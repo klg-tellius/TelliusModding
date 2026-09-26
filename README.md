@@ -3,8 +3,17 @@
 A Windows Python desktop editor for **Fire Emblem: Path of Radiance** and
 **Fire Emblem: Radiant Dawn**, with documentation of their file formats and systems.
 
-This is a source distribution for Windows. A standalone executable is not
-included.
+## Download for Windows
+
+Download **TelliusModding-Windows-x64.zip** from the
+[latest release](https://github.com/klg-tellius/TelliusModding/releases/latest),
+extract the whole ZIP, and open **TelliusModding.exe**. Python and all Python
+libraries are included; no pip commands or administrator access are needed.
+
+On first launch, choose **Download missing tools** to get WIT and optional FFmpeg
+from their upstream sites. This step needs internet access (about 125 MB total).
+Keep the `_internal` folder next to the EXE. See the
+[Windows release guide](docs/app/windows-release.md) for updates and build instructions.
 
 ## Run from source
 
@@ -16,13 +25,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe App/main.py
 ```
 
-Disc operations require Wiimm's ISO Tools. Download the Windows version from
-[WIT's website](https://wit.wiimm.de/download.html) and put `wit.exe` and its
-required runtime DLLs in `App/tools/wit/win64/`.
-
-General audio/video importing requires `ffmpeg.exe` in
-`App/tools/ffmpeg/win64/`. See the [FFmpeg origin information](App/tools/ffmpeg/ORIGIN.txt).
-External executables are not included in this source export.
+Use **Settings > Disc and media tools** to download WIT and optional FFmpeg.
+The source build also recognizes tools installed manually under `App/tools/`.
 
 Supply your own game disc and keep extracted data and mod projects outside this
 repository. See [project setup](docs/app/project-lifecycle.md),

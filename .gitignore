@@ -56,3 +56,6 @@ research/
 showcase/
 Thumbs.db
 Desktop.ini
+
+.venv-build/
+*-release.log

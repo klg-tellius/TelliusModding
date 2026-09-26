@@ -31,8 +31,9 @@ is included and must remain with that implementation.
 ## Dependencies and external tools
 
 Python dependencies are listed in [App/requirements.txt](App/requirements.txt):
-Pillow, NumPy, Sun Valley ttk (`sv-ttk`), and wgpu-py. They are installed
-separately and retain their respective licenses.
+Pillow, NumPy, fontTools, Sun Valley ttk (`sv-ttk`), and wgpu-py. Portable releases
+include these dependencies and their notices. Source installations use pip.
+All dependencies retain their respective licenses.
 
 - [Wiimm's ISO Tools](https://wit.wiimm.de/): disc extraction and build operations.
   See [origin information](App/tools/wit/ORIGIN.txt) and

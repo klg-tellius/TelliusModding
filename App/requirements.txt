@@ -1,5 +1,6 @@
 # Core app (project management, disc extract/build) uses only the standard library.
 Pillow>=10.0  # fe_modding.formats.tpl only, for decoding/encoding .tpl textures
+fonttools>=4.63  # preserve unsupported glyphs when importing TrueType/OpenType fonts
 numpy>=1.24  # fe_modding.formats.tpl's texture decoders and fe_modding.gui.model_viewer's 3D preview
 sv-ttk>=2.6  # fe_modding.gui.theme only, the Sun Valley (Windows 11) ttk theme; the app falls back to stock ttk without it
 wgpu>=0.32,<0.33  # fe_modding.gui.gpu_renderer only, GPU drawing for the 3D map/model views (Vulkan/DX12/Metal); without it they fall back to the numpy rasterizer

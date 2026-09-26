@@ -28,3 +28,5 @@ Open `tellius_archive.html` locally, or use the repository's GitHub Pages site.
 - [script_native_authoring_contracts](toInclude/script_native_authoring_contracts.md)
 - [script_native_registry_and_trigger_names](toInclude/script_native_registry_and_trigger_names.md)
 - [supports_affinities_bonds](toInclude/supports_affinities_bonds.md)
+
+- [Windows download and release builds](app/windows-release.md)
