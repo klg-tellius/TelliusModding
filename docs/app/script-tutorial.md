@@ -2,7 +2,7 @@
 
 This course teaches the app's `.fe9s` language, from a first event to a coordinated chapter overhaul. It covers the known **US Path of Radiance** event system. `.fe9s` is compiled into the game's `.cmb` bytecode; the game does not execute Python. Radiant Dawn, other regions, and a completely new campaign require additional verification. The function reference explains the available authoring calls, including their argument order, results, and important restrictions.
 
-Read the lessons in order the first time. Keep the [language reference](script-language.md), [function reference](script-call-reference.md), and [game-side script reference](https://klg-tellius.github.io/TelliusModding/#/events-scripting) alongside this guide. The code blocks tagged `fe9s` are compile-checked examples. Compilation proves syntax and encodability, not that a message, unit, map section, or event context exists at runtime.
+Read the lessons in order the first time. Keep the [language reference](script-language.md), [function reference](script-call-reference.md), and [game-side script reference](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/events-scripting) alongside this guide. The code blocks tagged `fe9s` are compile-checked examples. Compilation proves syntax and encodability, not that a message, unit, map section, or event context exists at runtime.
 
 ## Contents
 
@@ -45,7 +45,7 @@ An event script decides **when** something happens and invokes engine operations
 | Change music or movies | Existing IDs and selection calls, plus audio/video assets for new content |
 | Add a chapter beyond the campaign | Files plus native progression/loading changes; copying files alone is insufficient |
 
-Use [workspace features](workspace-and-features.md) for editing tools and the [game-system index](https://klg-tellius.github.io/TelliusModding/#/main) for each format. Start by replacing content inside a reachable chapter. File 01 is the Prologue, file 02 is displayed Chapter 1; do not assume the displayed number is the filename number.
+Use [workspace features](workspace-and-features.md) for editing tools and the [game-system index](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/main) for each format. Start by replacing content inside a reachable chapter. File 01 is the Prologue, file 02 is displayed Chapter 1; do not assume the displayed number is the filename number.
 
 ## 2. Prepare and make one small edit
 
@@ -254,7 +254,7 @@ def play_existing_c02_message():
 
 This is a small excerpt of the visit pattern, not a complete visit handler. Run it only with the appropriate message resources loaded. A message ID from another chapter may be unavailable.
 
-Dialogue has its own command interpreter. `$H` yields from the message to event logic; `TalkResume()` continues it. Moving or deleting a resume without examining the message can leave a scene stuck or omit dialogue. `$N` inserts a newline; `$K` waits without clearing retained text; `$P` flushes retained text. Portrait, expression and window context can carry between message segments. Consult [conversation rendering](https://klg-tellius.github.io/TelliusModding/#/message-format) before inventing markup.
+Dialogue has its own command interpreter. `$H` yields from the message to event logic; `TalkResume()` continues it. Moving or deleting a resume without examining the message can leave a scene stuck or omit dialogue. `$N` inserts a newline; `$K` waits without clearing retained text; `$P` flushes retained text. Portrait, expression and window context can carry between message segments. Consult [conversation rendering](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/message-format) before inventing markup.
 
 The dialogue preview is a selected-message visualization, not execution of the whole event VM. A preview can look correct while the game's preceding event supplies different portraits or timing.
 
@@ -500,7 +500,7 @@ Use this sequence to keep the project playable at each step:
 8. **Validate persistence.** Save/reload, next chapter, optional deaths and skipped scenes. Test every target difficulty.
 9. **Package and document.** Keep source, the edited-file list, required game/build, intended behavior and runtime test results together.
 
-For a wider overhaul, use the linked system notes for [characters/classes/items/skills](https://klg-tellius.github.io/TelliusModding/#/fe8data), [shops](https://klg-tellius.github.io/TelliusModding/#/shop-format), [music](https://klg-tellius.github.io/TelliusModding/#/music-system), [movies](https://klg-tellius.github.io/TelliusModding/#/cutscenes), [graphics](https://klg-tellius.github.io/TelliusModding/#/graphics-system), [saves](https://klg-tellius.github.io/TelliusModding/#/save-format), and [native gameplay](https://klg-tellius.github.io/TelliusModding/#/main-dol). Script calls coordinate these systems; they do not replace their file formats or native implementations.
+For a wider overhaul, use the linked system notes for [characters/classes/items/skills](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/fe8data), [shops](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/shop-format), [music](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/music-system), [movies](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/cutscenes), [graphics](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/graphics-system), [saves](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/save-format), and [native gameplay](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/main-dol). Script calls coordinate these systems; they do not replace their file formats or native implementations.
 
 ## 19. Validate and troubleshoot
 

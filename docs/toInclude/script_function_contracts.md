@@ -4,11 +4,11 @@
 
 The [function reference](../app/script-call-reference.md) includes all 497 catalogued names with positional signatures, individual argument explanations, behavior and return descriptions, and practical restrictions. Registration addresses, evidence badges, raw call-site dumps and research methodology are excluded from author-facing entries.
 
-Native contracts were investigated in the canonical US executable. See [SCRIPT_NATIVE_CONTRACTS.md](https://klg-tellius.github.io/TelliusModding/#/events-scripting) for the contract index, focused decompilation, applied Ghidra annotations and remaining resource-specific limits. The 44-script observation snapshot is retained privately under research/main_dol/notes/script_reference_observations.json for maintenance checks.
+Native contracts were investigated in the canonical US executable. See [SCRIPT_NATIVE_CONTRACTS.md](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/events-scripting) for the contract index, focused decompilation, applied Ghidra annotations and remaining resource-specific limits. The 44-script observation snapshot is retained privately under research/main_dol/notes/script_reference_observations.json for maintenance checks.
 
 ## Shared-script facts to preserve
 
-The game-side facts are filed under [Shared helper argument and return contracts](https://klg-tellius.github.io/TelliusModding/#/events-scripting): different live/deployed tests; unit-handle versus boolean returns; first-target/second-mover argument order; success paths returning zero; coordinate and weapon-away error sentinels; force-0-only breakup; and the nontrivial inventory valuation branch.
+The game-side facts are filed under [Shared helper argument and return contracts](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/events-scripting): different live/deployed tests; unit-handle versus boolean returns; first-target/second-mover argument order; success paths returning zero; coordinate and weapon-away error sentinels; force-0-only breakup; and the nontrivial inventory valuation branch.
 
 Other established helper sequences include the full/half/no-delay BGM variants, fixed 60/1000 tutorial delay conversion, the two-stage map release with an intervening yield, and reward/tutorial-dialog wrapper calls. `_gi` and `td` have caller-established roles, while their native body contracts remain unresolved. The unknown-byte and remaining-question references reflect that distinction.
 

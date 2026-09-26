@@ -1,7 +1,7 @@
 # FE9 conversation renderer documentation integration
 
 The authoritative topical specification is
-[research/CONVERSATION_RENDERING.md](https://klg-tellius.github.io/TelliusModding/#/message-format).
+[research/CONVERSATION_RENDERING.md](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/message-format).
 It includes native coordinates, real file structures, engine addresses, command
 semantics and a reproducible ten-screenshot validation manifest.
 

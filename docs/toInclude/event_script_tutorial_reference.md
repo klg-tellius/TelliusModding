@@ -2,7 +2,7 @@
 
 ## Published references
 
-- [Game-side guide](https://klg-tellius.github.io/TelliusModding/#/events-scripting): module loading, dispatch, frames, trigger/state separation, timing, binary constraints and scope limits. Contains no app instructions.
+- [Game-side guide](https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/events-scripting): module loading, dispatch, frames, trigger/state separation, timing, binary constraints and scope limits. Contains no app instructions.
 - [Authoring tutorial](../app/script-tutorial.md): Python-style `.fe9s` lessons, concrete snippets, chapter overhaul, content dependencies, build and runtime validation.
 - [Complete call index](../app/script-call-reference.md): all 406 native registrations, 89 startup helpers and two unregistered names. Native names/arities are cross-checked against `fe9_script_externs.tsv`; argument kinds remain inferred hints, not proven contracts.
 
