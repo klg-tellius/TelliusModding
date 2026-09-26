@@ -1,0 +1,40 @@
+# Tellius Modding app
+
+The app is a Windows Python/Tkinter desktop application for modifying *Fire Emblem: Path of Radiance* (GameCube) and *Fire Emblem: Radiant Dawn* (Wii). It organizes work into projects, extracts a source disc, exposes supported game data through editors and viewers, and rebuilds a playable disc image.
+
+The application source is under `App/`.
+
+## Commands
+
+Run these commands from `App/`:
+
+```bash
+python main.py
+python -m unittest discover -s tests -v
+```
+
+## Architecture
+
+The app has four main layers:
+
+1. **Project and game layer** — `fe_modding/project.py`, `games.py`, `config.py` and `patch.py` define projects, supported games, recent projects and settings, the extract/build lifecycle, and `.tpatch` mod patches.
+2. **Desktop workspace** — `fe_modding/gui/` contains the launcher, the workspace shell (top-bar sections, breadcrumbs, back/forward, Ctrl+K search, status bar), the pages (`gui/pages/`: Home, Chapters, a page per chapter, Characters, a page per character, Game Data, Flags, Assets, Disc & Patch), the Settings and Apply-patch dialogs, the editors and viewers they embed, the theme (`gui/theme.py`, Sun Valley light/dark) and the in-session change log. `fe_modding/project_index.py` joins the formats (characters, deployments, messages, scripts) for the chapter and character pages. `fe_modding/script_sources.py` loads and saves event scripts as source for the Script tab and the Flags page.
+3. **Game-data layer** — `fe_modding/formats/` reads and, where supported, writes the binary, image, audio, video, script, map, and model formats used by the games.
+4. **External-tool layer** — `fe_modding/tools.py` invokes the bundled WIT and FFmpeg executables in `tools/` for disc operations and general video decoding.
+
+Editors operate directly on files in a project's `extracted/` directory. Building a project packages the current contents of that directory; there is no separate apply or staging step.
+
+The two games share the architecture, but game-specific disc formats and build outputs are centralized in `fe_modding/games.py`. Path of Radiance builds to CISO and Radiant Dawn builds to WBFS. The bundled external tools currently make the app Windows-only.
+
+## Detailed references
+
+This file is the required high-level app overview. Agents should read the following files only when the task involves that part of the application:
+
+- [Project lifecycle](docs/app/project-lifecycle.md) — project layout, supported disc inputs, extraction, and building.
+- [Workspace and features](docs/app/workspace-and-features.md) — navigation, chapter handling, editors, viewers, and known user-facing limitations.
+- [Script language](docs/app/script-language.md) — the `.fe9s` event-script language, the Scripts tab and the script command line.
+- [Script modding tutorial](docs/app/script-tutorial.md) — progressive `.fe9s` lessons, chapter-overhaul workflow, validation, and the complete native/helper call index.
+- [Formats and tools](docs/app/formats-and-tools.md) — format-module responsibilities, write-support boundaries, bundled tools, and test coverage.
+- [Known bugs](docs/app/known-bugs.md) — confirmed but unfixed app defects.
+
+Research history, reverse-engineering evidence, and unresolved game-format investigation belong in `research.md` and the relevant research notes, not in this app overview.

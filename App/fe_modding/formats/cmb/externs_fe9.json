@@ -1,0 +1,7015 @@
+{
+ "externs": {
+  "AchieveSet": {
+   "argc": 2,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 55,
+   "note": ""
+  },
+  "AddTT": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "AllPop": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "AllPush": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "AllUnitEscape": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 141,
+   "note": ""
+  },
+  "AllUnitsBreakup": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 3,
+   "note": ""
+  },
+  "ArcFree": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "ArcLoad": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "ArenaDump": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "BGMCont": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 31,
+   "note": ""
+  },
+  "BGMFadeIn": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "bgm"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 125,
+   "note": ""
+  },
+  "BGMFadeOut": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 434,
+   "note": ""
+  },
+  "BGMMute": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 41,
+   "note": ""
+  },
+  "BGMPlay": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "bgm"
+    }
+   ],
+   "uses": 287,
+   "note": ""
+  },
+  "BGMPlayVol": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "bgm"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 29,
+   "note": ""
+  },
+  "BGMQuietOff": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 90,
+   "note": ""
+  },
+  "BGMQuietOn": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 90,
+   "note": ""
+  },
+  "BGMResume": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "BGMSetVol": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 99,
+   "note": ""
+  },
+  "BGMStop": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "BMGetChapter": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 11,
+   "note": ""
+  },
+  "BMGetMoney": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "BMGetPhase": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 103,
+   "note": ""
+  },
+  "BMGetTurn": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 41,
+   "note": ""
+  },
+  "BMGetValue": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "BMSetMoney": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "BMSetPhase": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "BMSetTanto": {
+   "argc": 4,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "BMSetTerm": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 16,
+   "note": ""
+  },
+  "BMSetTurn": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "BMSetValue": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 24,
+   "note": ""
+  },
+  "BeginFinale": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "BeginMapHoldCursor": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "BgmChangeEvt_MapToEvt1": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "bgm"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "BgmChangeEvt_MapToEvt2": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "bgm"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 16,
+   "note": ""
+  },
+  "BgmChangeEvt_MapToEvt3": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "BgmContEvt_EvtToMap1": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 19,
+   "note": ""
+  },
+  "BgmContEvt_EvtToMap2": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "BgmContEvt_EvtToMap3": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "BuildDestruction": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 18,
+   "note": ""
+  },
+  "BuildInstAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "BuildInstHide": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 46,
+   "note": ""
+  },
+  "BuildInstShow": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 23,
+   "note": ""
+  },
+  "ChapterMoviePlay": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 30,
+   "note": ""
+  },
+  "Check": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 65,
+   "note": ""
+  },
+  "CheckAttackable": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "CmFreeScript": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "CmLoadScript": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "CmSleepScript": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "CmWakeupScripts": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "Comeback": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 184,
+   "note": ""
+  },
+  "ComebackFunc": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "Complete18": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "Config_TutGet_sfx_vol": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 3,
+   "note": ""
+  },
+  "Config_TutSet_XinfoPage": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "Config_TutSet_otheridoshowing": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "Config_TutSet_sfx_vol": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "Config_TutSet_terInfo": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 42,
+   "note": ""
+  },
+  "Config_TutSet_unitInfo": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 48,
+   "note": ""
+  },
+  "Config_Tutorial": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 50,
+   "note": ""
+  },
+  "CopyMapCamera": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 80,
+   "note": ""
+  },
+  "CpClrNoMoveFlag": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "CreateEventCamera": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 300,
+   "note": ""
+  },
+  "CreateNoticeFrame": {
+   "argc": 4,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 152,
+   "note": ""
+  },
+  "CreateNoticeLFrame": {
+   "argc": 7,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "DefaultDieTalk": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 11,
+   "note": ""
+  },
+  "DefaultEscapeTalk": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "DeleteEventCamera": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 86,
+   "note": ""
+  },
+  "DeleteNoticeFrame": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 104,
+   "note": ""
+  },
+  "Dialog": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "Dialog2Items": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "Dialog3Items": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "Dialog4Items": {
+   "argc": 4,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "DialogDirect": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "DialogGetRes": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 11,
+   "note": ""
+  },
+  "DialogResult": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 71,
+   "note": ""
+  },
+  "DialogSetDefault": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 50,
+   "note": ""
+  },
+  "DialogTutorial": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "DisableSkip": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 365,
+   "note": ""
+  },
+  "DispFreeWholeForce": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "DispLoadWholeForce": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "DispPreLoadWholeForce": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "Dispos": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 131,
+   "note": ""
+  },
+  "DisposAsynchronous": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 34,
+   "note": ""
+  },
+  "DisposAuxiliary": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "DisposContinue": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 9,
+   "note": ""
+  },
+  "DisposContinueSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "DisposFirst": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "DisposFirstSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "DisposGetGroupCenter": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "DisposSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 106,
+   "note": ""
+  },
+  "DisposWarp": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "Dispos_ForEvent": {
+   "argc": 5,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "jid"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "Dispos_ForEventSenerio": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "Dispos_ForEventTiamat": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "DoorClose": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "DoorOpen": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 24,
+   "note": ""
+  },
+  "ENVNoisyOff": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 13,
+   "note": ""
+  },
+  "ENVNoisyOn": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 49,
+   "note": ""
+  },
+  "ENVNoisyOn_WhenNotEvtSkip": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "ENVQuietOff": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 12,
+   "note": ""
+  },
+  "ENVQuietOn": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 18,
+   "note": ""
+  },
+  "ENVSilentOff": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 138,
+   "note": ""
+  },
+  "ENVSilentOff_WhenNotEvtSkip": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "ENVSilentOn": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 264,
+   "note": ""
+  },
+  "Easy": {
+   "argc": -1,
+   "source": "unregistered",
+   "group": "",
+   "args": [],
+   "uses": 1,
+   "note": "Called by vanilla scripts but registered nowhere: the VM silently returns 0."
+  },
+  "EffectPlay": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "EffectWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EnableSkip": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 362,
+   "note": ""
+  },
+  "EndFinale": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "EndMapHoldCursor": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EnemyDeadCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EnemyMonkCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "EnemySelfDefenceCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "EnemyTigerCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EnemyUnitCheckByPID": {
+   "argc": 1,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "EventArrowAppend": {
+   "argc": 5,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowColor": {
+   "argc": 5,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowDelete": {
+   "argc": 0,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowFadeOut": {
+   "argc": 1,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowFocus": {
+   "argc": 2,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowStart": {
+   "argc": 2,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "EventArrowWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "event_arrow",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "EventCameraWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 164,
+   "note": ""
+  },
+  "EventGetX": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 94,
+   "note": ""
+  },
+  "EventGetY": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 94,
+   "note": ""
+  },
+  "EventQuake": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 18,
+   "note": ""
+  },
+  "EventQuakeStop": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 5,
+   "note": ""
+  },
+  "FRAME2MSEC": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "Fade": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1140,
+   "note": ""
+  },
+  "FadeWait": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 879,
+   "note": ""
+  },
+  "Flash": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "FlashWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "Focus": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 98,
+   "note": ""
+  },
+  "FocusBetweenAB": {
+   "argc": 5,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "FocusHardWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 146,
+   "note": ""
+  },
+  "FocusWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 32,
+   "note": ""
+  },
+  "ForceCheckAnyoneDead": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "ForceGetCount": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 167,
+   "note": ""
+  },
+  "ForceGetFirst": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 87,
+   "note": ""
+  },
+  "GCST": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 189,
+   "note": ""
+  },
+  "GMapFlagMarkOff": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "GMapFlagMarkOffAll": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "GMapFlagMarkOn": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 25,
+   "note": ""
+  },
+  "GMapPenDarkOnOff": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "GMapPenDispOnOff": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 9,
+   "note": ""
+  },
+  "GMapPenDraw1Seq": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "GMapPenDrawWait": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "GMapPenReset": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "GMapPointOff": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "GMapPointOffAll": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "GMapPointOn": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 27,
+   "note": ""
+  },
+  "GMapRegionFlashOnOff": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "GMapRegionFlashOnce": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "GMapRegionOff": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "GMapRegionOffAll": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "GMapRegionOn": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "GMapRegionOnSkipFlash": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "GameBind": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 61,
+   "note": ""
+  },
+  "GameUnbind": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 61,
+   "note": ""
+  },
+  "GetBattleType": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 28,
+   "note": ""
+  },
+  "GetDiedPlayerCount": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "GetFukiPosX": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "GetFukiPosY": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "GetLanguage": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "GetMapHeight": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "GetMapHeightBase": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "GetRank": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "GetRnd": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 25,
+   "note": ""
+  },
+  "GetTutorial": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 22,
+   "note": ""
+  },
+  "Hard": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 22,
+   "note": ""
+  },
+  "HideMapCursor": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 21,
+   "note": ""
+  },
+  "HidePrim2D": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "IndividualWarRecord": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "InstantDispos": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 313,
+   "note": ""
+  },
+  "InstantDisposContinue": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "InstantDisposContinueSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "InstantDisposFirst": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 23,
+   "note": ""
+  },
+  "InstantDisposFirstSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "InstantDisposRank": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 82,
+   "note": ""
+  },
+  "InstantDisposSetMode": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 33,
+   "note": ""
+  },
+  "InstantDoorClose": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "InstantDoorOpen": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "InstantFocus": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 209,
+   "note": ""
+  },
+  "InstantPastMapCamera": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 7,
+   "note": ""
+  },
+  "InstantRoofClose": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "InstantRoofOpen": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "InstantSetMapCamera": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 282,
+   "note": ""
+  },
+  "InstantUnitFocusByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 100,
+   "note": ""
+  },
+  "InstantUnitFocusOffsetByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 27,
+   "note": ""
+  },
+  "InstantUnitTransform": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "IsE3Version": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 3,
+   "note": ""
+  },
+  "ItemGetIndex": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "Join": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 132,
+   "note": ""
+  },
+  "JyokyoMapCapture": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "JyokyoMapDelete": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "JyokyoMapEnemyOn": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "JyokyoMapHide": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "JyokyoMapPlayerOn": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "JyokyoMapShow": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "LocalDieTalkWithBgmChange": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "MCResult": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "MSEC2FRAME": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "Maniac": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 39,
+   "note": ""
+  },
+  "MapFree": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 147,
+   "note": ""
+  },
+  "MapGetSight": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "MapGetTerrain": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "MapGetUnit": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "MapLoad": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 154,
+   "note": ""
+  },
+  "MapReload": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "MapUpdate": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "MindGetItem": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 76,
+   "note": ""
+  },
+  "MindGetMe": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 110,
+   "note": ""
+  },
+  "MindGetMind": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "MindGetMoney": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "MindGetTarget": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 54,
+   "note": ""
+  },
+  "MoviePlay": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "NetuzoBattle": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 13,
+   "note": ""
+  },
+  "NetuzoInit": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 30,
+   "note": ""
+  },
+  "NetuzoSet": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 44,
+   "note": ""
+  },
+  "Normal": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 135,
+   "note": ""
+  },
+  "NormalOnly": {
+   "argc": -1,
+   "source": "unregistered",
+   "group": "",
+   "args": [],
+   "uses": 6,
+   "note": "Called by vanilla scripts but registered nowhere: the VM silently returns 0."
+  },
+  "PIDisAlive": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "PadResetMask": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "PadSetMask": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "PastMapCamera": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 71,
+   "note": ""
+  },
+  "PersonGetYellLevel": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 14,
+   "note": ""
+  },
+  "PersonSetYellLevel": {
+   "argc": 3,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "PlayerDeadCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "PlayerEscapeCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "PlayerEscapeCount": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "PreLoadWait": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 5,
+   "note": ""
+  },
+  "ProcExists": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "ProcKill": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "QueryLesson": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "RectAdjustBoundary": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "RectBuild": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 183,
+   "note": ""
+  },
+  "RectFadeIn": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 66,
+   "note": ""
+  },
+  "RectFadeOut": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "RectFadeOutDelete": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 62,
+   "note": ""
+  },
+  "RectGet": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "RectKill": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 231,
+   "note": ""
+  },
+  "RectLeave": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 50,
+   "note": ""
+  },
+  "RectMove": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "RectMoveOffset": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 16,
+   "note": ""
+  },
+  "RectPreLoad": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 9,
+   "note": ""
+  },
+  "RectSet": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 131,
+   "note": ""
+  },
+  "RectSetCurve": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 217,
+   "note": ""
+  },
+  "RectSetPos": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 73,
+   "note": ""
+  },
+  "RegistGlobalFlags": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "RemoveBackdrop": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 34,
+   "note": ""
+  },
+  "ResumeEvent": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "RoofClose": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "RoofOpen": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "SFXPlay": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 82,
+   "note": ""
+  },
+  "SallyAddByGroup": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 20,
+   "note": ""
+  },
+  "SallyAddByPos": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "SallyGetSurplus": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "SallySetByGroup": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 67,
+   "note": ""
+  },
+  "SallySetByPos": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "SelectAuxiliary": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "SetAmbient": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "SetCamSuspend": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "SetCircle": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 90,
+   "note": ""
+  },
+  "SetDiffuse": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "SetEventBattle": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 18,
+   "note": ""
+  },
+  "SetEventCameraAt": {
+   "argc": 4,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 500,
+   "note": ""
+  },
+  "SetEventCameraPrec": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 338,
+   "note": ""
+  },
+  "SetEventCameraRot": {
+   "argc": 4,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 500,
+   "note": ""
+  },
+  "SetFog": {
+   "argc": 6,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "SetFragile": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 23,
+   "note": ""
+  },
+  "SetGrid": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 92,
+   "note": ""
+  },
+  "SetMapCamera": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 96,
+   "note": ""
+  },
+  "SetOnBtFocus": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 50,
+   "note": ""
+  },
+  "SetOutLink": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 64,
+   "note": ""
+  },
+  "SetPit": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 12,
+   "note": ""
+  },
+  "SetPullCursor": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "SetRock": {
+   "argc": 4,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "SetRoofEnable": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "SetSepia": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "SetShooter": {
+   "argc": 4,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 23,
+   "note": ""
+  },
+  "SetSight": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "SetTerrain": {
+   "argc": 3,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "SetWeather": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "SetWhiteBackdrop": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 34,
+   "note": ""
+  },
+  "ShooterBulletCheck": {
+   "argc": 0,
+   "source": "native",
+   "group": "chapter_objective",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "ShowMapCursor": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 20,
+   "note": ""
+  },
+  "SoundBossTalkEnd": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 256,
+   "note": ""
+  },
+  "SoundBossTalkStart": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "bgm"
+    }
+   ],
+   "uses": 301,
+   "note": ""
+  },
+  "StaffRoll": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "StartEventCamera": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 300,
+   "note": ""
+  },
+  "SuspendEvent": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "SysGetRound": {
+   "argc": 0,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TBoxOpen": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 50,
+   "note": ""
+  },
+  "TTPMEntry": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "TTPMInit": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "TalkEvent": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 1640,
+   "note": ""
+  },
+  "TalkEventDirect": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TalkExist": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 2,
+   "note": ""
+  },
+  "TalkResume": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 178,
+   "note": ""
+  },
+  "TimeiShow": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 67,
+   "note": ""
+  },
+  "TimeiShowGMap": {
+   "argc": 7,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TimeiShowHold": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TimeiShowHoldGMap": {
+   "argc": 6,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "mess"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 25,
+   "note": ""
+  },
+  "TimeiShowHoldOff": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "TimeiShowHoldOffAll": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "TrialAddUnit": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 6,
+   "note": ""
+  },
+  "Tut3SArrowABAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "Tut3SArrowBCAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "Tut3SArrowCAAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "Tut3SArrowDAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "Tut3SArrowUAnim": {
+   "argc": 3,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "TutBasesCreate": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutBasesDelete": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutEntryCommon": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TutPadActor": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 387,
+   "note": ""
+  },
+  "TutPreLoadWait": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "TutSallyCreate": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutSallyDelete": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "TutShow": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 46,
+   "note": ""
+  },
+  "TutShowKari": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TutTalkEvent": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 375,
+   "note": ""
+  },
+  "TutTalkResume": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 150,
+   "note": ""
+  },
+  "TutWaitF": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 476,
+   "note": ""
+  },
+  "TutWaitForNextTaiki": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 32,
+   "note": ""
+  },
+  "TutWaitForNextTurn": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "TutWaitForNextTurnAfter": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 13,
+   "note": ""
+  },
+  "TutWaitM": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TutorialBasesCreate": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialBasesDelete": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialCall": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 51,
+   "note": ""
+  },
+  "TutorialDialog": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "mess"
+    }
+   ],
+   "uses": 50,
+   "note": ""
+  },
+  "TutorialForget": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TutorialIn": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "TutorialInit": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 51,
+   "note": ""
+  },
+  "TutorialInitialize": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialLearn": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "TutorialLock": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "TutorialOut": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 51,
+   "note": ""
+  },
+  "TutorialResume": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialResumeOut": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 21,
+   "note": ""
+  },
+  "TutorialSallyCreate": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialSallyDelete": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "TutorialUnlock": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 144,
+   "note": ""
+  },
+  "Tutorial_FadeIn": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 71,
+   "note": ""
+  },
+  "Tutorial_FadeOut": {
+   "argc": 0,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [],
+   "uses": 21,
+   "note": ""
+  },
+  "UnitAddItem": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 28,
+   "note": ""
+  },
+  "UnitAddSkill": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 16,
+   "note": ""
+  },
+  "UnitAnim": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitAnimByPID": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 136,
+   "note": ""
+  },
+  "UnitAnimF": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitAnimFByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 53,
+   "note": ""
+  },
+  "UnitBreakup": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "UnitCanUseIt": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitCheckDeadHere": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitCheckDeadHereByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 13,
+   "note": ""
+  },
+  "UnitCheckExists": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitCheckExistsByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 181,
+   "note": ""
+  },
+  "UnitCheckExistsByPID2": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "UnitCheckLinked_Breakup": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitCheckLinked_BreakupByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitCheckLiveByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 447,
+   "note": ""
+  },
+  "UnitClassChange": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "UnitClrSkill": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "UnitClrStatus": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "UnitDead": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "UnitDelItem": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitDispReload": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitDontMoveSally": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitDontMoveSallyByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 34,
+   "note": ""
+  },
+  "UnitEscape": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 45,
+   "note": ""
+  },
+  "UnitEscapeByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 351,
+   "note": ""
+  },
+  "UnitFadeIn": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 52,
+   "note": ""
+  },
+  "UnitFadeOff": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 123,
+   "note": ""
+  },
+  "UnitFadeOut": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 80,
+   "note": ""
+  },
+  "UnitFocus": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitFocusByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 54,
+   "note": ""
+  },
+  "UnitFocusOff": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 138,
+   "note": ""
+  },
+  "UnitFocusOffsetByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "UnitFocusOn": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 6,
+   "note": ""
+  },
+  "UnitForcedSally": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitForcedSallyByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 56,
+   "note": ""
+  },
+  "UnitGet": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 16,
+   "note": ""
+  },
+  "UnitGetByPID": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 553,
+   "note": ""
+  },
+  "UnitGetByPos": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 277,
+   "note": ""
+  },
+  "UnitGetEquipAccI": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitGetEquipWepI": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitGetForce": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "UnitGetHP": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitGetItemCount": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitGetItemShowing": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "UnitGetItemShowingSub": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 8,
+   "note": ""
+  },
+  "UnitGetMaxHP": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitGetMoveCost": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitGetNext": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 75,
+   "note": ""
+  },
+  "UnitGetRace": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitGetStatus": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 14,
+   "note": ""
+  },
+  "UnitGetWeaponCount": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 18,
+   "note": ""
+  },
+  "UnitGetX": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 54,
+   "note": ""
+  },
+  "UnitGetXByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 59,
+   "note": ""
+  },
+  "UnitGetY": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 56,
+   "note": ""
+  },
+  "UnitGetYByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 47,
+   "note": ""
+  },
+  "UnitItemGetValuation": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitItemSendToHouseByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitItemSendtoWarehouse": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitItemSendtoWarehouseAll": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitItemSetDrop": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitMoveDir": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 35,
+   "note": ""
+  },
+  "UnitMoveDirByPID": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 411,
+   "note": ""
+  },
+  "UnitMovePos": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 41,
+   "note": ""
+  },
+  "UnitMovePosByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 146,
+   "note": ""
+  },
+  "UnitMoveToUnit": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitMoveToUnitByPID": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitMoveWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "map_scene",
+   "args": [],
+   "uses": 592,
+   "note": ""
+  },
+  "UnitPairup": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "UnitPutToWarehouse": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "UnitQueryEquip": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitQueryJID": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "jid"
+    }
+   ],
+   "uses": 37,
+   "note": ""
+  },
+  "UnitQueryJIDByPID": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "jid"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitQueryPID": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "UnitReplaceItem": {
+   "argc": 3,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitRotate": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 107,
+   "note": ""
+  },
+  "UnitRotateByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 672,
+   "note": ""
+  },
+  "UnitRotateToPos": {
+   "argc": 4,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 20,
+   "note": ""
+  },
+  "UnitRotateToPosByPID": {
+   "argc": 4,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitRotateToUnit": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "UnitRotateToUnitByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 74,
+   "note": ""
+  },
+  "UnitSearchItem": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "iid"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitSet": {
+   "argc": 3,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "UnitSetAccAway": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitSetCpAttackSeq": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 267,
+   "note": ""
+  },
+  "UnitSetCpHealSeq": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitSetCpMTypeID": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitSetCpMoveSeq": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 256,
+   "note": ""
+  },
+  "UnitSetCpTypeByPID": {
+   "argc": 3,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 9,
+   "note": ""
+  },
+  "UnitSetEXP": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitSetEquip": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 21,
+   "note": ""
+  },
+  "UnitSetFixed": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2,
+   "note": ""
+  },
+  "UnitSetHP": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "UnitSetHold": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 6,
+   "note": ""
+  },
+  "UnitSetPos": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 72,
+   "note": ""
+  },
+  "UnitSetPosDir": {
+   "argc": 4,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 41,
+   "note": ""
+  },
+  "UnitSetPosDirByPID": {
+   "argc": 4,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 471,
+   "note": ""
+  },
+  "UnitSetPosDirByPos": {
+   "argc": 5,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 10,
+   "note": ""
+  },
+  "UnitSetStatus": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 13,
+   "note": ""
+  },
+  "UnitSetWeaponAway": {
+   "argc": 1,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 11,
+   "note": ""
+  },
+  "UnitSetWeaponAwayByPID": {
+   "argc": 1,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    }
+   ],
+   "uses": 4,
+   "note": ""
+  },
+  "UnitTackle": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 12,
+   "note": ""
+  },
+  "UnitTransferToForce": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 7,
+   "note": ""
+  },
+  "UnitTransferToForceByPID": {
+   "argc": 2,
+   "source": "script",
+   "group": "startup.cmb",
+   "args": [
+    {
+     "name": "",
+     "kind": "pid"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 67,
+   "note": ""
+  },
+  "UnitTransform": {
+   "argc": 2,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 29,
+   "note": ""
+  },
+  "UnitTstSkill": {
+   "argc": 2,
+   "source": "native",
+   "group": "unit_and_battlemap",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "UnitWalkDir": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 632,
+   "note": ""
+  },
+  "UnitWalkSlow": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 26,
+   "note": ""
+  },
+  "UnitWarpOut": {
+   "argc": 1,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "UnitsInitialize": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 64,
+   "note": ""
+  },
+  "UnitsPop": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 15,
+   "note": ""
+  },
+  "UnitsPopWithoutMap": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitsPush": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "UnitsPush_Uninitialize": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 15,
+   "note": ""
+  },
+  "VisitIn": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 3,
+   "note": ""
+  },
+  "VisitOut": {
+   "argc": 3,
+   "source": "native",
+   "group": "map_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 18,
+   "note": ""
+  },
+  "WaitF": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 615,
+   "note": ""
+  },
+  "WaitM": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 2505,
+   "note": ""
+  },
+  "WaitPressAnyKey": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "WarRecord": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "WipeEnd": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "WipeIn": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "WipeOut": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "WipeWait": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "_bmsini": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_cmb_mess_load": {
+   "argc": 2,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "_gi": {
+   "argc": 2,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "_intr": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "_mf1": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_mf2": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_pa": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "_pldone": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_seqini": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_tr": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "_tt": {
+   "argc": 1,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "clr": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 5,
+   "note": ""
+  },
+  "dump": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "get": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 383,
+   "note": ""
+  },
+  "global": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 22,
+   "note": ""
+  },
+  "intplGetValue": {
+   "argc": 5,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    },
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "isFading": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "isFlash": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "isWipe": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 0,
+   "note": ""
+  },
+  "regist": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 794,
+   "note": ""
+  },
+  "report": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 0,
+   "note": ""
+  },
+  "set": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "str"
+    }
+   ],
+   "uses": 941,
+   "note": ""
+  },
+  "taikitk": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "td": {
+   "argc": 1,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [
+    {
+     "name": "",
+     "kind": "int"
+    }
+   ],
+   "uses": 1,
+   "note": ""
+  },
+  "tde": {
+   "argc": 0,
+   "source": "native",
+   "group": "native_externcalls",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "turnatk": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  },
+  "turntk": {
+   "argc": 0,
+   "source": "native",
+   "group": "bmap_scene",
+   "args": [],
+   "uses": 1,
+   "note": ""
+  }
+ }
+}

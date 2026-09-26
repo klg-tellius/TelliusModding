@@ -1,0 +1,8 @@
+Wiimm's ISO Tools (WIT), v3.05a r8638, cygwin64 build
+Source: https://wit.wiimm.de/download.html
+Upstream source code: https://github.com/Wiimm/wiimms-iso-tools
+License: GNU GPL v2 (see gpl-2.0.txt in this folder)
+
+Only wit.exe, wwt.exe, and the Cygwin runtime DLLs they require are kept here
+(the original archive also bundles bash/coreutils/wget/an installer, which
+this project does not use). wit.txt is the upstream usage reference for wit.exe.

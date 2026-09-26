@@ -1,0 +1,18 @@
+# Line endings: every text file is stored and checked out as LF,
+# whatever the local core.autocrlf setting. Edit tools may write CRLF on
+# Windows; git normalizes it back to LF on `git add`.
+* text=auto eol=lf
+
+# Windows batch files need CRLF to run reliably under cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary data: never touch.
+*.png binary
+*.jpg binary
+*.gif binary
+*.tpl binary
+*.cmp binary
+*.bin binary
+*.iso binary
+*.gbf binary
