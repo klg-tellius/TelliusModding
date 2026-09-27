@@ -255,6 +255,22 @@ class SourceToolsTests(unittest.TestCase):
         fn = compile_source(text).script.functions[1]
         self.assertEqual(fn.type, 11)
 
+    def test_string_references(self):
+        from fe_modding.formats.cmb import source_tools as st
+        source = (
+            "def opening():\n    Dispos(\"bmap02_mikata_c\")\n    if Hard():\n"
+            "        DisposSetMode(\"bmap02_first_n\", \"bmap02_first_h\", \"bmap02_first_m\")\n\n"
+            "def other():\n    x = UnitGetByPID(\"PID_IKE\")\n"
+        )
+        refs = st.string_references(source)
+        self.assertEqual([(r.function, r.line, r.call, r.value) for r in refs], [
+            ("opening", 2, "Dispos", "bmap02_mikata_c"),
+            ("opening", 4, "DisposSetMode", "bmap02_first_n"),
+            ("opening", 4, "DisposSetMode", "bmap02_first_h"),
+            ("opening", 4, "DisposSetMode", "bmap02_first_m"),
+            ("other", 7, "UnitGetByPID", "PID_IKE"),
+        ])
+
     def test_description(self):
         from fe_modding.formats.cmb import source_tools as st
         span = st.function_spans(self.SOURCE)[1]
