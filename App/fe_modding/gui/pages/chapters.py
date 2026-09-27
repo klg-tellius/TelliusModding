@@ -1,11 +1,12 @@
 """Chapters: a card per chapter, and a page per chapter gathering its map and
-deployment (the Build tab), dialogue, script and base shops, with an overview of
-who is in it, what is said and which script events it has.
+deployment (the Build tab), dialogue, script, base shops and battle scenes
+(the map's ``BattleTerrData`` row, ``battle_scene_editor.py``), with an
+overview of who is in it, what is said and which script events it has.
 
 Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
-which one the Build tab shows.
+which one the Build and Battle scenes tabs show.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from tkinter import messagebox, ttk
 from ... import chapters
 from ...formats.cmb.catalog import TRIGGERS
 from ...project_index import difficulty_name
+from ..battle_scene_editor import BattleScenePanel
 from ..deployment_editor import DeploymentEditor
 from ..dialogue_editor import DialogueEditor
 from ..map_builder import MapBuilder
@@ -26,10 +28,11 @@ from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 
-TABS = ["overview", "build", "dialogue", "script", "shops"]
+TABS = ["overview", "build", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
 TAB_ALIASES = {"map": "build", "deployment": "build"}
-TAB_LABELS = {"overview": "Overview", "build": "Build", "dialogue": "Dialogue", "script": "Script", "shops": "Shops"}
+TAB_LABELS = {"overview": "Overview", "build": "Build", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
+              "battle": "Battle scenes"}
 
 
 class ChaptersHub(Page):
@@ -180,8 +183,12 @@ class ChapterPage(Page):
                                  on_navigate_to_character=lambda pid: shell.navigate(("character", pid)),
                                  navigate=shell.navigate, script_editor=self._script,
                                  on_open_function=lambda name: shell.navigate(("chapter", self._chapter, "script", name)))
+        # FE8Data.bin's battle-scene rows: edits go to the shared session (saved with every other
+        # FE8Data.bin edit), so it isn't one of panels() either.
+        self._battle = BattleScenePanel(self._notebook, project, log, session_provider=lambda: shell.session,
+                                        map_editor=self._map)
         for key, panel in (("build", self._build), ("dialogue", self._dialogue),
-                           ("script", self._script), ("shops", self._shops)):
+                           ("script", self._script), ("shops", self._shops), ("battle", self._battle)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
         self._tab = "overview"
@@ -189,6 +196,9 @@ class ChapterPage(Page):
     # -- Page ----------------------------------------------------------------------------
     def panels(self):
         return [self._map, self._deployment, self._dialogue, self._script, self._shops]
+
+    def flush(self) -> None:
+        self._battle.flush()
 
     def refresh_chapter_lists(self) -> None:
         for panel in self.panels():
@@ -274,6 +284,7 @@ class ChapterPage(Page):
         deployment, map_cmp = chapters.phase_paths(self.project, folder) if folder else (None, None)
         self._deployment.select_chapter(deployment)
         self._map.select_chapter(map_cmp)
+        self._battle.select_map(folder)
         if self._chapter is not None:
             self._render_overview()
 
@@ -306,6 +317,7 @@ class ChapterPage(Page):
         self._notebook.select(TABS.index(tab))
 
     def _on_tab_changed(self) -> None:
+        self._battle.flush()
         self._tab = TABS[self._notebook.index("current")]
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):

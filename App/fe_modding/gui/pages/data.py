@@ -1,5 +1,5 @@
-"""Game Data: classes, items, skills, terrain types, chapters, battle scenes,
-the general tables and supports (``FE8Data.bin``),
+"""Game Data: classes, items, skills, terrain types, chapters, the general
+tables and supports (``FE8Data.bin``),
 and the props of every chapter map (Map Objects, read from the ``map.cmp`` files).
 
 Characters live in the same file but have their own pages; both edit one
@@ -19,7 +19,7 @@ from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
-        "battle": "Battle scenes", "general": "General", "supports": "Supports", "props": "Map Objects"}
+        "general": "General", "supports": "Supports", "props": "Map Objects"}
 
 
 class GameDataPage(Page):
