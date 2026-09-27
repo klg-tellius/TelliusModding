@@ -172,11 +172,13 @@ class ChapterPage(Page):
         self._script = ScriptEditor(self._notebook, project, log)
         self._shops = ShopEditor(self._notebook, project, log, index_provider=lambda: shell.index,
                                  session_provider=lambda: shell.session)
-        # The Build tab edits the Map and Deployment editors' data; it has none of its own,
+        # The Build tab edits the Map, Deployment and Script editors' data; it has none of its own,
         # so it isn't one of panels() (their dirty state covers it).
         self._build = MapBuilder(self._notebook, project, log, self._map, self._deployment,
                                  index_provider=lambda: shell.index, session_provider=lambda: shell.session,
-                                 on_navigate_to_character=lambda pid: shell.navigate(("character", pid)))
+                                 on_navigate_to_character=lambda pid: shell.navigate(("character", pid)),
+                                 script_editor=self._script,
+                                 on_open_function=lambda name: shell.navigate(("chapter", self._chapter, "script", name)))
         for key, panel in (("build", self._build), ("deployment", self._deployment), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops)):
             self._notebook.add(panel, text=TAB_LABELS[key])

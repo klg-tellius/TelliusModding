@@ -70,6 +70,7 @@ class ScriptEditor(EditorPanel):
         self._reparse_job = None
         self._name_lists: Optional[dict] = None
         self._externs = load_externs()
+        self._listeners: list = []
 
         self._build_widgets()
 
@@ -186,6 +187,48 @@ class ScriptEditor(EditorPanel):
         if self._current_path is not None and Path(path) == self._current_path and not self._dirty:
             self._load(self._current_path)
 
+    # -- the chapter script, for the Build tab's map zones -----------------------
+    def add_listener(self, callback) -> None:
+        """``callback()`` runs after the source parses again (edits, loading, saving)."""
+        self._listeners.append(callback)
+
+    def _notify(self) -> None:
+        for callback in list(self._listeners):
+            callback()
+
+    @property
+    def has_chapter_script(self) -> bool:
+        return self._chapter_path is not None
+
+    def chapter_source(self) -> Optional[str]:
+        """The chapter script's source as edited here, or None when no chapter
+        script is loaded (none, or a shared script is open instead)."""
+        if self._script is None or self._chapter_path is None or self._current_path != self._chapter_path:
+            return None
+        return self._editor.get()
+
+    def edit_chapter_source(self, source: str, select: Optional[str] = None) -> None:
+        """Replace the chapter script's source (an edit made elsewhere, like the
+        Build tab's zones); it is unsaved until Save, like a typed edit."""
+        if self.chapter_source() is None:
+            raise RuntimeError("The chapter script isn't open.")
+        self._set_source(source, select=select)
+
+    def source_snapshot(self) -> Optional[tuple]:
+        """(path, source) of the chapter script, for :meth:`restore_source` (undo)."""
+        source = self.chapter_source()
+        return None if source is None else (self._current_path, source)
+
+    def restore_source(self, state: Optional[tuple]) -> None:
+        if state is None or self.chapter_source() is None:
+            return
+        path, source = state
+        if path == self._current_path and source != self._editor.get():
+            self._set_source(source)
+
+    def save(self) -> bool:
+        return self._save()
+
     def _fill_file_choices(self) -> None:
         choices = []
         if self._chapter_path is not None:
@@ -223,6 +266,7 @@ class ScriptEditor(EditorPanel):
         self._status.config(text=f"{path.name} - {note}")
         self._reparse()
         self._check(quiet=True)
+        self._notify()
 
     # -- source analysis ----------------------------------------------------
     def _on_text_changed(self) -> None:
@@ -233,6 +277,8 @@ class ScriptEditor(EditorPanel):
         self._reparse_job = self.after(700, self._reparse)
 
     def _reparse(self) -> None:
+        if self._reparse_job is not None:  # a direct reparse makes a pending one redundant
+            self.after_cancel(self._reparse_job)
         self._reparse_job = None
         try:
             spans = st.function_spans(self._editor.get())
@@ -243,6 +289,7 @@ class ScriptEditor(EditorPanel):
         self._fill_function_list()
         if self._dirty:
             self._check(quiet=True)
+        self._notify()
 
     @staticmethod
     def _function_label(span: st.FunctionSpan) -> str:
@@ -481,9 +528,9 @@ class ScriptEditor(EditorPanel):
         self._load(self._current_path, ignore_sidecar=True)
 
     # -- save -------------------------------------------------------------
-    def _save(self) -> None:
+    def _save(self) -> bool:
         if self._current_path is None or self._base is None:
-            return
+            return False
         source = self._editor.get()
         try:
             result = script_sources.save(self._project, self._script, source)
@@ -494,16 +541,18 @@ class ScriptEditor(EditorPanel):
                 "Script has errors", f"{len(errors)} error(s) - nothing was saved.\n\n" + "\n".join(map(str, errors[:8])),
                 parent=self,
             )
-            return
+            return False
         except OSError as exc:
             messagebox.showerror("Could not save script", str(exc), parent=self)
-            return
+            return False
         self._base = self._script.base
         self._compiled = result
         self._dirty = False
         self._show_problems(result.diagnostics)
         self._status.config(text=f"Saved {self._current_path.name} ({len(result.warnings)} warning(s))")
         self._changelog.append(self._current_path.name, "Saved script")
+        self._notify()
+        return True
 
     def _confirm_discard(self) -> bool:
         return messagebox.askyesno(

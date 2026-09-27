@@ -280,6 +280,83 @@ class SourceToolsTests(unittest.TestCase):
         self.assertEqual([s.name for s in st.function_spans(text)], ["first", "new_event", "first_copy"])
 
 
+class ScriptZonesTests(unittest.TestCase):
+    SOURCE = (
+        "# function 0\n@export\ndef Startup():\n    regist(\"x\")\n\n"
+        "# function 1\n@on_area(x1=6, y1=7, x2=4, y2=5, side=\"player\", name=\"mod_zone\")\ndef enter():\n    pass\n\n"
+        "# function 2\n@trigger(5, 3, 9, 9, 0)\ndef visit():\n    TalkEvent(\"MS_1\")\n\n"
+        "# function 3\n@export\n@on_location(x=1, y=2, action=\"seize\", name=None)\ndef seize():\n    pass\n\n"
+        "# function 4\ndef helper():\n    WaitM(1)\n"
+    )
+
+    def test_zones(self):
+        from fe_modding.formats.cmb import script_zones as z
+        zones = z.zones(self.SOURCE)
+        self.assertEqual([(q.function, q.type, q.rect, q.mode, q.label) for q in zones], [
+            ("enter", 4, (4, 5, 6, 7), "player", "mod_zone"),
+            ("visit", 5, (3, 9, 3, 9), "visit", None),  # the raw form, with its action named
+            ("seize", 5, (1, 2, 1, 2), "seize", None),
+        ])
+        self.assertTrue(zones[0].contains((5, 6)))
+        self.assertFalse(zones[0].contains((3, 6)))
+
+    def test_add_new_and_attach(self):
+        from fe_modding.formats.cmb import script_zones as z
+        text, name = z.add_zone(self.SOURCE, z.AREA, (1, 1, 2, 3), "enemy", None)
+        self.assertEqual(name, "zone_event")
+        self.assertIn('@on_area(x1=1, y1=1, x2=2, y2=3, side="enemy", name=None)\ndef zone_event():\n    pass', text)
+        text, name = z.add_zone(text, z.LOCATION, (5, 5, 5, 5), "visit", None, function="helper")
+        self.assertEqual(name, "helper")
+        fns = compile_source(text).script.functions
+        self.assertEqual((fns[4].type, fns[5].type), (5, 4))
+        self.assertEqual(fns[4].params[:3], [5, 5, 9])
+
+    def test_update(self):
+        from fe_modding.formats.cmb import script_zones as z
+        text = z.update_zone(self.SOURCE, "seize", rect=(8, 8, 9, 9), new_name="grab", description="Take the throne")
+        zone = z.zones(text)[2]
+        self.assertEqual((zone.function, zone.rect, zone.mode, zone.description), ("grab", (8, 8, 8, 8), "seize", "Take the throne"))
+        self.assertIn("@export\n@on_location(x=8", text)  # the export is kept
+        text = z.update_zone(text, "grab", trigger_type=z.AREA, rect=(1, 1, 3, 3))
+        self.assertEqual(z.zones(text)[2].trigger_text(), '@on_area(x1=1, y1=1, x2=3, y2=3, side="player", name=None)')
+        with self.assertRaises(ValueError):
+            z.update_zone(text, "grab", new_name="enter")
+        with self.assertRaises(ValueError):
+            z.update_zone(text, "helper", rect=(0, 0, 0, 0))
+
+    def test_delete_empty_function(self):
+        from fe_modding.formats.cmb import script_zones as z
+        text, result = z.delete_zone(self.SOURCE, "enter")
+        self.assertEqual(result, "deleted")
+        self.assertNotIn("def enter", text)
+        compile_source(text)
+
+    def test_delete_marks_used_function_unused(self):
+        from fe_modding.formats.cmb import script_zones as z
+        from fe_modding.formats.cmb import source_tools as st
+        for name in ("visit", "seize"):  # has code / is exported
+            text, result = z.delete_zone(self.SOURCE, name)
+            self.assertEqual(result, "unused")
+            span = next(s for s in st.function_spans(text) if s.name == name)
+            self.assertEqual(span.trigger_type, 0)
+            self.assertTrue(z.is_unused(span.description))
+            self.assertNotIn(name, [q.function for q in z.zones(text)])
+            compile_source(text)
+        self.assertEqual(z.unused_trigger(span.description), '@on_location(x=1, y=2, action="seize", name=None)')
+        self.assertIn("@export\ndef seize", text)  # the export stays
+        self.assertEqual(z.attachable_functions(text), [("seize", True), ("helper", False)])
+        text, _ = z.add_zone(text, z.AREA, (0, 0, 1, 1), "player", None, function="seize")
+        span = next(s for s in st.function_spans(text) if s.name == "seize")
+        self.assertFalse(z.is_unused(span.description))
+
+    def test_called_empty_function_is_kept(self):
+        from fe_modding.formats.cmb import script_zones as z
+        source = self.SOURCE + "\ndef caller():\n    enter()\n"
+        self.assertTrue(z.is_empty(source, "enter"))
+        self.assertTrue(z.is_referenced(source, "enter"))
+        self.assertEqual(z.delete_zone(source, "enter")[1], "unused")
+
+
 SCRIPTS = Path(os.environ.get("FE9_EXTRACTED_FILES", "")) / "Scripts"
 
 
