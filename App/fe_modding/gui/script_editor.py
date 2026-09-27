@@ -21,7 +21,7 @@ from tkinter import messagebox, ttk
 from typing import Optional
 
 from .. import script_sources
-from ..formats import fe8data
+from ..script_suggestions import KIND_TITLES, ScriptSuggestions, chapter_of_script, resolve_kind
 from ..formats.cmb import CompileError, compile_source
 from ..formats.cmb.catalog import SPECIAL_ENTRY_POINTS, TRIGGERS, load_externs
 from ..formats.cmb.model import Label
@@ -68,7 +68,7 @@ class ScriptEditor(EditorPanel):
         self._compiled = None  # last successful CompileResult
         self._dirty = False
         self._reparse_job = None
-        self._name_lists: Optional[dict] = None
+        self._suggestions = ScriptSuggestions(project)
         self._externs = load_externs()
         self._listeners: list = []
 
@@ -256,6 +256,7 @@ class ScriptEditor(EditorPanel):
             return
         self._script = loaded
         self._current_path = path
+        self._suggestions.invalidate()  # pick up videos, maps, groups... added since
         self._base = loaded.base
         source, note = loaded.source, loaded.note
         self._fill_file_choices()
@@ -414,7 +415,16 @@ class ScriptEditor(EditorPanel):
     def _local_defs(self) -> dict:
         return {s.name: s for s in self._spans}
 
-    def _completions(self, prefix: str) -> list[str]:
+    def _completions(self, before: str, after: str, force: bool) -> list:
+        """Popup entries: values for the argument being typed (characters,
+        videos, music, groups...), else function names."""
+        return self._suggestions.completions(
+            before, after, force=force, externs=self._externs, identifiers=self._identifiers,
+            chapter_id=chapter_of_script(self._current_path),
+            pool=self._base.pool if self._base is not None else (), source=self._editor.get(),
+        )
+
+    def _identifiers(self, prefix: str) -> list[str]:
         low = prefix.lower()
         names = list(self._local_defs()) + _BUILTINS + list(self._externs)
         starts = [n for n in names if n.lower().startswith(low)]
@@ -434,30 +444,27 @@ class ScriptEditor(EditorPanel):
             return None
         where = {"native": "game function", "script": "defined in startup.cmb"}.get(sig.source, sig.source)
         text = f"{sig.signature()}  - {where}, used {sig.uses}× in vanilla"
+        kinds = [f"{i + 1}: {KIND_TITLES[k]}" for i in range(sig.argc)
+                 if (k := resolve_kind(name, i, self._externs)) and k not in (sig.arg_kind(i),)]
+        if kinds:
+            text += f"  [args {', '.join(kinds)}]"
         return text + (f"  ({sig.note})" if sig.note else "")
 
     def _is_known_call(self, name: str) -> bool:
         return name in self._externs or name in self._local_defs() or name in _BUILTINS
 
     def _name_values(self, kind: str) -> list[str]:
-        """Suggestions for a value of the given kind (pid, iid, mess, ...)."""
-        if self._name_lists is None:
-            self._name_lists = {}
-            try:
-                fe8 = fe8data.read_fe8data_path(self._project.extracted_dir / "files" / "FE8Data.bin")
-                self._name_lists["pid"] = [c.pid for c in fe8.characters if c.pid]
-                self._name_lists["iid"] = [i.iid for i in fe8.items if i.iid]
-                self._name_lists["jid"] = [c.jid for c in fe8.classes if c.jid]
-            except Exception:  # noqa: BLE001 - suggestions are optional
-                pass
+        """Suggestions for a value of the given kind (pid, iid, movie, group, ...)."""
         pool = self._base.pool if self._base is not None else []
-        prefixes = {"pid": "PID_", "mpid": "MPID_", "iid": "IID_", "jid": "JID_", "mess": "MS", "bgm": "BGM_", "sfx": "SE_"}
-        values = list(self._name_lists.get(kind, []))
+        if kind in KIND_TITLES:
+            return [s.text for s in self._suggestions.values(
+                kind, chapter_id=chapter_of_script(self._current_path), pool=pool, source=self._editor.get())]
+        prefixes = {"mpid": "MPID_"}
         if kind in prefixes:
-            values += [s for s in pool if s.upper().startswith(prefixes[kind].upper())]
-        elif kind in ("label", "str", "flag"):
-            values += [s for s in pool if s and not any(s.startswith(p) for p in ("PID_", "IID_", "JID_", "MS_", "BGM_"))]
-        return sorted(set(values))
+            return sorted({s for s in pool if s.upper().startswith(prefixes[kind])})
+        if kind in ("label", "str"):
+            return sorted({s for s in pool if s and not any(s.startswith(p) for p in ("PID_", "IID_", "JID_", "MS_", "BGM_"))})
+        return []
 
     # -- editing actions ----------------------------------------------------
     def _set_source(self, source: str, select: Optional[str] = None) -> None:
@@ -706,7 +713,8 @@ class InsertCallDialog(tk.Toplevel):
     """Pick a function (game extern or one of this script's functions), fill
     its arguments with typed fields, and get the call's source text."""
 
-    STRING_KINDS = {"str", "pid", "iid", "jid", "mpid", "mess", "bgm", "sfx", "flag", "label"}
+    STRING_KINDS = {"str", "pid", "iid", "jid", "mpid", "mess", "bgm", "sfx", "flag", "label",
+                    "skill", "movie", "map", "group", "rect"}
 
     def __init__(self, parent: tk.Misc, externs: dict, local_defs: dict, name_values):
         super().__init__(parent)
@@ -764,8 +772,10 @@ class InsertCallDialog(tk.Toplevel):
         for name, sig in self._externs.items():
             if sig.source == "unregistered":
                 continue
-            args = [(sig.arg_kind(i), (sig.args[i].get("name") if i < len(sig.args) else "") or sig.arg_kind(i))
-                    for i in range(sig.argc)]
+            args = []
+            for i in range(sig.argc):
+                kind = resolve_kind(name, i, self._externs) or sig.arg_kind(i)
+                args.append((kind, (sig.args[i].get("name") if i < len(sig.args) else "") or kind))
             group = "startup.cmb" if sig.source == "script" else sig.group
             entries.append((name, sig.argc, group, sig.uses, args, sig.note))
         return entries
@@ -795,7 +805,7 @@ class InsertCallDialog(tk.Toplevel):
         for i, (kind, label) in enumerate(args):
             ttk.Label(self._detail, text=f"{i + 1}. {label}").grid(row=3 + i, column=0, sticky="w", pady=2)
             var = tk.StringVar(value="" if kind in self.STRING_KINDS else "0")
-            values = self._name_values(kind) if kind in self.STRING_KINDS else []
+            values = self._name_values(kind) if kind in self.STRING_KINDS or kind == "chapter" else []
             widget = ttk.Combobox(self._detail, textvariable=var, values=values, width=26) if values \
                 else ttk.Entry(self._detail, textvariable=var, width=28)
             widget.grid(row=3 + i, column=1, sticky="w", padx=(6, 0), pady=2)

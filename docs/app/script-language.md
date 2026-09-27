@@ -79,7 +79,9 @@ This is a custom VM language, not Python: use double-quoted strings, integer ari
 
 ## Game functions
 
-There are 406 native functions plus the 89 helpers `startup.cmb` exports. The editor completes their names as you type, shows each signature (argument count and kinds inferred from the vanilla scripts) and flags an unknown name in red. **Insert call…** lists them all, with how often vanilla uses each, and fills the arguments with pickers (characters, items, classes, messages, music).
+There are 406 native functions plus the 89 helpers `startup.cmb` exports. The editor completes their names as you type, shows each signature (argument count and kinds inferred from the vanilla scripts) and flags an unknown name in red. **Insert call…** lists them all, with how often vanilla uses each, and fills the arguments with pickers (characters, items, classes, messages, music, videos, maps, deployment groups…)..
+
+While typing an argument, the completion list offers the project's values for it (`fe_modding/script_suggestions.py`): characters for a `PID` argument (`UnitGetByPID(`), items, classes and skills, the chapter's message IDs with a preview of their text, the music cues of `Sound/gcfesnd.bin` (`BGMPlay(0, `), the videos in `Movie/` (`MoviePlay(`), the map folders (`MapLoad(`), the deployment groups of the chapter's `dispos.cmp` files (`Dispos(`, `DisposSetMode(`…), campaign and chapter flags (`set(`, `get(`…), chapter numbers (`ChapterMoviePlay(`) and the `RID_` names the script already uses (`RectSet(`…). The list opens as soon as the argument starts, filters as you type (by ID or by name) and inserts the value quoted; inside a string it completes the text and closes the quote. Typing `PID_`, `IID_`, `JID_`, `SID_`, `BGM_` or `RID_` anywhere offers the same lists. Ctrl+Space opens the list on demand. The status line under the editor names the kind of each such argument.
 
 Compile checks:
 - The wrong number of arguments to a known function is an error.

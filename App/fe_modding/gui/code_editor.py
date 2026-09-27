@@ -2,7 +2,10 @@
 numbers, syntax highlighting, diagnostic underlines, and name completion.
 
 Kept generic enough (a completion provider and a signature provider are
-passed in) that nothing here knows about the game's catalogue."""
+passed in) that nothing here knows about the game's catalogue. The
+completion provider gets the current line split at the cursor and returns
+entries with ``text`` (inserted), ``label`` (shown) and ``replace`` (how
+many characters before the cursor the text replaces)."""
 
 from __future__ import annotations
 
@@ -59,7 +62,7 @@ class CodeEditor(ttk.Frame):
         self,
         parent: tk.Misc,
         *,
-        completions: Callable[[str], list[str]] = lambda prefix: [],
+        completions: Callable[[str, str, bool], list] = lambda before, after, force: [],
         signature: Callable[[str], Optional[str]] = lambda name: None,
         is_known_call: Callable[[str], bool] = lambda name: True,
         on_change: Callable[[], None] = lambda: None,
@@ -74,6 +77,7 @@ class CodeEditor(ttk.Frame):
         self._highlight_job = None
         self._popup: Optional[tk.Toplevel] = None
         self._popup_list: Optional[tk.Listbox] = None
+        self._popup_items: list = []
         self._suppress_change = False
 
         mono = tkfont.nametofont("TkFixedFont").copy()
@@ -246,7 +250,7 @@ class CodeEditor(ttk.Frame):
         self._redraw_lines()
         if event.keysym in ("Up", "Down", "Return", "Tab", "Escape"):
             return
-        if event.char and (event.char.isalnum() or event.char == "_"):
+        if (event.char and event.char.isprintable()) or event.keysym == "BackSpace":
             self._show_completions()
         else:
             self._close_popup()
@@ -285,28 +289,23 @@ class CodeEditor(ttk.Frame):
         return "break"
 
     # -- completion ---------------------------------------------------------
-    def _current_word(self) -> str:
-        m = _WORD_BEFORE.search(self.text.get("insert linestart", "insert"))
-        return m.group() if m else ""
-
     def _show_completions(self, force: bool = False) -> None:
-        word = self._current_word()
-        if len(word) < (1 if force else 2):
-            self._close_popup()
-            return
-        items = self._completions(word)[:40]
-        if not items or (len(items) == 1 and items[0] == word):
+        before = self.text.get("insert linestart", "insert")
+        after = self.text.get("insert", "insert lineend")
+        items = self._completions(before, after, force)[:60]
+        if not items:
             self._close_popup()
             return
         if self._popup is None:
             self._popup = tk.Toplevel(self)
             self._popup.wm_overrideredirect(True)
-            self._popup_list = tk.Listbox(self._popup, height=8, width=36, font=self._font, exportselection=False)
+            self._popup_list = tk.Listbox(self._popup, height=10, width=64, font=self._font, exportselection=False)
             self._popup_list.pack(fill="both", expand=True)
             self._popup_list.bind("<Double-Button-1>", lambda e: self._accept_completion())
+        self._popup_items = items
         self._popup_list.delete(0, "end")
         for item in items:
-            self._popup_list.insert("end", item)
+            self._popup_list.insert("end", item.label)
         self._popup_list.selection_set(0)
         bbox = self.text.bbox("insert")
         if bbox:
@@ -327,11 +326,11 @@ class CodeEditor(ttk.Frame):
         if self._popup_list is None:
             return
         sel = self._popup_list.curselection()
-        if sel:
-            choice = self._popup_list.get(sel[0])
-            word = self._current_word()
-            self.text.delete(f"insert-{len(word)}c", "insert")
-            self.text.insert("insert", choice)
+        if sel and sel[0] < len(self._popup_items):
+            choice = self._popup_items[sel[0]]
+            if choice.replace:
+                self.text.delete(f"insert-{choice.replace}c", "insert")
+            self.text.insert("insert", choice.text)
         self._close_popup()
         self._schedule_highlight()
         self._show_signature()
@@ -341,6 +340,7 @@ class CodeEditor(ttk.Frame):
             self._popup.destroy()
         self._popup = None
         self._popup_list = None
+        self._popup_items = []
 
     def _show_signature(self) -> None:
         """Show the signature of the call the cursor is inside, if any."""
