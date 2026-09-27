@@ -1,16 +1,18 @@
-"""Support editor: everything about one character's supports - affinity,
-support partners and their thresholds, bonds, and the support conversations
-- plus the affinity bonus table (``FE8Data.bin`` RelianceData, DivineData,
-KiznaData; see :mod:`fe_modding.formats.supports`), and the conversation
-text itself (``Mess/yell.m``).
+"""Support editing, in two places.
 
-The character is chosen from tiles (:class:`~.widgets.TileBrowser`, with
-their portrait when the host passes ``request_portrait``). Values are
-written as soon as a field is left or a choice is made; nothing waits for an
-Apply button. The panel reads and writes the FE8Data bytes through the
-``get_data``/``set_data`` callables and calls ``on_dirty`` after every
-change, so the host decides when the file is saved. The conversations tab is
-a Dialogue editor on ``yell.m`` with its own Save.
+:class:`CharacterSupportsPanel` is everything about one character's supports
+- affinity, support partners and their thresholds, bonds - and sits in the
+**Supports** tab of that character's page. :class:`SupportEditorPanel` is the
+Game Data **Supports** tab: every support pair at a glance (each opening the
+characters' pages), the affinity bonus table, and the support conversations
+(``Mess/yell.m``). The FE8Data tables are RelianceData, DivineData and
+KiznaData; see :mod:`fe_modding.formats.supports`.
+
+Values are written as soon as a field is left or a choice is made; nothing
+waits for an Apply button. Both panels read and write the FE8Data bytes
+through the ``get_data``/``set_data`` callables and call ``on_dirty`` after
+every change, so the host decides when the file is saved. The conversations
+tab is a Dialogue editor on ``yell.m`` with its own Save.
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ from typing import Callable, Optional
 
 from ..formats import fe8data, message, supports
 from ..formats.fe9_message_scene import TEMPLATES
-from .widgets import ScrollFrame, TileBrowser
 
 RANKS = ("C", "B", "A")
 DEFAULT_THRESHOLDS = (1, 3, 5)  # the most common real (non-filler) thresholds in vanilla
@@ -44,7 +45,53 @@ def conversation_id(pid_a: str, pid_b: str, rank: str) -> str:
     return f"MYELL_{a}_{b}_{rank}"
 
 
-class SupportEditorPanel(ttk.Frame):
+def read_conversation_ids(yell_path: Optional[Path]) -> Optional[set]:
+    """The message IDs in ``yell.m`` as saved (None: no readable file)."""
+    if yell_path is None or not yell_path.is_file():
+        return None
+    try:
+        return {m.speaker for m in message.read_messages_path(yell_path)}
+    except (OSError, ValueError):
+        return None
+
+
+class _Fe8View:
+    """What both panels read from the FE8Data bytes: the characters and
+    their affinities, the support lists, the affinity rows and the bonds."""
+
+    def __init__(self, data: bytes):
+        self.fe8 = fe8data.read_fe8data(data)
+        self.pids = list(dict.fromkeys(c.pid for c in self.fe8.characters if c.pid))
+        self.lists = supports.read_support_lists(data)
+        self.rows = supports.read_affinities(data)
+        self.bonds = supports.read_bonds(data)
+        self.affinities: dict[str, int] = {}
+        for c in self.fe8.characters:
+            if c.pid and c.pid not in self.affinities:
+                self.affinities[c.pid] = supports.character_affinity(data, c.index)
+
+    def affinity_of(self, pid: str) -> int:
+        return self.affinities.get(pid, 0)
+
+    def list_of(self, pid: str):
+        return next((x for x in self.lists if x.owner == pid), None)
+
+    def fid_name(self, pid: str) -> str:
+        for c in self.fe8.characters:
+            if c.pid == pid and c.fid and c.fid.startswith("FID_"):
+                return c.fid[4:]
+        return pid[4:]
+
+
+class CharacterSupportsPanel(ttk.Frame):
+    """One character's affinity, support partners and bonds (:meth:`show`
+    picks the character).
+
+    ``conversation_ids()`` gives the support conversations that exist (None:
+    unknown); ``open_conversation(pid, partner, rank)`` opens or creates one;
+    ``open_character(pid)`` shows another character (double-click on a
+    partner or bond)."""
+
     def __init__(
         self,
         parent: tk.Misc,
@@ -52,67 +99,43 @@ class SupportEditorPanel(ttk.Frame):
         set_data: Callable[[bytes], None],
         on_dirty: Callable[[], None] = lambda: None,
         display_name: Optional[Callable[[str], str]] = None,
-        make_dialogue_editor: Optional[Callable[[tk.Misc], object]] = None,
-        yell_path: Optional[Path] = None,
-        request_portrait: Optional[Callable[[str, int, Callable], None]] = None,
+        conversation_ids: Callable[[], Optional[set]] = lambda: None,
+        open_conversation: Optional[Callable[[str, str, str], None]] = None,
+        open_character: Optional[Callable[[str], None]] = None,
     ):
-        super().__init__(parent)
-        #: ``request_portrait(fid, size, callback)``: the face on a character's tile
-        self._request_portrait = request_portrait
+        super().__init__(parent, style="Page.TFrame")
         self._get_data = get_data
         self._set_data = set_data
         self._on_dirty = on_dirty
         self._display_name = display_name or (lambda pid: pid)
-        self._make_dialogue_editor = make_dialogue_editor
-        self._yell_path = yell_path if yell_path is not None and yell_path.is_file() else None
-        self._dialogue = None
+        self._conversation_ids = conversation_ids
+        self._open_conversation_cb = open_conversation
+        self._open_character = open_character
         self._pid: Optional[str] = None
-        self._notebook = ttk.Notebook(self)
-        self._notebook.pack(fill="both", expand=True)
-        self._build_character_tab()
-        self._build_affinity_tab()
-        if self._make_dialogue_editor is not None and self._yell_path is not None:
-            self._conversation_tab = ttk.Frame(self._notebook)
-            self._notebook.add(self._conversation_tab, text="Conversations")
-            self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_subtab(), add="+")
-        self.reload()
+        self._pair: Optional[str] = None
+        self._bond_index: Optional[int] = None
+        self._view: Optional[_Fe8View] = None
+        self._build()
 
     # -- data -------------------------------------------------------------------
+    def show(self, pid: Optional[str]) -> None:
+        self.flush()
+        self._pid = pid
+        self.reload()
+
     def reload(self) -> None:
         """Re-read everything from the current bytes (call after the host
         reloads or saves FE8Data.bin, or another view edits it)."""
         data = self._get_data()
-        self._fe8 = fe8data.read_fe8data(data)
-        self._pids = [c.pid for c in self._fe8.characters if c.pid]
-        self._pids = list(dict.fromkeys(self._pids))
-        self._lists = supports.read_support_lists(data)
-        self._rows = supports.read_affinities(data)
-        self._bonds = supports.read_bonds(data)
-        self._fids = {}
-        for c in self._fe8.characters:
-            if c.pid and c.fid:
-                self._fids.setdefault(c.pid, c.fid)
-        self._labels = [self._label(p) for p in self._pids]
-        self._label_to_pid = dict(zip(self._labels, self._pids))
-        counts = {sl.owner: sum(1 for s in sl.slots if not s.empty) for sl in self._lists}
-        self._picker.set_entries(
-            [f"{label}  ·  {counts[pid]} partner{'s' if counts[pid] != 1 else ''}" if counts.get(pid) else label
-             for pid, label in zip(self._pids, self._labels)],
-            [supports.AFFINITY_NAMES[self._affinity_of(p)] for p in self._pids],
-            image=self._tile_image if self._request_portrait is not None else None,
-            image_keys=[self._fids.get(p) for p in self._pids])
+        self._view = _Fe8View(data) if data else None
+        self._labels = [self._label(p) for p in self._view.pids] if self._view else []
+        self._label_to_pid = dict(zip(self._labels, self._view.pids)) if self._view else {}
         for box in (self._add_partner_box, self._add_bond_box):
-            box["values"] = self._labels
-        if self._pid in self._pids:
-            self._picker.select(self._pids.index(self._pid), notify=False)
-        elif self._picker.current is None and self._pids:
-            with_supports = [i for i, p in enumerate(self._pids) if counts.get(p)]
-            self._picker.select(with_supports[0] if with_supports else 0, notify=False)
-            self._pid = self._pids[self._picker.current]
-        self._refresh_character()
-        self._refresh_affinity_table()
-        problems = supports.validate_support_lists(self._lists)
-        self._problems.config(text="\n".join(problems) if problems else "")
+            box["values"] = [label for label, pid in self._label_to_pid.items() if pid != self._pid]
+        self._refresh()
+        problems = supports.validate_support_lists(self._view.lists) if self._view else []
+        mine = [p for p in problems if self._pid and self._pid in p]
+        self._problems.config(text="\n".join(mine))
 
     def _commit(self, data: bytes) -> None:
         if data == self._get_data():
@@ -132,50 +155,23 @@ class SupportEditorPanel(ttk.Frame):
         text = text.strip()
         if text in self._label_to_pid:
             return self._label_to_pid[text]
-        if text in self._pids:
+        if self._view is not None and text in self._view.pids:
             return text
         raise ValueError(f"Unknown character {text!r}.")
 
-    def _affinity_of(self, pid: str) -> int:
-        for c in self._fe8.characters:
-            if c.pid == pid:
-                return supports.character_affinity(self._get_data(), c.index)
-        return 0
-
-    def _tile_image(self, index: int, callback: Callable) -> None:
-        fid = self._fids.get(self._pids[index])
-        if fid and self._request_portrait is not None:
-            self._request_portrait(fid, 56, callback)
-
-    def _fid_name(self, pid: str) -> str:
-        for c in self._fe8.characters:
-            if c.pid == pid and c.fid and c.fid.startswith("FID_"):
-                return c.fid[4:]
-        return pid[4:]
-
-    # -- character tab -------------------------------------------------------------
-    def _build_character_tab(self) -> None:
-        tab = ttk.Frame(self._notebook, style="Page.TFrame")
-        self._notebook.add(tab, text="By character")
-        self._picker = TileBrowser(tab, "characters", self._on_pick, image_box=(6, 3), tile_width=250)
-        self._picker.pack(fill="both", expand=True)
-        scroll = ScrollFrame(self._picker.detail, padding=(16, 8, 16, 16))
-        scroll.pack(fill="both", expand=True)
-        body = scroll.body
-
-        self._title = ttk.Label(body, text="", style="Title.TLabel")
-        self._title.pack(anchor="w")
+    # -- layout -------------------------------------------------------------------
+    def _build(self) -> None:
+        body = self
         row = ttk.Frame(body, style="Page.TFrame")
-        row.pack(fill="x", pady=(6, 0))
+        row.pack(fill="x")
         ttk.Label(row, text="Affinity").pack(side="left")
         self._affinity = tk.StringVar()
-        box = ttk.Combobox(row, textvariable=self._affinity, values=supports.AFFINITY_NAMES, state="readonly",
-                           width=12)
-        box.pack(side="left", padx=(8, 0))
-        box.bind("<<ComboboxSelected>>", lambda e: self._set_affinity())
+        self._affinity_box = ttk.Combobox(row, textvariable=self._affinity, values=supports.AFFINITY_NAMES,
+                                          state="readonly", width=12)
+        self._affinity_box.pack(side="left", padx=(8, 0))
+        self._affinity_box.bind("<<ComboboxSelected>>", lambda e: self._set_affinity())
         ttk.Label(row, text="Bonuses reach allies of the same army within 3 tiles; both units' rows count.",
                   style="Muted.TLabel").pack(side="left", padx=(12, 0))
-
         # partners
         head = ttk.Frame(body, style="Page.TFrame")
         head.pack(fill="x", pady=(16, 4))
@@ -191,6 +187,7 @@ class SupportEditorPanel(ttk.Frame):
             tree.column(col, width=width, anchor="w" if col in ("partner", "aff", "bonus", "talk") else "center")
         tree.pack(fill="x")
         tree.bind("<<TreeviewSelect>>", lambda e: self._on_partner_selected())
+        tree.bind("<Double-Button-1>", lambda e: self._open_selected_partner())
         self._partner_tree = tree
 
         edit = ttk.Frame(body, style="Page.TFrame")
@@ -229,7 +226,8 @@ class SupportEditorPanel(ttk.Frame):
             "Both units gain 1 point at the end of each chapter they finish on the map together; the base "
             "offers the conversation when the points reach C, B or A, and viewing it raises the rank. A unit "
             "holds at most 5 support stars (C=1, B=2, A=3) and 10 partners. A pair is written to both "
-            "characters' lists; a removed partner leaves an empty slot so existing saves keep their points.")
+            "characters' lists; a removed partner leaves an empty slot so existing saves keep their points. "
+            "Double-click a partner to open their page.")
         ).pack(anchor="w", pady=(8, 0))
 
         # bonds
@@ -242,6 +240,7 @@ class SupportEditorPanel(ttk.Frame):
             tree.column(col, width=width, anchor="w")
         tree.pack(fill="x")
         tree.bind("<<TreeviewSelect>>", lambda e: self._on_bond_selected())
+        tree.bind("<Double-Button-1>", lambda e: self._open_selected_bond())
         self._bond_tree = tree
         form = ttk.Frame(body, style="Page.TFrame")
         form.pack(fill="x", pady=(6, 0))
@@ -274,23 +273,21 @@ class SupportEditorPanel(ttk.Frame):
         self._problems = ttk.Label(body, text="", style="Warn.TLabel", wraplength=820, justify="left")
         self._problems.pack(anchor="w", pady=(12, 0))
 
-    def _on_pick(self, index: int) -> None:
-        self._pid = self._pids[index]
-        self._refresh_character()
-
-    def _refresh_character(self) -> None:
+    def _refresh(self) -> None:
         pid = self._pid
         tree = self._partner_tree
         tree.delete(*tree.get_children())
         self._bond_tree.delete(*self._bond_tree.get_children())
         self._select_pair(None)
         self._select_bond(None)
-        if pid is None:
+        view = self._view
+        if pid is None or view is None:
+            self._affinity.set("")
+            self._slot_note.config(text="")
             return
-        self._title.config(text=self._label(pid))
-        own = self._affinity_of(pid)
+        own = view.affinity_of(pid)
         self._affinity.set(supports.AFFINITY_NAMES[own])
-        sl = next((x for x in self._lists if x.owner == pid), None)
+        sl = view.list_of(pid)
         talks = self._conversation_ids()
         used = 0
         for i, slot in enumerate(sl.slots if sl else []):
@@ -299,8 +296,8 @@ class SupportEditorPanel(ttk.Frame):
                             tags=("empty",))
                 continue
             used += 1
-            other = self._affinity_of(slot.partner)
-            bonus = supports.pair_bonus(self._rows, own, other, 3)
+            other = view.affinity_of(slot.partner)
+            bonus = supports.pair_bonus(view.rows, own, other, 3)
             text = ", ".join(f"{n} +{v}" for n, v in zip(supports.BONUS_NAMES, bonus) if v) or "none"
             have = "".join(r if conversation_id(pid, slot.partner, r) in talks else "·" for r in RANKS) \
                 if talks is not None else ""
@@ -310,7 +307,7 @@ class SupportEditorPanel(ttk.Frame):
         slots = len(sl.slots) if sl else 0
         self._slot_note.config(text=f"{used} partner{'s' if used != 1 else ''}, {slots} of "
                                     f"{supports.MAX_SLOTS} slots used")
-        for i, bd in enumerate(self._bonds):
+        for i, bd in enumerate(view.bonds):
             if pid not in (bd.pid1, bd.pid2):
                 continue
             other = bd.pid2 if bd.pid1 == pid else bd.pid1
@@ -320,11 +317,11 @@ class SupportEditorPanel(ttk.Frame):
 
     # -- affinity ----------------------------------------------------------------------
     def _set_affinity(self) -> None:
-        if self._pid is None:
+        if self._pid is None or self._view is None:
             return
         affinity = supports.AFFINITY_NAMES.index(self._affinity.get() or "None")
         data = self._get_data()
-        for c in self._fe8.characters:
+        for c in self._view.fe8.characters:
             if c.pid == self._pid:
                 data = supports.patch_character_affinity(data, c.index, affinity)
         self._commit(data)
@@ -343,7 +340,7 @@ class SupportEditorPanel(ttk.Frame):
         state = "normal" if partner else "disabled"
         slot = None
         if partner:
-            sl = next((x for x in self._lists if x.owner == self._pid), None)
+            sl = self._view.list_of(self._pid) if self._view else None
             slot = sl.slots[sl.slot_of(partner)] if sl and sl.slot_of(partner) >= 0 else None
         for (var, entry), value in zip(self._thresholds, (slot.c, slot.b, slot.a) if slot else ("", "", "")):
             entry.config(state="normal")
@@ -354,17 +351,17 @@ class SupportEditorPanel(ttk.Frame):
                                       "to both lists." if partner else "Select a partner to edit the pair."))
         talks = self._conversation_ids()
         for rank, button in zip(RANKS, self._talk_buttons):
-            if not partner or self._yell_path is None:
+            if not partner or self._open_conversation_cb is None:
                 button.config(state="disabled", text=rank)
                 continue
             exists = talks is not None and conversation_id(self._pid, partner, rank) in talks
             button.config(state="normal", text=f"Edit {rank}" if exists else f"Create {rank}")
 
     def _apply_thresholds(self) -> None:
-        partner = getattr(self, "_pair", None)
-        if not partner or self._pid is None:
+        partner = self._pair
+        if not partner or self._pid is None or self._view is None:
             return
-        sl = next((x for x in self._lists if x.owner == self._pid), None)
+        sl = self._view.list_of(self._pid)
         if sl is None or sl.slot_of(partner) < 0:
             return
         slot = sl.slots[sl.slot_of(partner)]
@@ -427,7 +424,7 @@ class SupportEditorPanel(ttk.Frame):
     def _select_bond(self, index: Optional[int]) -> None:
         self._bond_index = index
         state = "normal" if index is not None else "disabled"
-        bd = self._bonds[index] if index is not None else None
+        bd = self._view.bonds[index] if index is not None and self._view else None
         self._bond_kind_box.config(state="readonly" if bd else "disabled")
         self._bond_kind.set(f"{bd.kind}: {supports.BOND_KIND_NAMES.get(bd.kind, '')}" if bd else "")
         self._bond_value_entry.config(state="normal")
@@ -436,16 +433,16 @@ class SupportEditorPanel(ttk.Frame):
         self._bond_remove.config(state=state)
 
     def _apply_bond(self) -> None:
-        index = getattr(self, "_bond_index", None)
-        if index is None or index >= len(self._bonds):
+        index = self._bond_index
+        if index is None or self._view is None or index >= len(self._view.bonds):
             return
-        old = self._bonds[index]
+        old = self._view.bonds[index]
         try:
             kind = int((self._bond_kind.get() or "1").split(":")[0])
             value = _int(self._bond_value.get(), -128, 127, "Value")
             if (kind, value) == (old.kind, old.value):
                 return
-            bonds = list(self._bonds)
+            bonds = list(self._view.bonds)
             bonds[index] = supports.Bond(old.pid1, old.pid2, kind, value, old.tail)
             data = supports.write_bonds(self._get_data(), bonds)
         except ValueError as e:
@@ -456,29 +453,161 @@ class SupportEditorPanel(ttk.Frame):
             self._bond_tree.selection_set(str(index))
 
     def _add_bond_record(self) -> None:
-        if self._pid is None:
+        if self._pid is None or self._view is None:
             return
         try:
             other = self._pid_from(self._add_bond.get())
             if other == self._pid:
                 raise ValueError("A bond needs two different characters.")
-            bonds = list(self._bonds) + [supports.Bond(self._pid, other, supports.BOND_CRIT, 10)]
+            bonds = list(self._view.bonds) + [supports.Bond(self._pid, other, supports.BOND_CRIT, 10)]
             data = supports.write_bonds(self._get_data(), bonds)
         except ValueError as e:
             self._fail("Add bond", e)
             return
         self._add_bond.set("")
         self._commit(data)
-        new = str(len(self._bonds) - 1)
+        new = str(len(self._view.bonds) - 1)
         if self._bond_tree.exists(new):
             self._bond_tree.selection_set(new)
 
     def _remove_bond(self) -> None:
-        index = getattr(self, "_bond_index", None)
-        if index is None:
+        index = self._bond_index
+        if index is None or self._view is None:
             return
-        bonds = [bd for i, bd in enumerate(self._bonds) if i != index]
+        bonds = [bd for i, bd in enumerate(self._view.bonds) if i != index]
         self._commit(supports.write_bonds(self._get_data(), bonds))
+
+    # -- navigation ---------------------------------------------------------------------
+    def _open_selected_partner(self) -> None:
+        partner = self._selected_partner()
+        if partner and self._open_character is not None:
+            self._open_character(partner)
+
+    def _open_selected_bond(self) -> None:
+        sel = self._bond_tree.selection()
+        if not sel or self._view is None or self._open_character is None:
+            return
+        bd = self._view.bonds[int(sel[0])]
+        self._open_character(bd.pid2 if bd.pid1 == self._pid else bd.pid1)
+
+    def _open_conversation(self, rank: str) -> None:
+        if self._pair and self._pid is not None and self._open_conversation_cb is not None:
+            self._open_conversation_cb(self._pid, self._pair, rank)
+
+    def flush(self) -> None:
+        """Apply the field that still has the focus (see StatsEditor.flush)."""
+        self._apply_thresholds()
+        self._apply_bond()
+
+
+class SupportEditorPanel(ttk.Frame):
+    """The Game Data Supports tab. A character's partners and bonds are
+    edited on their page: ``open_character(pid)`` goes there."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        get_data: Callable[[], bytes],
+        set_data: Callable[[bytes], None],
+        on_dirty: Callable[[], None] = lambda: None,
+        display_name: Optional[Callable[[str], str]] = None,
+        make_dialogue_editor: Optional[Callable[[tk.Misc], object]] = None,
+        yell_path: Optional[Path] = None,
+        open_character: Optional[Callable[[str], None]] = None,
+    ):
+        super().__init__(parent)
+        self._get_data = get_data
+        self._set_data = set_data
+        self._on_dirty = on_dirty
+        self._display_name = display_name or (lambda pid: pid)
+        self._make_dialogue_editor = make_dialogue_editor
+        self._yell_path = yell_path if yell_path is not None and yell_path.is_file() else None
+        self._open_character = open_character
+        self._dialogue = None
+        self._notebook = ttk.Notebook(self)
+        self._notebook.pack(fill="both", expand=True)
+        self._build_pairs_tab()
+        self._build_affinity_tab()
+        if self._make_dialogue_editor is not None and self._yell_path is not None:
+            self._conversation_tab = ttk.Frame(self._notebook)
+            self._notebook.add(self._conversation_tab, text="Conversations")
+            self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_subtab(), add="+")
+        self.reload()
+
+    # -- data -------------------------------------------------------------------
+    def reload(self) -> None:
+        """Re-read everything from the current bytes (call after the host
+        reloads or saves FE8Data.bin, or another view edits it)."""
+        self._view = _Fe8View(self._get_data())
+        self._rows = self._view.rows
+        self._refresh_pairs()
+        self._refresh_affinity_table()
+
+    def _commit(self, data: bytes) -> None:
+        if data == self._get_data():
+            return
+        self._set_data(data)
+        self._on_dirty()
+        self.reload()
+
+    def _fail(self, title: str, error: Exception) -> None:
+        messagebox.showerror(title, str(error), parent=self)
+
+    def _label(self, pid: str) -> str:
+        name = self._display_name(pid)
+        return pid if name == pid else f"{name} ({pid})"
+
+    # -- pairs tab ------------------------------------------------------------------
+    def _build_pairs_tab(self) -> None:
+        tab = ttk.Frame(self._notebook, padding=12)
+        self._notebook.add(tab, text="Pairs")
+        ttk.Label(tab, style="Muted.TLabel", wraplength=820, justify="left", text=(
+            "Every support pair. A character's affinity, partners, thresholds and bonds are edited in the "
+            "Supports tab of their character page: double-click a pair to open it.")).pack(anchor="w", pady=(0, 8))
+        holder = ttk.Frame(tab)
+        holder.pack(fill="both", expand=True)
+        columns = ("a", "b", "c_at", "b_at", "a_at", "bonus", "talk")
+        tree = ttk.Treeview(holder, columns=columns, show="headings", selectmode="browse")
+        for col, text, width in (("a", "Character", 220), ("b", "Partner", 220), ("c_at", "C at", 50),
+                                 ("b_at", "B at", 50), ("a_at", "A at", 50),
+                                 ("bonus", "Bonus at A (each unit)", 230), ("talk", "Conversations", 110)):
+            tree.heading(col, text=text)
+            tree.column(col, width=width, anchor="center" if col.endswith("_at") else "w",
+                        stretch=col in ("a", "b", "bonus"))
+        scroll = ttk.Scrollbar(holder, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        tree.pack(side="left", fill="both", expand=True)
+        tree.bind("<Double-Button-1>", lambda e: self._open_pair())
+        tree.bind("<Return>", lambda e: self._open_pair())
+        self._pairs_tree = tree
+        self._problems = ttk.Label(tab, text="", style="Warn.TLabel", wraplength=820, justify="left")
+        self._problems.pack(anchor="w", pady=(8, 0))
+
+    def _refresh_pairs(self) -> None:
+        tree = self._pairs_tree
+        tree.delete(*tree.get_children())
+        view = self._view
+        talks = self.conversation_ids()
+        seen = set()
+        for sl in view.lists:
+            for slot in sl.slots:
+                if slot.empty or (slot.partner, sl.owner) in seen:
+                    continue
+                seen.add((sl.owner, slot.partner))
+                bonus = supports.pair_bonus(view.rows, view.affinity_of(sl.owner), view.affinity_of(slot.partner), 3)
+                text = ", ".join(f"{n} +{v}" for n, v in zip(supports.BONUS_NAMES, bonus) if v) or "none"
+                have = "".join(r if conversation_id(sl.owner, slot.partner, r) in talks else "·" for r in RANKS) \
+                    if talks is not None else ""
+                tree.insert("", "end", iid=f"{sl.owner}\t{slot.partner}", values=(
+                    self._label(sl.owner), self._label(slot.partner), slot.c, slot.b, slot.a, text, have))
+        problems = supports.validate_support_lists(view.lists)
+        self._problems.config(text="\n".join(problems) if problems else "")
+
+    def _open_pair(self) -> None:
+        sel = self._pairs_tree.selection()
+        if sel and self._open_character is not None:
+            self._open_character(sel[0].split("\t")[0])
 
     # -- affinity table tab --------------------------------------------------------------
     def _build_affinity_tab(self) -> None:
@@ -525,20 +654,15 @@ class SupportEditorPanel(ttk.Frame):
 
     def flush(self) -> None:
         """Apply the field that still has the focus (see StatsEditor.flush)."""
-        self._apply_thresholds()
-        self._apply_bond()
         self._apply_affinity_table()
 
     # -- conversations -------------------------------------------------------------------
-    def _conversation_ids(self) -> Optional[set]:
-        if self._yell_path is None:
-            return None
-        if self._dialogue is not None and self._dialogue.current_path == self._yell_path:
+    def conversation_ids(self) -> Optional[set]:
+        """The support conversations in ``yell.m``, unsaved ones included (None: no file)."""
+        if self._yell_path is not None and self._dialogue is not None \
+                and self._dialogue.current_path == self._yell_path:
             return self._dialogue.message_ids()
-        try:
-            return {m.speaker for m in message.read_messages_path(self._yell_path)}
-        except (OSError, ValueError):
-            return None
+        return read_conversation_ids(self._yell_path)
 
     def _ensure_dialogue(self):
         if self._dialogue is None:
@@ -551,23 +675,24 @@ class SupportEditorPanel(ttk.Frame):
         if str(self._notebook.select()) == str(getattr(self, "_conversation_tab", "")):
             self._ensure_dialogue()
         else:
-            self._refresh_character()  # conversations may have been added there
+            self._refresh_pairs()  # conversations may have been added there
 
     @property
     def dialogue_editor(self):
         return self._dialogue
 
-    def _open_conversation(self, rank: str) -> None:
-        partner = getattr(self, "_pair", None)
-        if not partner or self._pid is None or self._yell_path is None:
+    def open_conversation(self, pid: str, partner: str, rank: str) -> None:
+        """Show the pair's conversation of that rank in the Conversations tab,
+        creating it from the background-scene template when missing."""
+        if self._yell_path is None or self._make_dialogue_editor is None:
             return
-        msg_id = conversation_id(self._pid, partner, rank)
+        msg_id = conversation_id(pid, partner, rank)
         dialogue = self._ensure_dialogue()
         if msg_id not in dialogue.message_ids():
             # the Dialogue editor's background-scene template, with the pair's faces
             text = next((t for name, t in TEMPLATES.items() if "FCL_IKE" in t and "FCL_MIST" in t), "")
-            text = text.replace("FCL_IKE", "FCL_" + self._fid_name(self._pid)).replace(
-                "FCL_MIST", "FCL_" + self._fid_name(partner))
+            text = text.replace("FCL_IKE", "FCL_" + self._view.fid_name(pid)).replace(
+                "FCL_MIST", "FCL_" + self._view.fid_name(partner))
             if not dialogue.add_message(msg_id, text):
                 return
         dialogue.select_message(msg_id)
