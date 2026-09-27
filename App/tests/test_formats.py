@@ -1625,6 +1625,18 @@ class Fe8DataTests(unittest.TestCase):
         item.might = 0
         self.assertEqual(fe8data.item_category(item), "Staff")
 
+    def test_class_category(self):
+        def cls(jid, link, hp_cap, movement=5, categories=(), innate=None):
+            return fe8data.ClassEntry(0, 0, jid, None, None, link, None, movement, [hp_cap] + [20] * 7, [0] * 8,
+                                      [0] * 8, 0, None, [None] * 5, b"", innate_weapon=innate,
+                                      categories=list(categories))
+        classes = [cls("JID_RANGER", "JID_HERO", 40), cls("JID_HERO", "JID_RANGER", 60, 6),
+                   cls("JID_LION", "JID_LION_F", 60, categories=("alize", "beast")),
+                   cls("JID_LION_F", "JID_LION", 60, 6), cls("JID_CAT", None, 60, innate="IID_CLAW"),
+                   cls("JID_LORD", None, 60), cls("JID_SOLDIER", None, 40)]
+        self.assertEqual([fe8data.class_category(c, classes) for c in classes],
+                         ["Unpromoted", "Promoted", "Laguz", "Laguz", "Laguz", "Promoted", "Unpromoted"])
+
     def test_item_short_tokens_are_not_found_inside_tables(self):
         # "E" as plain bytes inside the character table must not be taken for the rank string
         data = bytearray(_build_synthetic_fe8data())

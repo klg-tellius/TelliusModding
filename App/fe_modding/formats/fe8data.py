@@ -376,6 +376,31 @@ def item_category(item: "ItemEntry") -> str:
     return dict(ITEM_WEAPON_TYPES).get(item.weapon_type or "", "Other")
 
 
+CLASS_CATEGORIES = ["Unpromoted", "Promoted", "Laguz"]
+#: Class category tokens only laguz classes carry.
+LAGUZ_CLASS_TOKENS = frozenset({"alize", "beast", "dragon", "bird"})
+
+
+def class_category(cls: "ClassEntry", classes: list) -> str:
+    """The :data:`CLASS_CATEGORIES` name of a class. Laguz classes carry a
+    laguz category token (or an innate weapon, on it or its linked class).
+    A human class is promoted when it outranks its linked ``promotes_to``
+    class (HP cap, then movement; see the module docstring), or, with no
+    link, when its HP cap is above the unpromoted 40."""
+    linked = next((c for c in classes if cls.promotes_to and c.jid == cls.promotes_to and c is not cls), None)
+    pair = [cls] + ([linked] if linked is not None else [])
+    if any(LAGUZ_CLASS_TOKENS.intersection(c.categories or ()) or c.innate_weapon for c in pair):
+        return "Laguz"
+    hp_cap = cls.stat_caps[0] if cls.stat_caps else 0
+    if linked is not None:
+        linked_cap = linked.stat_caps[0] if linked.stat_caps else 0
+        if hp_cap != linked_cap:
+            return "Promoted" if hp_cap > linked_cap else "Unpromoted"
+        if cls.movement != linked.movement:
+            return "Promoted" if cls.movement > linked.movement else "Unpromoted"
+    return "Promoted" if hp_cap > 40 else "Unpromoted"
+
+
 #: Rank tokens (item 0x14) and the minimum weapon EXP each one becomes; "N" means none, like null.
 ITEM_RANKS = (("E", 1), ("D", 31), ("C", 71), ("B", 121), ("A", 181), ("S", 251), ("N", 0))
 ITEM_PROPERTY_SLOTS = 6  # 0x18-0x2C
