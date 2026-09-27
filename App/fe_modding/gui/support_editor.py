@@ -4,7 +4,8 @@ support partners and their thresholds, bonds, and the support conversations
 KiznaData; see :mod:`fe_modding.formats.supports`), and the conversation
 text itself (``Mess/yell.m``).
 
-The character is chosen with a :class:`~.widgets.RecordPicker`. Values are
+The character is chosen from tiles (:class:`~.widgets.TileBrowser`, with
+their portrait when the host passes ``request_portrait``). Values are
 written as soon as a field is left or a choice is made; nothing waits for an
 Apply button. The panel reads and writes the FE8Data bytes through the
 ``get_data``/``set_data`` callables and calls ``on_dirty`` after every
@@ -21,7 +22,7 @@ from typing import Callable, Optional
 
 from ..formats import fe8data, message, supports
 from ..formats.fe9_message_scene import TEMPLATES
-from .widgets import RecordPicker, ScrollFrame
+from .widgets import ScrollFrame, TileBrowser
 
 RANKS = ("C", "B", "A")
 DEFAULT_THRESHOLDS = (1, 3, 5)  # the most common real (non-filler) thresholds in vanilla
@@ -53,8 +54,11 @@ class SupportEditorPanel(ttk.Frame):
         display_name: Optional[Callable[[str], str]] = None,
         make_dialogue_editor: Optional[Callable[[tk.Misc], object]] = None,
         yell_path: Optional[Path] = None,
+        request_portrait: Optional[Callable[[str, int, Callable], None]] = None,
     ):
         super().__init__(parent)
+        #: ``request_portrait(fid, size, callback)``: the face on a character's tile
+        self._request_portrait = request_portrait
         self._get_data = get_data
         self._set_data = set_data
         self._on_dirty = on_dirty
@@ -84,13 +88,19 @@ class SupportEditorPanel(ttk.Frame):
         self._lists = supports.read_support_lists(data)
         self._rows = supports.read_affinities(data)
         self._bonds = supports.read_bonds(data)
+        self._fids = {}
+        for c in self._fe8.characters:
+            if c.pid and c.fid:
+                self._fids.setdefault(c.pid, c.fid)
         self._labels = [self._label(p) for p in self._pids]
         self._label_to_pid = dict(zip(self._labels, self._pids))
         counts = {sl.owner: sum(1 for s in sl.slots if not s.empty) for sl in self._lists}
         self._picker.set_entries(
             [f"{label}  ·  {counts[pid]} partner{'s' if counts[pid] != 1 else ''}" if counts.get(pid) else label
              for pid, label in zip(self._pids, self._labels)],
-            [supports.AFFINITY_NAMES[self._affinity_of(p)] for p in self._pids])
+            [supports.AFFINITY_NAMES[self._affinity_of(p)] for p in self._pids],
+            image=self._tile_image if self._request_portrait is not None else None,
+            image_keys=[self._fids.get(p) for p in self._pids])
         for box in (self._add_partner_box, self._add_bond_box):
             box["values"] = self._labels
         if self._pid in self._pids:
@@ -132,6 +142,11 @@ class SupportEditorPanel(ttk.Frame):
                 return supports.character_affinity(self._get_data(), c.index)
         return 0
 
+    def _tile_image(self, index: int, callback: Callable) -> None:
+        fid = self._fids.get(self._pids[index])
+        if fid and self._request_portrait is not None:
+            self._request_portrait(fid, 56, callback)
+
     def _fid_name(self, pid: str) -> str:
         for c in self._fe8.characters:
             if c.pid == pid and c.fid and c.fid.startswith("FID_"):
@@ -142,11 +157,9 @@ class SupportEditorPanel(ttk.Frame):
     def _build_character_tab(self) -> None:
         tab = ttk.Frame(self._notebook, style="Page.TFrame")
         self._notebook.add(tab, text="By character")
-        bar = ttk.Frame(tab, style="Page.TFrame", padding=(12, 10, 12, 4))
-        bar.pack(fill="x")
-        self._picker = RecordPicker(bar, "characters", self._on_pick)
-        self._picker.pack(side="left")
-        scroll = ScrollFrame(tab, padding=(16, 8, 16, 16))
+        self._picker = TileBrowser(tab, "characters", self._on_pick, image_box=(6, 3), tile_width=250)
+        self._picker.pack(fill="both", expand=True)
+        scroll = ScrollFrame(self._picker.detail, padding=(16, 8, 16, 16))
         scroll.pack(fill="both", expand=True)
         body = scroll.body
 

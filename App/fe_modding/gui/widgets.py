@@ -1,5 +1,6 @@
 """Building blocks of the workspace pages: scrollable frames, clickable cards
-and a reflowing card grid, chips, links, and a portrait thumbnail cache.
+and a reflowing card grid, chips, links, a portrait thumbnail cache and the
+tile browser the Game Data tabs pick their records with.
 
 Cards are classic ``tk`` frames rather than ttk so they can change colour on
 hover; they repaint themselves through :func:`theme.on_change`.
@@ -407,161 +408,247 @@ def face_thumbnail(image: Image.Image, record, size: int) -> Image.Image:
     return crop.resize((size, size), Image.LANCZOS)
 
 
-# -- record picker ------------------------------------------------------------------
+# -- record browser ------------------------------------------------------------------
 
-class RecordPicker(ttk.Frame):
-    """Chooses one record of a long table without a side list: a search box
-    whose drop-down narrows to the entries matching every typed word,
-    previous/next buttons, and the position in the table. Entries given
-    categories get a category drop-down in front: choosing one limits the
-    list, the search and previous/next to that category.
+class TileBrowser(ttk.Frame):
+    """Chooses one record of a long table from a grid of tiles, like the
+    Characters page: a search box that keeps the tiles matching every typed
+    word, category toggles when the entries have categories, and a picture
+    on each tile when the host has one. Clicking a tile opens the record:
+    the tiles make way for :attr:`detail`, where the host puts the record's
+    form, under a bar with **‹ All …**, previous/next and the position.
 
-    ``on_pick(index)`` runs when the user picks an entry; :meth:`select`
-    changes it from code. Enter picks the first match; Escape or leaving
-    the box puts the current entry's name back."""
+    The host puts its always-available buttons in :attr:`actions` and those
+    that act on the open record in :attr:`record_actions`.
+    ``on_pick(index)`` runs when a record is opened; :meth:`select` does it
+    from code (``notify=False`` only moves the current record)."""
 
     ALL = "All"
 
-    def __init__(self, parent: tk.Misc, noun: str, on_pick: Callable[[int], None], *, width: int = 46,
-                 style: str = "Page.TFrame"):
+    def __init__(self, parent: tk.Misc, noun: str, on_pick: Callable[[int], None], *, tile_width: int = 230,
+                 image_box: tuple[int, int] = (4, 2), style: str = "Page.TFrame"):
         super().__init__(parent, style=style)
         self._noun = noun
         self._on_pick = on_pick
+        self._tile_width = tile_width
+        self._image_box = image_box
+        self._style = style
         self._labels: list[str] = []
+        self._subtitles: list[str] = []
         self._haystacks: list[str] = []
-        self._matches: list[int] = []
         self._categories: list[str] = []
-        self._category = tk.StringVar(value=self.ALL)
-        self._category_box: Optional[ttk.Combobox] = None
+        self._category_names: list[str] = []
+        self._image: Optional[Callable[[int, Callable], None]] = None
+        self._signature = None
+        self._stale = True
+        self._requested: set[int] = set()
+        self._cards: dict[int, Card] = {}
+        self._shown: list[int] = []
         self.current: Optional[int] = None
-        self._prev = ttk.Button(self, text="◀", width=3, command=lambda: self.step(-1))
-        self._prev.pack(side="left")
-        self._text = tk.StringVar()
-        self._box = ttk.Combobox(self, textvariable=self._text, width=width)
-        self._box.pack(side="left", padx=4)
-        self._next = ttk.Button(self, text="▶", width=3, command=lambda: self.step(1))
-        self._next.pack(side="left")
-        self._count = ttk.Label(self, text="", style="Muted.TLabel")
-        self._count.pack(side="left", padx=(10, 0))
-        self._box.bind("<KeyRelease>", self._on_typed)
-        self._box.bind("<Return>", lambda e: self._pick_first())
-        self._box.bind("<Escape>", lambda e: self._show_current())
-        self._box.bind("<FocusOut>", lambda e: self.after(150, self._restore_if_left))
-        self._box.bind("<<ComboboxSelected>>", lambda e: self._on_selected())
-        self._box.bind("<Prior>", lambda e: (self.step(-1), "break")[1])
-        self._box.bind("<Next>", lambda e: (self.step(1), "break")[1])
+        self._mode = "grid"
 
+        self.toolbar = ttk.Frame(self, style=style, padding=(12, 10, 12, 4))
+        self.toolbar.pack(fill="x")
+        self._nav = ttk.Frame(self.toolbar, style=style)
+        ttk.Button(self._nav, text=f"‹ All {noun}", command=self.show_grid).pack(side="left", padx=(0, 10))
+        ttk.Button(self._nav, text="◀", width=3, command=lambda: self.step(-1)).pack(side="left")
+        ttk.Button(self._nav, text="▶", width=3, command=lambda: self.step(1)).pack(side="left", padx=(4, 0))
+        self._title = ttk.Label(self._nav, text="", style="Strong.TLabel")
+        self._title.pack(side="left", padx=(12, 0))
+        self._position = ttk.Label(self._nav, text="", style="Muted.TLabel")
+        self._position.pack(side="left", padx=(10, 0))
+        self.actions = ttk.Frame(self.toolbar, style=style)
+        self.actions.pack(side="left")
+        self.record_actions = ttk.Frame(self.toolbar, style=style)
+        self._search = ttk.Frame(self.toolbar, style=style)
+        self._search.pack(side="right")
+        self._count = ttk.Label(self._search, text="", style="Muted.TLabel")
+        self._count.pack(side="right", padx=(10, 0))
+        self._query = tk.StringVar()
+        entry = ttk.Entry(self._search, textvariable=self._query, width=30)
+        entry.pack(side="right")
+        entry.bind("<Return>", lambda e: self._shown and self.select(self._shown[0]))
+        entry.bind("<Escape>", lambda e: self._query.set(""))
+        self._entry = entry
+        ttk.Label(self._search, text="Search name or ID", style="Muted.TLabel").pack(side="right", padx=(0, 8))
+        self._query.trace_add("write", lambda *_: self._filter_changed())
+
+        self._chips = ttk.Frame(self, style=style, padding=(12, 0, 12, 6))
+        self._category = tk.StringVar(value=self.ALL)
+        self._scroll = ScrollFrame(self, padding=(12, 4, 12, 16))
+        self._grid = CardGrid(self._scroll.body, card_width=tile_width, gap=10)
+        self._grid.pack(fill="x")
+        self.detail = ttk.Frame(self, style=style)
+        self._layout()
+
+    # -- entries ---------------------------------------------------------------------
     def set_entries(self, labels: list[str], haystacks: Optional[list[str]] = None,
-                    categories: Optional[list[str]] = None, category_order: Optional[list[str]] = None) -> None:
-        """The entries, in table order; ``haystacks`` is extra searchable text
-        per entry, ``categories`` one category name per entry (listed in
-        ``category_order``, then in order of appearance)."""
+                    categories: Optional[list[str]] = None, category_order: Optional[list[str]] = None, *,
+                    image: Optional[Callable[[int, Callable], None]] = None,
+                    image_keys: Optional[list] = None) -> None:
+        """The entries, in table order. A label ``"Name  ·  ID"`` is shown
+        as the tile's title and subtitle; ``haystacks`` is extra searchable
+        text per entry, ``categories`` one category name per entry (listed
+        in ``category_order``, then in order of appearance).
+        ``image(index, callback)`` calls ``callback(photo)`` with the
+        entry's picture (at once or later); ``image_keys`` names each
+        picture, so the tiles are only redrawn when one changes."""
         self._labels = list(labels)
+        self._subtitles = [label.split("  ·  ", 1)[1].replace("  ·  ", " · ") if "  ·  " in label else ""
+                           for label in self._labels]
         self._categories = list(categories) if categories else []
         self._haystacks = [f"{label} {extra} {category}".casefold()
                            for label, extra, category in zip(labels, haystacks or [""] * len(labels),
                                                              self._categories or [""] * len(labels))]
-        if self._categories:
-            present = list(dict.fromkeys(self._categories))
-            ordered = [c for c in (category_order or []) if c in present]
-            names = ordered + [c for c in present if c not in ordered]
-            if self._category_box is None:
-                self._category_box = ttk.Combobox(self, textvariable=self._category, state="readonly", width=16)
-                self._category_box.pack(side="left", padx=(0, 6), before=self._prev)
-                self._category_box.bind("<<ComboboxSelected>>", lambda e: self._on_category())
-            self._category_box["values"] = [self.ALL] + names
-            if self._category.get() not in names:
-                self._category.set(self.ALL)
-        elif self._category_box is not None:
-            self._category_box.destroy()
-            self._category_box = None
-            self._category.set(self.ALL)
+        self._image = image
+        present = list(dict.fromkeys(self._categories))
+        names = [c for c in (category_order or []) if c in present]
+        names += [c for c in present if c not in names]
+        if names != self._category_names:
+            self._category_names = names
+            self._build_chips()
         if self.current is not None and self.current >= len(labels):
             self.current = None
+        signature = (tuple(self._labels), tuple(self._categories), image is not None,
+                     tuple(image_keys) if image_keys is not None else None)
+        if signature != self._signature:
+            self._signature = signature
+            self._stale = True
+        if self._stale and self._mode == "grid":
+            self._rebuild()
+        else:
+            self._filter()
         self._show_current()
 
-    def _visible(self) -> list[int]:
-        """The entries of the chosen category (all of them without one)."""
-        category = self._category.get()
-        if not self._categories or category == self.ALL:
-            return list(range(len(self._labels)))
-        return [i for i, c in enumerate(self._categories) if c == category]
+    @property
+    def labels(self) -> list[str]:
+        return list(self._labels)
 
-    def _on_category(self) -> None:
-        visible = self._visible()
-        if visible and self.current not in visible:
-            self.select(visible[0])
+    def refresh_images(self) -> None:
+        """Ask for every picture again (the host can draw more of them now)."""
+        self._requested.clear()
+        self._request_images()
+
+    # -- modes -----------------------------------------------------------------------------
+    def show_grid(self) -> None:
+        if self._mode != "grid":
+            self._mode = "grid"
+            self._layout()
+            if self._stale:
+                self._rebuild()
+            else:
+                self._filter()
+            self._entry.focus_set()
+
+    def _show_detail(self) -> None:
+        if self._mode != "detail":
+            self._mode = "detail"
+            self._layout()
+
+    def _layout(self) -> None:
+        for widget in (self._nav, self.record_actions, self._search, self._chips, self._scroll, self.detail):
+            widget.pack_forget()
+        if self._mode == "detail":
+            self._nav.pack(side="left", before=self.actions)
+            self.record_actions.pack(side="left", after=self.actions)
+            self.detail.pack(fill="both", expand=True)
         else:
-            self._show_current()
-        self._box.focus_set()
+            self._search.pack(side="right")
+            if self._category_names:
+                self._chips.pack(fill="x")
+            self._scroll.pack(fill="both", expand=True)
 
+    def _build_chips(self) -> None:
+        for child in self._chips.winfo_children():
+            child.destroy()
+        if self._category.get() not in self._category_names:
+            self._category.set(self.ALL)
+        for value in [self.ALL] + self._category_names:
+            ttk.Radiobutton(self._chips, text=value, value=value, variable=self._category,
+                            style="Toggle.TButton", command=self._filter_changed).pack(side="left", padx=(0, 6))
+        self._layout()
+
+    # -- tiles ------------------------------------------------------------------------------
+    def _rebuild(self) -> None:
+        self._stale = False
+        self._grid.clear()
+        self._cards = {}
+        self._requested.clear()
+        for i, label in enumerate(self._labels):
+            title = label.split("  ·  ", 1)[0]
+            card = Card(self._grid, title=title or label, subtitle=self._subtitles[i],
+                        caption=self._categories[i] if self._categories else "", width=self._tile_width,
+                        image_box=self._image_box if self._image is not None else None,
+                        on_click=lambda i=i: self.select(i))
+            self._grid.add(i, card)
+            self._cards[i] = card
+        self._grid.done()
+        self._filter()
+
+    def _filter_changed(self) -> None:
+        self._filter()
+        self._scroll.scroll_top()
+
+    def _filter(self) -> None:
+        words = self._query.get().casefold().split()
+        category = self._category.get()
+        self._shown = [i for i in range(len(self._labels))
+                       if (words or category == self.ALL or not self._categories or self._categories[i] == category)
+                       and all(w in self._haystacks[i] for w in words)]
+        shown = set(self._shown)
+        if not self._stale and self._mode == "grid":
+            self._grid.filter(lambda i: i in shown)
+            self._request_images()
+        where = f" in {category}" if self._categories and category != self.ALL and not words else ""
+        self._count.configure(text=f"{len(self._shown)} of {len(self._labels)} {self._noun}{where}"
+                              + ("  ·  Enter opens the first" if words and self._shown else ""))
+
+    def _request_images(self) -> None:
+        if self._image is None or self._stale or self._mode != "grid":
+            return
+        for i in self._shown:
+            if i in self._requested or i not in self._cards:
+                continue
+            self._requested.add(i)
+            card = self._cards[i]
+            try:
+                self._image(i, lambda photo, card=card: card.winfo_exists() and card.set_image(photo))
+            except Exception:  # noqa: BLE001 - pictures are a convenience
+                pass
+
+    # -- the current record ----------------------------------------------------------------------
     def select(self, index: Optional[int], notify: bool = True) -> None:
         if index is None or not 0 <= index < len(self._labels):
             return
         self.current = index
         self._show_current()
         if notify:
+            self._show_detail()
             self._on_pick(index)
 
     def step(self, delta: int) -> None:
-        visible = self._visible()
-        if not visible:
+        order = self._shown if self.current in self._shown else list(range(len(self._labels)))
+        if not order:
             return
-        if self.current in visible:
-            position = visible.index(self.current) + delta
+        if self.current in order:
+            position = order.index(self.current) + delta
         else:
             position = 0 if delta > 0 else -1
-        self.select(visible[position % len(visible)])
+        self.select(order[position % len(order)])
 
     def focus_search(self) -> None:
-        self._box.focus_set()
-        self._box.select_range(0, "end")
+        self.show_grid()
+        self._entry.focus_set()
+        self._entry.select_range(0, "end")
 
     def _show_current(self) -> None:
-        self._matches = self._visible()
-        self._box["values"] = [self._labels[i] for i in self._matches]
-        self._text.set(self._labels[self.current] if self.current is not None else "")
-        category = self._category.get()
-        where = f" in {category}" if self._categories and category != self.ALL else ""
-        if self.current is not None and self.current in self._matches:
-            position = f"{self._matches.index(self.current) + 1} of {len(self._matches)}{where}"
-        elif self.current is not None and where:
-            position = f"{len(self._matches)}{where}  ·  showing one from another category"
-        elif self.current is not None:
-            position = f"{self.current + 1} of {len(self._labels)}"
+        if self.current is None:
+            self._title.configure(text="")
+            self._position.configure(text="")
+            return
+        self._title.configure(text=self._labels[self.current])
+        if self.current in self._shown and len(self._shown) != len(self._labels):
+            text = f"{self._shown.index(self.current) + 1} of {len(self._shown)} shown"
         else:
-            position = f"{len(self._matches)} {self._noun}{where}"
-        self._count.configure(text=position)
-
-    def _restore_if_left(self) -> None:
-        """Leaving the box shows the current entry again - unless the focus
-        only moved into the box's own drop-down list."""
-        try:
-            focused = str(self.tk.call("focus"))
-        except tk.TclError:
-            return
-        if not focused.startswith(str(self._box)):
-            self._show_current()
-
-    def _on_typed(self, event) -> None:
-        if event.keysym in ("Return", "Escape", "Up", "Down", "Prior", "Next", "Tab"):
-            return
-        words = self._text.get().casefold().split()
-        self._matches = [i for i in self._visible() if all(w in self._haystacks[i] for w in words)]
-        self._box["values"] = [self._labels[i] for i in self._matches]
-        self._count.configure(text=f"{len(self._matches)} match{'es' if len(self._matches) != 1 else ''}"
-                              "  ·  Enter picks the first, ↓ shows them")
-
-    def _pick_first(self) -> None:
-        if self._matches:
-            self.select(self._matches[0])
-        self._box.select_range(0, "end")
-
-    def _on_selected(self) -> None:
-        text = self._text.get()
-        for i in self._matches:
-            if self._labels[i] == text:
-                self.select(i)
-                return
-        if text in self._labels:
-            self.select(self._labels.index(text))
+            text = f"{self.current + 1} of {len(self._labels)}"
+        self._position.configure(text=text)
