@@ -1,5 +1,5 @@
-"""Game Data editor: classes, items, skills, terrain types, chapters, battle
-scenes and the general tables - all live in ``FE8Data.bin`` (see
+"""Game Data editor: classes, items, skills, terrain types, chapters and the
+general tables - all live in ``FE8Data.bin`` (see
 :mod:`fe_modding.formats.fe8data` for how it was reverse-engineered and what's
 confirmed vs. still open). Characters live in the same file but are edited on
 their own page (``character_form.py``); both work on one shared
@@ -38,13 +38,14 @@ Editable, per tab:
   block unless the type is given its own;
 - chapters: every field of the ``ChapterData`` record (files, objectives per
   difficulty, scenes, enemy levels, trial grades);
-- battle scenes: the ``BattleTerrData`` row of one map - its battle-scene map
-  per terrain type;
 - general: the ``GameData`` difficulty constants, the army groups
   (``GroupData``), the battle skies (``BattleSkyData``) and the build
   time/author (``DatabaseHead``).
 
-Classes, items, chapters and battle-scene rows have **New…** (empty or a
+The battle scenes (``BattleTerrData``) are edited on each chapter's page
+(``battle_scene_editor.py``).
+
+Classes, items and chapters have **New…** (empty or a
 copy) and **Remove** (refused while anything still names the record, see
 :mod:`.record_actions`). Skills and terrain types keep their count: the game
 refers to them by position.
@@ -88,7 +89,7 @@ from .widgets import ScrollFrame, TileBrowser
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]
 #: Weapon types whose items have a battle model (xwp/); tomes, staves and items have none.
 MODEL_WEAPON_TYPES = ("sword", "lance", "axe", "bow", "knife")
-TAB_KEYS = ["classes", "items", "skills", "terrain", "chapters", "battle", "general"]
+TAB_KEYS = ["classes", "items", "skills", "terrain", "chapters", "general"]
 #: Tabs whose records can be added and removed, and their table kind.
 TAB_KINDS = {"classes": "class", "items": "item", "chapters": "chapter"}
 #: Tabs of tables the engine binds by position (FE8DATA_NOTES.md §4.7).
@@ -411,8 +412,7 @@ class StatsEditor(EditorPanel):
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self.flush(), add="+")
         for key, title, noun in (("classes", "Classes", "classes"), ("items", "Items", "items"),
                                  ("skills", "Skills", "skills"), ("terrain", "Terrain", "terrain types"),
-                                 ("chapters", "Chapters", "chapters"), ("battle", "Battle scenes", "maps"),
-                                 ("general", "General", "")):
+                                 ("chapters", "Chapters", "chapters"), ("general", "General", "")):
             tab = ttk.Frame(self._notebook, style="Page.TFrame")
             self._notebook.add(tab, text=title)
             if key == "general":
@@ -423,7 +423,7 @@ class StatsEditor(EditorPanel):
             picker = TileBrowser(tab, noun, lambda i, k=key: self._show(k, i), **TILE_OPTIONS.get(key, {}))
             picker.pack(fill="both", expand=True)
             self._pickers[key] = picker
-            if key in TAB_KINDS or key == "battle":
+            if key in TAB_KINDS:
                 ttk.Button(picker.actions, text="New…", command=lambda k=key: self._add_record(k)).pack(
                     side="left", padx=(14, 0))
                 ttk.Button(picker.record_actions, text="Remove", command=lambda k=key: self._remove_record(k)).pack(
@@ -470,16 +470,12 @@ class StatsEditor(EditorPanel):
             unique([f"{self._terrain_name(t)}  ·  {t.name}" for t in self._terrain_types]))
         try:
             chapters = fe8data.read_chapter_data(self._data)
-            rows = fe8data.read_battle_terrain(self._data)
         except (KeyError, ValueError, struct.error):
-            chapters, rows = [], []
+            chapters = []
         self._pickers["chapters"].set_entries(
             unique([f"{self._text(c.title_key) or c.title_key or '(untitled)'}  ·  {c.script or '-'}  ·  id {c.chapter_id}"
                     for c in chapters]),
             [f"{c.map_name} {c.message}" for c in chapters])
-        self._pickers["battle"].set_entries(
-            unique([f"{r.map_name or '(no map)'}" + ("  ·  default for every map" if i == 0 else "")
-                    for i, r in enumerate(rows)]))
 
     def _icon_tile(self, size: int, image_index: int, cell: Optional[int], callback: Callable) -> None:
         image = icons.cell_image(self._icons(), image_index, cell, size)
@@ -503,32 +499,16 @@ class StatsEditor(EditorPanel):
 
     def _show(self, key: str, index: int) -> None:
         {"classes": self._show_class, "items": self._show_item, "skills": self._show_skill,
-         "terrain": self._show_terrain, "chapters": self._show_chapter, "battle": self._show_battle_row}[key](index)
+         "terrain": self._show_terrain, "chapters": self._show_chapter}[key](index)
 
     # -- adding and removing records --------------------------------------------------------
     def _add_record(self, key: str) -> None:
         self.flush()
         picker = self._pickers[key]
-        if key == "battle":
-            from tkinter import simpledialog
-            name = simpledialog.askstring("New battle-scene row", "Map name (the zmap folder, e.g. bmap05):",
-                                          parent=self)
-            if not name or not name.strip():
-                return
-            rows = fe8data.read_battle_terrain(self._data)
-            if any(r.map_name == name.strip() for r in rows):
-                messagebox.showerror("Already there", f"{name.strip()} already has a row.", parent=self)
-                return
-            columns = len(rows[0].scenes) if rows else fe8data.TERRAIN_TYPE_COUNT
-            rows.append(fe8data.BattleTerrainRow(name.strip(), [None] * columns))
-            self._data = fe8data.write_battle_terrain(self._data, rows)
-            self._session.changed(self)
-            index = len(rows) - 1
-        else:
-            index = record_actions.add_record(self, self._session, TAB_KINDS[key], picker.labels,
-                                              picker.current, source=self)
-            if index is None:
-                return
+        index = record_actions.add_record(self, self._session, TAB_KINDS[key], picker.labels,
+                                          picker.current, source=self)
+        if index is None:
+            return
         self._on_session_changed(self)
         self._forms[key] = None
         self._refresh_pickers()
@@ -542,20 +522,8 @@ class StatsEditor(EditorPanel):
         if index is None:
             return
         label = picker.labels[index]
-        if key == "battle":
-            if index == 0:
-                messagebox.showerror("Default row", "Row 0 is the default every other map falls back to.",
-                                     parent=self)
-                return
-            if not messagebox.askyesno("Remove row?", f"Remove the battle-scene row of {label}? The map then uses "
-                                       "the default row.", parent=self):
-                return
-            rows = fe8data.read_battle_terrain(self._data)
-            del rows[index]
-            self._data = fe8data.write_battle_terrain(self._data, rows)
-            self._session.changed(self)
-        elif not record_actions.remove_record(self, self._session, self._project, TAB_KINDS[key], index, label,
-                                              source=self):
+        if not record_actions.remove_record(self, self._session, self._project, TAB_KINDS[key], index, label,
+                                            source=self):
             return
         self._on_session_changed(self)
         self._forms[key] = None
@@ -601,7 +569,7 @@ class StatsEditor(EditorPanel):
 
     def _form_key(self, form: _Form) -> str:
         return {"class": "classes", "item": "items", "skill": "skills", "terrain": "terrain", "chapter": "chapters",
-                "battle": "battle", "general": "general"}[form.kind]
+                "general": "general"}[form.kind]
 
     def flush(self) -> None:
         """Apply whatever field still has the focus (a picker button or a
@@ -1221,7 +1189,7 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text="scripts change to a chapter by this id; 90 and up are the trial maps",
                   style="Muted.TLabel").grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
         row += 1
-        text_row("Map", "map_name", lambda: chapter().map_name, "zmap/<name>/; also its battle-scene row")
+        text_row("Map", "map_name", lambda: chapter().map_name, "zmap/<name>/; its battle scenes: the chapter page")
         text_row("Script", "script", lambda: chapter().script, "Scripts/<name>.cmb")
         text_row("Message file", "message", lambda: chapter().message, "Mess/<name>.m; empty: none")
         text_row("Map music", "bgm", lambda: chapter().bgm)
@@ -1263,52 +1231,6 @@ class StatsEditor(EditorPanel):
                            lambda d, i, v, f=field: patch(d, index, f"{f}{i}", v))
             row += 2
         self._hex_box(parent, form, "chapter", index, row, columns)
-
-    # -- battle scenes ------------------------------------------------------------------------
-    def _show_battle_row(self, index: int) -> None:
-        form, parent = self._new_form("battle", "battle", index)
-        rows = lambda: fe8data.read_battle_terrain(self._data)  # noqa: E731
-        r = rows()[index]
-        ttk.Label(parent, text=r.map_name or "(no map)", style="Title.TLabel").grid(row=0, column=0, columnspan=6,
-                                                                                    sticky="w")
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "The map shown behind a battle, per terrain type of the tile. Row 0 is the default: an empty cell "
-            "of another row uses row 0's." if index else
-            "The default row: every map without its own row, and every empty cell of another row, uses these."
-        )).grid(row=1, column=0, columnspan=6, sticky="w")
-
-        def set_cell(data: bytes, column: Optional[int], value: str) -> bytes:
-            table = fe8data.read_battle_terrain(data)
-            if column is None:
-                if not value.strip():
-                    raise ValueError("A row needs a map name.")
-                table[index].map_name = value.strip()
-            else:
-                table[index].scenes[column] = value.strip() or None
-            return fe8data.write_battle_terrain(data, table)
-
-        row = 2
-        if index:
-            ttk.Label(parent, text="Map name").grid(row=row, column=0, sticky="w", pady=(8, 2))
-            var = tk.StringVar()
-            entry = ttk.Entry(parent, textvariable=var, width=20)
-            entry.grid(row=row, column=1, sticky="w", pady=(8, 2))
-            form.add(entry, "Map name", var, lambda: rows()[index].map_name or "",
-                     lambda data, v: set_cell(data, None, v))
-            row += 1
-        scenes = sorted({s for each in rows() for s in each.scenes if s})
-        self._heading(parent, "Battle-scene map per terrain type", row, 6)
-        row += 1
-        names = [self._terrain_name(t) for t in self._terrain_types] or [str(i) for i in range(len(r.scenes))]
-        for k in range(len(r.scenes)):
-            line, col = divmod(k, 2)
-            ttk.Label(parent, text=f"{k}: {names[k] if k < len(names) else k}").grid(
-                row=row + line, column=3 * col, sticky="w", padx=(0 if col == 0 else 18, 6), pady=1)
-            var = tk.StringVar()
-            box = ttk.Combobox(parent, textvariable=var, values=[""] + scenes, width=18)
-            box.grid(row=row + line, column=3 * col + 1, sticky="w", pady=1)
-            form.add(box, f"Scene {k}", var, lambda k=k: rows()[index].scenes[k] or "",
-                     lambda data, v, k=k: set_cell(data, k, v))
 
     # -- general ------------------------------------------------------------------------------
     def _show_general(self) -> None:
