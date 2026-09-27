@@ -208,3 +208,47 @@ def delete_function_source(source: str, span: FunctionSpan) -> str:
     lines = source.splitlines()
     del lines[span.first_line - 1:span.last_line]
     return re.sub(r"\n{4,}", "\n\n\n", "\n".join(lines).rstrip("\n") + "\n")
+
+
+@dataclass(frozen=True)
+class StringReference:
+    """A string literal passed to a call: ``call(..., "value", ...)`` on
+    ``line`` of ``function``."""
+
+    function: str
+    line: int
+    call: str
+    value: str
+
+
+def string_references(source: str) -> list[StringReference]:
+    """Every string argument of every call, in source order - the Build
+    tab's Disposition window uses it to find the functions that deploy a
+    section (``Dispos("bmap02_first_n")``, ``DisposSetMode(...)``...).
+    Raises ParseError."""
+    found: list[StringReference] = []
+
+    def visit(node, function: str, line: int) -> None:
+        if isinstance(node, list):
+            for item in node:
+                visit(item, function, line)
+            return
+        if isinstance(node, tuple):
+            for item in node:
+                visit(item, function, line)
+            return
+        if not hasattr(node, "__dataclass_fields__") or isinstance(node, type):
+            return
+        if isinstance(node, A.Stmt) and node.line:
+            line = node.line
+        if isinstance(node, A.Call):
+            name = node.name if isinstance(node.name, str) else f"<string {node.name.offset}>"
+            for arg in node.args:
+                if isinstance(arg, A.Str):
+                    found.append(StringReference(function, line, name, arg.value))
+        for name in node.__dataclass_fields__:
+            visit(getattr(node, name), function, line)
+
+    for fd in parse(source).functions:
+        visit(fd.body, fd.name, fd.line)
+    return found

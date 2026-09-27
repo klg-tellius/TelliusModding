@@ -200,6 +200,11 @@ class ScriptEditor(EditorPanel):
     def has_chapter_script(self) -> bool:
         return self._chapter_path is not None
 
+    @property
+    def chapter_path(self) -> Optional[Path]:
+        """The chapter's own script file, whichever file is open."""
+        return self._chapter_path
+
     def chapter_source(self) -> Optional[str]:
         """The chapter script's source as edited here, or None when no chapter
         script is loaded (none, or a shared script is open instead)."""

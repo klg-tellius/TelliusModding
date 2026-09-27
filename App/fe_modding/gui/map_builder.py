@@ -28,7 +28,9 @@ Units: the canvas shows one deployment file (the "Deployment file" picker:
 ``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``); the "Section" picker
 beside it limits it to one section (the one new units go to), and "Add
 section..." / "Remove section" add an empty section or remove the picked one
-(``dispo.add_section()`` / ``remove_section()``). "All fields..." edits any raw field of a unit. The unit
+(``dispo.add_section()`` / ``remove_section()``). "All fields..." edits any raw field of a unit. The
+"Disposition..." window (``dispo_window.py``) lists the file's sections, each with its header, the script
+functions that deploy it and its units in an editable table. The unit
 panel edits the selected unit and its section's header; with "Same edit on every difficulty" the
 shared fields (character, class, items, AI, position...) follow in each
 variant that has the unit (``dispo.find_counterpart_unit()``), while level
@@ -95,6 +97,7 @@ TOOL_HELP = {
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
             "Delete removes the selected zone.",
 }
+HIGHLIGHT_COLOR = "#4dd0ff"  # the units of the section highlighted from the Disposition window
 ZONE_COLORS = {"player": "#4fc3f7", "enemy": "#ff8a65"}
 LOCATION_COLOR = "#ce93d8"
 ZONE_KINDS = {"Area - a unit enters": script_zones.AREA, "Location - a unit acts on a tile": script_zones.LOCATION}
@@ -112,6 +115,12 @@ def _terrain_color(name: str) -> tuple[int, int, int]:
 def _ordered(a, b) -> tuple[int, int, int, int]:
     """The (x1, y1, x2, y2) rectangle with corners ``a`` and ``b``."""
     return min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
+
+
+def _dim(color: str) -> str:
+    """``color`` (#rrggbb) faded towards the canvas background."""
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02x%02x%02x" % tuple(int(c * 0.35 + 0x1e * 0.65) for c in (r, g, b))
 
 
 def _prop_color(desc_index: int) -> str:
@@ -174,6 +183,7 @@ class _BuildCanvas(tk.Canvas):
         self.playable = None
         self.props: list[dict] = []
         self.units: list[dict] = []
+        self.highlighting = False  # a section's units are highlighted (the others are drawn dimmed)
         self.zones: list[dict] = []
         self.heights = None  # [x][y] mean combined elevation, for the heights layer
         self.selected_tiles: set = set()
@@ -284,7 +294,9 @@ class _BuildCanvas(tk.Canvas):
             for zone in self.zones:
                 self._draw_zone(zone)
         if self.show["units"]:
-            for unit in self.units:
+            self.highlighting = any(unit["highlight"] for unit in self.units)
+            # the highlighted section's units on top, the selected unit above them
+            for unit in sorted(self.units, key=lambda u: (u["selected"], u["highlight"])):
                 self._draw_unit(unit)
         for x, y in self.selected_tiles:
             self.create_rectangle(*self.box(x, y), outline="#ffe14d", width=2)
@@ -297,10 +309,15 @@ class _BuildCanvas(tk.Canvas):
             bx0, by0, bx1, by1 = self.box(*unit["pos2"])
             self.create_line((x0 + x1) / 2, (y0 + y1) / 2, (bx0 + bx1) / 2, (by0 + by1) / 2, fill=unit["color"],
                              width=2, arrow="last", dash=(4, 2))
-        self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=unit["color"],
+        dimmed = self.highlighting and not unit["highlight"] and not unit["selected"]
+        if unit["highlight"]:
+            self.create_rectangle(x0 + 1, y0 + 1, x1 - 1, y1 - 1, outline=HIGHLIGHT_COLOR, width=2)
+        if unit["selected"]:
+            self.create_rectangle(x0, y0, x1, y1, outline="#ffe14d", width=3)
+        self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=_dim(unit["color"]) if dimmed else unit["color"],
                          outline="#ffffff" if unit["selected"] else "#101010", width=3 if unit["selected"] else 1)
         if self.cell >= 18:
-            self.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=unit["text"], fill="#ffffff",
+            self.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=unit["text"], fill="#8a8a8a" if dimmed else "#ffffff",
                              font=("Segoe UI", max(6, int(self.cell / 4)), "bold"))
 
     def _draw_zone(self, zone: dict) -> None:
@@ -431,6 +448,7 @@ class MapBuilder(EditorPanel):
         self._ai_labels: dict[str, list[str]] | None = None
         self._form_vars: dict = {}
         self._windows: dict[str, tk.Toplevel] = {}
+        self._highlight: tuple[str, str] | None = None  # (variant, section) highlighted on the canvas
 
         self._build_widgets()
         map_editor.add_listener(self._on_map_changed)
@@ -590,6 +608,7 @@ class MapBuilder(EditorPanel):
         row = ttk.Frame(windows)
         row.pack(fill="x", pady=(2, 0))
         ttk.Button(row, text="Objects...", command=self.open_objects).pack(side="left")
+        ttk.Button(row, text="Disposition...", command=self.open_disposition).pack(side="left", padx=(4, 0))
         ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(anchor="w", pady=(4, 0))
         self._all_variants = tk.BooleanVar(value=True)
         ttk.Checkbutton(parent, text="Same edit on every difficulty", variable=self._all_variants).pack(side="bottom", anchor="w")
@@ -636,6 +655,7 @@ class MapBuilder(EditorPanel):
         self._refresh_sections()
         self._refresh_canvas()
         self._update_buttons()
+        self._notify_disposition()
 
     @staticmethod
     def _variant_name(variant: str) -> str:
@@ -657,6 +677,7 @@ class MapBuilder(EditorPanel):
             self._selection = None
         self._refresh_sections()
         self._refresh_canvas()
+        self._notify_disposition()
 
     def _see_unit(self, section_name: str, index: int) -> None:
         unit = self.raw_unit(self._variant(), section_name, index)
@@ -835,11 +856,12 @@ class MapBuilder(EditorPanel):
                     continue
                 for ui, unit in enumerate(section.units):
                     selected = self._selection == ("unit", section.name, ui)
+                    highlight = self._highlight == (self._variant(), section.name)
                     units.append({
                         "key": (section.name, ui), "x": unit[F["pos_x"]], "y": unit[F["pos_y"]],
                         "pos2": (unit[F["pos2_x"]], unit[F["pos2_y"]]),
                         "color": FACTION_COLORS.get(unit[F["faction"]], "#8a8a8a"),
-                        "text": self._short_name(unit[F["pid"]]), "selected": selected,
+                        "text": self._short_name(unit[F["pid"]]), "selected": selected, "highlight": highlight,
                     })
         canvas.units = units
 
@@ -1009,14 +1031,14 @@ class MapBuilder(EditorPanel):
     def map_editor(self):
         return self._map
 
-    def _open_window(self, key: str, factory) -> None:
+    def _open_window(self, key: str, factory, needs_map: bool = True) -> None:
         window = self._windows.get(key)
         if window is not None and window.winfo_exists():
             window.deiconify()
             window.lift()
             window.focus_set()
             return
-        if self._map.map_data is None:
+        if needs_map and self._map.map_data is None:
             messagebox.showinfo("Build", "Open a chapter with a map first.", parent=self)
             return
         self._windows[key] = factory(self)
@@ -1035,6 +1057,19 @@ class MapBuilder(EditorPanel):
         from .map_windows import Map3DWindow
 
         self._open_window("3d", Map3DWindow)
+
+    def open_disposition(self) -> None:
+        from .dispo_window import DispositionWindow
+
+        if not self._deploy.variants():
+            messagebox.showinfo("Build", "This chapter has no deployment file.", parent=self)
+            return
+        self._open_window("disposition", DispositionWindow, needs_map=False)
+
+    def _notify_disposition(self) -> None:
+        window = self._windows.get("disposition")
+        if window is not None and window.winfo_exists():
+            window.units_changed()
 
     @property
     def project(self):
@@ -1195,10 +1230,12 @@ class MapBuilder(EditorPanel):
         self._update_buttons()
         return True
 
-    def _unit_targets(self, docs, section: str, index: int, all_variants: bool) -> list[tuple[str, str, int]]:
-        """(variant, section, index) of the selected unit, plus its
-        counterparts in the other variants when ``all_variants``."""
-        current = self._variant()
+    def _unit_targets(self, docs, section: str, index: int, all_variants: bool,
+                      current: str | None = None) -> list[tuple[str, str, int]]:
+        """(variant, section, index) of the selected unit (in ``current``,
+        the shown deployment file by default), plus its counterparts in the
+        other variants when ``all_variants``."""
+        current = current or self._variant()
         unit = docs[current].section(section).units[index]
         targets = [(current, section, index)]
         if all_variants:
@@ -1827,6 +1864,9 @@ class MapBuilder(EditorPanel):
         window = self._windows.get("objects")
         if window is not None and window.winfo_exists():
             window.show_instance(self.selected_instance())
+        window = self._windows.get("disposition")
+        if window is not None and window.winfo_exists():
+            window.show_unit(self.selected_unit())
 
     # -- inspector -----------------------------------------------------------------------------
     def _choices(self):
@@ -2254,17 +2294,170 @@ class MapBuilder(EditorPanel):
         except ValueError as exc:
             messagebox.showerror("Section", str(exc), parent=self)
             return
-        current, all_variants = self._variant(), self._all_variants.get()
+        self.apply_section_header(self._variant(), section_name, header)
+
+    def apply_section_header(self, variant: str, section_name: str, header: dispo.SectionHeader) -> bool:
+        """Write ``header`` to a section of ``variant`` and, with "Same edit
+        on every difficulty", to the same section in the other files."""
+        all_variants = self._all_variants.get()
 
         def edit(docs):
             for v, doc in docs.items():
-                if v != current and not all_variants:
+                if v != variant and not all_variants:
                     continue
-                target = doc.section(section_name) if v == current else dispo.counterpart_section(doc, section_name)
+                target = doc.section(section_name) if v == variant else dispo.counterpart_section(doc, section_name)
                 if target is not None and not target.is_link:
                     dispo.set_section_header(target, header)
 
-        self._edit_units(edit, f"Section {section_name}: army {header.group}, occupied tiles {header.occupied_ok}")
+        return self._edit_units(edit, f"Section {section_name}: army {header.group}, occupied tiles {header.occupied_ok}")
+
+    # -- the Disposition window ------------------------------------------------------------
+    def variants(self) -> list[str]:
+        """The chapter's deployment files, in the Deployment file picker's order."""
+        order = "cnhm"
+        return sorted(self._deploy.variants(), key=lambda v: order.find(v.removeprefix("dispos_")[:1]))
+
+    def variant_name(self, variant: str) -> str:
+        return self._variant_name(variant)
+
+    def current_variant(self) -> str | None:
+        return self._variant()
+
+    def set_variant(self, variant: str) -> None:
+        """Show ``variant`` on the canvas (the Deployment file picker)."""
+        if variant in self._deploy.variants() and variant != self._variant():
+            self._variant_var.set(self._variant_name(variant))
+            self._variant_changed()
+
+    def document(self, variant: str | None) -> dispo.DispoDocument | None:
+        return self._deploy.document(variant) if variant else None
+
+    def group_keys(self) -> list:
+        return self._deploy.group_keys()
+
+    @property
+    def all_variants_var(self) -> tk.BooleanVar:
+        """The "Same edit on every difficulty" checkbox's variable."""
+        return self._all_variants
+
+    def selected_unit(self) -> tuple[str, str, int] | None:
+        """(variant, section, index) of the unit selected on the canvas."""
+        if self._selection and self._selection[0] == "unit" and self._variant():
+            return self._variant(), self._selection[1], self._selection[2]
+        return None
+
+    def show_unit(self, variant: str, section_name: str, index: int | None) -> None:
+        """Select (and scroll to) a unit on the canvas, switching the shown
+        file to ``variant``; ``index`` None clears a unit selection."""
+        self.set_variant(variant)
+        if index is None:
+            if self._selection and self._selection[0] == "unit":
+                self._select(None)
+            return
+        if self.raw_unit(variant, section_name, index) is None or self._selection == ("unit", section_name, index):
+            return
+        if self._filter_var.get() not in ("All sections", section_name):
+            self._filter_var.set("All sections")
+        self._select(("unit", section_name, index))
+        self._see_unit(section_name, index)
+
+    def highlight_section(self, variant: str | None, section_name: str | None) -> None:
+        """Outline every unit of a section on the canvas and dim the others
+        (None clears it). A section filter hiding the section is lifted."""
+        target = (variant, section_name) if variant and section_name else None
+        if target == self._highlight:
+            return
+        self._highlight = target
+        if target is not None and self._filter_var.get() not in ("All sections", section_name):
+            self._filter_var.set("All sections")
+        self._refresh_canvas()
+
+    def see_section(self, variant: str, section_name: str) -> None:
+        """Scroll the canvas to the middle of a section's units."""
+        doc = self._deploy.document(variant)
+        section = doc.section(section_name) if doc else None
+        if not section or not section.units:
+            return
+        self.set_variant(variant)
+        xs = [int(u[F["pos_x"]]) for u in section.units]
+        ys = [int(u[F["pos_y"]]) for u in section.units]
+        self.after_idle(lambda: self._canvas.see_tile((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2))
+
+    def unit_choices(self):
+        """(characters, classes, items, skills) as (display, label) pairs, and
+        the SEQ_/MTYPE_ labels by prefix."""
+        return self._choices(), self._ai_choices()
+
+    def character_name(self, pid) -> str:
+        if not isinstance(pid, str):
+            return "" if not pid else str(pid)
+        info = self._character(pid)
+        return info.name if info is not None and info.name else pid
+
+    def edit_unit_fields(self, variant: str, section_name: str, index: int, values: dict) -> bool:
+        """Set fields (index -> value) of one unit of ``variant``. With "Same
+        edit on every difficulty" the shared ones follow in the same unit of
+        the other files; level and stat bonuses stay per file."""
+        all_variants = self._all_variants.get()
+
+        def edit(docs):
+            for v, sec, i in self._unit_targets(docs, section_name, index, all_variants, variant):
+                unit = docs[v].section(sec).units[i]
+                for field, value in values.items():
+                    if v == variant or field not in PER_VARIANT_FIELDS:
+                        unit[field] = value
+
+        text = ", ".join(f"{dispo.field_name(f) or f'field {f}'} = {value}" for f, value in values.items())
+        return self._edit_units(edit, f"{section_name}[{index}]: {text}")
+
+    def delete_unit(self, variant: str, section_name: str, index: int) -> bool:
+        all_variants = self._all_variants.get()
+
+        def edit(docs):
+            for v, sec, i in self._unit_targets(docs, section_name, index, all_variants, variant):
+                dispo.remove_unit(docs[v], sec, i)
+
+        if self._selection and self._selection[0] == "unit":
+            self._selection = None
+        return self._edit_units(edit, f"Deleted unit {section_name}[{index}]")
+
+    def open_raw_fields(self, variant: str, section_name: str, index: int) -> None:
+        _RawFieldsDialog(self, variant, section_name, index)
+
+    def section_loaders(self, section_name: str) -> tuple[list, Optional[str]]:
+        """(references, problem): the calls of the chapter script that name
+        ``section_name`` - or its name without the difficulty letter, the
+        prefix the ...Rank deployment calls take - as
+        ``source_tools.StringReference``s; problem says why there are none
+        to show."""
+        from ..formats.cmb import source_tools
+        from .. import script_sources
+
+        if self._script is None or not self._script.has_chapter_script:
+            return [], "This chapter has no script."
+        source = self._script.chapter_source()
+        if source is None:  # the Script tab shows another file: read the chapter's from disk
+            path = self._script.chapter_path
+            try:
+                key = (path, path.stat().st_mtime_ns)
+                if getattr(self, "_disk_script", (None,))[0] != key:
+                    self._disk_script = (key, script_sources.load(self._project, path).source)
+                source = self._disk_script[1]
+            except Exception as exc:  # noqa: BLE001
+                return [], f"Could not read the chapter script: {exc}"
+        if getattr(self, "_refs_key", (None,))[0] != source:
+            try:
+                self._refs_key = (source, source_tools.string_references(source), None)
+            except ParseError as exc:
+                self._refs_key = (source, [], f"The chapter script doesn't parse (line {exc.line}: {exc.message}).")
+        _source, refs, problem = self._refs_key
+        base = dispo.section_base(section_name)
+        return [r for r in refs if r.value == section_name or (base != section_name and r.value == base)], problem
+
+    def open_function(self, name: str) -> None:
+        """Show a function of the chapter script in the Script tab."""
+        if self._on_open_function is not None:
+            self._on_open_function(name)
 
     # -- workspace --------------------------------------------------------------------------
     def refresh_chapter_list(self) -> None:
