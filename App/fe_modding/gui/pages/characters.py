@@ -414,7 +414,7 @@ class CharacterPage(Page):
         d = self._deployment_rows[selection[0]]
         if d.chapter_id is None:
             return  # debug/"always" folders aren't chapters
-        self.shell.navigate(("chapter", d.chapter_id, "deployment", d.folder, d.difficulty, d.section, d.unit_index))
+        self.shell.navigate(("chapter", d.chapter_id, "build", d.folder, d.difficulty, d.section, d.unit_index))
 
     def _open_message(self, tree) -> None:
         selection = tree.selection()

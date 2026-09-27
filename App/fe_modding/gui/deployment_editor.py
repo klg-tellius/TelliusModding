@@ -15,9 +15,9 @@ removes it. Flags, item flags and the army get checkboxes and lists
 (``dispo_widgets``); "Edit Section..." (or double-clicking a section) edits
 the section header: its army, the occupied-tile byte and the mode byte.
 
-The Build tab (``map_builder.py``) edits the same documents through
-``document()``/``apply()``, so both views always show one copy of the data
-and one Save writes it.
+The chapter page shows no tab for this editor: it holds the chapter's
+deployment data, and the Build tab (``map_builder.py``) shows and edits the
+documents through ``document()``/``apply()``/``save()``.
 """
 
 from __future__ import annotations

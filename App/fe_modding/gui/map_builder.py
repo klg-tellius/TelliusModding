@@ -9,8 +9,8 @@ The tab owns no data. Map edits go through the chapter page's
 :class:`~.map_editor.MapEditor` (``edit_map()``, ``edit_pack()``,
 ``paint_terrain()``) and unit edits through its
 :class:`~.deployment_editor.DeploymentEditor` (``apply()`` on the parsed
-``dispo.DispoDocument``s), so the Deployment tab shows the same edits and
-either Save writes them once.
+``dispo.DispoDocument``s); Save Chapter writes both. There is no separate
+Deployment tab: this one lists the sections and units too.
 
 Tile heights: each tile has four corner elevations on three panel layers
 (combined, ground, roof - ``map_heights.LAYERS``). The Tile heights tool
@@ -24,7 +24,11 @@ coordinates of ``mapbuildinst`` (x, y), the panel layer and the dispos
 ``map_scene.render_topdown()`` of ``map_scene.build_map_scene()``, built on
 a worker thread and redone (debounced) after prop edits.
 
-Units: the canvas shows one difficulty variant (``dispos_n/h/m/c``). The unit
+Units: the canvas shows one deployment file (the "Deployment file" picker:
+``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``), and the Sections /
+Units list beside it shows its sections and units; selecting a row selects
+the unit (or every unit of the section, whose header the inspector then
+edits) on the canvas. "All fields..." edits any raw field of a unit. The unit
 panel edits the selected unit; with "Same edit on every difficulty" the
 shared fields (character, class, items, AI, position...) follow in each
 variant that has the unit (``dispo.find_counterpart_unit()``), while level
@@ -53,6 +57,7 @@ from PIL import Image, ImageTk
 from .. import map_heights
 from ..formats import dispo, map_file
 from . import dispo_widgets, gpu_renderer, map_scene
+from ..project_index import difficulty_name
 from .editor_panel import EditorPanel
 from .widgets import ScrollFrame
 
@@ -172,6 +177,17 @@ class _BuildCanvas(tk.Canvas):
         y1 = y0 if y1 is None else y1
         c = self.cell
         return MARGIN + x0 * c, MARGIN + y0 * c, MARGIN + (x1 + 1) * c, MARGIN + (y1 + 1) * c
+
+    def see_tile(self, x: int, y: int) -> None:
+        """Scroll so tile (x, y) is in the middle of the view."""
+        if self.size is None:
+            return
+        x = min(max(x, 0), self.size[0] - 1)
+        y = min(max(y, 0), self.size[1] - 1)
+        x0, y0, x1, y1 = self.box(x, y)
+        width, height = self.size[0] * self.cell + 2 * MARGIN, self.size[1] * self.cell + 2 * MARGIN
+        self.xview_moveto(max(0.0, ((x0 + x1) / 2 - self.winfo_width() / 2) / width))
+        self.yview_moveto(max(0.0, ((y0 + y1) / 2 - self.winfo_height() / 2) / height))
 
     def zoom(self, factor: float) -> None:
         self.cell = int(max(8, min(96, round(self.cell * factor))))
@@ -376,9 +392,9 @@ class MapBuilder(EditorPanel):
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
         self._redo_button.pack(side="left", padx=(4, 0))
-        ttk.Label(top, text="Difficulty").pack(side="left", padx=(14, 4))
+        ttk.Label(top, text="Deployment file").pack(side="left", padx=(14, 4))
         self._variant_var = tk.StringVar()
-        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=14)
+        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=26)
         self._variant_combo.pack(side="left")
         self._variant_combo.bind("<<ComboboxSelected>>", lambda e: self._variant_changed())
         ttk.Label(top, text="Units of").pack(side="left", padx=(10, 4))
@@ -386,6 +402,9 @@ class MapBuilder(EditorPanel):
         self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=24)
         self._filter_combo.pack(side="left")
         self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_canvas())
+        self._unit_list_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text="Unit list", variable=self._unit_list_var,
+                        command=self._toggle_unit_list).pack(side="left", padx=(8, 0))
         self._layer_vars = {}
         layers = ttk.Frame(top)
         layers.pack(side="left", padx=(14, 0))
@@ -400,10 +419,15 @@ class MapBuilder(EditorPanel):
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
+        self._paned = paned
 
         tools = ttk.Frame(paned, padding=8, width=230)
         paned.add(tools, weight=0)
         self._build_tools(tools)
+
+        self._unit_pane = ttk.Frame(paned, padding=(6, 8), width=250)
+        paned.add(self._unit_pane, weight=1)
+        self._build_unit_list(self._unit_pane)
 
         middle = ttk.Frame(paned)
         paned.add(middle, weight=4)
@@ -429,6 +453,35 @@ class MapBuilder(EditorPanel):
         paned.add(inspector, weight=0)
         self._inspector = inspector.body
         self._canvas.redraw()
+
+    def _build_unit_list(self, parent: ttk.Frame) -> None:
+        """The deployment file's sections and their units, as a tree beside the map."""
+        ttk.Label(parent, text="Sections / Units", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(parent, text="Click a section to edit it, a unit to select it on the map. "
+                               "Double-click a section to show only its units.",
+                  style="Muted.TLabel", wraplength=240, justify="left").pack(anchor="w", pady=(2, 4))
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+        tree = ttk.Treeview(frame, columns=("info",), show="tree headings", selectmode="browse")
+        tree.heading("#0", text="Section / unit")
+        tree.heading("info", text="Army / class, tile")
+        tree.column("#0", width=150)
+        tree.column("info", width=150)
+        bar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        tree.pack(side="left", fill="both", expand=True)
+        tree.bind("<<TreeviewSelect>>", lambda e: self._on_tree_select())
+        tree.bind("<Double-Button-1>", self._on_tree_double_click)
+        self._unit_tree = tree
+        self._tree_keys: dict[str, tuple] = {}  # iid -> (section,) | (section, unit index)
+        self._tree_iids: dict[tuple, str] = {}
+
+    def _toggle_unit_list(self) -> None:
+        if self._unit_list_var.get():
+            self._paned.insert(1, self._unit_pane, weight=1)
+        else:
+            self._paned.forget(self._unit_pane)
 
     def _build_tools(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
@@ -532,6 +585,7 @@ class MapBuilder(EditorPanel):
             self._add_to_vars[v] = var
             ttk.Checkbutton(self._add_to_frame, text=self._variant_name(v), variable=var).pack(anchor="w")
         self._refresh_sections()
+        self._refresh_unit_tree()
         self._refresh_canvas()
         self._update_buttons()
 
@@ -540,7 +594,7 @@ class MapBuilder(EditorPanel):
         letter = variant.removeprefix("dispos_").removesuffix(".bin")
         # _c sections are deployed by name on every difficulty; the n/h/m trio goes to the
         # scripts' DisposSetMode-style helpers, which pick one by difficulty (script tutorial, lesson 15).
-        return {"c": "c (every difficulty)"}.get(letter, f"{letter} (difficulty file)")
+        return f"{variant} ({'every difficulty' if letter == 'c' else difficulty_name(letter)})"
 
     def _variant(self) -> str | None:
         name = self._variant_var.get()
@@ -551,10 +605,92 @@ class MapBuilder(EditorPanel):
         return self._deploy.document(variant) if variant else None
 
     def _variant_changed(self) -> None:
-        if self._selection and self._selection[0] == "unit":
+        if self._selection and self._selection[0] in ("unit", "section"):
             self._selection = None
         self._refresh_sections()
+        self._refresh_unit_tree()
         self._refresh_canvas()
+
+    def _refresh_unit_tree(self) -> None:
+        tree = self._unit_tree
+        opened = {self._tree_keys[i][0] for i in tree.get_children() if tree.item(i, "open")}
+        tree.delete(*tree.get_children())
+        self._tree_keys, self._tree_iids = {}, {}
+        doc = self._doc()
+        if doc is None:
+            return
+        index = self._index_provider()
+        class_names = getattr(index, "class_names", {}) if index is not None else {}
+        for si, section in enumerate(doc.sections):
+            iid = f"s{si}"
+            if section.is_link:
+                tree.insert("", "end", iid=iid, text=section.name, values=(f"links to {section.header!r}",))
+            else:
+                count = len(section.units)
+                tree.insert("", "end", iid=iid, text=section.name, open=section.name in opened,
+                            values=(f"{self._section_army(section)} · {count} unit{'s' if count != 1 else ''}",))
+            self._tree_keys[iid] = (section.name,)
+            self._tree_iids[(section.name,)] = iid
+            for ui, unit in enumerate(section.units):
+                pid, jid = unit[F["pid"]], unit[F["jid"]]
+                info = self._character(pid) if isinstance(pid, str) else None
+                name = info.name if info is not None and info.name else str(pid or "-")
+                job = class_names.get(jid) or jid or "-"
+                unit_iid = f"s{si}u{ui}"
+                tree.insert(iid, "end", iid=unit_iid, text=name,
+                            values=(f"{job} · {unit[F['pos_x']]}, {unit[F['pos_y']]}",))
+                self._tree_keys[unit_iid] = (section.name, ui)
+                self._tree_iids[(section.name, ui)] = unit_iid
+
+    def _sync_unit_tree(self) -> None:
+        """Select the tree row of the selected unit or section (and nothing otherwise)."""
+        selection = self._selection
+        key = None
+        if selection and selection[0] == "unit":
+            key = (selection[1], selection[2])
+        elif selection and selection[0] == "section":
+            key = (selection[1],)
+        iid = self._tree_iids.get(key) if key else None
+        tree, current = self._unit_tree, self._unit_tree.selection()
+        if iid is None:
+            if current:
+                tree.selection_remove(*current)
+        elif tuple(current) != (iid,):
+            if len(key) == 2:
+                tree.item(self._tree_iids[(key[0],)], open=True)
+            tree.selection_set(iid)
+            tree.see(iid)
+
+    def _on_tree_select(self) -> None:
+        selected = self._unit_tree.selection()
+        key = self._tree_keys.get(selected[0]) if selected else None
+        if key is None:
+            return
+        target = ("unit", *key) if len(key) == 2 else ("section", key[0])
+        if target == self._selection:
+            return
+        if len(key) == 2 and self._filter_var.get() not in ("All sections", key[0]):
+            self._filter_var.set("All sections")
+        self._select(target)
+        if len(key) == 2:
+            self._see_unit(*key)
+
+    def _on_tree_double_click(self, event):
+        key = self._tree_keys.get(self._unit_tree.identify_row(event.y))
+        if key is None or len(key) != 1:
+            return None
+        self._show_only_section(None if self._filter_var.get() == key[0] else key[0])
+        return "break"
+
+    def _show_only_section(self, name: str | None) -> None:
+        values = self._filter_combo.cget("values")
+        self._filter_var.set(name if name in values else "All sections")
+        self._refresh_canvas()
+
+    def _see_unit(self, section_name: str, index: int) -> None:
+        unit = self.raw_unit(self._variant(), section_name, index)
+        if unit is not None:
+            self.after_idle(lambda: self._canvas.see_tile(unit[F["pos_x"]], unit[F["pos_y"]]))
 
     def _refresh_sections(self) -> None:
         doc = self._doc()
@@ -614,7 +750,11 @@ class MapBuilder(EditorPanel):
         data = self._map.map_data
         if data is None or data.capacity is None:
             canvas.size = None
+            canvas.units = []
             canvas.redraw()
+            # the unit list and the inspector still work without a map
+            self._sync_unit_tree()
+            self._refresh_inspector()
             return
         cap = data.capacity
         canvas.size = (cap.x_size, cap.y_size)
@@ -655,7 +795,7 @@ class MapBuilder(EditorPanel):
                 if only != "All sections" and section.name != only:
                     continue
                 for ui, unit in enumerate(section.units):
-                    selected = self._selection == ("unit", section.name, ui)
+                    selected = self._selection in (("unit", section.name, ui), ("section", section.name))
                     units.append({
                         "key": (section.name, ui), "x": unit[F["pos_x"]], "y": unit[F["pos_y"]],
                         "pos2": (unit[F["pos2_x"]], unit[F["pos2_y"]]),
@@ -664,6 +804,7 @@ class MapBuilder(EditorPanel):
                     })
         canvas.units = units
         canvas.redraw()
+        self._sync_unit_tree()
         self._refresh_inspector()
 
     def _layers_changed(self) -> None:
@@ -1363,6 +1504,8 @@ class MapBuilder(EditorPanel):
             self._tile_inspector(body, (selection[1], selection[2]))
         elif selection[0] == "tiles":
             self._tiles_inspector(body, sorted(selection[1]))
+        elif selection[0] == "section":
+            self._section_inspector(body, selection[1])
         else:
             self._unit_inspector(body, selection[1], selection[2])
 
@@ -1603,6 +1746,8 @@ class MapBuilder(EditorPanel):
         buttons.pack(anchor="w", pady=(12, 0))
         ttk.Button(buttons, text="Apply", command=lambda: self._apply_unit(section_name, index)).pack(side="left")
         ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
+            side="left", padx=(6, 0))
         if isinstance(pid, str) and self._on_navigate_to_character is not None:
             ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
         ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
@@ -1675,6 +1820,83 @@ class MapBuilder(EditorPanel):
         if self._edit_units(edit, f"Edited {pid} ({section_name}[{index}])") and not new_selection.get("keep", True):
             self._select(None)
 
+    def _section_inspector(self, body, section_name: str) -> None:
+        doc = self._doc()
+        section = doc.section(section_name) if doc else None
+        if section is None:
+            self._selection = None
+            self._refresh_inspector()
+            return
+        ttk.Label(body, text=section_name, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        count = len(section.units)
+        ttk.Label(body, text=f"{count} unit{'s' if count != 1 else ''} in {self._variant_name(self._variant())}",
+                  style="Muted.TLabel").pack(anchor="w")
+        if section.is_link:
+            ttk.Label(body, text=f"This section holds no units of its own: it links to {section.header!r}.",
+                      style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w", pady=(8, 0))
+            return
+        ttk.Label(body, text="Header", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 2))
+        header_form = dispo_widgets.SectionHeaderFrame(body, dispo.section_header(section), self._deploy.group_keys())
+        header_form.pack(anchor="w")
+        ttk.Button(body, text="Apply to section", command=lambda: self._apply_section(section_name, header_form)).pack(
+            anchor="w", pady=(4, 0))
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="w", pady=(12, 0))
+        only = self._filter_var.get() == section_name
+        ttk.Button(buttons, text="Show all sections" if only else "Show only this section",
+                   command=lambda: self._show_only_section(None if only else section_name)).pack(side="left")
+        ttk.Button(buttons, text="Place units in it", command=lambda: self._place_in_section(section_name)).pack(
+            side="left", padx=(6, 0))
+
+    def _place_in_section(self, section_name: str) -> None:
+        match = next((v for v in self._section_combo.cget("values") if v.split("  (", 1)[0] == section_name), None)
+        if match is not None:
+            self._section_var.set(match)
+        self._tool.set("unit")
+        self._tool_changed()
+
+    def _open_raw_fields(self, section_name: str, index: int) -> None:
+        variant = self._variant()
+        if variant is not None:
+            _RawFieldsDialog(self, variant, section_name, index)
+
+    def edit_raw_field(self, variant: str, section_name: str, index: int, field: int, value) -> bool:
+        """Set one field of one unit, in this deployment file only (All fields...)."""
+        def edit(docs):
+            docs[variant].section(section_name).units[index][field] = value
+
+        name = dispo.field_name(field) or f"field {field}"
+        return self._edit_units(edit, f"{variant} {section_name}[{index}]: {name} = {value}")
+
+    def label_choices(self) -> dict[str, list[str]]:
+        """Every label the chapter's deployment files use, by prefix."""
+        return dispo.labels_by_prefix([self._deploy.document(v) for v in self._deploy.variants()])
+
+    def navigate_to_character(self, pid: str) -> None:
+        if self._on_navigate_to_character is not None:
+            self._on_navigate_to_character(pid)
+
+    def raw_unit(self, variant: str | None, section_name: str, index: int) -> list | None:
+        doc = self._deploy.document(variant) if variant else None
+        section = doc.section(section_name) if doc else None
+        return section.units[index] if section is not None and 0 <= index < len(section.units) else None
+
+    def select_unit(self, difficulty: str, section_name: str, index: int) -> None:
+        """Show one unit (deep links): difficulty letter (n/h/m/c) of its
+        deployment file, its section and its index there."""
+        variant = f"dispos_{difficulty}.bin"
+        if variant not in self._deploy.variants():
+            return
+        if self._variant() != variant:
+            self._variant_var.set(self._variant_name(variant))
+            self._variant_changed()
+        if self.raw_unit(variant, section_name, index) is None:
+            return
+        if self._filter_var.get() not in ("All sections", section_name):
+            self._filter_var.set("All sections")
+        self._select(("unit", section_name, index))
+        self._see_unit(section_name, index)
+
     def _apply_section(self, section_name: str, form) -> None:
         """Write the section header form to this section and, with "Same
         edit on every difficulty", to the same section in the other files."""
@@ -1698,3 +1920,58 @@ class MapBuilder(EditorPanel):
     # -- workspace --------------------------------------------------------------------------
     def refresh_chapter_list(self) -> None:
         pass
+
+
+class _RawFieldsDialog(tk.Toplevel):
+    """Every field of one unit, as the file stores it (unread ones included);
+    double-click one to edit it. Edits touch this deployment file only."""
+
+    def __init__(self, builder: MapBuilder, variant: str, section_name: str, index: int) -> None:
+        super().__init__(builder)
+        self.title(f"{section_name} [{index}] - {variant}")
+        self._builder, self._key = builder, (variant, section_name, index)
+        frame = ttk.Frame(self, padding=10)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Double-click a field to edit it. Changes apply to this deployment file only.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        self._tree = ttk.Treeview(frame, columns=("index", "value"), show="headings", height=22)
+        self._tree.heading("index", text="#")
+        self._tree.heading("value", text="Value")
+        self._tree.column("index", width=160, stretch=False)
+        self._tree.column("value", width=320)
+        self._tree.pack(fill="both", expand=True)
+        self._tree.bind("<Double-Button-1>", lambda e: self._edit())
+        ttk.Button(frame, text="Close", command=self.destroy).pack(anchor="e", pady=(8, 0))
+        self._fill()
+        self.transient(builder.winfo_toplevel())
+        self.grab_set()
+
+    def _fill(self) -> None:
+        self._tree.delete(*self._tree.get_children())
+        unit = self._builder.raw_unit(*self._key)
+        for i, value in enumerate(unit or ()):
+            name = dispo.field_name(i)
+            self._tree.insert("", "end", iid=str(i), values=(f"{i} ({name})" if name else f"{i} (unread)",
+                                                              dispo.describe_field(i, value)))
+
+    def _navigate(self, pid: str) -> None:
+        self.destroy()
+        self._builder.navigate_to_character(pid)
+
+    def _edit(self) -> None:
+        from .deployment_editor import _FieldEditDialog
+
+        unit = self._builder.raw_unit(*self._key)
+        selection = self._tree.selection()
+        if unit is None or not selection:
+            return
+        field = int(selection[0])
+        dialog = _FieldEditDialog(self, field, unit[field], self._builder.label_choices(),
+                                  on_navigate_to_character=self._navigate)
+        self.wait_window(dialog)
+        if dialog.result is None or dialog.result == unit[field]:
+            return
+        if self._builder.edit_raw_field(*self._key, field, dialog.result):
+            self._fill()
+            self._tree.selection_set(str(field))
+            self._tree.see(str(field))
