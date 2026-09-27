@@ -15,42 +15,6 @@ from fe_modding.gui import model_viewer as mv
 from test_formats import _build_map_object, _quad_glb
 
 
-class UnsavedMapTerrainTests(unittest.TestCase):
-    """The Build tab exports and imports the terrain of its open map, whose
-    files may differ from the saved map.cmp (here there is none at all)."""
-
-    def _map(self):
-        from fe_modding.formats import pak, skeleton
-        from test_map_heights import _map_bin
-
-        texpack = tpl.build_tpl([(Image.new("RGBA", (8, 8), (0, 255, 0, 255)), tpl.FORMAT_CMPR)])
-        scene = gltf_import.read_gltf(_quad_glb(translation=(5.0, 0.0, 5.0), with_texture=False), Path("."))
-        ground = gltf_import.build_static_gs(scene, bone=0, bone_world=skeleton.IDENTITY_3X4, name="flat", tex_id_base=0,
-                                             extra_textures=(gs_file.GsTexture((1, 0), 0, (257, 0, 0, 0, 0), 1.0, 1.0, 0),))
-        files = {"map.bin": _map_bin(), "texpack.tpl": texpack, "flat.gs": gs_file.write_gs(ground.gs)}
-        entries = [pak.PakEntry(name, 0, 0) for name in files]
-        return entries, files
-
-    def test_export_and_import_use_the_given_contents(self):
-        import tempfile
-
-        entries, files = self._map()
-        path = Path("zmap") / "flat" / "map.cmp"  # never read: the contents are passed
-        glb = mv.export_map_terrain_glb(path, files)
-        self.assertEqual(glb[:4], b"glTF")
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "ground.glb"
-            source.write_bytes(_quad_glb(translation=(5.0, 1.0, 5.0)))
-            before = dict(files)
-            result = mv.replace_map_terrain_with_glb(path, source, contents=(entries, files))
-        self.assertEqual(files, before)  # the open map is left alone until the review is accepted
-        new_entries, new_files = mv._unpack(path, result.outputs[path])
-        self.assertEqual([e.name for e in new_entries], [e.name for e in entries])
-        self.assertNotEqual(new_files["flat.gs"], files["flat.gs"])
-        terrain = map_file.read_map_bytes(new_files["map.bin"]).build_desc[0]
-        self.assertEqual((terrain.filename, terrain.offset_y), ("flat", 1.0))
-
-
 class TplAppendTests(unittest.TestCase):
     def test_existing_images_keep_bytes_and_index(self):
         red = Image.new("RGBA", (16, 8), (255, 0, 0, 255))

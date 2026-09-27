@@ -177,8 +177,7 @@ class ChapterPage(Page):
         # file's sections and units, and picks which of the phase's files (dispos_n/h/m/c) to show.
         self._build = MapBuilder(self._notebook, project, log, self._map, self._deployment,
                                  index_provider=lambda: shell.index, session_provider=lambda: shell.session,
-                                 on_navigate_to_character=lambda pid: shell.navigate(("character", pid)),
-                                 on_open_model_set=lambda label: shell.navigate(("asset", "models", label)))
+                                 on_navigate_to_character=lambda pid: shell.navigate(("character", pid)))
         for key, panel in (("build", self._build), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops)):
             self._notebook.add(panel, text=TAB_LABELS[key])
