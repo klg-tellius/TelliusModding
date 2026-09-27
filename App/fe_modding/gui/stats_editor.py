@@ -6,8 +6,8 @@ their own page (``character_form.py``); both work on one shared
 :class:`~.fe8_session.Fe8DataSession`, so neither can overwrite the other.
 
 Each record tab lists its records as tiles (:class:`~.widgets.TileBrowser`:
-a search box, category toggles for items, and the record's icon or a
-portrait of a character of the class on the tile); clicking one opens its
+a search box, category toggles for items, and the item or skill icon on
+the tile); clicking one opens its
 full-width form, with **‹ All …** and previous/next above it.
 Every field is written to the session as soon as it is left (Tab, Enter, a
 click elsewhere or a drop-down choice); **Save FE8Data.bin** writes the file,
@@ -94,9 +94,8 @@ TAB_KINDS = {"classes": "class", "items": "item", "chapters": "chapter"}
 FIXED_TABS = {"skills": "The game checks skills by their position in the table: they can be edited, "
                         "not added or removed.",
               "terrain": "The game walks exactly 77 terrain types: they can be edited, not added or removed."}
-#: The tiles of each tab: portraits for classes, icons for items and skills.
-TILE_OPTIONS = {"classes": {"image_box": (6, 3), "tile_width": 250}, "items": {"image_box": (4, 2)},
-                "skills": {"image_box": (4, 2)}}
+#: The tiles of each tab: icons for items and skills (classes have no icon).
+TILE_OPTIONS = {"items": {"image_box": (4, 2)}, "skills": {"image_box": (4, 2)}}
 #: Icons are drawn at this many pixels on their tiles (items are 24, skills 32).
 TILE_IMAGE_SIZE = 48
 GAME_DATA_LABELS = {
@@ -184,11 +183,8 @@ class StatsEditor(EditorPanel):
     shares_fe8_session = True  # its unsaved edits are the session's, listed once as FE8Data.bin
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog,
-                 session: Fe8DataSession | None = None, navigate: Optional[Callable[[tuple], None]] = None,
-                 class_portrait: Optional[Callable[[str, int, Callable], None]] = None):
+                 session: Fe8DataSession | None = None, navigate: Optional[Callable[[tuple], None]] = None):
         super().__init__(parent)
-        #: ``class_portrait(jid, size, callback)``: a face for the class's tile, when the host has one
-        self._class_portrait = class_portrait
         self._project = project
         self._changelog = changelog
         self._navigate = navigate
@@ -450,9 +446,7 @@ class StatsEditor(EditorPanel):
         self._icons()  # re-reads icon.tpl when it changed, so a replaced icon redraws the tiles
         self._pickers["classes"].set_entries(
             unique([f"{self.class_name(c)}  ·  {c.jid or '?'}" for c in fe8.classes]),
-            [f"{c.mjid} {c.aid}" for c in fe8.classes],
-            image=self._class_tile_image if self._class_portrait is not None else None,
-            image_keys=[c.jid for c in fe8.classes])
+            [f"{c.mjid} {c.aid}" for c in fe8.classes])
         self._pickers["items"].set_entries(
             unique([f"{self.item_name(it)}  ·  {it.iid or '?'}" for it in fe8.items]),
             [it.miid or "" for it in fe8.items],
@@ -494,16 +488,6 @@ class StatsEditor(EditorPanel):
         scale = TILE_IMAGE_SIZE / max(image.size)
         callback(ImageTk.PhotoImage(backing.resize(
             (round(image.width * scale), round(image.height * scale)), Image.NEAREST)))
-
-    def _class_tile_image(self, index: int, callback: Callable) -> None:
-        jid = self._fe8.classes[index].jid
-        if jid and self._class_portrait is not None:
-            self._class_portrait(jid, 56, callback)
-
-    def refresh_class_images(self) -> None:
-        """The host can draw class portraits now (its character index is ready)."""
-        if "classes" in self._pickers:
-            self._pickers["classes"].refresh_images()
 
     def _new_form(self, key: str, kind: str, index: int) -> tuple[_Form, ttk.Frame]:
         self._commit(self._forms[key])
