@@ -3,13 +3,15 @@ the general tables and supports (``FE8Data.bin``),
 and the props of every chapter map (Map Objects, read from the ``map.cmp`` files).
 
 Characters live in the same file but have their own pages; both edit one
-shared session (``fe8_session.py``). Each tab picks its record with a search
-box and previous/next buttons instead of a side list, and fields apply as
-soon as they are left. The Supports tab also edits the support conversations
+shared session (``fe8_session.py``). Each tab lists its records as tiles
+(the class tiles show a character of the class, the item and skill tiles
+their icon, the support tiles the character's portrait); a tile opens the
+record's form, and fields apply as soon as they are left. The Supports tab also edits the support conversations
 (``Mess/yell.m``) through a Dialogue editor."""
 
 from __future__ import annotations
 
+from ...project_index import GENERIC, NAMED, PLAYABLE
 from ..dialogue_editor import DialogueEditor
 from ..prop_browser import MapObjectsPanel
 from ..shell import Page
@@ -25,7 +27,10 @@ class GameDataPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
-        self._editor = StatsEditor(self, self.project, shell.changelog, shell.session, navigate=shell.navigate)
+        self._class_faces: dict[str, str] = {}
+        self._class_faces_for = None
+        self._editor = StatsEditor(self, self.project, shell.changelog, shell.session, navigate=shell.navigate,
+                                   class_portrait=self._class_portrait)
         self._editor.pack(fill="both", expand=True)
         self._editor._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._tab = "classes"
@@ -40,6 +45,7 @@ class GameDataPage(Page):
                 display_name=self._character_name,
                 make_dialogue_editor=lambda parent: DialogueEditor(parent, self.project, shell.changelog),
                 yell_path=self.project.extracted_dir / "files" / "Mess" / "yell.m",
+                request_portrait=shell.portraits.request,
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])
             session.subscribe(self._on_session_changed)
@@ -50,6 +56,31 @@ class GameDataPage(Page):
         index = self.shell.index
         info = index.by_pid.get(pid) if index is not None and index.ready else None
         return info.name if info is not None and info.name else pid
+
+    def _class_portrait(self, jid: str, size: int, callback) -> None:
+        """A face for a class tile: the first playable character of the
+        class, else a named one, else a generic one (by promoted class last)."""
+        index = self.shell.index
+        if index is None or not index.ready:
+            return
+        if self._class_faces_for is not index:
+            rank = {PLAYABLE: 0, NAMED: 1, GENERIC: 2}
+            best: dict[str, tuple] = {}
+            for c in index.characters:
+                if not c.fid:
+                    continue
+                for promoted, class_jid in enumerate((c.jid, c.promoted_jid)):
+                    key = (promoted, rank.get(c.category, 3), c.index)
+                    if class_jid and (class_jid not in best or key < best[class_jid][0]):
+                        best[class_jid] = (key, c.fid)
+            self._class_faces = {class_jid: fid for class_jid, (_, fid) in best.items()}
+            self._class_faces_for = index
+        fid = self._class_faces.get(jid)
+        if fid:
+            self.shell.portraits.request(fid, size, callback)
+
+    def index_changed(self) -> None:
+        self._editor.refresh_class_images()
 
     def _on_session_changed(self, source) -> None:
         if self._supports is not None and source is not self._supports:

@@ -5,8 +5,10 @@ confirmed vs. still open). Characters live in the same file but are edited on
 their own page (``character_form.py``); both work on one shared
 :class:`~.fe8_session.Fe8DataSession`, so neither can overwrite the other.
 
-Each record tab picks one record with a :class:`~.widgets.RecordPicker`
-(search box, previous/next) above a full-width form - there is no side list.
+Each record tab lists its records as tiles (:class:`~.widgets.TileBrowser`:
+a search box, category toggles for items, and the record's icon or a
+portrait of a character of the class on the tile); clicking one opens its
+full-width form, with **‹ All …** and previous/next above it.
 Every field is written to the session as soon as it is left (Tab, Enter, a
 click elsewhere or a drop-down choice); **Save FE8Data.bin** writes the file,
 and the build copies it into ``system.cmp``, which holds the copy the game
@@ -79,7 +81,7 @@ from . import record_actions, theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
-from .widgets import RecordPicker, ScrollFrame
+from .widgets import ScrollFrame, TileBrowser
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]
@@ -92,6 +94,11 @@ TAB_KINDS = {"classes": "class", "items": "item", "chapters": "chapter"}
 FIXED_TABS = {"skills": "The game checks skills by their position in the table: they can be edited, "
                         "not added or removed.",
               "terrain": "The game walks exactly 77 terrain types: they can be edited, not added or removed."}
+#: The tiles of each tab: portraits for classes, icons for items and skills.
+TILE_OPTIONS = {"classes": {"image_box": (6, 3), "tile_width": 250}, "items": {"image_box": (4, 2)},
+                "skills": {"image_box": (4, 2)}}
+#: Icons are drawn at this many pixels on their tiles (items are 24, skills 32).
+TILE_IMAGE_SIZE = 48
 GAME_DATA_LABELS = {
     "battle_exp_mode_bonus": "Battle EXP mode bonus", "battle_exp_level_constant": "Battle EXP level constant",
     "promotion_exp_bonus_base": "Promoted-unit EXP base", "boss_exp_bonus": "Boss kill EXP bonus",
@@ -177,8 +184,11 @@ class StatsEditor(EditorPanel):
     shares_fe8_session = True  # its unsaved edits are the session's, listed once as FE8Data.bin
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog,
-                 session: Fe8DataSession | None = None, navigate: Optional[Callable[[tuple], None]] = None):
+                 session: Fe8DataSession | None = None, navigate: Optional[Callable[[tuple], None]] = None,
+                 class_portrait: Optional[Callable[[str, int, Callable], None]] = None):
         super().__init__(parent)
+        #: ``class_portrait(jid, size, callback)``: a face for the class's tile, when the host has one
+        self._class_portrait = class_portrait
         self._project = project
         self._changelog = changelog
         self._navigate = navigate
@@ -191,7 +201,7 @@ class StatsEditor(EditorPanel):
         self._texts: Optional[dict] = None
         self._skill_descriptions: Optional[dict] = None
         self._forms: dict[str, Optional[_Form]] = {key: None for key in TAB_KEYS}
-        self._pickers: dict[str, RecordPicker] = {}
+        self._pickers: dict[str, TileBrowser] = {}
         self._bodies: dict[str, ScrollFrame] = {}
         self._session.subscribe(self._on_session_changed)
         self._build_widgets()
@@ -413,24 +423,20 @@ class StatsEditor(EditorPanel):
                 body.pack(fill="both", expand=True)
                 self._bodies[key] = body
                 continue
-            bar = ttk.Frame(tab, style="Page.TFrame", padding=(12, 10, 12, 4))
-            bar.pack(fill="x")
-            picker = RecordPicker(bar, noun, lambda i, k=key: self._show(k, i))
-            picker.pack(side="left")
+            picker = TileBrowser(tab, noun, lambda i, k=key: self._show(k, i), **TILE_OPTIONS.get(key, {}))
+            picker.pack(fill="both", expand=True)
             self._pickers[key] = picker
             if key in TAB_KINDS or key == "battle":
-                ttk.Button(bar, text="New…", command=lambda k=key: self._add_record(k)).pack(side="left", padx=(14, 0))
-                ttk.Button(bar, text="Remove", command=lambda k=key: self._remove_record(k)).pack(
+                ttk.Button(picker.actions, text="New…", command=lambda k=key: self._add_record(k)).pack(
+                    side="left", padx=(14, 0))
+                ttk.Button(picker.record_actions, text="Remove", command=lambda k=key: self._remove_record(k)).pack(
                     side="left", padx=(6, 0))
             elif key in FIXED_TABS:
-                ttk.Label(bar, text=FIXED_TABS[key], style="Muted.TLabel", wraplength=420, justify="left").pack(
-                    side="left", padx=(14, 0))
-            body = ScrollFrame(tab, padding=(16, 8, 16, 16))
+                ttk.Label(picker.actions, text=FIXED_TABS[key], style="Muted.TLabel", wraplength=420,
+                          justify="left").pack(side="left", padx=(14, 0))
+            body = ScrollFrame(picker.detail, padding=(16, 8, 16, 16))
             body.pack(fill="both", expand=True)
             self._bodies[key] = body
-            ttk.Label(body.body, text=f"Pick one of the {noun} above: type part of its name or ID, "
-                                      "or step through them with ◀ ▶ (Page Up / Page Down in the box).",
-                      style="Muted.TLabel").pack(anchor="w")
 
     def _refresh_pickers(self) -> None:
         fe8 = self._fe8
@@ -441,16 +447,25 @@ class StatsEditor(EditorPanel):
                 seen[label] = seen.get(label, 0) + 1
             return [f"{label}  #{i}" if seen[label] > 1 else label for i, label in enumerate(labels)]
 
+        self._icons()  # re-reads icon.tpl when it changed, so a replaced icon redraws the tiles
         self._pickers["classes"].set_entries(
             unique([f"{self.class_name(c)}  ·  {c.jid or '?'}" for c in fe8.classes]),
-            [f"{c.mjid} {c.aid}" for c in fe8.classes])
+            [f"{c.mjid} {c.aid}" for c in fe8.classes],
+            image=self._class_tile_image if self._class_portrait is not None else None,
+            image_keys=[c.jid for c in fe8.classes])
         self._pickers["items"].set_entries(
             unique([f"{self.item_name(it)}  ·  {it.iid or '?'}" for it in fe8.items]),
             [it.miid or "" for it in fe8.items],
-            [fe8data.item_category(it) for it in fe8.items], fe8data.ITEM_CATEGORIES)
+            [fe8data.item_category(it) for it in fe8.items], fe8data.ITEM_CATEGORIES,
+            image=lambda i, callback: self._icon_tile(
+                icons.ITEM_CELL, icons.ITEM_IMAGE, icons.item_cell(self._fe8.items[i].icon), callback),
+            image_keys=[(it.icon, self._icon_stamp) for it in fe8.items])
         self._pickers["skills"].set_entries(
             unique([f"{self.skill_name(s)}  ·  {s.sid or '?'}" for s in fe8.skills]),
-            [f"{s.msid} {s.japanese_name}" for s in fe8.skills])
+            [f"{s.msid} {s.japanese_name}" for s in fe8.skills],
+            image=lambda i, callback: self._icon_tile(
+                icons.SKILL_CELL, icons.SKILL_IMAGE, icons.skill_cell(self._fe8.skills[i].params[0]), callback),
+            image_keys=[(s.params[0], self._icon_stamp) for s in fe8.skills])
         try:
             self._terrain_types = fe8data.read_terrain_types(self._data)
         except (KeyError, ValueError, struct.error):
@@ -469,6 +484,26 @@ class StatsEditor(EditorPanel):
         self._pickers["battle"].set_entries(
             unique([f"{r.map_name or '(no map)'}" + ("  ·  default for every map" if i == 0 else "")
                     for i, r in enumerate(rows)]))
+
+    def _icon_tile(self, size: int, image_index: int, cell: Optional[int], callback: Callable) -> None:
+        image = icons.cell_image(self._icons(), image_index, cell, size)
+        if image is None:
+            return
+        backing = Image.new("RGBA", image.size, (96, 96, 96, 255))
+        backing.alpha_composite(image)
+        scale = TILE_IMAGE_SIZE / max(image.size)
+        callback(ImageTk.PhotoImage(backing.resize(
+            (round(image.width * scale), round(image.height * scale)), Image.NEAREST)))
+
+    def _class_tile_image(self, index: int, callback: Callable) -> None:
+        jid = self._fe8.classes[index].jid
+        if jid and self._class_portrait is not None:
+            self._class_portrait(jid, 56, callback)
+
+    def refresh_class_images(self) -> None:
+        """The host can draw class portraits now (its character index is ready)."""
+        if "classes" in self._pickers:
+            self._pickers["classes"].refresh_images()
 
     def _new_form(self, key: str, kind: str, index: int) -> tuple[_Form, ttk.Frame]:
         self._commit(self._forms[key])
@@ -504,7 +539,7 @@ class StatsEditor(EditorPanel):
             self._session.changed(self)
             index = len(rows) - 1
         else:
-            index = record_actions.add_record(self, self._session, TAB_KINDS[key], list(picker._labels),
+            index = record_actions.add_record(self, self._session, TAB_KINDS[key], picker.labels,
                                               picker.current, source=self)
             if index is None:
                 return
@@ -520,7 +555,7 @@ class StatsEditor(EditorPanel):
         index = picker.current
         if index is None:
             return
-        label = picker._labels[index]
+        label = picker.labels[index]
         if key == "battle":
             if index == 0:
                 messagebox.showerror("Default row", "Row 0 is the default every other map falls back to.",
@@ -539,8 +574,8 @@ class StatsEditor(EditorPanel):
         self._on_session_changed(self)
         self._forms[key] = None
         self._refresh_pickers()
-        if picker._labels:
-            picker.select(min(index, len(picker._labels) - 1))
+        if picker.labels:
+            picker.select(min(index, len(picker.labels) - 1))
         self._status_label.config(text=f"Removed {label}: save FE8Data.bin to keep it", style="Muted.TLabel")
 
     # -- committing -------------------------------------------------------------

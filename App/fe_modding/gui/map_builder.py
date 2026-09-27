@@ -36,9 +36,20 @@ and stat bonuses are set per variant in the difficulty table, whose
 checkboxes add the unit to a variant or remove it. Any PID/JID/IID/SID label
 can be used: the document model adds new strings to the label pool.
 
+Script zones: the chapter script's functions triggered by a unit entering a
+zone (``@on_area``) or acting on a tile (``@on_location``) are drawn on the
+map (the "Script zones" layer). The Script zones tool draws new zones - each
+a new function, or an untriggered one given the trigger - and moves, edits
+and deletes them. They edit the source open in the chapter's
+:class:`~.script_editor.ScriptEditor` (``edit_chapter_source()``, through
+``formats.cmb.script_zones``), so the Script tab shows the same edits and
+Save compiles them once. Deleting a zone deletes its function when the
+function is empty; one with code is kept, without its trigger, and marked
+UNUSED in its description.
+
 Undo/Redo keep snapshots of the map's files (map.bin, and the models and
-texture pack a prop copied from another map adds) and every dispos variant,
-taken before each action.
+texture pack a prop copied from another map adds), every dispos variant and
+the chapter script's source, taken before each action.
 """
 
 from __future__ import annotations
@@ -56,6 +67,9 @@ from PIL import Image, ImageTk
 
 from .. import map_heights
 from ..formats import dispo, map_file
+from ..formats.cmb import script_zones
+from ..formats.cmb.catalog import ACTIONS, SIDES
+from ..formats.cmb.parser import ParseError
 from . import dispo_widgets, gpu_renderer, map_scene
 from ..project_index import difficulty_name
 from .editor_panel import EditorPanel
@@ -77,7 +91,14 @@ TOOL_HELP = {
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
     "unit": "Click a tile to add a unit there, in the chosen section.",
+    "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
+            "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
+            "Delete removes the selected zone.",
 }
+ZONE_COLORS = {"player": "#4fc3f7", "enemy": "#ff8a65"}
+LOCATION_COLOR = "#ce93d8"
+ZONE_KINDS = {"Area - a unit enters": script_zones.AREA, "Location - a unit acts on a tile": script_zones.LOCATION}
+NEW_FUNCTION = "New function"
 
 
 def _terrain_color(name: str) -> tuple[int, int, int]:
@@ -86,6 +107,11 @@ def _terrain_color(name: str) -> tuple[int, int, int]:
     hue = (sum(name.encode("utf-8")) * 0.61803398875) % 1.0
     r, g, b = colorsys.hls_to_rgb(hue, 0.45, 0.55)
     return int(r * 255), int(g * 255), int(b * 255)
+
+
+def _ordered(a, b) -> tuple[int, int, int, int]:
+    """The (x1, y1, x2, y2) rectangle with corners ``a`` and ``b``."""
+    return min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
 
 
 def _prop_color(desc_index: int) -> str:
@@ -148,9 +174,11 @@ class _BuildCanvas(tk.Canvas):
         self.playable = None
         self.props: list[dict] = []
         self.units: list[dict] = []
+        self.zones: list[dict] = []
         self.heights = None  # [x][y] mean combined elevation, for the heights layer
         self.selected_tiles: set = set()
-        self.show = {"image": True, "terrain": False, "heights": False, "grid": True, "props": True, "units": True}
+        self.show = {"image": True, "terrain": False, "heights": False, "grid": True, "props": True, "zones": True,
+                     "units": True}
         self._photo = None
         self._composite_key = None
         for sequence, handler in (
@@ -252,6 +280,9 @@ class _BuildCanvas(tk.Canvas):
                 color = "#ffe14d" if prop["selected"] else prop["color"]
                 self.create_rectangle(*self.box(*prop["rect"]), outline=color, width=width,
                                       dash=() if prop["model"] else (3, 3))
+        if self.show["zones"]:
+            for zone in self.zones:
+                self._draw_zone(zone)
         if self.show["units"]:
             for unit in self.units:
                 self._draw_unit(unit)
@@ -272,10 +303,24 @@ class _BuildCanvas(tk.Canvas):
             self.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=unit["text"], fill="#ffffff",
                              font=("Segoe UI", max(6, int(self.cell / 4)), "bold"))
 
+    def _draw_zone(self, zone: dict) -> None:
+        x0, y0, x1, y1 = self.box(*zone["rect"])
+        color = "#ffe14d" if zone["selected"] else zone["color"]
+        pad = 2 if zone["area"] else max(3, self.cell * 0.18)
+        self.create_rectangle(x0 + pad, y0 + pad, x1 - pad, y1 - pad, outline=color, fill=zone["color"], stipple="gray25",
+                              width=3 if zone["selected"] else 2, dash=() if zone["area"] else (4, 2))
+        if self.cell >= 16:
+            self.create_text(x0 + pad + 2, y0 + pad + 1, anchor="nw", text=zone["text"], fill=color,
+                             font=("Segoe UI", max(7, min(10, int(self.cell / 3))), "bold"))
+
     def preview_tiles(self, tiles, color: str) -> None:
         self.delete("preview")
         for x, y in tiles:
             self.create_rectangle(*self.box(x, y), fill=color, outline="#ffffff", tags="preview")
+
+    def preview_rect(self, rect, color: str) -> None:
+        self.delete("preview")
+        self.create_rectangle(*self.box(*rect), outline=color, width=3, dash=(6, 3), tags="preview")
 
     def preview_marker(self, tile, color: str) -> None:
         self.delete("preview")
@@ -352,7 +397,8 @@ class MapBuilder(EditorPanel):
                  index_provider: Callable[[], object] = lambda: None,
                  session_provider: Callable[[], object] = lambda: None,
                  on_navigate_to_character: Optional[Callable[[str], None]] = None,
-                 navigate: Optional[Callable[[tuple], None]] = None) -> None:
+                 navigate: Optional[Callable[[tuple], None]] = None,
+                 script_editor=None, on_open_function: Optional[Callable[[str], None]] = None) -> None:
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
@@ -362,8 +408,14 @@ class MapBuilder(EditorPanel):
         self._session_provider = session_provider
         self._on_navigate_to_character = on_navigate_to_character
         self.navigate = navigate  # workspace routes, e.g. ("data", "chapters", "3")
+        self._script = script_editor
+        self._on_open_function = on_open_function
+        self._zones_key = None  # (source, zones, parse problem or None), cached per source text
+        self._zones_stale = False
+        self._zone_function_choices = {NEW_FUNCTION: None}
         self.empty_text = "Open a chapter with a map."
-        self._selection: tuple | None = None  # ("unit", section, index) | ("prop", instance index)
+        # ("unit", section, index) | ("prop", index) | ("zone", function) | ("tile", x, y) | ("tiles", tiles)
+        self._selection: tuple | None = None
         self._press_state: dict | None = None
         self._undo: list = []
         self._redo: list = []
@@ -383,6 +435,8 @@ class MapBuilder(EditorPanel):
         self._build_widgets()
         map_editor.add_listener(self._on_map_changed)
         deployment.add_listener(self._on_units_changed)
+        if script_editor is not None:
+            script_editor.add_listener(self._on_script_changed)
         self.bind("<Map>", lambda e: self._on_shown())
 
     # -- layout ------------------------------------------------------------------------
@@ -411,7 +465,7 @@ class MapBuilder(EditorPanel):
         layers = ttk.Frame(top)
         layers.pack(side="left", padx=(14, 0))
         for key, text in (("image", "Map image"), ("terrain", "Terrain"), ("heights", "Heights"), ("grid", "Grid"),
-                          ("props", "Props"), ("units", "Units")):
+                          ("props", "Props"), ("zones", "Script zones"), ("units", "Units")):
             var = tk.BooleanVar(value=key not in ("terrain", "heights"))
             self._layer_vars[key] = var
             ttk.Checkbutton(layers, text=text, variable=var, command=self._layers_changed).pack(side="left", padx=(0, 6))
@@ -489,7 +543,7 @@ class MapBuilder(EditorPanel):
         ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         self._tool = tk.StringVar(value="select")
         for key, text in (("select", "Select / move"), ("terrain", "Paint terrain"), ("prop", "Place prop"),
-                          ("heights", "Tile heights"), ("unit", "Place unit")):
+                          ("heights", "Tile heights"), ("unit", "Place unit"), ("zone", "Script zones")):
             ttk.Radiobutton(parent, text=text, value=key, variable=self._tool, command=self._tool_changed).pack(anchor="w", pady=1)
         self._tool_help = ttk.Label(parent, text=TOOL_HELP["select"], style="Muted.TLabel", wraplength=210, justify="left")
         self._tool_help.pack(anchor="w", pady=(6, 8))
@@ -534,6 +588,30 @@ class MapBuilder(EditorPanel):
         self._add_to_frame.pack(anchor="w")
         self._add_to_vars: dict[str, tk.BooleanVar] = {}
         self._tool_frames["unit"] = frame
+
+        frame = ttk.Frame(parent)
+        ttk.Label(frame, text="New zone").pack(anchor="w")
+        self._zone_kind = tk.StringVar(value=next(iter(ZONE_KINDS)))
+        kind_box = ttk.Combobox(frame, textvariable=self._zone_kind, values=list(ZONE_KINDS), state="readonly", width=30)
+        kind_box.pack(anchor="w", fill="x")
+        kind_box.bind("<<ComboboxSelected>>", lambda e: self._zone_kind_changed())
+        self._zone_mode_label = ttk.Label(frame, text="Triggered by")
+        self._zone_mode_label.pack(anchor="w", pady=(6, 0))
+        self._zone_mode = tk.StringVar(value="player")
+        self._zone_mode_box = ttk.Combobox(frame, textvariable=self._zone_mode, state="readonly", width=30)
+        self._zone_mode_box.pack(anchor="w", fill="x")
+        ttk.Label(frame, text="Runs").pack(anchor="w", pady=(6, 0))
+        self._zone_function = tk.StringVar(value=NEW_FUNCTION)
+        self._zone_function_box = ttk.Combobox(frame, textvariable=self._zone_function, state="readonly", width=30)
+        self._zone_function_box.pack(anchor="w", fill="x")
+        ttk.Label(frame, text="A new zone runs a new, empty function, or an existing function without a trigger "
+                              "(the ones marked UNUSED come first): it gets the zone's trigger.",
+                  style="Muted.TLabel", wraplength=210, justify="left").pack(anchor="w", pady=(4, 0))
+        self._zone_note = ttk.Label(frame, text="", style="Muted.TLabel", wraplength=210, justify="left")
+        self._zone_note.pack(anchor="w", pady=(8, 0))
+        self._zone_open_script = ttk.Button(frame, text="Open this chapter's script", command=self._open_chapter_script)
+        self._tool_frames["zone"] = frame
+        self._zone_kind_changed()
 
         windows = ttk.Frame(parent)
         windows.pack(side="bottom", fill="x", pady=(8, 0))
@@ -805,6 +883,19 @@ class MapBuilder(EditorPanel):
                         "text": self._short_name(unit[F["pid"]]), "selected": selected,
                     })
         canvas.units = units
+
+        zones, _problem = self._zone_state()
+        selected_zone = self._selection[1] if self._selection and self._selection[0] == "zone" else None
+        canvas.zones = []
+        for zone in zones:
+            x1, y1, x2, y2 = zone.rect
+            if x2 < 0 or y2 < 0 or x1 >= cap.x_size or y1 >= cap.y_size:
+                continue
+            rect = (max(x1, 0), max(y1, 0), min(x2, cap.x_size - 1), min(y2, cap.y_size - 1))
+            color = ZONE_COLORS.get(zone.mode, "#bdbdbd") if zone.is_area else LOCATION_COLOR
+            text = zone.function if zone.is_area else f"{zone.function} [{zone.mode}]"
+            canvas.zones.append({"function": zone.function, "rect": rect, "area": zone.is_area, "color": color,
+                                 "text": text, "selected": zone.function == selected_zone})
         canvas.redraw()
         self._sync_unit_tree()
         self._refresh_inspector()
@@ -839,13 +930,15 @@ class MapBuilder(EditorPanel):
     def _update_buttons(self) -> None:
         self._undo_button.configure(state="normal" if self._undo else "disabled")
         self._redo_button.configure(state="normal" if self._redo else "disabled")
-        dirty = [p.display_name for p in (self._map, self._deploy) if p.dirty]
+        dirty = [p.display_name for p in self._panels() if p.dirty]
         self._status.configure(text=("Unsaved: " + ", ".join(dirty)) if dirty else "")
 
     # -- backdrop render -----------------------------------------------------------------
     def _on_shown(self) -> None:
         if self._render_wanted:
             self._request_render(0)
+        if self._zones_stale:
+            self._on_script_changed()
 
     def _request_render(self, delay: int) -> None:
         if self._render_after is not None:
@@ -908,8 +1001,12 @@ class MapBuilder(EditorPanel):
         self._refresh_canvas()
 
     # -- undo ------------------------------------------------------------------------------
+    def _state(self) -> tuple:
+        script = self._script.source_snapshot() if self._script is not None else None
+        return self._map.snapshot(), self._deploy.snapshot(), script
+
     def _record(self) -> None:
-        self._undo.append((self._map.snapshot(), self._deploy.snapshot()))
+        self._undo.append(self._state())
         del self._undo[:-50]
         self._redo.clear()
         self._update_buttons()
@@ -917,12 +1014,14 @@ class MapBuilder(EditorPanel):
     def _swap(self, source: list, target: list) -> None:
         if not source:
             return
-        map_state, units = source.pop()
-        target.append((self._map.snapshot(), self._deploy.snapshot()))
+        map_state, units, script = source.pop()
+        target.append(self._state())
         if map_state is not None and map_state != self._map.snapshot():
             self._map.restore(map_state)
         if units != self._deploy.snapshot():
             self._deploy.restore(units)
+        if self._script is not None:
+            self._script.restore_source(script)
         self._selection = None
         self._refresh_canvas()
         self._update_buttons()
@@ -933,8 +1032,16 @@ class MapBuilder(EditorPanel):
     def _do_redo(self) -> None:
         self._swap(self._redo, self._undo)
 
+    def _panels(self) -> list:
+        """The editors whose data this tab edits (the script only while the
+        Script tab shows this chapter's own script)."""
+        panels = [self._map, self._deploy]
+        if self._script is not None and self._script.chapter_source() is not None:
+            panels.append(self._script)
+        return panels
+
     def _save(self) -> None:
-        for panel in (self._map, self._deploy):
+        for panel in self._panels():
             if panel.dirty and not panel.save():
                 break
         self._update_buttons()
@@ -1161,6 +1268,9 @@ class MapBuilder(EditorPanel):
         if self._selection[0] == "prop":
             self.delete_instance(self._selection[1])
             return
+        if self._selection[0] == "zone":
+            self._delete_zone(self._selection[1])
+            return
         if self._selection[0] != "unit":
             return
         _kind, section, index = self._selection
@@ -1287,6 +1397,268 @@ class MapBuilder(EditorPanel):
         if self._edit_units(edit, f"Added {pid} on {tile} to {section}") and current in added:
             self._select(("unit", *added[current]))
 
+    # -- script zones ------------------------------------------------------------------------
+    def _zone_state(self) -> tuple[list, Optional[str]]:
+        """(zones, problem): the chapter script's zones, or none and why."""
+        if self._script is None or not self._script.has_chapter_script:
+            return [], "This chapter has no script."
+        source = self._script.chapter_source()
+        if source is None:
+            return [], "The Script tab shows another file: open this chapter's script to see and edit its zones."
+        if self._zones_key is None or self._zones_key[0] != source:
+            try:
+                self._zones_key = (source, script_zones.zones(source), None)
+            except ParseError as exc:
+                self._zones_key = (source, [], f"The chapter script doesn't parse (line {exc.line}: {exc.message}). "
+                                               "Fix it in the Script tab to see its zones.")
+        return self._zones_key[1], self._zones_key[2]
+
+    def _zone(self, function: str):
+        return next((z for z in self._zone_state()[0] if z.function == function), None)
+
+    def _zones_at(self, tile) -> list[str]:
+        """The functions of the drawn zones covering ``tile``, smallest zone first."""
+        found = [z for z in self._canvas.zones if z["rect"][0] <= tile[0] <= z["rect"][2] and z["rect"][1] <= tile[1] <= z["rect"][3]]
+        found.sort(key=lambda z: (z["rect"][2] - z["rect"][0] + 1) * (z["rect"][3] - z["rect"][1] + 1))
+        return [z["function"] for z in found]
+
+    def _zone_at(self, tile) -> Optional[str]:
+        if not self._canvas.show["zones"]:
+            return None
+        found = self._zones_at(tile)
+        return found[0] if found else None
+
+    def _on_script_changed(self) -> None:
+        if not self.winfo_ismapped():
+            self._zones_stale = True
+            return
+        self._zones_stale = False
+        self._refresh_zone_tool()
+        self._refresh_canvas()
+        self._update_buttons()
+
+    def _refresh_zone_tool(self) -> None:
+        zones, problem = self._zone_state()
+        choices = {NEW_FUNCTION: None}
+        if problem is None:
+            for name, unused in script_zones.attachable_functions(self._script.chapter_source()):
+                choices[f"{name}  (unused)" if unused else name] = name
+        self._zone_function_choices = choices
+        self._zone_function_box.configure(values=list(choices))
+        if self._zone_function.get() not in choices:
+            self._zone_function.set(NEW_FUNCTION)
+        if problem is None:
+            self._zone_note.configure(text=f"{len(zones)} zone(s) in {self._script.current_path.name}.")
+        else:
+            self._zone_note.configure(text=problem)
+        if problem is not None and self._script is not None and self._script.has_chapter_script:
+            self._zone_open_script.pack(anchor="w", pady=(4, 0))
+        else:
+            self._zone_open_script.pack_forget()
+
+    def _open_chapter_script(self) -> None:
+        if self._script is not None and self._script.show_chapter_script():
+            self._on_script_changed()
+
+    @staticmethod
+    def _mode_names(trigger_type: int) -> list[str]:
+        return list((SIDES if trigger_type == script_zones.AREA else ACTIONS).values())
+
+    def _zone_kind_changed(self) -> None:
+        kind = ZONE_KINDS[self._zone_kind.get()]
+        names = self._mode_names(kind)
+        self._zone_mode_label.configure(text="Triggered by" if kind == script_zones.AREA else "Action")
+        self._zone_mode_box.configure(values=names)
+        if self._zone_mode.get() not in names:
+            self._zone_mode.set(names[0] if kind == script_zones.AREA else "visit")
+
+    @staticmethod
+    def _mode_value(text: str):
+        """A side/action from its combobox text (a number if it has no name)."""
+        text = text.strip()
+        return int(text) if text.lstrip("-").isdigit() else text
+
+    def _edit_script(self, edit, select: Optional[str] = None) -> bool:
+        """Run ``edit(source) -> source`` on the chapter script as one Undo step."""
+        _zones, problem = self._zone_state()
+        if problem is not None:
+            messagebox.showinfo("Script zones", problem, parent=self)
+            return False
+        source = self._script.chapter_source()
+        try:
+            new = edit(source)
+        except (ParseError, ValueError, KeyError) as exc:
+            messagebox.showerror("Script zones", str(exc).strip("'\""), parent=self)
+            return False
+        if new == source:
+            return True
+        self._record()
+        self._script.edit_chapter_source(new, select=select)
+        self._update_buttons()
+        return True
+
+    def _add_zone(self, rect) -> None:
+        kind = ZONE_KINDS[self._zone_kind.get()]
+        mode = self._mode_value(self._zone_mode.get())
+        function = self._zone_function_choices.get(self._zone_function.get())
+        out = {}
+
+        def edit(source):
+            new, out["name"] = script_zones.add_zone(source, kind, rect, mode, None, function=function)
+            return new
+
+        if self._edit_script(edit, select=function):
+            self._zone_function.set(NEW_FUNCTION)
+            what = "gets the zone's trigger" if function else "is a new function: write what it does in the Script tab"
+            self._zone_note.configure(text=f"Added a zone on {rect[:2]}–{rect[2:]}. {out['name']} {what}.")
+            self._select(("zone", out["name"]))
+
+    def _moved_zone_rect(self, function: str, dx: int, dy: int):
+        """The zone's tiles moved by (dx, dy), kept on the map grid."""
+        zone = self._zone(function)
+        if zone is None or self._canvas.size is None:
+            return None
+        w, h = self._canvas.size
+        x1, y1, x2, y2 = zone.rect
+        dx = max(-x1, min(dx, w - 1 - x2))
+        dy = max(-y1, min(dy, h - 1 - y2))
+        return x1 + dx, y1 + dy, x2 + dx, y2 + dy
+
+    def _move_zone(self, function: str, dx: int, dy: int) -> None:
+        rect = self._moved_zone_rect(function, dx, dy)
+        if rect is not None:
+            self._edit_script(lambda source: script_zones.update_zone(source, function, rect=rect))
+
+    def _delete_zone(self, function: str) -> None:
+        out = {}
+
+        def edit(source):
+            new, out["result"] = script_zones.delete_zone(source, function)
+            return new
+
+        if self._selection == ("zone", function):
+            self._selection = None
+        if self._edit_script(edit):
+            if out["result"] == "deleted":
+                note = f"Deleted the zone and its empty function {function}."
+            else:
+                note = (f"Deleted the zone. {function} has code (or is exported or called), so it is kept without a "
+                        "trigger and marked UNUSED in its description.")
+            self._zone_note.configure(text=note)
+            self._hover.configure(text=note)
+            self._refresh_canvas()
+
+    def _zone_inspector(self, body, function: str) -> None:
+        zone = self._zone(function)
+        if zone is None:
+            self._selection = None
+            self._refresh_inspector()
+            return
+        source = self._script.chapter_source()
+        ttk.Label(body, text=f"Zone: {function}", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        info = zone.trigger_text() + (f"\nExported as {zone.export_id}" if zone.export_id else "")
+        ttk.Label(body, text=info, style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(2, 8))
+        form = ttk.Frame(body)
+        form.pack(anchor="w", fill="x")
+        v = {"name": tk.StringVar(value=function), "description": tk.StringVar(value=zone.description.replace("\n", " / ")),
+             "kind": tk.StringVar(value=next(k for k, t in ZONE_KINDS.items() if t == zone.type)),
+             "mode": tk.StringVar(value=str(zone.mode)),
+             "label": tk.StringVar(value="" if zone.label is None else str(zone.label))}
+        for key, value in zip(("x1", "y1", "x2", "y2"), zone.rect):
+            v[key] = tk.StringVar(value=str(value))
+        self._form_vars = v
+        row = 0
+
+        def add(label, widget):
+            nonlocal row
+            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=2)
+            widget.grid(row=row, column=1, sticky="w", pady=2, padx=(8, 0))
+            row += 1
+
+        add("Function", ttk.Entry(form, textvariable=v["name"], width=26))
+        add("Description", ttk.Entry(form, textvariable=v["description"], width=26))
+        kind_box = ttk.Combobox(form, textvariable=v["kind"], values=list(ZONE_KINDS), state="readonly", width=26)
+        add("Kind", kind_box)
+        mode_label = ttk.Label(form)
+        mode_box = ttk.Combobox(form, textvariable=v["mode"], state="readonly", width=16)
+        mode_label.grid(row=row, column=0, sticky="w", pady=2)
+        mode_box.grid(row=row, column=1, sticky="w", pady=2, padx=(8, 0))
+        row += 1
+        tiles = ttk.Frame(form)
+        add("Tiles", tiles)
+        spins = {}
+        for i, key in enumerate(("x1", "y1", "x2", "y2")):
+            ttk.Label(tiles, text={"x1": "X", "y1": "Y", "x2": "to X", "y2": "Y"}[key]).pack(side="left", padx=(0 if i == 0 else 6, 2))
+            spins[key] = ttk.Spinbox(tiles, from_=0, to=255, textvariable=v[key], width=4)
+            spins[key].pack(side="left")
+        add("Event name", ttk.Entry(form, textvariable=v["label"], width=26))
+
+        def kind_changed(_event=None) -> None:
+            kind = ZONE_KINDS[v["kind"].get()]
+            names = self._mode_names(kind)
+            if kind == zone.type and str(zone.mode) not in names:
+                names.append(str(zone.mode))
+            mode_box.configure(values=names)
+            if v["mode"].get() not in names:
+                v["mode"].set(str(zone.mode) if kind == zone.type else names[0] if kind == script_zones.AREA else "visit")
+            mode_label.configure(text="Triggered by" if kind == script_zones.AREA else "Action")
+            for key in ("x2", "y2"):
+                spins[key].configure(state="normal" if kind == script_zones.AREA else "disabled")
+
+        kind_box.bind("<<ComboboxSelected>>", kind_changed)
+        kind_changed()
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="w", pady=(10, 0))
+        ttk.Button(buttons, text="Apply", command=lambda: self._apply_zone(function)).pack(side="left")
+        ttk.Button(buttons, text="Delete zone", command=lambda: self._delete_zone(function)).pack(side="left", padx=(6, 0))
+        if self._on_open_function is not None:
+            ttk.Button(buttons, text="Open in Script tab", command=lambda: self._on_open_function(function)).pack(side="left", padx=(6, 0))
+        try:
+            empty = script_zones.is_empty(source, function)
+        except (ParseError, StopIteration):
+            empty = False
+        if empty and zone.export_id is None and not script_zones.is_referenced(source, function):
+            fate = "The function is empty: deleting the zone deletes it."
+        else:
+            fate = "Deleting the zone keeps the function (it has code, or is exported or called), without its trigger and marked UNUSED."
+        ttk.Label(body, text=fate, style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(10, 0))
+        ttk.Label(body, text="Event name: the trigger's name label (a debug label for a zone; empty for none). "
+                             "Area sides and location actions: see the script tutorial, lessons 7 and 11. Changing "
+                             "the code the zone runs is done in the Script tab.",
+                  style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _apply_zone(self, function: str) -> None:
+        v = self._form_vars
+        zone = self._zone(function)
+        if zone is None:
+            return
+        kind = ZONE_KINDS[v["kind"].get()]
+        try:
+            coords = [int(v[k].get()) for k in ("x1", "y1", "x2", "y2")]
+        except ValueError:
+            messagebox.showerror("Zone", "Tile coordinates are whole numbers.", parent=self)
+            return
+        if kind == script_zones.LOCATION:
+            coords[2:] = coords[:2]
+        rect = _ordered(coords[:2], coords[2:])
+        size = self._canvas.size
+        if size is not None and (rect[0] < 0 or rect[1] < 0 or rect[2] >= size[0] or rect[3] >= size[1]):
+            messagebox.showerror("Zone", f"The zone must be on the map grid (0-{size[0] - 1}, 0-{size[1] - 1}).", parent=self)
+            return
+        label = v["label"].get().strip() or None
+        name = v["name"].get().strip()
+        description = "\n".join(part.strip() for part in v["description"].get().split(" / ") if part.strip())
+        if name != function:
+            self._selection = ("zone", name)
+
+        def edit(source):
+            return script_zones.update_zone(source, function, rect=rect, mode=self._mode_value(v["mode"].get()),
+                                            label=label, trigger_type=kind, new_name=name,
+                                            description=description if description != zone.description else None)
+
+        if not self._edit_script(edit, select=name):
+            self._selection = ("zone", function)
+
     # -- pointer ------------------------------------------------------------------------------
     def _unit_at(self, tile):
         for unit in reversed(self._canvas.units):
@@ -1328,6 +1700,14 @@ class MapBuilder(EditorPanel):
             self._place_prop(tile)
         elif tool == "unit":
             self._place_unit(tile)
+        elif tool == "zone":
+            zone = None if event is not None and event.state & 0x0001 else self._zone_at(tile)  # Shift: draw anyway
+            if zone is not None:
+                self._select(("zone", zone))
+                self._press_state = {"kind": "zone", "function": zone, "start": tile}
+            else:
+                self._press_state = {"kind": "zone_new", "start": tile}
+                self._canvas.preview_rect((*tile, *tile), "#ffe14d")
 
     def on_drag(self, tile, _event) -> None:
         state = self._press_state
@@ -1345,6 +1725,16 @@ class MapBuilder(EditorPanel):
             else:
                 state["tiles"].add(tile)
             self._canvas.preview_tiles(state["tiles"], self._paint_color())
+        elif state["kind"] == "zone_new":
+            if ZONE_KINDS[self._zone_kind.get()] == script_zones.LOCATION:
+                state["start"] = tile
+            state["to"] = tile
+            self._canvas.preview_rect(_ordered(state["start"], tile), "#ffe14d")
+        elif state["kind"] == "zone":
+            state["to"] = tile
+            rect = self._moved_zone_rect(state["function"], tile[0] - state["start"][0], tile[1] - state["start"][1])
+            if rect is not None:
+                self._canvas.preview_rect(rect, "#ffe14d")
         else:
             state["to"] = tile
             self._canvas.preview_marker(tile, "#ffe14d")
@@ -1362,6 +1752,9 @@ class MapBuilder(EditorPanel):
                 self._select(("tiles", frozenset((x, y) for x in range(min(ax, bx), max(ax, bx) + 1)
                                                  for y in range(min(ay, by), max(ay, by) + 1))))
             return
+        if state["kind"] == "zone_new":
+            self._add_zone(_ordered(state["start"], state.get("to", state["start"])))
+            return
         if state["kind"] == "paint":
             name = self._terrain_choices.get(self._terrain_var.get())
             if name:
@@ -1378,7 +1771,9 @@ class MapBuilder(EditorPanel):
         target = state.get("to")
         if target is None or target == state["start"]:
             return
-        if state["kind"] == "unit":
+        if state["kind"] == "zone":
+            self._move_zone(state["function"], target[0] - state["start"][0], target[1] - state["start"][1])
+        elif state["kind"] == "unit":
             self._move_unit(state["key"], target)
         elif state["kind"] == "prop":
             from .. import map_props
@@ -1411,6 +1806,13 @@ class MapBuilder(EditorPanel):
             menu.add_command(label="Select prop", command=lambda: self._select(("prop", prop)))
             menu.add_command(label="Turn prop 90°", command=lambda: (self._select(("prop", prop)), self._rotate_selected()))
             menu.add_command(label="Delete prop", command=lambda: (self._select(("prop", prop)), self._delete_selection()))
+        if self._canvas.show["zones"]:
+            for zone in self._zones_at(tile):
+                menu.add_separator()
+                menu.add_command(label=f"Select zone {zone}", command=lambda z=zone: self._select(("zone", z)))
+                menu.add_command(label=f"Delete zone {zone}", command=lambda z=zone: self._delete_zone(z))
+                if self._on_open_function is not None:
+                    menu.add_command(label=f"Open {zone} in the Script tab", command=lambda z=zone: self._on_open_function(z))
         if menu.index("end") is not None:
             menu.tk_popup(event.x_root, event.y_root)
 
@@ -1438,6 +1840,8 @@ class MapBuilder(EditorPanel):
                 pid = doc.section(section).units[index][F["pid"]]
                 info = self._character(pid) if isinstance(pid, str) else None
                 parts.append(info.label if info is not None else str(pid))
+        if self._canvas.show["zones"]:
+            parts += [f"zone {z}" for z in self._zones_at(tile)]
         self._hover.configure(text="   ·   ".join(parts))
 
     def _paint_color(self) -> str:
@@ -1446,6 +1850,11 @@ class MapBuilder(EditorPanel):
 
     def _tool_changed(self) -> None:
         tool = self._tool.get()
+        if tool == "zone":
+            self._refresh_zone_tool()
+            if not self._layer_vars["zones"].get():
+                self._layer_vars["zones"].set(True)
+                self._refresh_canvas()
         self._tool_help.configure(text=TOOL_HELP[tool])
         for key, frame in self._tool_frames.items():
             if key == tool:
@@ -1509,7 +1918,8 @@ class MapBuilder(EditorPanel):
         selection = self._selection
         if selection is None:
             ttk.Label(body, text="Nothing selected", font=("Segoe UI", 11, "bold")).pack(anchor="w")
-            ttk.Label(body, text="Pick a tool on the left. With Select / move, click a unit or a prop to edit it here.\n\n"
+            ttk.Label(body, text="Pick a tool on the left. With Select / move, click a unit or a prop to edit it here; "
+                                 "with Script zones, a zone.\n\n"
                                  "Middle-drag pans, Ctrl+wheel zooms. Ctrl+Z / Ctrl+Y undo and redo.",
                       style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
             return
@@ -1521,6 +1931,8 @@ class MapBuilder(EditorPanel):
             self._tiles_inspector(body, sorted(selection[1]))
         elif selection[0] == "section":
             self._section_inspector(body, selection[1])
+        elif selection[0] == "zone":
+            self._zone_inspector(body, selection[1])
         else:
             self._unit_inspector(body, selection[1], selection[2])
 

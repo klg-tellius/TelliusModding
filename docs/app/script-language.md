@@ -88,6 +88,7 @@ Compile checks:
 ## Editing in the app
 
 - The **Function** drop-down (pick which function to edit; it also follows the cursor), the **Function** form (name, description, export, trigger and its parameters) and **New / Duplicate / Delete** all edit the source text. **Apply to code** rewrites the selected function's decorators and renames its calls. The description is stored as the `# ...` comment lines just above the function (the decompiler's own `# function N - ...` line is not part of it), and its first line is shown next to the name in the drop-down.
+- The chapter page's **Build** tab draws the `@on_area` and `@on_location` functions on the map and adds, moves, edits and deletes them (its **Script zones** tool) by editing this source. Deleting a zone deletes an empty function; a function with code is kept without its trigger and marked `UNUSED` in its description.
 - **Check** compiles without saving. Errors and warnings are listed under the editor; click one to jump to its line.
 - **Save** compiles and writes `Scripts/CNN.cmb`. The first save keeps the extracted file in the project's originals. It also stores your source, with its names and comments, in `script_sources/CNN.fe9s`. That source is reloaded while it still matches the `.cmb`; if the `.cmb` changed elsewhere, the file is decompiled again and the old source is kept as `.fe9s.bak`.
 - The **Bytecode** tab shows the selected function's compiled instructions.
