@@ -10,7 +10,7 @@ The tab owns no data. Map edits go through the chapter page's
 ``paint_terrain()``) and unit edits through its
 :class:`~.deployment_editor.DeploymentEditor` (``apply()`` on the parsed
 ``dispo.DispoDocument``s); Save Chapter writes both. There is no separate
-Deployment tab: this one lists the sections and units too.
+Deployment tab: this one places and edits the units too.
 
 Tile heights: each tile has four corner elevations on three panel layers
 (combined, ground, roof - ``map_heights.LAYERS``). The Tile heights tool
@@ -25,11 +25,9 @@ coordinates of ``mapbuildinst`` (x, y), the panel layer and the dispos
 a worker thread and redone (debounced) after prop edits.
 
 Units: the canvas shows one deployment file (the "Deployment file" picker:
-``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``), and the Sections /
-Units list beside it shows its sections and units; selecting a row selects
-the unit (or every unit of the section, whose header the inspector then
-edits) on the canvas. "All fields..." edits any raw field of a unit. The unit
-panel edits the selected unit; with "Same edit on every difficulty" the
+``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``); "Units of" limits it
+to one section. "All fields..." edits any raw field of a unit. The unit
+panel edits the selected unit and its section's header; with "Same edit on every difficulty" the
 shared fields (character, class, items, AI, position...) follow in each
 variant that has the unit (``dispo.find_counterpart_unit()``), while level
 and stat bonuses are set per variant in the difficulty table, whose
@@ -458,9 +456,6 @@ class MapBuilder(EditorPanel):
         self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=24)
         self._filter_combo.pack(side="left")
         self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_canvas())
-        self._unit_list_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(top, text="Unit list", variable=self._unit_list_var,
-                        command=self._toggle_unit_list).pack(side="left", padx=(8, 0))
         self._layer_vars = {}
         layers = ttk.Frame(top)
         layers.pack(side="left", padx=(14, 0))
@@ -475,15 +470,10 @@ class MapBuilder(EditorPanel):
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
-        self._paned = paned
 
         tools = ttk.Frame(paned, padding=8, width=230)
         paned.add(tools, weight=0)
         self._build_tools(tools)
-
-        self._unit_pane = ttk.Frame(paned, padding=(6, 8), width=250)
-        paned.add(self._unit_pane, weight=1)
-        self._build_unit_list(self._unit_pane)
 
         middle = ttk.Frame(paned)
         paned.add(middle, weight=4)
@@ -509,35 +499,6 @@ class MapBuilder(EditorPanel):
         paned.add(inspector, weight=0)
         self._inspector = inspector.body
         self._canvas.redraw()
-
-    def _build_unit_list(self, parent: ttk.Frame) -> None:
-        """The deployment file's sections and their units, as a tree beside the map."""
-        ttk.Label(parent, text="Sections / Units", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        ttk.Label(parent, text="Click a section to edit it, a unit to select it on the map. "
-                               "Double-click a section to show only its units.",
-                  style="Muted.TLabel", wraplength=240, justify="left").pack(anchor="w", pady=(2, 4))
-        frame = ttk.Frame(parent)
-        frame.pack(fill="both", expand=True)
-        tree = ttk.Treeview(frame, columns=("info",), show="tree headings", selectmode="browse")
-        tree.heading("#0", text="Section / unit")
-        tree.heading("info", text="Army / class, tile")
-        tree.column("#0", width=150)
-        tree.column("info", width=150)
-        bar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=bar.set)
-        bar.pack(side="right", fill="y")
-        tree.pack(side="left", fill="both", expand=True)
-        tree.bind("<<TreeviewSelect>>", lambda e: self._on_tree_select())
-        tree.bind("<Double-Button-1>", self._on_tree_double_click)
-        self._unit_tree = tree
-        self._tree_keys: dict[str, tuple] = {}  # iid -> (section,) | (section, unit index)
-        self._tree_iids: dict[tuple, str] = {}
-
-    def _toggle_unit_list(self) -> None:
-        if self._unit_list_var.get():
-            self._paned.insert(1, self._unit_pane, weight=1)
-        else:
-            self._paned.forget(self._unit_pane)
 
     def _build_tools(self, parent: ttk.Frame) -> None:
         ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
@@ -665,7 +626,6 @@ class MapBuilder(EditorPanel):
             self._add_to_vars[v] = var
             ttk.Checkbutton(self._add_to_frame, text=self._variant_name(v), variable=var).pack(anchor="w")
         self._refresh_sections()
-        self._refresh_unit_tree()
         self._refresh_canvas()
         self._update_buttons()
 
@@ -685,86 +645,9 @@ class MapBuilder(EditorPanel):
         return self._deploy.document(variant) if variant else None
 
     def _variant_changed(self) -> None:
-        if self._selection and self._selection[0] in ("unit", "section"):
+        if self._selection and self._selection[0] == "unit":
             self._selection = None
         self._refresh_sections()
-        self._refresh_unit_tree()
-        self._refresh_canvas()
-
-    def _refresh_unit_tree(self) -> None:
-        tree = self._unit_tree
-        opened = {self._tree_keys[i][0] for i in tree.get_children() if tree.item(i, "open")}
-        tree.delete(*tree.get_children())
-        self._tree_keys, self._tree_iids = {}, {}
-        doc = self._doc()
-        if doc is None:
-            return
-        index = self._index_provider()
-        class_names = getattr(index, "class_names", {}) if index is not None else {}
-        for si, section in enumerate(doc.sections):
-            iid = f"s{si}"
-            if section.is_link:
-                tree.insert("", "end", iid=iid, text=section.name, values=(f"links to {section.header!r}",))
-            else:
-                count = len(section.units)
-                tree.insert("", "end", iid=iid, text=section.name, open=section.name in opened,
-                            values=(f"{self._section_army(section)} · {count} unit{'s' if count != 1 else ''}",))
-            self._tree_keys[iid] = (section.name,)
-            self._tree_iids[(section.name,)] = iid
-            for ui, unit in enumerate(section.units):
-                pid, jid = unit[F["pid"]], unit[F["jid"]]
-                info = self._character(pid) if isinstance(pid, str) else None
-                name = info.name if info is not None and info.name else str(pid or "-")
-                job = class_names.get(jid) or jid or "-"
-                unit_iid = f"s{si}u{ui}"
-                tree.insert(iid, "end", iid=unit_iid, text=name,
-                            values=(f"{job} · {unit[F['pos_x']]}, {unit[F['pos_y']]}",))
-                self._tree_keys[unit_iid] = (section.name, ui)
-                self._tree_iids[(section.name, ui)] = unit_iid
-
-    def _sync_unit_tree(self) -> None:
-        """Select the tree row of the selected unit or section (and nothing otherwise)."""
-        selection = self._selection
-        key = None
-        if selection and selection[0] == "unit":
-            key = (selection[1], selection[2])
-        elif selection and selection[0] == "section":
-            key = (selection[1],)
-        iid = self._tree_iids.get(key) if key else None
-        tree, current = self._unit_tree, self._unit_tree.selection()
-        if iid is None:
-            if current:
-                tree.selection_remove(*current)
-        elif tuple(current) != (iid,):
-            if len(key) == 2:
-                tree.item(self._tree_iids[(key[0],)], open=True)
-            tree.selection_set(iid)
-            tree.see(iid)
-
-    def _on_tree_select(self) -> None:
-        selected = self._unit_tree.selection()
-        key = self._tree_keys.get(selected[0]) if selected else None
-        if key is None:
-            return
-        target = ("unit", *key) if len(key) == 2 else ("section", key[0])
-        if target == self._selection:
-            return
-        if len(key) == 2 and self._filter_var.get() not in ("All sections", key[0]):
-            self._filter_var.set("All sections")
-        self._select(target)
-        if len(key) == 2:
-            self._see_unit(*key)
-
-    def _on_tree_double_click(self, event):
-        key = self._tree_keys.get(self._unit_tree.identify_row(event.y))
-        if key is None or len(key) != 1:
-            return None
-        self._show_only_section(None if self._filter_var.get() == key[0] else key[0])
-        return "break"
-
-    def _show_only_section(self, name: str | None) -> None:
-        values = self._filter_combo.cget("values")
-        self._filter_var.set(name if name in values else "All sections")
         self._refresh_canvas()
 
     def _see_unit(self, section_name: str, index: int) -> None:
@@ -832,8 +715,7 @@ class MapBuilder(EditorPanel):
             canvas.size = None
             canvas.units = []
             canvas.redraw()
-            # the unit list and the inspector still work without a map
-            self._sync_unit_tree()
+            # the inspector still works without a map
             self._refresh_inspector()
             return
         cap = data.capacity
@@ -875,7 +757,7 @@ class MapBuilder(EditorPanel):
                 if only != "All sections" and section.name != only:
                     continue
                 for ui, unit in enumerate(section.units):
-                    selected = self._selection in (("unit", section.name, ui), ("section", section.name))
+                    selected = self._selection == ("unit", section.name, ui)
                     units.append({
                         "key": (section.name, ui), "x": unit[F["pos_x"]], "y": unit[F["pos_y"]],
                         "pos2": (unit[F["pos2_x"]], unit[F["pos2_y"]]),
@@ -897,7 +779,6 @@ class MapBuilder(EditorPanel):
             canvas.zones.append({"function": zone.function, "rect": rect, "area": zone.is_area, "color": color,
                                  "text": text, "selected": zone.function == selected_zone})
         canvas.redraw()
-        self._sync_unit_tree()
         self._refresh_inspector()
 
     def _layers_changed(self) -> None:
@@ -1929,8 +1810,6 @@ class MapBuilder(EditorPanel):
             self._tile_inspector(body, (selection[1], selection[2]))
         elif selection[0] == "tiles":
             self._tiles_inspector(body, sorted(selection[1]))
-        elif selection[0] == "section":
-            self._section_inspector(body, selection[1])
         elif selection[0] == "zone":
             self._zone_inspector(body, selection[1])
         else:
@@ -2246,41 +2125,6 @@ class MapBuilder(EditorPanel):
         pid = shared[F["pid"]]
         if self._edit_units(edit, f"Edited {pid} ({section_name}[{index}])") and not new_selection.get("keep", True):
             self._select(None)
-
-    def _section_inspector(self, body, section_name: str) -> None:
-        doc = self._doc()
-        section = doc.section(section_name) if doc else None
-        if section is None:
-            self._selection = None
-            self._refresh_inspector()
-            return
-        ttk.Label(body, text=section_name, font=("Segoe UI", 11, "bold")).pack(anchor="w")
-        count = len(section.units)
-        ttk.Label(body, text=f"{count} unit{'s' if count != 1 else ''} in {self._variant_name(self._variant())}",
-                  style="Muted.TLabel").pack(anchor="w")
-        if section.is_link:
-            ttk.Label(body, text=f"This section holds no units of its own: it links to {section.header!r}.",
-                      style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w", pady=(8, 0))
-            return
-        ttk.Label(body, text="Header", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 2))
-        header_form = dispo_widgets.SectionHeaderFrame(body, dispo.section_header(section), self._deploy.group_keys())
-        header_form.pack(anchor="w")
-        ttk.Button(body, text="Apply to section", command=lambda: self._apply_section(section_name, header_form)).pack(
-            anchor="w", pady=(4, 0))
-        buttons = ttk.Frame(body)
-        buttons.pack(anchor="w", pady=(12, 0))
-        only = self._filter_var.get() == section_name
-        ttk.Button(buttons, text="Show all sections" if only else "Show only this section",
-                   command=lambda: self._show_only_section(None if only else section_name)).pack(side="left")
-        ttk.Button(buttons, text="Place units in it", command=lambda: self._place_in_section(section_name)).pack(
-            side="left", padx=(6, 0))
-
-    def _place_in_section(self, section_name: str) -> None:
-        match = next((v for v in self._section_combo.cget("values") if v.split("  (", 1)[0] == section_name), None)
-        if match is not None:
-            self._section_var.set(match)
-        self._tool.set("unit")
-        self._tool_changed()
 
     def _open_raw_fields(self, section_name: str, index: int) -> None:
         variant = self._variant()
