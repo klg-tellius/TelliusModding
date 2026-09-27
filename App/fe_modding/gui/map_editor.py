@@ -26,7 +26,17 @@ from ..project import ModProject
 from . import map_scene
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from .model_viewer import ModelPreviewDialog, load_named_model_set
+from .model_viewer import (
+    ModelPreviewDialog,
+    _ImportReviewDialog,
+    _TerrainImportOptions,
+    _unpack,
+    export_map_terrain_glb,
+    load_named_model_set,
+    map_terrain_name,
+    replace_map_terrain_with_glb,
+    terrain_mask_image,
+)
 
 
 class MapEditor(EditorPanel):
@@ -349,6 +359,113 @@ class MapEditor(EditorPanel):
             messagebox.showerror("Water flow", str(exc), parent=parent)
             return
         self.edit_pack(lambda _entries, files: files.__setitem__(f"{name}.ga", ga_bytes), f"Water flow of {name} set to {values}")
+
+    # -- terrain model (the same data as Assets > 3D Models, zmap/<map>) -----------------
+    @property
+    def models_label(self) -> str:
+        """The map's set in Assets > 3D Models."""
+        return f"zmap/{self.map_name}"
+
+    def export_terrain(self, parent) -> None:
+        """Export the land terrain as it is now (unsaved edits included), and
+        its road/shore mask next to it, as the 3D Models panel does."""
+        if self._map_data is None:
+            return
+        target = filedialog.asksaveasfilename(
+            title="Export the terrain as glTF", defaultextension=".glb", initialfile=f"zmap_{self.map_name}.glb",
+            filetypes=[("glTF binary", "*.glb")], parent=parent)
+        if not target:
+            return
+        files = self._pak_contents
+        written = [target]
+        try:
+            Path(target).write_bytes(export_map_terrain_glb(self._current_path, files))
+            mask = terrain_mask_image(files, map_terrain_name(files, self._map_data, self.map_name))
+            if mask is not None:
+                mask_path = Path(target).with_name(Path(target).stem + "_mask.png")
+                mask.convert("L").save(mask_path)
+                written.append(str(mask_path))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not export the terrain", str(exc), parent=parent)
+            return
+        note = ""
+        if len(written) > 1:
+            note = ("\n\nThe mask covers 640 x 640 units (128 tiles) from the terrain's corner, x to the right and z "
+                    "downwards: black shows the atlas through the first UV set, white through the second (roads, shores).")
+        messagebox.showinfo("Exported", "Wrote " + "\n".join(written) + note, parent=parent)
+
+    def import_terrain(self, parent) -> None:
+        """Replace the land terrain with a glTF (``replace_map_terrain_with_glb``
+        on the open map, unsaved edits included). The review dialog shows the
+        change; applying it is a map edit like any other: Undo takes it back
+        and Save Chapter writes it."""
+        if self._map_data is None:
+            return
+        chosen = filedialog.askopenfilename(
+            title=f"Replace the {self.models_label} terrain with a glTF model",
+            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")], parent=parent)
+        if not chosen:
+            return
+        top = parent.winfo_toplevel()
+        try:
+            from ..formats import gltf_import
+
+            has_map_base = any(m.name in gltf_import.UV2_MATERIALS
+                               for m in gltf_import.read_gltf(Path(chosen).read_bytes(), Path(chosen).parent).materials)
+            options = _TerrainImportOptions(parent, has_map_base)
+            parent.wait_window(options)
+            if options.result is None:
+                return
+            follow, conform, texturing, mask, keep_light = options.result
+            top.config(cursor="watch")
+            top.update_idletasks()
+            try:
+                result = replace_map_terrain_with_glb(
+                    self._current_path, Path(chosen), follow, conform, texturing, mask, keep_light,
+                    contents=(self._pak_entries, self._pak_contents))
+            finally:
+                top.config(cursor="")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import the terrain", str(exc), parent=parent)
+            return
+        dialog = _ImportReviewDialog(
+            parent, f"Replace the {self.models_label} terrain", self.models_label, self._current_path, result,
+            accept_text="Apply to the map",
+            footnote="Current: the saved map. Applied to the open map: Undo takes it back, Save Chapter writes it.")
+        parent.wait_window(dialog)
+        if not dialog.result:
+            return
+        entries, files = _unpack(self._current_path, result.outputs[self._current_path])
+        self._set_pack(entries, files, f"Replaced the terrain with {Path(chosen).name}")
+
+    def has_kept_original(self) -> bool:
+        return self._current_path is not None and self._project.kept_original(self._current_path) is not None
+
+    def restore_original(self, parent) -> None:
+        """Load the map as extracted (the copy kept by the first save or
+        import) in place of the open one, as an undoable edit."""
+        original = self._project.kept_original(self._current_path) if self._current_path is not None else None
+        if original is None:
+            messagebox.showinfo("Restore original", "This map is still as extracted: nothing was saved over it.", parent=parent)
+            return
+        if not messagebox.askyesno(
+                "Restore original map?",
+                f"Put back {self.map_name}'s map as it was extracted: terrain, props, water, tile heights and terrain "
+                "types? Undo takes it back; Save Chapter writes it.", parent=parent):
+            return
+        try:
+            entries, files = _unpack(self._current_path, original.read_bytes())
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not restore", str(exc), parent=parent)
+            return
+        self._set_pack(entries, files, "Restored the map as extracted")
+
+    def _set_pack(self, entries: list[pak.PakEntry], files: dict[str, bytes], log_text: str) -> None:
+        self._pak_entries = list(entries)
+        self._pak_contents = dict(files)
+        for entry in entries:
+            self._pak_reserved[entry.name] = entry.reserved
+        self._changed(log_text)
 
     # -- terrain types (painted from the Build tab) --------------------------------------
     def _load_terrain_catalog(self) -> None:

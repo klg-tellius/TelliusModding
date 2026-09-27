@@ -1059,11 +1059,14 @@ def surface_heights(triangles: list[_Triangle], points: list[tuple[float, float]
     return map_heights.surface_heights(_triangle_array(triangles), points)
 
 
-def export_map_terrain_glb(container_path: Path) -> bytes:
+def export_map_terrain_glb(container_path: Path, files: dict[str, bytes] | None = None) -> bytes:
     """A chapter's land terrain as ``.glb``, in the mesh's own coordinates
     (5 units per tile, tile 0 at ``panel_offset * 5``), with each material's
-    first texture. Props and water are left out."""
-    _entries, files = _read_container(container_path)
+    first texture. Props and water are left out. ``files`` is the map's
+    unpacked contents when they aren't the saved file's (the Build tab's
+    unsaved map)."""
+    if files is None:
+        _entries, files = _read_container(container_path)
     map_data = map_file.read_map_bytes(files["map.bin"])
     name = map_terrain_name(files, map_data, container_path.parent.name)
     gs_model = model_fmt.read_model_bytes(files[f"{name}.gs"])
@@ -1101,6 +1104,7 @@ def replace_map_terrain_with_glb(
     map_texturing: bool = False,
     mask: Image.Image | None = None,
     keep_light: bool = False,
+    contents: tuple[list[pak.PakEntry], dict[str, bytes]] | None = None,
 ) -> ModelImport:
     """``map.cmp`` with its land terrain rebuilt from a glTF (a static mesh
     in the terrain's own coordinates, as :func:`export_map_terrain_glb`
@@ -1120,8 +1124,14 @@ def replace_map_terrain_with_glb(
     by the grey mask stored right after it (``mask``, else the current
     terrain's; black keeps the first UV set, white the second; see
     :data:`MAP_MASK_SPAN`), and multiplied by a last image: the current
-    light overlay with ``keep_light``, else white."""
-    entries, files = _read_container(container_path)
+    light overlay with ``keep_light``, else white.
+
+    ``contents`` (pack entries and files) replaces the saved file's, for a
+    map the Build tab has open with unsaved edits."""
+    if contents is not None:
+        entries, files = list(contents[0]), dict(contents[1])
+    else:
+        entries, files = _read_container(container_path)
     current = dict(files)
     map_data = map_file.read_map_bytes(files["map.bin"])
     name = map_terrain_name(files, map_data, container_path.parent.name)
@@ -2948,6 +2958,8 @@ class _ImportReviewDialog(tk.Toplevel):
         container_path: Path,
         result: ModelImport,
         animation_name: str | None = None,
+        accept_text: str = "Write files",
+        footnote: str = "The files as extracted are kept in the project's originals folder.",
     ) -> None:
         super().__init__(parent)
         self.title(title)
@@ -3016,11 +3028,9 @@ class _ImportReviewDialog(tk.Toplevel):
 
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", padx=8, pady=8)
-        ttk.Label(
-            buttons, text="The files as extracted are kept in the project's originals folder.", style="Muted.TLabel"
-        ).pack(side="left")
+        ttk.Label(buttons, text=footnote, style="Muted.TLabel").pack(side="left")
         ttk.Button(buttons, text="Cancel", command=self._close).pack(side="right")
-        ttk.Button(buttons, text="Write files", command=self._accept).pack(side="right", padx=(0, 6))
+        ttk.Button(buttons, text=accept_text, command=self._accept).pack(side="right", padx=(0, 6))
         self.protocol("WM_DELETE_WINDOW", self._close)
 
         try:

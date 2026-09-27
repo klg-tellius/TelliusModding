@@ -105,6 +105,12 @@ class ModProject:
             return None
         return self.originals_dir / relative
 
+    def kept_original(self, path: Path | str) -> Optional[Path]:
+        """The kept original of ``path`` (a file under ``extracted/``), or
+        ``None`` when none is kept."""
+        original = self._original_of(Path(path))
+        return original if original is not None and original.is_file() else None
+
     def write_keeping_original(self, path: Path | str, data: bytes) -> None:
         """Write ``data`` to ``path`` (a file under ``extracted/``), first
         copying the current file to :attr:`originals_dir` unless a copy is

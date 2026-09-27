@@ -3,7 +3,9 @@
 - :class:`MapObjectsWindow` - every placed object (``mapbuildinst``) in a
   table, each editable: object, tile, angle, height and the tiles it covers.
 - :class:`MapSettingsWindow` - capacity scale, light, fog, grid colour and
-  the ``mapextra`` record, and the water surface (import, flow).
+  the ``mapextra`` record, the land terrain model (export, import, restore:
+  the map's ``zmap/<map>`` set in Assets > 3D Models, edited here on the open
+  map) and the water surface (import, flow).
 - :class:`Map3DWindow` - the whole chapter in 3D (``map_scene.build_map_scene``),
   rebuilt on a worker thread after each edit.
 
@@ -369,8 +371,8 @@ class MapObjectsWindow(_Window):
 
 
 class MapSettingsWindow(_Window):
-    """The map-wide records (capacity scale, light, fog, grid colour, extra)
-    and the water surface."""
+    """The map-wide records (capacity scale, light, fog, grid colour, extra),
+    the terrain model and the water surface."""
 
     SECTIONS = [
         ("light", "Light", LIGHT_FIELDS, map_file.patch_light_field),
@@ -380,7 +382,7 @@ class MapSettingsWindow(_Window):
     ]
 
     def __init__(self, builder) -> None:
-        super().__init__(builder, "Map settings", "780x720")
+        super().__init__(builder, "Map settings", "780x800")
         scroll = ScrollFrame(self, padding=12)
         scroll.pack(fill="both", expand=True)
         self._body = scroll.body
@@ -429,12 +431,28 @@ class MapSettingsWindow(_Window):
                   style="Muted.TLabel").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
         ttk.Button(form, text="Apply", command=self._apply).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
 
+        row += 2
+        ttk.Label(form, text="Terrain model", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, columnspan=8, sticky="w", pady=(18, 2))
+        ttk.Label(form, text=f"The land mesh of {self.map.models_label} (also in Assets > 3D Models). Here it is edited on the "
+                             "open map, unsaved edits included: Undo takes an import back and Save Chapter writes it.",
+                  style="Muted.TLabel", wraplength=720, justify="left").grid(row=row + 1, column=0, columnspan=8, sticky="w")
+        terrain = ttk.Frame(form)
+        terrain.grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(4, 0))
+        ttk.Button(terrain, text="Export terrain .glb...", command=lambda: self.map.export_terrain(self)).pack(side="left")
+        ttk.Button(terrain, text="Import terrain .glb...",
+                   command=lambda: self._undoable(lambda: self.map.import_terrain(self))).pack(side="left", padx=(6, 0))
+        ttk.Button(terrain, text="Restore original...", state="normal" if self.map.has_kept_original() else "disabled",
+                   command=lambda: self._undoable(lambda: self.map.restore_original(self))).pack(side="left", padx=(6, 0))
+        if self.builder.can_open_model_set:
+            ttk.Button(terrain, text="Open in 3D Models ›",
+                       command=lambda: self.builder.open_model_set(self.map.models_label)).pack(side="left", padx=(6, 0))
+
         waters = self.map.water_names()
-        ttk.Label(form, text="Water", font=("Segoe UI", 10, "bold")).grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(18, 2))
+        ttk.Label(form, text="Water", font=("Segoe UI", 10, "bold")).grid(row=row + 3, column=0, columnspan=8, sticky="w", pady=(18, 2))
         ttk.Label(form, text=("Water objects: " + ", ".join(waters)) if waters else "This map has no water.",
-                  style="Muted.TLabel").grid(row=row + 3, column=0, columnspan=8, sticky="w")
+                  style="Muted.TLabel").grid(row=row + 4, column=0, columnspan=8, sticky="w")
         water = ttk.Frame(form)
-        water.grid(row=row + 4, column=0, columnspan=8, sticky="w", pady=(4, 0))
+        water.grid(row=row + 5, column=0, columnspan=8, sticky="w", pady=(4, 0))
         ttk.Button(water, text="Import water .glb...", command=lambda: self._undoable(lambda: self.map.import_water(self))).pack(side="left")
         ttk.Button(water, text="Water flow...", command=lambda: self._undoable(lambda: self.map.water_flow(self))).pack(side="left", padx=(6, 0))
 
