@@ -4,10 +4,11 @@ and the props of every chapter map (Map Objects, read from the ``map.cmp`` files
 
 Characters live in the same file but have their own pages; both edit one
 shared session (``fe8_session.py``). Each tab lists its records as tiles
-(the item and skill tiles show their icon, the support tiles the
-character's portrait; classes have no icon); a tile opens the
-record's form, and fields apply as soon as they are left. The Supports tab also edits the support conversations
-(``Mess/yell.m``) through a Dialogue editor."""
+(the item and skill tiles show their icon; classes have no icon); a tile opens
+the record's form, and fields apply as soon as they are left. The Supports tab
+lists every support pair (a character's partners and bonds are edited on their
+page), edits the affinity bonus table and the support conversations
+(``Mess/yell.m``, through a Dialogue editor)."""
 
 from __future__ import annotations
 
@@ -41,7 +42,7 @@ class GameDataPage(Page):
                 display_name=self._character_name,
                 make_dialogue_editor=lambda parent: DialogueEditor(parent, self.project, shell.changelog),
                 yell_path=self.project.extracted_dir / "files" / "Mess" / "yell.m",
-                request_portrait=shell.portraits.request,
+                open_character=lambda pid: shell.navigate(("character", pid, "supports")),
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])
             session.subscribe(self._on_session_changed)
@@ -52,6 +53,16 @@ class GameDataPage(Page):
         index = self.shell.index
         info = index.by_pid.get(pid) if index is not None and index.ready else None
         return info.name if info is not None and info.name else pid
+
+    def open_support_conversation(self, pid: str, partner: str, rank: str) -> None:
+        """Show (or create) the pair's support conversation in Supports › Conversations."""
+        if self._supports is None:
+            return
+        self.shell.navigate((self.kind, "supports"))
+        self._supports.open_conversation(pid, partner, rank)
+
+    def support_conversation_ids(self):
+        return self._supports.conversation_ids() if self._supports is not None else None
 
     def _on_session_changed(self, source) -> None:
         if self._supports is not None and source is not self._supports:

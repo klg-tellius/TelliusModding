@@ -1,7 +1,7 @@
 """Characters: a portrait card per character, and a page per character with
-everything about them - the editable FE8Data record, portrait and models,
-every chapter and message they appear in, and the script functions that name
-them.
+everything about them - the editable FE8Data record, their supports
+(affinity, partners, bonds), portrait and models, every chapter and message
+they appear in, and the script functions that name them.
 
 Story copies of a character (``PID_BOLE_MAP1`` for the Prologue's Boyd,
 ``PID_IKE_EV2``...) share the name key (``MPID_``) of the main record; the
@@ -12,17 +12,18 @@ included.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from .. import record_actions
 from ..character_form import CharacterForm
 from ..shell import Page, plain_text
+from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header
 
 CATEGORY_CHIPS = {PLAYABLE: "chip_playable", NAMED: "chip_named", GENERIC: "chip_generic"}
-TABS = ["stats", "look", "appearances", "scripts"]
-TAB_LABELS = {"stats": "Stats", "look": "Portrait & models", "appearances": "Appearances",
+TABS = ["stats", "supports", "look", "appearances", "scripts"]
+TAB_LABELS = {"stats": "Stats", "supports": "Supports", "look": "Portrait & models", "appearances": "Appearances",
               "scripts": "Script references"}
 
 
@@ -157,14 +158,75 @@ class CharacterPage(Page):
                                    on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
                                    on_open_character=self._open_character, project=shell.project)
         self._form.pack(fill="both", expand=True)
+        support_scroll = ScrollFrame(self._notebook, padding=(16, 12))
+        self._build_supports(support_scroll.body)
         self._look = ScrollFrame(self._notebook, padding=(16, 12))
         self._appearances = ttk.Frame(self._notebook, style="Page.TFrame", padding=(16, 12))
         self._scripts = ttk.Frame(self._notebook, style="Page.TFrame", padding=(16, 12))
-        for key, widget in zip(TABS, (stats, self._look, self._appearances, self._scripts)):
+        for key, widget in zip(TABS, (stats, support_scroll, self._look, self._appearances, self._scripts)):
             self._notebook.add(widget, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
         self._scripts_for = None
         self._theme_bg()
+
+    def _build_supports(self, body) -> None:
+        session = self.shell.session
+        self._supports = None
+        if not session.available:
+            ttk.Label(body, text="FE8Data.bin not found. Extract the project first.", style="Muted.TLabel").pack(
+                anchor="w")
+            return
+        bar = ttk.Frame(body, style="Page.TFrame")
+        bar.pack(fill="x", pady=(0, 10))
+        self._support_save = ttk.Button(bar, text="Save FE8Data.bin", command=self._save_fe8)
+        self._support_save.pack(side="left")
+        self._support_status = ttk.Label(bar, text="", style="Muted.TLabel")
+        self._support_status.pack(side="left", padx=(12, 0))
+        self._supports = CharacterSupportsPanel(
+            body,
+            get_data=lambda: session.data,
+            set_data=lambda b: setattr(session, "data", b),
+            on_dirty=lambda: session.changed(self._supports),
+            display_name=self._name_of,
+            conversation_ids=self._support_conversation_ids,
+            open_conversation=lambda pid, partner, rank: self.shell.page("data").open_support_conversation(
+                pid, partner, rank),
+            open_character=lambda pid: self.shell.navigate(("character", pid, "supports")),
+        )
+        self._supports.pack(fill="both", expand=True)
+        session.subscribe(self._on_session_changed)
+        self._refresh_support_status()
+
+    def _support_conversation_ids(self):
+        data_page = self.shell.existing_page("data")
+        if data_page is not None:
+            return data_page.support_conversation_ids()
+        return read_conversation_ids(self.project.extracted_dir / "files" / "Mess" / "yell.m")
+
+    def _on_session_changed(self, source) -> None:
+        try:
+            if self._supports is not None and source is not self._supports and self.winfo_exists():
+                self._supports.reload()
+            self._refresh_support_status()
+        except tk.TclError:
+            pass
+
+    def _refresh_support_status(self) -> None:
+        dirty = self.shell.session.dirty
+        self._support_save.configure(state="normal" if dirty else "disabled")
+        self._support_status.configure(text="Unsaved changes in FE8Data.bin" if dirty else "",
+                                       style="Warn.TLabel" if dirty else "Muted.TLabel")
+
+    def _save_fe8(self) -> None:
+        self.flush()
+        try:
+            self.shell.session.save()
+        except OSError as exc:
+            messagebox.showerror("Could not save", str(exc), parent=self)
+
+    def flush(self) -> None:
+        if self._supports is not None:
+            self._supports.flush()
 
     def _open_character(self, pid) -> None:
         """After a character was added (its PID) or removed (None)."""
@@ -213,7 +275,10 @@ class CharacterPage(Page):
         return True
 
     def _on_tab_changed(self) -> None:
+        self.flush()
         self._tab = TABS[self._notebook.index("current")]
+        if self._tab == "supports" and self._supports is not None:
+            self._supports.reload()  # conversations may have been added in Game Data
         if self._tab == "scripts":
             self._render_scripts()
         route = self.shell.route
@@ -229,6 +294,8 @@ class CharacterPage(Page):
             child.destroy()
         self._portrait.configure(image="", width=0)
         self._form.show(self.shell.session.character_index(pid))
+        if self._supports is not None:
+            self._supports.show(pid if self.shell.session.character_index(pid) is not None else None)
         if info is None:
             unsaved = self.shell.session.character_index(pid) is not None
             ttk.Label(self._subtitle, style="Muted.TLabel",
