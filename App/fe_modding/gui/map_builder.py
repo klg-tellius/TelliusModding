@@ -464,17 +464,6 @@ class MapBuilder(EditorPanel):
         self._remove_section_button.pack(side="left", padx=(4, 0))
         self._filter_var.trace_add("write", lambda *_: self._remove_section_button.configure(
             state="disabled" if self._filter_var.get() == "All sections" else "normal"))
-        self._layer_vars = {}
-        layers = ttk.Frame(top)
-        layers.pack(side="left", padx=(14, 0))
-        for key, text in (("image", "Map image"), ("terrain", "Terrain"), ("heights", "Heights"), ("grid", "Grid"),
-                          ("props", "Props"), ("zones", "Script zones"), ("units", "Units")):
-            var = tk.BooleanVar(value=key not in ("terrain", "heights"))
-            self._layer_vars[key] = var
-            ttk.Checkbutton(layers, text=text, variable=var, command=self._layers_changed).pack(side="left", padx=(0, 6))
-        ttk.Button(top, text="−", width=3, command=lambda: self._canvas.zoom(1 / 1.25)).pack(side="left", padx=(8, 0))
-        ttk.Button(top, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
-        ttk.Button(top, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
@@ -495,6 +484,18 @@ class MapBuilder(EditorPanel):
         self._status.pack(side="right")
         self._hover = ttk.Label(bottom, text="", style="Muted.TLabel", anchor="w")
         self._hover.pack(side="left", fill="x", expand=True)
+        view = ttk.Frame(middle)
+        view.pack(side="bottom", fill="x", padx=6, pady=(4, 0))
+        self._layer_vars = {}
+        for key, text in (("image", "Map image"), ("terrain", "Terrain"), ("heights", "Heights"), ("grid", "Grid"),
+                          ("props", "Props"), ("zones", "Script zones"), ("units", "Units")):
+            var = tk.BooleanVar(value=key not in ("terrain", "heights"))
+            self._layer_vars[key] = var
+            ttk.Checkbutton(view, text=text, variable=var, command=self._layers_changed).pack(side="left", padx=(0, 6))
+        ttk.Button(view, text="−", width=3, command=lambda: self._canvas.zoom(1 / 1.25)).pack(side="left", padx=(8, 0))
+        ttk.Button(view, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
+        ttk.Button(view, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
+        ttk.Button(view, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
         xbar.pack(side="bottom", fill="x")
         ybar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -589,7 +590,6 @@ class MapBuilder(EditorPanel):
         row = ttk.Frame(windows)
         row.pack(fill="x", pady=(2, 0))
         ttk.Button(row, text="Objects...", command=self.open_objects).pack(side="left")
-        ttk.Button(row, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
         ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(anchor="w", pady=(4, 0))
         self._all_variants = tk.BooleanVar(value=True)
         ttk.Checkbutton(parent, text="Same edit on every difficulty", variable=self._all_variants).pack(side="bottom", anchor="w")
