@@ -651,6 +651,58 @@ def set_section_header(section: DocSection, header: SectionHeader) -> None:
     section.header = (section.header & 0xFF000000) | (header.mode << 16) | (header.occupied_ok << 8) | header.group
 
 
+def _set_section_table(doc: DispoDocument, table_sections: list[DocSection]) -> None:
+    """Rewrite the section table to list ``table_sections`` (every section of
+    ``doc``) in that order, with the names laid out afresh in the same order."""
+    names, offsets = bytearray(), []
+    for section in table_sections:
+        offsets.append(len(names))
+        names += section.name.encode(_LABEL_CODEC) + b"\x00"
+    position = {id(section): i for i, section in enumerate(doc.sections)}
+    doc.table_order = [position[id(section)] for section in table_sections]
+    doc.name_offsets = offsets
+    doc.names_blob = bytes(names)
+
+
+def add_section(doc: DispoDocument, name: str, header: Optional[SectionHeader] = None) -> DocSection:
+    """Append an empty unit section called ``name`` (mode 4, no army unless
+    ``header`` says otherwise). The section table stays sorted by name when
+    it was; otherwise the new entry goes last."""
+    try:
+        raw_name = name.encode("ascii")
+    except UnicodeEncodeError:
+        raise ValueError("A section name must be ASCII") from None
+    if not name or b"\x00" in raw_name or any(c.isspace() for c in name):
+        raise ValueError("A section name must be non-empty, with no spaces")
+    if doc.section(name) is not None:
+        raise ValueError(f"There is already a section {name!r}")
+    table = [doc.sections[i] for i in doc.table_order]
+    was_sorted = [s.name.encode(_LABEL_CODEC) for s in table] == sorted(s.name.encode(_LABEL_CODEC) for s in table)
+    section = DocSection(name=name, header=0)
+    set_section_header(section, header or SectionHeader(4, 0, 0))
+    doc.sections.append(section)
+    if was_sorted:
+        at = next((i for i, s in enumerate(table) if s.name.encode(_LABEL_CODEC) > raw_name), len(table))
+        table.insert(at, section)
+    else:
+        table.append(section)
+    _set_section_table(doc, table)
+    return section
+
+
+def remove_section(doc: DispoDocument, name: str) -> DocSection:
+    """Remove a unit section, its units included; link sections stay."""
+    section = doc.section(name)
+    if section is None:
+        raise ValueError(f"No section {name!r}")
+    if section.is_link:
+        raise ValueError(f"Section {name!r} is a link the game needs; it can't be removed")
+    table = [doc.sections[i] for i in doc.table_order if doc.sections[i] is not section]
+    doc.sections.remove(section)
+    _set_section_table(doc, table)
+    return section
+
+
 def section_base(name: str) -> str:
     """A section's name without its difficulty letter (``bmap02_first_n`` ->
     ``bmap02_first``), the part the variants share."""
