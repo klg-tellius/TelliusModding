@@ -351,7 +351,8 @@ class MapBuilder(EditorPanel):
     def __init__(self, parent, project, changelog, map_editor, deployment,
                  index_provider: Callable[[], object] = lambda: None,
                  session_provider: Callable[[], object] = lambda: None,
-                 on_navigate_to_character: Optional[Callable[[str], None]] = None) -> None:
+                 on_navigate_to_character: Optional[Callable[[str], None]] = None,
+                 navigate: Optional[Callable[[tuple], None]] = None) -> None:
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
@@ -360,6 +361,7 @@ class MapBuilder(EditorPanel):
         self._index_provider = index_provider
         self._session_provider = session_provider
         self._on_navigate_to_character = on_navigate_to_character
+        self.navigate = navigate  # workspace routes, e.g. ("data", "chapters", "3")
         self.empty_text = "Open a chapter with a map."
         self._selection: tuple | None = None  # ("unit", section, index) | ("prop", instance index)
         self._press_state: dict | None = None
@@ -541,7 +543,7 @@ class MapBuilder(EditorPanel):
         row.pack(fill="x", pady=(2, 0))
         ttk.Button(row, text="Objects...", command=self.open_objects).pack(side="left")
         ttk.Button(row, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
-        ttk.Button(windows, text="Map settings & water...", command=self.open_settings).pack(anchor="w", pady=(4, 0))
+        ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(anchor="w", pady=(4, 0))
         self._all_variants = tk.BooleanVar(value=True)
         ttk.Checkbutton(parent, text="Same edit on every difficulty", variable=self._all_variants).pack(side="bottom", anchor="w")
         self._auto_heights = tk.BooleanVar(value=True)
@@ -968,6 +970,19 @@ class MapBuilder(EditorPanel):
         from .map_windows import Map3DWindow
 
         self._open_window("3d", Map3DWindow)
+
+    @property
+    def project(self):
+        return self._project
+
+    @property
+    def changelog(self):
+        return self._changelog
+
+    @property
+    def fe8_session(self):
+        """The shared FE8Data.bin session (None outside the workspace)."""
+        return self._session_provider()
 
     def cleanup(self) -> None:
         for window in list(self._windows.values()):

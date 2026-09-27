@@ -1423,3 +1423,127 @@ class StatsEditor(EditorPanel):
 
     def select_skill(self, sid: str) -> None:
         self._select_record("skills", self._fe8.skills if self._fe8 else [], lambda s: s.sid, sid)
+
+    def select_chapter(self, index: int) -> None:
+        """Show a ``ChapterData`` record by its position."""
+        picker = self._pickers.get("chapters")
+        if picker is not None and 0 <= index < len(picker._labels):
+            self.select_tab("chapters")
+            picker.select(index)
+
+
+class _Body:
+    """A form body without a scrollbar of its own, for a form placed in a
+    window that already scrolls."""
+
+    def __init__(self, frame: ttk.Frame):
+        self.body = frame
+
+    def scroll_top(self) -> None:
+        pass
+
+
+class ChapterRecordPanel(StatsEditor):
+    """Game Data › Chapters' form, shown where a chapter's map is edited (the
+    Build tab's Map settings window): the ``ChapterData`` record whose map is
+    the open map folder, or a choice when several records use it (trial
+    maps). It edits the same FE8Data.bin session, so Game Data shows each
+    edit at once, and the file is saved with Save FE8Data.bin."""
+
+    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session: Fe8DataSession,
+                 navigate: Optional[Callable[[tuple], None]] = None):
+        self._map_name: Optional[str] = None
+        self._matches: list[int] = []
+        self._record: Optional[int] = None
+        super().__init__(parent, project, changelog, session, navigate)
+
+    def _build_widgets(self) -> None:
+        top = ttk.Frame(self)
+        top.pack(fill="x")
+        self._save_button = ttk.Button(top, text="Save FE8Data.bin", style="Accent.TButton", command=self._save,
+                                       state="disabled")
+        self._save_button.pack(side="left")
+        self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
+        self._revert_button.pack(side="left", padx=(6, 0))
+        self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
+        self._status_label.pack(side="left", padx=(10, 0))
+        if self._navigate is not None:
+            ttk.Button(top, text="Open in Game Data ›", command=self._open_in_game_data).pack(side="right")
+        chooser = ttk.Frame(self)
+        chooser.pack(fill="x", pady=(6, 0))
+        self._record_label = ttk.Label(chooser, text="Record")
+        self._record_var = tk.StringVar()
+        self._record_combo = ttk.Combobox(chooser, textvariable=self._record_var, state="readonly", width=60)
+        self._record_combo.bind("<<ComboboxSelected>>", lambda e: self._pick(self._record_combo.current()))
+        ttk.Label(self, style="Muted.TLabel", wraplength=720, justify="left", text=(
+            "The same record as Game Data › Chapters, stored in FE8Data.bin: fields apply when you leave them, and "
+            "Save FE8Data.bin (not Save Chapter) writes them.")).pack(anchor="w", pady=(4, 0))
+        frame = ttk.Frame(self)
+        frame.pack(fill="x")
+        self._bodies["chapters"] = _Body(frame)
+        self._notebook = frame  # StatsEditor puts its "not found" note in the notebook's master
+
+    def _refresh_pickers(self) -> None:
+        """Relabel the records (a title or map may just have changed)."""
+        try:
+            chapters = fe8data.read_chapter_data(self._data)
+        except (KeyError, ValueError, struct.error):
+            chapters = []
+        self._matches = [c.index for c in chapters if self._map_name and c.map_name == self._map_name]
+        labels = [f"{self._text(chapters[i].title_key) or chapters[i].title_key or '(untitled)'}  ·  "
+                  f"{chapters[i].script or '-'}  ·  id {chapters[i].chapter_id}  ·  record {i}" for i in self._matches]
+        try:
+            self._record_combo.configure(values=labels)
+            if len(self._matches) > 1:
+                self._record_label.pack(side="left")
+                self._record_combo.pack(side="left", padx=(8, 0))
+            else:
+                self._record_label.pack_forget()
+                self._record_combo.pack_forget()
+            if self._record in self._matches:
+                self._record_combo.current(self._matches.index(self._record))
+        except tk.TclError:
+            pass
+
+    def _show_general(self) -> None:
+        pass
+
+    def select_tab(self, name: str) -> None:
+        pass
+
+    def show_map(self, map_name: Optional[str]) -> None:
+        """Show the record of map folder ``map_name`` (``bmap05_2``)."""
+        if map_name == self._map_name and self._forms["chapters"] is not None:
+            return
+        self.flush()
+        self._map_name = map_name
+        self._refresh_pickers()
+        if self._record not in self._matches:
+            self._record = self._matches[0] if self._matches else None
+        self._pick(self._matches.index(self._record) if self._record is not None else -1)
+
+    def _pick(self, position: int) -> None:
+        if 0 <= position < len(self._matches):
+            self._record = self._matches[position]
+            self._record_combo.current(position)
+            self._show_chapter(self._record)
+            return
+        self._record = None
+        form, parent = self._new_form("chapters", "chapter", -1)
+        self._forms["chapters"] = None
+        ttk.Label(parent, style="Muted.TLabel", wraplength=720, justify="left", text=(
+            f"No Game Data › Chapters record uses the map {self._map_name}." if self._map_name
+            else "Open a chapter with a map.")).grid(row=0, column=0, sticky="w", pady=(8, 0))
+
+    def _revert(self) -> None:
+        super()._revert()
+        self._forms["chapters"] = None
+        self.show_map(self._map_name)
+
+    def _open_in_game_data(self) -> None:
+        self.flush()
+        self._navigate(("data", "chapters", str(self._record)) if self._record is not None else ("data", "chapters"))
+
+    def cleanup(self) -> None:
+        self.flush()
+        self._session.unsubscribe(self._on_session_changed)

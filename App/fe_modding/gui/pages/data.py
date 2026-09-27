@@ -101,6 +101,8 @@ class GameDataPage(Page):
                 self._editor.select_item(route[2])
             elif tab == "skills":
                 self._editor.select_skill(route[2])
+            elif tab == "chapters" and str(route[2]).isdigit():
+                self._editor.select_chapter(int(route[2]))
         return True
 
     def crumbs(self, route):
