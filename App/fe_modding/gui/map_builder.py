@@ -1542,13 +1542,14 @@ class MapBuilder(EditorPanel):
         mode_label.grid(row=row, column=0, sticky="w", pady=2)
         mode_box.grid(row=row, column=1, sticky="w", pady=2, padx=(8, 0))
         row += 1
-        tiles = ttk.Frame(form)
-        add("Tiles", tiles)
         spins = {}
-        for i, key in enumerate(("x1", "y1", "x2", "y2")):
-            ttk.Label(tiles, text={"x1": "X", "y1": "Y", "x2": "to X", "y2": "Y"}[key]).pack(side="left", padx=(0 if i == 0 else 6, 2))
-            spins[key] = ttk.Spinbox(tiles, from_=0, to=255, textvariable=v[key], width=4)
-            spins[key].pack(side="left")
+        for label, keys in (("From tile", ("x1", "y1")), ("To tile", ("x2", "y2"))):
+            tiles = ttk.Frame(form)
+            add(label, tiles)
+            for i, key in enumerate(keys):
+                ttk.Label(tiles, text="XY"[i]).pack(side="left", padx=(0 if i == 0 else 8, 2))
+                spins[key] = ttk.Spinbox(tiles, from_=0, to=255, textvariable=v[key], width=4)
+                spins[key].pack(side="left")
         add("Event name", ttk.Entry(form, textvariable=v["label"], width=26))
 
         def kind_changed(_event=None) -> None:
