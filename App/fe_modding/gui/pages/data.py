@@ -4,7 +4,8 @@ and the props of every chapter map (Map Objects, read from the ``map.cmp`` files
 
 Characters live in the same file but have their own pages; both edit one
 shared session (``fe8_session.py``). Each tab lists its records as tiles
-(the item and skill tiles show their icon; classes have no icon); a tile opens
+(the item and skill tiles show their icon; classes have no icon, and are filtered
+as unpromoted, promoted or laguz like items by weapon type); a tile opens
 the record's form, and fields apply as soon as they are left. The Supports tab
 lists every support pair (a character's partners and bonds are edited on their
 page), edits the affinity bonus table and the support conversations

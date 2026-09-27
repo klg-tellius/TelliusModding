@@ -6,7 +6,8 @@ their own page (``character_form.py``); both work on one shared
 :class:`~.fe8_session.Fe8DataSession`, so neither can overwrite the other.
 
 Each record tab lists its records as tiles (:class:`~.widgets.TileBrowser`:
-a search box, category toggles for items, and the item or skill icon on
+a search box, category toggles for items (weapon type) and classes
+(unpromoted, promoted, laguz), and the item or skill icon on
 the tile); clicking one opens its
 full-width form, with **‹ All …** and previous/next above it.
 Every field is written to the session as soon as it is left (Tab, Enter, a
@@ -446,7 +447,8 @@ class StatsEditor(EditorPanel):
         self._icons()  # re-reads icon.tpl when it changed, so a replaced icon redraws the tiles
         self._pickers["classes"].set_entries(
             unique([f"{self.class_name(c)}  ·  {c.jid or '?'}" for c in fe8.classes]),
-            [f"{c.mjid} {c.aid}" for c in fe8.classes])
+            [f"{c.mjid} {c.aid}" for c in fe8.classes],
+            [fe8data.class_category(c, fe8.classes) for c in fe8.classes], fe8data.CLASS_CATEGORIES)
         self._pickers["items"].set_entries(
             unique([f"{self.item_name(it)}  ·  {it.iid or '?'}" for it in fe8.items]),
             [it.miid or "" for it in fe8.items],
