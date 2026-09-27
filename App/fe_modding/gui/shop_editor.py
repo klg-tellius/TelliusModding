@@ -9,6 +9,14 @@ cell names the item offered (or nothing). Chapter ``NN``'s shops are the
 sections ending in ``CNN``; a chapter without them (an added chapter) can
 get a copy of another chapter's.
 
+The armory and vendor lists show each item's icon (``window/icon.tpl``, see
+:mod:`fe_modding.formats.icons`) and price. The price is not a shop setting:
+the game charges an item's cost per use times its uses, both in the item's
+``FE8Data.bin`` record, so **Edit price...** changes that cost in the shared
+:class:`~.fe8_session.Fe8DataSession` - the same price in every chapter and
+difficulty - after warning so. Save writes FE8Data.bin too when it has
+unsaved edits.
+
 Path of Radiance only: Radiant Dawn's shop files use a different layout.
 """
 
@@ -19,7 +27,9 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
-from ..formats import shop
+from PIL import ImageTk
+
+from ..formats import fe8data, icons, shop
 from ..games import Game
 from ..project import ModProject
 from .changelog import ChangeLog
@@ -52,6 +62,12 @@ class ShopEditor(EditorPanel):
         self._by_label: dict[str, str] = {}
         self._forge_labels: dict[str, str] = {}  # IID -> its name alone when no other item shares it
         self._by_forge_label: dict[str, str] = {}
+        self._prices: dict[str, int] = {}
+        self._items: dict[str, object] = {}  # IID -> FE8Data.bin ItemEntry
+        self._icon_images: list = []
+        self._icon_stamp: Optional[int] = None
+        self._icon_photos: dict[int, ImageTk.PhotoImage] = {}
+        self._subscribed = None  # the FE8Data session whose changes re-read the prices
         self._build_widgets()
 
     # -- layout ---------------------------------------------------------------------------
@@ -100,14 +116,16 @@ class ShopEditor(EditorPanel):
             self._counts[kind] = ttk.Label(head, text="", style="Muted.TLabel")
             self._counts[kind].pack(side="left", padx=(8, 0))
             ttk.Label(frame, text=KIND_HINTS[kind], style="Muted.TLabel").pack(anchor="w")
-            tree = ttk.Treeview(frame, columns=("name", "iid", "price"), show="headings", height=8,
+            tree = ttk.Treeview(frame, columns=("iid", "price"), show="tree headings", height=8,
                                 selectmode="browse")
-            for col, text, width, anchor in (("name", "Item", 150, "w"), ("iid", "ID", 150, "w"),
-                                             ("price", "Price", 60, "e")):
+            tree.heading("#0", text="Item")
+            tree.column("#0", width=190, anchor="w")
+            for col, text, width, anchor in (("iid", "ID", 150, "w"), ("price", "Price", 70, "e")):
                 tree.heading(col, text=text)
                 tree.column(col, width=width, anchor=anchor, stretch=col != "price")
             tree.pack(fill="both", expand=True, pady=(4, 0))
             tree.bind("<Delete>", lambda e, k=kind: self._remove(k))
+            tree.bind("<Double-1>", lambda e, k=kind: self._edit_price(k))
             self._lists[kind] = tree
             buttons = ttk.Frame(frame)
             buttons.pack(fill="x", pady=(4, 0))
@@ -115,6 +133,8 @@ class ShopEditor(EditorPanel):
             ttk.Button(buttons, text="▼", width=3, command=lambda k=kind: self._move(k, 1)).pack(side="left",
                                                                                                 padx=(4, 0))
             ttk.Button(buttons, text="Remove", command=lambda k=kind: self._remove(k)).pack(side="left", padx=(8, 0))
+            ttk.Button(buttons, text="Edit price...", command=lambda k=kind: self._edit_price(k)).pack(
+                side="left", padx=(8, 0))
             add = ttk.Frame(frame)
             add.pack(fill="x", pady=(4, 0))
             var = tk.StringVar()
@@ -175,6 +195,10 @@ class ShopEditor(EditorPanel):
         index = self._index_provider()
         names = getattr(index, "item_names", {}) or {}
         items = session.fe8.items if session is not None and session.available else []
+        if session is not None and session is not self._subscribed:
+            session.subscribe(self._on_session_changed)
+            self._subscribed = session
+        self._items = {it.iid: it for it in items if it.iid}
         self._prices = {it.iid: it.cost * it.uses for it in items if it.iid}
         self._weapon = {it.iid: it.weapon_type for it in items if it.iid}
         iids = sorted(self._prices, key=lambda i: (names.get(i) or i).casefold())
@@ -261,10 +285,10 @@ class ShopEditor(EditorPanel):
             tree.delete(*tree.get_children())
             section = sections.get(kind)
             for i, iid in enumerate(section.items if section else []):
-                name = self._labels.get(iid, iid)
-                name = name[:name.rindex(" (")] if name.endswith(")") and " (" in name else ""
                 price = self._prices.get(iid)
-                tree.insert("", "end", iid=str(i), values=(name, iid, "" if price is None else price))
+                photo = self._icon_photo(iid)
+                tree.insert("", "end", iid=str(i), text=self._item_name(iid), image=photo if photo is not None else "",
+                            values=(iid, "" if price is None else price))
             count = len(section.items) if section else 0
             self._counts[kind].configure(text=f"{count} item{'s' if count != 1 else ''}")
         forge = sections.get("F")
@@ -274,13 +298,63 @@ class ShopEditor(EditorPanel):
             var.set("" if item is None else self._forge_labels.get(item, item) if item else NONE_LABEL)
         self._update_status()
 
+    def _item_name(self, iid) -> str:
+        """The item's English name, or its ID when the index has none."""
+        label = self._labels.get(iid, iid)
+        return label[:label.rindex(" (")] if label.endswith(")") and " (" in label else str(iid)
+
+    def _icons(self) -> list:
+        """The images of window/icon.tpl, re-read when the file changes."""
+        path = icons.icon_path(self._project.extracted_dir / "files")
+        try:
+            stamp = path.stat().st_mtime_ns
+        except OSError:
+            return []
+        if stamp != self._icon_stamp:
+            try:
+                self._icon_images = icons.read_icon_images(path.read_bytes())
+            except Exception:  # noqa: BLE001 - icons are a convenience
+                self._icon_images = []
+            self._icon_stamp = stamp
+            self._icon_photos = {}
+        return self._icon_images
+
+    def _icon_photo(self, iid) -> Optional[ImageTk.PhotoImage]:
+        item = self._items.get(iid)
+        if item is None:
+            return None
+        images = self._icons()
+        if item.icon not in self._icon_photos:
+            image = icons.item_icon(images, item.icon) if images else None
+            if image is None:
+                return None
+            try:
+                self._icon_photos[item.icon] = ImageTk.PhotoImage(image)
+            except tk.TclError:
+                return None
+        return self._icon_photos[item.icon]
+
+    def _session_dirty(self) -> bool:
+        session = self._session_provider()
+        return bool(session is not None and session.dirty)
+
     def _update_status(self) -> None:
-        self._save_button.configure(state="normal" if self._dirty else "disabled")
-        if self._dirty:
-            names = ", ".join(shop.DIFFICULTY_NAMES[d] for d in shop.DIFFICULTY_FILES if d in self._edited)
-            self._status.configure(text=f"Unsaved changes ({names})")
-        else:
-            self._status.configure(text="")
+        fe8_dirty = self._session_dirty()
+        self._save_button.configure(state="normal" if self._dirty or fe8_dirty else "disabled")
+        names = [shop.DIFFICULTY_NAMES[d] for d in shop.DIFFICULTY_FILES if d in self._edited and self._dirty]
+        if fe8_dirty:
+            names.append("FE8Data.bin")
+        self._status.configure(text=f"Unsaved changes ({', '.join(names)})" if names else "")
+
+    def _on_session_changed(self, source) -> None:
+        """FE8Data.bin changed or was saved (here or on another page): re-read names, icons and prices."""
+        if source is self or not self._loaded:
+            return
+        try:
+            self._refresh_catalog()
+            self._render()
+        except tk.TclError:
+            pass
 
     def _set_difficulty(self) -> None:
         names = {v: k for k, v in shop.DIFFICULTY_NAMES.items()}
@@ -358,6 +432,39 @@ class ShopEditor(EditorPanel):
         where = f"{shop.FORGE_ROW_NAMES[row]} / {shop.FORGE_BASE_NAMES[shop.FORGE_BASES[base]]}"
         self._changed([self._difficulty], f"{self._where('F')}: {where} = {iid or 'none'}")
 
+    def _edit_price(self, kind: str) -> None:
+        section = self._sections().get(kind)
+        index = self._selected(kind)
+        if section is None or index is None:
+            return
+        iid = section.items[index]
+        session = self._session_provider()
+        item = self._items.get(iid)
+        if session is None or not session.available or item is None:
+            messagebox.showerror("Edit price", f"{iid} isn't an item in FE8Data.bin.", parent=self)
+            return
+        if item.uses == 0:
+            messagebox.showinfo("Edit price", f"{self._item_name(iid)} has 0 uses, so its price (cost per use x uses) "
+                                              "is always 0. Give it uses in Game Data › Items first.", parent=self)
+            return
+        dialog = _PriceDialog(self, self._item_name(iid), iid, item, self._icon_photo(iid))
+        self.wait_window(dialog)
+        cost = dialog.result
+        if cost is None or cost == item.cost:
+            return
+        try:
+            session.data = fe8data.patch_item_field(session.data, item.index, "cost", cost)
+        except ValueError as exc:
+            messagebox.showerror("Edit price", str(exc), parent=self)
+            return
+        old = item.cost * item.uses
+        self._changelog.append("FE8Data.bin", f"{iid}: price {old} -> {cost * item.uses} "
+                                              f"(cost per use {item.cost} -> {cost}), every chapter")
+        session.changed(self)
+        self._refresh_catalog()
+        self._render()
+        self._select(kind, index)
+
     def _template_chapter(self) -> Optional[int]:
         doc = self._doc()
         chapters = [c for c in doc.chapters() if all(doc.shop(k, c) for k in shop.SHOP_KINDS)] if doc else []
@@ -406,19 +513,29 @@ class ShopEditor(EditorPanel):
         return self._save()
 
     def _save(self) -> bool:
+        saved = []
         try:
             for difficulty in sorted(self._edited):
                 self._project.write_keeping_original(self._path(difficulty),
                                                      shop.build_shop(self._docs[difficulty]))
+                saved.append(shop.DIFFICULTY_FILES[difficulty])
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not save shops", str(exc), parent=self)
             return False
-        files = ", ".join(shop.DIFFICULTY_FILES[d] for d in sorted(self._edited))
+        if saved:
+            self._changelog.append("Shops", f"Saved {', '.join(saved)}")
         self._edited = set()
         self._dirty = False
-        self._changelog.append("Shops", f"Saved {files}")
+        if self._session_dirty():
+            try:
+                self._session_provider().save()  # item prices; also any other page's FE8Data.bin edits
+            except OSError as exc:
+                messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+                self._update_status()
+                return False
+            saved.append("FE8Data.bin")
         self._update_status()
-        self._status.configure(text=f"Saved {files}")
+        self._status.configure(text=f"Saved {', '.join(saved)}" if saved else "")
         return True
 
     def _confirm_discard(self) -> bool:
@@ -428,3 +545,82 @@ class ShopEditor(EditorPanel):
         self._load()
         self._render()
         return True
+
+
+class _PriceDialog(tk.Toplevel):
+    """Asks for an item's new price; ``result`` is the new cost per use, or None."""
+
+    def __init__(self, parent: tk.Misc, name: str, iid: str, item, photo):
+        super().__init__(parent)
+        self.title("Edit price")
+        self.transient(parent.winfo_toplevel())
+        self.resizable(False, False)
+        self.result: Optional[int] = None
+        self._item = item
+        body = ttk.Frame(self, padding=14)
+        body.pack(fill="both", expand=True)
+        head = ttk.Frame(body)
+        head.pack(fill="x")
+        if photo is not None:
+            ttk.Label(head, image=photo).pack(side="left", padx=(0, 8))
+        ttk.Label(head, text=f"{name} ({iid})" if name != iid else iid, style="Heading.TLabel").pack(side="left")
+        ttk.Label(body, wraplength=420, justify="left", style="Warn.TLabel", text=(
+            "Warning: an item has a single price for the whole game, not one per chapter. It is stored in "
+            "FE8Data.bin (cost per use x uses), so changing it changes this item's price in every chapter's "
+            "shops, on every difficulty, and wherever else the game uses it.")).pack(anchor="w", pady=(10, 8))
+        form = ttk.Frame(body)
+        form.pack(fill="x")
+        ttk.Label(form, text="Price").grid(row=0, column=0, sticky="w")
+        self._price_var = tk.StringVar(value=str(item.cost * item.uses))
+        entry = ttk.Entry(form, textvariable=self._price_var, width=10)
+        entry.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self._note = ttk.Label(form, style="Muted.TLabel")
+        self._note.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self._price_var.trace_add("write", lambda *_: self._update_note())
+        self._update_note()
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        self._ok = ttk.Button(buttons, text="Change price everywhere", style="Accent.TButton", command=self._accept)
+        self._ok.pack(side="right", padx=(0, 6))
+        entry.bind("<Return>", lambda e: self._accept())
+        self.bind("<Escape>", lambda e: self.destroy())
+        entry.focus_set()
+        entry.select_range(0, "end")
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _cost(self) -> Optional[int]:
+        """The cost per use closest to the typed price, or None when it isn't a price."""
+        try:
+            price = int(self._price_var.get().strip())
+        except ValueError:
+            return None
+        if price < 0:
+            return None
+        uses = self._item.uses
+        cost = (price + uses // 2) // uses
+        return cost if cost <= 0xFFFF else None
+
+    def _update_note(self) -> None:
+        uses, cost = self._item.uses, self._cost()
+        if cost is None:
+            text = f"Enter a whole number up to {0xFFFF * uses}."
+        else:
+            text = f"{uses} uses x {cost} per use = {cost * uses}"
+            try:
+                if cost * uses != int(self._price_var.get().strip()):
+                    text += f" (the price must be a multiple of {uses})"
+            except ValueError:
+                pass
+        self._note.configure(text=text)
+
+    def _accept(self) -> None:
+        cost = self._cost()
+        if cost is None:
+            self.bell()
+            return
+        self.result = cost
+        self.destroy()

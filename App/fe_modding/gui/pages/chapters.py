@@ -1,11 +1,11 @@
-"""Chapters: a card per chapter, and a page per chapter gathering its map,
-deployment, dialogue, script and base shops, with an overview of who is in it, what is
-said and which script events it has.
+"""Chapters: a card per chapter, and a page per chapter gathering its map and
+deployment (the Build tab), dialogue, script and base shops, with an overview of
+who is in it, what is said and which script events it has.
 
 Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
-which one the Map and Deployment tabs show.
+which one the Build tab shows.
 """
 
 from __future__ import annotations
@@ -26,11 +26,10 @@ from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 
-TABS = ["overview", "build", "deployment", "dialogue", "script", "shops"]
+TABS = ["overview", "build", "dialogue", "script", "shops"]
 #: Old routes to tabs that were merged into another.
-TAB_ALIASES = {"map": "build"}
-TAB_LABELS = {"overview": "Overview", "build": "Build", "deployment": "Deployment",
-              "dialogue": "Dialogue", "script": "Script", "shops": "Shops"}
+TAB_ALIASES = {"map": "build", "deployment": "build"}
+TAB_LABELS = {"overview": "Overview", "build": "Build", "dialogue": "Dialogue", "script": "Script", "shops": "Shops"}
 
 
 class ChaptersHub(Page):
@@ -128,7 +127,7 @@ class ChaptersHub(Page):
 
 class ChapterPage(Page):
     """Route ``("chapter", id[, tab[, ...]])``; deep links:
-    ``dialogue, message_id`` · ``deployment, folder, difficulty, section, unit`` ·
+    ``dialogue, message_id`` · ``build, folder, difficulty, section, unit`` ·
     ``script, function``."""
 
     kind = "chapter"
@@ -164,7 +163,8 @@ class ChapterPage(Page):
         self._overview = ScrollFrame(self._notebook, padding=(16, 12))
         self._notebook.add(self._overview, text="Overview")
         project, log = self.project, shell.changelog
-        # The map's data; the Build tab shows and edits it (the MapEditor has no tab of its own).
+        # The map's and the deployment's data; the Build tab shows and edits both
+        # (neither editor has a tab of its own).
         self._map = MapEditor(self._notebook, project, log)
         self._deployment = DeploymentEditor(self._notebook, project, log,
                                             on_navigate_to_character=lambda pid: shell.navigate(("character", pid)))
@@ -173,13 +173,14 @@ class ChapterPage(Page):
         self._shops = ShopEditor(self._notebook, project, log, index_provider=lambda: shell.index,
                                  session_provider=lambda: shell.session)
         # The Build tab edits the Map, Deployment and Script editors' data; it has none of its own,
-        # so it isn't one of panels() (their dirty state covers it).
+        # so it isn't one of panels() (their dirty state covers it). It shows the deployment
+        # file's sections and units, and picks which of the phase's files (dispos_n/h/m/c) to show.
         self._build = MapBuilder(self._notebook, project, log, self._map, self._deployment,
                                  index_provider=lambda: shell.index, session_provider=lambda: shell.session,
                                  on_navigate_to_character=lambda pid: shell.navigate(("character", pid)),
-                                 script_editor=self._script,
+                                 navigate=shell.navigate, script_editor=self._script,
                                  on_open_function=lambda name: shell.navigate(("chapter", self._chapter, "script", name)))
-        for key, panel in (("build", self._build), ("deployment", self._deployment), ("dialogue", self._dialogue),
+        for key, panel in (("build", self._build), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
@@ -318,11 +319,11 @@ class ChapterPage(Page):
         elif tab == "script":
             if self._script.show_chapter_script():
                 self.after_idle(lambda: self._script.select_function(args[0]))
-        elif tab == "deployment" and len(args) >= 4:
+        elif tab == "build" and len(args) >= 4:
             folder, difficulty, section, unit = args[:4]
             if folder != self._phase:
                 self._set_phase(folder)
-            self._deployment.select_unit(difficulty, section, int(unit))
+            self._build.select_unit(difficulty, section, int(unit))
 
     # -- overview --------------------------------------------------------------------------------
     def _render_overview(self) -> None:
@@ -369,8 +370,8 @@ class ChapterPage(Page):
             ttk.Label(row, text=f"{section}  ·  {len(members)} unit{'s' if len(members) != 1 else ''}",
                       style="Faint.TLabel").pack(side="left", padx=(8, 0))
             first = members[0]
-            Link(row, "Edit in Deployment ›", lambda u=first: self.shell.navigate(
-                ("chapter", self._chapter, "deployment", u.folder, u.difficulty, u.section, u.unit_index))
+            Link(row, "Edit in Build ›", lambda u=first: self.shell.navigate(
+                ("chapter", self._chapter, "build", u.folder, u.difficulty, u.section, u.unit_index))
                  ).pack(side="right")
             grid = CardGrid(body, card_width=230, gap=8)
             grid.pack(fill="x")

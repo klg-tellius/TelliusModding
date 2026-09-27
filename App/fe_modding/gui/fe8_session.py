@@ -52,6 +52,10 @@ class Fe8DataSession:
         is whoever made it (views skip their own changes)."""
         self._listeners.append(listener)
 
+    def unsubscribe(self, listener: Callable[[object], None]) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
     def changed(self, source: object = None) -> None:
         """Call after patching ``data``: reparses, marks unsaved, notifies."""
         self.reparse()

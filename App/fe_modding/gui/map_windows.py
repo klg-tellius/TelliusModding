@@ -3,7 +3,9 @@
 - :class:`MapObjectsWindow` - every placed object (``mapbuildinst``) in a
   table, each editable: object, tile, angle, height and the tiles it covers.
 - :class:`MapSettingsWindow` - capacity scale, light, fog, grid colour and
-  the ``mapextra`` record, and the water surface (import, flow).
+  the ``mapextra`` record, the water surface (import, flow), and the
+  chapter's Game Data › Chapters record (``stats_editor.ChapterRecordPanel``,
+  FE8Data.bin: title, objectives, music, backgrounds, enemy levels...).
 - :class:`Map3DWindow` - the whole chapter in 3D (``map_scene.build_map_scene``),
   rebuilt on a worker thread after each edit.
 
@@ -23,6 +25,7 @@ from .. import map_props
 from ..formats import map_file
 from . import map_scene
 from .model_viewer import _ModelPreview
+from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame
 
 ANGLES = {"0°": 0, "90°": 192, "180°": 128, "270°": 64}
@@ -369,8 +372,8 @@ class MapObjectsWindow(_Window):
 
 
 class MapSettingsWindow(_Window):
-    """The map-wide records (capacity scale, light, fog, grid colour, extra)
-    and the water surface."""
+    """The map-wide records (capacity scale, light, fog, grid colour, extra),
+    the water surface, and the chapter's record in Game Data › Chapters."""
 
     SECTIONS = [
         ("light", "Light", LIGHT_FIELDS, map_file.patch_light_field),
@@ -380,15 +383,32 @@ class MapSettingsWindow(_Window):
     ]
 
     def __init__(self, builder) -> None:
-        super().__init__(builder, "Map settings", "780x720")
+        super().__init__(builder, "Map settings", "1000x800")
         scroll = ScrollFrame(self, padding=12)
         scroll.pack(fill="both", expand=True)
-        self._body = scroll.body
+        self._body = ttk.Frame(scroll.body)
+        self._body.pack(fill="x", anchor="w")
         self._vars: dict[str, tk.StringVar] = {}
         self._render()
+        self._chapter = None
+        session = builder.fe8_session
+        if session is not None and session.available:
+            ttk.Label(scroll.body, text="Chapter (Game Data › Chapters)", font=("Segoe UI", 10, "bold")).pack(
+                anchor="w", pady=(18, 4))
+            self._chapter = ChapterRecordPanel(scroll.body, builder.project, builder.changelog, session,
+                                               navigate=builder.navigate)
+            self._chapter.pack(fill="x", anchor="w")
+            self._chapter.show_map(self.map.map_name or None)
 
     def _map_changed(self) -> None:
         self._render()
+        if self._chapter is not None:
+            self._chapter.show_map(self.map.map_name or None)
+
+    def close(self) -> None:
+        if self._chapter is not None:
+            self._chapter.cleanup()
+        super().close()
 
     def _render(self) -> None:
         for child in self._body.winfo_children():
