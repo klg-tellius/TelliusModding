@@ -11,6 +11,9 @@ canvas (``dispos_n/h/m/c.bin``) with all its sections.
   Each function is a link to it in the Script tab.
 - Below, a table of the section's units with their main fields. Double-click
   a cell to edit it in place; "All fields..." edits the rest.
+- "Highlight the section's units on the map" outlines the selected
+  section's units on the Build canvas and dims the others; "Show on map"
+  scrolls the canvas to them.
 
 Selecting a unit in the table selects it on the Build canvas (and the other
 way round). Every edit goes through the :class:`~.map_builder.MapBuilder`,
@@ -109,6 +112,11 @@ class DispositionWindow(_Window):
         self._delete_button.pack(side="right")
         self._raw_button = ttk.Button(tools, text="All fields...", command=self._raw_fields, state="disabled")
         self._raw_button.pack(side="right", padx=(0, 6))
+        self._see_button = ttk.Button(tools, text="Show on map", command=self._see_section)
+        self._see_button.pack(side="right", padx=(0, 12))
+        self._highlight_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(tools, text="Highlight the section's units on the map", variable=self._highlight_var,
+                        command=self._update_highlight).pack(side="right", padx=(0, 6))
 
         table = ttk.Frame(right)
         table.pack(fill="both", expand=True)
@@ -252,6 +260,15 @@ class DispositionWindow(_Window):
                 anchor="w", pady=(4, 0))
         self._fill_table()
 
+    def _update_highlight(self) -> None:
+        section = self._current_section()
+        on = self._highlight_var.get() and section is not None and bool(section.units)
+        self.builder.highlight_section(self._variant() if on else None, section.name if on else None)
+
+    def _see_section(self) -> None:
+        if self._section is not None and self._variant():
+            self.builder.see_section(self._variant(), self._section)
+
     def _apply_header(self, section_name: str, form: dispo_widgets.SectionHeaderFrame) -> None:
         try:
             header = form.header()
@@ -294,6 +311,7 @@ class DispositionWindow(_Window):
         if selected is not None and selected < len(units):
             self._select_row(selected)
         self._update_buttons()
+        self._update_highlight()
 
     def _selected_index(self) -> Optional[int]:
         selection = self._table.selection()
@@ -484,4 +502,5 @@ class DispositionWindow(_Window):
 
     def close(self) -> None:
         self._cancel_edit()
+        self.builder.highlight_section(None, None)
         super().close()

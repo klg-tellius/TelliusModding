@@ -97,6 +97,7 @@ TOOL_HELP = {
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
             "Delete removes the selected zone.",
 }
+HIGHLIGHT_COLOR = "#4dd0ff"  # the units of the section highlighted from the Disposition window
 ZONE_COLORS = {"player": "#4fc3f7", "enemy": "#ff8a65"}
 LOCATION_COLOR = "#ce93d8"
 ZONE_KINDS = {"Area - a unit enters": script_zones.AREA, "Location - a unit acts on a tile": script_zones.LOCATION}
@@ -114,6 +115,12 @@ def _terrain_color(name: str) -> tuple[int, int, int]:
 def _ordered(a, b) -> tuple[int, int, int, int]:
     """The (x1, y1, x2, y2) rectangle with corners ``a`` and ``b``."""
     return min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])
+
+
+def _dim(color: str) -> str:
+    """``color`` (#rrggbb) faded towards the canvas background."""
+    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    return "#%02x%02x%02x" % tuple(int(c * 0.35 + 0x1e * 0.65) for c in (r, g, b))
 
 
 def _prop_color(desc_index: int) -> str:
@@ -176,6 +183,7 @@ class _BuildCanvas(tk.Canvas):
         self.playable = None
         self.props: list[dict] = []
         self.units: list[dict] = []
+        self.highlighting = False  # a section's units are highlighted (the others are drawn dimmed)
         self.zones: list[dict] = []
         self.heights = None  # [x][y] mean combined elevation, for the heights layer
         self.selected_tiles: set = set()
@@ -286,7 +294,9 @@ class _BuildCanvas(tk.Canvas):
             for zone in self.zones:
                 self._draw_zone(zone)
         if self.show["units"]:
-            for unit in self.units:
+            self.highlighting = any(unit["highlight"] for unit in self.units)
+            # the highlighted section's units on top, the selected unit above them
+            for unit in sorted(self.units, key=lambda u: (u["selected"], u["highlight"])):
                 self._draw_unit(unit)
         for x, y in self.selected_tiles:
             self.create_rectangle(*self.box(x, y), outline="#ffe14d", width=2)
@@ -299,12 +309,15 @@ class _BuildCanvas(tk.Canvas):
             bx0, by0, bx1, by1 = self.box(*unit["pos2"])
             self.create_line((x0 + x1) / 2, (y0 + y1) / 2, (bx0 + bx1) / 2, (by0 + by1) / 2, fill=unit["color"],
                              width=2, arrow="last", dash=(4, 2))
+        dimmed = self.highlighting and not unit["highlight"] and not unit["selected"]
+        if unit["highlight"]:
+            self.create_rectangle(x0 + 1, y0 + 1, x1 - 1, y1 - 1, outline=HIGHLIGHT_COLOR, width=2)
         if unit["selected"]:
             self.create_rectangle(x0, y0, x1, y1, outline="#ffe14d", width=3)
-        self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=unit["color"],
+        self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, fill=_dim(unit["color"]) if dimmed else unit["color"],
                          outline="#ffffff" if unit["selected"] else "#101010", width=3 if unit["selected"] else 1)
         if self.cell >= 18:
-            self.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=unit["text"], fill="#ffffff",
+            self.create_text((x0 + x1) / 2, (y0 + y1) / 2, text=unit["text"], fill="#8a8a8a" if dimmed else "#ffffff",
                              font=("Segoe UI", max(6, int(self.cell / 4)), "bold"))
 
     def _draw_zone(self, zone: dict) -> None:
@@ -435,6 +448,7 @@ class MapBuilder(EditorPanel):
         self._ai_labels: dict[str, list[str]] | None = None
         self._form_vars: dict = {}
         self._windows: dict[str, tk.Toplevel] = {}
+        self._highlight: tuple[str, str] | None = None  # (variant, section) highlighted on the canvas
 
         self._build_widgets()
         map_editor.add_listener(self._on_map_changed)
@@ -842,11 +856,12 @@ class MapBuilder(EditorPanel):
                     continue
                 for ui, unit in enumerate(section.units):
                     selected = self._selection == ("unit", section.name, ui)
+                    highlight = self._highlight == (self._variant(), section.name)
                     units.append({
                         "key": (section.name, ui), "x": unit[F["pos_x"]], "y": unit[F["pos_y"]],
                         "pos2": (unit[F["pos2_x"]], unit[F["pos2_y"]]),
                         "color": FACTION_COLORS.get(unit[F["faction"]], "#8a8a8a"),
-                        "text": self._short_name(unit[F["pid"]]), "selected": selected,
+                        "text": self._short_name(unit[F["pid"]]), "selected": selected, "highlight": highlight,
                     })
         canvas.units = units
 
@@ -2345,6 +2360,28 @@ class MapBuilder(EditorPanel):
             self._filter_var.set("All sections")
         self._select(("unit", section_name, index))
         self._see_unit(section_name, index)
+
+    def highlight_section(self, variant: str | None, section_name: str | None) -> None:
+        """Outline every unit of a section on the canvas and dim the others
+        (None clears it). A section filter hiding the section is lifted."""
+        target = (variant, section_name) if variant and section_name else None
+        if target == self._highlight:
+            return
+        self._highlight = target
+        if target is not None and self._filter_var.get() not in ("All sections", section_name):
+            self._filter_var.set("All sections")
+        self._refresh_canvas()
+
+    def see_section(self, variant: str, section_name: str) -> None:
+        """Scroll the canvas to the middle of a section's units."""
+        doc = self._deploy.document(variant)
+        section = doc.section(section_name) if doc else None
+        if not section or not section.units:
+            return
+        self.set_variant(variant)
+        xs = [int(u[F["pos_x"]]) for u in section.units]
+        ys = [int(u[F["pos_y"]]) for u in section.units]
+        self.after_idle(lambda: self._canvas.see_tile((min(xs) + max(xs)) // 2, (min(ys) + max(ys)) // 2))
 
     def unit_choices(self):
         """(characters, classes, items, skills) as (display, label) pairs, and
