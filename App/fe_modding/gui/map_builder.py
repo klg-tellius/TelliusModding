@@ -25,8 +25,10 @@ coordinates of ``mapbuildinst`` (x, y), the panel layer and the dispos
 a worker thread and redone (debounced) after prop edits.
 
 Units: the canvas shows one deployment file (the "Deployment file" picker:
-``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``); "Units of" limits it
-to one section. "All fields..." edits any raw field of a unit. The unit
+``dispos_n/h/m/c.bin`` of the phase's ``dispos.cmp``); the "Section" picker
+beside it limits it to one section (the one new units go to), and "Add
+section..." / "Remove section" add an empty section or remove the picked one
+(``dispo.add_section()`` / ``remove_section()``). "All fields..." edits any raw field of a unit. The unit
 panel edits the selected unit and its section's header; with "Same edit on every difficulty" the
 shared fields (character, class, items, AI, position...) follow in each
 variant that has the unit (``dispo.find_counterpart_unit()``), while level
@@ -451,11 +453,17 @@ class MapBuilder(EditorPanel):
         self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=26)
         self._variant_combo.pack(side="left")
         self._variant_combo.bind("<<ComboboxSelected>>", lambda e: self._variant_changed())
-        ttk.Label(top, text="Units of").pack(side="left", padx=(10, 4))
+        ttk.Label(top, text="Section").pack(side="left", padx=(10, 4))
         self._filter_var = tk.StringVar(value="All sections")
         self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=24)
         self._filter_combo.pack(side="left")
-        self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_canvas())
+        self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._filter_changed())
+        ttk.Button(top, text="Add section...", command=self._add_section).pack(side="left", padx=(6, 0))
+        self._remove_section_button = ttk.Button(top, text="Remove section", command=self._remove_section,
+                                                 state="disabled")
+        self._remove_section_button.pack(side="left", padx=(4, 0))
+        self._filter_var.trace_add("write", lambda *_: self._remove_section_button.configure(
+            state="disabled" if self._filter_var.get() == "All sections" else "normal"))
         self._layer_vars = {}
         layers = ttk.Frame(top)
         layers.pack(side="left", padx=(14, 0))
@@ -665,6 +673,75 @@ class MapBuilder(EditorPanel):
         self._section_combo.configure(values=labelled)
         if self._section_var.get() not in labelled:
             self._section_var.set(labelled[0] if labelled else "")
+
+    def _filter_changed(self) -> None:
+        """Show the picked section's units (or every section's); placed units go to it."""
+        name = self._filter_var.get()
+        match = next((v for v in self._section_combo.cget("values") if v.split("  (", 1)[0] == name), None)
+        if match is not None:
+            self._section_var.set(match)
+        self._refresh_canvas()
+
+    def _section_variants(self, docs, name: str) -> list[tuple[str, str]]:
+        """(variant, section name) pairs a section edit on ``name`` in the
+        current file reaches: that file, plus with "Same edit on every
+        difficulty" the other Normal/Hard/Maniac files, whose sections carry
+        their own difficulty letter (``bmap02_first_n`` -> ``bmap02_first_h``)."""
+        current = self._variant()
+        targets = [(current, name)]
+        base = dispo.section_base(name)
+        letter = current.removeprefix("dispos_")[:1]
+        if not self._all_variants.get() or base == name or letter not in "nhm":
+            return targets
+        for variant in docs:
+            other = variant.removeprefix("dispos_")[:1]
+            if variant != current and other in "nhm":
+                targets.append((variant, f"{base}_{other}"))
+        return targets
+
+    def _add_section(self) -> None:
+        doc = self._doc()
+        if doc is None:
+            return
+        dialog = _AddSectionDialog(self, self._deploy.group_keys())
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        name, header = dialog.result
+
+        def edit(docs):
+            for variant, section_name in self._section_variants(docs, name):
+                if docs[variant].section(section_name) is None or variant == self._variant():
+                    dispo.add_section(docs[variant], section_name, header)
+
+        if self._edit_units(edit, f"Added section {name}"):
+            self._refresh_sections()
+            self._filter_var.set(name)
+            self._filter_changed()
+
+    def _remove_section(self) -> None:
+        name = self._filter_var.get()
+        doc = self._doc()
+        section = doc.section(name) if doc and name != "All sections" else None
+        if section is None:
+            return
+        targets = self._section_variants({v: None for v in self._deploy.variants()}, name)
+        targets = [(v, n) for v, n in targets if (d := self._deploy.document(v)) is not None and d.section(n)]
+        count = sum(len(self._deploy.document(v).section(n).units) for v, n in targets)
+        where = ", ".join(f"{n} in {v}" for v, n in targets)
+        if not messagebox.askyesno(
+                "Remove section",
+                f"Remove {where}, with {'its' if len(targets) == 1 else 'their'} {count} unit{'s' if count != 1 else ''}?\n\n"
+                "Scripts that deploy the section by name will find nothing.", parent=self):
+            return
+        if self._selection and self._selection[0] == "unit":
+            self._selection = None
+
+        def edit(docs):
+            for variant, section_name in targets:
+                dispo.remove_section(docs[variant], section_name)
+
+        self._edit_units(edit, f"Removed section {name}")
 
     @staticmethod
     def _section_army(section) -> str:
@@ -2191,6 +2268,49 @@ class MapBuilder(EditorPanel):
     # -- workspace --------------------------------------------------------------------------
     def refresh_chapter_list(self) -> None:
         pass
+
+
+class _AddSectionDialog(tk.Toplevel):
+    """Name and header of a new, empty section; ``result`` is (name, header)
+    once OK is pressed."""
+
+    def __init__(self, builder: MapBuilder, group_keys) -> None:
+        super().__init__(builder)
+        self.title("Add section")
+        self.result = None
+        frame = ttk.Frame(self, padding=10)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Name").pack(anchor="w")
+        self._name_var = tk.StringVar()
+        entry = ttk.Entry(frame, textvariable=self._name_var, width=36)
+        entry.pack(anchor="w", fill="x")
+        ttk.Label(frame, text="Scripts deploy a section by this name. With \"Same edit on every difficulty\", "
+                              "a name ending in the file's difficulty letter (_n, _h, _m) adds the section "
+                              "to the other difficulties too, with their letter.",
+                  style="Muted.TLabel", wraplength=340, justify="left").pack(anchor="w", pady=(2, 8))
+        self._header = dispo_widgets.SectionHeaderFrame(frame, dispo.SectionHeader(4, 0, 0), group_keys)
+        self._header.pack(anchor="w")
+        buttons = ttk.Frame(frame)
+        buttons.pack(anchor="e", pady=(10, 0))
+        ttk.Button(buttons, text="OK", command=self._ok).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.transient(builder.winfo_toplevel())
+        self.grab_set()
+        entry.focus_set()
+
+    def _ok(self) -> None:
+        name = self._name_var.get().strip()
+        try:
+            header = self._header.header()
+            if not name:
+                raise ValueError("Give the section a name.")
+        except ValueError as exc:
+            messagebox.showerror("Add section", str(exc), parent=self)
+            return
+        self.result = (name, header)
+        self.destroy()
 
 
 class _RawFieldsDialog(tk.Toplevel):

@@ -90,6 +90,43 @@ class DispoDocumentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dispo.add_unit(doc, "DATE", dispo.new_unit_values())
 
+    def test_add_section_then_units(self):
+        doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
+        dispo.add_section(doc, "SECAA", dispo.SectionHeader(4, 1, 3))
+        unit = dispo.new_unit_values()
+        unit[F["pid"]] = "PID_NEW"
+        dispo.add_unit(doc, "SECAA", unit)
+        data = dispo.build_dispo(doc)
+        parsed = dispo.parse_dispo(data)
+        self.assertEqual([s.name for s in parsed.sections], ["DATE", "SECA", "SECB", "SECAA"])
+        self.assertEqual(dispo.section_header(parsed.section("SECAA")), dispo.SectionHeader(4, 1, 3))
+        self.assertEqual(parsed.section("SECAA").units[0][F["pid"]], "PID_NEW")
+        # the table was sorted by name, so the new entry goes in its place
+        self.assertEqual([parsed.sections[i].name for i in parsed.table_order], ["DATE", "SECA", "SECAA", "SECB"])
+        self.assertEqual(dispo.build_dispo(parsed), data)
+
+    def test_add_section_refuses_bad_names(self):
+        doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
+        for name in ("", "SECA", "has space", "é"):
+            with self.assertRaises(ValueError):
+                dispo.add_section(doc, name)
+
+    def test_remove_section(self):
+        doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
+        dispo.remove_section(doc, "SECA")
+        parsed = dispo.parse_dispo(dispo.build_dispo(doc))
+        self.assertEqual([s.name for s in parsed.sections], ["DATE", "SECB"])
+        self.assertEqual(parsed.section("SECB").units[0][F["pid"]], "PID_TEST")
+        with self.assertRaises(ValueError):
+            dispo.remove_section(parsed, "DATE")
+
+    def test_add_then_remove_section_restores_the_file(self):
+        data = _build_minimal_dispo_bytes()
+        doc = dispo.parse_dispo(data)
+        dispo.add_section(doc, "SECC")
+        dispo.remove_section(doc, "SECC")
+        self.assertEqual(dispo.build_dispo(doc), data)
+
     def test_move_unit_keeps_the_second_tile_offset(self):
         unit = dispo.new_unit_values()
         unit[F["pos_x"]], unit[F["pos_y"]], unit[F["pos2_x"]], unit[F["pos2_y"]] = 15, 16, 13, 16
