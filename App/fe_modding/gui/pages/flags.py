@@ -28,6 +28,7 @@ from ...formats import event_flags as ef
 from ...formats.cmb import CompileError
 from ...formats.cmb.parser import ParseError, parse
 from ..shell import Page
+from .chapters import open_script
 from .. import theme
 
 TABS = {"campaign": "Campaign flags", "chapter": "Chapter flags", "save": "Save file"}
@@ -143,18 +144,7 @@ class FlagsPage(Page):
                               chapter_id: Optional[str] = None) -> None:
         """Show ``path`` in a chapter's Script tab (startup.cmb opens in the
         current or first chapter's)."""
-        page = self.shell.existing_page("chapter")
-        chapter_id = chapter_id or getattr(page, "_chapter", None)
-        if chapter_id is None:
-            ids = [c for c in chapters.list_chapter_ids(self.project) if script_sources.chapter_script(self.project, c)]
-            if not ids:
-                return
-            chapter_id = ids[0]
-        if not self.shell.navigate(("chapter", chapter_id, "script")):
-            return
-        editor = self.script_editor()
-        if editor is not None and editor.open_file(path) and function:
-            editor.after_idle(lambda: editor.select_function(function))
+        open_script(self.shell, path, function, chapter_id)
 
     # -- chapter budget scan ----------------------------------------------------------------
     def budget(self) -> Optional[dict]:

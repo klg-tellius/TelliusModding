@@ -15,7 +15,7 @@ import re
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from ... import chapters
+from ... import chapters, script_sources
 from ...formats.cmb.catalog import TRIGGERS
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
@@ -442,6 +442,24 @@ class ChapterPage(Page):
             if kind:
                 ttk.Label(cell, text=trigger.title if trigger else f"trigger {kind}",
                           style="SurfaceMuted.TLabel").pack(side="left", padx=(8, 0))
+
+
+def open_script(shell, path, function: str | None = None, chapter_id: str | None = None) -> None:
+    """Show ``path`` in a chapter's Script tab: ``chapter_id``'s, else the open
+    chapter's, else the first chapter with a script (a shared script such as
+    ``startup.cmb`` has no chapter of its own; the tab's File box lists it)."""
+    page = shell.existing_page("chapter")
+    chapter_id = chapter_id or getattr(page, "_chapter", None)
+    if chapter_id is None:
+        ids = [c for c in chapters.list_chapter_ids(shell.project) if script_sources.chapter_script(shell.project, c)]
+        if not ids:
+            return
+        chapter_id = ids[0]
+    if not shell.navigate(("chapter", chapter_id, "script")):
+        return
+    editor = shell.page("chapter")._script
+    if editor.open_file(path) and function:
+        editor.after_idle(lambda: editor.select_function(function))
 
 
 def _set_image(card: Card, photo) -> None:

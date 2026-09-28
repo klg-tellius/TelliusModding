@@ -1,7 +1,8 @@
 """Assets: a tile per resource type, each opening its viewer full-page.
 
 The viewers keep their own file lists - that list belongs to the tool, not to
-the workspace navigation."""
+the workspace navigation. Conversations and Scripts list their files as cards
+that open the chapter page's Dialogue and Script tabs (``text_assets.py``)."""
 
 from __future__ import annotations
 
@@ -25,9 +26,12 @@ from ..portrait_viewer import PortraitViewer
 from ..shell import Page
 from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
+from .text_assets import ConversationsPanel, ScriptsPanel
 
 #: (key, label, icon, description, class), in hub order.
 ASSET_TOOLS = [
+    ("conversations", "Conversations", "✉", "Every message file (Mess/), chapters' and shared", ConversationsPanel),
+    ("scripts", "Scripts", "⌘", "Every event script (Scripts/), chapters' and startup.cmb", ScriptsPanel),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
     ("backgrounds", "Backgrounds", "▭", "Conversation backgrounds (s/)", BackgroundViewer),
@@ -43,6 +47,8 @@ ASSET_TOOLS = [
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
+#: Tools that list files for other pages to open (they take the shell).
+LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
 
 class AssetsHub(Page):
@@ -55,7 +61,8 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Assets", style="Title.TLabel").pack(anchor="w")
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
-        for title, keys in (("Characters and models", ("portraits", "models")),
+        for title, keys in (("Text and scripts", ("conversations", "scripts")),
+                            ("Characters and models", ("portraits", "models")),
                             ("Art", ("backgrounds", "illustrations", "ending", "world_map")),
                             ("Interface", ("icons", "fonts", "ui_windows", "etc_graphics", "equipment")),
                             ("Sound and video", ("music", "videos"))):
@@ -73,7 +80,8 @@ class AssetsHub(Page):
 
 
 class AssetPage(Page):
-    """One asset tool full-page; route ``("asset", key[, selection])``."""
+    """One asset tool full-page; route ``("asset", key[, selection])``
+    (for Conversations, the selection is a message file it hosts)."""
 
     kind = "asset"
 
@@ -92,8 +100,16 @@ class AssetPage(Page):
         panel = self._panels.get(key)
         if panel is None:
             cls = TOOLS_BY_KEY[key][4]
-            panel = cls(self, self.project, self.shell.changelog)
+            if cls in LIST_PANELS:
+                panel = cls(self, self.shell)
+            else:
+                panel = cls(self, self.project, self.shell.changelog)
             self._panels[key] = panel
+        selection = route[2] if len(route) > 2 else None
+        if key == "conversations" and selection and not panel.open_file(selection):
+            return False
+        if isinstance(panel, LIST_PANELS) and not selection:
+            panel.show_list()
         if key != self._key:
             for other in self._panels.values():
                 other.pack_forget()
@@ -109,7 +125,16 @@ class AssetPage(Page):
         return True
 
     def crumbs(self, route):
-        return [("Assets", ("assets",)), (TOOLS_BY_KEY[route[1]][1], None)]
+        label = TOOLS_BY_KEY[route[1]][1]
+        if route[1] == "conversations" and len(route) > 2 and route[2]:
+            return [("Assets", ("assets",)), (label, ("asset", route[1])), (route[2], None)]
+        return [("Assets", ("assets",)), (label, None)]
+
+    def index_changed(self) -> None:
+        # the list cards show chapter titles and message counts from the index
+        panel = self._panels.get(self._key)
+        if isinstance(panel, LIST_PANELS) and panel.showing_list:
+            panel.show_list()
 
     def history_label(self, route):
         return TOOLS_BY_KEY[route[1]][1]
