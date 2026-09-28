@@ -37,6 +37,24 @@ class ChapterHelperTests(unittest.TestCase):
             self.assertEqual(chapters.chapter_phases(project, "09"), ["bmap09", "bmap09_2", "bmap09_3", "bmap09_10"])
             self.assertEqual(chapters.chapter_phases(project, "11"), [])
 
+    def test_asset_file_lists(self):
+        from fe_modding.gui.pages.text_assets import message_files, script_files
+        with tempfile.TemporaryDirectory() as tmp:
+            files = Path(tmp) / "files"
+            (files / "Mess").mkdir(parents=True)
+            (files / "Scripts").mkdir()
+            for name in ("c10.m", "common.m", "c02.m", "a.m"):
+                (files / "Mess" / name).touch()
+            for name in ("C10.cmb", "zz.cmb", "startup.cmb", "C02.cmb", "C07.cmb"):
+                (files / "Scripts" / name).touch()
+            project = _fake_project(Path(tmp))
+            self.assertEqual([(p.name, c) for p, c in message_files(project)],
+                             [("c02.m", "02"), ("c10.m", "10"), ("a.m", None), ("common.m", None)])
+            # C07 has no chapter page (no c07.m): it is listed with the shared scripts
+            self.assertEqual([(p.name, c) for p, c in script_files(project)],
+                             [("C02.cmb", "02"), ("C10.cmb", "10"), ("startup.cmb", None), ("C07.cmb", None),
+                              ("zz.cmb", None)])
+
     def test_display_title_falls_back_to_number(self):
         self.assertEqual(chapters.chapter_display_title("01", {"01": "Prologue: Mercenaries"}), "Prologue: Mercenaries")
         self.assertEqual(chapters.chapter_display_title("32", {}), "Chapter 32")
