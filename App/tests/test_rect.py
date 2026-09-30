@@ -100,6 +100,72 @@ class RectBuildTests(unittest.TestCase):
             self.assertEqual(rect.free_tpl_name(tmp), "00b")
 
 
+def _all_kinds_file() -> rect.RectFile:
+    doc = rect.RectFile(resources=[], address_order=[], pool_order=[])
+    doc.add(rect.RectResource(
+        name="RID_UI",
+        mode=rect.MODE_STACK, depth=200, duration=0.0, brightness=0, unused_0d=0,
+        layers=[
+            rect.GradientLayer((0, 0, 608, 48), ((0, 0, 0, 255),) * 2 + ((0, 0, 0, 0),) * 2),
+            rect.TextLayer("MIK_AX", 12, 24, color=2, align=0),
+            rect.RectLayer("window/a.tpl", 3, (0, 0, 24, 24), (10, 20, 10, 20), flags=0),
+            rect.ColorQuadLayer("window/a.tpl", 4, (0, 0, 8, 8), (0, 0, 0, 0), flags=0,
+                                colors=((255, 255, 255, 160),) * 4),
+            rect.TextboxLayer("RID_FRAME", "", "RID_CURSOR", 56, 60, 363, 92, 528, lines=1),
+            rect.SeatsLayer([(112, 131, 0, 1, 0), (496, 427, 0, 0, 1), (7, 9, 0x0100, 1, 2)]),
+        ],
+    ))
+    doc.add(rect.new_background("RID_A", "s/aaa", 8, 8))
+    return doc
+
+
+class RectKindTests(unittest.TestCase):
+    def test_every_layer_kind_round_trips(self):
+        data = _all_kinds_file().build()
+        again = rect.parse_rect(data)
+        self.assertEqual(again.build(), data)
+        ui = again.find("RID_UI")
+        self.assertEqual([type(layer).__name__ for layer in ui.layers],
+                         ["GradientLayer", "TextLayer", "RectLayer", "ColorQuadLayer", "TextboxLayer", "SeatsLayer"])
+        self.assertEqual(ui.layers[5].seats[2], (7, 9, 0x0100, 1, 2))
+        self.assertEqual(ui.layers[4].marker, "RID_CURSOR")
+        self.assertEqual(ui.layers[4].window, "RID_FRAME")
+
+    def test_blocks_start_on_four_byte_boundaries_and_the_pool_ends_aligned(self):
+        data = _all_kinds_file().build()
+        size, data_size, relocs, exports = [int.from_bytes(data[i:i + 4], "big") for i in range(0, 16, 4)]
+        self.assertEqual((0x20 + data_size) % 4, 0)
+        table = 0x20 + data_size + 4 * relocs
+        for i in range(exports):
+            self.assertEqual(int.from_bytes(data[table + 8 * i:table + 8 * i + 4], "big") % 4, 0)
+
+    def test_relocations_list_exactly_the_non_null_pointers(self):
+        doc = rect.RectFile(resources=[], address_order=[], pool_order=[])
+        doc.add(rect.RectResource("RID_T", layers=[rect.TextboxLayer("RID_W", "", "", 0, 0, 0, 0, 10)]))
+        data = doc.build()
+        # descriptor name, one layer slot, and only the window pointer of the textbox
+        self.assertEqual(int.from_bytes(data[8:12], "big"), 3)
+
+    def test_the_conversation_reader_reads_every_kind(self):
+        resources = read_rect_resources(_all_kinds_file().build())
+        self.assertEqual([p.kind for p in resources["RID_UI"].parts], [5, 3, 1, 6, 2, 4])
+        self.assertEqual(resources["RID_UI"].parts[4].window, "RID_FRAME")
+        self.assertEqual(resources["RID_UI"].parts[4].marker, "RID_CURSOR")
+
+    def test_a_text_layer_can_be_edited(self):
+        doc = rect.parse_rect(_all_kinds_file().build())
+        doc.find("RID_UI").layers[1].text = "#F04New name"
+        again = rect.parse_rect(doc.build())
+        self.assertEqual(again.find("RID_UI").layers[1].text, "#F04New name")
+
+    def test_unknown_layer_kinds_are_refused(self):
+        data = bytearray(_small_file().build())
+        # first layer's kind byte: block 0 (RID_B, two layers) starts at 0x20, then 20 + 2 * 4 bytes
+        data[0x20 + 28] = 9
+        with self.assertRaises(rect.RectError):
+            rect.parse_rect(bytes(data))
+
+
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
 class RealRectTests(unittest.TestCase):
     def setUp(self):
@@ -135,6 +201,38 @@ class RealRectTests(unittest.TestCase):
         entries = rect.read_rects_path(self.root / "s" / "rect.bin")
         self.assertEqual(len(entries), 195)
         self.assertEqual(entries[0].resource_id, "RID_アジト-作戦室".encode("shift_jis"))
+
+@unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
+class RealSiblingRectTests(unittest.TestCase):
+    NAMES = ("window/RectDesc.bin", "window/RectBases.bin", "window/RectUnitList.bin",
+             "ending/RectFinale.bin", "ending/RectFinale_en.bin")
+
+    def setUp(self):
+        self.root = Path(os.environ["FE9_EXTRACTED_FILES"])
+
+    def test_every_sibling_file_rebuilds_byte_for_byte(self):
+        for name in self.NAMES:
+            path = self.root / name
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            self.assertEqual(rect.parse_rect(data).build(), data, name)
+
+    def test_known_content(self):
+        desc = self.root / "window/RectDesc.bin"
+        if not desc.is_file():
+            self.skipTest("no RectDesc.bin")
+        doc = rect.read_rect_file(desc)
+        self.assertEqual(len(doc.resources), 51)
+        pagecur = doc.find("RID_PAGECUR")
+        self.assertEqual((pagecur.mode, len(pagecur.layers), pagecur.duration), (rect.MODE_FLIPBOOK, 16, 1.0))
+        talk = doc.find("RID_TW3")
+        self.assertTrue(any(isinstance(layer, rect.ColorQuadLayer) for layer in talk.layers) or talk.layers)
+        conversation = doc.find("RID_TUT会話")
+        boxes = [layer for layer in conversation.layers if isinstance(layer, rect.TextboxLayer)]
+        seats = [layer for layer in conversation.layers if isinstance(layer, rect.SeatsLayer)]
+        self.assertEqual(len(boxes), 4)
+        self.assertEqual(seats[0].seats[0][:2], (112, 131))
 
 
 if __name__ == "__main__":
