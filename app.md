@@ -20,11 +20,11 @@ The app has four main layers:
 1. **Project and game layer** — `fe_modding/project.py`, `games.py`, `config.py` and `patch.py` define projects, supported games, recent projects and settings, the extract/build lifecycle, and `.tpatch` mod patches.
 2. **Desktop workspace** — `fe_modding/gui/` contains the launcher, the workspace shell (top-bar sections, breadcrumbs, back/forward, Ctrl+K search, status bar), the pages (`gui/pages/`: Home, Chapters, a page per chapter, Characters, a page per character, Game Data, Flags, Assets, Disc & Patch), the Settings and Apply-patch dialogs, the editors and viewers they embed, the theme (`gui/theme.py`, Sun Valley light/dark) and the in-session change log. `fe_modding/project_index.py` joins the formats (characters, deployments, messages, scripts) for the chapter and character pages. `fe_modding/script_sources.py` loads and saves event scripts as source for the Script tab and the Flags page.
 3. **Game-data layer** — `fe_modding/formats/` reads and, where supported, writes the binary, image, audio, video, script, map, and model formats used by the games.
-4. **External-tool layer** — `fe_modding/tools.py` invokes the bundled WIT and FFmpeg executables in `tools/` for disc operations and general video decoding.
+4. **External-tool layer** — `fe_modding/tools.py` invokes WIT and FFmpeg from developer-provided `tools/` binaries or the per-user tool cache for disc operations and general video decoding.
 
 Editors operate directly on files in a project's `extracted/` directory. Building a project packages the current contents of that directory; there is no separate apply or staging step.
 
-The two games share the architecture, but game-specific disc formats and build outputs are centralized in `fe_modding/games.py`. Path of Radiance builds to CISO and Radiant Dawn builds to WBFS. The bundled external tools currently make the app Windows-only.
+The two games share the architecture, but game-specific disc formats and build outputs are centralized in `fe_modding/games.py`. Path of Radiance builds to CISO and Radiant Dawn builds to WBFS. The desktop distribution currently targets Windows x64. Portable releases include Python and its dependencies; the first-run setup downloads WIT and optional FFmpeg. See [Windows releases](docs/app/windows-release.md).
 
 ## Detailed references
 

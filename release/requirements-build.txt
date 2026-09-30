@@ -1,0 +1,16 @@
+# Tested Windows x64 / CPython 3.14 release environment.
+altgraph==0.17.5
+cffi==2.1.1
+fonttools==4.63.0
+numpy==2.5.3
+packaging==26.3
+pefile==2024.8.26
+pillow==12.3.0
+pycparser==3.0
+pyinstaller==6.22.0
+pyinstaller-hooks-contrib==2026.7
+pywin32-ctypes==0.2.3
+rendercanvas==2.7.2
+setuptools==84.0.0
+sv_ttk==2.6.1
+wgpu==0.32.0

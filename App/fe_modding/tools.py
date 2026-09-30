@@ -31,11 +31,16 @@ import sys
 from pathlib import Path
 
 from .exceptions import ModdingError
+from .runtime_tools import tool_directory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WIT_DIR = REPO_ROOT / "tools" / "wit" / "win64"
+if not (WIT_DIR / "wit.exe").is_file():
+    WIT_DIR = tool_directory("wit")
 WIT_EXE = WIT_DIR / "wit.exe"
 FFMPEG_DIR = REPO_ROOT / "tools" / "ffmpeg" / "win64"
+if not (FFMPEG_DIR / "ffmpeg.exe").is_file():
+    FFMPEG_DIR = tool_directory("ffmpeg")
 FFMPEG_EXE = FFMPEG_DIR / "ffmpeg.exe"
 
 
@@ -50,7 +55,7 @@ def wit_path() -> Path:
             "for your platform and point WIT_EXE at it."
         )
     if not WIT_EXE.exists():
-        raise ToolError(f"WIT binary not found at {WIT_EXE}. The tools/wit folder may be missing.")
+        raise ToolError("WIT is not installed. Open Settings > Disc and media tools to download it.")
     return WIT_EXE
 
 
@@ -100,7 +105,7 @@ def ffmpeg_path() -> Path:
             "platform and point FFMPEG_EXE at it."
         )
     if not FFMPEG_EXE.exists():
-        raise ToolError(f"FFmpeg binary not found at {FFMPEG_EXE}. The tools/ffmpeg folder may be missing.")
+        raise ToolError("FFmpeg is not installed. Open Settings > Disc and media tools to download it.")
     return FFMPEG_EXE
 
 

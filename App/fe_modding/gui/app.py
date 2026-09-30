@@ -13,6 +13,7 @@ the whole session, so moving around never loses work.
 from __future__ import annotations
 
 import tkinter as tk
+import sys
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -49,6 +50,9 @@ class MainWindow(tk.Tk):
         self.bind("<Alt-Right>", lambda e: self._shell and self._shell.forward())
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)
         self._show_launcher()
+        from ..tools import WIT_EXE
+        if getattr(sys, "frozen", False) and not WIT_EXE.is_file() and "--self-test" not in sys.argv:
+            self.after(200, self._setup_tools)
 
     # -- menu -----------------------------------------------------------
     def _build_menu(self) -> None:
@@ -82,9 +86,14 @@ class MainWindow(tk.Tk):
 
         settings_menu = tk.Menu(menubar, tearoff=False)
         settings_menu.add_command(label="Preferences...", command=lambda: SettingsDialog(self))
+        settings_menu.add_command(label="Disc and media tools...", command=self._setup_tools)
         menubar.add_cascade(label="Settings", menu=settings_menu)
 
         self.config(menu=menubar)
+
+    def _setup_tools(self):
+        from .tool_setup import ToolSetupDialog
+        ToolSetupDialog(self)
 
     def _go(self, route) -> None:
         if self._shell is not None:

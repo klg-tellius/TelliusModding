@@ -10,6 +10,12 @@ in the game) - see CLAUDE.md for how that was confirmed.
 
 A single background file can hold more than one image (day/night variants,
 damage states, ...); each is listed and replaced independently.
+
+``s/rect.bin`` says how the game shows those files (see ``formats/rect.py``):
+each ``RID_`` resource lists the images it uses, the period they are
+cross-faded over, a brightness and an optional weather overlay. The panel edits
+those properties, and adds a new resource with its own TPL, which an event
+script then shows with ``RectBuild("RID_...")``.
 """
 
 from __future__ import annotations
@@ -17,7 +23,7 @@ from __future__ import annotations
 import io
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageTk
 
@@ -45,6 +51,8 @@ class BackgroundViewer(EditorPanel):
         self._dirty = False
         self._thumb_photos: list[ImageTk.PhotoImage] = []  # keep references alive
         self._preview_photo: ImageTk.PhotoImage | None = None
+        self._rect_doc: rect.RectFile | None = None
+        self._resource: rect.RectResource | None = None
 
         self._build_widgets()
         self._load_background_list()
@@ -71,6 +79,7 @@ class BackgroundViewer(EditorPanel):
         scrollbar.pack(fill="y", side="right")
         self._file_list.config(yscrollcommand=scrollbar.set)
         self._file_list.bind("<<ListboxSelect>>", lambda e: self._on_file_selected())
+        ttk.Button(left, text="Add New Background...", command=self._add_background).pack(fill="x", pady=(8, 0))
 
         # right: thumbnails + preview + import
         right = ttk.Frame(paned, padding=8)
@@ -86,6 +95,8 @@ class BackgroundViewer(EditorPanel):
         self._info_label = ttk.Label(right, text="", style="Muted.TLabel")
         self._info_label.pack(anchor="w")
 
+        self._build_resource_frame(right)
+
         button_row = ttk.Frame(right)
         button_row.pack(fill="x", pady=(8, 0))
         self._import_button = ttk.Button(
@@ -97,23 +108,157 @@ class BackgroundViewer(EditorPanel):
         self._status_label = ttk.Label(button_row, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(8, 0))
 
+    def _build_resource_frame(self, parent: tk.Misc) -> None:
+        frame = ttk.LabelFrame(parent, text="Rect resource (s/rect.bin)", padding=6)
+        frame.pack(fill="x", pady=(8, 0))
+        self._resource_choice = tk.StringVar()
+        self._resource_box = ttk.Combobox(frame, textvariable=self._resource_choice, state="readonly", width=34)
+        self._resource_box.grid(row=0, column=0, columnspan=4, sticky="we")
+        self._resource_box.bind("<<ComboboxSelected>>", lambda e: self._show_resource())
+        self._resource_layers = ttk.Label(frame, text="", style="Muted.TLabel")
+        self._resource_layers.grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 4))
+
+        self._mode_var = tk.StringVar()
+        self._period_var = tk.StringVar()
+        self._brightness_var = tk.StringVar()
+        self._effect_var = tk.StringVar()
+        ttk.Label(frame, text="Layers:").grid(row=2, column=0, sticky="w")
+        ttk.Combobox(frame, textvariable=self._mode_var, state="readonly", width=12,
+                     values=list(rect.MODE_NAMES.values())).grid(row=2, column=1, sticky="w", padx=(2, 12))
+        ttk.Label(frame, text="Period (s):").grid(row=2, column=2, sticky="w")
+        ttk.Spinbox(frame, textvariable=self._period_var, from_=0.1, to=60, increment=0.1, width=6).grid(
+            row=2, column=3, sticky="w")
+        ttk.Label(frame, text="Brightness:").grid(row=3, column=0, sticky="w", pady=(4, 0))
+        ttk.Spinbox(frame, textvariable=self._brightness_var, from_=0, to=255, width=6).grid(
+            row=3, column=1, sticky="w", padx=(2, 12), pady=(4, 0))
+        ttk.Label(frame, text="Overlay:").grid(row=3, column=2, sticky="w", pady=(4, 0))
+        ttk.Combobox(frame, textvariable=self._effect_var, state="readonly", width=14,
+                     values=list(rect.EFFECT_NAMES.values())).grid(row=3, column=3, sticky="w", pady=(4, 0))
+        self._resource_apply = ttk.Button(frame, text="Save Resource", command=self._save_resource, state="disabled")
+        self._resource_apply.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(frame, text="Layers cross-fade over the period; 255 brightness is unchanged.",
+                  style="Muted.TLabel").grid(row=4, column=2, columnspan=2, sticky="w", pady=(6, 0))
+
+    def _load_rect_doc(self) -> None:
+        self._rect_doc = None
+        path = self._project.extracted_dir / "files" / "s" / "rect.bin"
+        try:
+            if path.exists():
+                self._rect_doc = rect.read_rect_file(path)
+        except Exception:  # noqa: BLE001 - the resource panel is optional, never block the file list on it
+            self._rect_doc = None
+
+    def _resources_using(self, path: Path | None) -> list[rect.RectResource]:
+        if self._rect_doc is None or path is None:
+            return []
+        wanted = f"s/{path.name}"
+        return [r for r in self._rect_doc.resources if any(layer.file == wanted for layer in r.layers)]
+
+    def _show_resources_for_current_file(self) -> None:
+        resources = self._resources_using(self._current_path)
+        self._resource_box.config(values=[r.name for r in resources])
+        self._resource_choice.set(resources[0].name if resources else "")
+        self._show_resource()
+
+    def _show_resource(self) -> None:
+        name = self._resource_choice.get()
+        self._resource = self._rect_doc.find(name) if self._rect_doc is not None and name else None
+        resource = self._resource
+        if resource is None:
+            self._resource_layers.config(text="No rect resource uses this file.")
+            for var in (self._mode_var, self._period_var, self._brightness_var, self._effect_var):
+                var.set("")
+            self._resource_apply.config(state="disabled")
+            return
+        width, height = resource.size
+        textures = ", ".join(str(layer.texture) for layer in resource.layers)
+        self._resource_layers.config(text=f"{len(resource.layers)} layer(s), {width}x{height}, texture {textures}")
+        self._mode_var.set(rect.MODE_NAMES.get(resource.mode, str(resource.mode)))
+        self._period_var.set(f"{resource.duration:g}")
+        self._brightness_var.set(str(resource.brightness))
+        self._effect_var.set(rect.EFFECT_NAMES.get(resource.effect, str(resource.effect)))
+        self._resource_apply.config(state="normal")
+
+    def _save_resource(self) -> None:
+        resource = self._resource
+        if resource is None or self._rect_doc is None:
+            return
+        try:
+            mode = {v: k for k, v in rect.MODE_NAMES.items()}[self._mode_var.get()]
+            effect = {v: k for k, v in rect.EFFECT_NAMES.items()}[self._effect_var.get()]
+            duration = float(self._period_var.get())
+            brightness = int(self._brightness_var.get())
+            if not 0 < duration <= 600 or not 0 <= brightness <= 255:
+                raise ValueError("Period must be 0-600 seconds and brightness 0-255.")
+        except (KeyError, ValueError) as exc:
+            messagebox.showerror("Invalid resource values", str(exc), parent=self)
+            return
+        resource.mode, resource.effect, resource.duration, resource.brightness = mode, effect, duration, brightness
+        self._write_rect_doc(f"Edited {resource.name}")
+
+    def _write_rect_doc(self, note: str) -> bool:
+        path = self._project.extracted_dir / "files" / "s" / "rect.bin"
+        try:
+            rect.write_rect_file(self._rect_doc, path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not save rect.bin", str(exc), parent=self)
+            return False
+        self._changelog.append("rect.bin", note)
+        self._status_label.config(text=note)
+        return True
+
+    def _add_background(self) -> None:
+        if self._rect_doc is None:
+            messagebox.showinfo("Add background", "s/rect.bin was not found; extract the project first.", parent=self)
+            return
+        chosen = filedialog.askopenfilenames(
+            title="Choose the image(s) of the new background (several are cross-faded as an animation)",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not chosen:
+            return
+        name = simpledialog.askstring(
+            "Resource name",
+            'Name for the new resource. An event script shows it with RectBuild("<name>").',
+            initialvalue="RID_",
+            parent=self,
+        )
+        if not name:
+            return
+        name = name.strip()
+        try:
+            images = [Image.open(path).convert("RGB") for path in chosen]
+            if len({image.size for image in images}) != 1:
+                first = images[0].size
+                images = [image.resize(first, Image.LANCZOS) for image in images]
+            rect.add_background(self._rect_doc, self._project.extracted_dir / "files", name, images)
+        except Exception as exc:  # noqa: BLE001
+            self._load_rect_doc()  # drop the half-added resource
+            messagebox.showerror("Could not add background", str(exc), parent=self)
+            return
+        if not self._write_rect_doc(f"Added {name}"):
+            return
+        self._load_background_list()
+        self._show_resources_for_current_file()
+        messagebox.showinfo(
+            "Background added",
+            f'{name} is in s/rect.bin and its image is in files/s/. Build the project, then show it from an '
+            f'event script with RectBuild("{name}").',
+            parent=self,
+        )
+
     # -- data loading ---------------------------------------------------------
     def _load_background_list(self) -> None:
         background_dir = self._project.extracted_dir / "files" / "s"
         self._all_files = sorted(p for p in background_dir.glob("*") if p.is_file()) if background_dir.exists() else []
 
         self._names_by_file: dict[str, str] = {}
-        try:
-            rect_path = self._project.extracted_dir / "files" / "s" / "rect.bin"
-            if rect_path.exists():
-                for entry in rect.read_rects_path(rect_path):
-                    for image in entry.images:
-                        file_name = image.file_name.decode("ascii", errors="replace")
-                        short_name = file_name.split("/")[-1]
-                        label = entry.resource_id.decode("shift-jis", errors="replace")
-                        self._names_by_file.setdefault(short_name, label)
-        except Exception:  # noqa: BLE001 - naming is a convenience, never block listing files over it
-            pass
+        self._load_rect_doc()
+        if self._rect_doc is not None:
+            for resource in self._rect_doc.resources:
+                for layer in resource.layers:
+                    self._names_by_file.setdefault(layer.file.split("/")[-1], resource.name)
 
         self._apply_filter("")
 
@@ -160,6 +305,7 @@ class BackgroundViewer(EditorPanel):
         self._refresh_thumbnails()
         if self._infos:
             self._select_image(0)
+        self._show_resources_for_current_file()
 
     def _refresh_thumbnails(self) -> None:
         for child in self._thumb_frame.winfo_children():

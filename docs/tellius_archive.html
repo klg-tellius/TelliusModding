@@ -515,7 +515,7 @@ lz10: {
     <tr><td class="num">6</td><td><code>RGBA8</code></td><td class="num">32</td><td>No</td><td>Full RGBA; unusual tiling (below) — translucent UI panels</td></tr>
   </tbody></table></div>
   <div class="callout"><p class="callout-t">RGB5A3 has two pixel layouts</p><p>Bit 15 selects the layout. When set, the remaining 15 bits are opaque RGB555. When clear, the word stores 3-bit alpha plus 4 bits each of red, green, and blue. C8 and C4 images store palette indexes; their palette entries may use this same RGB5A3 encoding.</p></div>
-  <p>RGBA8 uses a distinctive 4×4 tiled layout: each tile stores all alpha/red pairs first, followed by all green/blue pairs. See ${wl("rect-format")} for how a background image's slot is looked up by internal label.</p>
+  <p>RGBA8 uses a distinctive 4×4 tiled layout: each tile stores all alpha/red pairs first, followed by all green/blue pairs. See ${wl("rect-format")} for how full-screen images are named, animated and shown.</p>
   <h2>How an image reaches the screen</h2><p>A TPL image header selects dimensions, pixel format, and possibly a palette. The renderer interprets pixels in GX tiles rather than ordinary left-to-right rows. The surrounding game system chooses the TPL resource—portrait, background, UI element, or icon—and may first remove an LZ10 wrapper.</p>
   <h2>Worked replacement</h2><p>Replacing a C8 portrait image means resizing to the slot dimensions, mapping each new pixel to the existing shared palette, tiling indexes in C8 order, and recompressing the containing <code>.cms</code>. Regenerating a palette for only one image can recolor sibling mouth or eye frames that point to the same palette.</p>
   <h2>Known limits</h2><p>The nine pixel formats listed here are decoded. Resource-specific animation timing, icon indexing, and UI placement belong to their consumer formats rather than TPL itself.</p>
@@ -715,7 +715,7 @@ fe8data: {
   categories:["Chapter data","Editable","Scripting"],
   body:`
   <p>The compiled bytecode driving a chapter — setup, cutscene triggers, win/lose conditions. Not compressed or archived: a direct binary file per chapter, plus <code>startup.cmb</code> (helpers every chapter calls) and <code>ending.cmb</code>. Each function inside a script carries a <strong>trigger type</strong> (start of turn, start of phase, a unit reaching a tile, ...) and parameters controlling exactly when it fires; a stack-machine bytecode body does the actual work once triggered. See ${wl("events-scripting")} for how the engine runs it.</p>
-  <p>For a step-by-step explanation of modules, event state, execution, timing and the boundaries of script-driven changes, read the <a href="https://klg-tellius.github.io/TelliusModding/#/events-scripting">event script system guide</a>. Its scope is the researched US Path of Radiance executable; a registered function name alone does not establish all argument meanings or Radiant Dawn compatibility.</p>
+  <p>For a step-by-step explanation of modules, event state, execution, timing and the boundaries of script-driven changes, read the <a href="../research/EVENT_SCRIPT_GUIDE.md">event script system guide</a>. Its scope is the researched US Path of Radiance executable; a registered function name alone does not establish all argument meanings or Radiant Dawn compatibility.</p>
   <h2>How a script function becomes an event</h2>
   <p>The engine evaluates a function's trigger and parameters; when eligible, it starts that function's stack-machine bytecode. Instructions manipulate values and branch locally, while external calls request native game operations. The format therefore stores both the condition and the response, but mutable chapter state lives outside the file.</p>
 
@@ -1089,17 +1089,41 @@ fe8effect: {
 },
 
 "rect-format": {
-  ns:"format", title:"Rect.bin", dek:"The single game-wide sprite-rect table for internal background labels",
-  infobox:{ type:"Lookup table", status:"confirmed", fields:[
-    ["File","<code>s/rect.bin</code>"],["Scope","One file, game-wide"],["Coverage","194 / 199 backgrounds resolve"]
+  ns:"format", title:"Rect.bin", dek:"The game-wide table of full-screen images and how each one is animated and shown",
+  infobox:{ type:"Resource table", status:"confirmed", fields:[
+    ["File","<code>s/rect.bin</code> (the copy bundled in <code>system.cmp</code> is the one the game reads)"],
+    ["Resources","195 named <code>RID_</code> resources"],["Images","316 layers over 195 texture files"],
+    ["Container",`${wl("labeled-section","Labeled Section Format")}`],["Shown by","<code>RectBuild</code> in event scripts"]
   ]},
   categories:["Graphics","Registry"],
   body:`
-  <p>A single game-wide file cross-referencing every ${wl("tpl-texture","background")} in <code>s/</code> against its original Japanese internal resource-ID label — useful for telling same-location variants apart in a list, though the labels themselves aren't translated. Because there's only one such file, this module uses hardcoded offsets rather than a general parser — a property of the file, not a shortcut.</p>
-  <h2>How the lookup is used</h2><p>Scene data can work with a stable resource label while the graphics folder stores a filename. <code>rect.bin</code> bridges those two identities in both directions; the selected file then supplies its TPL image data.</p>
-  <h2>Example</h2><p>Two backgrounds may depict the same location at different times. Their filenames alone can be opaque, while distinct internal labels identify the intended scene variant. Resolving label to filename selects the asset; resolving filename to label explains an extracted file's role.</p>
-  <p>The file exposes two lookup views over the same underlying data: one resolves a background filename to its resource label, and the other resolves that label back to the filename. They are inverse indexes over one catalog, not two independent tables.</p>
-  <p>194 of 199 real background files in Path of Radiance resolve to a label through this table.</p>
+  <p>Every full-screen picture that an event can put on screen is a <strong>rect resource</strong>: conversation and cutscene backgrounds, the illustrated region maps, the title screen and its animated flame, the game-over and ending art. <code>s/rect.bin</code> holds them all. Each resource has a Japanese-derived name beginning <code>RID_</code> (for example <code>RID_街-夜</code>, “town, night”), points at one or more images of a file in <code>s/</code>, and carries the few settings that decide how those images are animated and shown. The <code>s/</code> files themselves are ordinary ${wl("tpl-texture","TPL textures")}; the file names are opaque three-character codes, so the resource names are what identify a picture.</p>
+  <h2>How a script uses a resource</h2>
+  <p>An event script calls <code>RectBuild("RID_…")</code> to create the image (or <code>RectLeave</code> to create it without tying it to the running event). The name is looked up in the engine's global name table, which the resource file fills when it loads. The resulting image can then be moved, faded, scaled, rotated, brightened or removed with the other <code>Rect*</code> calls. <code>RectPreLoad</code> loads a resource's textures ahead of time so it appears without a hitch. ${badge("confirmed","confirmed")}</p>
+  <h2>What a resource contains</h2>
+  <div class="table-wrap"><table><thead><tr><th>Setting</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td>Layers</td><td>One to 255 images. Each names a texture file, the image number inside it, the rectangle of the texture to show (all vanilla layers show the whole texture) and an alpha.</td></tr>
+    <tr><td>Composition mode</td><td>How several layers combine: <strong>stack</strong> them, show them as a hard <strong>flip-book</strong>, or <strong>cross-fade</strong> from one to the next. All 195 vanilla resources use cross-fade.</td></tr>
+    <tr><td>Period</td><td>Seconds for one pass through all layers, from 0.8 s up to 10 s. A resource with one layer never changes, so its period is irrelevant.</td></tr>
+    <tr><td>Brightness</td><td>255 leaves the picture alone; smaller values darken it. Vanilla uses 122–255 (full-frame art is always 255); many conversation backdrops are dimmed a little so the dialogue box reads clearly.</td></tr>
+    <tr><td>Overlay</td><td>An optional self-running weather or particle effect drawn with the picture: snow (the eleven snow scenes), sand (the desert), mist (the river plain) and a particle overlay used by the two altar scenes.</td></tr>
+  </tbody></table></div>
+  <h2>Animation</h2>
+  <p>With several layers the resource is a short looping animation. A clock advances once per frame so that one pass over all layers lasts exactly the period; each layer owns an equal share. In cross-fade mode the current layer is drawn opaque and the next one fades in over it, then the cycle continues and wraps. The layers are usually lighting variants: the night version of the command room (<code>RID_アジト-作戦室-夜</code>) is four candle-flicker frames over 1.85 seconds; a door scene has an open and a closed state; the title flame is forty frames over ten seconds. ${badge("confirmed","confirmed")}</p>
+  <div class="callout"><p class="callout-t">Size and pivot</p><p>A resource is as large as its first layer's rectangle. That size is also its default pivot (half the width and height), the origin of scaling and rotation, and what the “align inside the 608 × 448 layout area” script call measures.</p></div>
+  <h2>Properties scripts can change</h2>
+  <p>A shown image keeps eleven properties, addressed by number by <code>RectSet</code>, <code>RectGet</code> and <code>RectSetCurve</code>: X and Y position, a depth offset, the pivot X and Y, horizontal and vertical scale (percent), rotation, opacity (0–255) and brightness (0–255, 128 is normal). Opacity and brightness are reset after every drawing pass so they never leak into other graphics. ${badge("confirmed","confirmed")}</p>
+  <h2>The images</h2>
+  <ul>
+    <li>195 distinct texture files, none shared between resources, holding 316 images. Almost all are CMPR; the title logo is RGB565 and two others are RGB5A3.</li>
+    <li>Most resources are 608 × 296 (the strip above the dialogue box, 114 of them) or 608 × 448 (full frame, 39). Region exteriors are 664 × 448; the title is 512 × 320; scrolls and world-map pieces run taller (up to 608 × 912) or wider (up to 1024 × 616, the largest a texture can be).</li>
+    <li>Three files in <code>s/</code> are used by no resource.</li>
+    <li>One vanilla resource asks for two more rows than its texture has; the extra rows are simply never drawn.</li>
+  </ul>
+  <h2>What a new resource needs</h2>
+  <p>The game finds a texture file by path, first among the loaded archives and then on the disc, so a new file under <code>s/</code> with any name is found. The resource needs a name, at least one layer, and a texture no larger than 1024 pixels on either side; the resource table itself is a relocatable file whose export list must stay sorted by name. Because the game reads the copy inside <code>system.cmp</code>, an edited table has to be present there. ${badge("strong","strong evidence")} An edited table has not been run in the game.</p>
+  <h2>Related files</h2>
+  <p>The window and ending resource files (<code>window/RectDesc.bin</code>, <code>RectBases.bin</code>, <code>RectUnitList.bin</code>, <code>ending/RectFinale*.bin</code>) use the same descriptor but add more kinds of layer: text labels, dialogue boxes, portrait seat tables, gradients and four-colour images. ${badge("open","open question")} Their remaining layer kinds are documented only in outline.</p>
   `
 },
 
@@ -1842,7 +1866,7 @@ chapters: {
   <p>Slots 0&ndash;31 are all used by the story, 32 means &ldquo;game cleared&rdquo;, and the save code treats every number from 32 up as a trial map, so a new story chapter cannot simply be appended after the Endgame. ${badge("confirmed","engine")}</p>
   <ul>
     <li><strong>Replacing</strong> a chapter needs data only: point its record at other files, or edit the files it names.</li>
-    <li><strong>Adding battles inside a chapter</strong> can reuse the Chapter 17 mechanism in any chapter's script, up to three extra battles per number. Nothing in that path checks the chapter number except Chapter 17's own camera setup. ${badge("plausible","untested")}</li>
+    <li><strong>Adding battles inside a chapter</strong> can reuse the Chapter 17 mechanism in any chapter's script, up to three extra battles per number. A Prologue whose script ends its battle this way opens the save menu and plays a second battle on the Chapter 1 map before Chapter 1 begins. Likewise, giving the Prologue an <code>Opening2</code> function makes its preparations screen appear. ${badge("confirmed","in game")}</li>
     <li><strong>Inserting a new number</strong> means renumbering every later record and changing the executable wherever it tests a chapter number: the Chapter 27 pair, the ending, the save limit, the report from Chapter 9 on, the convoy unlock, the phase music and the per-chapter shops.</li>
   </ul>
   <p>Within one chapter the four files are largely independent in content but coordinated in effect: the script's ${wl("events-scripting","phase and turn triggers")} decide when dialogue plays and which units act, dispo's deployment records decide who is actually on the field for the script to act on, and the map file's terrain and ${wl("map-grid","grid")} decide where any of that can physically happen. A chapter with more than one battle-map phase — a mid-chapter reinforcement wave, for instance — gets its own suffixed map, <code>bmap06</code> then <code>bmap06_2</code>, sharing the same script and dialogue file as the primary phase.</p>
@@ -1987,7 +2011,7 @@ cutscenes: {
     <tr><td><code>tut_data.bin</code> / <code>tut_data_en.bin</code></td><td>The ${wl("tutorial-browser","tutorial/glossary browser")} and tutorial-popup system's per-chapter trigger and topic tables</td></tr>
     <tr><td><code>client.bin</code></td><td>Mostly high-entropy data with a couple of disc-identifier strings — not a moddable content file</td></tr>
   </tbody></table>
-  <p>Two whole-game tables sit alongside these per-folder assets: ${wl("rect-format","<code>s/rect.bin</code>")}, the sprite-rect table for backgrounds, and <code>shop/cp_data.bin</code>, an AI/combat-behavior symbol pool unrelated to character supports.</p>
+  <p>Two whole-game tables sit alongside these per-folder assets: ${wl("rect-format","<code>s/rect.bin</code>")}, the table of full-screen image resources, and <code>shop/cp_data.bin</code>, an AI/combat-behavior symbol pool unrelated to character supports.</p>
   `
 },
 

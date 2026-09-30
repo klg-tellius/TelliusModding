@@ -1,0 +1,24 @@
+Tellius Modding - Windows x64
+
+1. Extract the entire ZIP into a folder you can write to.
+2. Open TelliusModding.exe. Keep the _internal folder beside it.
+3. Choose Download missing tools on the first-run screen. WIT (disc tools)
+   and optional FFmpeg (media imports) download from their upstream sites.
+4. Create a project using your own game disc image.
+
+Python, Tkinter and the Python libraries are already included.
+No administrator access is required. Tool downloads need an internet connection.
+To retry setup later, use Settings > Disc and media tools.
+
+Do not run the EXE from inside the ZIP. Keep mod projects outside this app folder.
+To update, extract a new release into a new folder. Settings and downloaded tools
+are stored separately in your user profile.
+
+Documentation: https://klg-tellius.github.io/TelliusModding/
+Source and issues: https://github.com/klg-tellius/TelliusModding
+
+This initial build is not digitally signed. Windows may show a publisher warning.
+Download only from the project's GitHub Releases page and compare the supplied
+SHA-256 checksum if needed. Follow your organization's security policy.
+
+No game data is included. Third-party notices are in licenses/ and CREDITS.md.
