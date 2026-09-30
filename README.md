@@ -12,8 +12,7 @@ libraries are included; no pip commands or administrator access are needed.
 
 On first launch, choose **Download missing tools** to get WIT and optional FFmpeg
 from their upstream sites. This step needs internet access (about 125 MB total).
-Keep the `_internal` folder next to the EXE. See the
-[Windows release guide](docs/app/windows-release.md) for updates and build instructions.
+Keep the `_internal` folder next to the EXE. See `release/RELEASE-NOTES.md` for updates and build instructions.
 
 ## Run from source
 
@@ -29,15 +28,11 @@ Use **Settings > Disc and media tools** to download WIT and optional FFmpeg.
 The source build also recognizes tools installed manually under `App/tools/`.
 
 Supply your own game disc and keep extracted data and mod projects outside this
-repository. See [project setup](docs/app/project-lifecycle.md),
-[workspace features](docs/app/workspace-and-features.md), and
-[known limitations](docs/app/known-bugs.md).
+repository. Project setup, workspace features and known limitations are covered in the
+[Tellius Archive](https://klg-tellius.github.io/TelliusModding/).
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [Scripting tutorial](docs/app/script-tutorial.md)
-- [Script function reference](docs/app/script-call-reference.md)
 - [Application architecture](app.md)
 
 The [interactive Tellius Archive](https://klg-tellius.github.io/TelliusModding/)
