@@ -68,7 +68,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from .. import map_heights
-from ..formats import dispo, map_file
+from ..formats import dispo, dispo_rules, map_file
 from ..formats.cmb import script_zones
 from ..formats.cmb.catalog import ACTIONS, SIDES
 from ..formats.cmb.parser import ParseError
@@ -2075,10 +2075,15 @@ class MapBuilder(EditorPanel):
         form.pack(anchor="w", fill="x", pady=(8, 0))
         row = 0
 
-        def add(label, widget):
+        groups: dict[str, list] = {"gauge": [], "ai": [], "ai_toggle": []}
+
+        def add(label, widget, group=None):
             nonlocal row
-            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 6))
+            caption = ttk.Label(form, text=label)
+            caption.grid(row=row, column=0, sticky="w", pady=2, padx=(0, 6))
             widget.grid(row=row, column=1, sticky="w", pady=2)
+            if group:
+                groups[group].append((caption, widget))
             row += 1
 
         def picker(field, pairs, width=30):
@@ -2098,7 +2103,7 @@ class MapBuilder(EditorPanel):
         faction = tk.StringVar(value=dispo.FACTION_NAMES.get(unit[F["faction"]], str(unit[F["faction"]])))
         self._form_vars["faction"] = faction
         add("Faction", ttk.Combobox(form, textvariable=faction, values=list(dispo.FACTION_NAMES.values()), width=10))
-        flags = dispo_widgets.FlagChecks(form, unit[F["flags"]], dispo.FLAG_BITS)
+        flags = dispo_widgets.FlagChecks(form, unit[F["flags"]], dispo_rules.unit_flag_bits(unit[F["flags"]]))
         self._form_vars["flags"] = flags
         add("Flags", flags)
         position = ttk.Frame(form)
@@ -2124,10 +2129,51 @@ class MapBuilder(EditorPanel):
             add(f"Item {slot + 1}", cell)
         for slot in range(5):
             add(f"Skill {slot + 1}", picker(f"skill{slot}", skills, 26))
+        ai_on = tk.BooleanVar(value=False)
+        self._form_vars["ai_on"] = ai_on
+        add("AI", ttk.Checkbutton(form, text="AI-controlled unit", variable=ai_on), "ai_toggle")
         for field, label, prefix in AI_FIELDS:
-            add(label, picker(field, [(l, l) for l in ai.get(prefix, [])], 26))
-        add("Laguz gauge", number("laguz_gauge", 0, 19))
-        add("AI turn order (lower first)", number("ai_order", -128, 127, 6))
+            add(label, picker(field, [(l, l) for l in ai.get(prefix, [])], 26), "ai")
+        add("AI turn order (lower first)", number("ai_order", -128, 127, 6), "ai")
+        add("Laguz gauge", number("laguz_gauge", 0, 19), "gauge")
+
+        is_laguz = self._is_laguz()
+        original_ai = (unit[F["seq_attack"]], unit[F["seq_move"]], unit[F["seq_heal"]], unit[F["ai_order"]])
+        original_gauge = unit[F["laguz_gauge"]]
+
+        def show(group, visible):
+            for caption, widget in groups[group]:
+                for part in (caption, widget):
+                    part.grid() if visible else part.grid_remove()
+
+        def refresh_rules(*_):
+            """Show only the controls that apply to the faction and class now in the form."""
+            try:
+                faction_now = self._read_faction()
+                laguz_now = is_laguz(self._form_vars["jid"].label(), self._form_vars["pid"].label())
+            except ValueError:
+                return
+            default_ai = dispo_rules.show_ai(faction_now, *original_ai)
+            show("ai_toggle", not default_ai)
+            show("ai", default_ai or ai_on.get())
+            show("gauge", dispo_rules.show_laguz_gauge(laguz_now, original_gauge))
+            for slot in range(8):
+                iid = self._form_vars[f"item{slot}"]
+                try:
+                    label = iid.label()
+                except ValueError:
+                    continue
+                item_flags = self._form_vars[f"item{slot}_flag"]
+                item_flags.set_visible(dispo.ITEM_FLAG_RING,
+                                       dispo_rules.show_ring_flag(label, unit[F[f"item{slot}_flag"]]))
+
+        for widget in (faction, ai_on):
+            widget.trace_add("write", refresh_rules)
+        for field in ("pid", "jid", *[f"item{i}" for i in range(8)]):
+            picker_widget = self._form_vars[field]
+            for sequence in ("<<ComboboxSelected>>", "<FocusOut>", "<KeyRelease>"):
+                picker_widget.bind(sequence, refresh_rules, add="+")
+        refresh_rules()
 
         ttk.Label(body, text="Section", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 2))
         header_form = dispo_widgets.SectionHeaderFrame(body, dispo.section_header(section), self._deploy.group_keys())
@@ -2178,6 +2224,20 @@ class MapBuilder(EditorPanel):
                              "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
                   justify="left").pack(anchor="w", pady=(8, 0))
 
+    def _is_laguz(self):
+        """``is_laguz(jid, pid)`` for the loaded FE8Data (cached with the choices)."""
+        session = self._session_provider()
+        fe8 = getattr(session, "fe8", None) if session is not None else None
+        if getattr(self, "_laguz_source", None) is not fe8:
+            self._laguz_source = fe8
+            self._laguz_check = dispo_rules.laguz_lookup(fe8)
+        return self._laguz_check
+
+    def _read_faction(self) -> int:
+        faction_text = self._form_vars["faction"].get().strip()
+        faction = next((k for k, name in dispo.FACTION_NAMES.items() if name == faction_text), None)
+        return faction if faction is not None else int(faction_text)
+
     def _read_form(self) -> dict[int, object]:
         """Field index -> value from the unit form (shared fields only)."""
         v = self._form_vars
@@ -2185,9 +2245,7 @@ class MapBuilder(EditorPanel):
         for field in ("pid", "jid", *[f"item{i}" for i in range(8)], *[f"skill{i}" for i in range(5)],
                       *[f for f, _l, _p in AI_FIELDS]):
             values[F[field]] = v[field].label()
-        faction_text = v["faction"].get().strip()
-        faction = next((k for k, name in dispo.FACTION_NAMES.items() if name == faction_text), None)
-        values[F["faction"]] = faction if faction is not None else int(faction_text)
+        values[F["faction"]] = self._read_faction()
         for field in ("pos_x", "pos_y", "pos2_x", "pos2_y", "laguz_gauge"):
             values[F[field]] = int(v[field].get())
         values[F["ai_order"]] = int(v["ai_order"].get())
@@ -2209,6 +2267,18 @@ class MapBuilder(EditorPanel):
         all_variants = self._all_variants.get()
         presence = {v: (row["present"].get(), row["found"]) for v, row in self._variant_rows.items()}
         base_unit = list(self._deploy.document(current).section(section_name).units[index])
+        if (shared[F["faction"]] == dispo_rules.PLAYER_FACTION and base_unit[F["faction"]] != dispo_rules.PLAYER_FACTION
+                and not self._form_vars["ai_on"].get()):
+            # Moved onto the player army without asking for AI: give it the inert AI vanilla player units carry.
+            for field, label in dispo_rules.INERT_AI.items():
+                shared[F[field]] = label
+            shared[F["ai_order"]] = 0
+        problems = dispo_rules.warnings(
+            shared[F["faction"]], self._is_laguz()(shared[F["jid"]], shared[F["pid"]]), shared[F["laguz_gauge"]],
+            [(shared[F[f"item{i}"]], shared[F[f"item{i}_flag"]]) for i in range(8)])
+        if problems and not messagebox.askokcancel(
+                "Unit", "\n".join(problems) + "\n\nApply anyway?", parent=self):
+            return
         new_selection = {}
 
         def write(unit, per_variant):
