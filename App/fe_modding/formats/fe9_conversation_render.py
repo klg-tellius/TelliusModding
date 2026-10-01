@@ -11,6 +11,37 @@ from .fe9_conversation_assets import ConversationAssets
 
 SCENE_SIZE = (608, 448)
 FONT_NAMES = ("system", "fe_font", "talk", "bigkana", "alpha")
+# #Pnnn: cell nnn (hex) of window/icon.tpl image 0, 24x24 cells in rows of 32, advance 24px,
+# centred on the line (draw_markup_text_core 8000e7fc, icon object 80367160).
+ICON_SHEET = "window/icon.tpl"
+ICON_SIZE = 24
+_MARKUP = r"(#[FCSXYRGBAI][0-9A-Fa-f]{2}|#P[0-9A-Fa-f]{3}|#[cDsxyEeOoi]|\n)"
+# Code names that only change drawing state (no width): see draw_markup_text_core.
+_STATE_CODES = ("#s", "#x", "#y", "#D", "#E", "#e", "#O", "#o", "#i")
+# Text effects of draw_markup_text_core: the drop shadow is the glyph in black at half its alpha,
+# offset 2px (x sx, y sy); the outline is the glyph in black at its alpha, drawn at radius 1px in
+# the 8 directions of the table at 802838e8; then the glyph itself.
+SHADOW_OFFSET = 2.0
+OUTLINE_DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1),
+                      (0.70710678, 0.70710678), (-0.70710678, 0.70710678),
+                      (-0.70710678, -0.70710678), (0.70710678, -0.70710678))
+
+
+def _scale(run: str, sx: float, sy: float) -> tuple[float, float]:
+    """#Sxx / #Xxx / #Yxx set both / horizontal / vertical text scale to xx/64; #s, #x, #y
+    and #D reset them (draw_markup_text_core 8000e7fc)."""
+    if len(run) == 4 and run[1] in "SXY":
+        value = int(run[2:], 16) / 64
+        return (value if run[1] in "SX" else sx), (value if run[1] in "SY" else sy)
+    return (1.0 if run in ("#s", "#x", "#D") else sx), (1.0 if run in ("#s", "#y", "#D") else sy)
+
+
+def icon_cell(sheet: Image.Image, index: int) -> Image.Image:
+    columns = sheet.width // ICON_SIZE
+    x, y = index % columns * ICON_SIZE, index // columns * ICON_SIZE
+    if y + ICON_SIZE > sheet.height:
+        raise ValueError(f"Icon #{index:03X} is outside {ICON_SHEET}")
+    return sheet.crop((x, y, x + ICON_SIZE, y + ICON_SIZE)).convert("RGBA")
 
 
 @dataclass(frozen=True)
@@ -28,34 +59,77 @@ class ConversationRenderer:
         self._portraits.clear()
 
     def measure(self, text: str) -> int:
+        """Width as measure_text_width (80010b78) computes it, which sizes conversation windows."""
         font = self.assets.font()
         width = maximum = 0
-        for run in re.split(r"(#[FC][0-9A-Fa-f]{2}|#[cD]|\n)", text):
+        sx = 1.0
+        # measure_text_width skips #y as a 4-byte code, so the two characters after it are not
+        # counted; the renderer draws them normally.
+        text = re.sub(r"#y..", "#y", text)
+        for run in re.split(_MARKUP, text):
             if run == '\n':
                 maximum, width = max(maximum, width), 0
+                sx = 1.0
+            elif run[:1] == '#' and (len(run) == 4 and run[1] in "SXY" or run in _STATE_CODES):
+                sx = _scale(run, sx, 1.0)[0]
+            elif run[:1] == '#' and len(run) == 4 and run[1] in "RGBAI":
+                continue
+            elif run.startswith('#P') and len(run)==5:
+                width += ICON_SIZE  # measure_text_width adds the icon object's 24px width
             elif run.startswith('#F') and len(run)==4:
                 index=int(run[2:],16)
                 if index >= len(FONT_NAMES): raise ValueError(f"Unknown font index {index}")
                 font=self.assets.font(FONT_NAMES[index])
-            elif run.startswith('#C') and len(run)==4 or run in ('#c','#D'):
+            elif run.startswith('#C') and len(run)==4 or run == '#c':
                 continue
             else:
-                width += font.measure(run)
-        return max(maximum,width)
+                width += font.measure(run) * sx
+        return round(max(maximum,width))
 
-    def _text(self, image, text, xy, brightness=255, font_name="talk", missing=None):
-        """Draw a textbox's text; ``missing`` collects (font name, character) pairs the font lacks."""
+    @staticmethod
+    def _effects(image, layer, xy, shadow, outline, sx, sy):
+        """Composite ``layer`` (one run of glyphs) at ``xy`` with the game's shadow and outline."""
+        alpha = layer.getchannel("A")
+        black = Image.new("RGBA", layer.size, (0, 0, 0, 255))
+
+        def stamp(mask, dx, dy):
+            pad = Image.new("RGBA", layer.size)
+            pad.paste(black, (0, 0), mask)
+            shifted = pad.transform(pad.size, Image.AFFINE, (1, 0, -dx, 0, 1, -dy), Image.BILINEAR)
+            image.alpha_composite(shifted, xy)
+
+        if shadow:
+            stamp(alpha.point(lambda v: v // 2), SHADOW_OFFSET * sx, SHADOW_OFFSET * sy)
+        if outline:
+            for dx, dy in OUTLINE_DIRECTIONS:
+                stamp(alpha, dx, dy)
+        image.alpha_composite(layer, xy)
+
+    def _text(self, image, text, xy, brightness=255, font_name="talk", missing=None,
+              shadow=False, outline=False):
+        """Draw a textbox's text; ``missing`` collects (font name, character) pairs the font lacks.
+
+        ``shadow``/``outline`` are the textbox descriptor's +0x1E/+0x1F bytes; #E/#e and #O/#o
+        switch them inside the text, #D turns both off."""
         x, y = xy
         font = self.assets.font(font_name)
         current = font_name
-        color = previous_color = (255,255,255,255)
-        for run in re.split(r"(#[FC][0-9A-Fa-f]{2}|#[cD]|\n)", text):
+        default_color = (255,255,255,255)
+        color = previous_color = default_color
+        sx = sy = 1.0
+        italic = 0.0
+        effects = (shadow, outline)
+        for run in re.split(_MARKUP, text):
             if run == "\n":
-                # Each textbox line is queued as its own talk-font primitive, so font and colour
-                # changes do not carry over to the next line (dialogue_textbox_draw_lines).
+                # Each textbox line is queued as its own talk-font primitive, so font, colour,
+                # scale and effect changes do not carry over to the next line
+                # (dialogue_textbox_draw_lines).
                 x, y = xy[0], y+28
                 font, current = self.assets.font(font_name), font_name
-                color = previous_color = (255,255,255,255)
+                color = previous_color = default_color
+                sx = sy = 1.0
+                italic = 0.0
+                shadow, outline = effects
             elif run.startswith("#F") and len(run)==4:
                 index=int(run[2:],16)
                 if index >= len(FONT_NAMES): raise ValueError(f"Unknown font index {index}")
@@ -65,14 +139,57 @@ class ConversationRenderer:
                 previous_color, color = color, self.assets.text_color(int(run[2:],16))
             elif run == '#c':
                 color = previous_color
-            elif run == '#D':
-                color = (255,255,255,255)
+            elif run[:1] == '#' and len(run) == 4 and run[1] in "RGBA":
+                # One colour channel, without saving the previous colour for #c.
+                channel = "RGBA".index(run[1])
+                color = tuple(int(run[2:], 16) if i == channel else v for i, v in enumerate(color))
+            elif run[:1] == '#' and len(run) == 4 and run[1] == 'I':
+                italic = int(run[2:], 16) / 16
+            elif run[:1] == '#' and (len(run) == 4 and run[1] in "SXY" or run in _STATE_CODES):
+                sx, sy = _scale(run, sx, sy)
+                if run == '#D':
+                    color = self.assets.text_color(1)
+                    italic, shadow, outline = 0.0, False, False
+                elif run in ('#E', '#e'):
+                    shadow = run == '#E'
+                elif run in ('#O', '#o'):
+                    outline = run == '#O'
+                elif run == '#i':
+                    italic = 0.0
+            elif run.startswith('#P') and len(run)==5:
+                # Icons ignore #C and the text effects; only the window brightness modulates them.
+                icon = icon_cell(self.assets.textures(ICON_SHEET)[0], int(run[2:],16))
+                if brightness < 255:
+                    icon = Image.merge("RGBA", [*(band.point(lambda v: v*brightness//255)
+                                                  for band in icon.split()[:3]), icon.split()[3]])
+                # The icon keeps its size; only its centring follows the vertical scale.
+                line_height = font.ascent + font.descent
+                image.alpha_composite(icon, (round(x), y + round((line_height * sy - ICON_SIZE) / 2)))
+                x += ICON_SIZE
             else:
                 if missing is not None:
                     missing.update((current, c) for c in run if not font.has(c))
                 ink = tuple(c*brightness//255 for c in color[:3])+(color[3],)
-                font.draw(image,run,(x,y),color=ink)
-                x += font.measure(run)
+                width = font.measure(run)
+                height = font.ascent + font.descent
+                # Glyph boxes, bearings and advances scale about the line's top-left corner;
+                # scaled glyphs are filtered bilinearly. Italic shears each glyph about the
+                # baseline: the top of the ascent moves right by italic * sx pixels.
+                lean = abs(italic) * sx * max(font.ascent, font.descent) / max(1, font.ascent)
+                pad = int(lean) + 4
+                layer = Image.new("RGBA", (width + 2 * pad, height + 2 * pad))
+                font.draw(layer, run, (pad, pad), color=ink, shadow=False)
+                if sx != 1.0 or sy != 1.0:
+                    layer = layer.resize((max(1, round(layer.width * sx)), max(1, round(layer.height * sy))),
+                                         Image.BILINEAR)
+                origin = (round(x - pad * sx), round(y - pad * sy))
+                if italic:
+                    baseline = (pad + font.ascent) * sy
+                    k = italic * sx / (font.ascent * sy)
+                    layer = layer.transform(layer.size, Image.AFFINE, (1, k, -k * baseline, 0, 1, 0),
+                                            Image.BILINEAR)
+                self._effects(image, layer, origin, shadow, outline, sx, sy)
+                x += width * sx
 
     def _face(self, portrait: Portrait, seat, time_ms, talking, mirrored, brightness):
         # The game draws random blink intervals (30..541 frames) and random
@@ -161,7 +278,7 @@ class ConversationRenderer:
                     if len(seats)>3: seats[3]=(496-shift,291,False)
                 attempt(lambda:self.assets.draw_resource(image,definition.window,bounds=bounds,brightness=brightness))
             if definition.panel: panel_names.add(definition.panel)
-            text_positions[i]=(x,y,width,brightness)
+            text_positions[i]=(x,y,width,brightness,(raw[0x1e],raw[0x1f]))  # shadow, outline
             markers[i]=(definition.marker,marker_x,marker_y)
         # GX depth comes from facedata +0x1d, independently of seat/load order.
         ordered = sorted(enumerate(scene.portraits), key=lambda pair:
@@ -186,14 +303,15 @@ class ConversationRenderer:
                     image.alpha_composite(layer)
         for name in panel_names:
             attempt(lambda:self.assets.draw_resource(image,name))
-        for i,(x,y,width,brightness) in text_positions.items():
+        for i,(x,y,width,brightness,effects) in text_positions.items():
             text=scene.boxes[i].text.rstrip("\n")
             measured=attempt(lambda:self.measure(text))
             if measured is not None and measured > width:
                 diagnostics.append(Diagnostic(event.source_offset,f"Textbox {i}: line exceeds its {width}px text area ({measured}px)"))
             layer=Image.new("RGBA",SCENE_SIZE)
             missing=set()
-            attempt(lambda:self._text(layer,text,(x,y),brightness,missing=missing))
+            attempt(lambda:self._text(layer,text,(x,y),brightness,missing=missing,
+                                      shadow=bool(effects[0]),outline=bool(effects[1])))
             for name in sorted({n for n,_ in missing}):
                 chars="".join(sorted({c for n,c in missing if n==name}))
                 fallback=attempt(lambda:"☆" if self.assets.font(name).has("☆") else "a space")
@@ -219,10 +337,13 @@ class ConversationRenderer:
                 cursor=Image.new("RGBA",SCENE_SIZE)
                 attempt(lambda:self.assets.draw_resource(cursor,name,frame=time_ms*60//1000))
                 image.alpha_composite(cursor,(x,y))
-        if scene.screen_black:
+        alpha = 1.0 if scene.screen_black else 0.0
+        if scene.screen_fade is not None:
+            kind, start, duration = scene.screen_fade
+            fraction = min(1.0,max(0.0,(time_ms-start)/max(1,duration)))
+            alpha = 1-fraction if kind == "in" else fraction
+        if alpha >= 1.0:
             image = Image.new("RGBA", SCENE_SIZE, (0,0,0,255))
-        elif event.kind in ("screen_fade_in", "screen_fade_out"):
-            fraction = min(1.0,max(0.0,(time_ms-event.time_ms)/max(1,event.transition_duration_ms)))
-            alpha = 1-fraction if event.kind == "screen_fade_in" else fraction
+        elif alpha > 0.0:
             image = Image.blend(image,Image.new("RGBA",SCENE_SIZE,(0,0,0,255)),alpha)
         return RenderResult(image,tuple(diagnostics))

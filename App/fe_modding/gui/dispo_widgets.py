@@ -23,15 +23,23 @@ class FlagChecks(ttk.Frame):
         super().__init__(parent)
         self._original = int(original)
         self._vars: dict[int, tk.BooleanVar] = {}
+        self._cells: dict[int, ttk.Frame] = {}
         for i, (mask, label, help_text) in enumerate(bits):
             var = tk.BooleanVar(value=bool(self._original & mask))
             self._vars[mask] = var
             cell = ttk.Frame(self)
+            self._cells[mask] = cell
             cell.grid(row=i // columns, column=i % columns, sticky="w", padx=(0, 8))
             ttk.Checkbutton(cell, text=label, variable=var).pack(anchor="w")
             if show_help:
                 ttk.Label(cell, text=help_text, style="Muted.TLabel", wraplength=340,
                           justify="left").pack(anchor="w", padx=(22, 0))
+
+    def set_visible(self, mask: int, visible: bool) -> None:
+        """Show or hide one checkbox; a hidden one keeps its value."""
+        cell = self._cells.get(mask)
+        if cell is not None:
+            cell.grid() if visible else cell.grid_remove()
 
     def value(self) -> int:
         value = self._original

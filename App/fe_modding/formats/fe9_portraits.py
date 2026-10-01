@@ -19,9 +19,10 @@ class FaceRecord:
     right_eye: tuple[int, int]
     mouth: tuple[int, int]
     flags: int
-    unknown_1a: int
+    mini_portrait: int  # +1a: texture index of the 64x64 menu face, 0xffff for none (L_ faces)
     default_mouth: int
     depth: int
+    menu_offset: int = 0  # +1e (s16): pixels the face is lowered in menu panels
 
 
 def read_face_table(data: bytes) -> dict[str, FaceRecord]:
@@ -44,11 +45,11 @@ def read_face_table(data: bytes) -> dict[str, FaceRecord]:
     for offset in range(records, records + count * 32, 32):
         fid, name, filename = (string(p) for p in struct.unpack_from(">III", data, offset))
         coords = struct.unpack_from(">6h", data, offset + 12)
-        flags, textures, default, depth = struct.unpack_from(">HHBB", data, offset + 24)
+        flags, mini, default, depth, menu_offset = struct.unpack_from(">HHBBh", data, offset + 24)
         if not fid.startswith("FID_") or fid in result:
             raise ValueError(f"Invalid/duplicate face ID: {fid}")
         result[fid] = FaceRecord(fid, name, filename, coords[:2], coords[2:4],
-                                 coords[4:], flags, textures, default, depth)
+                                 coords[4:], flags, mini, default, depth, menu_offset)
     return result
 
 

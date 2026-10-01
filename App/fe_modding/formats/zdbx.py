@@ -33,9 +33,12 @@ blocks of tab-separated key/value lines) and a few ``.tpl`` textures.
     ``止め飛び去り``, ``走り回数`` (run count), ``ダメージ後退`` (knockback),
     ``補間速度``/``移動補間速度``/``待機補間速度`` (blend speeds), ``大型``
     (large).
-- ``xwp/`` (91) - one file per weapon code; ``zbg/`` (117) - one
-  ``param.dbx`` per battle scenery; ``xcam/`` (19) - camera scripts per
-  action; ``ztool/`` (15) and ``ztex/`` (12) - the in-game battle tool's
+- ``xwp/`` (91) - one file per weapon code (:mod:`battle_weapons`);
+  ``zbg/`` (117) - one ``param.dbx`` per battle scenery
+  (:mod:`battle_scenery`); ``xcam/`` (19) - camera scripts per action and
+  ``zdbx/camera.dbx`` the camera rigs (:mod:`battle_camera`); the tuning keys
+  of ``zu/*_prm.dbx`` are :mod:`battle_params`; :mod:`dbx` edits any of them
+  losslessly. ``ztool/`` (15) and ``ztex/`` (12) - the in-game battle tool's
   window layouts and textures.
 
 **Battle model lookup** (``build_battle_preview_weapon_string``): the

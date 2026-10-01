@@ -3156,6 +3156,7 @@ class _ModelCanvas(tk.Canvas):
         self._animated_triangles: list[_Triangle] | None = None
         self._highlighted_bone: int | None = None
         self._show_mesh = True
+        self._show_skeleton = True
         self._grid: "GridOverlay | None" = None
         self._show_grid = False
         self._gameplay_grid: "GridOverlay | None" = None
@@ -3231,9 +3232,12 @@ class _ModelCanvas(tk.Canvas):
 
     def set_show_mesh(self, show: bool) -> None:
         """Toggle the mesh's visibility - the skeleton overlay (markers and
-        connector lines) always stays visible regardless, since it's often
-        what you actually want an unobstructed view of."""
+        connector lines) is controlled separately by `set_show_skeleton()`."""
         self._show_mesh = show
+        self._schedule_redraw()
+
+    def set_show_skeleton(self, show: bool) -> None:
+        self._show_skeleton = show
         self._schedule_redraw()
 
     def set_grid(self, overlay: "GridOverlay | None") -> None:
@@ -3612,6 +3616,9 @@ class _ModelCanvas(tk.Canvas):
         if self._show_gameplay_grid and self._gameplay_grid is not None:
             self._draw_grid(self._gameplay_grid, to_screen, "#55ddff")
 
+        if not self._show_skeleton:
+            return
+
         drawables: list[tuple[float, str, object, object]] = []
         for bone_index, parent_index in self._bone_parents.items():
             if bone_index not in positions or parent_index not in positions:
@@ -3751,6 +3758,13 @@ class _ModelPreview(ttk.Frame):
         self._show_mesh_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header, text="Show mesh", variable=self._show_mesh_var, command=self._on_show_mesh_toggled
+        ).pack(side="right", padx=(0, 8))
+        self._show_skeleton_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            canvas_header,
+            text="Show skeleton",
+            variable=self._show_skeleton_var,
+            command=lambda: self._canvas.set_show_skeleton(self._show_skeleton_var.get()),
         ).pack(side="right", padx=(0, 8))
         # Only meaningful once a caller hands over a chapter's placement
         # grid via set_grid() (map_editor.py's "3D Terrain"/"Map View" tabs)

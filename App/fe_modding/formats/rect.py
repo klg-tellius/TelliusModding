@@ -169,8 +169,8 @@ class TextLayer:
     x: int = 0
     y: int = 0
     depth: int = 0  # header byte +2, drawn as the vertex depth
-    style_a: int = 0  # +0x10: selects a text-record variant (0 in every vanilla layer)
-    style_b: int = 0  # +0x11: 1 selects the multi-vertex glyph variant (13 vanilla layers)
+    style_a: int = 0  # +0x10: drop shadow on (2px, black at half alpha); 0 in every vanilla layer
+    style_b: int = 0  # +0x11: outline on (1px black, 8 directions); 1 in 13 vanilla layers
     color: int = 1  # +0x12: text palette index
     unknown_13: int = 1  # +0x13: 1 in every vanilla layer, not read by the draw method
     align: int = -1  # +0x14: -1 left, 0 centred on x, 1 right-aligned to x
@@ -208,8 +208,8 @@ class TextboxLayer:
     marker_x: int = 0  # +0x18
     marker_y: int = 0  # +0x1A
     width: int = 0  # +0x1C
-    style_a: int = 1  # +0x1E, the same two text-variant toggles as TextLayer +0x10/+0x11
-    style_b: int = 1  # +0x1F
+    style_a: int = 1  # +0x1E: drop shadow of the box's text (as TextLayer +0x10)
+    style_b: int = 1  # +0x1F: outline of the box's text (as TextLayer +0x11)
     line_height: int = 28  # +0x20
     lines: int = 3  # +0x21
     speed: int = 7  # +0x22

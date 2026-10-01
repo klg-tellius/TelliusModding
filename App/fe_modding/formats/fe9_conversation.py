@@ -25,7 +25,17 @@ class Token:
     arg: str = ""
 
 
-_COMMAND = re.compile(rb"\$(?:([RBcC])([^|]*)\||FC([^|]*)\||([F][ASDcdhfos0-9])|([sdwWO][0-9])|(=[0-9]{4})|(M[CD]|U[Bb]|[SN]D|SE|W[+\-D])|([KPNHGY<>]))")
+_COMMAND = re.compile(rb"\$(?:([RBcC])([^|]*)\||FC([^|]*)\||([F][ASDcdhfos0-9])|([sdwWO][0-9])|(=[0-9]{4})|(M[CD]|U[Bb]|[SN]D|DC|SE|W[+\-D])|([KPNHGY<>]))")
+
+# Message Speed option (MCFG_MESSSPEED) -> frames per text tick, from process_dialogue_textbox_frame
+# (80120354): option 0 Slow 10, 1 Normal 4, 2 Fast 1, 3 Max = the whole page in one tick.
+TEXT_SPEEDS = {"slow": 10, "normal": 4, "fast": 1, "max": 0}
+# Commands for which dialogue_textbox_exec_command (8011e4b8) returns 2: they end the current
+# text tick, so the next glyph waits for the following tick.
+# Markup kept in a textbox's text for the renderer (draw_markup_text_core 8000e7fc).
+_DRAWN_MARKUP = ("#F", "#C", "#P", "#S", "#X", "#Y", "#R", "#G", "#B", "#A", "#I",
+                 "#c", "#D", "#s", "#x", "#y", "#E", "#e", "#O", "#o", "#i")
+_TICK_ENDING = {"c", "d", "P", "K", "H", "Y", "w", "W+", "W-", "WD"}
 
 
 def tokenize(text: str) -> tuple[Token, ...]:
@@ -102,6 +112,13 @@ class Scene:
     nametag: bool = True
     transition_ms: int = 267
     screen_black: bool = False
+    # ("in" | "out", start_ms, duration_ms) of the latest $< / $> screen transition. It runs
+    # alongside the text: the message does not wait for it.
+    screen_fade: tuple[str, int, int] | None = None
+    # $SD/$SE: while False, B no longer skips the conversation and advances text like A instead.
+    skippable: bool = True
+    # $UB/$Ub: the event script that started the message has been released and runs again.
+    script_released: bool = False
 
 
 @dataclass(frozen=True)
@@ -142,7 +159,11 @@ class Timeline:
 
 def build_timeline(text: str, *, context: InitialContext | None = None,
                    measure: Callable[[str], int] | None = None,
-                   text_reveal_ms: int = 33) -> Timeline:
+                   text_speed: str = "normal") -> Timeline:
+    """``text_speed`` is the Message Speed option: slow, normal, fast or max."""
+    if text_speed not in TEXT_SPEEDS:
+        raise ValueError(f"Unknown text speed {text_speed!r}")
+    tick_frames = TEXT_SPEEDS[text_speed]
     context = context or InitialContext()
     if len(context.portraits) != 9:
         raise ValueError("Initial context must contain nine portrait seats")
@@ -155,10 +176,18 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
                   portraits=tuple(Portrait(fid=(f if f.startswith("FID_") else "FID_" + f)) if f else Portrait()
                                   for f in context.portraits))
     events, diagnostics = [], []
-    now = 0
+    frames = 0  # game time in 60 Hz frames; events report milliseconds
+
+    def now():
+        return round(frames * 1000 / 60)
 
     def emit(kind="command", offset=0, wait=False, transition_from=None, duration=0):
-        events.append(Event(len(events), now, offset, kind, scene, wait, transition_from, duration))
+        events.append(Event(len(events), now(), offset, kind, scene, wait, transition_from, duration))
+
+    def end_tick():
+        # Even at Max speed the following glyphs wait for the next frame.
+        nonlocal frames
+        frames += max(1, tick_frames)
 
     def portrait(**changes):
         nonlocal scene
@@ -178,9 +207,9 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
         if fid in ("FID_ME", "FID_LME"):
             diagnostics.append(Diagnostic(offset, f"{fid} needs a character alias in Initial context"))
         if scene.portraits[scene.seat].fid:
-            portrait(fid=fid, mouth=1, eye_mode=1, blink_mode=1, loaded_ms=now, expression_ms=now)
+            portrait(fid=fid, mouth=1, eye_mode=1, blink_mode=1, loaded_ms=now(), expression_ms=now())
         else:
-            portrait(fid=fid, loaded_ms=now)
+            portrait(fid=fid, loaded_ms=now())
 
     def width_after(start, box):
         # 801208bc: scan future lines for this window until its dismissal.
@@ -195,7 +224,7 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
                 active = int(token.arg[0])
             if code in ("P", "N") or (code == "text" and token.arg == "\n"):
                 maximum = max(maximum, measure(line)); line = ""
-            elif (code == "text" or code == "markup" and token.arg.startswith(("#F", "#C"))) and active == box:
+            elif (code == "text" or code == "markup" and token.arg.startswith(_DRAWN_MARKUP)) and active == box:
                 line += token.arg
         return min(560, max(368, max(maximum, measure(line)) + 224))
 
@@ -216,8 +245,9 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
             textbox(text=text_value, visible=True)
             if char != "\n":
                 scene = replace(scene, speaker_seat=scene.seat)
-                now += text_reveal_ms
             emit("text", token.offset)
+            if char != "\n":
+                frames += tick_frames
             continue
         if code == "R":
             scene = replace(scene, layout=arg, boxes=(Textbox(),)*4, speaker_seat=-1)
@@ -226,22 +256,27 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
         elif code == "=":
             scene = replace(scene, transition_ms=267 if arg == "9999" else int(arg))
         elif code in ("<", ">"):
-            scene = replace(scene,screen_black=False)
-            emit("screen_fade_in" if code == "<" else "screen_fade_out", token.offset,
-                 duration=scene.transition_ms)
-            now += scene.transition_ms
-            scene = replace(scene,screen_black=code == ">")
+            # screen_start_transition (8008a32c): ms / 16.667 whole frames, linear (easing mode 0).
+            duration = round(scene.transition_ms * 60 // 1000 * 1000 / 60)
+            scene = replace(scene, screen_black=code == ">",
+                            screen_fade=("in" if code == "<" else "out", now(), duration))
+            emit("screen_fade_in" if code == "<" else "screen_fade_out", token.offset, duration=duration)
+            continue
         elif code in ("s", "W", "c", "d"):
             value = int(arg[0]) if arg and arg[0].isdigit() else -1
             if not 0 <= value < 4:
                 diagnostics.append(Diagnostic(token.offset, f"Invalid textbox: ${code}{arg}")); continue
             scene = replace(scene, box=value, seat=value, speaker_seat=-1)
+            if code == "s" and not scene.boxes[value].visible:
+                # $s on a hidden box only selects it: no flush, and the text tick goes on.
+                emit(offset=token.offset)
+                continue
             if code == "d":
                 textbox(visible=False, text=""); portrait(fid="",mouth=1,eye_mode=1,blink_mode=1)
             else:
                 old_box = scene.boxes[value]
                 width = old_box.width if old_box.visible else width_after(i+1,value)
-                textbox(width=width, visible=True, text="", opened_ms=now)
+                textbox(width=width, visible=True, text="", opened_ms=now())
                 if code == "c":
                     load_face(arg[1:], token.offset)
         elif code == "F":
@@ -255,7 +290,7 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
         elif code in ("FS", "FA"):
             portrait(mouth=0 if code == "FS" else 1)
         elif code in ("Fc", "Fh", "Fo", "Fd", "Ff", "Fs"):
-            changes = {"expression_ms": now}
+            changes = {"expression_ms": now()}
             if code in ("Fc", "Fh", "Fo", "Fd"):
                 changes["eye_mode"] = {"Fc":3,"Fh":4,"Fo":5,"Fd":1}[code]
             if code in ("Fd", "Ff", "Fs", "Fo"):
@@ -271,11 +306,14 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
             scene = replace(scene, mouth_enabled=(code=="MD"))
         elif code in ("K", "H"):
             emit("wait" if code == "K" else "event_wait", token.offset, True)
+            end_tick()
             continue
         elif code == "w":
+            # A blocking child process of 2^n frames, then the rest of the text tick.
             emit("pause", token.offset)
-            now += round((1 << int(arg)) * 1000 / 60)
+            frames += 1 << int(arg)
             emit("pause_end", token.offset)
+            end_tick()
             continue
         elif code == "WD":
             textbox(visible=False, text="")
@@ -283,13 +321,19 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
             scene = replace(scene, boxes=tuple(replace(b,visible=False) for b in scene.boxes))
         elif code == "W+":
             scene = replace(scene, boxes=tuple(replace(b,visible=bool(b.text)) for b in scene.boxes))
-        elif code in ("SD", "SE", "UB", "Ub", "G", "Y"):
-            # Script scheduling/backlog controls have no additional raster content.
+        elif code in ("SD", "DC", "SE"):
+            # Bit 8 of the dialogue flags (80367a58): B stops skipping the conversation.
+            scene = replace(scene, skippable=code == "SE")
+        elif code in ("UB", "Ub"):
+            # Releases the event script blocked on this message; $Ub's extra flag 0x100 is never read.
+            scene = replace(scene, script_released=True)
+        elif code in ("G", "Y"):
+            # $G names the text-log entry "G" (narration); $Y only ends the text tick.
             pass
         elif code == "O":
             # $On only picks the text-typing sound (SFX_SYS_MSG<n>, 0 = silent); nothing is drawn.
             pass
-        elif code == "markup" and (arg.startswith(("#F", "#C")) or arg in ("#c", "#D")):
+        elif code == "markup" and arg.startswith(_DRAWN_MARKUP):
             textbox(text=scene.boxes[scene.box].text+arg)
         elif code == "markup" and arg == "##":
             textbox(text=scene.boxes[scene.box].text+"#")
@@ -299,7 +343,9 @@ def build_timeline(text: str, *, context: InitialContext | None = None,
             # Both face alpha and textbox visibility tweens use eight frames.
             # 800790d4/800791f0 and 80122238/801222a4; curve mode 0.
             emit("transition", token.offset, transition_from=before, duration=133)
-            now += 133
+            frames += 8
         emit(offset=token.offset)
+        if code in _TICK_ENDING or code == "s":
+            end_tick()
     emit("end", len(text))
     return Timeline(tuple(events), tuple(diagnostics), tuple(e.time_ms for e in events))

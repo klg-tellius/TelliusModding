@@ -55,8 +55,12 @@ class StepKind:
 _SEAT_OPT = FieldSpec("seat", "Seat", "seat_opt")
 _EYES = (("c", "Close eyes ($Fc)"), ("h", "Half-open eyes ($Fh)"),
          ("o", "Hold eyes open ($Fo)"), ("d", "Normal eyes and blinking ($Fd)"))
-_CONTROLS = (("UB", "$UB"), ("Ub", "$Ub"), ("SD", "$SD (shop dialogue)"),
-             ("SE", "$SE (shop dialogue)"), ("G", "$G (narration)"), ("Y", "$Y"), ("C", "$C…|"))
+_CONTROLS = (("C", "$C…|"),)
+_SKIP = (("SD", "Disable skipping ($SD)"), ("SE", "Enable skipping ($SE)"),
+         ("DC", "Disable skipping ($DC, unused alias)"))
+_RELEASE = (("UB", "$UB"), ("Ub", "$Ub (identical)"))
+_TYPING_SOUNDS = (("0", "Silent ($O0)"), ("1", "Dialogue ($O1)"), ("2", "Ancient language ($O2)"),
+                  ("3", "Narration ($O3)"), ("4", "Tutorial ($O4)"))
 
 STEP_KINDS: dict[str, StepKind] = {k.kind: k for k in (
     StepKind("layout", "Set layout", "Scene",
@@ -105,13 +109,30 @@ STEP_KINDS: dict[str, StepKind] = {k.kind: k for k in (
              (FieldSpec("target", "Speaker", "line_target"), FieldSpec("flush", "Clear box first ($P)", "bool"),
               FieldSpec("text", "Text", "text"), FieldSpec("wait", "Wait for input ($K)", "bool"))),
     StepKind("wait", "Wait for input", "Text", "$K: wait for the player to press a button."),
+    StepKind("no_wait", "Continue without waiting", "Text",
+             "$Y: end the current text tick without waiting for input, e.g. to cut a speaker off. "
+             "The next command runs on the following tick."),
+    StepKind("narration", "Narration log entry", "Text",
+             "$G: the following text goes into the text log (Z at a wait) as narration, "
+             "without a speaker name. Vanilla uses it after $O3 in world-map narration."),
+    StepKind("typing_sound", "Typing sound", "Text",
+             "$O<n>: sound played as text appears (SFX_SYS_MSG<n>). Nothing is drawn.",
+             (FieldSpec("value", "Sound", "choice", _TYPING_SOUNDS),)),
     StepKind("yield", "Yield to script", "Flow",
              "$H: pause the message and resume the event script; the message continues later."),
+    StepKind("release_script", "Release event script", "Flow",
+             "$UB/$Ub: let the event script that started this message run again while the "
+             "message stays on screen. Vanilla puts it right before $H, at the end of a message "
+             "so the scene carries over, or mid-message so the script can move the camera or units. "
+             "$Ub also sets a flag nothing reads.",
+             (FieldSpec("code", "Code", "choice", _RELEASE),)),
+    StepKind("skip", "Conversation skipping", "Flow",
+             "$SD/$SE: normally B skips the whole conversation. After $SD, B advances the text "
+             "like A instead; $SE restores skipping. Vanilla disables skipping around choices.",
+             (FieldSpec("mode", "Skipping", "choice", _SKIP),)),
     StepKind("control", "Control code", "Advanced",
-             "Recognised control whose effect is not fully decoded.",
+             "$C…| is not a command in the US executable: the game prints the text after it.",
              (FieldSpec("code", "Code", "choice", _CONTROLS),), confidence="Undecoded"),
-    StepKind("option", "$O<n>", "Advanced", "$O<n>: used before world-map narration; effect not decoded.",
-             (FieldSpec("value", "Value", "int"),), confidence="Undecoded"),
     StepKind("raw", "Raw text", "Advanced", "Unrecognised source kept byte for byte.",
              (FieldSpec("text", "Source", "text"),), confidence="Raw"),
 )}
@@ -119,7 +140,7 @@ STEP_KINDS: dict[str, StepKind] = {k.kind: k for k in (
 _FACE_CODES = {"FC": ("load_portrait", "fid"), "FD": ("remove_portrait", None),
                "Fc": ("eyes", "c"), "Fh": ("eyes", "h"), "Fo": ("eyes", "o"), "Fd": ("eyes", "d"),
                "Ff": ("blink", "f"), "Fs": ("blink", "s"), "FS": ("mouth_set", "S"), "FA": ("mouth_set", "A")}
-_CONTROL_CODES = {"UB", "Ub", "SD", "SE", "G", "Y", "C"}
+_CONTROL_CODES = {"C"}
 
 
 @dataclass
@@ -140,7 +161,8 @@ def new_step(kind: str, **fields) -> Step:
                 "blink": {"seat": 0, "speed": "s"}, "mouth_set": {"seat": 0, "set": "A"},
                 "select_seat": {"seat": 0}, "show_speaker": {"box": 0, "fid": ""},
                 "select_box": {"box": 0, "command": "s"}, "dismiss_box": {"box": 0},
-                "windows": {"mode": "-"}, "control": {"code": "UB"}, "option": {"value": 3},
+                "windows": {"mode": "-"}, "control": {"code": "C"}, "typing_sound": {"value": "1"},
+                "release_script": {"code": "UB"}, "skip": {"mode": "SD"},
                 "raw": {"text": ""},
                 "line": {"select": "", "index": 0, "flush": True, "text": "", "wait": True}}
     return Step(kind, {"trail": 0, **defaults.get(kind, {}), **fields})
@@ -232,7 +254,15 @@ def decompile(text: str) -> list[Step]:
             elif code == "H":
                 add("yield", token.offset)
             elif code == "O":
-                add("option", token.offset, value=int(arg))
+                add("typing_sound", token.offset, value=arg)
+            elif code in ("SD", "SE", "DC"):
+                add("skip", token.offset, mode=code)
+            elif code in ("UB", "Ub"):
+                add("release_script", token.offset, code=code)
+            elif code == "G":
+                add("narration", token.offset)
+            elif code == "Y":
+                add("no_wait", token.offset)
             elif code in _CONTROL_CODES and (code != "C" or not arg):
                 add("control", token.offset, code=code)
             else:
@@ -290,8 +320,14 @@ def render_step(step: Step) -> str:
         out = "$H"
     elif kind == "control":
         out = "$C|" if f["code"] == "C" else "$" + f["code"]
-    elif kind == "option":
+    elif kind == "typing_sound":
         out = f"$O{int(f['value'])}"
+    elif kind in ("skip", "release_script"):
+        out = "$" + f["mode" if kind == "skip" else "code"]
+    elif kind == "narration":
+        out = "$G"
+    elif kind == "no_wait":
+        out = "$Y"
     elif kind == "raw":
         out = to_raw(f["text"])
     else:
@@ -326,7 +362,7 @@ def validate_step(step: Step) -> str | None:
         return "Choose a portrait"
     if step.kind == "transition" and not 0 <= int(f["ms"]) <= 9999:
         return "Duration must be 0-9999"
-    if step.kind == "option" and not 0 <= int(f["value"]) <= 9:
+    if step.kind == "typing_sound" and not 0 <= int(f["value"]) <= 9:
         return "Value must be 0-9"
     for key in ("seat", "index"):
         if f.get(key) is not None and not 0 <= int(f[key]) <= (3 if key == "index" and f.get("select") in ("s", "W") else 8):
@@ -361,11 +397,11 @@ def summary(step: Step) -> str:
         text = f"box {f['box']} ← {f['fid']}"
     elif kind in ("select_box", "dismiss_box"):
         text = f"box {f['box']}"
-    elif kind in ("windows", "control"):
+    elif kind in ("windows", "control", "skip", "release_script"):
         spec = STEP_KINDS[kind].fields[0]
         text = dict(spec.choices)[f[spec.name]]
-    elif kind == "option":
-        text = str(f["value"])
+    elif kind == "typing_sound":
+        text = dict(_TYPING_SOUNDS).get(str(f["value"]), f"SFX_SYS_MSG{f['value']} ($O{f['value']})")
     elif kind == "line":
         who = {"F": "seat ", "s": "box ", "W": "box "}.get(f["select"], "")
         prefix = f"[{who}{f['index']}] " if f["select"] else ""
@@ -398,6 +434,18 @@ INLINE_CODES: tuple[tuple[str, str], ...] = (
     ("$MC...$MD", "Ellipsis with the mouth still"), ("$MC--$MD", "Dash with the mouth still"),
     ("$N", "New line ($N)"), ("#C0A", "Colour 0A (#Cxx)"), ("#c", "Previous colour (#c)"),
 )
+
+#: What vanilla text uses each #P icon cell for (window/icon.tpl image 0, 24x24, 32 per row).
+ICON_LABELS: dict[int, str] = {
+    0x01: "Boss", 0x09: "Beorc", 0x0A: "Laguz", 0x0B: "Knight", 0x0C: "Armor", 0x0D: "Dragon",
+    0x0E: "Flying", 0x0F: "Sword / knife", 0x10: "Lance", 0x11: "Axe", 0x12: "Bow", 0x13: "Staff",
+    0x14: "Fire", 0x15: "Wind", 0x16: "Thunder", 0x27: "A button (OK)", 0x28: "B button (Back)",
+    0x2A: "Status / Help button", 0x2B: "Unit List button", 0x2C: "Move left/right (tutorial)",
+    0x2D: "Switch (item captions, with 02E-030)", 0x2E: "Switch (with 02D)", 0x2F: "Switch (with 030)",
+    0x30: "Switch (with 02F)", 0x31: "Move (tutorial, alternative to 02C)", 0x32: "Fight button",
+    0x33: "Menu / Reinforcement (first half, with 034)", 0x34: "Menu / Reinforcement (second half)",
+    0x35: "Select Topic", 0x36: "Select Content", 0x38: "Select", 0x53: "Beast", 0x54: "Bird",
+}
 
 #: Fonts a Line can switch to: (index, label, opening codes). A switch lasts until the end of
 #: the textbox line, so ``apply_font`` repeats it on every line and closes it with ``#F02``
@@ -449,14 +497,28 @@ def describe_inline(code: str) -> str:
     if code.startswith("#F") and code[2:].isdigit():
         index = int(code[2:])
         return f"Font {index}: {FONT_LABELS.get(index, 'no such font')}, until the end of the line"
+    if len(code) == 4 and code[:2] in ("#S", "#X", "#Y") and all(c in "0123456789abcdefABCDEF" for c in code[2:]):
+        value = int(code[2:], 16)
+        axis = {"#S": "Text scale", "#X": "Horizontal text scale", "#Y": "Vertical text scale"}[code[:2]]
+        return f"{axis} {value}/64 = {value / 64:.0%}, from the line's top-left corner, until reset or the end of the line"
+    if len(code) == 4 and code[:2] in ("#R", "#G", "#B", "#A") and all(c in "0123456789abcdefABCDEF" for c in code[2:]):
+        channel = {"#R": "Red", "#G": "Green", "#B": "Blue", "#A": "Alpha"}[code[:2]]
+        return f"{channel} channel of the text colour = {int(code[2:], 16)}/255"
+    if len(code) == 4 and code[:2] == "#I" and all(c in "0123456789abcdefABCDEF" for c in code[2:]):
+        return f"Italic: the top of the line leans {int(code[2:], 16) / 16:g}px right"
+    if code.startswith("#P") and len(code) == 5:
+        return f"Icon {code[2:]}: cell {int(code[2:], 16)} of window/icon.tpl (24x24)"
     if code.startswith("$O") and code[2:].isdigit():
         sounds = {"0": "silent", "1": "dialogue", "2": "ancient language", "3": "narration", "4": "tutorial"}
         return f"Typing sound {code[2:]} ({sounds.get(code[2:], 'SFX_SYS_MSG' + code[2:])})"
     return {"$MC": "Stop mouth motion", "$MD": "Restart mouth motion", "$N": "New line",
-            "#c": "Restore previous colour", "#D": "Default colour", "##": "Literal #"}.get(
+            "#c": "Restore previous colour", "#D": "Default colour, scale and italic; shadow and outline off", "##": "Literal #"}.get(
         code, {"#C": "Text colour", "#F": "Font",
-               "#P": "Inline icon", "#X": "Highlighted text start", "#x": "Highlighted text end",
-               "#S": "Styled text start", "#s": "Styled text end"}.get(code[:2], code))
+               "#x": "Reset horizontal text scale", "#y": "Reset vertical text scale (the window"
+               " width measurement also skips the next 2 characters)",
+               "#s": "Reset text scale", "#E": "Drop shadow on (2px, black at half alpha)",
+               "#e": "Drop shadow off", "#O": "Outline on (1px black, 8 directions)",
+               "#o": "Outline off", "#i": "Italic off"}.get(code[:2], code))
 
 
 def _template(*parts: str) -> str:

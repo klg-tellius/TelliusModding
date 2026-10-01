@@ -9,7 +9,12 @@ from __future__ import annotations
 from tkinter import ttk
 
 from ..background_viewer import BackgroundViewer
+from ..battle_camera_viewer import BattleCameraViewer
+from ..battle_params_viewer import BattleParamsViewer
+from ..battle_scenery_viewer import BattleSceneryViewer
+from ..battle_weapons_viewer import BattleWeaponsViewer
 from ..editor_panel import EditorPanel
+from ..effects_viewer import EffectsViewer
 from ..graphics_viewers import (
     EndingViewer,
     EquipmentViewer,
@@ -23,6 +28,8 @@ from ..icon_viewer import IconViewer
 from ..model_viewer import ModelViewer
 from ..music_editor import MusicEditor
 from ..portrait_viewer import PortraitViewer
+from ..sfx_viewer import SfxViewer
+from ..soundroom_editor import SoundRoomEditor
 from ..shell import Page
 from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
@@ -44,6 +51,13 @@ ASSET_TOOLS = [
     ("etc_graphics", "Misc Graphics", "▧", "Textures in etc/", EtcGraphicsViewer),
     ("equipment", "Equipment", "⚔", "Loose .tpl textures in zu/", EquipmentViewer),
     ("music", "Music", "♫", "Music streams (Sound/): preview, replace, add", MusicEditor),
+    ("effects", "Visual Effects", "✺", "Spell and battle effects (FE8Effect.bin, yme/): preview, replace, add", EffectsViewer),
+    ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle (zdbx.cmp xwp/): type, flight, effects", BattleWeaponsViewer),
+    ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", BattleSceneryViewer),
+    ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action camera scripts (camera.dbx, xcam/)", BattleCameraViewer),
+    ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
+    ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
+    ("sound_room", "Sound Room", "♬", "Sound Room slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
@@ -62,10 +76,10 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text and scripts", ("conversations", "scripts")),
-                            ("Characters and models", ("portraits", "models")),
-                            ("Art", ("backgrounds", "illustrations", "ending", "world_map")),
+                            ("Characters and models", ("portraits", "models", "battle_weapons", "battle_sceneries", "battle_cameras", "battle_params")),
+                            ("Art", ("backgrounds", "illustrations", "ending", "world_map", "effects")),
                             ("Interface", ("icons", "fonts", "ui_windows", "etc_graphics", "equipment")),
-                            ("Sound and video", ("music", "videos"))):
+                            ("Sound and video", ("music", "sfx", "sound_room", "videos"))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")

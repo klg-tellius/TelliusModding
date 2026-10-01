@@ -841,8 +841,8 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(
             names,
             [
-                "layout_mode", "select_box", "show_portrait", "set_speaker_name",
-                "select_box", "typography_start", "typography_end", "pause", "page_break",
+                "layout_mode", "select_box", "mouth_set_first", "set_speaker_name",
+                "select_box", "mouth_still", "mouth_moving", "pause", "wait_for_input",
             ],
         )
 

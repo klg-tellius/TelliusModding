@@ -63,21 +63,10 @@ unit's accumulators at deployment and consumed by
 ``apply_fixed_growth_level_up`` (FE8DATA_NOTES.md §4.1). A community
 editor names the block ``supportgrowth``; it is not support data.
 
-A related, ruled-out lead: cp_data.bin (checked on the strength of "CP" =
-"Compatibility Points", the common Fire-Emblem-engine term for support
-points) is NOT a support table. Its first ~67 entries are a flat array of
-IID_ pointers to real "skill scroll" items (IID_COUNTER, IID_GAMBLE, ...-
-consumables that teach the matching skill, confirmed by name match against
-the skill table). The rest of the file is a flat string pool of AI/event
-symbols (ATK_SEQID_LIST, HEAL_SEQID_LIST, MOV_SEQID_LIST, TALK_-prefixed
-condition tags, ...) sitting in one alphabetically-sorted run - CP_DataHead
-lives in that exact run, between ATK_SEQID_LIST and HEAL_SEQID_LIST,
-which is what actually gives away its real meaning: an AI/combat-behavior
-data table header (plausibly "Combat Pattern"), unrelated to character
-supports despite the "CP" coincidence. This file is more likely the master
-symbol pool dispo.py's per-unit "AI-behavior references" resolve through -
-a lead worth chasing for dispo.py's own still-unnamed record fields, not
-for supports.
+A related, ruled-out lead: cp_data.bin ("CP" = computer player, not support
+"Compatibility Points") is the AI's data - scripts, movement weights, heal
+thresholds, the thief steal list - and holds no support data
+(research/CP_DATA_NOTES.md, formats/cp_data.py).
 
 **Class weapon ranks and innate skills** (a follow-up pass, resolving two
 items this docstring used to list as undecoded). `ClassEntry.weapon_ranks`
@@ -309,10 +298,8 @@ the loose end to chase.
 roadmap" plan that scoped this table also asked for the numeric
 support-bonus tables (Hit/Avoid/etc. bonuses per support level). No
 PID_-pair-keyed table turned up searching FE8Data.bin's own string-pool
-region, and cp_data.bin (a plausible-sounding lead, given "CP" = a common
-Fire Emblem-engine term for support points) turned out instead to be an
-IID_-keyed table of "skill scroll" consumable items (e.g. IID_COUNTER,
-IID_GAMBLE - items that teach the matching skill), not support data. Given
+region, and cp_data.bin (a plausible-sounding lead, given "CP") turned out to be the
+computer player's AI data (research/CP_DATA_NOTES.md), not support data. Given
 real Tellius support bonuses scale by *affinity pair* (a compact ~10x10
 matrix), not by *character* pair, a useful next search would look for a
 small fixed-size table keyed by affinity index rather than by PID_ label -
