@@ -49,10 +49,9 @@ fields), one per ``EID_`` name (100% of records resolve their name pointer
   guards against one defensively rather than assuming the data can't have
   one).
 
-Read-only: no editor, and no write function - this is a lookup/definition
-table for effects the engine's own renderer knows how to play, not a
-balance table, and nothing in this codebase currently needs to add or
-rename an effect entry.
+``build_effect_registry`` rebuilds the file (vanilla records give the vanilla
+file byte for byte) so the Visual Effects tile can append an ``EID_`` entry.
+The file is 295 records on the real disc (the 263 above was an earlier count).
 """
 
 from __future__ import annotations
@@ -66,6 +65,7 @@ from .common import HEADER_SIZE
 
 TRUE_HEADER_SIZE = 0x24  # 9 words - see module docstring; NOT common.HEADER_SIZE
 RECORD_SIZE = 0x0C  # 12 bytes: eid_ptr, flags, chain_ptr
+SYMBOL_NAME = b"EffectData"
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,7 @@ class EffectRecord:
     variant_id: int  # flags byte 1 - continuous small int (0-66), meaning unconfirmed
     subtype: int  # flags byte 3 - mostly 0, rare small values, low confidence
     next_in_chain: Optional[str]  # field 2, resolved - see module docstring
+    flags: int = 0  # the raw flags word (field 1), kept so a rebuild is lossless
 
 
 def _read_cstring(data: bytes, addr: int) -> str:
@@ -97,9 +98,54 @@ def read_effect_registry(data: bytes) -> list[EffectRecord]:
                 variant_id=(flags >> 16) & 0xFF,
                 subtype=flags & 0xFF,
                 next_in_chain=_read_cstring(data, chain_ptr + HEADER_SIZE) if chain_ptr else None,
+                flags=flags,
             )
         )
     return records
+
+
+def build_effect_registry(records: list[EffectRecord]) -> bytes:
+    """Build an ``FE8Effect.bin`` from records, in record order.
+
+    Layout mirrors ``anim_registry.build_anim_registry``: count word, 12-byte
+    records, a sorted NUL-separated name pool, pad to 4, then the pointer
+    table (every non-zero record pointer field), a zero pair and the
+    ``EffectData`` symbol name.
+    """
+    names = {r.eid_name for r in records} | {r.next_in_chain for r in records if r.next_in_chain}
+    pool_start = 4 + len(records) * RECORD_SIZE
+    offsets, pool = {}, bytearray()
+    for name in sorted(names):
+        offsets[name] = pool_start + len(pool)
+        pool += name.encode("ascii") + b"\x00"
+    data = bytearray(struct.pack(">I", len(records)))
+    pointers = []
+    for i, r in enumerate(records):
+        base = 4 + i * RECORD_SIZE
+        pointers.append(base)
+        chain_ptr = 0
+        if r.next_in_chain:
+            pointers.append(base + 8)
+            chain_ptr = offsets[r.next_in_chain]
+        data += struct.pack(">III", offsets[r.eid_name], r.flags, chain_ptr)
+    data += pool
+    data += bytes(-len(data) % 4)
+    tail = struct.pack(f">{len(pointers)}I", *pointers) + struct.pack(">II", 0, 0) + SYMBOL_NAME + b"\x00"
+    size = TRUE_HEADER_SIZE - 4 + len(data) + len(tail)
+    header = struct.pack(">4I", size, len(data), len(pointers), 1) + bytes(16)
+    return header + bytes(data) + tail
+
+
+def make_record(name: str, flags: int, next_in_chain: Optional[str] = None) -> EffectRecord:
+    return EffectRecord(
+        address=0,
+        eid_name=name,
+        category=(flags >> 24) & 0xFF,
+        variant_id=(flags >> 16) & 0xFF,
+        subtype=flags & 0xFF,
+        next_in_chain=next_in_chain,
+        flags=flags,
+    )
 
 
 def read_effect_registry_path(path: Path | str) -> list[EffectRecord]:
