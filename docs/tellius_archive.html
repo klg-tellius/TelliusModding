@@ -295,9 +295,10 @@ const TITLES = {
   lz10:"LZ10", "pack-archive":"Pack Archive", "labeled-section":"Labeled Section Format",
   "tpl-texture":"TPL Texture", fe8data:"FE8Data.bin", "dispo-format":"Dispo Format",
   "map-format":"Map File Format", "event-script":"Event Script", "message-format":"Message Format",
-  "shop-format":"Shop Format", "stm-format":"STM & DSP-ADPCM", "thp-format":"THP",
+  "face-data":"Face Data",
+  "shop-format":"Shop Format", "cp-data-format":"cp_data.bin", "stm-format":"STM & DSP-ADPCM", "thp-format":"THP",
   "model-formats":".g / .gs / .ga", fe8anim:"FE8Anim.bin", fe8effect:"FE8Effect.bin",
-  "rect-format":"Rect.bin", "iso-fst":"GameCube Disc & FST", "main-dol":"main.dol",
+  "rect-format":"Rect.bin", "sound-room":"soundroom.bin", "iso-fst":"GameCube Disc & FST", "main-dol":"main.dol",
   "save-format":"GameCube Save (.gci)", gcfesnd:"gcfesnd.bin", musyx:"MusyX Audio Resources",
   zdbx:"ZDBX & DBX", posing:"Skeleton Posing & Skinning", "format-coverage":"File Format Index",
   characters:"Characters", classes:"Classes", "items-weapons":"Items & Weapons", skills:"Skills",
@@ -312,7 +313,7 @@ const TITLES = {
   "skill-corrosion":"Corrosion", "skill-cancel":"Cancel", "skill-miracle":"Miracle / Pray",
   "skill-wing-guard":"Wing Guard", "skill-vantage":"Vantage", "skill-steal":"Steal",
   "skill-chant":"Chant", "skill-canto":"Canto",
-  "armies-allegiance":"Armies & Allegiance", "laguz-transformation":"Laguz Transformation",
+  "level-up-growth":"Level-Up Growth", "armies-allegiance":"Armies & Allegiance", "laguz-transformation":"Laguz Transformation",
   "terrain-texture-rendering":"Terrain Texture Blending", "weather":"Weather",
   "developer-debug-tools":"Developer & Debug Tools", "event-flags":"Event Flags"
 };
@@ -371,7 +372,7 @@ unexplored: {
   <h2>Payloads not decoded field-by-field</h2>
   <ul>
     <li><code>zbg/</code>'s 3D battle scenery, beyond what ${wl("model-formats",".g/.gs/.ga")} already covers.</li>
-    <li>The per-scenery (<code>zbg/</code>) parameter files inside <code>zdbx.cmp</code>; its master tables, per-model tables and weapon tables are read (see ${wl("zdbx","ZDBX & DBX")}).</li>
+    <li>The units of the numeric values in the <code>zdbx.cmp</code> tables (speeds, ranges, camera times); the tables themselves are read (see ${wl("zdbx","ZDBX & DBX")}).</li>
   </ul>
 
   <h2>Partially described formats</h2>
@@ -624,8 +625,8 @@ fe8data: {
     <tr><td class="num">16&ndash;18</td><td>&mdash;</td><td>Not read</td><td>${badge("confirmed","unused")}</td></tr>
     <tr><td class="num">19&ndash;26</td><td><code>bonus_hp..res</code></td><td>Signed stat bonuses: HP, Str, Mag, Skl, Spd, Lck, Def, Res</td><td>${badge("confirmed","")}</td></tr>
     <tr><td class="num">27</td><td><code>laguz_gauge</code></td><td>Starting laguz gauge (nonzero values below 20)</td><td>${badge("confirmed","")}</td></tr>
-    <tr><td class="num">28&ndash;30</td><td><code>seq_attack/move/heal</code></td><td>AI behavior sequences (<code>SEQ_*</code>) — always <code>SEQ_NO*</code> on player units</td><td>${badge("confirmed","")}</td></tr>
-    <tr><td class="num">31</td><td><code>mtype</code></td><td>Movement AI (<code>MTYPE_*</code>)</td><td>${badge("confirmed","")}</td></tr>
+    <tr><td class="num">28&ndash;30</td><td><code>seq_attack/move/heal</code></td><td>AI behavior scripts (<code>SEQ_*</code>, ${wl("cp-data-format","cp_data.bin")}) — always <code>SEQ_NO*</code> on player units</td><td>${badge("confirmed","")}</td></tr>
+    <tr><td class="num">31</td><td><code>mtype</code></td><td>Movement AI (<code>MTYPE_*</code>, ${wl("cp-data-format","cp_data.bin")})</td><td>${badge("confirmed","")}</td></tr>
     <tr><td class="num">32&ndash;33</td><td><code>pos_x/y</code></td><td>Spawn tile</td><td>${badge("confirmed","")}</td></tr>
     <tr><td class="num">34&ndash;35</td><td><code>pos2_x/y</code></td><td>Tile the unit walks to after appearing</td><td>${badge("confirmed","")}</td></tr>
     <tr><td class="num">36</td><td><code>level</code></td><td>Level; when the class is the character's own and the character's base level is higher, the base level wins</td><td>${badge("confirmed","")}</td></tr>
@@ -800,6 +801,32 @@ fe8data: {
 },
 
 
+"face-data": {
+  ns:"format", title:"Face Data", dek:"How each conversation portrait is assembled from its texture set, placed and layered",
+  infobox:{ type:"Record table &middot; relocatable resource", status:"confirmed", fields:[
+    ["File","<code>face/facedata.bin</code> in <code>system.cmp</code>"],["Records","358, 32 bytes each"],
+    ["Key","<code>FID_</code> portrait ID"],["Textures","<code>Face/&lt;name&gt;.cms</code>"]
+  ]},
+  categories:["Graphics","Text"],
+  body:`
+  <p>Every portrait the game can show has one record in the face table, keyed by its <code>FID_</code> ID (for example <code>FID_IKE</code> for the small portrait, <code>FID_L_IKE</code> for the large one). The record names the texture set, says where the eyes and mouth go on the base image, and how far back the character stands. ${badge("confirmed","confirmed")}</p>
+  <h2>Record</h2>
+  <div class="table-wrap"><table><thead><tr><th>Offset</th><th>Field</th></tr></thead><tbody>
+    <tr><td>0x00</td><td>Portrait ID (<code>FID_</code>)</td></tr>
+    <tr><td>0x04</td><td>Display-name key (<code>MPID_</code>), shown on the nameplate</td></tr>
+    <tr><td>0x08</td><td>Texture set file name (<code>.cms</code>)</td></tr>
+    <tr><td>0x0C&ndash;0x17</td><td>Top-left corner of the left eye, right eye and mouth on the base image (signed x, y pairs)</td></tr>
+    <tr><td>0x18</td><td>Parts present: 1 eyes, 2 mouth</td></tr>
+    <tr><td>0x1A</td><td>Texture number of the 64&times;64 menu face, or <code>0xFFFF</code> for none</td></tr>
+    <tr><td>0x1C</td><td>Mouth set picked automatically in some scenes</td></tr>
+    <tr><td>0x1D</td><td>Depth: portraits with a higher value are drawn behind the others</td></tr>
+    <tr><td>0x1E</td><td>Pixels the portrait is lowered when shown in a menu panel (signed)</td></tr>
+  </tbody></table></div>
+  <h2>Texture set</h2><p>Texture 0 is the base picture. With both parts, textures 1&ndash;3 and 4&ndash;6 are the two mouth sets (3 and 6 are the closed mouths) and 7&ndash;9 and 10&ndash;12 the left and right eye frames. Without a mouth the eye numbers move down by six. Small portraits end with a 64&times;64 face used by menus, which is the texture field 0x1A points to; large portraits have none. When both eyes share the same position, only the right-eye overlay is drawn.</p>
+  <h2>Placement</h2><p>A portrait is anchored by the middle of its bottom edge at its seat and is never resized. Facing the other way mirrors the whole picture. In conversations, the depth byte decides the layering: Titania (depth 54) appears in front of Greil (108) whatever their seat order. In menus such as the status screen and item lists, the large portrait sits at the bottom of a clipped panel, and tall characters are lowered by field 0x1E so their face stays visible: 3 px for Titania, 39 for Gort, 47 for Dheginsea.</p>
+  `
+},
+
 "message-format": {
   ns:"format", title:"Message Format", dek:"Chapter dialogue text, with an inline scripting language for portraits and pacing",
   infobox:{ type:"Text &middot; relocatable resource", status:"confirmed", fields:[
@@ -825,7 +852,7 @@ fe8data: {
     <tr><td><code>$B&lt;background&gt;|</code></td><td>Background image, e.g. 村-崖 (“village-cliff”), 平原-昼 (“plains-day”) — see ${wl("tpl-texture","backgrounds")}</td></tr>
     <tr><td><code>$=dddd</code>, <code>$&lt;</code></td><td>Screen-transition duration in ms (9999 = default 267 ms); start the transition</td></tr>
     <tr><td><code>$F&lt;0-8&gt;</code></td><td>Select portrait seat N</td></tr>
-    <tr><td><code>$FC&lt;name&gt;|</code>, <code>$FD</code></td><td>Load a portrait into the current seat (<code>L_</code> names are the large ones); remove it</td></tr>
+    <tr><td><code>$FC&lt;name&gt;|</code>, <code>$FD</code></td><td>Load a portrait into the current seat (<code>L_</code> names are the large ones; see ${wl("face-data")}); remove it</td></tr>
     <tr><td><code>$Fc</code> <code>$Fh</code> <code>$Fo</code> <code>$Fd</code></td><td>Eyes closed / half-open / held open / normal blinking</td></tr>
     <tr><td><code>$Ff</code>, <code>$Fs</code></td><td>Quick / normal blinking</td></tr>
     <tr><td><code>$FS</code>, <code>$FA</code></td><td>First / second mouth texture set (not show/hide)</td></tr>
@@ -839,10 +866,18 @@ fe8data: {
     <tr><td><code>$w&lt;n&gt;</code></td><td>Pause 2<sup>n</sup> frames</td></tr>
     <tr><td><code>$MC</code>&hellip;<code>$MD</code></td><td>Stop and restart mouth movement — wraps “...” and “--” so the speaker's mouth stays still</td></tr>
     <tr><td><code>$H</code></td><td>Hand control back to the event script; the message resumes later</td></tr>
+    <tr><td><code>$UB</code>, <code>$Ub</code></td><td>Let the event script waiting on the message run again (the two behave the same). Always followed by <code>$H</code>: at the end of a message it keeps the windows and portraits for the next message; mid-message it lets the script move the camera or units before the text resumes</td></tr>
+    <tr><td><code>$SD</code>, <code>$SE</code></td><td>Skip disable / enable. B normally skips the whole conversation; after <code>$SD</code> it advances the text like A instead. Used around choices so a decision cannot be skipped past (<code>$DC</code> is an unused alias of <code>$SD</code>)</td></tr>
+    <tr><td><code>$Y</code></td><td>Move on without waiting for a button press, e.g. when a speaker is cut off</td></tr>
+    <tr><td><code>$G</code></td><td>Record the following text in the text log as narration, with no speaker name (world-map narration)</td></tr>
     <tr><td><code>$O&lt;n&gt;</code></td><td>Typing sound played as text appears: 1 dialogue, 2 ancient language, 3 world-map narration, 4 tutorial, 0 silent</td></tr>
     <tr><td><code>#Cxx</code>, <code>#c</code>, <code>#Fxx</code></td><td>Text colour from the palette / previous colour; ${wl("font-format","font")} (system, fe_font, talk, bigkana, alpha) for the rest of the line</td></tr>
+    <tr><td><code>#Pnnn</code></td><td>Inline icon: cell <code>nnn</code> (hex) of <code>window/icon.tpl</code>, 24&times;24, 32 per row, centred on the line and 24 px wide. <code>#P027</code> is the A button, <code>#P028</code> the B button, <code>#P00F</code>&ndash;<code>#P016</code> the weapon types</td></tr>
   </tbody></table>
-  <p>A few codes have known boundaries but unresolved effects: <code>$UB</code>/<code>$Ub</code> (usually just before <code>$H</code>), <code>$SD</code>/<code>$SE</code> (around shop and choice dialogue), <code>$G</code> (world-map narration), and <code>$Y</code>. ${badge("open","open")}</p>
+  <p>The background name 支援背景 (“support background”) stands for the current chapter's conversation background, set in the chapter data. ${badge("confirmed","confirmed")}</p>
+  <h2>Timing</h2><p>Text appears one character per tick. A tick lasts 10 frames at the Slow message speed, 4 at Normal and 1 at Fast; at Max the whole page appears at once. Opening, clearing or closing a box, waiting for a button, <code>$Y</code> and <code>$w</code> each end the current tick, so the next character waits for the following one. A press of A shows the rest of the page at once. Boxes and portraits fade in and out over 8 frames, and the portraits of characters who are not speaking dim over 4 frames. Screen fades (<code>$&lt;</code>, <code>$&gt;</code>) last the <code>$=</code> duration and run while the text continues. Z at a wait opens the text log, which keeps the last 256 lines. ${badge("confirmed","confirmed")}</p>
+  <h2>Text effects</h2><p>Every dialogue window draws its text with a <strong>drop shadow</strong>, the glyphs again in black at half opacity 2 pixels down and right, and a 1-pixel black <strong>outline</strong>, the glyphs redrawn in black in eight directions around their position. The choice dialog uses neither. Inside a text, <code>#E</code>/<code>#e</code> switch the shadow on or off and <code>#O</code>/<code>#o</code> the outline; <code>#Ixx</code> slants the following letters so that the top of the line leans <code>xx</code>/16 pixels to the right (<code>#i</code> ends it); <code>#Rxx</code>, <code>#Gxx</code>, <code>#Bxx</code> and <code>#Axx</code> set the red, green, blue or opacity of the text colour. <code>#D</code> returns to the default colour, size and slant and turns the shadow and outline off. The game's own texts never use these codes. ${badge("confirmed","confirmed")}</p>
+  <h2>Text scale</h2><p><code>#Sxx</code> scales text in both directions, <code>#Xxx</code> only horizontally and <code>#Yxx</code> only vertically, by <code>xx</code>/64: <code>#S40</code> is normal size, <code>#S80</code> double. <code>#s</code>, <code>#x</code> and <code>#y</code> reset them, as do <code>#D</code> and the start of every line. Scaled text grows right and down from the start of its line, the line spacing does not change, and icons keep their size; window widths take the horizontal scale into account. The game squeezes three long defeat conditions of the objective window with <code>#X3A</code> (91&nbsp;%, &ldquo;Exceed 15 turns&rdquo;) and enlarges the tutorial's &ldquo;- Demonstration -&rdquo; title with <code>#S50</code> (125&nbsp;%). ${badge("confirmed","confirmed")}</p>
   `
 },
 
@@ -867,6 +902,75 @@ fe8data: {
   <h2>Example</h2><p>The early-game sword row reads Iron Sword/<code>MDV_IRN</code>, Slim Sword/<code>MDV_SLM</code>, Steel Sword/<code>MDV_STL</code>, then zero for Silver and the magic bases; later chapters fill Silver Sword/<code>MDV_SLV</code>. The tome row leaves the physical bases empty and fills Fire, Thunder, Wind and Light.</p>
   <h2>The sell shop</h2><p>The base also has a sell shop (<code>SSHOP</code>, the <code>_SSHOP_</code> dialogue tag). It lists the player's own items, so it has no inventory section; its messages include refusing to buy a valuable item. ${badge("confirmed","confirmed")}</p>
   <h2>File layout</h2><p>After the 0x20-byte header come two pointers to the file's build timestamp and author strings, then every armory section, every vendor section and every forge section in chapter order, the label pool, the relocation table, and the section table sorted by name.</p>
+  `
+},
+"cp-data-format": {
+  ns:"format", title:"cp_data.bin", dek:"The computer player's data: AI scripts, movement-scoring weights, heal thresholds, waypoint and target tables",
+  infobox:{ type:"Record list &middot; <code>Labeled Section Format</code>", status:"confirmed", fields:[
+    ["File","<code>cp_data.bin</code> (also bundled in <code>system.cmp</code>)"],["Size","26,024 bytes (US)"],["Sections","134"],
+    ["Loader","<code>load_cp_data_resource</code> <code>800FC678</code>"],["Write support","Yes"]
+  ]},
+  categories:["Combat","Editable"],
+  body:`
+  <p><code>cp_data.bin</code> is the data of the enemy and NPC AI (&ldquo;CP&rdquo; is <em>computer player</em>, not support points). It uses the ${wl("labeled-section","Labeled Section Format")}: every section name is registered in the engine's name hash table at load, so a unit's ${wl("dispo-format","dispo record")} (<code>seq_attack</code>, <code>seq_move</code>, <code>seq_heal</code>, <code>mtype</code>) and the <code>UnitSetCp*</code> script calls find their section by name. ${badge("confirmed","confirmed")}</p>
+  <h2>Sections</h2>
+  <div class="table-wrap"><table><thead><tr><th>Sections</th><th>Count</th><th>Holds</th></tr></thead><tbody>
+    <tr><td><code>CP_DataHead</code></td><td>1</td><td>Build timestamp and author, then pointers to the defaults (<code>TBL_STEALITEMS</code>, <code>MTYPE_NORMAL</code>, <code>SEQ_NOATTACK</code>, <code>SEQ_NOMOVE</code>, <code>SEQ_NOHEAL</code>, <code>ATK_SEQID_LIST</code>)</td></tr>
+    <tr><td><code>TBL_STEALITEMS</code></td><td>1</td><td>67 <code>IID_</code> names an AI thief may steal (skill scrolls, rings, drops, keys, healing items)</td></tr>
+    <tr><td><code>TBL_PID_*</code></td><td>14</td><td>Character lists used as target filters by AI scripts</td></tr>
+    <tr><td><code>TBL_MAP*_ROUTE*</code></td><td>10</td><td>Waypoints, one word <code>(x &lt;&lt; 16) | y</code> each, ended by <code>0xFFFF0000</code></td></tr>
+    <tr><td><code>MTYPE_*</code></td><td>32</td><td>24-byte movement-scoring weight tables</td></tr>
+    <tr><td><code>SEQ_*</code> scripts</td><td>69</td><td>AI scripts: 31 attack, 38 move</td></tr>
+    <tr><td><code>SEQ_*HEAL*</code></td><td>6</td><td>8-byte heal behaviours</td></tr>
+    <tr><td><code>*_SEQID_LIST</code>, <code>MTYPE_TABLEID_LIST</code></td><td>4</td><td>Name lists; a record's position is its id in the save file</td></tr>
+  </tbody></table></div>
+  <h2>AI scripts</h2>
+  <p>A script is an array of 28-byte entries of seven words: an opcode and six fields <code>a</code>&ndash;<code>f</code>. The first two entries are a header carrying the script's own name and its id. Each unit keeps one program counter per script kind (one byte each, saved in the save file), so a script resumes on the next turn where its last <code>END</code> sent it. The engine runs the entry the counter points at by looking its opcode up in a 52-entry handler table (<code>0x80273000</code> US, <code>0x8027C2C0</code> PAL, <code>0x8026CAF0</code> JP, the same opcodes in all three). ${badge("confirmed","confirmed")}</p>
+  <p>Before the handler runs, a non-zero <code>b</code> word is copied into the <em>threat limit</em>: the move checks then only stop on tiles whose enemy threat (a per-tile sum of the threat of every enemy that can reach it) is at most that value; <code>0xFFFF</code> means no limit. Handlers advance the counter by one; jumps move it to the first label entry (opcode 0) whose <code>c</code> is the wanted label, label 0 meaning the first entry. The label search does not stop at the end of the script: it reads on into the sections that follow. ${badge("confirmed","confirmed")}</p>
+  <h3>A unit's turn</h3>
+  <p>The AI runs a fixed list of steps for each unit: retreat and heal (driven by the heal record), the <strong>attack script</strong>, then the <strong>move script</strong>, stopping at the first step that found an action. A script step calls entries until one ends the run (<code>END</code>, or a <code>SET_SCRIPTS</code> that replaces the running script); after 256 entries without that, a built-in script runs instead (attack with 100% chance, or move toward the nearest foe). Action entries register a candidate action and set a <em>found</em> flag; a later action entry replaces the candidate, so vanilla scripts follow every action with a jump to label 99 when one was found. ${badge("confirmed","confirmed")}</p>
+  <div class="table-wrap"><table><thead><tr><th>Opcode</th><th>Name</th><th>Effect</th></tr></thead><tbody>
+    <tr><td class="num">0</td><td>LABEL</td><td>Jump target <code>c</code></td></tr>
+    <tr><td class="num">1</td><td>COMPARE</td><td>If register <code>a</code> compared with <code>c</code> by <code>b</code> (0 <code>&gt;</code>, 1 <code>&gt;=</code>, 2 <code>==</code>, 3 <code>&lt;=</code>, 4 <code>&lt;</code>, 5 <code>!=</code>) holds, jump to label <code>d</code></td></tr>
+    <tr><td class="num">2</td><td>CALL</td><td>Call the function registered under the name <code>e</code> (unused)</td></tr>
+    <tr><td class="num">3</td><td>SET_SCRIPTS</td><td>Give the unit attack script <code>e</code> and/or move script <code>f</code></td></tr>
+    <tr><td class="num">4 / 6 / 7</td><td>GOTO / JUMP_IF_FOUND / CLEAR_FOUND</td><td>Jump to <code>d</code>; jump when an action was found (or, <code>a</code> = 0, when none was); forget the found action</td></tr>
+    <tr><td class="num">5</td><td>EVENT_ACTION</td><td>Turn the pending move into the action of an event on the destination tile (unused)</td></tr>
+    <tr><td class="num">100&ndash;104</td><td>ATTACK family</td><td>Weapon attack (action 15) on the named character (100), on any target (101), without moving (103), on a class (104)</td></tr>
+    <tr><td class="num">105 / 106</td><td>USE_STAFF</td><td>Use a staff: heal, Restore, Silence, Sleep, Berserk, Warp, Rescue or Ward (+ without moving)</td></tr>
+    <tr><td class="num">107 / 108</td><td>STEAL</td><td>Steal an item listed in <code>TBL_STEALITEMS</code> (needs <code>SID_STEAL</code>; + without moving)</td></tr>
+    <tr><td class="num">110 / 111</td><td>USE_SKILL</td><td>Use skill <code>f</code>: Gamble (attack, action 21), Fairness, Flutter, Tackle, Tackle 2, Snarl, Earth / Sky Blessing</td></tr>
+    <tr><td class="num">112</td><td>SHOOT</td><td>Fire a ballista (actions 49 / 42)</td></tr>
+    <tr><td class="num">113 / 114</td><td>ROCK_ATTACK</td><td>Use a map object of kind 10, the rocks (action 46); 114 without a roll, from a tile list ${badge("strong","strong evidence")}</td></tr>
+    <tr><td class="num">115</td><td>TACKLE</td><td>Action 19 on an adjacent unit ${badge("plausible","tentative")}</td></tr>
+    <tr><td class="num">116</td><td>ATTACK_DIRECT</td><td>Weapon attack with a simpler choice of tile ${badge("strong","strong evidence")}</td></tr>
+    <tr><td class="num">200&ndash;218</td><td>Movement</td><td>Move to a tile (200), toward a character to talk (201, 215), toward a class (203), destroy a village (204), safest tile (205), toward the nearest target (206, 207, 217), to an event (209), random tile (210), escape (211), to a map object of kind 4 (212, tentative), along a waypoint route (216), talk in place (218)</td></tr>
+    <tr><td class="num">500 / 501 / 600</td><td>Registers</td><td>Count the targets within a multiple of the unit's Mov (16.16 factor in <code>b</code>); test skill #9; change the Mov bonus and read Mov</td></tr>
+    <tr><td class="num">502</td><td>USE_ITEM</td><td>Use the item <code>e</code> (action 4)</td></tr>
+    <tr><td class="num">1000 / 1001</td><td>STOP / END</td><td>End the run; the next run starts at label <code>d</code> (identical code)</td></tr>
+    <tr><td class="num">102, 109, 202, 208, 213, 214</td><td>NOP</td><td>Nothing</td></tr>
+  </tbody></table></div>
+  <p>The action opcodes share their fields: <code>a</code> is a percent chance (the handler acts when a roll of 0&ndash;99 is at most <code>a</code>), <code>e</code> an optional <code>TBL_PID_*</code> character list and <code>d</code> its mode. With no list they target every hostile unit; with a list they target its characters whatever their side, or, with <code>d</code> set, every hostile unit not in it (<code>SEQ_ALLATK100_NOLAGU</code>). Movement and talk opcodes leave a result code in register 0: 1 not on the map, 2 next to the target, 3 talk queued, 8 arrived, 9 nothing found, 10 try limit reached, 11 has the skill. ${badge("confirmed","confirmed")}</p>
+  <h3>Example</h3>
+  <p>The app shows every entry as one line of readable code. <code>SEQ_ATTACK1.5RANGEMOVE</code>, the move script of units that wait until a foe comes within one and a half times their move range, reads:</p>
+  <pre><code>r0 = count_units(range=1.5, weapon_range=True)
+if r0 &gt; 0: goto L1
+nop202()
+stop()
+L1:
+set_scripts(move=SEQ_NEARESTUNITMOVE)
+stop(resume=L1)</code></pre>
+  <p><code>SEQ_USECHANGE_ATRANGE</code> has no <code>END</code>, and the labels it jumps to are not in it: the label search finds them in <code>SEQ_USECHANGE_1.5ATRANGE</code>, the next section in the file, whose code it then runs. ${badge("confirmed","confirmed")}</p>
+  <h2>Movement types and heal records</h2>
+  <p>An <code>MTYPE_*</code> table gives the weights of the terms that score every tile a unit could attack from: damage dealt, the share of the foe's HP removed, adjacent foes, a per-class-flag bonus, the turn number, skill modifiers, damage taken, terrain defense and the unit's own HP lost. The tile with the best score wins. A heal record holds the HP percentage at which a unit begins retreating, the percentage at which it stops, and whether it tries healing items first. ${badge("confirmed","confirmed")}</p>
+  <div class="callout">
+    <p class="callout-t">Editing</p>
+    <p>The app's <em>Game Data &rsaquo; AI (CP)</em> tab edits scripts (as readable code or as raw entries), heal records, movement weights, the steal list and the routes. New scripts are appended to their id list so existing ids never move; the build copies the file into <code>system.cmp</code>.</p>
+  </div>
+  <div class="callout warn">
+    <p class="callout-t">Open</p>
+    <p>The meaning of each bit of the class-flag halfword behind the <code>MTYPE</code> class bonuses, what map objects of kinds 4 and 10 are in each chapter, and the in-game effect of opcodes 115 and 212 are not settled. ${badge("open","open question")}</p>
+  </div>
   `
 },
 
@@ -1065,7 +1169,7 @@ fe8effect: {
   ns:"format", title:"FE8Effect.bin", dek:"The visual-effect registry for combat, spell, and environmental presentation",
   infobox:{ type:"Flat ID registry", status:"confirmed", fields:[
     ["Records","263"],["Record size","12 bytes"],["Identifier prefix","<code>EID_</code>"],
-    ["Resolves cleanly","263 / 263"],["Write support","No"]
+    ["Resolves cleanly","263 / 263"],["Write support","Rebuild (byte-identical); add record"]
   ]},
   categories:["Graphics","Animation","Registry"],
   body:`
@@ -1129,7 +1233,38 @@ fe8effect: {
     <tr><td><code>window/RectUnitList.bin</code></td><td>The unit-list panel.</td></tr>
     <tr><td><code>ending/RectFinale.bin</code></td><td>The ending: 22 illustration slides, one portrait per character, and the whole staff roll as text resources.</td></tr>
   </tbody></table></div>
-  <p>Everything in these files is plain data, so text, positions, colours and images can be changed without touching the executable. ${badge("open","open question")} What the two per-text style switches look like on screen is not established.</p>
+  <p>Everything in these files is plain data, so text, positions, colours and images can be changed without touching the executable. The Sound Room's slideshow is a list of these resources too: see ${wl("sound-room")}. </p><p>Each text line and each dialogue textbox carries two switches: a drop shadow (2 pixels, black at half opacity) and a 1-pixel black outline. Lines with icons and three large headings (Staff Credits, Satoru Iwata, Demonstration) use the outline; every dialogue textbox except the choice dialog uses both. ${badge("confirmed","confirmed")}</p>
+  `
+},
+
+"sound-room": {
+  ns:"format", title:"soundroom.bin", dek:"The list of pictures the Sound Room cycles through behind its track menu",
+  infobox:{ type:"Record list", status:"confirmed", fields:[
+    ["File","<code>soundroom.bin</code> (filesystem root, read directly from the disc)"],
+    ["Records","21, eight bytes each"],["Pictures",`${wl("rect-format","Rect.bin")} resources`],
+    ["Read by","The Sound Room menu"]
+  ]},
+  categories:["Graphics","Audio"],
+  body:`
+  <p>The Sound Room, the jukebox in the extras menu, plays the game's music over a full-screen illustration. <code>soundroom.bin</code> is the list of those illustrations. It does not hold the track list: the 64 playable tracks are a fixed table of <code>BGM_</code> names in the executable, and no picture belongs to a particular track. ${badge("confirmed","confirmed")}</p>
+  <h2>Layout</h2>
+  <p>The file uses the same plain data container as ${wl("fe8anim")}: a 32-byte header (file size, data size, pointer count and a symbol count of zero), the data, then the position of every pointer in the data so the loader can relocate it. There is no symbol table. The data is a record count, the records, then the picture names, sorted and stored once each.</p>
+  <div class="table-wrap"><table><thead><tr><th>Offset</th><th>Size</th><th>Field</th></tr></thead><tbody>
+    <tr><td><code>+0x00</code></td><td>4</td><td>Pointer to the picture's <code>RID_</code> name: a resource of ${wl("rect-format","<code>s/rect.bin</code>")}</td></tr>
+    <tr><td><code>+0x04</code></td><td>2</td><td>X position, signed</td></tr>
+    <tr><td><code>+0x06</code></td><td>2</td><td>Y position, signed</td></tr>
+  </tbody></table></div>
+  <h2>How the Sound Room uses it</h2>
+  <p>On opening, the menu loads the file and shows record 0. Each picture is created exactly as an event script's <code>RectBuild</code> would create it, then moved to the record's X and Y (the rect's position properties 0 and 1). The pictures form a slideshow that wraps at the record count:</p>
+  <ul>
+    <li>Playing a track with A shows the next picture.</li>
+    <li>X hides the menu. While it is hidden, A or Right shows the next picture and Left the previous one; B, X or Start brings the menu back.</li>
+    <li>The outgoing picture fades out over 64 frames while the new one fades in.</li>
+  </ul>
+  <p>Because the count is read from the file, pictures can be added, removed or reordered, and any rect resource can be used, including a new one. ${badge("confirmed","confirmed")} An edited list has not yet been run in the game.</p>
+  <h2>The vanilla list</h2>
+  <p>Twenty-one pictures: event illustrations (<code>RID_再会と別離-A</code>/<code>-B</code>, “reunion and parting”; <code>RID_聖天馬騎士</code>, “holy pegasus knight”; <code>RID_クリミアの復興1</code>/<code>2</code>, “Crimea's restoration”; the tower, the Goldoan dragons and others), three views of the crumbling castle, and the exteriors of the six nations (Crimea, Daein, Phoenicis, Begnion, Gallia, Kilvas).</p>
+  <p>The layout area is 608 × 448. The full-frame pictures sit at 0, 0. Larger ones use a negative offset to choose the part that is shown: the 608 × 800 tower is at Y −250, the 608 × 912 second restoration picture at Y −420, and the 856 × 480 crumbling-castle view at X −40.</p>
   `
 },
 
@@ -1264,6 +1399,18 @@ gcfesnd: {
   categories:["Audio","Registry"],
   body:`
   <p><code>gcfesnd.bin</code> is the game-specific catalog above ${wl("musyx","MusyX")}. It contains symbolic <code>BGM_*</code> cue names, roughly 1,150 <code>SFX_*</code> names, and the filenames of streamed ${wl("stm-format","STM music tracks")}.</p>
+  <h2>Record array</h2>
+  <p>After a 0x20-byte header, a flat array of self-sized records runs until a zero length byte: 148 twelve-byte <code>BGM_*</code> records, then 1,154 twenty-byte <code>SFX_*</code> records. All fields are big-endian.</p>
+  <table class="wikitable"><tr><th>Offset</th><th>Size</th><th>SFX field</th></tr>
+  <tr><td>+0x00</td><td>4</td><td>Name string offset (add 0x20)</td></tr>
+  <tr><td>+0x04</td><td>1</td><td>Record length, always 20</td></tr>
+  <tr><td>+0x05</td><td>1</td><td>Flags; low 2 bits select the voice class (values 0, 1, 8 seen)</td></tr>
+  <tr><td>+0x06</td><td>1</td><td>Default volume, 0-127</td></tr>
+  <tr><td>+0x07</td><td>1</td><td>Pan (0x40 = centre on 1,131 of 1,154 cues)</td></tr>
+  <tr><td>+0x08</td><td>4</td><td>Sound id into the MusyX banks; several cues share one id (0x158 is the silent dummy)</td></tr>
+  <tr><td>+0x0C</td><td>4</td><td>Four small bytes, first usually 0x1E (priority/range-like, inferred from the game's accessors)</td></tr>
+  <tr><td>+0x10</td><td>4</td><td>Distance-like value (2000, 100, 200, 150, 750 ...)</td></tr></table>
+  <p>Cue names group by second component: BTL (632), BMP (214), ARAM (114), SYS (71), EVT (59), ENV (52) and a few others. The meaning of the last two fields is inferred, not proven.</p>
   <h2>How a cue name reaches audio data</h2>
   <p>The SFX portion contains an ascending numeric-ID/string-offset table. BGM playback instead passes a symbolic name into a generic native lookup. That lookup computes two polynomial hashes (multipliers 37 and 31); the first selects one of 509 buckets, while the second helps reject collisions in the bucket's linked list.</p>
   <p>The bucket table is populated in zero-initialized runtime memory. Consequently the executable proves how names are resolved, while a static copy of the DOL cannot by itself show the final cue-to-loaded-track mapping for every BGM name.</p>
@@ -1295,10 +1442,10 @@ zdbx: {
   <table><thead><tr><th>Folder</th><th>Entries</th><th>Purpose</th></tr></thead><tbody>
     <tr><td><code>zu/</code></td><td>184</td><td>Two tables per battle-model code of <code>files/zu/</code>: the model table and the parameter table (see below)</td></tr>
     <tr><td><code>xwp/</code></td><td>91</td><td>One table per weapon, named by its item ID without <code>IID_</code>: the model the battle loads (<code>Model</code> block: folder and model name), its kind and whether it flies as a missile (see ${wl("items-weapons","Items & Weapons")})</td></tr>
-    <tr><td><code>zbg/</code></td><td>117</td><td>Per-battle-scenery parameters</td></tr>
-    <tr><td><code>xcam/</code></td><td>19</td><td>Camera scripts for attack, critical, impact, death, level-up, and class-change beats</td></tr>
+    <tr><td><code>zbg/</code></td><td>117</td><td>One <code>param.dbx</code> per battle scenery: indoor flag, footstep effect and sound (see below)</td></tr>
+    <tr><td><code>xcam/</code></td><td>19</td><td>Camera scripts for attack, critical, impact, death, level-up, and class-change beats: keyframes that move one of the camera rigs of <code>camera.dbx</code> (see below)</td></tr>
     <tr><td><code>zdbx/</code></td><td>11</td><td>Master class, model, weapon, skill, effect, scenery, camera, and engine tables</td></tr>
-    <tr><td><code>ztool/</code>, <code>ztex/</code></td><td>27</td><td>Window layouts and textures of the in-game battle tool</td></tr>
+    <tr><td><code>ztool/</code>, <code>ztex/</code></td><td>27</td><td>Window layouts of the in-game battle tool, and 2D textures: the battle screen's windows and digits (see below) and the tool's widgets</td></tr>
   </tbody></table>
   <h2>How DBX participates in battle presentation</h2>
   <p>The battle engine (named “kiribato” in the files' own comments) opens <code>zdbx.cmp</code> when a battle starts and reads its tables by name. Global tables select class, weapon, effect, scenery, and camera resources; per-asset files then tune how those resources attach and play. DBX is configuration, not the model geometry or animation curves themselves.</p>
@@ -1312,7 +1459,19 @@ zdbx: {
   <p>A new battle model can be added without replacing one: a copied model folder under a new code, its two tables, and one job-list line. In the Prologue, Boyd was given <code>zu/bol2</code> (a copy of <code>fig1</code> with a recoloured texture) through the line <code>JID_FIGHTER PID_BOLE_MAP1=bol2</code>; the game drew it in battle while every other fighter kept <code>fig1</code>. ${badge("confirmed","in game")}</p>
   <h2>Important master tables</h2>
   <ul><li><code>jobList.dbx</code> maps each <code>JID_</code> class to its battle-model code and contains character- and animation-ID-specific overrides.</li><li><code>weaponList.dbx</code> lists weapons in item-table order.</li><li><code>skill.dbx</code> links Japanese skill names with effect triggers.</li><li><code>effectList.dbx</code> catalogs spell, skill, status, environmental, and UI effects.</li><li><code>camera.dbx</code> defines the default battle-camera rig.</li><li><code>bgList.dbx</code> maps battle-scenery identifiers to locations: the Prologue (<code>MAP01</code>) fights in front of <code>zbg/map01_woods</code>, a separate 3D scene rather than the map terrain. ${badge("confirmed","confirmed in game")}</li><li><code>param.dbx</code> contains global battle timing, fade, and camera parameters.</li></ul>
-  <p>The archive, its catalog tables, the per-model tables and the weapon tables' model and kind are understood; most per-scenery parameter fields remain unnamed.</p>
+  <h2>Weapon, scenery, camera and unit-parameter tables</h2>
+  <p>These tables are short and fully read; every field is listed. The meanings of the numeric codes are read off which files use them; the engine code that consumes them is not traced further.</p>
+  <ul>
+    <li><strong><code>xwp/&lt;NAME&gt;.dbx</code></strong> has a <code>Model</code> block (<code>name</code>, <code>folder</code>, <code>model</code>; tomes have none) and a <code>Weapon</code> block: <code>show</code> (always 1), <code>kind</code>, <code>missile</code>, optional <code>effectId</code> (an <code>EID_</code> effect played with the weapon) and <code>damageEffId</code> (an <code>EID_..._WP</code> effect on the target). <code>kind</code>: 0 sword, 1 lance, 2 axe, 3 bow, 4 tome (no model), 5 knife, 6 thrown spear, 7 thrown axe or sword, 8 wave blade (Rune and Sonic swords), 9 arrow, 10 beast claw, 11 dragon breath. <code>missile</code>: 0 melee, 1 flies as a projectile, 2 special wave.</li>
+    <li><strong><code>zbg/&lt;scenery&gt;/param.dbx</code></strong> has one <code>Param</code> block: <code>name</code>, <code>roomFlag</code> (1 for indoor sceneries), <code>footEffect</code> and <code>footSound</code> (0 none, 1 dirt, 2 water, 3 snow, 4 grass; the sound follows the same order). Ships, bridges and floors use 0; rivers, seas and swamps use 2; Daein's snowy sceneries use 3.</li>
+    <li><strong><code>zdbx/camera.dbx</code></strong> has one <code>Camera</code> block per rig: <code>cam0</code> (scene camera), <code>cam1</code> (free orbit camera), <code>camCharaL0</code> and <code>camCharaR0</code> (follow an actor: <code>entityClass Actor</code>, then <code>charaAtk</code>, <code>charaDef</code>, <code>charaSup</code> in the order to try), <code>camCharaL1</code> and <code>camCharaR1</code> (follow a weapon: <code>weapon0</code> to <code>weapon2</code>, with a <code>speed</code>). Fields are <code>pos</code>, <code>rot</code> (degrees), <code>dist</code>, <code>offs</code> (look-at offset), <code>dest</code>, <code>attract</code>, <code>eyeCenter</code> and <code>enable</code>. Vanilla has a typo on <code>cam1</code>: <code>rot -2.-2, 180.0, 0.0</code>.</li>
+    <li><strong><code>xcam/&lt;name&gt;.dbx</code></strong> is one <code>CameraAnime</code> block: <code>name</code>, <code>caption</code> (Japanese description), optional <code>folder</code>, <code>camera</code> (the rig it moves), <code>num</code>, then <code>num</code> keyframes each written as <code>pos</code>, <code>rot</code>, <code>dist</code>, <code>time</code>. <code>time</code> is the keyframe's duration in engine units (0 cuts straight to it); the unit is not measured.</li>
+    <li><strong><code>zu/&lt;code&gt;_prm.dbx</code></strong> tuning keys follow the texture lines: floats <code>移動速度</code> (move speed, 0.15 to 1.0), <code>間合い</code> (attack range, 10 to 22), <code>ルートスケール</code> (root scale), <code>ダメージ後退</code> (knockback, 0.1 or 1.0); whole numbers <code>走り回数</code> (run count) and the blend speeds <code>補間速度</code>, <code>待機補間速度</code>, <code>移動補間速度</code> (10 to 30); and flags that are either <code>1</code> or absent: <code>ジャンプ攻撃</code>, <code>ジャンプ攻撃２</code>, <code>ジャンプ必殺</code>, <code>ジャンプ止め</code>, <code>ジャンプ奥義</code> (jumping attack variants), <code>飛行系</code> (flying), <code>大型</code> (large), <code>止め飛び去り</code> (flies away on the finishing blow).</li>
+  </ul>
+  <h2>The battle screen's layout</h2>
+  <p><code>zdbx/battle.dbx</code> lays out everything drawn over a battle scene, as widget blocks: <code>Layer</code> (<code>Window</code>, <code>Caption</code>, the two name plates, <code>Exp</code>), <code>Texture</code> (a cell of an image in <code>ztex/</code>), <code>Picture</code>, <code>Caption</code> (text), <code>Number</code>, <code>Gauge</code> and <code>Rect</code>. Each block has a <code>name</code>, a <code>layer</code>, <code>show</code> and a <code>pos</code> on a 640×480 screen. The two HP windows come from <code>ztex/btlwin.tpl</code> (a 600×224 sheet of window frames and gauge bars). The bars are the gauges <code>GaugeL</code> and <code>GaugeR</code>, each paired with its HP number (<code>numName</code>), and HP digits come from <code>ztex/number.tpl</code>. The names and weapon names are captions the game fills in at the start of the fight. The left side is always the attacker and the right side the defender. ${badge("confirmed","engine")}</p>
+  <p>The layout still holds a stat panel from development: a <code>ParamWin</code> picture and six <code>Number</code> widgets, <code>NumAtkL/R</code>, <code>NumHitL/R</code> and <code>NumCritL/R</code>, between the two HP windows, all with <code>show 0</code>. The game still writes each fighter's attack, hit and critical rate into them at the start of every battle. They can't simply be switched on: their digit texture <code>num1</code> (10×20 cells at row 28 of <code>number.tpl</code>) is outside the shipped 200×32 image, which only has the large HP digits, and the region <code>ParamPlate</code> points at in <code>btlwin.tpl</code> now holds other window art. ${badge("confirmed","engine + files")}</p>
+  <p>The archive, its catalog tables and all of the tables above are understood. Not decoded: the units of speed, range, blend and camera time values, the layout files of <code>ztool/</code>, and the use of most <code>ztex/</code> textures besides the battle windows and digits.</p>
   `
 },
 
@@ -1358,7 +1517,7 @@ posing: {
     <tr><td>${wl("dispo-format")}</td><td><code>zmap/*/dispos.cmp</code></td><td>Unit deployment, shared and per difficulty</td><td>${badge("confirmed","")}</td></tr>
     <tr><td>${wl("map-format")}</td><td><code>zmap/*/map.cmp</code></td><td>Terrain, panels, objects, lighting</td><td>${badge("strong","partial fields")}</td></tr>
     <tr><td>${wl("event-script")}</td><td><code>Scripts/*.cmb</code></td><td>Compiled chapter bytecode</td><td>${badge("confirmed","layout and instructions complete")}</td></tr>
-    <tr><td>${wl("message-format")}</td><td><code>Mess/*.m</code></td><td>Text and inline presentation codes</td><td>${badge("strong","layout and lookup complete; a few codes open")}</td></tr>
+    <tr><td>${wl("message-format")}</td><td><code>Mess/*.m</code></td><td>Text and inline presentation codes</td><td>${badge("confirmed","complete")}</td></tr>
     <tr><td>${wl("tpl-texture")}</td><td><code>.tpl</code>, compressed <code>.cms</code></td><td>GX textures and palettes</td><td>${badge("confirmed","used formats complete")}</td></tr>
     <tr><td>${wl("model-formats")}</td><td><code>.g/.gs/.ga</code></td><td>Skeleton, mesh, animation</td><td>${badge("strong","partial unknown fields")}</td></tr>
     <tr><td>${wl("stm-format")}</td><td><code>Sound/*.stm</code></td><td>Streamed DSP-ADPCM music</td><td>${badge("confirmed","complete")}</td></tr>
@@ -1368,7 +1527,7 @@ posing: {
     <tr><td>${wl("zdbx")}</td><td><code>zdbx.cmp</code>, loose <code>.dbx</code></td><td>Text design tables and parameters</td><td>${badge("strong","cataloged, fields partial")}</td></tr>
     <tr><td>${wl("font-format")}</td><td><code>Fonts/*.gcf</code>, <code>Fonts/system.cms</code></td><td>Bitmap fonts: glyph table and I4 sheets</td><td>${badge("confirmed","layout complete; per-screen font use open")}</td></tr>
     <tr><td>${wl("save-format")}</td><td>Memory-card <code>.gci</code></td><td>CRC-checked save blocks and tagged state chunks</td><td>${badge("strong","header, CRC, event flags, FWEP decoded; unit and convoy chunks open")}</td></tr>
-    <tr><td><code>soundroom.bin</code></td><td>Filesystem root</td><td>Reverb/ambient-zone records</td><td>${badge("plausible","identified, partial")}</td></tr>
+    <tr><td>${wl("sound-room")}</td><td>Filesystem root</td><td>Sound Room slideshow: picture names and screen offsets</td><td>${badge("confirmed","complete")}</td></tr>
     <tr><td><code>tut_data*.bin</code></td><td>Filesystem root</td><td>Tutorial trigger/topic tables</td><td>${badge("plausible","identified, partial")}</td></tr>
     <tr><td><code>client.bin</code></td><td>Filesystem root</td><td>Region/save-related metadata</td><td>${badge("open","unidentified payload")}</td></tr>
   </tbody></table>
@@ -1692,7 +1851,7 @@ skills: {
 "laguz-transformation": {
   ns:"system", title:"Laguz Transformation", dek:"A hidden 0–20 gauge that charges in human form and drains in beast form, not a simple timer",
   infobox:{ type:"Game system", status:"confirmed", fields:[
-    ["Gauge range","0–20"],["Gain per turn (untransformed)","+2"],["Drain per turn (transformed)","−1"]
+    ["Gauge range","0–20"],["Gain per turn (untransformed)","+2"],["Drain per turn (transformed)","−1"],["Gain when damaged (untransformed)","+4"],["Change when damaged (transformed)","−3"]
   ]},
   categories:["Balance","Combat"],
   body:`
@@ -1702,6 +1861,8 @@ skills: {
   <h2>How the gauge moves each turn</h2>
   <p>While untransformed, an eligible unit gains 2 points per turn. While transformed, the same unit instead loses 1 point per turn. The gauge is clamped to its 0–20 range in both directions — a unit at 0 cannot drain further, and one at 20 cannot gain further, which is also the signal used elsewhere to mean "fully charged" or "exhausted."</p>
   <div class="callout"><p class="callout-t">Asymmetric by design</p><p>Draining costs a third of what gaining takes to replace — roughly 10 turns to fully charge from empty, versus 20 turns to fully drain from a permanent transformation. Transformation is the expensive, temporary state; walking around human is the default.</p></div>
+  <h2>When the unit is damaged</h2>
+  <p>Taking damage also moves the gauge, through a second routine run by the damage event: an untransformed Laguz gains 4 points, a transformed one loses 3, again clamped to 0–20. A transformed state is simply the presence of the Lycanthrope status flag (skill 9) on the unit; a separate always-beast flag (skill 10) exempts a unit from both routines. ${badge("strong","engine")}</p>
   <h2>Forced full charge</h2>
   <p>One runtime condition can override the stored value entirely and report the gauge as permanently full regardless of what's actually stored — a way to grant unlimited transformation to a specific unit or state without changing the normal accounting for every other laguz.</p>
   <p style="color:var(--ink-muted);font-size:13px">Open: exactly which point in the turn sequence applies the per-turn gain/drain step has not been pinned down.</p>
@@ -1724,7 +1885,7 @@ skills: {
   <p>A single exchange starts at one strike. A flag on the attacker's own <strong>equipped weapon</strong> can unconditionally double it — a Brave weapon's signature behavior, entirely independent of Speed. On top of whatever the weapon already granted, a proc skill can add further strikes via the same skill-check mechanism described below — a Brave weapon and a proc skill genuinely stack within the same exchange rather than being alternate paths.</p>
   <h2>Hit, miss, and critical — the "True Hit" system</h2>
   <p>A strike's outcome is decided by two separate rolls of the same random-number generator (a three-word chained shift-register generator, XORed against the requested percentage): the <strong>Hit</strong> roll advances the generator <em>twice</em> and averages the two results before comparing against the attacker's Hit-rate forecast stat, while the <strong>Critical</strong> roll uses a single roll compared against the Crit-rate forecast stat. Averaging two rolls for Hit but using one for Crit is exactly the series' well-known "True Hit" design — hit rates cluster more tightly around their displayed value than a flat single roll would, while crit rates stay a flat percentage. A confirmed critical hit applies a flat <strong>×3</strong> damage multiplier.</p>
-  <p>Crit rate can also receive a flat class-level bonus: a specific class trait adds a flat <strong>+15</strong> to Crit in the same forecast step that applies the ordinary Skill-based term, on top of any other active bonus. Separately, an unrelated weapon-side flag can force Crit to <strong>0</strong> outright for that weapon, overriding every other bonus in play.</p>
+  <p>The Japanese release has no class-level critical bonus at all; in the other releases crit rate can also receive a flat class-level bonus: a specific class trait adds a flat <strong>+15</strong> to Crit in the same forecast step that applies the ordinary Skill-based term, on top of any other active bonus. Separately, an unrelated weapon-side flag can force Crit to <strong>0</strong> outright for that weapon, overriding every other bonus in play.</p>
   <h2>Proc skills — the actual check</h2>
   <p>See ${wl("skills")} for the mechanism (a per-actor bitmask checked by raw table position, rolled against the same shared RNG) and for which specific skills have a confirmed real effect once they trigger.</p>
   <h2>Weapon effectiveness — bonus damage against certain enemy types</h2>
@@ -1741,13 +1902,33 @@ extra = max(0, modeBonus[difficulty]
                 + bossBonus(defeated) + thiefBonus(defeated))
 
 raw EXP = base + extra</code></pre>
-  <p>Boss and thief properties are tested independently, so their bonuses can stack on the same defeated unit. After the raw award is calculated, one runtime skill/flag doubles it and another reduces it to 70%, preserving a minimum of 1. The award is capped at 100 and is also constrained by a separate helper that considers current level, current EXP, promotion eligibility, and party state.</p>
+  <p>Boss and thief properties are tested independently, so their bonuses can stack on the same defeated unit. After the raw award is calculated, the Elite skill doubles it and the Frac90 skill reduces it to 70%, preserving a minimum of 1. The same adjustment is applied to growth rates at level-up (see ${wl("level-up-growth")}). The award is capped at 100 and is also constrained by a separate helper that considers current level, current EXP, promotion eligibility, and party state.</p>
   <div class="callout"><p class="callout-t">Mental model: <code>GameData</code> supplies constants, native code supplies the formula</p><p>Seven difficulty-indexed rows are read through a named runtime resource. They hold the mode bonus, level constant, promotion-base bonus, boss bonus, thief bonus, transformed/Laguz growth bonus, and the Berserker/Sniper/Swordmaster critical bonus. The transformed/Laguz row is consumed by a linked-class stat-growth routine, not by the battle-EXP calculator.</p></div>
-  <p style="color:var(--ink-muted);font-size:13px">Still open: the symbolic <code>SID_</code> names corresponding to the runtime IDs for the ×2 and 70% EXP modifiers, and the exact gameplay circumstances represented by the result-state bytes that can force one EXP or suppress the extra component.</p>
+  <p style="color:var(--ink-muted);font-size:13px">Still open: the exact gameplay circumstances represented by the result-state bytes that can force one EXP or suppress the extra component.</p>
   <h2>After the numbers: presentation is a separate step</h2>
   <p>Once damage and any experience award are fully calculated, the game hands off to a separate, scheduled presentation step — the EXP bar animation, boss or player-death consequences, any post-battle dialogue, and victory recognition all run there rather than inline with the combat calculation itself. This separation is why a battle's numerical outcome and its on-screen consequences are handled as two distinct stages rather than one.</p>
   <h2>Worked exchange</h2>
   <p>An attacker with 14 effective Speed fights a defender with 9. The +5 advantage clears the +4 threshold, so the attacker receives a second exchange if both units survive. If the attacker uses a Brave weapon, each attacker exchange contains two strikes: two before the counter and two in the follow-up, for as many as four attacker strikes. Each strike still rolls Hit separately, then Critical if it hits; Brave does not guarantee four successful hits and the Speed advantage does not multiply critical damage.</p>
+  `
+},
+
+"level-up-growth": {
+  ns:"system", title:"Level-Up Growth", dek:"How a level-up turns growth rates into stat gains: a random roll per stat, or fixed accumulation",
+  infobox:{ type:"Game system", status:"confirmed", fields:[
+    ["Modes","Random (a roll per stat) or Fixed (accumulated growth)"],["Chosen","Per save, a flag in the party record"],
+    ["Fixed threshold","100 (90 with the Frac90 skill)"],["Stats","HP, Strength, Magic, Skill, Speed, Luck, Defense, Resistance"]
+  ]},
+  categories:["Balance","Characters"],
+  body:`
+  <p>Every character has eight growth rates (in percent), set in the ${wl("fe8data","character record")} and optionally added to by the unit's linked class. A level-up converts them into stat gains in one of two ways, selected by one flag stored in the save's party record. ${badge("confirmed","engine")}</p>
+  <h2>Random growth</h2>
+  <p>For each stat the game takes the rate, awards 1 point for every full 100% it contains, then rolls the remainder once against the shared random-number generator for one more point. A unit with the Frac90 skill gets a second chance at that roll. The gains are written to eight pending bytes on the unit and then trimmed against the stat caps of the unit and its class before the level-up screen shows them.</p>
+  <h2>Fixed growth</h2>
+  <p>Each stat keeps a hidden counter. A level-up adds the growth rate to it; whenever the counter reaches the threshold (100) the stat gains a point and the threshold is subtracted. Units with the Frac90 skill use a threshold of 90 instead. A 40% growth therefore pays a point at levels 3, 5 and 8 and so on, with no randomness. The counters are halved when a unit promotes.</p>
+  <div class="callout"><p class="callout-t">Which mode is in force</p><p>The flag is set when a playthrough starts and read through a single accessor used by both level-up paths and the debug menu; the debug menu has an entry that flips it.</p></div>
+  <h2>Skills that touch it</h2>
+  <p>The same helper that scales battle EXP scales growth rates for Elite (doubled) and Frac90 (70%), with an upper limit of 100 on the result.</p>
+  <p>See ${wl("combat-mechanics")} for the EXP side of the same adjustment.</p>
   `
 },
 
@@ -1901,7 +2082,7 @@ chapters: {
   </div>
   <div class="callout warn">
     <p class="callout-t">Data that belongs to another system</p>
-    <p><code>cp_data.bin</code> is not support data: it contains consumable skill-scroll items followed by AI-behavior and event-scripting symbol names. <code>CP_DataHead</code> belongs to that AI/combat namespace rather than to relationship points. ${badge("open","ruled out")}</p>
+    <p><code>cp_data.bin</code> is not support data: it is the computer player's data &mdash; AI scripts, movement-scoring weights, heal thresholds and the thief steal list. See ${wl("cp-data-format","cp_data.bin")}. ${badge("open","ruled out")}</p>
   </div>
   <h2>Confirmed: rank thresholds and progress</h2>
   <p>Independent of the unresolved bonus table, the progression mechanics themselves are fully confirmed. Each unit can hold at most <strong>5</strong> concurrent supports; a sixth partner simply cannot begin building rank until one of the existing five is somehow freed. Each support pairing stores its own C/B/A progress thresholds, and a unit's current rank with that partner is just a comparison of accumulated progress against those threshold values. Progress itself increases by a flat <strong>+1</strong> for each qualifying conversation and is capped one point above the A threshold, so continuing to trigger a maxed-out support's conversations cannot overflow or wrap its stored progress.</p>
@@ -1935,6 +2116,8 @@ chapters: {
     <p class="callout-t">The built-in table already carries spare cue slots</p>
     <p>Because 24 registered cue names already exist with no backing file, pointing one at a real <code>.stm</code> path (and flipping its "has a real track" byte) makes that name resolve to a real stream exactly the way any retail cue does — without growing the table itself, as long as each repointed slot gets its own path string rather than sharing the original placeholder with the other 23. ${badge("confirmed","confirmed")}</p>
   </div>
+  <h2>The Sound Room</h2>
+  <p>The extras menu's Sound Room plays from a fixed table of 64 <code>BGM_</code> names in the executable, through the same name lookup as any other cue. The illustrations behind its menu are a separate slideshow listed in ${wl("sound-room")}. ${badge("confirmed","confirmed")}</p>
   <p style="color:var(--ink-muted);font-size:13px">Contrast with ${wl("cutscenes")}, where a video is instead referenced by a literal path string with no hash lookup or intermediate table at all — a mechanically simpler, if less flexible, solution to the same "trigger a media asset by name" problem.</p>
   `
 },
@@ -2013,11 +2196,11 @@ cutscenes: {
     <tr><td><code>FE8Effect.bin</code></td><td>${wl("fe8effect","The visual-effect registry")} for spell and skill particle effects</td></tr>
     <tr><td><code>system.cmp</code></td><td>Loaded at boot: the common message text (skill and menu help) plus copies of <code>FE8Data.bin</code>, <code>FE8Anim.bin</code>, <code>FE8Effect.bin</code> and 13 other loose files. The game's file lookup searches loaded archives before the disc, so these copies are the ones it reads ${badge("strong","engine")}</td></tr>
     <tr><td>${wl("zdbx","<code>zdbx.cmp</code>")}</td><td>The battle engine's text tables: the class-to-model job list and hundreds of plain-text parameter files for class models, weapons, scenery, and camera scripts</td></tr>
-    <tr><td><code>soundroom.bin</code></td><td>A small reverb-zone table — which ambient audio profile applies to each world-map location</td></tr>
+    <tr><td>${wl("sound-room","<code>soundroom.bin</code>")}</td><td>The Sound Room's picture list: which full-screen illustrations it cycles through behind the track menu, and where each sits on screen</td></tr>
     <tr><td><code>tut_data.bin</code> / <code>tut_data_en.bin</code></td><td>The ${wl("tutorial-browser","tutorial/glossary browser")} and tutorial-popup system's per-chapter trigger and topic tables</td></tr>
     <tr><td><code>client.bin</code></td><td>Mostly high-entropy data with a couple of disc-identifier strings — not a moddable content file</td></tr>
   </tbody></table>
-  <p>Two whole-game tables sit alongside these per-folder assets: ${wl("rect-format","<code>s/rect.bin</code>")}, the table of full-screen image resources, and <code>shop/cp_data.bin</code>, an AI/combat-behavior symbol pool unrelated to character supports.</p>
+  <p>Two whole-game tables sit alongside these per-folder assets: ${wl("rect-format","<code>s/rect.bin</code>")}, the table of full-screen image resources, and ${wl("cp-data-format","<code>cp_data.bin</code>")}, the computer player's data (AI scripts, movement weights, heal thresholds, thief steal list), unrelated to character supports.</p>
   `
 },
 
@@ -2420,8 +2603,8 @@ biorhythm: {
   <p>Selecting a unit from the Game category opens a real, fully wired stat editor for that unit, reachable through several differently-labeled rows that all converge on the same tool: it directly reads and writes level (1&ndash;20), experience (0&ndash;99), transformation gauge, several other capped byte fields, and one unclamped field that changes every turn (see ${wl("biorhythm")}). A separate row computes each stat's remaining "growth doping" headroom by comparing the unit's current stat against a stored cap. Another row is a genuine support-rank editor, raising or lowering the stored rank between the selected unit and a chosen partner. A further, unlabeled row cycles a small per-unit state value through three settings — its exact effect (most likely a deployment or roster status) is not confirmed.</p>
   <h2>A working battle previewer</h2>
   <p>A separate development menu entry starts a full battle previewer: a self-contained process that can display attacker/defender/support combat roles, actions, outcomes, and skill/effect names outside of an actual battle sequence — evidently built as a tool for checking combat presentation without having to trigger a real battle.</p>
-  <h2>Testing dialogue color codes</h2>
-  <p>The second root menu's small text-rendering test tool displays the same short sentence three times, each with a different inline color-code wrapper (<code>#X&lt;hex&gt;...#x</code>) around one word — confirming the text-rendering system supports inline color markup distinct from the <code>$</code>-prefixed layout/portrait codes documented in ${wl("message-format","the dialogue format")}. Selecting any of the three rows only displays the sample text; none of them has any further effect.</p>
+  <h2>Testing text width</h2>
+  <p>The second root menu's small text-rendering test tool displays the same short sentence three times, each with one word drawn at a different width (<code>#X3A</code> squeezed, <code>#X46</code> stretched, and unchanged) — a test of the horizontal text scale described in ${wl("message-format","the dialogue format")}. Selecting any of the three rows only displays the sample text; none of them has any further effect.</p>
   <h2>Standalone debug helpers outside the menu system</h2>
   <p>Beyond the three menu trees, several debug-only helpers are wired directly into normal gameplay systems:</p>
   <ul>
@@ -2430,7 +2613,10 @@ biorhythm: {
     <li>A function that dumps the complete contents of every ${wl("armies-allegiance","army list")} at once — every unit's slot, position, state, and name, grouped by army — clearly meant as a debugging aid for the allegiance system rather than anything a player would ever see.</li>
     <li>Script-level calls that can directly read or write a unit's fields and push/pop entire unit rosters, exposed the same way ordinary script commands are, but intended for test scripts rather than chapter content.</li>
   </ul>
-  <div class="callout"><p class="callout-t">Retained, not reachable</p><p>Every menu and helper described here is complete working code left in the shipped executable — the game simply never calls the entry points that would open these menus during normal play. Reaching them requires directly invoking the retained functions rather than any input sequence discoverable through the shipped menus themselves.</p></div>
+  <h2>Why they stay hidden</h2>
+  <p>Two separate, dormant switches keep the menus out of normal play, and neither is a missing piece of code. The map pause menu walks a zero-terminated list of root menus; the list holds the ordinary pause menu first and then a zero, so the walk stops before it reaches the four developer roots stored behind it. Moving the roots in front of the zero shows all of them. Separately, the start-up process that launches the game controller runs the production title screen, while a complete development title screen (build information, memory-card import and export, the battle previewer, chapter and difficulty selection, and a "Production version" entry that continues to the normal file menu) sits in the executable with nothing pointing at it. ${badge("confirmed","engine")}</p>
+  <h2>Overlay switches</h2>
+  <p>The Display category's overlays are plain flag bytes read by the main loop every frame: process tree, performance meter, GPU performance meter, in-game debug information, safe-frame guide, sound-test overlay, 2D-primitive overlay, battle-display off and skip-block visualisation. They start at zero and nothing but the menu sets them. ${badge("confirmed","engine")}</p>
   <p style="color:var(--ink-muted);font-size:13px">Open: none of the menu labels that read like they should show a real item, skill, weapon-rank, or status-condition list actually lead to one anywhere in this build — each stat is instead edited one field at a time through the shared editor above, and whether a separate list ever existed is unresolved. ${badge("open","open")} A handful of individual byte-sized unit fields, and the exact effect of the unlabeled per-unit state toggle mentioned above, are also unresolved.</p>
   `
 },
@@ -2507,7 +2693,7 @@ biorhythm: {
 
   <div class="callout warn">
     <p class="callout-t">Open</p>
-    <p>Whether chapter title cards, map names and battle damage numbers are font text or pre-drawn images, and how the drop shadow behind text is produced, are not yet established. ${badge("open","open")}</p>
+    <p>Whether chapter title cards, map names and battle damage numbers are font text or pre-drawn images is not yet established. The shadow and outline behind dialogue text are described in ${wl("message-format")}. ${badge("open","open")}</p>
   </div>
   `
 },
