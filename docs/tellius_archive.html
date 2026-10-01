@@ -376,7 +376,6 @@ unexplored: {
 
   <h2>Partially described formats</h2>
   <ul>
-    <li><code>window/RectBases.bin</code>, <code>RectDesc.bin</code>, <code>RectUnitList.bin</code> — confirmed to reuse the ${wl("labeled-section","Labeled Section Format")}. <code>RectDesc.bin</code>'s section catalog cross-references cleanly against ${wl("message-format","dialogue's")} <code>$R&lt;tag&gt;|</code> layout-mode codes; <code>RectBases.bin</code> gives each base shop, including the ${wl("shop-format","sell shop S")}, its own window resources, separate from the warehouse UI. Per-entry byte content (screen rects) not decoded.</li>
     <li><code>tut_data.bin</code> / <code>tut_data_en.bin</code> — the same labeled-section container; per-chapter trigger data and the ${wl("tutorial-browser","tutorial browser")} topic/list ownership are identified, but several record fields still need names.</li>
   </ul>
 
@@ -715,7 +714,7 @@ fe8data: {
   categories:["Chapter data","Editable","Scripting"],
   body:`
   <p>The compiled bytecode driving a chapter — setup, cutscene triggers, win/lose conditions. Not compressed or archived: a direct binary file per chapter, plus <code>startup.cmb</code> (helpers every chapter calls) and <code>ending.cmb</code>. Each function inside a script carries a <strong>trigger type</strong> (start of turn, start of phase, a unit reaching a tile, ...) and parameters controlling exactly when it fires; a stack-machine bytecode body does the actual work once triggered. See ${wl("events-scripting")} for how the engine runs it.</p>
-  <p>For a step-by-step explanation of modules, event state, execution, timing and the boundaries of script-driven changes, read the <a href="https://klg-tellius.github.io/TelliusModding/tellius_archive.html#/events-scripting">event script system guide</a>. Its scope is the researched US Path of Radiance executable; a registered function name alone does not establish all argument meanings or Radiant Dawn compatibility.</p>
+  <p>For a step-by-step explanation of modules, event state, execution, timing and the boundaries of script-driven changes, read the <a href="../research/EVENT_SCRIPT_GUIDE.md">event script system guide</a>. Its scope is the researched US Path of Radiance executable; a registered function name alone does not establish all argument meanings or Radiant Dawn compatibility.</p>
   <h2>How a script function becomes an event</h2>
   <p>The engine evaluates a function's trigger and parameters; when eligible, it starts that function's stack-machine bytecode. Instructions manipulate values and branch locally, while external calls request native game operations. The format therefore stores both the condition and the response, but mutable chapter state lives outside the file.</p>
 
@@ -1122,8 +1121,15 @@ fe8effect: {
   </ul>
   <h2>What a new resource needs</h2>
   <p>The game finds a texture file by path, first among the loaded archives and then on the disc, so a new file under <code>s/</code> with any name is found. The resource needs a name, at least one layer, and a texture no larger than 1024 pixels on either side; the resource table itself is a relocatable file whose export list must stay sorted by name. Because the game reads the copy inside <code>system.cmp</code>, an edited table has to be present there. ${badge("strong","strong evidence")} An edited table has not been run in the game.</p>
-  <h2>Related files</h2>
-  <p>The window and ending resource files (<code>window/RectDesc.bin</code>, <code>RectBases.bin</code>, <code>RectUnitList.bin</code>, <code>ending/RectFinale*.bin</code>) use the same descriptor but add more kinds of layer: text labels, dialogue boxes, portrait seat tables, gradients and four-colour images. ${badge("open","open question")} Their remaining layer kinds are documented only in outline.</p>
+  <h2>The other resource files</h2>
+  <p>The window and ending files (<code>window/RectDesc.bin</code>, <code>RectBases.bin</code>, <code>RectUnitList.bin</code>, <code>ending/RectFinale.bin</code>) use the same container and descriptor and differ only in the kinds of layer they hold. Besides the textured quad, a layer can be a <strong>text line</strong> (a message ID or literal text with inline markup, a position and an alignment), a <strong>rectangle with four corner colours</strong> (panels, letterbox bars, fade masks; the corners run upper-left, upper-right, lower-left, lower-right), a <strong>quad with corner colours</strong>, a <strong>dialogue textbox</strong> (frame, panel and cursor resources, text origin, width, line height, line count, typing speed, portrait seat) and a <strong>seat table</strong> (where each portrait stands and which way it faces). ${badge("confirmed","confirmed")}</p>
+  <div class="table-wrap"><table><thead><tr><th>File</th><th>What it defines</th></tr></thead><tbody>
+    <tr><td><code>window/RectDesc.bin</code></td><td>The shared interface vocabulary, loaded at boot: the nine dialogue layouts (up-down, background, no-background, world-map, tutorial&hellip;), the text-window frames, the page and world-map cursors (16- and 12-frame flip-books), the weapon-triangle icons, the cinema letterbox and the fade masks.</td></tr>
+    <tr><td><code>window/RectBases.bin</code></td><td>The base shop windows: a frame with a title strip and a dialogue box for each of the four shops, and the warehouse plate.</td></tr>
+    <tr><td><code>window/RectUnitList.bin</code></td><td>The unit-list panel.</td></tr>
+    <tr><td><code>ending/RectFinale.bin</code></td><td>The ending: 22 illustration slides, one portrait per character, and the whole staff roll as text resources.</td></tr>
+  </tbody></table></div>
+  <p>Everything in these files is plain data, so text, positions, colours and images can be changed without touching the executable. ${badge("open","open question")} What the two per-text style switches look like on screen is not established.</p>
   `
 },
 
@@ -1866,7 +1872,7 @@ chapters: {
   <p>Slots 0&ndash;31 are all used by the story, 32 means &ldquo;game cleared&rdquo;, and the save code treats every number from 32 up as a trial map, so a new story chapter cannot simply be appended after the Endgame. ${badge("confirmed","engine")}</p>
   <ul>
     <li><strong>Replacing</strong> a chapter needs data only: point its record at other files, or edit the files it names.</li>
-    <li><strong>Adding battles inside a chapter</strong> can reuse the Chapter 17 mechanism in any chapter's script, up to three extra battles per number. A Prologue whose script ends its battle this way opens the save menu and plays a second battle on the Chapter 1 map before Chapter 1 begins. Likewise, giving the Prologue an <code>Opening2</code> function makes its preparations screen appear. ${badge("confirmed","in game")}</li>
+    <li><strong>Adding battles inside a chapter</strong> can reuse the Chapter 17 mechanism in any chapter's script, up to three extra battles per number. A Prologue whose script ends its battle this way opens the save menu and plays a second battle on the Chapter 1 map before Chapter 1 begins, and a save made in that menu reloads into the second battle. Likewise, giving the Prologue an <code>Opening2</code> function makes its preparations screen appear. ${badge("confirmed","in game")}</li>
     <li><strong>Inserting a new number</strong> means renumbering every later record and changing the executable wherever it tests a chapter number: the Chapter 27 pair, the ending, the save limit, the report from Chapter 9 on, the convoy unlock, the phase music and the per-chapter shops.</li>
   </ul>
   <p>Within one chapter the four files are largely independent in content but coordinated in effect: the script's ${wl("events-scripting","phase and turn triggers")} decide when dialogue plays and which units act, dispo's deployment records decide who is actually on the field for the script to act on, and the map file's terrain and ${wl("map-grid","grid")} decide where any of that can physically happen. A chapter with more than one battle-map phase — a mid-chapter reinforcement wave, for instance — gets its own suffixed map, <code>bmap06</code> then <code>bmap06_2</code>, sharing the same script and dialogue file as the primary phase.</p>
