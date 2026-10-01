@@ -13,6 +13,7 @@ page), edits the affinity bonus table and the support conversations
 
 from __future__ import annotations
 
+from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
 from ..prop_browser import MapObjectsPanel
 from ..shell import Page
@@ -20,7 +21,7 @@ from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
-        "general": "General", "supports": "Supports", "props": "Map Objects"}
+        "general": "General", "supports": "Supports", "props": "Map Objects", "ai": "AI (CP)"}
 
 
 class GameDataPage(Page):
@@ -49,6 +50,9 @@ class GameDataPage(Page):
             session.subscribe(self._on_session_changed)
         self._props = MapObjectsPanel(self._editor._notebook, self.project)
         self._editor._notebook.add(self._props, text=TABS["props"])
+        self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
+                               session_provider=lambda: shell.session if shell.session.available else None)
+        self._editor._notebook.add(self._ai, text=TABS["ai"])
 
     def _character_name(self, pid: str) -> str:
         index = self.shell.index
@@ -70,7 +74,7 @@ class GameDataPage(Page):
             self._supports.reload()
 
     def panels(self):
-        panels = [self._editor]
+        panels = [self._editor, self._ai]
         if self._supports is not None and self._supports.dialogue_editor is not None:
             panels.append(self._supports.dialogue_editor)  # yell.m has its own Save
         return panels
@@ -97,12 +101,13 @@ class GameDataPage(Page):
         if self._supports is not None:
             widgets["supports"] = self._supports
         widgets["props"] = self._props
+        widgets["ai"] = self._ai
         return widgets
 
     def show(self, route) -> bool:
         tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
         self._tab = tab
-        if tab in ("supports", "props"):
+        if tab in ("supports", "props", "ai"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
                 self._editor._notebook.select(widget)
