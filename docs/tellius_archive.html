@@ -387,7 +387,7 @@ unexplored: {
   <table><thead><tr><th>Question</th><th>Status</th><th>Article</th></tr></thead><tbody>
     <tr><td>What are the actual support-bonus numbers?</td><td>${badge("open","open")}</td><td>${wl("support-system")}</td></tr>
     <tr><td>Exactly what script code reads a battle-goal marker's state?</td><td>${badge("open","open")}</td><td>${wl("objectives")}</td></tr>
-    <tr><td>What do the item properties <code>sealcrit</code>, <code>stormsw</code>, <code>weakA</code>, <code>valuable</code>, <code>JH</code> and <code>noneart</code> change in play?</td><td>${badge("open","open")}</td><td>${wl("items-weapons")}</td></tr>
+    <tr><td>What does the Boots' item property <code>noneart</code> change in play?</td><td>${badge("open","open")}</td><td>${wl("items-weapons")}</td></tr>
     <tr><td>Which battle-event code triggers the hit and damage number, and what do the codes from 1,000 up play?</td><td>${badge("plausible","partial")}</td><td>${wl("model-formats")}</td></tr>
     <tr><td>What is the second, greyscale texture the Prologue scenery's materials point to, and what do shape flags <code>0x8</code> and <code>0x200</code> do?</td><td>${badge("open","open")}</td><td>${wl("model-formats")}</td></tr>
     <tr><td>What do map-model registry bytes <code>0x09</code> and <code>0x0B</code> mean, and which class field supplies the animation ID of a unit whose character has none?</td><td>${badge("open","open")}</td><td>${wl("fe8anim","FE8Anim.bin")}</td></tr>
@@ -642,7 +642,7 @@ fe8data: {
     <tr><td class="num"><code>0x04</code></td><td>Commander: the leader of the unit's army (see below)</td><td>Ike in every player group, each chapter's boss</td></tr>
     <tr><td class="num"><code>0x08</code></td><td>A reinforcement appears even when the character is not already in play</td><td>Reinforcements</td></tr>
     <tr><td class="num"><code>0x40</code></td><td>Bridge-cover barrier: movement onto terrain 55 (&ldquo;bridge cover&rdquo;, normally cost 1) costs 48, more than any unit has</td><td>Every unit except fliers (Chapter 23's dragon and pegasus knights, Jill) and a few cutscene actors</td></tr>
-    <tr><td class="num"><code>0x10</code>, <code>0x20</code></td><td>Set AI bits the game never uses in its own files; <code>0x10</code> opens an extra route in the AI's door/chest checks</td><td>&mdash; ${badge("open","")}</td></tr>
+    <tr><td class="num"><code>0x10</code>, <code>0x20</code></td><td>Let the AI use a Door Key (<code>0x10</code>) or a Chest Key (<code>0x20</code>); no vanilla record sets them</td><td>&mdash; ${badge("confirmed","")}</td></tr>
   </tbody></table></div>
   <h2>Armies and commanders</h2><p>The last byte of a group's header names its <strong>army</strong>: an index into the 30 army names in ${wl("fe8data")} (<code>GroupData</code>). Every unit the group deploys joins that army; 0 leaves the unit's army unchanged.</p>
   <div class="table-wrap"><table class="tight"><thead><tr><th>Id</th><th>Army</th><th>Id</th><th>Army</th><th>Id</th><th>Army</th></tr></thead><tbody>
@@ -657,7 +657,7 @@ fe8data: {
     <tr><td class="num">10</td><td>Greil Mercenaries</td><td class="num">19</td><td>Truly unaffiliated</td><td class="num">29</td><td>Heron clan</td></tr>
     <tr><td></td><td></td><td class="num">20</td><td>Palmeny monks</td><td class="num">30</td><td>Stray mercenaries</td></tr>
   </tbody></table></div>
-  <p>(Names translated from the Japanese keys; the game shows the text of its message files.) The map's army list sorts units by army, and the living unit flagged <code>0x04</code> is that army's commander. A commander with ${wl("skills","Charisma")} gives the units of its own army within 3 tiles +5 to two combat values; an enemy with Horror within 3 tiles takes 5 off two. Player groups use 10 (Greil Mercenaries) early on, then 1 (Crimean Army). Event scripts read and change a unit's army with <code>UnitGet</code>/<code>UnitSet</code> field 38, and a unit moved to another side by <code>UnitTransferToForce</code> takes that side's army. ${badge("open","which combat values Charisma changes")}</p>
+  <p>(Names translated from the Japanese keys; the game shows the text of its message files.) The map's army list sorts units by army, and the living unit flagged <code>0x04</code> is that army's commander. A commander with ${wl("skills","Charisma")} gives the units of its own army within 3 tiles +5 Hit and +5 Avoid (never on the player side); each enemy with Horror within 3 tiles takes 5 off Hit and Critical. Player groups use 10 (Greil Mercenaries) early on, then 1 (Crimean Army). Event scripts read and change a unit's army with <code>UnitGet</code>/<code>UnitSet</code> field 38, and a unit moved to another side by <code>UnitTransferToForce</code> takes that side's army. ${badge("confirmed","engine")}</p>
   <h2>Enemy turn order</h2><p>At the start of each AI phase the game scores every unit of the acting side and moves them lowest score first. Field 39 fills the top of the score, so it sets the order outright. Among units with the same value, faster units and units carrying staves or weaker weapons go earlier. Vanilla leaves most units at 0 and gives higher numbers to later waves and bosses, so reinforcements and commanders act after the front line.</p>
   <p>See ${wl("chapters")} for how this file fits together with the other three per-chapter files, and ${wl("characters")}/${wl("skills")} for what a resolved <code>PID_</code>/<code>SID_</code> value means at the game-system level.</p>
   `
@@ -942,9 +942,9 @@ fe8data: {
     <tr><td class="num">110 / 111</td><td>USE_SKILL</td><td>Use skill <code>f</code>: Gamble (attack, action 21), Fairness, Flutter, Tackle, Tackle 2, Snarl, Earth / Sky Blessing</td></tr>
     <tr><td class="num">112</td><td>SHOOT</td><td>Fire a ballista (actions 49 / 42)</td></tr>
     <tr><td class="num">113 / 114</td><td>ROCK_ATTACK</td><td>Use a map object of kind 10, the rocks (action 46); 114 without a roll, from a tile list ${badge("strong","strong evidence")}</td></tr>
-    <tr><td class="num">115</td><td>TACKLE</td><td>Action 19 on an adjacent unit ${badge("plausible","tentative")}</td></tr>
+    <tr><td class="num">115</td><td>TACKLE</td><td>Shove (action 19) an adjacent unit</td></tr>
     <tr><td class="num">116</td><td>ATTACK_DIRECT</td><td>Weapon attack with a simpler choice of tile ${badge("strong","strong evidence")}</td></tr>
-    <tr><td class="num">200&ndash;218</td><td>Movement</td><td>Move to a tile (200), toward a character to talk (201, 215), toward a class (203), destroy a village (204), safest tile (205), toward the nearest target (206, 207, 217), to an event (209), random tile (210), escape (211), to a map object of kind 4 (212, tentative), along a waypoint route (216), talk in place (218)</td></tr>
+    <tr><td class="num">200&ndash;218</td><td>Movement</td><td>Move to a tile (200), toward a character to talk (201, 215), toward a class (203), destroy a village (204), safest tile (205), toward the nearest target (206, 207, 217), to an event (209), random tile (210), escape (211), to the nearest breakable terrain and attack it (212), along a waypoint route (216), talk in place (218)</td></tr>
     <tr><td class="num">500 / 501 / 600</td><td>Registers</td><td>Count the targets within a multiple of the unit's Mov (16.16 factor in <code>b</code>); test skill #9; change the Mov bonus and read Mov</td></tr>
     <tr><td class="num">502</td><td>USE_ITEM</td><td>Use the item <code>e</code> (action 4)</td></tr>
     <tr><td class="num">1000 / 1001</td><td>STOP / END</td><td>End the run; the next run starts at label <code>d</code> (identical code)</td></tr>
@@ -962,15 +962,12 @@ set_scripts(move=SEQ_NEARESTUNITMOVE)
 stop(resume=L1)</code></pre>
   <p><code>SEQ_USECHANGE_ATRANGE</code> has no <code>END</code>, and the labels it jumps to are not in it: the label search finds them in <code>SEQ_USECHANGE_1.5ATRANGE</code>, the next section in the file, whose code it then runs. ${badge("confirmed","confirmed")}</p>
   <h2>Movement types and heal records</h2>
-  <p>An <code>MTYPE_*</code> table gives the weights of the terms that score every tile a unit could attack from: damage dealt, the share of the foe's HP removed, adjacent foes, a per-class-flag bonus, the turn number, skill modifiers, damage taken, terrain defense and the unit's own HP lost. The tile with the best score wins. A heal record holds the HP percentage at which a unit begins retreating, the percentage at which it stops, and whether it tries healing items first. ${badge("confirmed","confirmed")}</p>
+  <p>An <code>MTYPE_*</code> table gives the weights of the terms that score every tile a unit could attack from: damage dealt, the share of the foe's HP removed, adjacent foes, a bonus per category of the foe's class (<code>mage</code>, <code>fly</code>, <code>knight</code>, <code>armor</code>, laguz, <code>human</code>, <code>beast</code>, <code>dragon</code>, <code>bird</code>, <code>hero</code>: the "killer" types weight their namesake, the archer type fliers), the turn number, skill modifiers, damage taken, terrain defense and the unit's own HP lost. The tile with the best score wins. A heal record holds the HP percentage at which a unit begins retreating, the percentage at which it stops, and whether it tries healing items first. ${badge("confirmed","confirmed")}</p>
   <div class="callout">
     <p class="callout-t">Editing</p>
     <p>The app's <em>Game Data &rsaquo; AI (CP)</em> tab edits scripts (as readable code or as raw entries), heal records, movement weights, the steal list and the routes. New scripts are appended to their id list so existing ids never move; the build copies the file into <code>system.cmp</code>.</p>
   </div>
-  <div class="callout warn">
-    <p class="callout-t">Open</p>
-    <p>The meaning of each bit of the class-flag halfword behind the <code>MTYPE</code> class bonuses, what map objects of kinds 4 and 10 are in each chapter, and the in-game effect of opcodes 115 and 212 are not settled. ${badge("open","open question")}</p>
-  </div>
+  <p>The Japanese, European and US releases ship the same <code>cp_data.bin</code>, byte for byte.</p>
   `
 },
 
@@ -1333,62 +1330,133 @@ fe8effect: {
 },
 
 "save-format": {
-  ns:"format", title:"GameCube Save (.gci)", dek:"Memory-card container, CRC-checked save blocks, and the tagged chapter-state stream",
-  infobox:{ type:"Save format", status:"strong", fields:[
+  ns:"format", title:"GameCube Save (.gci)", dek:"Memory-card container, CRC-checked save blocks, the shared system data and the tagged chapter-state stream",
+  infobox:{ type:"Save format", status:"confirmed", fields:[
     ["Container","GameCube <code>.gci</code>"],["Blocks","6 × 0x4000 file blocks + 2 × 0x6000 checkpoints"],
-    ["Integrity","CRC-32 per block"],["Decoded chunks","<code>BMST</code> (partly), <code>FWEP</code>, event flags"]
+    ["File slots","5, sharing the six file blocks"],["Integrity","CRC-32 per block"],
+    ["Chunks","<code>BMST</code>, <code>MDST</code>, <code>UNIP</code>, <code>SOKO</code>, <code>FWEP</code>, <code>T  T</code>"]
   ]},
   categories:["Save Data","Container"],
   body:`
-  <p>A <code>.gci</code> file is a single GameCube memory-card entry: a 0x40-byte directory header followed by the game's payload. The header contains the game and company identifiers, filename, timestamps, permissions, icon/banner metadata, and the number of memory-card blocks occupied.</p>
+  <p>A <code>.gci</code> file is a single GameCube memory-card entry: a 0x40-byte directory header followed by the game's payload. The header holds the game and company identifiers (<code>GFEE</code>, <code>01</code>), the internal filename <code>FIREEMBLEM8J</code>, timestamps, permissions, icon and banner metadata, and the number of card blocks used (19). There is no file-level checksum.</p>
   <h2>Body layout</h2>
   <p>After 0x2000 bytes of banner and icon images, the payload holds eight save blocks. ${badge("confirmed","confirmed")}</p>
   <table><thead><tr><th>Body offset</th><th>Size</th><th>Use</th></tr></thead><tbody>
-    <tr><td><code>0x2000</code>, <code>0x6000</code>, <code>0xA000</code></td><td><code>0x4000</code> each</td><td>Three save files, first copy</td></tr>
-    <tr><td><code>0xE000</code>, <code>0x12000</code>, <code>0x16000</code></td><td><code>0x4000</code> each</td><td>The same three files, second copy</td></tr>
-    <tr><td><code>0x1A000</code>, <code>0x20000</code></td><td><code>0x6000</code> each</td><td>Two chapter checkpoint blocks, written alternately</td></tr>
+    <tr><td><code>0x2000</code> + <em>i</em> × <code>0x4000</code>, <em>i</em> = 0–5</td><td><code>0x4000</code> each</td><td>File blocks</td></tr>
+    <tr><td><code>0x1A000</code>, <code>0x20000</code></td><td><code>0x6000</code> each</td><td>Checkpoint (suspend) blocks</td></tr>
   </tbody></table>
-  <p>Every save is written twice. When loading, the game takes the valid copy with the higher sequence number, so a save interrupted halfway still leaves the older copy intact.</p>
+  <p>Each file block names its file slot (0–4) in its header; the six blocks are shared by up to five slots. When the card is read at boot, the game discards every block whose checksum fails, keeps only the newest block (highest sequence number) of each slot and only the newer checkpoint, and frees the rest. A new save goes into a free block, and its sequence number is one more than the highest on the card. An interrupted save therefore leaves the slot's previous block in place. ${badge("confirmed","confirmed")}</p>
   <h2>Block header</h2>
   <table><thead><tr><th>Offset</th><th>Size</th><th>Meaning</th></tr></thead><tbody>
-    <tr><td><code>+0x00</code></td><td>64</td><td>Title and date/time text shown by the memory-card screen</td></tr>
+    <tr><td><code>+0x00</code></td><td>64</td><td>Title and date text shown by the memory-card screen</td></tr>
     <tr><td><code>+0x40</code></td><td>4</td><td>Magic <code>"FE8J"</code></td></tr>
     <tr><td><code>+0x44</code></td><td>4</td><td>Version stamp <code>0x20050201</code></td></tr>
-    <tr><td><code>+0x48</code></td><td>4</td><td>Sequence number: the newest block wins</td></tr>
+    <tr><td><code>+0x48</code></td><td>4</td><td>Sequence number</td></tr>
     <tr><td><code>+0x4C</code></td><td>4</td><td>Block size</td></tr>
     <tr><td><code>+0x50</code></td><td>4</td><td>CRC-32 of the block from <code>+0x70</code> to its end</td></tr>
-    <tr><td><code>+0x60</code>, <code>+0x64</code>, <code>+0x65</code></td><td>1 + 1 + 1</td><td>Save kind, chapter number, and resume point — which path the game takes when loading: 1 and 2 inside a map, 4 the start of the chapter (the save made after a victory), 5&ndash;7 the next part of Chapter 17, 10 a trial map (see ${wl("chapters")}) ${badge("confirmed","engine")}</td></tr>
-    <tr><td><code>+0x66</code></td><td>1</td><td>Difficulty</td></tr>
-    <tr><td><code>+0x70</code></td><td>0x48</td><td>System snapshot (tagged <code>SYSF</code>), unlock words and option bytes</td></tr>
+    <tr><td><code>+0x58</code></td><td>8</td><td>Play time in console timer ticks (40.5 million per second)</td></tr>
+    <tr><td><code>+0x60</code></td><td>1</td><td>Save kind: 2 file save, 3 checkpoint, 1 a consumed copy (half-written, never loaded)</td></tr>
+    <tr><td><code>+0x61</code></td><td>1</td><td>Playthrough id, recorded in the system data when the game is finished</td></tr>
+    <tr><td><code>+0x62</code></td><td>1</td><td>File slot 0–4</td></tr>
+    <tr><td><code>+0x63</code></td><td>1</td><td>For a checkpoint, the file slot it suspends</td></tr>
+    <tr><td><code>+0x64</code></td><td>1</td><td>Chapter number</td></tr>
+    <tr><td><code>+0x65</code></td><td>1</td><td>Resume point (below)</td></tr>
+    <tr><td><code>+0x66</code></td><td>1</td><td>Difficulty: 0 Normal, 1 Hard, 2 Maniac, 3 Easy</td></tr>
+    <tr><td><code>+0x70</code></td><td>0x48</td><td>System data (below)</td></tr>
     <tr><td><code>+0xB8</code></td><td>rest</td><td>Tagged chapter-state stream</td></tr>
   </tbody></table>
-  <p>The checksum is standard CRC-32 (the same polynomial as ZIP and PNG). A block whose checksum doesn't match is treated as empty, so changing any byte from <code>+0x70</code> onward requires recomputing it. Two exceptions skip the check: a stored checksum of <code>0x12345678</code>, and blocks whose save kind is 1. ${badge("confirmed","confirmed")}</p>
+  <p>The checksum is standard CRC-32 (the same polynomial as ZIP and PNG). A block whose checksum doesn't match is treated as empty, so changing any byte from <code>+0x70</code> onward requires recomputing it. A stored checksum of <code>0x12345678</code> and save kind 1 skip the check. ${badge("confirmed","confirmed")}</p>
+  <p>The resume point decides where loading the block leads (see ${wl("chapters")}): ${badge("confirmed","engine")}</p>
+  <table><thead><tr><th>Value</th><th>Saved from</th><th>Loading it</th></tr></thead><tbody>
+    <tr><td>1</td><td>The base menu</td><td>Reloads the map and returns to the base</td></tr>
+    <tr><td>2</td><td>Battle preparations</td><td>Reloads the map and returns to preparations</td></tr>
+    <tr><td>3</td><td>New Game</td><td>Starts the first chapter</td></tr>
+    <tr><td>4</td><td>The save after a victory</td><td>Starts the next chapter from its opening</td></tr>
+    <tr><td>5, 6, 7</td><td>The end of part 1, 2 or 3 of a multi-part chapter</td><td>Continues with the next part</td></tr>
+    <tr><td>8</td><td>A checkpoint (suspend)</td><td>Resumes the battle where it stopped</td></tr>
+    <tr><td>10</td><td>A trial map</td><td>Starts that trial map</td></tr>
+  </tbody></table>
+  <h2>System data</h2>
+  <p>Header <code>+0x70</code> is a copy of the console-wide system data, written into every block. At boot the game takes it from the newest block that carries it. ${badge("confirmed","confirmed")}</p>
+  <table><thead><tr><th>Offset</th><th>Size</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td><code>+0x00</code></td><td>8</td><td><code>"SYSF"</code> and the version stamp</td></tr>
+    <tr><td><code>+0x08</code></td><td>8</td><td>Random system id made with the data; a save is only written over data with the same id</td></tr>
+    <tr><td><code>+0x10</code></td><td>2</td><td>Unlocks: bit 0 game finished (clear records, trial map 1), bits 1 and 2 trial maps 2 and 3, bits 4 and 5 trial maps 4–6. Finishing on Normal or Easy sets bit 0, Hard bits 0–1, Maniac bits 0–2.</td></tr>
+    <tr><td><code>+0x12</code></td><td>30</td><td>Ids of the playthroughs that reached the ending; their count + 1 is the playthrough number shown on a new file</td></tr>
+    <tr><td><code>+0x30</code></td><td>16</td><td>Characters met: one bit per character number below 128, set whenever a unit is deployed</td></tr>
+    <tr><td><code>+0x40</code></td><td>3</td><td>Screen position X and Y and brightness (the Screen menu)</td></tr>
+    <tr><td><code>+0x47</code></td><td>1</td><td>Last file slot used</td></tr>
+  </tbody></table>
   <h2>The state stream</h2>
-  <p>From <code>+0xB8</code> the block is a fixed sequence of four-character tags, each followed by one fixed-size record written by its own serializer. There are no length fields, because every record has a known size: ${badge("confirmed","confirmed")}</p>
-  <table><thead><tr><th>Tag</th><th>Contents</th></tr></thead><tbody>
-    <tr><td><code>BMST</code></td><td>Party and chapter state: current map number and name, progress counters, and the ${wl("event-flags","event flags")}</td></tr>
-    <tr><td><code>MDST</code></td><td>Camera and cursor</td></tr>
-    <tr><td><code>UNIP</code></td><td>Every unit slot</td></tr>
-    <tr><td><code>SOKO</code></td><td>The convoy (200 item slots)</td></tr>
-    <tr><td><code>FWEP</code></td><td>The forged-weapon pool</td></tr>
-    <tr><td><code>T  T</code></td><td>A further party block</td></tr>
+  <p>From <code>+0xB8</code> the block is a sequence of four-character tags, each followed by the record its serializer writes. There are no length fields. Every record has a fixed size except <code>UNIP</code>, which takes 2 bytes per empty unit slot and 143 per used one, so the chunks after it move as the army grows. The rest of the block is zero. ${badge("confirmed","confirmed")}</p>
+  <table><thead><tr><th>Tag</th><th>Size</th><th>Contents</th></tr></thead><tbody>
+    <tr><td><code>BMST</code></td><td><code>0x214</code></td><td>Party and chapter state, including the ${wl("event-flags","event flags")}</td></tr>
+    <tr><td><code>MDST</code></td><td><code>0x20</code></td><td>Map display state (sight mode, weather, fog) and camera</td></tr>
+    <tr><td><code>UNIP</code></td><td>159 slots</td><td>Every unit slot, player and enemy</td></tr>
+    <tr><td><code>SOKO</code></td><td><code>0x320</code></td><td>The convoy: 200 item slots</td></tr>
+    <tr><td><code>FWEP</code></td><td><code>0x480</code></td><td>The forged-weapon pool</td></tr>
+    <tr><td><code>T  T</code></td><td><code>0x204</code></td><td>The map's tile records: doors, chests, villages, walls, ballistae</td></tr>
   </tbody></table>
   <h2>BMST — party and chapter state</h2>
-  <p>Byte <code>0x15</code> after the tag is the number of the map to load, and <code>0x1F8</code> holds the same map as text (<code>bmap02</code>, or <code>trial_05</code> for a trial map). File slot <code>01</code> is the Prologue, so displayed Chapter 1 is map <code>02</code>. The twelve bytes at <code>0xAC</code> are the event flags: 96 bits, one per script flag slot. ${badge("confirmed","confirmed")}</p>
+  <table><thead><tr><th>Offset after tag</th><th>Size</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td><code>0x10</code></td><td>1</td><td>Chapter number</td></tr>
+    <tr><td><code>0x11</code>, <code>0x12</code></td><td>1, 2</td><td>Army whose phase it is, turn number</td></tr>
+    <tr><td><code>0x18</code>, <code>0x1C</code></td><td>4, 4</td><td>Gold, bonus experience</td></tr>
+    <tr><td><code>0x20</code></td><td>0x30</td><td>The chapter's four objective text keys</td></tr>
+    <tr><td><code>0x52</code>, <code>0x53</code></td><td>1, 1</td><td>Map cursor tile</td></tr>
+    <tr><td><code>0x54</code></td><td>1</td><td>Resume point</td></tr>
+    <tr><td><code>0x55</code></td><td>1</td><td>The base's opening event already ran</td></tr>
+    <tr><td><code>0x56</code>, <code>0x57</code></td><td>1, 1</td><td>Deployment surplus, playthrough number</td></tr>
+    <tr><td><code>0x58</code>, <code>0x60</code></td><td>8, 8</td><td>Play-time tick counters</td></tr>
+    <tr><td><code>0x68</code>–<code>0x73</code></td><td>12</td><td>Chapter report: gold gained, gold spent, bonus experience, score</td></tr>
+    <tr><td><code>0x74</code>, <code>0x84</code></td><td>16, 16</td><td>Tutorials unlocked and tutorials read (one bit each)</td></tr>
+    <tr><td><code>0x9C</code></td><td>12</td><td>Options: menu switches (unit and terrain windows, message speed, fixed growths…), unit speed, brightness, screen position, music and sound volume, difficulty</td></tr>
+    <tr><td><code>0xA8</code></td><td>12</td><td>The 96 event flag bits</td></tr>
+    <tr><td><code>0xB4</code></td><td>0x140</td><td>Clear history: 40 entries of chapter, part flag, turns and play time in seconds</td></tr>
+    <tr><td><code>0x1F4</code></td><td>0x18</td><td>Map name, <code>bmap02</code> or <code>trial_05</code></td></tr>
+  </tbody></table>
+  <p>In a save made after a victory, the chapter number already points at the next chapter while the map name is still the map just won. Loading such a save starts the next chapter, which clears every chapter-local flag, so the chapter flag bits stored in it are leftovers. In base, preparation, part and checkpoint saves every bit is live. ${badge("confirmed","confirmed")}</p>
+  <h2>UNIP — units</h2>
+  <p>A unit's position in the 159-slot unit table is its slot number, which the records use to link units together. Characters, classes and items are stored as their position in ${wl("fe8data","FE8Data")}'s tables, counting from 1, so a mod that reorders those tables changes what existing saves contain. A used slot holds: ${badge("confirmed","confirmed")}</p>
+  <table><thead><tr><th>Offset</th><th>Size</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td><code>0</code>, <code>2</code></td><td>2, 2</td><td>Character and class numbers (0 = empty slot, 2 bytes only)</td></tr>
+    <tr><td><code>4</code></td><td>1</td><td>Army: 0 player, 1 enemy, 2 ally, 3 other, 4 free, 5 reserve, 6 inactive, 7 removed</td></tr>
+    <tr><td><code>5</code>–<code>7</code></td><td>3</td><td>Previous and next unit of the same army, carried unit</td></tr>
+    <tr><td><code>8</code>–<code>14</code></td><td>7</td><td>Deployment group, level, experience (255 = none), laguz gauge, a 0–100 value, tile X and Y</td></tr>
+    <tr><td><code>15</code>, <code>19</code></td><td>4, 4</td><td>State bits; temporary status and bonuses</td></tr>
+    <tr><td><code>23</code>–<code>25</code></td><td>3</td><td>Current HP, build bonus, movement bonus</td></tr>
+    <tr><td><code>26</code></td><td>8</td><td>HP, Str, Mag, Skl, Spd, Lck, Def, Res held on top of the class base</td></tr>
+    <tr><td><code>34</code></td><td>8</td><td>Fixed-growth accumulators</td></tr>
+    <tr><td><code>42</code></td><td>16</td><td>Skills: one bit per skill table index</td></tr>
+    <tr><td><code>58</code></td><td>32</td><td>Eight item slots</td></tr>
+    <tr><td><code>90</code></td><td>8</td><td>Weapon experience for sword, lance, axe, bow, fire, thunder, wind and staff (E 1, D 31, C 71, B 121, A 181, S 251)</td></tr>
+    <tr><td><code>98</code></td><td>14</td><td>Battles, lifetime kills, kills on this map, tiles moved, two more counters, chapter of the last kill</td></tr>
+    <tr><td><code>112</code></td><td>10</td><td>${wl("support-system","Support")} points, one per support-list slot</td></tr>
+    <tr><td><code>122</code></td><td>15</td><td>${wl("cp-data-format","AI")} script choices, steps, flags and turn order</td></tr>
+    <tr><td><code>137</code></td><td>6</td><td>One more value and padding</td></tr>
+  </tbody></table>
+  <p>An item slot, in a unit or in the convoy, is the item number (2 bytes), its remaining uses, and a flag byte: <code>0x80</code> equipped, <code>0x40</code> dropped when its holder is defeated, and the low six bits the forge record (1–48) of a forged weapon. ${badge("confirmed","confirmed")}</p>
   <h2>FWEP — forge record pool</h2>
-  <p>The forged-weapon pool is copied as raw bytes: 48 records at a stride of <code>0x18</code>, for <code>0x480</code> bytes after the four-character tag. If <code>F</code> is the <code>FWEP</code> tag position, 1-based forge record <code>i</code> starts at <code>F + 4 + (i - 1) * 0x18</code>, and the next tag follows at <code>F + 4 + 0x480</code>.</p>
+  <p>The forged-weapon pool is copied as raw bytes: 48 records at a stride of <code>0x18</code>.</p>
   <table><thead><tr><th>Record offset</th><th>Meaning</th></tr></thead><tbody>
     <tr><td><code>+0x00</code></td><td>Allocation marker, 0 free and 1 allocated</td></tr>
-    <tr><td><code>+0x01..0x0F</code></td><td>Custom weapon name storage; first byte zero means no custom name</td></tr>
-    <tr><td><code>+0x10</code></td><td>Signed might adjustment steps</td></tr>
-    <tr><td><code>+0x11</code></td><td>Signed hit adjustment steps; each step is worth 5 hit</td></tr>
-    <tr><td><code>+0x12</code></td><td>Signed critical adjustment steps; each step is worth 3 critical</td></tr>
+    <tr><td><code>+0x01..0x0F</code></td><td>Custom weapon name; first byte zero means no custom name</td></tr>
+    <tr><td><code>+0x10</code></td><td>Signed might steps</td></tr>
+    <tr><td><code>+0x11</code></td><td>Signed hit steps; each step is worth 5 hit</td></tr>
+    <tr><td><code>+0x12</code></td><td>Signed critical steps; each step is worth 3 critical</td></tr>
     <tr><td><code>+0x13</code></td><td>Signed weight-reduction steps</td></tr>
-    <tr><td><code>+0x14..0x17</code></td><td>Appearance-related bytes, defaulting to <code>80 80 80 FF</code></td></tr>
+    <tr><td><code>+0x14..0x17</code></td><td>Appearance bytes, defaulting to <code>80 80 80 FF</code></td></tr>
   </tbody></table>
-  <p>An item instance stores its forge-record index in the low six bits of its own byte <code>+5</code>, preserving that byte's upper two flags. Copying an item instance deep-copies the forge record when present; releasing a default record clears the allocation marker, name-start bytes, stat steps, and default appearance bytes but does not prove a full-record scrub of every stored byte.</p>
+  <h2>T  T — map tile records</h2>
+  <p>64 records of 8 bytes and a count. Each record names a tile (X, Y), a type, a subtype and four value bytes; the chapter scripts fill the table when the map starts, and the map updates it as things happen. ${badge("confirmed","confirmed")}</p>
+  <table><thead><tr><th>Type</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td>4</td><td>Breakable wall (current and maximum HP)</td></tr>
+    <tr><td>7</td><td>Ballista (item and uses)</td></tr>
+    <tr><td>9, 10</td><td>Pit, rolling rock</td></tr>
+    <tr><td><code>0x21</code>–<code>0x25</code></td><td>Door opened, roof opened, chest opened, village visited, building destroyed</td></tr>
+  </tbody></table>
   <h2>What remains unknown</h2>
-  <p>The field layouts inside <code>MDST</code>, <code>UNIP</code>, <code>SOKO</code> and <code>T  T</code>, the system snapshot, the save-kind values, and resume points 1, 2 and 8 in detail. ${badge("open","open")}</p>
+  <p>Every byte is stored and restored as listed, but a few have no known gameplay meaning yet: the first 16 bytes of <code>BMST</code>, its bytes <code>0x50</code>, <code>0x51</code> and <code>0x94</code>–<code>0x9B</code>, the labels of some option switches, three unit counters, and two system-data bytes. ${badge("open","open")}</p>
   `
 },
 gcfesnd: {
@@ -1526,7 +1594,7 @@ posing: {
     <tr><td>${wl("musyx")}</td><td><code>.sdir/.samp</code></td><td>Sample directory and bank</td><td>${badge("strong","identified")}</td></tr>
     <tr><td>${wl("zdbx")}</td><td><code>zdbx.cmp</code>, loose <code>.dbx</code></td><td>Text design tables and parameters</td><td>${badge("strong","cataloged, fields partial")}</td></tr>
     <tr><td>${wl("font-format")}</td><td><code>Fonts/*.gcf</code>, <code>Fonts/system.cms</code></td><td>Bitmap fonts: glyph table and I4 sheets</td><td>${badge("confirmed","layout complete; per-screen font use open")}</td></tr>
-    <tr><td>${wl("save-format")}</td><td>Memory-card <code>.gci</code></td><td>CRC-checked save blocks and tagged state chunks</td><td>${badge("strong","header, CRC, event flags, FWEP decoded; unit and convoy chunks open")}</td></tr>
+    <tr><td>${wl("save-format")}</td><td>Memory-card <code>.gci</code></td><td>CRC-checked save blocks and tagged state chunks</td><td>${badge("confirmed","every chunk decoded")}</td></tr>
     <tr><td>${wl("sound-room")}</td><td>Filesystem root</td><td>Sound Room slideshow: picture names and screen offsets</td><td>${badge("confirmed","complete")}</td></tr>
     <tr><td><code>tut_data*.bin</code></td><td>Filesystem root</td><td>Tutorial trigger/topic tables</td><td>${badge("plausible","identified, partial")}</td></tr>
     <tr><td><code>client.bin</code></td><td>Filesystem root</td><td>Region/save-related metadata</td><td>${badge("open","unidentified payload")}</td></tr>
@@ -1653,10 +1721,10 @@ classes: {
     <tr><td><code>0x5E</code>&ndash;<code>0x5F</code></td><td>Padding</td><td>Never read</td></tr>
   </tbody></table></div>
   <h2>How weapon properties enter combat</h2>
-  <ul><li><strong>Might</strong> contributes to Attack before defense is subtracted.</li><li><strong>Type</strong> also selects which pair of stats the attack uses at all: most values compare Strength against Defense, while a specific small range of values switches the whole exchange to Magic against Resistance.</li><li><strong>Hit</strong> contributes to the displayed hit rate used by the two-roll hit test.</li><li><strong>Weight</strong> participates in the effective-Speed side of doubling rather than directly scheduling strikes.</li><li><strong>Rank</strong> becomes a minimum weapon EXP that the unit's weapon experience in that type must reach.</li><li><strong>Effectiveness</strong> compares a weapon mask with the target's species/race mask and can double the relevant attack contribution.</li><li><strong>Special flags</strong> can create Brave-style extra strikes or suppress effectiveness.</li></ul>
+  <ul><li><strong>Might</strong> contributes to Attack before defense is subtracted.</li><li><strong>Type</strong> also selects which pair of stats the attack uses at all: most values compare Strength against Defense, while a specific small range of values switches the whole exchange to Magic against Resistance.</li><li><strong>Hit</strong> contributes to the displayed hit rate used by the two-roll hit test.</li><li><strong>Weight</strong> participates in the effective-Speed side of doubling rather than directly scheduling strikes.</li><li><strong>Rank</strong> becomes a minimum weapon EXP that the unit's weapon experience in that type must reach.</li><li><strong>Effectiveness</strong> compares the categories of the equipped weapon and item with the categories of the target's class and can double the weapon's Might (see ${wl("combat-mechanics")}).</li><li><strong>Special flags</strong> can create Brave-style extra strikes or suppress effectiveness.</li></ul>
   <p>The same table includes <code>IID_RAGNELL</code> and <code>IID_ALONDITE</code>, while siege-weapon actions identify placed weapons such as <code>IID_ONAGER</code>. See ${wl("map-actions")} for ballista/Shoot behavior.</p>
   <h2>Forged weapon instances</h2>
-  <p>A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and four appearance-related bytes. A free record has allocation marker 0; an allocated record has marker 1.</p>
+  <p>A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and the weapon's own attack-trail colour (four RGBA bytes, grey <code>80 80 80 FF</code> by default) used instead of the item's trail colour. A free record has allocation marker 0; an allocated record has marker 1.</p>
   <table><thead><tr><th>Forge field</th><th>Combat interpretation</th></tr></thead><tbody>
     <tr><td>Might step</td><td><code>max(1, base_might + step)</code></td></tr>
     <tr><td>Hit step</td><td><code>max(1, base_hit + 5 * step)</code></td></tr>
@@ -1673,8 +1741,16 @@ classes: {
   <p>If the table is missing, no weapon is made for the battle. In the shipped game this happens to the Devil Axe, whose model folder exists without a table, and to the four ballistae. A forged weapon's preview in the forge uses <code>xwp/forge/&lt;name&gt;_b.cmp</code> instead; 16 weapons have one. Bows are the only weapons drawn with bending (skinned) geometry, so the string can be drawn back.</p>
   <h2>Where item information lives</h2>
   <table><thead><tr><th>Information</th><th>Location</th></tr></thead><tbody><tr><td>Definition and combat properties</td><td>${wl("fe8data","FE8Data.bin")} item table</td></tr><tr><td>Chapter inventory</td><td>${wl("dispo-format","dispos.cmp")} item slots</td></tr><tr><td>Shop availability</td><td>${wl("shop-format","shop inventory sections")}</td></tr><tr><td>Item icon</td><td><code>window/icon.tpl</code>, first image, cell 96 + icon (see ${wl("graphics-system","Graphics & Images")})</td></tr><tr><td>Battle model</td><td>${wl("zdbx","<code>xwp/&lt;NAME&gt;.dbx</code>")} in <code>zdbx.cmp</code>, which names the pack <code>xwp/&lt;folder&gt;/&lt;model&gt;.cmp</code></td></tr><tr><td>Current durability</td><td>Runtime/save inventory instance</td></tr></tbody></table>
-  <h2>Open questions</h2>
-  <p>A few property tokens are only known by the vanilla items carrying them (<code>sealcrit</code>, <code>stormsw</code>, <code>weakA</code>, <code>valuable</code>, <code>JH</code>, <code>noneart</code>); what each changes in play is not yet traced.</p>
+  <h2>Special properties</h2>
+  <table><thead><tr><th>Property</th><th>Carried by</th><th>Effect</th></tr></thead><tbody>
+    <tr><td><code>sealcrit</code></td><td>Alondite, Ragnell, Gurgurant, Lion's claws, kings' beaks</td><td>Its wielder cannot be critted</td></tr>
+    <tr><td><code>weakA</code></td><td>Ragnell, Lion's claws, dragon breaths, kings' beaks</td><td>Can damage the blessed-armour units (see ${wl("combat-mechanics")})</td></tr>
+    <tr><td><code>stormsw</code></td><td>Alondite, Ragnell, Gurgurant</td><td>Plays the ranged sword-wave battle animation</td></tr>
+    <tr><td><code>flutter</code></td><td>Vortex</td><td>Plays the Vortex animation; treated as a long-range attack in battle</td></tr>
+    <tr><td><code>valuable</code></td><td>Unique and legendary weapons, Knight Ring</td><td>Cannot be sold or discarded</td></tr>
+    <tr><td><code>JH</code></td><td>Demi Band</td><td>Halves the laguz transformation bonus to Str, Mag, Skl, Spd, Def and Res</td></tr>
+    <tr><td><code>noneart</code></td><td>Boots</td><td>No effect found in the executable ${badge("open","open")}</td></tr>
+  </tbody></table>
   `
 },
 
@@ -1691,6 +1767,7 @@ skills: {
   <h2>What counts as a skill</h2>
   <table><thead><tr><th>Family</th><th>What it changes</th><th>Examples</th></tr></thead><tbody><tr><td>Combat proc</td><td>Activates during a strike or exchange, usually with a chance</td><td>Sol, Luna, Cancel, Counter</td></tr><tr><td>Passive combat modifier</td><td>Changes a calculation or condition while owned</td><td>Wrath, Resolve, weapon permissions</td></tr><tr><td>Map command</td><td>Makes an action available for a selected unit</td><td>Steal, Chant, Unlock, Shoot</td></tr><tr><td>Movement capability</td><td>Changes where or when the unit can move</td><td>Canto, Pass, flying traits</td></tr><tr><td>Engine trait</td><td>Marks identity or behavior without appearing as a learnable skill</td><td>Boss, female, final boss, ${wl("laguz-transformation","transformed laguz")}</td></tr></tbody></table>
   <p>The table contains 98 records. Fifty-seven have player-facing help keys; the other 41 are internal traits and permissions. Thus “skill record” is an engine category broader than “skill shown on the Skills screen.”</p>
+  <p>Internal traits the engine tests by number include: the <strong>boss</strong> flag (37 bosses: an EXP bonus when defeated), the <strong>final boss</strong> flag (Ashnard: no EXP for fighting him), the <strong>laguz class</strong> flag (every laguz class), and <strong>blessed armour</strong> (the Black Knight's class and Ashnard's mounted class: only Ragnell, the Lion's claws, the dragon breaths and the kings' beaks damage them). Some player-facing skills have internal ids that don't match their English names: Parity (<code>SID_FAIRNESS</code>, Lucia and Rikard: no support, terrain or skill bonuses in that unit's battles), Insight (<code>SID_TELEGNOSIS</code>, +20 Hit), Paragon (<code>SID_ELITE</code>), Blossom (<code>SID_FRAC90</code>), Resolve (<code>SID_BLAVE</code>), Colossus (<code>SID_RUMBLE</code>), Mantle (<code>SID_GODDESSBLESS</code>), Lethality (<code>SID_ASSASSINATE</code>), Shove and Smite (<code>SID_TACKLE</code>/<code>SID_TACKLE2</code>), Roar (<code>SID_SNARL</code>), Blessing and Boon (<code>SID_SKYBLESSING</code>/<code>SID_EARTHBLESSING</code>). Charisma gives the units of a commander's group within 3 tiles +5 Hit and +5 Avoid (enemy and other armies only, never the player's); each enemy with Horror within 3 tiles gives −5 Hit and −5 Critical. ${badge("confirmed","confirmed")}</p>
   <h2>How a unit acquires skills</h2>
   <ul><li><strong>Personal:</strong> a ${wl("characters","character record")} contains up to three <code>SID_</code> pointers.</li><li><strong>Class-innate:</strong> a ${wl("classes","class record")} contains up to five traits granted to every unit of that class.</li><li><strong>Chapter-specific:</strong> a ${wl("dispo-format","deployment record")} can grant up to five more skills for that appearance.</li><li><strong>Runtime:</strong> the active unit consolidates these capabilities into state that native map and combat code can query.</li></ul>
   <div class="callout"><p class="callout-t">Do not confuse three different numbers</p><p>The skill's <strong>table index</strong> selects its runtime bit. <code>param0</code> is the skill's <strong>icon number</strong>, 1–46 on the 51 skills that have one. <code>param1</code> is its <strong>capacity cost</strong>. None of them is a second skill ID.</p></div>
@@ -1890,7 +1967,14 @@ skills: {
   <p>See ${wl("skills")} for the mechanism (a per-actor bitmask checked by raw table position, rolled against the same shared RNG) and for which specific skills have a confirmed real effect once they trigger.</p>
   <h2>Weapon effectiveness — bonus damage against certain enemy types</h2>
   <p>Before any of that, the equipped weapon's own type value already decided which pair of stats is even being compared: most weapon types weigh Strength against the target's Defense, but a specific small range of type values switches the whole calculation to Magic against Resistance instead.</p>
-  <p>Before computing base Attack, the game runs a dedicated effectiveness check: a 16-bit "race/species" value read from the target's own runtime combat data is tested against a 16-bit "effective against" value stored on the attacker's <em>equipped weapon</em>. If the two share a bit, damage is unconditionally doubled — the mechanism behind every effectiveness pairing in the game (bows vs. flying units, Fire vs. beast-type laguz, and so on). Two special-case bits additionally require the attacker to hold a specific flag before the bonus applies even when the race bit matches (plausibly a laguz-transformation edge case), and two further weapon flags can suppress an otherwise-matching effectiveness outright — one of which unconditionally forces "never effective," regardless of the race match.</p>
+  <p>Before computing base Attack, the game runs a dedicated effectiveness check. The attacker's "effective against" mask is the combination of its equipped weapon's and its equipped item's category words; it is tested against the categories of the defender's <em>class</em>. If the two share a bit, the weapon's Might is doubled — the mechanism behind every effectiveness pairing in the game (bows vs. flying units, Fire vs. beast-type laguz, and so on). Two categories work differently: <code>boss</code> is effective against any unit carrying the boss flag and <code>final</code> against the final boss, whatever their class; no vanilla weapon has either. ${badge("confirmed","confirmed")}</p>
+  <h2>Hit, Critical and Attack overrides</h2>
+  <ul>
+    <li>Deadeye doubles the final Hit; Gamble halves the final Hit and doubles the final Critical.</li>
+    <li>Attacking a unit under a status condition makes the final Hit 100.</li>
+    <li>A unit wielding Alondite, Ragnell, Gurgurant, the Lion's claws or the kings' beaks cannot be critted (property <code>sealcrit</code>).</li>
+    <li>The Black Knight and Ashnard on Rajaion wear blessed armour (an internal skill flag on their classes): any weapon without the <code>weakA</code> property — Ragnell, the Lion's claws, the dragon breaths, the kings' beaks — has its Attack set to 0 against them, and Counter does not reflect damage onto them.</li>
+  </ul>
   <p>On disk, a weapon names its targets with two category words in its ${wl("items-weapons","item record")} (<code>fly</code>, <code>beast</code>, <code>dragon</code>, <code>armor</code>, <code>knight</code>, <code>alize</code>&hellip;), the same words a class uses to describe itself. The <em>Full Guard</em> property removes every effectiveness bonus against its holder; two more properties remove only the anti-flier or only the anti-laguz bonus.</p>
   <h2>Battle experience — two level comparisons, then modifiers</h2>
   <p>Battle EXP is assembled from two components. The first is a halved level-difference term with a minimum of 1. The second adds difficulty, promoted-level, boss, and thief adjustments with a minimum of 0. The game uses two related definitions of effective level: the base term treats a promoted unit as <code>level + 20</code>, while the extra term uses <code>level + 20 + promotionBase[difficulty]</code>.</p>
@@ -1902,9 +1986,9 @@ extra = max(0, modeBonus[difficulty]
                 + bossBonus(defeated) + thiefBonus(defeated))
 
 raw EXP = base + extra</code></pre>
-  <p>Boss and thief properties are tested independently, so their bonuses can stack on the same defeated unit. After the raw award is calculated, the Elite skill doubles it and the Frac90 skill reduces it to 70%, preserving a minimum of 1. The same adjustment is applied to growth rates at level-up (see ${wl("level-up-growth")}). The award is capped at 100 and is also constrained by a separate helper that considers current level, current EXP, promotion eligibility, and party state.</p>
+  <p>Three gates come first: fighting the final boss gives no EXP; a unit that never did damage in the exchange gets exactly 1; and the <code>extra</code> term only counts when the opponent died. Boss and thief properties are tested independently, so their bonuses can stack on the same defeated unit. After the raw award is calculated, the Elite skill doubles it and the Frac90 skill reduces it to 70%, preserving a minimum of 1. The same adjustment is applied to growth rates at level-up (see ${wl("level-up-growth")}). The award is capped at 100 and is also constrained by a separate helper that considers current level, current EXP, promotion eligibility, and party state.</p>
   <div class="callout"><p class="callout-t">Mental model: <code>GameData</code> supplies constants, native code supplies the formula</p><p>Seven difficulty-indexed rows are read through a named runtime resource. They hold the mode bonus, level constant, promotion-base bonus, boss bonus, thief bonus, transformed/Laguz growth bonus, and the Berserker/Sniper/Swordmaster critical bonus. The transformed/Laguz row is consumed by a linked-class stat-growth routine, not by the battle-EXP calculator.</p></div>
-  <p style="color:var(--ink-muted);font-size:13px">Still open: the exact gameplay circumstances represented by the result-state bytes that can force one EXP or suppress the extra component.</p>
+
   <h2>After the numbers: presentation is a separate step</h2>
   <p>Once damage and any experience award are fully calculated, the game hands off to a separate, scheduled presentation step — the EXP bar animation, boss or player-death consequences, any post-battle dialogue, and victory recognition all run there rather than inline with the combat calculation itself. This separation is why a battle's numerical outcome and its on-screen consequences are handled as two distinct stages rather than one.</p>
   <h2>Worked exchange</h2>
@@ -1933,44 +2017,67 @@ raw EXP = base + extra</code></pre>
 },
 
 "map-actions": {
-  ns:"system", title:"Map Actions", dek:"How the game decides which actions show up in a unit's menu on a given tile — Chant, Steal, Unlock, Shoot, and the rest, all built on one shared mechanism",
-  infobox:{ type:"Game system", status:"strong", fields:[
-    ["Shared mechanism","One generic \"register this action\" call"],["Checker functions found","~38"],
-    ["Fully confirmed actions","Chant, Steal, Unlock, Shoot, Wait, Village-Destroy, Shove/Smite, Rescue pickup/drop"]
+  ns:"system", title:"Map Actions", dek:"The player's command menu, the enemy AI's action checkers, and the action ids both hand to one executor",
+  infobox:{ type:"Game system", status:"confirmed", fields:[
+    ["Player commands","32 menu-entry classes"],["AI checkers","~38, through one shared register call"],
+    ["Executor","One switch on the action id"]
   ]},
   categories:["Structure","Combat"],
   body:`
-  <p>When a unit is selected on the map, the menu of actions available at its current tile — Attack, Staff, Chant, Steal, Visit, Seize, Wait, and so on — isn't built by one big function checking every possibility. Roughly forty separate "can this unit do X here" checker functions each run their own eligibility logic independently, and every one that succeeds funnels into the same small shared primitive: a plain writer that stashes an action type plus its target or position into a fixed set of global slots and sets a single "an action was found" flag. That primitive does no validation itself — each checker has already decided the action is legal before calling it. The same global slots are read straight back by the ${wl("cutscenes","battle/cutscene state machine")}, which is the concrete link between picking an action from the menu and a battle or scene actually starting.</p>
+  <p>A map action is identified by a small number, the <em>action id</em>. Two different front ends produce it. The player's command menu is a list of menu entries, one class per command; the enemy and NPC AI uses separate checker functions. Both store the chosen id, its target and its tile in the same pending-action slots, and one executor then runs it. ${badge("confirmed","confirmed")}</p>
 
-  <h2>How an action reaches the menu</h2>
-  <p>Each checker answers one question—whether this unit has at least one legal target for this action here. A successful checker registers an action code plus target context. The menu presents registered choices, and selection hands the stored context to the corresponding state machine.</p>
-  <h2>Actions confirmed in full</h2>
-  <table><thead><tr><th>Action</th><th>How it's checked</th></tr></thead><tbody>
-    <tr><td>Chant</td><td>Scans the unit's own skill list for any ${wl("skills","Chant/Sing-family")} skill; if it knows one, scans nearby tiles for allies, pairs each known Chant variant with its own validator, scores every compatible neighbor against every variant known, and registers the best-scoring target — confirming Chant targets a nearby ally chosen by an internal priority system, not one freely picked by the player.</td></tr>
-    <tr><td>Steal</td><td>Gated on the Steal skill; scans nearby enemy units' inventories and checks each item against a dedicated "steal items list" table. The ordinary "take an item from an ally" action shares this exact same search — Steal is simply that search granted a wider net that also reaches enemy inventories.</td></tr>
-    <tr><td>Unlock</td><td>Gated on a specific skill; registers under two related action constants — "walk to the nearest locked object" and "already standing next to one" — the classic thief open-without-a-key mechanic.</td></tr>
-    <tr><td>Shoot</td><td>Gated on a skill literally named for firing; confirmed by matching a scanned tile's item type against a real siege-weapon's own item entry — the map's ballista/siege-weapon firing action, with its own AI dispatcher rolling a percentage chance and trying two variants in sequence.</td></tr>
-    <tr><td>Wait</td><td>The simplest checker in the system: confirms only that the unit is currently free to act, then registers at the unit's own current tile — no target search, no skill, no item.</td></tr>
-    <tr><td>Village-Destroy</td><td>Gated on a skill bit distinct from any of the above — a genuinely separate action, despite superficially resembling Steal's own skill-gated shape.</td></tr>
-    <tr><td>Shove / Smite</td><td>Moves an adjacent unit 1 or 2 tiles away in the chosen direction. A target with a specific defensive trait rolls its own Strength as a percentage chance to resist entirely, canceling the push and holding its tile.</td></tr>
-    <tr><td>Rescue pickup / Drop</td><td>Pickup starts a presentation process for the selected acting unit and target ally. Drop reads the carried unit from the carrier, breaks the dual-unit link, stores the destination tile, and starts the release motion, optionally loading the Rescue/Warp-style drop effect.</td></tr>
+  <h2>The player's command menu</h2>
+  <p>Each command (Attack, Staff, Rescue&hellip;) is a small class with four methods: its label (an <code>MMM_</code> message key), its help text (an <code>MH_</code> key), an availability test and an execute method. When the menu opens, every entry's availability test decides whether it is shown; choosing it stores its action id. The full list:</p>
+  <table><thead><tr><th>Command</th><th>Label key</th><th>Action id</th><th>Notes</th></tr></thead><tbody>
+    <tr><td>Wait</td><td><code>MMM_TAIKI</code></td><td class="num">1</td><td>always available</td></tr>
+    <tr><td>Items</td><td><code>MMM_ITEM</code></td><td class="num">2</td><td>opens the item sub-menu (Use, Equip, Unequip, Trade, Drop)</td></tr>
+    <tr><td>Use (item)</td><td><code>MMM_IUSE</code></td><td class="num">4</td><td></td></tr>
+    <tr><td>Trade</td><td><code>MMM_ITRADE</code></td><td class="num">6</td><td><code>0x28</code> when chosen from the item sub-menu</td></tr>
+    <tr><td>Talk</td><td><code>MMM_TALK</code></td><td class="num">7</td><td></td></tr>
+    <tr><td>Visit</td><td><code>MMM_VISIT</code></td><td class="num">9</td><td></td></tr>
+    <tr><td>Door / Chest</td><td><code>MMM_DOOR</code> / <code>MMM_TBOX</code></td><td class="num">11 / 12</td><td>one shared class with two labels</td></tr>
+    <tr><td>Seize</td><td><code>MMM_CONQ</code></td><td class="num">13</td><td></td></tr>
+    <tr><td>Escape</td><td><code>MMM_ESC</code></td><td class="num">14</td><td></td></tr>
+    <tr><td>Attack</td><td><code>MMM_ATTACK</code></td><td class="num">15</td><td></td></tr>
+    <tr><td>Staff</td><td><code>MMM_ROD</code></td><td class="num">16</td><td></td></tr>
+    <tr><td>Steal</td><td><code>MMM_STEAL</code></td><td class="num">17</td><td></td></tr>
+    <tr><td>Chant</td><td><code>MMM_CHANT</code></td><td class="num">18 / 43</td><td></td></tr>
+    <tr><td>Shove / Smite</td><td><code>MMM_TACKLE1</code> / <code>MMM_TACKLE2</code></td><td class="num">19 / 20</td><td>push an adjacent unit 1 or 2 tiles</td></tr>
+    <tr><td>Gamble</td><td><code>MMM_GAMBLE</code></td><td class="num">21</td><td></td></tr>
+    <tr><td>Rescue</td><td><code>MMM_RESCUE</code> (<code>MMM_RESCUEP</code> "Savior")</td><td class="num">25</td><td></td></tr>
+    <tr><td>Drop</td><td><code>MMM_DROPOFF</code></td><td class="num">26</td><td></td></tr>
+    <tr><td>Give / Take</td><td><code>MMM_CSEND</code> / <code>MMM_CRECV</code></td><td class="num">27 / 28</td><td>the transfer happens in the menu; the executor does nothing</td></tr>
+    <tr><td>Vortex</td><td><code>MMM_FLUTTER</code></td><td class="num">29</td><td>an attack with the Vortex as weapon</td></tr>
+    <tr><td>Roar</td><td><code>M咆哮</code></td><td class="num">30</td><td>"Paralyze an enemy unit", once per map</td></tr>
+    <tr><td>Reinforce</td><td><code>MMM_ZOEN</code></td><td class="num">32</td><td>deploys a named reinforcement group</td></tr>
+    <tr><td>Sky Boon</td><td><code>M天</code></td><td class="num">33</td><td>the Heal effect over a range (Blessing skill)</td></tr>
+    <tr><td>Earth Bounty</td><td><code>M地</code></td><td class="num">34</td><td>the Restore effect with an earth-blast animation (Boon skill)</td></tr>
+    <tr><td>Break</td><td><code>MMM_DBR</code></td><td class="num">39</td><td>attack breakable terrain</td></tr>
+    <tr><td>Arrive</td><td><code>MMM_ARR</code></td><td class="num">41</td><td></td></tr>
+    <tr><td>Ballista</td><td><code>MMM_SH</code></td><td class="num">42 / 49</td><td>two siege-weapon variants</td></tr>
+    <tr><td>Order / Direct</td><td><code>MMM_ORDER</code> / <code>MMM_DEMAND</code></td><td class="num">50 / 51</td><td>army orders (follow, safety, move&hellip;)</td></tr>
   </tbody></table>
+  <p>A further label, <code>M落石</code> ("Push"), sits among these keys; which command class uses it is not traced. ${badge("open","open")}</p>
 
-  <h2>Actions identified by shape, not independently confirmed</h2>
+  <h2>Rules the executor applies</h2>
   <ul>
-    <li><strong>Use Item</strong> — two entry points reach the same action constant: one resolves a specific item and checks its usability, the other is reachable through nothing more than a single flag bit on the unit.</li>
-    <li><strong>Attack and Staff share one broad targeting bucket</strong> — a function scoring candidate allies by lowest HP ratio (an unmistakable Heal-staff targeting heuristic) registers under the exact same action constant previously assumed to be Attack-only. The likely reading: which of the two the player actually sees is decided upstream, by which item category the unit has equipped, not by separate action codes at this layer.</li>
-    <li><strong>Seize</strong> — carries no skill gate at all; instead searches the whole map for one unique structure and computes which tile to approach it from based on that structure's own facing. A no-skill search for exactly one special map object fits a chapter-objective action (see ${wl("objectives")}) far better than a personal ability.</li>
+    <li><strong>Shove and Smite</strong> push the target 1 or 2 tiles away. A target with a specific defensive trait rolls its Strength as a percentage to resist, and fliers are not pushed. A unit pushed onto a pit falls.</li>
+    <li><strong>Drop</strong> next to an enemy hidden in fog becomes an ambush: the "!" encounter mark and sound play instead.</li>
+    <li><strong>Door and Chest</strong> use the chosen key item; a thief opening a lock without one runs the Chest Key's effect.</li>
+    <li><strong>Break</strong> runs a combat preview against the breakable terrain's own HP.</li>
   </ul>
 
-  <h2>Executing a selected action</h2>
-  <p>Once a menu choice has become a pending action, a later executor reads the stored action type and context, normalizes presentation flags, and dispatches to the appropriate native path. Shove and Smite start a dedicated motion process with the acting unit, target unit, and computed destination tile. Rescue pickup starts a separate presentation process for the acting/target pair, while Drop reads the carried unit from the carrier, breaks the dual-unit link, stores the destination tile, and starts the release motion.</p>
-  <p>The same executor can also trigger non-combat effects. A reinforcement action loads a named deployment group, places its units on map tiles, applies facing and animation state, refreshes range/grid/action visuals, and may hand off to an asynchronous descriptor. Visual feedback such as the encounter marker is spawned through a named effect object and positioned at the active unit while the matching sound cue plays.</p>
-  <p>Combat preview is a separate path from committed combat. One action case builds the strike forecast log and resolves the exchange against the combat-actor slots without entering the full committed battle path that calculates EXP and final aftermath. Debug code can print the same battle/result stream with markers for HP setup, hit, heal, damage, death, EXP, level-up/stat gains, and named skill procs such as Vantage, Astra, Sol, Luna, Cancel, Miracle, Counter, Poison, and Great Magic.</p>
-
-  <h2>Actions outside this registry</h2>
-  <p>Trade, Give, and explicit Arrive/Escape checkers are not identified in this registry. Dropping an already-carried unit is handled downstream by the pending-action executor rather than by the same nearby-unit scan that offers Rescue pickup.</p>
-  <p style="color:var(--ink-muted);font-size:13px">Which units count as "nearby allies" versus "nearby enemies" for these checkers is determined by the runtime army-relation system — see ${wl("armies-allegiance")}.</p>
+  <h2>The AI's checkers</h2>
+  <p>Enemy and NPC units don't use the menu. About forty checker functions each answer "can this unit do X here", and every one that succeeds calls the same small register function, which stores the action id, its target and tile and sets an "action found" flag. The ${wl("cp-data-format","AI scripts")} call these checkers. Notable ones:</p>
+  <table><thead><tr><th>Checker</th><th>What it does</th></tr></thead><tbody>
+    <tr><td>Chant</td><td>Pairs each Chant variant the unit knows with its own validator, scores nearby allies and registers the best one.</td></tr>
+    <tr><td>Steal</td><td>Scans nearby enemy inventories against the AI's steal list.</td></tr>
+    <tr><td>Unlock (thieves)</td><td>Walks to the nearest door or chest, or opens one next to it (actions 11 / 12).</td></tr>
+    <tr><td>Door Key / Chest Key</td><td>Only for units deployed with the matching ${wl("dispo-format","deployment flag")} (<code>0x10</code> doors, <code>0x20</code> chests).</td></tr>
+    <tr><td>Holy Water / Torch</td><td>Always answer no: the AI never uses these items.</td></tr>
+    <tr><td>Wait</td><td>Registers the unit's own tile.</td></tr>
+  </tbody></table>
+  <p style="color:var(--ink-muted);font-size:13px">Which units count as allies or enemies for these checks is decided by the army-relation system — see ${wl("armies-allegiance")}.</p>
   `
 },
 
@@ -1987,11 +2094,11 @@ raw EXP = base + extra</code></pre>
   <h2>Example: earning and spending</h2>
   <p>If the party gains 1,000 gold, current gold and cumulative earned gold rise by 1,000 unless the current balance hits the cap first. Spending 300 then lowers current gold and raises cumulative spent by 300; it does not erase the earned total.</p>
   <h2>Shops and forging</h2>
-  <p>Gold is spent through ${wl("shop-format","per-chapter shop inventories")}: an armory, a vendor, and a forge. The forge is a genuine weapon-upgrading mechanic — its stock is a grid of weapon families by base weapon (see ${wl("items-weapons")} for how a forged weapon's stats are adjusted).</p>
+  <p>Gold is spent through ${wl("shop-format","per-chapter shop inventories")}: an armory, a vendor, and a forge. The forge is a genuine weapon-upgrading mechanic — its stock is a grid of weapon families by base weapon (see ${wl("items-weapons")} for how a forged weapon's stats are adjusted). Only one weapon can be forged per chapter: a flag in the party data is set when the forged weapon is delivered, the base menu's Forge entry is unavailable while it is set, and it clears when the chapter ends. The flag is saved. ${badge("confirmed","confirmed")}</p>
   <h2>Convoy</h2>
   <p>Beyond what a unit personally carries, the party has one shared storage array — the convoy — holding up to <strong>200</strong> items independently of any unit's own inventory. A shop purchase can be sent straight to the convoy instead of to a unit on the field, without needing to route through anyone's personal inventory first.</p>
   <p>Convoy access itself is chapter-gated: it is unavailable during the game's early chapters, and becomes available again from partway through the game onward, plus during the base/preparation screens that sit outside normal chapter numbering.</p>
-  <p style="color:var(--ink-muted);font-size:13px">Open: whether forge purchases specifically share this same convoy-destination path, or are limited differently, hasn't been confirmed.</p>
+  <p>A forged weapon goes either to the unit or, when the convoy is available, into the convoy.</p>
   `
 },
 
@@ -2047,7 +2154,7 @@ chapters: {
     <tr><td>Chapter 27</td><td>Two numbers (slots 28 and 29) for one chapter on two maps. No save menu between them, and the second half's script only has an intro.</td></tr>
     <tr><td>Chapter 17</td><td>One number, four battles. The script ends each of the first three with <code>Complete18(part)</code> instead of a victory: the number stays the same, the save menu opens, and <code>Opening18_2</code>, <code>_3</code> or <code>_4</code> sets up the next battle, loading another map when needed.</td></tr>
     <tr><td>After the Endgame</td><td>Number 32 means the game is cleared: the Endgame map is reloaded for the final scene, the ending plays, the clear is recorded per difficulty in the system data, and the title screen returns.</td></tr>
-    <tr><td>Saves</td><td>A save stores the chapter number and a resume point: start of chapter (the save made after a victory), part 2&ndash;4 of Chapter 17, or a point inside a map.</td></tr>
+    <tr><td>Saves</td><td>A save stores the chapter number and a resume point: the base, preparations, the start of the chapter (the save made after a victory), part 2&ndash;4 of Chapter 17, or a suspended battle (see ${wl("save-format")}).</td></tr>
   </tbody></table>
   <h2>Adding chapters</h2>
   <p>Slots 0&ndash;31 are all used by the story, 32 means &ldquo;game cleared&rdquo;, and the save code treats every number from 32 up as a trial map, so a new story chapter cannot simply be appended after the Endgame. ${badge("confirmed","engine")}</p>
@@ -2061,6 +2168,8 @@ chapters: {
   <p>The event script owns the “turn 3, enemy phase” condition. When it fires, it refers to units that the chapter's deployment data defines, places them at tactical-grid coordinates valid for the current map, and may display lines stored in the chapter message file. Editing only the dialogue changes what is said; editing only deployment changes who appears and what they carry; editing only the trigger changes when the same reinforcement sequence runs.</p>
   <h2>What a chapter does not own</h2>
   <p>Character base definitions, class capabilities, item definitions, and skill definitions remain global in ${wl("fe8data")}. A chapter selects and overrides those definitions; it does not duplicate them. Campaign progression is also not a fifth chapter-data file: native code advances the current chapter number after completion.</p>
+  <h2>Playthrough number</h2>
+  <p>A new game records how many different games have already been cleared on the memory card, plus one. On the first playthrough the 17 class rings marked in deployment records (such as Oscar's Knight Ring and Hibuchi's Thief Ring) are not given; from the second on they appear and drop. From the second playthrough, holding A also speeds up map unit movement. Each game gets an id when it starts, and a clear is recorded once per id, so clearing again from a later save of the same game doesn't count twice. Scripts read the same number with <code>SysGetRound</code>. ${badge("confirmed","confirmed")}</p>
   <h2>Difficulty</h2>
   <p>One difficulty setting — Easy, Normal, Hard, or Maniac, defaulting to Hard — is chosen once at the start of a playthrough and persists across every chapter transition rather than being stored or re-derived per chapter. Difficulty-indexed lookups spread throughout the game read this same value by name: it selects among the ${wl("combat-mechanics","EXP, growth, and critical-bonus constants")} used in combat, which per-chapter shop stock is available, and a handful of map-only effects only active on the harder settings.</p>
   `
