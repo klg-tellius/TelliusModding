@@ -1445,7 +1445,7 @@ fe8effect: {
     <tr><td><code>+0x11</code></td><td>Signed hit steps; each step is worth 5 hit</td></tr>
     <tr><td><code>+0x12</code></td><td>Signed critical steps; each step is worth 3 critical</td></tr>
     <tr><td><code>+0x13</code></td><td>Signed weight-reduction steps</td></tr>
-    <tr><td><code>+0x14..0x17</code></td><td>Appearance bytes, defaulting to <code>80 80 80 FF</code></td></tr>
+    <tr><td><code>+0x14..0x17</code></td><td>Attack-trail colour (RGBA) picked in the forge, <code>80 80 80 FF</code> by default</td></tr>
   </tbody></table>
   <h2>T  T — map tile records</h2>
   <p>64 records of 8 bytes and a count. Each record names a tile (X, Y), a type, a subtype and four value bytes; the chapter scripts fill the table when the map starts, and the map updates it as things happen. ${badge("confirmed","confirmed")}</p>
@@ -1724,7 +1724,7 @@ classes: {
   <ul><li><strong>Might</strong> contributes to Attack before defense is subtracted.</li><li><strong>Type</strong> also selects which pair of stats the attack uses at all: most values compare Strength against Defense, while a specific small range of values switches the whole exchange to Magic against Resistance.</li><li><strong>Hit</strong> contributes to the displayed hit rate used by the two-roll hit test.</li><li><strong>Weight</strong> participates in the effective-Speed side of doubling rather than directly scheduling strikes.</li><li><strong>Rank</strong> becomes a minimum weapon EXP that the unit's weapon experience in that type must reach.</li><li><strong>Effectiveness</strong> compares the categories of the equipped weapon and item with the categories of the target's class and can double the weapon's Might (see ${wl("combat-mechanics")}).</li><li><strong>Special flags</strong> can create Brave-style extra strikes or suppress effectiveness.</li></ul>
   <p>The same table includes <code>IID_RAGNELL</code> and <code>IID_ALONDITE</code>, while siege-weapon actions identify placed weapons such as <code>IID_ONAGER</code>. See ${wl("map-actions")} for ballista/Shoot behavior.</p>
   <h2>Forged weapon instances</h2>
-  <p>A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and the weapon's own attack-trail colour (four RGBA bytes, grey <code>80 80 80 FF</code> by default) used instead of the item's trail colour. A free record has allocation marker 0; an allocated record has marker 1.</p>
+  <p>A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and the weapon's own attack-trail colour (four RGBA bytes, grey <code>80 80 80 FF</code> by default, picked by the player in the forge menu) used instead of the item's trail colour. While the player edits a forge, the game works on a temporary record; confirming copies it into a free slot and frees the temporary one. A free record has allocation marker 0; an allocated record has marker 1.</p>
   <table><thead><tr><th>Forge field</th><th>Combat interpretation</th></tr></thead><tbody>
     <tr><td>Might step</td><td><code>max(1, base_might + step)</code></td></tr>
     <tr><td>Hit step</td><td><code>max(1, base_hit + 5 * step)</code></td></tr>
@@ -1928,21 +1928,21 @@ skills: {
 "laguz-transformation": {
   ns:"system", title:"Laguz Transformation", dek:"A hidden 0–20 gauge that charges in human form and drains in beast form, not a simple timer",
   infobox:{ type:"Game system", status:"confirmed", fields:[
-    ["Gauge range","0–20"],["Gain per turn (untransformed)","+2"],["Drain per turn (transformed)","−1"],["Gain when damaged (untransformed)","+4"],["Change when damaged (transformed)","−3"]
+    ["Gauge range","0–20"],["Gain per step (untransformed)","+2"],["Drain per step (transformed)","−1"],["Gain when damaged (untransformed)","+4"],["Change when damaged (transformed)","−3"]
   ]},
   categories:["Balance","Combat"],
   body:`
   <p>Laguz units carry a hidden stat alongside their normal battle stats: a transformation gauge. It behaves like a resource meter rather than a toggle or a countdown — it climbs while the unit is untransformed and drains while transformed, and either end of its range is a meaningful boundary rather than a fixed timer length.</p>
   <h2>Starting value</h2>
   <p>A unit's gauge on deployment comes from its character record: 16 for Giffca, Lethe, Tibarn, Janaff and Naesala, 10 for Ranulf, 5 for Mordecai, Ena, Nasir and Ulki, 0 for everyone else. A class with the always-transformed trait starts at the full 20 instead, and ${wl("dispo-format","deployment records")} carry a starting-gauge field of their own. ${badge("confirmed","engine")}</p>
-  <h2>How the gauge moves each turn</h2>
-  <p>While untransformed, an eligible unit gains 2 points per turn. While transformed, the same unit instead loses 1 point per turn. The gauge is clamped to its 0–20 range in both directions — a unit at 0 cannot drain further, and one at 20 cannot gain further, which is also the signal used elsewhere to mean "fully charged" or "exhausted."</p>
-  <div class="callout"><p class="callout-t">Asymmetric by design</p><p>Draining costs a third of what gaining takes to replace — roughly 10 turns to fully charge from empty, versus 20 turns to fully drain from a permanent transformation. Transformation is the expensive, temporary state; walking around human is the default.</p></div>
+  <h2>The gauge step</h2>
+  <p>While untransformed, an eligible unit gains 2 points per step. While transformed, the same unit instead loses 1 point per step. The step runs from the map's action flow, once for the acting unit and once for its target when the action ends, and seen in game after each combat involving a laguz; when it crosses a boundary, the transformation (or reversion) animation plays. The gauge is clamped to its 0–20 range in both directions — a unit at 0 cannot drain further, and one at 20 cannot gain further, which is also the signal used elsewhere to mean "fully charged" or "exhausted."</p>
+  <div class="callout"><p class="callout-t">Asymmetric by design</p><p>Draining costs a third of what gaining takes to replace — 10 steps to fully charge from empty, versus 20 steps to fully drain. Transformation is the expensive, temporary state; walking around human is the default.</p></div>
   <h2>When the unit is damaged</h2>
   <p>Taking damage also moves the gauge, through a second routine run by the damage event: an untransformed Laguz gains 4 points, a transformed one loses 3, again clamped to 0–20. A transformed state is simply the presence of the Lycanthrope status flag (skill 9) on the unit; a separate always-beast flag (skill 10) exempts a unit from both routines. ${badge("strong","engine")}</p>
   <h2>Forced full charge</h2>
   <p>One runtime condition can override the stored value entirely and report the gauge as permanently full regardless of what's actually stored — a way to grant unlimited transformation to a specific unit or state without changing the normal accounting for every other laguz.</p>
-  <p style="color:var(--ink-muted);font-size:13px">Open: exactly which point in the turn sequence applies the per-turn gain/drain step has not been pinned down.</p>
+  <p style="color:var(--ink-muted);font-size:13px">Open: whether a turn change also runs the step has not been checked in game with an ordinary laguz.</p>
   `
 },
 
