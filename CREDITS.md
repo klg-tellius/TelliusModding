@@ -18,6 +18,12 @@ for Fire Emblem: Path of Radiance and Radiant Dawn.
 - [vgmstream](https://github.com/vgmstream/vgmstream): audio-decoding behavior
   used as a cross-check for DSP-ADPCM.
 
+- Ralf's public `GFEP01` Gecko/AR code thread on
+  [GC-Forever](https://www.gc-forever.com/forums/viewtopic.php?t=2203) (debug menus,
+  development mode, ally/NPC battle animations, growth modes, fog of war, free camera,
+  reinforcement uses, critical-hit options): used as reverse-engineering leads,
+  re-derived and verified against the US, PAL and JP executables.
+
 These acknowledgments identify useful resources; they do not imply endorsement
 or assign their authors ownership of this project's code.
 
