@@ -53,35 +53,32 @@ recognized-but-undecoded ones kept out of the "confirmed" set):
   by internal name (plain ASCII, no Shift-JIS involved) into whichever
   portrait slot is currently selected.
 - ``$F<0-8>`` - select portrait slot N (up to 9 portrait "seats" on
-  screen at once); ``$FS``/``$FD`` show/hide the currently selected
-  portrait; ``$Fc``/``$Fd``/``$Fh``/``$Fo``/``$FA`` change its expression
-  (which letter means which specific expression isn't decoded).
+  screen at once); ``$FD`` removes the selected portrait; ``$FS``/``$FA``
+  pick its first/second mouth set; ``$Fc``/``$Fh``/``$Fo``/``$Fd`` close,
+  half-open, hold open or restore its eyes.
 - ``$c<0-3><name>|`` - set dialogue box N's displayed speaker name;
   ``$s<0-3>`` - select box N; ``$d<0-3>`` - dismiss box N.
-- ``$MC ... $MD`` - a bracketing pair, confirmed by what it always wraps:
-  real ASCII ``--`` or ``...`` - almost certainly switching to a "render
-  this as a typographic character" mode for an em dash / ellipsis glyph
-  the base font can't represent directly, then back.
+- ``$MC ... $MD`` - stop and restart the speaker's mouth motion; vanilla
+  wraps ``--`` and ``...`` in it so the mouth stays still on them.
 - ``$K`` - end of the current text box / wait for player input to
   continue - the single most common code in the game by a wide margin.
-- ``$w<1-6>`` - a short timed pause before the next character/word.
-- ``$P`` - marks the start of an actual spoken line, immediately followed
-  by plain text with no separator - confirmed by its context always being
-  a portrait-setup sequence (``$FCL_<name>|$F<n>$P<the actual line>``).
-- ``$SD``/``$SE`` - seen only around shop-greeting messages (the
-  ``BASES_*SHOP_MESS`` tag above); plausibly "shop dialogue"/"shop exit",
-  not decoded further.
-- ``$<`` - a screen transition/wipe, seen only immediately after a
-  ``$B<tag>|`` background change.
-- ``$=<4 digits>`` (e.g. ``$=1000``, ``$=0300``) - a numeric value at the
-  very start of some messages, before even ``$R``; plausibly a
-  pre-display delay (values are 0-2300, generally round multiples of
-  50-100), not decoded further.
+- ``$w<1-6>`` - pause 2^n frames.
+- ``$P`` - clear the current box and start a new page of text.
+- ``$SD``/``$SE`` - skip disable/enable: while ``$SD`` is in force, B no
+  longer skips the conversation and advances text like A instead (used
+  around choices). ``$DC`` sets the same flag but is unused.
+- ``$<``/``$>`` - fade the screen in/out over the ``$=`` duration; the text
+  keeps running during the fade.
+- ``$=<4 digits>`` - that transition duration in milliseconds (9999 means
+  the default 267).
 - ``$O<0-9>`` - text-typing sound ``SFX_SYS_MSG<n>`` (0 silent): 1 dialogue,
   2 ancient language, 3 world-map narration, 4 tutorial. Draws nothing.
-- ``$H``, ``$N``, ``$UB``/``$Ub``, ``$Y``, ``$G`` - real, recognized codes
-  (so tokenize_control_codes() won't swallow them into plain text) whose
-  actual effect isn't decoded here; see research/CONVERSATION_RENDERING.md.
+- ``$H`` yields to the event script (the message resumes later); ``$N``
+  starts a new line (``$ND`` toggles the nametag); ``$UB``/``$Ub`` release
+  the event script waiting on the message, normally right before ``$H``;
+  ``$Y`` ends the current text tick without waiting for input; ``$G``
+  logs the following text as narration (no speaker name in the text log).
+  See research/CONVERSATION_RENDERING.md.
   A separate ``#F<2 digits>`` tag selects the game font for the rest of the
   line (``#F01`` = the Tellius alphabet); see research/FONT_NOTES.md.
 """
@@ -112,27 +109,30 @@ CODEBOOK: list[tuple[bytes, str, Optional[str]]] = [
     (rb"c[0-9]([^|]*)\|", "set_speaker_name", "cp437"),
     (rb"F([0-9])", "select_portrait_slot", "cp437"),
     (rb"F([cdho])", "portrait_expression", "cp437"),
-    (rb"FA", "portrait_expression", None),
-    (rb"FS", "show_portrait", None),
+    (rb"FA", "mouth_set_second", None),
+    (rb"FS", "mouth_set_first", None),
     (rb"FD", "hide_portrait", None),
-    (rb"MC", "typography_start", None),
-    (rb"MD", "typography_end", None),
+    (rb"MC", "mouth_still", None),
+    (rb"MD", "mouth_moving", None),
     (rb"w([0-9])", "pause", "cp437"),
     (rb"s([0-9])", "select_box", "cp437"),
     (rb"d([0-9])", "dismiss_box", "cp437"),
     (rb"O([0-9])", "typing_sound", "cp437"),
-    (rb"=([0-9]{4})", "predelay", "cp437"),
-    (rb"K", "page_break", None),
-    (rb"P", "line_start", None),
-    (rb"H", "unknown", None),
-    (rb"N", "unknown", None),
-    (rb"UB", "unknown", None),
-    (rb"Ub", "unknown", None),
-    (rb"SD", "shop_dialogue", None),
-    (rb"SE", "shop_dialogue", None),
-    (rb"G", "narration_text", None),
-    (rb"Y", "unknown", None),
-    (rb"<", "screen_wipe", None),
+    (rb"=([0-9]{4})", "transition_duration", "cp437"),
+    (rb"K", "wait_for_input", None),
+    (rb"P", "clear_box", None),
+    (rb"H", "yield_to_script", None),
+    (rb"ND", "toggle_nametag", None),
+    (rb"N", "new_line", None),
+    (rb"UB", "release_script", None),
+    (rb"Ub", "release_script", None),
+    (rb"SD", "disable_skip", None),
+    (rb"DC", "disable_skip", None),
+    (rb"SE", "enable_skip", None),
+    (rb"G", "narration_log", None),
+    (rb"Y", "end_text_tick", None),
+    (rb"<", "screen_fade_in", None),
+    (rb">", "screen_fade_out", None),
 ]
 _COMPILED_CODEBOOK = [(re.compile(rb"\$" + pattern), name, encoding) for pattern, name, encoding in CODEBOOK]
 

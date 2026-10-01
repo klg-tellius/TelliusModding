@@ -14,7 +14,7 @@ from PIL import Image, ImageTk
 from ..formats import fe9_message_scene as ms
 from . import theme
 from ..formats.fe9_conversation import InitialContext, build_timeline, tokenize
-from ..formats.fe9_conversation_render import SCENE_SIZE
+from ..formats.fe9_conversation_render import ICON_SHEET, SCENE_SIZE, icon_cell
 
 THUMB = 48
 # Layouts with at most this many seats pair one textbox with each seat
@@ -73,6 +73,14 @@ def portrait_names(assets) -> list[tuple[str, str]]:
     return result
 
 
+def face_details(assets, name: str) -> str:
+    """facedata.bin fields the stage does not show (read-only)."""
+    record = assets.faces["FID_" + _short(name)]
+    mini = "none" if record.mini_portrait == 0xFFFF else f"texture {record.mini_portrait}"
+    return "\n".join((f"{record.filename}   depth {record.depth}", f"64x64 menu face: {mini}",
+                      f"Lowered in menu panels by {record.menu_offset}px"))
+
+
 def display_name(assets, name: str) -> str:
     if assets is None or not name:
         return ""
@@ -96,8 +104,9 @@ def layout_names(assets) -> list[str]:
 class _Picker(tk.Toplevel):
     """Searchable list with a preview image of the selected entry."""
 
-    def __init__(self, parent, title, entries, preview, initial=""):
+    def __init__(self, parent, title, entries, preview, initial="", info=None):
         super().__init__(parent)
+        self._info = info
         self.title(title)
         self.transient(parent.winfo_toplevel())
         self.result = None
@@ -116,8 +125,12 @@ class _Picker(tk.Toplevel):
         self._tree.configure(yscrollcommand=scroll.set)
         self._tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="left", fill="y")
-        self._image = ttk.Label(body, width=40, anchor="center")
-        self._image.pack(side="left", fill="both", padx=(8, 0))
+        side = ttk.Frame(body)
+        side.pack(side="left", fill="both", padx=(8, 0))
+        self._image = ttk.Label(side, width=40, anchor="center")
+        self._image.pack(fill="both", expand=True)
+        self._details = ttk.Label(side, style="Muted.TLabel", justify="left", wraplength=280)
+        self._details.pack(anchor="w")
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", padx=8, pady=8)
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
@@ -153,6 +166,13 @@ class _Picker(tk.Toplevel):
                 image = None
         self._image.configure(image=image or "", text="" if image else "No preview")
         self._image.image = image
+        details = ""
+        if selection and self._info is not None:
+            try:
+                details = self._info(selection[0])
+            except (ValueError, KeyError):
+                details = ""
+        self._details.configure(text=details)
 
     def _accept(self):
         selection = self._tree.selection()
@@ -504,6 +524,8 @@ class SceneEditor(ttk.Frame):
             insert["menu"] = menu
             for code, label in ms.INLINE_CODES:
                 menu.add_command(label=f"{label}    {code}", command=lambda c=code: (text.insert("insert", c), text.focus_set()))
+            menu.add_separator()
+            menu.add_command(label="Icon…    #Pnnn", command=lambda: self._insert_icon(text))
             fonts = ttk.Menubutton(top, text="Font")
             fonts.pack(side="right", padx=(0, 4))
             font_menu = tk.Menu(fonts, tearoff=False)
@@ -552,6 +574,27 @@ class SceneEditor(ttk.Frame):
         text.bind("<Motion>", hover)
         self._getters[spec.name] = lambda: text.get("1.0", "end-1c")
 
+    def _insert_icon(self, text: tk.Text) -> None:
+        """Pick a window/icon.tpl cell and insert its #Pnnn code (drawn 24px wide, centred)."""
+        assets = self._get_assets()
+        if assets is None:
+            return
+        try:
+            sheet = assets.textures(ICON_SHEET)[0]
+        except (ValueError, OSError, KeyError, IndexError):
+            return
+        count = (sheet.width // 24) * (sheet.height // 24)
+        entries = [(f"{i:03X}", ms.ICON_LABELS.get(i, "")) for i in range(count)]
+
+        def preview(value):
+            image = icon_cell(sheet, int(value, 16)).resize((96, 96), Image.NEAREST)
+            return ImageTk.PhotoImage(image)
+
+        picker = _Picker(self, "Insert icon", entries, preview)
+        if picker.result:
+            text.insert("insert", "#P" + picker.result)
+            text.focus_set()
+
     @staticmethod
     def _restyle(text: tk.Text, change) -> None:
         """Apply ``change(text, start, end) -> (text, start, end)`` to the selection (or cursor)."""
@@ -597,7 +640,8 @@ class SceneEditor(ttk.Frame):
         if assets is None:
             return None
         return _Picker(self, "Choose portrait", portrait_names(assets),
-                       lambda name: self._thumbs.portrait(assets, name, 220), _short(initial)).result
+                       lambda name: self._thumbs.portrait(assets, name, 220), _short(initial),
+                       info=lambda name: face_details(assets, name)).result
 
     def _pick_background(self, initial=""):
         assets = self._get_assets()

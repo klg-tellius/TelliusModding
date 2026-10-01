@@ -152,10 +152,6 @@ def build_timeline(text: str, fallback_speaker: str = "") -> ConversationTimelin
                 visible=True,
             )
             state = replace(state, portraits=tuple(portraits))
-        elif name == "show_portrait":
-            portraits = list(state.portraits)
-            portraits[state.selected_portrait_slot] = replace(portraits[state.selected_portrait_slot], visible=True)
-            state = replace(state, portraits=tuple(portraits))
         elif name == "hide_portrait":
             portraits = list(state.portraits)
             portraits[state.selected_portrait_slot] = replace(portraits[state.selected_portrait_slot], visible=False)
@@ -171,7 +167,7 @@ def build_timeline(text: str, fallback_speaker: str = "") -> ConversationTimelin
             now += _clamp_index(token.arg, 1, 6) * WAIT_UNIT_MS
             append_frame("pause")
             continue
-        elif name == "page_break":
+        elif name == "wait_for_input":
             append_frame("page_break", wait=True)
             shown_text.clear()
             now += PAGE_WAIT_MS

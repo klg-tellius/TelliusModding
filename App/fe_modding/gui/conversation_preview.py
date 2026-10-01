@@ -52,6 +52,13 @@ class FE9ConversationPreview(ttk.Frame):
                                 ("Next page", self._next), ("Step", self._step)):
             ttk.Button(controls, text=label, command=callback).pack(side="left", padx=(4, 0))
         ttk.Checkbutton(controls, text="Auto-advance", variable=self._auto).pack(side="left", padx=4)
+        # The game's Message Speed option: frames per glyph (Slow 10, Normal 4, Fast 1, Max = page).
+        self._speed = tk.StringVar(value="Normal")
+        ttk.Label(controls, text="Message speed").pack(side="left", padx=(8, 2))
+        speed = ttk.Combobox(controls, textvariable=self._speed, values=("Slow", "Normal", "Fast", "Max"),
+                             state="readonly", width=7)
+        speed.pack(side="left")
+        speed.bind("<<ComboboxSelected>>", lambda event: self._rebuild())
         ttk.Button(controls, text="Reload assets", command=self._reload).pack(side="right")
         self._status = ttk.Label(self)
         self._status.pack(anchor="w", pady=(3, 0))
@@ -201,7 +208,8 @@ class FE9ConversationPreview(ttk.Frame):
         try:
             if self._assets.refresh():
                 self._renderer.invalidate()
-            self._timeline = build_timeline(self._text, context=context, measure=self._renderer.measure)
+            self._timeline = build_timeline(self._text, context=context, measure=self._renderer.measure,
+                                            text_speed=self._speed.get().lower())
         except Exception as error:
             self._timeline = build_timeline("")
             self._index, self._clock = 0, 0.0
@@ -321,7 +329,8 @@ class FE9ConversationPreview(ttk.Frame):
         self._syncing = False
         page = sum(e.wait for e in self._timeline.events[:self._index+1])
         pages = sum(e.wait for e in self._timeline.events)
-        self._status.configure(text=f"{self._speaker}   Page {max(1,page)}/{max(1,pages)}   {event.time_ms/1000:.2f}s   {event.kind}")
+        flags = ("" if event.state.skippable else "   B skip off") + ("   script released" if event.state.script_released else "")
+        self._status.configure(text=f"{self._speaker}   Page {max(1,page)}/{max(1,pages)}   {event.time_ms/1000:.2f}s   {event.kind}{flags}")
         self._play.configure(text="Pause" if self._playing else "Continue" if event.wait else "Play")
         self._set_diagnostics(([self._inherit_error] if self._inherit_error else []) +
                               ([self.context_description] if self.context_description else []) +

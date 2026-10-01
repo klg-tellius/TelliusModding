@@ -38,7 +38,7 @@ class DecompileTests(unittest.TestCase):
         text = "$R上下会話|$s0$FS$c0ZAWANAR|$s0Hey, $MC...$MD$K\n$d0$c1IKE|$Ub$HNo.$K$N$UB$H"
         self.assertEqual([k for k, _ in self.kinds(text)], [
             "layout", "select_box", "mouth_set", "show_speaker", "line", "dismiss_box",
-            "show_speaker", "control", "yield", "line", "line", "control", "yield"])
+            "show_speaker", "release_script", "yield", "line", "line", "release_script", "yield"])
         self.assertEqual(self.kinds(text)[4][1]["text"], "Hey, $MC...$MD")
 
     def test_round_trip_and_canonical_forms(self):
@@ -48,6 +48,20 @@ class DecompileTests(unittest.TestCase):
         for step in steps:
             self.assertEqual(ms.render_step(step.edited()), step.raw, step.kind)
         self.assertEqual(steps[-1].kind, "raw")  # unknown command kept byte for byte
+
+    def test_decoded_controls(self):
+        text = "$SD$R上下会話|$O3$GOver the sea.$K$Y$SE$DC$Ub$H"
+        self.assertEqual(self.kinds(text), [
+            ("skip", {"mode": "SD"}), ("layout", {"layout": "上下会話"}),
+            ("typing_sound", {"value": "3"}), ("narration", {}),
+            ("line", {"select": "", "index": 0, "flush": False, "text": "Over the sea.", "wait": True}),
+            ("no_wait", {}), ("skip", {"mode": "SE"}), ("skip", {"mode": "DC"}),
+            ("release_script", {"code": "Ub"}), ("yield", {})])
+        steps = ms.decompile(raw(text))
+        for step in steps:
+            self.assertEqual(ms.render_step(step.edited()), step.raw, step.kind)
+        self.assertEqual(ms.summary(steps[0]), "Disable skipping ($SD)")
+        self.assertIn("window/icon.tpl", ms.describe_inline("#P027"))
 
     def test_editing_regenerates_only_that_step(self):
         text = raw("$R背景会話|$F1$FCL_IKE|$F1$PHello.$K")

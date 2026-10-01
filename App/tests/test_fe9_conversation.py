@@ -24,7 +24,7 @@ class FaceTableTests(unittest.TestCase):
         for offset, value in zip((8,12,16), (b'FID_TEST',b'MPID_TEST',b'TEST.cms')):
             struct.pack_into('>I', body, offset, len(body))
             body.extend(value+b'\0')
-        struct.pack_into('>6hHHBB', body, 20, 1,2, 7,2, 4,7, 3,0xffff,1,54)
+        struct.pack_into('>6hHHBBh', body, 20, 1,2, 7,2, 4,7, 3,0xffff,1,54,-3)
         reloc = len(body)
         body.extend(struct.pack('>4I',4,8,12,16))
         return struct.pack('>8I',32+len(body),reloc,4,0,0,0,0,0)+body
@@ -36,7 +36,8 @@ class FaceTableTests(unittest.TestCase):
         self.assertEqual(record.right_eye,(7,2))
         self.assertEqual(record.mouth,(4,7))
         self.assertEqual(record.depth,54)
-        self.assertEqual(record.unknown_1a,0xffff)
+        self.assertEqual(record.mini_portrait,0xffff)
+        self.assertEqual(record.menu_offset,-3)
 
     def test_malformed_record_rejected(self):
         data = bytearray(self.table())
@@ -75,14 +76,23 @@ class TimelineTests(unittest.TestCase):
         a = t.advance(0,0)
         self.assertTrue(t.events[a].wait)
         self.assertEqual(t.events[a].state.portraits[0].mouth,1)
-        b = t.advance(a,0)
+        # The command after an input wait runs on the next text tick, not at the same time.
+        self.assertEqual(t.advance(a,0),a)
+        b = t.advance(a,t.duration_ms)
         self.assertGreater(b,a)
         self.assertEqual(t.events[b].state.portraits[0].mouth,0)
         self.assertTrue(t.events[b].wait)
 
     def test_exponential_frame_wait(self):
+        # $wN blocks 2^N frames, then the rest of the 4-frame Normal text tick: 16+4, then +4 after
+        # the input wait, then 8+4 frames.
         t = build_timeline('$w4$K$w3$K')
-        self.assertEqual([e.time_ms for e in t.events if e.wait],[267,400])
+        self.assertEqual([e.time_ms for e in t.events if e.wait],[333,600])
+        slow = build_timeline('ab$K',text_speed='slow')
+        self.assertEqual(next(e for e in slow.events if e.wait).time_ms,333)  # 2 glyphs x 10 frames
+        fast = build_timeline('ab$Y$K',text_speed='max')
+        self.assertEqual(next(e for e in fast.events if e.wait).time_ms,17)  # $Y ends the frame's tick
+        with self.assertRaises(ValueError): build_timeline('',text_speed='turbo')
 
     def test_independent_boxes_and_deferred_scroll(self):
         t = build_timeline('$c0MIST|one\ntwo\nthree$K\n$c1IKE|yes$K$d0')
@@ -112,6 +122,25 @@ class TimelineTests(unittest.TestCase):
                 index+=1
             self.assertEqual(t.events[index],fresh.events[target])
         self.assertEqual(t.events[0].state,fresh.events[0].state)
+
+    def test_skip_release_and_nonblocking_fade(self):
+        t = build_timeline('$=0500$<$SD$c0IKE|Hi$K$SE$UB$H')
+        waits = [e for e in t.events if e.wait]
+        self.assertFalse(waits[0].state.skippable)
+        self.assertTrue(waits[1].state.skippable and waits[1].state.script_released)
+        fade = waits[0].state.screen_fade
+        self.assertEqual((fade[0], fade[1]), ('in', 0))
+        self.assertEqual(fade[2], 500)  # 30 frames
+        # The text runs during the fade instead of after it.
+        self.assertLess(next(e for e in t.events if e.kind == 'text').time_ms, 500)
+
+    def test_icon_counts_in_window_width(self):
+        plain = build_timeline('$c0IKE|ab$K', measure=lambda s: len(s))
+        icon = build_timeline('$c0IKE|#P027ab$K', measure=lambda s: 24*s.count('#P') + len(s.replace('#P027', '')))
+        self.assertEqual(icon.events[-1].state.boxes[0].text, '#P027ab')
+        self.assertEqual(plain.events[-1].state.boxes[0].width, 368)
+        big = build_timeline('$c0IKE|' + 'x'*150 + '#P027$K', measure=lambda s: 24*s.count('#P') + len(s.replace('#P027', '')))
+        self.assertEqual(big.events[-1].state.boxes[0].width, 150 + 24 + 224)
 
     def test_resource_parser_rejects_bad_bounds(self):
         with self.assertRaises(ValueError): read_rect_resources(bytes(32))
@@ -160,6 +189,38 @@ class LocalResourceTests(unittest.TestCase):
         self.assertEqual(a.image.tobytes(),b.image.tobytes())
         self.assertFalse([d for d in a.diagnostics if 'No scene background' not in d.description])
         self.assertFalse(self.assets.refresh())
+
+    def test_inline_icon_draws_and_measures(self):
+        r=ConversationRenderer(self.assets)
+        self.assertEqual(r.measure('#P027'),24)
+        t=build_timeline('$c0MIST|#P027OK$K',measure=r.measure)
+        e=next(e for e in t.events if e.wait)
+        result=r.render(e)
+        self.assertFalse([d for d in result.diagnostics if 'No scene background' not in d.description])
+
+    def test_text_scale_markup(self):
+        r=ConversationRenderer(self.assets)
+        plain=r.measure('Exceed 15 turns')
+        self.assertEqual(r.measure('#X3AExceed 15 turns#x'),round(plain*0x3A/64))
+        self.assertEqual(r.measure('#Y80Exceed 15 turns#y'),plain)  # height only
+        self.assertEqual(r.measure('#S80ab#s'),2*r.measure('ab'))
+        self.assertEqual(r.measure('#yabcd'),r.measure('cd'))  # measure_text_width skips 4 bytes
+        t=build_timeline('$c0MIST|#S50Demo#s$K',measure=r.measure)
+        e=next(e for e in t.events if e.wait)
+        self.assertEqual(e.state.boxes[0].text,'#S50Demo#s')
+        self.assertFalse([d for d in r.render(e).diagnostics if 'No scene background' not in d.description])
+
+    def test_text_effect_markup(self):
+        r=ConversationRenderer(self.assets)
+        self.assertEqual(r.measure('#I40#R00#E#Oab#i#e#o'),r.measure('ab'))  # state codes add no width
+        t=build_timeline('$c0MIST|#I40#R00#E#Oab#i#e#o#D$K',measure=r.measure)
+        e=next(e for e in t.events if e.wait)
+        self.assertEqual(e.state.boxes[0].text,'#I40#R00#E#Oab#i#e#o#D')
+        self.assertFalse([d for d in r.render(e).diagnostics if 'No scene background' not in d.description])
+        from PIL import Image
+        plain=Image.new('RGBA',(80,40)); fx=Image.new('RGBA',(80,40))
+        r._text(plain,'ab',(10,5)); r._text(fx,'ab',(10,5),shadow=True,outline=True)
+        self.assertGreater(sum(fx.getchannel('A').histogram()[1:]),sum(plain.getchannel('A').histogram()[1:]))
 
     def test_chapter_two_ending_continuations(self):
         messages={m.speaker:m.text for m in read_messages_path(self.assets.files/'Mess/c02.m')}
