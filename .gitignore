@@ -59,3 +59,20 @@ Desktop.ini
 
 .venv-build/
 *-release.log
+
+# Kept local only: game-derived research, working notes and private files
+research/
+research.md
+doc.md
+CLAUDE.md
+AGENTS.md
+publication/
+showcase/
+docs/*
+!docs/tellius_archive.html
+!docs/index.html
+!docs/.nojekyll
+
+# JVM crash logs (Ghidra)
+hs_err_pid*.log
+replay_pid*.log
