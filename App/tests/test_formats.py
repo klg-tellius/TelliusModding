@@ -818,6 +818,17 @@ class MessageTests(unittest.TestCase):
         data = message.write_messages(original)
         self.assertEqual(message.read_messages(io.BytesIO(data)), original)
 
+    def test_texts_and_table_are_word_aligned(self):
+        # The engine's loader masks the table offset (header +4) and every
+        # text offset with & ~3: an unaligned one makes it register garbage IDs.
+        messages = [message.Message(speaker=f"MS_{i}", text="x" * i) for i in range(7)]
+        data = message.write_messages(messages)
+        table = struct.unpack_from(">I", data, 4)[0]
+        self.assertEqual(table % 4, 0)
+        offsets = [struct.unpack_from(">I", data, 0x20 + table + 8 * i)[0] for i in range(len(messages))]
+        self.assertTrue(all(o % 4 == 0 for o in offsets), offsets)
+        self.assertEqual(message.read_messages(io.BytesIO(data)), messages)
+
     def test_round_trip_empty(self):
         data = message.write_messages([])
         self.assertEqual(message.read_messages(io.BytesIO(data)), [])

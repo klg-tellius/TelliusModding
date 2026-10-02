@@ -239,12 +239,20 @@ def write_messages(messages: list[Message]) -> bytes:
     original may or may not have done) - only structural round-tripping is
     guaranteed: write_messages(read_messages(x)) reads back as the same
     messages.
+
+    Every text starts on a 4-byte boundary, padded with NULs as in every
+    vanilla file: the engine's loader (``load_relocatable_resource``, US
+    8003f87c) masks the pointer-table offset (header +4) and each text
+    offset with ``& ~3``. An unaligned table is read 1-3 bytes early, so
+    every ID pointer it registers is garbage (invalid reads in
+    ``register_scene_info_by_name`` and a corrupted global name table).
     """
     text_blob = bytearray()
     text_offsets = []
     for message in messages:
         text_offsets.append(len(text_blob))
         text_blob += message.text.encode(ENCODING) + b"\x00"
+        text_blob += bytes(-len(text_blob) % 4)
 
     name_blob = bytearray()
     name_offsets = []
