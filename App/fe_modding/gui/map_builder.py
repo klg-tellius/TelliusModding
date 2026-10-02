@@ -514,6 +514,7 @@ class MapBuilder(EditorPanel):
         ttk.Button(view, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
         ttk.Button(view, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
         ttk.Button(view, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
+        ttk.Button(view, text="Play...", command=self.open_play).pack(side="left", padx=(4, 0))
         xbar.pack(side="bottom", fill="x")
         ybar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -1057,6 +1058,12 @@ class MapBuilder(EditorPanel):
         from .map_windows import Map3DWindow
 
         self._open_window("3d", Map3DWindow)
+
+    def open_play(self) -> None:
+        """Play the chapter on this map (moves, fights, events, the enemy AI), step by step."""
+        from .playthrough_window import PlaythroughWindow
+
+        self._open_window("play", PlaythroughWindow)
 
     def open_disposition(self) -> None:
         from .dispo_window import DispositionWindow

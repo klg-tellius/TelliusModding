@@ -382,6 +382,7 @@ class StageView(ttk.Frame):
         self.speed = tk.StringVar(value="1x")
         self.game_camera = None  # battle_sim.camera.GameCamera, when the 3D tab has the scripts
         self.use_game_camera = tk.BooleanVar(value=False)
+        self.on_finished = None  # called when playback reaches the end of the fight
 
         bars = ttk.Frame(self)
         bars.pack(fill="x")
@@ -502,6 +503,8 @@ class StageView(ttk.Frame):
             self._scale.set(self._t)
             self._show(self._t)
             self.stop()
+            if self.on_finished is not None:
+                self.on_finished()
             return
         self._scale.set(self._t)
         self._show(self._t)
