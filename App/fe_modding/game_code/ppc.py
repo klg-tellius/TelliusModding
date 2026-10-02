@@ -151,6 +151,10 @@ def cmpwi(ra: int, imm: int) -> int:
     return _d_form(11, 0, ra, imm)
 
 
+def cmplwi(ra: int, imm: int) -> int:
+    return _d_form(10, 0, ra, imm)
+
+
 def andi_(ra: int, rs: int, imm: int) -> int:
     return _d_form(28, rs, ra, imm)
 
@@ -161,6 +165,14 @@ def _x_form(rd: int, ra: int, rb: int, xo: int, op: int = 31) -> int:
 
 def mr(ra: int, rs: int) -> int:
     return _x_form(rs, ra, rs, 444)
+
+
+def cmplw(ra: int, rb: int) -> int:
+    return _x_form(0, ra, rb, 32)
+
+
+def lbzx(rd: int, ra: int, rb: int) -> int:
+    return _x_form(rd, ra, rb, 87)
 
 
 def add(rd: int, ra: int, rb: int) -> int:

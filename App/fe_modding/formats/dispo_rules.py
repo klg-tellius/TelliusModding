@@ -12,8 +12,8 @@ record already holds is still shown, and "All fields..." edits everything.
   rescue targets), so for them the AI is offered on request and shown at
   once when it is not the inert default;
 - the ring item flag is used only on ring accessories and ``IID_COIN``;
-- flag bits 0x10, 0x20 and 0x80 are unused (one player record sets 0x10,
-  one 0x20).
+- flag bit 0x80 is never read; 0x10/0x20 (AI Door Key / Chest Key) are
+  set on only one vanilla record each but are shown, since they work.
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ PLAYER_FACTION = 0
 INERT_AI = {"seq_attack": "SEQ_NOATTACK", "seq_move": "SEQ_NOMOVE", "seq_heal": "SEQ_NOHEAL"}
 #: Flag bits worth showing by default; the others appear when already set.
 COMMON_FLAG_MASKS = (dispo.FLAG_AUTOLEVEL, dispo.FLAG_HOLD_POSITION, dispo.FLAG_COMMANDER,
-                     dispo.FLAG_SPAWN_WHEN_ABSENT, dispo.FLAG_BRIDGE_BARRIER)
+                     dispo.FLAG_SPAWN_WHEN_ABSENT, dispo.FLAG_AI_DOOR_KEY, dispo.FLAG_AI_CHEST_KEY,
+                     dispo.FLAG_BRIDGE_BARRIER)
 
 
 def laguz_lookup(fe8: Optional[fe8data.Fe8Data]) -> Callable[[object, object], bool]:
@@ -80,7 +81,7 @@ def item_flag_bits(iid, flag: int):
 
 
 def unit_flag_bits(flags: int):
-    """``FLAG_BITS`` without the unused bits, unless the record sets them."""
+    """``FLAG_BITS`` without the unread bit 0x80, unless the record sets it."""
     return tuple(bit for bit in dispo.FLAG_BITS if bit[0] in COMMON_FLAG_MASKS or flags & bit[0])
 
 

@@ -710,3 +710,6 @@ for _key, _name, _what, _default, _minimum, _maximum, _unit, _at, _kind in (
         default=_default, minimum=_minimum, maximum=_maximum, unit=_unit,
         versions={v: (Field(BATTLE_STATS_DATA + _at, _kind),) for v in _BATTLE_STATS},
         requires=(_battle_stats,)))
+
+
+from . import chapter_flow  # noqa: E402,F401  (registers the story-flow hook)

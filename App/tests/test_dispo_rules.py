@@ -30,8 +30,9 @@ class DispoRulesTests(unittest.TestCase):
         self.assertIn(dispo.ITEM_FLAG_RING, masks)
 
     def test_unused_flag_bits_appear_when_set(self):
-        self.assertNotIn(0x10, [b[0] for b in dispo_rules.unit_flag_bits(0x01)])
-        self.assertIn(0x10, [b[0] for b in dispo_rules.unit_flag_bits(0x11)])
+        self.assertNotIn(0x80, [b[0] for b in dispo_rules.unit_flag_bits(0x01)])
+        self.assertIn(0x80, [b[0] for b in dispo_rules.unit_flag_bits(0x81)])
+        self.assertIn(0x10, [b[0] for b in dispo_rules.unit_flag_bits(0x01)])
 
     def test_warnings(self):
         self.assertEqual(dispo_rules.warnings(1, True, 5, [("IID_COIN", 3)]), [])
