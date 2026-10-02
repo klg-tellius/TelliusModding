@@ -832,10 +832,12 @@ def import_static_model(
     bone: int = 0,
     base_dir: Optional[Path | str] = None,
     name: str = "imported",
+    mip_count: int = 0,
 ) -> tuple[bytes, Optional[bytes], list[str]]:
     """glTF bytes -> ``(.gs bytes, .tpl bytes or None, warnings)``. With
     ``skeleton_data`` (the ``.g`` the model is drawn with), vertices go into
-    ``bone``'s bind space; without it the bone is taken as identity."""
+    ``bone``'s bind space; without it the bone is taken as identity.
+    ``mip_count`` mip levels are written after each texture (``tpl.build_tpl``)."""
     scene = read_gltf(gltf_data, base_dir)
     world = skeleton.IDENTITY_3X4
     if skeleton_data is not None:
@@ -844,7 +846,9 @@ def import_static_model(
             raise GltfImportError(f"Bone {bone} is not in the skeleton ({len(bones)} bones).")
         world = skeleton.bind_world_matrices(bones)[bone]
     build = build_static_gs(scene, bone=bone, bone_world=world, name=name)
-    tpl_bytes = tpl.build_tpl([texture_for_tpl(img) for img in build.images]) if build.images else None
+    tpl_bytes = None
+    if build.images:
+        tpl_bytes = tpl.build_tpl([texture_for_tpl(img) for img in build.images], mip_count=mip_count)
     return gs_file.write_gs(build.gs), tpl_bytes, build.warnings
 
 
