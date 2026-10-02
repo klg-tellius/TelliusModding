@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import cp_ai_lang, cp_data, dispo, fe8data  # noqa: E402
 from fe_modding.formats.cmb.compiler import compile_source  # noqa: E402
-from fe_modding.playthrough import actions, ai_vm, engine, movement, setup  # noqa: E402
-from fe_modding.playthrough.simulation import ACTION, LINE, MESSAGE, Simulation  # noqa: E402
+from fe_modding.playthrough import actions, ai_vm, movement, setup  # noqa: E402
+from fe_modding.playthrough.simulation import LINE, MESSAGE, Simulation  # noqa: E402
 from fe_modding.playthrough.state import ENEMY, PLAYER, GameState, SimUnit  # noqa: E402
 from fe_modding.playthrough.world import World  # noqa: E402
 
@@ -147,7 +147,7 @@ class ActionTests(unittest.TestCase):
     def test_shove_blocked_by_wall(self):
         world = _world(terrain={(3, 0): WALL})
         a = _unit(self.state, "PID_A", 0, 0)
-        b = _unit(self.state, "PID_B", 2, 0)
+        _unit(self.state, "PID_B", 2, 0)
         self.assertFalse(any(c.action == "shove" for c in actions.choices(world, self.state, a, (1, 0))))
 
     def test_canto_after_acting(self):
@@ -281,7 +281,7 @@ class AiTests(unittest.TestCase):
                   "SEQ_MOV": "move_nearest()\nend()\n"})
         world = _world(cp=cp)
         state = GameState()
-        a = _unit(state, "PID_A", 0, 0)
+        _unit(state, "PID_A", 0, 0)
         e1 = _unit(state, "PID_B", 3, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_MOV", ai_order=1)
         e2 = _unit(state, "PID_C", 7, 7, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_MOV", ai_order=0)
         from fe_modding.playthrough.state import PhaseStart

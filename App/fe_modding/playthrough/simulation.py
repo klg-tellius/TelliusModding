@@ -77,6 +77,17 @@ class Simulation:
                 return
         self.cursor = len(self.history) - 1
 
+    def forward_by(self, until: str) -> bool:
+        """Move forward through the recorded entries to the next ``until`` boundary.
+        False when the end of the history came first."""
+        start = self.mark()
+        while self.cursor < len(self.history) - 1:
+            self.cursor += 1
+            for result in self.entry.steps:
+                if self.boundary(until, result, start):
+                    return True
+        return False
+
     @staticmethod
     def _kind(entry: Entry) -> str:
         return entry.steps[-1].kind if entry.steps else "start"
@@ -107,6 +118,13 @@ class Simulation:
                      [engine.Step("command", "Command", outputs=outputs)])
         return outputs
 
+    def edit(self, change: Callable[[GameState], None], label: str) -> None:
+        """Change the state at the current entry (a new entry; later ones are dropped)."""
+        self._truncate()
+        state = self.state.snapshot()
+        change(state)
+        self._append(state, label, [engine.Step("command", label)])
+
     def step(self) -> engine.Step:
         """One engine step from the current entry."""
         self._truncate()
@@ -122,31 +140,41 @@ class Simulation:
         """Step until the granularity boundary ``until`` (or ``stop`` says so,
         or the player must give a command). Returns the steps."""
         done = []
-        start_phase = (self.state.turn, self.state.phase)
+        start = self.mark()
         for _ in range(limit):
             result = self.step()
             if result.kind in ("input", "over") and not result.outputs:
                 break
             done.append(result)
-            if result.kind == "over":
-                break
-            if stop is not None and stop(result):
-                break
-            if until == LINE:
-                break
-            if until == MESSAGE and result.kind == "message":
-                break
-            if until == ACTION and any(o.kind in ("action", "battle", "death", "message") for o in result.outputs):
-                break
-            if until == UNIT and (result.unit_done or result.kind == "command"):
-                break
-            if until == PHASE and (self.state.turn, self.state.phase) != start_phase:
-                break
-            if self.state.awaiting_input and self.state.canto is None:
-                break
-            if self.state.canto is not None and not self.state.pending:
+            if (stop is not None and stop(result)) or self.boundary(until, result, start):
                 break
         return done
+
+    def mark(self) -> tuple:
+        """Where a run starts, for :meth:`boundary`."""
+        return (self.state.turn, self.state.phase)
+
+    def boundary(self, until: str, result: engine.Step, start: tuple) -> bool:
+        """Whether a run to ``until`` that began at ``start`` (:meth:`mark`) stops after ``result``."""
+        if result.kind == "over":
+            return True
+        if until == LINE:
+            return True
+        if until == MESSAGE and result.kind == "message":
+            return True
+        if until == ACTION and any(o.kind in ("action", "battle", "death", "message") for o in result.outputs):
+            return True
+        if until == UNIT and (result.unit_done or result.kind == "command"):
+            return True
+        if until == PHASE and self.mark() != start:
+            return True
+        return self.needs_input
+
+    @property
+    def needs_input(self) -> bool:
+        """The player must give a command (a phase command or a Canto move)."""
+        state = self.state
+        return not state.pending and not state.over and (state.phase == 0 or state.canto is not None)
 
 
 def _command_label(world: World, state: GameState, command) -> str:

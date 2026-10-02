@@ -291,8 +291,12 @@ class AiStep:
             self.emit(f"{where}: {line}  - not simulated", line=line)
             t.pc += 1
             return
+        mark = len(self.state.out)
         note = handler(entry, prog)
+        later = self.state.out[mark:]  # what the entry started (a new script) is logged after the entry
+        del self.state.out[mark:]
         self.emit(f"{where}: {line}" + (f"  -> {note}" if note else ""), line=line)
+        self.state.out.extend(later)
         if t.pc == before and t.stage in ("attack", "move") and not getattr(self, "_jumped", False):
             t.pc += 1
         self._jumped = False
@@ -383,7 +387,7 @@ class AiStep:
         return movement.destinations(self.world, self.state, self.unit)
 
     def _best_attack(self, foes: list, in_place: bool) -> Optional[dict]:
-        world, state, unit = self.world, self.state, self.unit
+        world, unit = self.world, self.unit
         weights = _mtype(world, unit)
         best, best_score = None, None
         tiles = self._tiles(in_place)
