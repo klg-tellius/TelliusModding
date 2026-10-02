@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fe_modding.battle_sim import (
     Combatant, Fe9Rng, Fe9Rules, FixedOutcomes, RngOutcomes, from_character, from_class, simulate,
 )
-from fe_modding.battle_sim import scene_assets as sa, timeline
+from fe_modding.battle_sim import camera, scene_assets as sa, timeline
 from fe_modding.battle_sim.timeline import Clip
 from fe_modding.battle_sim.units import Weapon, weapon_from_item
 from fe_modding.formats import fe8data
@@ -293,6 +293,86 @@ class SceneAssetTests(unittest.TestCase):
             self.assertEqual(found.weapon_model.name, "ironsword.cmp")
             self.assertEqual(assets.unit(u, prefix="ax").roles, {sa.ATTACK1: "fig1_at1_ax"})
             self.assertEqual(assets.model_codes(), ["fig1"])
+
+
+class CueAndFlightTests(unittest.TestCase):
+    CLIPS = TimelineTests.CLIPS
+
+    def lookup(self, side, role):
+        return self.CLIPS.get(role)
+
+    def test_skill_cues(self):
+        a = unit("A", skills=["SID_SUNTRICK"])
+        d = unit("D", skills=["SID_WINGSHIELD", "SID_COUNTER"], stats=(60, 10, 5, 10, 10, 5, 5, 3))
+        log = simulate(a, d, outcomes=FixedOutcomes({(1, "proc:sol"): True, (1, "proc:counter"): True}))
+        tl = timeline.build(log, self.lookup)
+        cues = [(c.side, c.kind, c.key) for c in tl.cues]
+        self.assertIn((0, "skill", "sol"), cues)
+        self.assertIn((1, "skill", "counter"), cues)
+        sol = next(c for c in tl.cues if c.key == "sol")
+        self.assertEqual(sol.frame, tl.changes[0].frame)
+        self.assertEqual(len(tl.shots), len(log.strikes))
+        log = simulate(a, d, outcomes=FixedOutcomes({(1, "proc:wing_guard"): True}))
+        cues = [(c.side, c.kind, c.key) for c in timeline.build(log, self.lookup).cues]
+        self.assertIn((1, "skill", "wing_guard"), cues)  # plays on its owner, the one struck
+
+    def test_spell_cue(self):
+        fire = Weapon(**{**FIRE.__dict__, "effect": "EID_FIRE"})
+        tl = timeline.build(simulate(unit(weapon=fire), unit("D")), self.lookup)
+        self.assertIn((1, "spell", "EID_FIRE"), [(c.side, c.kind, c.key) for c in tl.cues])
+        self.assertEqual(tl.flights, [])
+
+    def test_bow_flight(self):
+        clips = dict(self.CLIPS)
+        clips[sa.SHOT] = Clip("shot", 60, impact=40, release=25)
+        tl = timeline.build(simulate(unit(weapon=BOW), unit("D"), distance=2), lambda s, r: clips.get(r), distance=2)
+        flight = tl.flights[0]
+        self.assertEqual((flight.start, flight.end, flight.side), (timeline.LEAD_FRAMES + 25, timeline.LEAD_FRAMES + 40, 0))
+        self.assertAlmostEqual(flight.progress(flight.start + 7.5), 0.5)
+        self.assertIsNone(flight.progress(flight.end))
+        tl = timeline.build(simulate(unit(weapon=BOW), unit("D"), distance=2), self.lookup, distance=2)
+        self.assertEqual(tl.flights[0].end - tl.flights[0].start, timeline.FLIGHT_FRAMES)
+
+    def test_unarmed_side_only_reacts(self):
+        log = simulate(unit("A"), unit("D", weapon=None))
+        self.assertEqual([s.side for s in log.strikes], [0])
+        tl = timeline.build(log, self.lookup)
+        self.assertEqual(tl.pose(1, tl.changes[0].frame + 1)[0], "dam")
+
+
+class CameraTests(unittest.TestCase):
+    def script(self, name="atk_l", rig="camCharaL0"):
+        from fe_modding.formats import battle_camera as bc
+        frames = [bc.Keyframe((0.0, 0.0, 0.0), (0.0, 90.0, 0.0), 100.0, 0),
+                  bc.Keyframe((0.0, 10.0, 0.0), (10.0, 90.0, 0.0), 50.0, 20)]
+        return bc.new_script(name, rig, keyframes=frames)
+
+    def test_sample(self):
+        from fe_modding.formats import battle_camera as bc
+        script = bc.read_script(self.script())
+        self.assertEqual(camera.sample(script, 0), ((0.0, 0.0, 0.0), (0.0, 90.0, 0.0), 100.0))
+        pos, rot, dist = camera.sample(script, 10)
+        self.assertEqual((pos[1], rot[0], dist), (5.0, 5.0, 75.0))
+        self.assertEqual(camera.sample(script, 99)[2], 50.0)
+
+    def test_game_camera_from_zdbx(self):
+        from fe_modding.formats import zdbx
+        rigs = ("{\r\n\tclass\tCamera\r\n\tname\tcamCharaL0\r\n\tentityClass\tActor\r\n"
+                "\tentityName\tcharaAtk\r\n}\r\n")
+        archive = zdbx.build_zdbx_archive([
+            ("zdbx/camera.dbx", rigs.encode("shift_jis")),
+            ("xcam/atk_l.dbx", self.script().encode("shift_jis")),
+            ("xcam/crit_r.dbx", self.script("crit_r", "cam1").encode("shift_jis")),
+        ])
+        gc = camera.GameCamera.from_zdbx(archive)
+        self.assertEqual(sorted(gc.scripts), ["atk_l", "crit_r"])
+        shots = [(0.0, 0, False), (100.0, 1, True)]
+        view = gc.view(shots, 10.0)
+        self.assertEqual((view.follow, view.dist), (0, 75.0))
+        self.assertIsNone(gc.view(shots, 110.0).follow)  # cam1 follows no unit
+        gc.time_scale = 2.0
+        self.assertEqual(gc.view(shots, 20.0).dist, 75.0)
+        self.assertEqual(camera.choose_script(gc.scripts, 1, False).name, "atk_l")  # any atk* fallback
 
 
 if __name__ == "__main__":

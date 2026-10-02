@@ -18,6 +18,13 @@ What is new here:
   defender at ``+spacing / 2`` on the Z axis, turned to face each other. The
   engine's spacing (``間合い``) and the models' facing axis are not measured,
   so both are adjustable.
+- Timeline cues play ``yme/EID_*.cmp`` effect packs at the unit's ``_pl_``
+  bone (else ``_root_``) from the frame the blow lands - the engine's own
+  effect timing is not decoded. Flights carry a thrown weapon, or a plain
+  stand-in arrow for bows (no arrow model is decoded), from the striker's
+  hand to the target's ``_cam_`` bone.
+- The game camera (:mod:`fe_modding.battle_sim.camera`) drives the canvas
+  with ``_ModelCanvas.set_view`` and its optional perspective projection.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim import timeline as tlm
 from ..formats import animation, engine_pose
 from .model_viewer import (
+    FIT_FRACTION,
     _build_loaded_set,
     _LoadedSet,
     _load_model_set,
@@ -44,6 +52,8 @@ from .model_viewer import (
 )
 
 SIDE_NAMES = ("Attacker", "Defender")
+#: Screen height per unit of camera distance (a 45 degree field of view: 2 tan 22.5).
+VIEW_SPAN = 0.83
 HAND_BONES = ("_r_hand_", "_l_hand_")
 BOW_KIND = 3  # battle_weapons.KINDS
 
@@ -131,6 +141,12 @@ class StageUnit:
     weapon_normals: Optional[np.ndarray] = None
     hand: Optional[int] = None
     height: float = 1.0
+    anchor: Optional[int] = None  # _pl_, else _root_: where skill effects play
+    eye: Optional[int] = None  # _cam_: what the game camera looks at
+
+    def bone(self, *names: str) -> Optional[int]:
+        bones = [b.name for b in self.loaded.bones] if self.loaded is not None else []
+        return next((bones.index(n) for n in names if n in bones), None)
 
     def clip(self, role: str) -> Optional[tlm.Clip]:
         stem = self.assets.roles.get(role)
@@ -139,7 +155,8 @@ class StageUnit:
             return None
         impact = next((e.frame for e in anim.events if 0 in e.codes), None)
         swing = next((e.frame for e in anim.events if 1 in e.codes), None)
-        return tlm.Clip(stem, float(max(anim.length_in_frames, 1)), impact, swing)
+        release = next((e.frame for e in anim.events if 2 in e.codes), None)
+        return tlm.Clip(stem, float(max(anim.length_in_frames, 1)), impact, swing, release)
 
 
 class SetCache:
@@ -180,10 +197,10 @@ def load_unit(cache: SetCache, assets: sa.UnitAssets) -> StageUnit:
         unit.loaded, unit.mesh, unit.clips = cache.get(("unit", assets.pack, assets.texture), load)
         ys = unit.mesh.positions[..., 1] if len(unit.loaded.triangles) else np.zeros(1)
         unit.height = max(float(ys.max() - ys.min()), 1e-3)
-        names = [b.name for b in unit.loaded.bones]
-        wanted = HAND_BONES[1] if assets.weapon_kind == BOW_KIND else HAND_BONES[0]
-        unit.hand = names.index(wanted) if wanted in names else (
-            names.index(HAND_BONES[0]) if HAND_BONES[0] in names else None)
+        bow = assets.weapon_kind == BOW_KIND
+        unit.hand = unit.bone(*(HAND_BONES[::-1] if bow else HAND_BONES[:1]))
+        unit.anchor = unit.bone("_pl_", "_root_")
+        unit.eye = unit.bone("_cam_", "_root_")
     if assets.weapon_model is not None:
         def load_weapon():
             loaded = _load_model_set(assets.weapon_model.parent.name, assets.weapon_model)
@@ -201,15 +218,75 @@ def load_scenery(path: Path) -> _LoadedSet:
     return _load_model_set(path.parent.name, path)
 
 
-class BattleStage:
-    """Scenery plus two :class:`StageUnit` s; :meth:`frame` gives the scene's triangles at a time."""
+@dataclass
+class EffectAsset:
+    """A ``yme/EID_*.cmp`` effect pack, ready to pose."""
 
-    def __init__(self, units: list[StageUnit], scenery: Optional[_LoadedSet] = None):
+    loaded: _LoadedSet
+    mesh: SkinnedMesh
+    anim: Optional[animation.GaAnimation]
+    length: float
+
+
+def load_effect(path: Path) -> Optional[EffectAsset]:
+    if not path.is_file():
+        return None
+    loaded = _load_model_set(path.stem, path)
+    anim = None
+    for _name, data in loaded.animations:
+        try:
+            anim = animation.read_animation_bytes(data)
+            break
+        except Exception:  # noqa: BLE001 - an unreadable clip leaves the effect static
+            continue
+    length = float(anim.length_in_frames) if anim is not None and anim.length_in_frames else EFFECT_FRAMES
+    return EffectAsset(loaded, SkinnedMesh(loaded.triangles), anim, length)
+
+
+EFFECT_FRAMES = 30.0  # an effect without an animation shows this long
+ARROW_COLOR = (150, 110, 70)
+
+
+def _arrow(length: float) -> tuple[list[_Triangle], np.ndarray, np.ndarray]:
+    """A plain two-plane arrow along +Z (no arrow model is decoded), with both windings."""
+    w = length * 0.03
+    quads = [((-w, 0, 0), (w, 0, 0), (w, 0, length), (-w, 0, length)),
+             ((0, -w, 0), (0, w, 0), (0, w, length), (0, -w, length))]
+    tris = []
+    for a, b, c, d in quads:
+        for tri in ((a, b, c), (a, c, d), (c, b, a), (d, c, a)):
+            tris.append(_Triangle(tri[0], tri[1], tri[2], (0.0, 0.0, -1.0), ARROW_COLOR))
+    positions = np.array([(t.a, t.b, t.c) for t in tris], dtype=np.float64)
+    normals = np.array([t.normal for t in tris], dtype=np.float64)
+    return tris, positions, normals
+
+
+def _look_rotation(direction: np.ndarray) -> np.ndarray:
+    """A 3x3 rotation turning +Z to ``direction``."""
+    z = direction / max(np.linalg.norm(direction), 1e-9)
+    up = np.array([0.0, 1.0, 0.0]) if abs(z[1]) < 0.99 else np.array([1.0, 0.0, 0.0])
+    x = np.cross(up, z)
+    x /= max(np.linalg.norm(x), 1e-9)
+    y = np.cross(z, x)
+    return np.stack([x, y, z], axis=1)
+
+
+class BattleStage:
+    """Scenery plus two :class:`StageUnit` s; :meth:`frame` gives the scene's triangles at a time.
+
+    ``effects(kind, key)`` returns the :class:`EffectAsset` of a timeline
+    cue (a skill key or a spell's EID), or None to skip it."""
+
+    def __init__(self, units: list[StageUnit], scenery: Optional[_LoadedSet] = None, effects=None):
         self.units = units
         self.scenery = scenery.triangles if scenery is not None else []
         self.spacing = 1.2 * max(u.height for u in units) if units else 1.0
         self.facing = 0.0
         self.timeline: Optional[tlm.Timeline] = None
+        self.effects = effects or (lambda kind, key: None)
+        self._world: list = [[], []]  # each unit's bone world matrices at the last frame (placed)
+        height = max((u.height for u in units), default=1.0)
+        self._arrow = _arrow(0.35 * height)
 
     def lookup(self, side: int, role: str) -> Optional[tlm.Clip]:
         return self.units[side].clip(role)
@@ -221,20 +298,75 @@ class BattleStage:
         half = self.spacing / 2
         return [placement(-half, self.facing), placement(half, self.facing + 180.0)]
 
+    def point(self, side: int, bone: Optional[int]) -> np.ndarray:
+        """Where ``bone`` of ``side`` is in the scene at the last frame (the unit's spot if unknown)."""
+        world = self._world[side]
+        if bone is not None and bone < len(world):
+            return world[bone][:, 3].copy()
+        return self._placements()[side][:, 3].copy()
+
     def frame(self, t: float) -> list[_Triangle]:
         tris = list(self.scenery)
+        tl = self.timeline
+        flying = [f for f in (tl.flights if tl is not None else ()) if f.progress(t) is not None]
         for side, (unit, place) in enumerate(zip(self.units, self._placements())):
+            self._world[side] = []
             if unit.loaded is None:
                 continue
-            stem, frame = self.timeline.pose(side, t) if self.timeline is not None else (None, 0.0)
+            stem, frame = tl.pose(side, t) if tl is not None else (None, 0.0)
             anim = unit.clips.get(stem) if stem else None
             world, palette = engine_pose.pose(unit.loaded.bones, anim, frame) if unit.loaded.bones else ([], [])
+            self._world[side] = [_compose(place, m) for m in world]
             positions, normals = unit.mesh.pose(world, palette)
             tris += _rebuild(unit.loaded.triangles, *_transform(place, positions, normals))
-            if unit.weapon is not None and unit.hand is not None and world:
-                hand = _compose(place, world[unit.hand])
+            thrown = unit.assets.weapon_kind not in (None, BOW_KIND) and any(f.side == side for f in flying)
+            if unit.weapon is not None and unit.hand is not None and world and not thrown:
+                hand = self._world[side][unit.hand]
                 tris += _rebuild(unit.weapon.triangles, *_transform(hand, unit.weapon_positions, unit.weapon_normals))
+        for flight in flying:
+            tris += self._projectile(flight, flight.progress(t))
+        for cue in (tl.cues if tl is not None else ()):
+            effect = self.effects(cue.kind, cue.key) if t >= cue.frame else None
+            if effect is not None and t < cue.frame + effect.length:
+                tris += self._effect(effect, cue, t - cue.frame)
         return tris
+
+    def _projectile(self, flight: tlm.Flight, u: float) -> list[_Triangle]:
+        unit = self.units[flight.side]
+        start = self.point(flight.side, unit.hand)
+        end = self.point(1 - flight.side, self.units[1 - flight.side].eye)
+        matrix = np.zeros((3, 4))
+        matrix[:, :3] = _look_rotation(end - start)
+        matrix[:, 3] = start + (end - start) * u
+        if unit.weapon is not None and unit.assets.weapon_kind != BOW_KIND:
+            return _rebuild(unit.weapon.triangles, *_transform(matrix, unit.weapon_positions, unit.weapon_normals))
+        arrow, positions, normals = self._arrow
+        return _rebuild(arrow, *_transform(matrix, positions, normals))
+
+    def _effect(self, effect: EffectAsset, cue: tlm.Cue, local: float) -> list[_Triangle]:
+        bones = effect.loaded.bones
+        world, palette = engine_pose.pose(bones, effect.anim, local) if bones else ([], [])
+        positions, normals = effect.mesh.pose(world, palette)
+        matrix = self._placements()[cue.side].copy()
+        matrix[:, 3] = self.point(cue.side, self.units[cue.side].anchor)
+        return _rebuild(effect.loaded.triangles, *_transform(matrix, positions, normals))
+
+    def camera(self, game_camera, t: float):
+        """``(center, yaw, pitch, zoom distance)`` of the game camera at ``t``, or None."""
+        if self.timeline is None or game_camera is None:
+            return None
+        view = game_camera.view(self.timeline.shots, t)
+        if view is None:
+            return None
+        if view.follow is None:
+            target = (self.point(0, None) + self.point(1, None)) / 2
+        else:
+            target = self.point(view.follow, self.units[view.follow].eye)
+        target = target + np.asarray(view.offset, dtype=np.float64)
+        # the left/right scripts are mirrored through the units' facing
+        yaw = math.radians(view.rot[1] + self.facing)
+        pitch = math.radians(view.rot[0])
+        return tuple(target.tolist()), yaw, pitch, max(view.dist, 1e-3)
 
 
 class StageView(ttk.Frame):
@@ -248,6 +380,8 @@ class StageView(ttk.Frame):
         self._after = None
         self._max_hp = (1, 1)
         self.speed = tk.StringVar(value="1x")
+        self.game_camera = None  # battle_sim.camera.GameCamera, when the 3D tab has the scripts
+        self.use_game_camera = tk.BooleanVar(value=False)
 
         bars = ttk.Frame(self)
         bars.pack(fill="x")
@@ -277,6 +411,8 @@ class StageView(ttk.Frame):
         speed = ttk.Combobox(controls, textvariable=self.speed, values=("0.25x", "0.5x", "1x", "2x"), width=6,
                              state="readonly")
         speed.pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(controls, text="Game camera", variable=self.use_game_camera,
+                        command=self._camera_toggled).pack(side="left", padx=(8, 0))
         self._scale = ttk.Scale(controls, from_=0, to=1, command=self._scrub)
         self._scale.pack(side="left", fill="x", expand=True, padx=(8, 0))
         self._time = ttk.Label(controls, text="", width=12)
@@ -308,6 +444,12 @@ class StageView(ttk.Frame):
         if stage is None or stage.timeline is None:
             return
         self.canvas.set_pose(None, stage.frame(t))
+        if self.use_game_camera.get():
+            view = stage.camera(self.game_camera, t)
+            if view is not None:
+                center, yaw, pitch, dist = view
+                zoom = self.canvas._extent / (FIT_FRACTION * VIEW_SPAN * dist)
+                self.canvas.set_view(center, yaw, pitch, zoom, 1.0 / dist)
         hp = stage.timeline.hp(t)
         for side in (0, 1):
             maximum = max(self._max_hp[side], stage.timeline.hp_start[side], 1)
@@ -315,6 +457,12 @@ class StageView(ttk.Frame):
         popup = stage.timeline.popup(t)
         self._popup.configure(text=f"{SIDE_NAMES[popup.side]}: {popup.text}" if popup else "")
         self._time.configure(text=f"{t / tlm.FPS:5.1f} s")
+
+    def _camera_toggled(self) -> None:
+        if not self.use_game_camera.get():
+            c = self.canvas
+            c.set_view(c._center, c._yaw, c._pitch, c._zoom, 0.0)
+        self.refresh()
 
     def _scrub(self, value) -> None:
         if self._playing:

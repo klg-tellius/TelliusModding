@@ -6,6 +6,9 @@ clip's ``.ga`` combat event 0 ("the blow lands", see
 :data:`fe_modding.rig_contract.COMBAT_CODES`), else event 1 ("the swing"),
 else half-way through the clip. It plays its damage clip on a hit, its dodge
 clip on a miss and its death clip on a kill, and HP changes on that frame.
+Skills that trigger and spells that land leave a :class:`Cue` on that frame;
+bows and thrown weapons leave a :class:`Flight` from the clip's combat event
+2 ("releases the thrown or fired item") to the contact frame.
 Between clips both units loop their idle clip; a dead unit holds the last
 frame of its death clip.
 
@@ -26,6 +29,9 @@ FPS = 30
 LEAD_FRAMES = 20  # idle before the first strike
 GAP_FRAMES = 8  # idle between strikes
 TAIL_FRAMES = 40  # after the last strike
+FLIGHT_FRAMES = 10  # a projectile's flight when its clip has no release event
+#: Skills whose effect plays on the unit that owns them while being struck.
+DEFENDER_SKILLS = frozenset({"wing_guard", "pray"})
 
 
 @dataclass(frozen=True)
@@ -34,6 +40,7 @@ class Clip:
     length: float  # frames
     impact: Optional[float] = None  # frame of combat event 0 (blow lands)
     swing: Optional[float] = None  # frame of combat event 1
+    release: Optional[float] = None  # frame of combat event 2 (the thrown or fired item leaves)
 
     @property
     def contact(self) -> float:
@@ -77,9 +84,38 @@ class Change:
 
 
 @dataclass
+class Cue:
+    """A visual effect starting at ``frame`` on ``side``: a skill that
+    triggered (``kind`` "skill", ``key`` a :data:`rules_fe9.SKILL_NAMES` key)
+    or a spell landing (``kind`` "spell", ``key`` the tome's ``EID_`` effect)."""
+
+    frame: float
+    side: int
+    kind: str
+    key: str
+
+
+@dataclass
+class Flight:
+    """A thrown or fired item travelling from ``side`` to the other unit."""
+
+    start: float
+    end: float
+    side: int
+
+    def progress(self, t: float) -> Optional[float]:
+        if self.start <= t < self.end:
+            return (t - self.start) / max(self.end - self.start, 1e-6)
+        return None
+
+
+@dataclass
 class Timeline:
     segments: list = field(default_factory=list)
     changes: list = field(default_factory=list)
+    cues: list = field(default_factory=list)
+    flights: list = field(default_factory=list)
+    shots: list = field(default_factory=list)  # (start frame, striker side, crit), for the game camera
     length: float = 0.0
     hp_start: tuple = (0, 0)
 
@@ -146,6 +182,7 @@ def build(log: BattleLog, lookup: ClipLookup, *, distance: int = 1) -> Timeline:
         length = attack.length if attack else 30.0
         contact = start + (attack.contact if attack else length / 2)
         tl.segments.append(sa_segment(side, start, start + length, attack, role))
+        tl.shots.append((start, side, strike.crit))
         busy[side] = start + length
 
         reaction_role = sa.DEATH if strike.kill else (sa.DAMAGE if strike.hit else sa.DODGE)
@@ -159,6 +196,17 @@ def build(log: BattleLog, lookup: ClipLookup, *, distance: int = 1) -> Timeline:
             dead[other] = True
         text = "Miss" if not strike.hit else (f"Crit {strike.damage}" if strike.crit else str(strike.damage))
         tl.changes.append(Change(contact, other, strike.hp_after, text, strike.number))
+        if strike.label == "Counter":
+            tl.cues.append(Cue(start, side, "skill", "counter"))
+        for key in strike.procs:
+            tl.cues.append(Cue(contact, other if key in DEFENDER_SKILLS else side, "skill", key))
+        if w is not None and w.magic:
+            if w.effect:
+                tl.cues.append(Cue(contact, other, "spell", w.effect))
+        elif w is not None and (w.weapon_type == "bow" or distance > 1):
+            release = attack.release if attack is not None and attack.release is not None else None
+            launch = start + release if release is not None and start + release < contact else contact - FLIGHT_FRAMES
+            tl.flights.append(Flight(max(start, launch), contact, side))
         t = max(busy[side], busy[other]) + GAP_FRAMES
 
     end = max(t, *busy) + TAIL_FRAMES

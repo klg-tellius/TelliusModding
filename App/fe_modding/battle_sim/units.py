@@ -43,6 +43,7 @@ class Weapon:
     properties: frozenset = frozenset()  # ITEM_PROPERTY_TOKENS: twice, crit0, sealcrit, weakA, sfxseal...
     effective: frozenset = frozenset()  # ITEM_CATEGORY_TOKENS the weapon is effective against
     stat_bonus: tuple = (0,) * 10  # ITEM_STAT_BONUS_NAMES order: STAT_NAMES, Mov, Con
+    effect: str = ""  # EID_ played when it is used (a tome's spell)
 
     @property
     def magic(self) -> bool:
@@ -65,6 +66,7 @@ def weapon_from_item(item: fe8data.ItemEntry) -> Weapon:
         min_range=item.min_range, max_range=item.max_range,
         properties=frozenset(p for p in item.properties if p),
         effective=frozenset(c for c in item.categories if c), stat_bonus=bonus[:10],
+        effect=item.effect or "",
     )
 
 

@@ -23,8 +23,10 @@ from typing import Optional
 
 from .. import battle_sim
 from ..battle_sim import rules_fe9
+from ..battle_sim import camera as battle_camera_sim
 from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
+from ..formats import effects as effects_fmt
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
 from ..project import ModProject
@@ -243,7 +245,10 @@ class _Side(ttk.LabelFrame):
         values = ["(unarmed)"] + [self.sim.names.item(it) for it in items]
         self._weapon_box["values"] = values
         if self.weapon.get() not in values:
-            self.weapon.set(values[1] if len(values) > 1 else values[0])
+            # laguz start on their class's natural weapon (equip_innate_laguz_weapon)
+            innate = next((it for it in items if cls is not None and it.iid == cls.innate_weapon), None)
+            self.weapon.set(self.sim.names.item(innate) if innate is not None else
+                            (values[1] if len(values) > 1 else values[0]))
         self.sim.rerun()
 
     @staticmethod
@@ -539,6 +544,9 @@ class _ScenePanel(ttk.Frame):
         self.scenery = tk.StringVar(value="(none)")
         self.spacing = tk.DoubleVar(value=1.0)
         self.facing = tk.IntVar(value=0)
+        self.time_scale = tk.DoubleVar(value=1.0)
+        self._camera: Optional[battle_camera_sim.GameCamera] = None
+        self._effects: dict = {}  # EID -> EffectAsset or None
         self.codes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
         self.prefixes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
 
@@ -567,13 +575,20 @@ class _ScenePanel(ttk.Frame):
         ttk.Label(row, text="Facing").pack(side="left")
         ttk.Spinbox(row, from_=0, to=270, increment=90, width=5, textvariable=self.facing, wrap=True,
                     command=self._placed).pack(side="left", padx=(6, 0))
+        row = ttk.Frame(controls)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="Camera time scale").pack(side="left")
+        ttk.Spinbox(row, from_=0.25, to=8.0, increment=0.25, width=5, textvariable=self.time_scale,
+                    command=self._placed).pack(side="left", padx=(6, 0))
         ttk.Button(controls, text="Reload models", command=lambda: self._reload(force=True)).pack(
             anchor="w", pady=(10, 0))
         self._notes = ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text="")
         self._notes.pack(anchor="w", pady=(10, 0))
         ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text=(
             "Clips follow zu/<model>.dbx (attack, critical, dodge, damage, death). The blow lands on the clip's "
-            "combat event. Spacing and facing are the simulator's own: the engine's are not measured.")).pack(
+            "combat event. Spacing and facing are the simulator's own: the engine's are not measured. Skill and "
+            "spell effects start when the blow lands (their real timing is not decoded). The game camera plays "
+            "the xcam/ scripts; their time unit is not measured, hence the time scale.")).pack(
             anchor="w", pady=(10, 0))
 
         self.view = battle_stage.StageView(self)
@@ -595,7 +610,28 @@ class _ScenePanel(ttk.Frame):
             for box in self._code_boxes:
                 box["values"] = codes
             self._scenery_box["values"] = ["(none)"] + list(self._assets.sceneries())
+            try:
+                self._camera = battle_camera_sim.GameCamera.from_zdbx(self._assets.zdbx_data)
+            except Exception:  # noqa: BLE001 - no camera scripts: the free camera still works
+                self._camera = None
+            self.view.game_camera = self._camera
         return self._assets
+
+    def _effect(self, kind: str, key: str):
+        """The effect pack of a timeline cue: a skill's EID (the skill record's 0x14) or a spell's."""
+        eid = key
+        if kind == "skill":
+            fe8 = self.sim.fe8
+            eid = next((sk.effect for sk in (fe8.skills if fe8 else ()) if sk.effect and sk.sid
+                        and self.sim.rules.skill_key(sk.sid) == key), None)
+        if not eid:
+            return None
+        if eid not in self._effects:
+            try:
+                self._effects[eid] = battle_stage.load_effect(effects_fmt.pack_path(self._files, eid))
+            except Exception:  # noqa: BLE001 - a broken effect pack is skipped
+                self._effects[eid] = None
+        return self._effects[eid]
 
     def fight_changed(self, log, units, distance: int) -> None:
         previous = self._fight
@@ -637,7 +673,7 @@ class _ScenePanel(ttk.Frame):
                 units3d = [battle_stage.load_unit(self._cache, a) for a in unit_assets]
                 scene = self._cache.get(("scenery", scenery), lambda: battle_stage.load_scenery(scenery)) \
                     if scenery is not None else None
-                stage = battle_stage.BattleStage(units3d, scene)
+                stage = battle_stage.BattleStage(units3d, scene, self._effect)
             except Exception as exc:  # noqa: BLE001 - show what failed instead of a dead tab
                 self._notes.configure(text=f"Could not load the models: {exc}")
                 self.view.set_stage(None)
@@ -674,6 +710,8 @@ class _ScenePanel(ttk.Frame):
         try:
             stage.spacing = float(self.spacing.get())
             stage.facing = float(self.facing.get())
+            if self._camera is not None:
+                self._camera.time_scale = max(float(self.time_scale.get()), 0.05)
         except (tk.TclError, ValueError):
             return
         self.view.refresh()
