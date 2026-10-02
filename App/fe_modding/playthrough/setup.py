@@ -124,7 +124,7 @@ def deploy(world: World, state: GameState, group: str, *, animate: bool = True, 
     placed = []
     for record in section.units:
         pid = record[F["pid"]]
-        unit = state.unit_by_pid(pid) if isinstance(pid, str) else None
+        unit = _reusable(state, pid, placed)
         if unit is None:
             unit = state.add_unit(make_unit(world, record, group))
         if force is not None:
@@ -145,6 +145,19 @@ def deploy(world: World, state: GameState, group: str, *, animate: bool = True, 
     names = ", ".join(world.name(u.pid) for u in placed[:8]) + ("..." if len(placed) > 8 else "")
     state.emit("action", f"Deployed {group}: {names}" if placed else f"Deployed {group} (empty)", group=group)
     return placed
+
+
+def _reusable(state: GameState, pid, placed: list) -> Optional[SimUnit]:
+    """The existing unit a deployment record reuses: a living unit of that
+    character that is off the map (the reserve) or on the player's side.
+    Generic soldiers share one PID, so an enemy already on the map is not
+    reused, and no unit is placed twice by one deployment."""
+    if not isinstance(pid, str):
+        return None
+    for unit in sorted(state.units.values(), key=lambda u: u.uid):
+        if unit.pid == pid and not unit.dead and unit not in placed and (unit.hidden or unit.faction == PLAYER):
+            return unit
+    return None
 
 
 def opening_tasks(world: World) -> list:

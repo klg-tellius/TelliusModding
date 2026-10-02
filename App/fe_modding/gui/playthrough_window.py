@@ -229,7 +229,7 @@ class PlaythroughWindow(_Window):
                                   terrain_types=b.map_editor.terrain_types, documents=documents, fe8=fe8,
                                   script=script, difficulty=difficulty, names=names,
                                   chapter_stem=path.stem if path is not None else None, problems=problems)
-        world.item_names = dict(getattr(index, "item_names", {}) or {})
+        world.item_names = {k: v for k, v in (getattr(index, "item_names", {}) or {}).items() if v}
         if script is None:
             problems.append("This chapter has no event script: every deployment section of the chosen "
                             "difficulty for the player is placed, and no events run.")

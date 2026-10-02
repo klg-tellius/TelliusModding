@@ -38,6 +38,7 @@ class World:
     groups: dict = field(default_factory=dict)  # deployment section name -> dispo.DocSection (setup.groups)
     difficulty: str = "n"  # n (normal), h (hard), m (maniac)
     names: dict = field(default_factory=dict)  # PID_ -> display name
+    item_names: dict = field(default_factory=dict)  # IID_ -> display name
 
     def __post_init__(self) -> None:
         self.rules = Fe9Rules(self.fe8.skills)
@@ -93,7 +94,9 @@ class World:
         return self.names.get(pid) or pid.removeprefix("PID_")
 
     def item_name(self, iid) -> str:
-        return iid.removeprefix("IID_") if isinstance(iid, str) else "?"
+        if not isinstance(iid, str):
+            return "?"
+        return self.item_names.get(iid) or iid.removeprefix("IID_")
 
     def can_wield(self, unit, item: fe8data.ItemEntry) -> bool:
         """Whether ``unit`` (a SimUnit) may use ``item`` as a weapon or staff."""

@@ -322,6 +322,24 @@ class AiTests(unittest.TestCase):
 
 
 class SetupTests(unittest.TestCase):
+    def test_generic_enemies_sharing_a_pid_are_separate_units(self):
+        F = dispo.FIELD
+
+        def record(pid, x, faction):
+            r = [0] * 48
+            r[F["pid"]], r[F["pos_x"]], r[F["pos2_x"]], r[F["level"]], r[F["faction"]] = pid, x, x, 1, faction
+            return r
+
+        world = _world()
+        world.groups = {"enemies": dispo.DocSection("enemies", 0, [record("PID_B", 1, 1), record("PID_B", 3, 1)]),
+                        "party": dispo.DocSection("party", 0, [record("PID_A", 5, 0)])}
+        state = GameState()
+        setup.deploy(world, state, "enemies")
+        self.assertEqual(sorted(u.tile for u in state.living()), [(1, 0), (3, 0)])
+        setup.deploy(world, state, "party")
+        setup.deploy(world, state, "party")  # a player character is reused, not duplicated
+        self.assertEqual(sum(1 for u in state.living() if u.pid == "PID_A"), 1)
+
     def test_make_unit_applies_bonuses_and_items(self):
         world = _world()
         record = [0] * 48
