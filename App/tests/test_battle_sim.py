@@ -7,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fe_modding.battle_sim import (
     Combatant, Fe9Rng, Fe9Rules, FixedOutcomes, RngOutcomes, from_character, from_class, simulate,
 )
+from fe_modding.battle_sim import scene_assets as sa, timeline
+from fe_modding.battle_sim.timeline import Clip
 from fe_modding.battle_sim.units import Weapon, weapon_from_item
 from fe_modding.formats import fe8data
 
@@ -204,6 +206,93 @@ class DataTests(unittest.TestCase):
         w = weapon_from_item(item)
         self.assertTrue(w.magic)
         self.assertEqual(w.effective, frozenset({"fly"}))
+
+
+class TimelineTests(unittest.TestCase):
+    CLIPS = {
+        sa.IDLE: Clip("idle", 40), sa.ATTACK1: Clip("at1", 50, impact=30), sa.CRIT1: Clip("cr1", 70, impact=45),
+        sa.DAMAGE: Clip("dam", 20), sa.DODGE: Clip("dog", 16), sa.DEATH: Clip("ded", 60, swing=5),
+    }
+
+    def lookup(self, side, role):
+        return self.CLIPS.get(role)
+
+    def test_strike_sequence(self):
+        log = simulate(unit("A"), unit("D"))
+        tl = timeline.build(log, self.lookup)
+        first = tl.changes[0]
+        self.assertEqual(first.frame, timeline.LEAD_FRAMES + 30)
+        self.assertEqual(tl.pose(0, first.frame - 1), ("at1", 29))
+        self.assertEqual(tl.pose(1, first.frame - 1)[0], "idle")
+        self.assertEqual(tl.pose(1, first.frame + 2), ("dam", 2))
+        self.assertEqual(tl.hp(first.frame - 1), (30, 30))
+        self.assertEqual(tl.hp(first.frame), (30, 20))
+        self.assertEqual(len(tl.changes), 2)
+        self.assertGreater(tl.changes[1].frame, first.frame + 20)
+        self.assertEqual(tl.pose(0, tl.length - 1)[0], "idle")
+
+    def test_crit_miss_and_death(self):
+        log = simulate(unit("A"), unit("D"), outcomes=FixedOutcomes({(1, "hit"): False, (2, "crit"): True}))
+        tl = timeline.build(log, self.lookup)
+        self.assertEqual(tl.changes[0].text, "Miss")
+        self.assertEqual(tl.pose(1, tl.changes[0].frame + 1)[0], "dog")
+        self.assertEqual(tl.changes[1].text, "Crit 30")
+        self.assertEqual(tl.pose(0, tl.length - 1), ("ded", 60))  # held
+        self.assertEqual(tl.popup(tl.changes[1].frame + 3).text, "Crit 30")
+
+    def test_missing_clips(self):
+        tl = timeline.build(simulate(unit("A"), unit("D")), lambda side, role: None)
+        self.assertEqual(tl.pose(0, 30), (None, 0.0))
+        self.assertEqual(len(tl.changes), 2)
+
+    def test_attack_role(self):
+        roles = {sa.ATTACK1: 1, sa.ATTACK2: 1, sa.CRIT1: 1, sa.SHOT: 1, sa.SPELL: 1}
+        self.assertEqual(sa.attack_role(roles, crit=True, second=False, weapon_type="sword", magic=False,
+                                        ranged=False), sa.CRIT1)
+        self.assertEqual(sa.attack_role(roles, crit=False, second=True, weapon_type="sword", magic=False,
+                                        ranged=False), sa.ATTACK2)
+        self.assertEqual(sa.attack_role(roles, crit=True, second=False, weapon_type="bow", magic=False,
+                                        ranged=True), sa.SHOT)
+        self.assertEqual(sa.attack_role(roles, crit=False, second=False, weapon_type="flame", magic=True,
+                                        ranged=False), sa.SPELL)
+
+
+class SceneAssetTests(unittest.TestCase):
+    def test_unit_assets(self):
+        import tempfile
+
+        from fe_modding.formats import zdbx
+        with tempfile.TemporaryDirectory() as tmp:
+            files = Path(tmp)
+            folder = files / "zu" / "fig1"
+            folder.mkdir(parents=True)
+            for name in ("fig1_ax.pak", "fig1_sw.pak", "fig1.tpl", "fig1_b.tpl"):
+                (folder / name).write_bytes(b"x")
+            (files / "xwp" / "ironsword").mkdir(parents=True)
+            (files / "xwp" / "ironsword" / "ironsword.cmp").write_bytes(b"x")
+            enc = lambda text: text.encode("shift_jis")
+            archive = zdbx.build_zdbx_archive([
+                (zdbx.JOB_LIST, enc("JID_HERO fig1\r\n")),
+                ("zu/fig1.dbx", enc("{\r\n\tsw_攻撃1\tfig1_at1_sw\r\n\tsw_必殺1\tfig1_cr1_sw\r\n"
+                                    "\tax_攻撃1\tfig1_at1_ax\r\n}\r\n")),
+                ("zu/fig1_prm.dbx", enc("{\r\n\tclass\tParam\r\n\tname\tfig1\r\n\ttexnum\t1\r\n\tPID_IKE\tfig1_b\r\n"
+                                        "\t間合い\t10.0\r\n}\r\n")),
+                ("xwp/IRONSWORD.dbx", enc("{\r\n\tclass\tModel\r\n\tfolder\txwp/ironsword\r\n"
+                                          "\tmodel\tironsword\r\n}\r\n{\r\n\tclass\tWeapon\r\n\tkind\t0\r\n}\r\n")),
+            ])
+            assets = sa.BattleAssets(files, archive)
+            u = unit(jid="JID_HERO", pid="PID_IKE")
+            found = assets.unit(u)
+            self.assertEqual(found.code, "fig1")
+            self.assertEqual(found.prefixes, ["ax", "sw"])
+            self.assertEqual(found.prefix, "sw")
+            self.assertEqual(found.roles, {sa.ATTACK1: "fig1_at1_sw", sa.CRIT1: "fig1_cr1_sw"})
+            self.assertEqual(found.pack.name, "fig1_sw.pak")
+            self.assertEqual(found.texture.name, "fig1_b.tpl")
+            self.assertEqual(found.spacing, 10.0)
+            self.assertEqual(found.weapon_model.name, "ironsword.cmp")
+            self.assertEqual(assets.unit(u, prefix="ax").roles, {sa.ATTACK1: "fig1_at1_ax"})
+            self.assertEqual(assets.model_codes(), ["fig1"])
 
 
 if __name__ == "__main__":

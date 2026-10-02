@@ -23,10 +23,12 @@ from typing import Optional
 
 from .. import battle_sim
 from ..battle_sim import rules_fe9
+from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
 from ..project import ModProject
+from . import battle_stage
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
@@ -299,8 +301,10 @@ class BattleSimulator(EditorPanel):
         ttk.Label(self, text="Battle Simulator", style="Title.TLabel").pack(anchor="w")
         ttk.Label(self, text="Path of Radiance rules. Changes here stay in the simulator; nothing is written "
                              "to the game.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
-        body = ttk.Frame(self)
-        body.pack(fill="both", expand=True)
+        self._tabs = ttk.Notebook(self)
+        self._tabs.pack(fill="both", expand=True)
+        body = ttk.Frame(self._tabs, padding=(0, 8, 0, 0))
+        self._tabs.add(body, text="Setup and forecast")
         self._sides_frame = body
         self.sides = [_Side(self, 0), _Side(self, 1)]
         self.sides[0].grid(row=0, column=0, sticky="nsew", padx=(0, 6))
@@ -312,6 +316,9 @@ class BattleSimulator(EditorPanel):
         body.columnconfigure(2, weight=1)
         body.rowconfigure(0, weight=1)
         self._build_middle(middle)
+        self._scene = _ScenePanel(self, self._tabs, project)
+        self._tabs.add(self._scene, text="3D fight")
+        self._tabs.bind("<<NotebookTabChanged>>", lambda _e: self._scene.tab_shown())
 
         self._session.subscribe(self._on_session_changed)
         self._on_session_changed(None)
@@ -470,6 +477,7 @@ class BattleSimulator(EditorPanel):
             outcomes = battle_sim.RngOutcomes(seed)
         self._log = battle_sim.simulate(units[0], units[1], rules=self.rules, outcomes=outcomes, distance=distance)
         self._show(self._log)
+        self._scene.fight_changed(self._log, units, distance)
 
     def _show(self, log: battle_sim.BattleLog) -> None:
         for side, unit in enumerate((log.attacker, log.defender)):
@@ -507,7 +515,168 @@ class BattleSimulator(EditorPanel):
         self._log_text.configure(state="disabled")
 
     def cleanup(self) -> None:
+        self._scene.cleanup()
         self._session.unsubscribe(self._on_session_changed)
         if self._pending is not None:
             self.after_cancel(self._pending)
             self._pending = None
+
+
+class _ScenePanel(ttk.Frame):
+    """The "3D fight" tab: the fight played by the units' battle models in a scenery.
+
+    Loading models is slow, so the scene is (re)loaded only while the tab is
+    shown; a new fight with the same models only rebuilds the timeline."""
+
+    def __init__(self, sim: "BattleSimulator", parent: tk.Misc, project: ModProject):
+        super().__init__(parent, padding=(0, 8, 0, 0))
+        self.sim = sim
+        self._files = project.extracted_dir / "files"
+        self._assets: Optional[sa.BattleAssets] = None
+        self._cache = battle_stage.SetCache()
+        self._loaded_key = None
+        self._fight = None  # (log, units, distance)
+        self.scenery = tk.StringVar(value="(none)")
+        self.spacing = tk.DoubleVar(value=1.0)
+        self.facing = tk.IntVar(value=0)
+        self.codes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
+        self.prefixes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
+
+        controls = ttk.Frame(self, width=260)
+        controls.pack(side="left", fill="y", padx=(0, 10))
+        ttk.Label(controls, text="Scenery").pack(anchor="w")
+        self._scenery_box = ttk.Combobox(controls, textvariable=self.scenery, state="readonly", height=24)
+        self._scenery_box.pack(fill="x")
+        self._scenery_box.bind("<<ComboboxSelected>>", lambda _e: self._reload())
+        self._code_boxes, self._prefix_boxes = [], []
+        for side in (0, 1):
+            ttk.Label(controls, text=f"{SIDE_NAMES[side]} model", style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
+            code = ttk.Combobox(controls, textvariable=self.codes[side], state="readonly", height=24)
+            code.pack(fill="x")
+            code.bind("<<ComboboxSelected>>", lambda _e: self._reload())
+            prefix = ttk.Combobox(controls, textvariable=self.prefixes[side], state="readonly")
+            prefix.pack(fill="x", pady=(2, 0))
+            prefix.bind("<<ComboboxSelected>>", lambda _e: self._reload())
+            self._code_boxes.append(code)
+            self._prefix_boxes.append(prefix)
+        ttk.Label(controls, text="Spacing", style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
+        self._spacing = ttk.Scale(controls, from_=0.0, to=4.0, variable=self.spacing, command=self._placed)
+        self._spacing.pack(fill="x")
+        row = ttk.Frame(controls)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="Facing").pack(side="left")
+        ttk.Spinbox(row, from_=0, to=270, increment=90, width=5, textvariable=self.facing, wrap=True,
+                    command=self._placed).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Reload models", command=lambda: self._reload(force=True)).pack(
+            anchor="w", pady=(10, 0))
+        self._notes = ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text="")
+        self._notes.pack(anchor="w", pady=(10, 0))
+        ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text=(
+            "Clips follow zu/<model>.dbx (attack, critical, dodge, damage, death). The blow lands on the clip's "
+            "combat event. Spacing and facing are the simulator's own: the engine's are not measured.")).pack(
+            anchor="w", pady=(10, 0))
+
+        self.view = battle_stage.StageView(self)
+        self.view.pack(side="left", fill="both", expand=True)
+
+    def _visible(self) -> bool:
+        try:
+            return self.sim._tabs.select() == str(self)
+        except tk.TclError:
+            return False
+
+    def assets(self) -> Optional[sa.BattleAssets]:
+        if self._assets is None:
+            try:
+                self._assets = sa.BattleAssets.from_files(self._files)
+            except Exception:  # noqa: BLE001 - a damaged zdbx.cmp leaves the 3D tab empty
+                self._assets = sa.BattleAssets(self._files, b"")
+            codes = ["(automatic)"] + self._assets.model_codes()
+            for box in self._code_boxes:
+                box["values"] = codes
+            self._scenery_box["values"] = ["(none)"] + list(self._assets.sceneries())
+        return self._assets
+
+    def fight_changed(self, log, units, distance: int) -> None:
+        previous = self._fight
+        self._fight = (log, units, distance)
+        same = (previous is not None and previous[2] == distance and previous[0].text() == log.text()
+                and [u.__dict__ for u in previous[1]] == [u.__dict__ for u in units])
+        if self._visible() and not same:
+            self._reload()
+
+    def tab_shown(self) -> None:
+        if self._visible():
+            self._reload()
+
+    def _unit_assets(self) -> list:
+        log, units, distance = self._fight
+        found = []
+        for side, unit in enumerate(units):
+            code = self.codes[side].get()
+            prefix = self.prefixes[side].get()
+            found.append(self.assets().unit(
+                unit, code=None if code.startswith("(") else code, prefix=None if prefix.startswith("(") else prefix,
+                ranged=distance > 1))
+        return found
+
+    def _reload(self, force: bool = False) -> None:
+        if self._fight is None or self.assets() is None:
+            return
+        log, units, distance = self._fight
+        unit_assets = self._unit_assets()
+        for side, found in enumerate(unit_assets):
+            self._prefix_boxes[side]["values"] = ["(automatic)"] + found.prefixes
+        scenery = self.assets().sceneries().get(self.scenery.get())
+        key = (tuple((a.pack, a.texture, a.weapon_model, a.weapon_kind, tuple(sorted(a.roles.items())))
+                     for a in unit_assets), scenery)
+        if force or key != self._loaded_key or self.view.stage is None:
+            self.configure(cursor="watch")
+            self.update_idletasks()
+            try:
+                units3d = [battle_stage.load_unit(self._cache, a) for a in unit_assets]
+                scene = self._cache.get(("scenery", scenery), lambda: battle_stage.load_scenery(scenery)) \
+                    if scenery is not None else None
+                stage = battle_stage.BattleStage(units3d, scene)
+            except Exception as exc:  # noqa: BLE001 - show what failed instead of a dead tab
+                self._notes.configure(text=f"Could not load the models: {exc}")
+                self.view.set_stage(None)
+                self._loaded_key = None
+                return
+            finally:
+                self.configure(cursor="")
+            self._loaded_key = key
+            height = max(u.height for u in units3d)
+            self._spacing.configure(to=max(4.0 * height, 1.0))
+            self.spacing.set(stage.spacing)
+            stage.facing = float(self.facing.get())
+            stage.set_log(log, distance)
+            self.view.set_stage(stage, (log.attacker.name, log.defender.name),
+                                (log.attacker.stats[0], log.defender.stats[0]))
+        else:
+            self.view.stage.set_log(log, distance)
+            self.view.set_stage(self.view.stage, (log.attacker.name, log.defender.name),
+                                (log.attacker.stats[0], log.defender.stats[0]))
+        notes = []
+        for side, found in enumerate(unit_assets):
+            what = f"{SIDE_NAMES[side]}: {found.code or 'no model'}"
+            if found.prefix:
+                what += f", {found.prefix} clips ({len(found.roles)})"
+            if found.weapon_model is None and units[side].weapon is not None:
+                what += ", no weapon model"
+            notes.append(what + "".join(f"; {n}" for n in found.notes))
+        self._notes.configure(text="\n".join(notes))
+
+    def _placed(self, *_args) -> None:
+        stage = self.view.stage
+        if stage is None:
+            return
+        try:
+            stage.spacing = float(self.spacing.get())
+            stage.facing = float(self.facing.get())
+        except (tk.TclError, ValueError):
+            return
+        self.view.refresh()
+
+    def cleanup(self) -> None:
+        self.view.cleanup()
