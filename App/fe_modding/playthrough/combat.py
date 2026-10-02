@@ -119,8 +119,9 @@ def fight(world: World, state: GameState, attacker: SimUnit, defender: SimUnit, 
         used = sum(1 for s in log.strikes if s.side == side and (s.hit or magic))
         _use(world, state, unit, index, used)
     exp = 0
-    if attacker.faction == 0 or defender.faction == 0:
-        player, other = (attacker, defender) if attacker.faction == 0 else (defender, attacker)
+    player = attacker if attacker.faction == 0 else defender
+    if player.faction == 0 and player.hp > 0:  # a fallen unit gains nothing
+        other = defender if player is attacker else attacker
         dealt = any(s.side == (0 if player is attacker else 1) and s.damage for s in log.strikes)
         exp = battle_exp(player, other, dealt, other.hp <= 0)
     state.emit("battle", f"{world.name(attacker.pid)} attacks {world.name(defender.pid)} ({how})\n" + log.text(),
