@@ -12,6 +12,7 @@ from ..background_viewer import BackgroundViewer
 from ..battle_camera_viewer import BattleCameraViewer
 from ..battle_params_viewer import BattleParamsViewer
 from ..battle_scenery_viewer import BattleSceneryViewer
+from ..battle_simulator import BattleSimulator
 from ..battle_weapons_viewer import BattleWeaponsViewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
@@ -55,6 +56,7 @@ ASSET_TOOLS = [
     ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle (zdbx.cmp xwp/): type, flight, effects", BattleWeaponsViewer),
     ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", BattleSceneryViewer),
     ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action camera scripts (camera.dbx, xcam/)", BattleCameraViewer),
+    ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
     ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
     ("sound_room", "Sound Room", "♬", "Sound Room slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
@@ -76,7 +78,7 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text and scripts", ("conversations", "scripts")),
-                            ("Characters and models", ("portraits", "models", "battle_weapons", "battle_sceneries", "battle_cameras", "battle_params")),
+                            ("Characters and models", ("portraits", "models", "battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "battle_sim")),
                             ("Art", ("backgrounds", "illustrations", "ending", "world_map", "effects")),
                             ("Interface", ("icons", "fonts", "ui_windows", "etc_graphics", "equipment")),
                             ("Sound and video", ("music", "sfx", "sound_room", "videos"))):
@@ -116,6 +118,8 @@ class AssetPage(Page):
             cls = TOOLS_BY_KEY[key][4]
             if cls in LIST_PANELS:
                 panel = cls(self, self.shell)
+            elif getattr(cls, "uses_fe8_session", False):
+                panel = cls(self, self.project, self.shell.changelog, self.shell.session)
             else:
                 panel = cls(self, self.project, self.shell.changelog)
             self._panels[key] = panel
@@ -136,6 +140,8 @@ class AssetPage(Page):
                 panel.select_set(route[2])
             elif key == "icons":
                 panel.select_icon(route[2])
+            elif key == "battle_sim":
+                panel.select_character(route[2])
         return True
 
     def crumbs(self, route):

@@ -61,7 +61,8 @@ struct Camera {
     rot1: vec4<f32>,
     rot2: vec4<f32>,
     center: vec4<f32>,
-    // x/y: world units -> NDC (sign included), z: depth scale
+    // x/y: world units -> NDC (sign included), z: depth scale,
+    // w: perspective (0 = orthographic, else 1 / eye distance)
     scale: vec4<f32>,
 };
 
@@ -110,12 +111,13 @@ fn vs_main(v: VIn) -> VOut {
     var out: VOut;
     let r = rotate(v.position - camera.center.xyz);
     let nz = rotate(v.normal).z;
-    if (nz >= 0.0) {
-        // back-facing: the whole triangle shares this normal, so all three
-        // vertices land outside the clip volume and it is dropped
+    let w = 1.0 + r.z * camera.scale.w;
+    if (nz >= 0.0 || w <= 0.05) {
+        // back-facing (the whole triangle shares this normal) or behind the
+        // eye: all three vertices land outside the clip volume and it is dropped
         out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     } else {
-        out.clip = vec4<f32>(r.x * camera.scale.x, r.y * camera.scale.y, 0.5 + r.z * camera.scale.z, 1.0);
+        out.clip = vec4<f32>(r.x * camera.scale.x, r.y * camera.scale.y, (0.5 + r.z * camera.scale.z) * w, w);
     }
     out.color = v.color / 255.0;
     out.alpha = v.alpha;
@@ -557,6 +559,7 @@ class GpuSceneRenderer:
         extent: float,
         screen_x_sign: float,
         screen_y_sign: float,
+        perspective: float = 0.0,
     ) -> Image.Image:
         """Draw the model and return the RGB frame - the same camera as
         ``_ModelCanvas._rasterize()``'s ``to_screen()``."""
@@ -573,6 +576,7 @@ class GpuSceneRenderer:
         camera[4, 1] = scale * screen_y_sign / (height / 2.0)
         # rotated z stays within ~0.87 * extent of the center; leave room for poses
         camera[4, 2] = 0.25 / max(extent, 1e-6)
+        camera[4, 3] = perspective
         self._device.queue.write_buffer(self._camera_buffer, 0, camera)
 
         encoder = self._device.create_command_encoder()

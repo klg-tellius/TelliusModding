@@ -64,7 +64,7 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
         scale = (min(self.W, self.H) * model_viewer.FIT_FRACTION / canvas._extent) * canvas._zoom
         gpu = RENDERER.render(
             self.W, self.H, canvas._rotation_matrix(), canvas._center, scale, canvas._extent,
-            canvas._screen_x_sign, canvas._screen_y_sign,
+            canvas._screen_x_sign, canvas._screen_y_sign, canvas._perspective,
         ).astype(np.int16)
         self.assertEqual(gpu.shape, cpu.shape)
         diff = np.abs(gpu - cpu).max(axis=2) > 12
@@ -98,6 +98,12 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
 
     def test_rotated_camera(self):
         self._compare(_quad(0.0, texture=_checker()), canvas=_canvas(), tolerance=0.08)
+
+    def test_perspective(self):
+        canvas = _canvas(yaw=0.3, pitch=-0.2)
+        canvas._perspective = 0.25
+        tris = _quad(1.0, color=(30, 200, 30), size=0.8) + _quad(-1.0, color=(200, 30, 30), size=0.3)
+        self._compare(tris, canvas=canvas)
 
     def test_update_positions(self):
         tris = _quad(0.0)
