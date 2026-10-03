@@ -42,6 +42,7 @@ This file is the required high-level app overview. Agents should read the follow
 - [Script language](docs/app/script-language.md) — the `.fe9s` event-script language, the Scripts tab and the script command line.
 - Script modding tutorial (`docs/app/script-tutorial.md`) — not written yet: progressive `.fe9s` lessons and the native/helper call index.
 - AI scripts (`docs/app/ai-scripts.md`) — not written yet: Game Data › AI (CP) readable AI code (`formats/cp_ai_lang.py`, opcodes in `formats/cp_ops.py`), the raw view and the other `cp_data.bin` tabs.
+- [Campaign-modding plan](docs/app/campaign-plan.md) — state of the work on supporting a full new campaign, and the checklist to run with a disc.
 - [Making a new campaign](docs/app/modder-guide.md) — a modder's workflow and where each step happens in the app.
 - [Formats and tools](docs/app/formats-and-tools.md) — format-module responsibilities, write-support boundaries, bundled tools, and test coverage.
 - [Known bugs](docs/app/known-bugs.md) — confirmed but unfixed app defects.
