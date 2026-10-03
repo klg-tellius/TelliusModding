@@ -38,9 +38,9 @@ from .widgets import Link, PortraitCache, track_hover
 Route = tuple
 
 NAV = [("home", "Home"), ("chapters", "Chapters"), ("characters", "Characters"), ("data", "Game Data"),
-       ("flags", "Flags"), ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("disc", "Disc & Patch")]
+       ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("disc", "Disc & Patch")]
 SECTION_OF = {"home": "home", "chapters": "chapters", "chapter": "chapters", "characters": "characters",
-              "character": "characters", "data": "data", "flags": "flags", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "disc": "disc"}
+              "character": "characters", "data": "data", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "disc": "disc"}
 # Sections that work before the source disc is extracted.
 UNEXTRACTED_KINDS = ("home", "disc")
 
@@ -423,8 +423,8 @@ class Shell(ttk.Frame):
         items += [("Tool", label, "Game Data", ("data", key))
                   for key, label in (("classes", "Classes"), ("items", "Items"), ("skills", "Skills"),
                                      ("terrain", "Terrain"), ("supports", "Supports"),
-                                     ("props", "Map Objects"))]
-        items += [("Tool", label, "Flags", ("flags", key))
+                                     ("props", "Map Objects"), ("flags", "Flags"))]
+        items += [("Tool", label, "Game Data › Flags", ("data", "flags", key))
                   for key, label in (("campaign", "Campaign flags"), ("chapter", "Chapter flags"),
                                      ("save", "Save file flags"))]
         index = self.index

@@ -59,7 +59,7 @@ ASSET_TOOLS = [
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
     ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
-    ("sound_room", "Sound Room", "♬", "Sound Room slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
+    ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
@@ -77,11 +77,13 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Assets", style="Title.TLabel").pack(anchor="w")
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
-        for title, keys in (("Text and scripts", ("conversations", "scripts")),
-                            ("Characters and models", ("portraits", "models", "battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "battle_sim")),
-                            ("Art", ("backgrounds", "illustrations", "ending", "world_map", "effects")),
-                            ("Interface", ("icons", "fonts", "ui_windows", "etc_graphics", "equipment")),
-                            ("Sound and video", ("music", "sfx", "sound_room", "videos"))):
+        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "fonts")),
+                            ("Characters and models", ("portraits", "models")),
+                            ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "effects")),
+                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
+                                        "icons", "ui_windows", "etc_graphics", "equipment")),
+                            ("Sound and video", ("music", "sfx", "videos")),
+                            ("Tools", ("battle_sim",))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")

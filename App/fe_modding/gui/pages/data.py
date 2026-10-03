@@ -6,13 +6,15 @@ Characters live in the same file but have their own pages; both edit one
 shared session (``fe8_session.py``). Each tab lists its records as tiles
 (the item and skill tiles show their icon; classes have no icon, and are filtered
 as unpromoted, promoted or laguz like items by weapon type); a tile opens
-the record's form, and fields apply as soon as they are left. The Supports tab
+the record's form, and fields apply as soon as they are left. The Flags tab
+holds the 96 script flags (campaign, chapter, save file). The Supports tab
 lists every support pair (a character's partners and bonds are edited on their
 page), edits the affinity bonus table and the support conversations
 (``Mess/yell.m``, through a Dialogue editor)."""
 
 from __future__ import annotations
 
+from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
 from ..prop_browser import MapObjectsPanel
@@ -21,7 +23,7 @@ from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
-        "general": "General", "supports": "Supports", "props": "Map Objects", "ai": "AI (CP)"}
+        "general": "General", "supports": "Supports", "props": "Map Objects", "flags": "Flags", "ai": "AI (CP)"}
 
 
 class GameDataPage(Page):
@@ -50,6 +52,8 @@ class GameDataPage(Page):
             session.subscribe(self._on_session_changed)
         self._props = MapObjectsPanel(self._editor._notebook, self.project)
         self._editor._notebook.add(self._props, text=TABS["props"])
+        self._flags = FlagsPanel(self._editor._notebook, shell)
+        self._editor._notebook.add(self._flags, text=TABS["flags"])
         self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
                                session_provider=lambda: shell.session if shell.session.available else None)
         self._editor._notebook.add(self._ai, text=TABS["ai"])
@@ -72,6 +76,9 @@ class GameDataPage(Page):
     def _on_session_changed(self, source) -> None:
         if self._supports is not None and source is not self._supports:
             self._supports.reload()
+
+    def index_changed(self) -> None:
+        self._flags.index_changed()
 
     def panels(self):
         panels = [self._editor, self._ai]
@@ -101,19 +108,22 @@ class GameDataPage(Page):
         if self._supports is not None:
             widgets["supports"] = self._supports
         widgets["props"] = self._props
+        widgets["flags"] = self._flags
         widgets["ai"] = self._ai
         return widgets
 
     def show(self, route) -> bool:
         tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
         self._tab = tab
-        if tab in ("supports", "props", "ai"):
+        if tab in ("supports", "props", "flags", "ai"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
                 self._editor._notebook.select(widget)
         else:
             self._editor.select_tab(tab)
-        if len(route) > 2 and route[2]:
+        if tab == "flags":
+            self._flags.show_sub(tuple(route[2:]))
+        elif len(route) > 2 and route[2]:
             if tab == "classes":
                 self._editor.select_class(route[2])
             elif tab == "items":
