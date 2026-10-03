@@ -10,11 +10,12 @@ from .data import GameDataPage
 from .disc import DiscPage
 from .home import HomePage
 from .saves import SaveEditorPage
+from .tools import ToolsHub
 
 PAGE_FACTORIES = {
     page.kind: page
     for page in (HomePage, ChaptersHub, ChapterPage, CharactersHub, CharacterPage, GameDataPage,
-                 SaveEditorPage,
+                 SaveEditorPage, ToolsHub,
                  AssetsHub, AssetPage, CodePage, DiscPage)
 }
 

@@ -27,11 +27,12 @@ from ..graphics_viewers import (
 from ..font_viewer import FontViewer
 from ..icon_viewer import IconViewer
 from ..model_viewer import ModelViewer
+from ..prop_browser import MapObjectsPanel
 from ..music_editor import MusicEditor
 from ..portrait_viewer import PortraitViewer
 from ..sfx_viewer import SfxViewer
 from ..soundroom_editor import SoundRoomEditor
-from ..shell import Page
+from ..shell import TOOL_ASSETS, Page
 from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 from .text_assets import ConversationsPanel, ScriptsPanel
@@ -42,6 +43,7 @@ ASSET_TOOLS = [
     ("scripts", "Scripts", "⌘", "Every event script (Scripts/), chapters' and startup.cmb", ScriptsPanel),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
+    ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse and export", MapObjectsPanel),
     ("backgrounds", "Backgrounds", "▭", "Conversation backgrounds (s/)", BackgroundViewer),
     ("illustrations", "Illustrations", "✎", "Textures in illust/", IllustrationViewer),
     ("ending", "Ending Art", "✦", "Textures in ending/", EndingViewer),
@@ -78,12 +80,11 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "fonts")),
-                            ("Characters and models", ("portraits", "models")),
+                            ("Characters and models", ("portraits", "models", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "effects")),
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment")),
-                            ("Sound and video", ("music", "sfx", "videos")),
-                            ("Tools", ("battle_sim",))):
+                            ("Sound and video", ("music", "sfx", "videos"))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")
@@ -148,6 +149,8 @@ class AssetPage(Page):
 
     def crumbs(self, route):
         label = TOOLS_BY_KEY[route[1]][1]
+        if route[1] in TOOL_ASSETS:
+            return [("Tools", ("tools",)), (label, None)]
         if route[1] == "conversations" and len(route) > 2 and route[2]:
             return [("Assets", ("assets",)), (label, ("asset", route[1])), (route[2], None)]
         return [("Assets", ("assets",)), (label, None)]

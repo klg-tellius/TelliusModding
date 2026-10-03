@@ -38,9 +38,11 @@ from .widgets import Link, PortraitCache, track_hover
 Route = tuple
 
 NAV = [("home", "Home"), ("chapters", "Chapters"), ("characters", "Characters"), ("data", "Game Data"),
-       ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("disc", "Disc & Patch")]
+       ("assets", "Assets"), ("tools", "Tools")]
 SECTION_OF = {"home": "home", "chapters": "chapters", "chapter": "chapters", "characters": "characters",
-              "character": "characters", "data": "data", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "disc": "disc"}
+              "character": "characters", "data": "data", "assets": "assets", "asset": "assets", "tools": "tools", "saves": "tools", "code": "tools"}
+#: Asset-page tools that belong to the Tools section.
+TOOL_ASSETS = ("battle_sim",)
 # Sections that work before the source disc is extracted.
 UNEXTRACTED_KINDS = ("home", "disc")
 
@@ -161,6 +163,8 @@ class Shell(ttk.Frame):
         right.pack(side="right", padx=12)
         settings = ttk.Button(right, text="⚙", width=3, command=self.open_settings)
         settings.pack(side="right", padx=(8, 0))
+        disc = ttk.Button(right, text="💿", width=3, command=lambda: self.navigate(("disc",)))
+        disc.pack(side="right", padx=(8, 0))
         search = ttk.Button(right, text="⌕  Search everything…      Ctrl+K", command=self.open_search, width=34)
         search.pack(side="right")
 
@@ -330,6 +334,8 @@ class Shell(ttk.Frame):
 
     def _after_route_change(self) -> None:
         section = SECTION_OF.get(self.route[0], "")
+        if self.route[0] == "asset" and self.route[1:2] and self.route[1] in TOOL_ASSETS:
+            section = "tools"
         for key, item in self._nav.items():
             item.set_active(key == section)
         label = self._current.history_label(self.route) if self._current else None
@@ -418,12 +424,14 @@ class Shell(ttk.Frame):
     def search_items(self) -> list[tuple[str, str, str, Route]]:
         """``(kind, label, detail, route)`` for everything the palette finds."""
         items: list[tuple[str, str, str, Route]] = [("Go to", label, "", (key,)) for key, label in NAV]
+        items.append(("Go to", "Disc & Patch", "", ("disc",)))
+        items += [("Tool", label, "Tools", (key,)) for key, label in (("saves", "Saves"), ("code", "Game Code"))]
         for key, label in self._asset_tools:
-            items.append(("Tool", label, "Assets", ("asset", key)))
+            items.append(("Tool", label, "Tools" if key in TOOL_ASSETS else "Assets", ("asset", key)))
         items += [("Tool", label, "Game Data", ("data", key))
                   for key, label in (("classes", "Classes"), ("items", "Items"), ("skills", "Skills"),
                                      ("terrain", "Terrain"), ("supports", "Supports"),
-                                     ("props", "Map Objects"), ("flags", "Flags"))]
+                                     ("flags", "Flags"))]
         items += [("Tool", label, "Game Data › Flags", ("data", "flags", key))
                   for key, label in (("campaign", "Campaign flags"), ("chapter", "Chapter flags"),
                                      ("save", "Save file flags"))]

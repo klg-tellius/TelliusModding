@@ -1,6 +1,5 @@
 """Game Data: classes, items, skills, terrain types, chapters, the general
-tables and supports (``FE8Data.bin``),
-and the props of every chapter map (Map Objects, read from the ``map.cmp`` files).
+tables and supports (``FE8Data.bin``).
 
 Characters live in the same file but have their own pages; both edit one
 shared session (``fe8_session.py``). Each tab lists its records as tiles
@@ -17,13 +16,12 @@ from __future__ import annotations
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
-from ..prop_browser import MapObjectsPanel
 from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
-        "general": "General", "supports": "Supports", "props": "Map Objects", "flags": "Flags", "ai": "AI (CP)"}
+        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)"}
 
 
 class GameDataPage(Page):
@@ -50,8 +48,6 @@ class GameDataPage(Page):
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])
             session.subscribe(self._on_session_changed)
-        self._props = MapObjectsPanel(self._editor._notebook, self.project)
-        self._editor._notebook.add(self._props, text=TABS["props"])
         self._flags = FlagsPanel(self._editor._notebook, shell)
         self._editor._notebook.add(self._flags, text=TABS["flags"])
         self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
@@ -86,10 +82,6 @@ class GameDataPage(Page):
             panels.append(self._supports.dialogue_editor)  # yell.m has its own Save
         return panels
 
-    def cleanup(self) -> None:
-        super().cleanup()
-        self._props.browser.cleanup()
-
     def flush(self) -> None:
         self._editor.flush()
         if self._supports is not None:
@@ -107,7 +99,6 @@ class GameDataPage(Page):
         widgets = {key: tabs[i] for i, key in enumerate(TAB_KEYS) if i < len(tabs)}
         if self._supports is not None:
             widgets["supports"] = self._supports
-        widgets["props"] = self._props
         widgets["flags"] = self._flags
         widgets["ai"] = self._ai
         return widgets
@@ -115,7 +106,7 @@ class GameDataPage(Page):
     def show(self, route) -> bool:
         tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
         self._tab = tab
-        if tab in ("supports", "props", "flags", "ai"):
+        if tab in ("supports", "flags", "ai"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
                 self._editor._notebook.select(widget)

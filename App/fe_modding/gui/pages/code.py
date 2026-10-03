@@ -77,7 +77,7 @@ class CodePage(Page):
         self._scroll.pack(fill="both", expand=True)
 
     def crumbs(self, route):
-        return [("Home", ("home",)), ("Game Code", None)]
+        return [("Tools", ("tools",)), ("Game Code", None)]
 
     def history_label(self, route):
         return "Game Code"
