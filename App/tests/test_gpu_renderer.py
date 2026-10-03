@@ -113,5 +113,59 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
         self.assertFalse(RENDERER.update_positions(moved[:1]))
 
 
+    def test_dynamic_meshes_draw_over_the_static_one(self):
+        """set_mesh / update_mesh / show_mesh give the image of the combined triangle list."""
+        canvas = _canvas(yaw=0.2, pitch=-0.1)
+        scale = (min(self.W, self.H) * model_viewer.FIT_FRACTION / canvas._extent) * canvas._zoom
+        static = _quad(1.0, color=(30, 200, 30), size=0.9)
+        mover = _quad(0.0, texture=_checker(), size=0.4)
+        hidden = _quad(-0.5, color=(250, 250, 250), size=0.2)
+        RENDERER.set_triangles(static)
+        uploads = RENDERER.uploads
+        RENDERER.set_mesh("mover", mover)
+        RENDERER.set_mesh("hidden", hidden)
+        RENDERER.show_mesh("hidden", False)
+        positions = np.array([(t.a, t.b, t.c) for t in mover]) + (0.3, 0.2, 0.0)
+        normals = np.array([t.normal for t in mover])
+        self.assertTrue(RENDERER.update_mesh("mover", positions, normals))
+        self.assertFalse(RENDERER.update_mesh("mover", positions[:1], normals[:1]))
+        self.assertFalse(RENDERER.update_mesh("nothing", positions, normals))
+        args = (self.W, self.H, canvas._rotation_matrix(), canvas._center, scale, canvas._extent, 1.0, 1.0, 0.0)
+        for _ in range(3):  # frames rewrite the moving mesh only
+            self.assertTrue(RENDERER.update_mesh("mover", positions, normals))
+            gpu = RENDERER.render(*args).astype(np.int16)
+        self.assertEqual(RENDERER.uploads, uploads + 2)
+        moved = model_viewer._retarget_triangles(mover, positions, normals)
+        cpu = canvas._rasterize(static + moved, self.W, self.H).astype(np.int16)
+        diff = np.abs(gpu - cpu).max(axis=2) > 12
+        self.assertLess(diff.mean(), 0.03, f"{diff.mean():.3f} of pixels differ")
+
+
+class CpuSceneLayerTest(unittest.TestCase):
+    def test_cached_static_layer_matches_full_raster(self):
+        canvas = _canvas(yaw=0.2, pitch=-0.1)
+        canvas.low_res = False
+        canvas._perspective = 0.0
+        canvas._static_layer = None
+        static = _quad(1.0, color=(30, 200, 30), size=0.9)
+        mover = _quad(0.0, color=(200, 30, 30), size=0.4)
+        canvas._triangles = static
+        canvas._scene_dynamic = {"mover": mover}
+        positions = np.array([(t.a, t.b, t.c) for t in mover]) + (0.3, 0.0, 0.0)
+        normals = np.array([t.normal for t in mover])
+        canvas._scene_poses = {"mover": (positions, normals)}
+        first = np.asarray(canvas._cpu_scene_frame(120, 90))
+        layer = canvas._static_layer
+        second = np.asarray(canvas._cpu_scene_frame(120, 90))
+        self.assertIs(canvas._static_layer, layer)  # the static layer was reused
+        expected = canvas._rasterize(static + model_viewer._retarget_triangles(mover, positions, normals), 120, 90)
+        np.testing.assert_array_equal(first, expected)
+        np.testing.assert_array_equal(second, expected)
+        canvas._scene_poses = {"mover": None}
+        np.testing.assert_array_equal(np.asarray(canvas._cpu_scene_frame(120, 90)), canvas._rasterize(static, 120, 90))
+        canvas.low_res = True
+        self.assertEqual(canvas._cpu_scene_frame(120, 90).size, (120, 90))
+
+
 if __name__ == "__main__":
     unittest.main()

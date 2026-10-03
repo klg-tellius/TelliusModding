@@ -109,6 +109,7 @@ import io
 import json
 import math
 import re
+import time
 import tkinter as tk
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -775,6 +776,17 @@ def _skin_vertex(p, skin: _VertexSkin, world, palette, *, direction: bool = Fals
         if length > 1e-9:
             out = [c / length for c in out]
     return tuple(out)
+
+
+def _retarget_triangles(triangles: list[_Triangle], positions, normals) -> list[_Triangle]:
+    """``triangles`` moved to ``positions`` (n, 3, 3) / ``normals`` (n, 3), keeping the rest."""
+    positions = np.asarray(positions).tolist()
+    normals = np.asarray(normals).tolist()
+    return [
+        _Triangle(tuple(p[0]), tuple(p[1]), tuple(p[2]), tuple(nrm), t.color, t.skin, t.uv, t.texture,
+                  t.texture_layers, t.alpha, t.blend_mode)
+        for t, p, nrm in zip(triangles, positions, normals)
+    ]
 
 
 def _skin_triangles(triangles: list[_Triangle], world, palette) -> list[_Triangle]:
@@ -3150,6 +3162,7 @@ class _ModelCanvas(tk.Canvas):
 
     #: 0 = orthographic; else 1 / the eye's distance from the center (set_view)
     _perspective = 0.0
+    last_frame_ms = 0.0  # how long the last redraw took
 
     def __init__(self, parent: tk.Misc):
         super().__init__(parent, background="#2b2b2b", highlightthickness=0)
@@ -3189,6 +3202,14 @@ class _ModelCanvas(tk.Canvas):
         self._gpu_checked = False
         self._gpu_model: list[_Triangle] | None = None
         self._gpu_uploaded: list[_Triangle] | None = None
+        # set_scene(): moving meshes drawn over the static model, posed by
+        # update_scene() (the battle simulator's units over its scenery)
+        self._scene_dynamic: dict = {}
+        self._scene_poses: dict = {}
+        self._gpu_scene: dict | None = None
+        self._gpu_poses: dict | None = None
+        self._static_layer: tuple | None = None  # CPU: (view key, framebuffer, zbuffer) of the static model
+        self.low_res = False  # CPU scene frames at half size (set while playing with a moving camera)
 
         self.bind("<ButtonPress-1>", self._on_drag_start)
         self.bind("<B1-Motion>", self._on_drag_motion)
@@ -3219,8 +3240,46 @@ class _ModelCanvas(tk.Canvas):
         self._animated_triangles = None
         self._highlighted_bone = None
         self._gpu_model = None
+        self._scene_dynamic, self._scene_poses = {}, {}
+        self._gpu_scene = self._gpu_poses = None
+        self._static_layer = None
         self._fit_to_content()
         self._schedule_redraw()
+
+    def set_scene(self, static: list[_Triangle], dynamic: dict) -> None:
+        """Show ``static`` (uploaded once) plus moving meshes: ``dynamic`` maps
+        a key to its triangle list, drawn as given until ``update_scene()``
+        poses or hides it. Unlike ``set_pose()``, a frame only rewrites the
+        moving meshes, so a large static scenery costs nothing per frame."""
+        self.set_model(static, {}, {}, {})
+        self._scene_dynamic = dict(dynamic)
+        self._scene_poses = {}
+        self._fit_to_content()
+
+    def replace_scene_meshes(self, dynamic: dict) -> None:
+        """Swap ``set_scene()``'s moving meshes, keeping the static model and the view."""
+        self._scene_dynamic = dict(dynamic)
+        self._scene_poses = {}
+        self._gpu_scene = self._gpu_poses = None
+        self._schedule_redraw()
+
+    def update_scene(self, poses: dict) -> None:
+        """Pose moving meshes: key -> ``(positions (n, 3, 3), normals (n, 3))``
+        in the order of its triangles, or None to hide it."""
+        self._scene_poses = {**self._scene_poses, **poses}
+        self._schedule_redraw()
+
+    def _scene_triangles(self) -> list[_Triangle]:
+        """The moving meshes as posed now, as triangles (the CPU path)."""
+        out: list[_Triangle] = []
+        for key, triangles in self._scene_dynamic.items():
+            if key not in self._scene_poses:
+                out.extend(triangles)
+                continue
+            pose = self._scene_poses[key]
+            if pose is not None:
+                out.extend(_retarget_triangles(triangles, *pose))
+        return out
 
     def set_pose(
         self,
@@ -3306,6 +3365,7 @@ class _ModelCanvas(tk.Canvas):
 
     def _fit_to_content(self) -> None:
         points = [v for tri in self._triangles for v in (tri.a, tri.b, tri.c)]
+        points.extend(v for tris in self._scene_dynamic.values() for tri in tris for v in (tri.a, tri.b, tri.c))
         points.extend(self._bone_markers.values())
         if not points:
             self._center = self._home_center = (0.0, 0.0, 0.0)
@@ -3401,7 +3461,14 @@ class _ModelCanvas(tk.Canvas):
         r_pitch = np.array([[1.0, 0.0, 0.0], [0.0, cosp, -sinp], [0.0, sinp, cosp]])
         return r_pitch @ r_yaw
 
-    def _rasterize(self, triangles: list[_Triangle], width: int, height: int) -> "np.ndarray":
+    def _rasterize(
+        self,
+        triangles: list[_Triangle],
+        width: int,
+        height: int,
+        framebuffer: "np.ndarray | None" = None,
+        zbuffer: "np.ndarray | None" = None,
+    ) -> "np.ndarray":
         """Render `triangles` into an (height, width, 3) uint8 framebuffer:
         batch-transform every vertex with one matrix multiply, drop
         back-facing triangles, then for each remaining triangle rasterize
@@ -3409,12 +3476,15 @@ class _ModelCanvas(tk.Canvas):
         barycentric inside-test, a per-pixel Z-buffer test, and per-pixel
         bilinear-filtered texture sampling where the triangle has one) -
         see this class's own docstring for why this replaced one
-        `create_polygon` per triangle."""
-        bg = np.array([43, 43, 43], dtype=np.uint8)
-        framebuffer = np.full((height, width, 3), bg, dtype=np.uint8)
+        `create_polygon` per triangle. A given `framebuffer`/`zbuffer` is
+        drawn over in place (the static layer of `set_scene()`)."""
+        if framebuffer is None:
+            bg = np.array([43, 43, 43], dtype=np.uint8)
+            framebuffer = np.full((height, width, 3), bg, dtype=np.uint8)
+        if zbuffer is None:
+            zbuffer = np.full((height, width), np.inf, dtype=np.float64)
         if not triangles:
             return framebuffer
-        zbuffer = np.full((height, width), np.inf, dtype=np.float64)
 
         rot = self._rotation_matrix()
         ccx, ccy, ccz = self._center
@@ -3551,12 +3621,71 @@ class _ModelCanvas(tk.Canvas):
 
         return framebuffer
 
-    def _gpu_frame(self, triangles: list[_Triangle], width: int, height: int, scale: float) -> "Image.Image | None":
-        """Render `triangles` on the GPU, or None to use `_rasterize()`."""
+    def _ensure_gpu(self) -> "gpu_renderer.GpuSceneRenderer | None":
         if not self._gpu_checked:
             self._gpu_checked = True
             self._gpu = gpu_renderer.create_renderer()
-        if self._gpu is None:
+        return self._gpu
+
+    @property
+    def uses_gpu(self) -> bool:
+        """Whether frames are drawn on the GPU (creates the renderer if not checked yet)."""
+        return self._ensure_gpu() is not None
+
+    def _render_args(self, width: int, height: int, scale: float) -> tuple:
+        return (width, height, self._rotation_matrix(), self._center, scale, self._extent,
+                self._screen_x_sign, self._screen_y_sign, self._perspective)
+
+    def _gpu_scene_frame(self, width: int, height: int, scale: float) -> "Image.Image | None":
+        """`set_scene()`'s frame on the GPU: the static mesh stays uploaded and
+        only the moving meshes' positions are rewritten; None to use the CPU."""
+        gpu = self._ensure_gpu()
+        if gpu is None:
+            return None
+        try:
+            if self._gpu_model is not self._triangles:
+                gpu.set_triangles(self._triangles)
+                self._gpu_model = self._gpu_uploaded = self._triangles
+                self._gpu_scene = None
+            if self._gpu_scene is not self._scene_dynamic:
+                gpu.clear_meshes()
+                for key, triangles in self._scene_dynamic.items():
+                    gpu.set_mesh(key, triangles)
+                self._gpu_scene, self._gpu_poses = self._scene_dynamic, None
+            if self._gpu_poses is not self._scene_poses:
+                for key, pose in self._scene_poses.items():
+                    gpu.show_mesh(key, pose is not None)
+                    if pose is not None:
+                        gpu.update_mesh(key, *pose)
+                self._gpu_poses = self._scene_poses
+            return gpu.render_image(*self._render_args(width, height, scale))
+        except Exception:  # noqa: BLE001 - a driver/device failure falls back to the CPU rasterizer
+            gpu_renderer.log.warning("GPU render failed - switching to the CPU rasterizer", exc_info=True)
+            self._gpu = None
+            return None
+
+    def _cpu_scene_frame(self, width: int, height: int) -> "Image.Image":
+        """`set_scene()`'s frame on the CPU: the static model is rasterized once
+        per view and kept with its depth; each frame copies it and draws only
+        the moving meshes over it. ``low_res`` halves the size."""
+        full = (width, height)
+        if self.low_res:
+            width, height = max(width // 2, 1), max(height // 2, 1)
+        key = (width, height, full, tuple(self._center), self._yaw, self._pitch, self._zoom, self._perspective,
+               self._screen_x_sign, self._screen_y_sign, self._extent, id(self._triangles))
+        if self._static_layer is None or self._static_layer[0] != key:
+            # _rasterize() scales by min(width, height): at half size, so is the view
+            zbuffer = np.full((height, width), np.inf, dtype=np.float64)
+            framebuffer = self._rasterize(self._triangles, width, height, zbuffer=zbuffer)
+            self._static_layer = (key, framebuffer, zbuffer)
+        _key, framebuffer, zbuffer = self._static_layer
+        frame = self._rasterize(self._scene_triangles(), width, height, framebuffer.copy(), zbuffer.copy())
+        image = Image.fromarray(frame, mode="RGB")
+        return image.resize(full, Image.BILINEAR) if image.size != full else image
+
+    def _gpu_frame(self, triangles: list[_Triangle], width: int, height: int, scale: float) -> "Image.Image | None":
+        """Render `triangles` on the GPU, or None to use `_rasterize()`."""
+        if self._ensure_gpu() is None:
             return None
         try:
             if self._gpu_model is not self._triangles:
@@ -3600,6 +3729,13 @@ class _ModelCanvas(tk.Canvas):
             self.tag_lower(self._image_item)
 
     def _redraw(self) -> None:
+        started = time.perf_counter()
+        try:
+            self._redraw_frame()
+        finally:
+            self.last_frame_ms = (time.perf_counter() - started) * 1000
+
+    def _redraw_frame(self) -> None:
         self._redraw_pending = False
         # everything except the mesh image is an overlay, rebuilt per frame
         self.addtag_all("overlay")
@@ -3610,16 +3746,20 @@ class _ModelCanvas(tk.Canvas):
         height = self.winfo_height() or 360
         cx, cy = width / 2, height / 2
         scale = (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
-        if not self._show_mesh or (not self._triangles and not self._bone_markers):
+        has_mesh = bool(self._triangles or self._scene_dynamic)
+        if not self._show_mesh or (not has_mesh and not self._bone_markers):
             if self._image_item is not None:
                 self.itemconfigure(self._image_item, state="hidden")
-        if not self._triangles and not self._bone_markers:
+        if not has_mesh and not self._bone_markers:
             self.create_text(width / 2, height / 2, text="No mesh data for this model set", fill="#999999")
             return
 
         positions = self._posed_positions if self._posed_positions is not None else self._bone_markers
 
-        if self._show_mesh:
+        if self._show_mesh and self._scene_dynamic:
+            frame = self._gpu_scene_frame(width, height, scale)
+            self._show_frame(frame if frame is not None else self._cpu_scene_frame(width, height))
+        elif self._show_mesh:
             triangles = self._animated_triangles if self._animated_triangles is not None else self._triangles
             frame = self._gpu_frame(triangles, width, height, scale)
             if frame is None:

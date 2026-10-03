@@ -12,7 +12,14 @@ reach a keyframe (0 = cut). The rig's ``entityName`` (``charaAtk`` /
 ``time`` (taken as frames, times :attr:`GameCamera.time_scale`), and how
 ``pos`` / ``rot`` / ``dist`` combine. They are read as an orbit, like the
 ``cam1`` rig: the camera looks at the followed unit's ``_cam_`` bone plus
-``pos``, from ``dist`` away, turned by ``rot`` (x pitch, y yaw, degrees).
+the rig's ``offs`` plus ``pos``, from ``dist`` away, turned by ``rot``
+(degrees: x tilts the camera down, y turns it about the fighters, 180 being
+the side view with the left unit on the left).
+
+The scale of ``dist`` / ``pos`` against the battle models is not measured
+either, so the stage scales them: :meth:`GameCamera.reference_dist` (the
+first ``atk_l`` keyframe's ``dist``) is mapped to the distance that frames
+both units, which keeps each script's push-ins and pull-backs.
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from ..formats import battle_camera, zdbx
 @dataclass(frozen=True)
 class View:
     follow: Optional[int]  # side the camera looks at (None: between the units)
-    offset: tuple  # added to the look-at point
+    offset: tuple  # added to the look-at point (keyframe pos + the rig's offs), in game units
     rot: tuple  # degrees: pitch, yaw, roll
     dist: float
 
@@ -82,6 +89,19 @@ class GameCamera:
                 continue
         return cls(scripts, rigs)
 
+    def reference_dist(self) -> Optional[float]:
+        """The first ``atk_l`` keyframe's ``dist`` (else any attack script's): the normal framing."""
+        script = choose_script(self.scripts, 0, False)
+        if script is None or not script.keyframes:
+            return None
+        dist = script.keyframes[0].dist
+        return dist if dist > 0 else None
+
+    def _rig_offset(self, script: battle_camera.CameraScript) -> tuple:
+        rig = self.rigs.get(script.camera)
+        offs = battle_camera.parse_vec(rig.get("offs")) if rig is not None else None
+        return offs or (0.0, 0.0, 0.0)
+
     def _follow(self, script: battle_camera.CameraScript, striker: int) -> Optional[int]:
         rig = self.rigs.get(script.camera)
         entity = rig.get("entityName") if rig is not None else ""
@@ -109,4 +129,5 @@ class GameCamera:
         if values is None:
             return None
         pos, rot, dist = values
-        return View(self._follow(script, side), pos, rot, dist)
+        offset = tuple(p + o for p, o in zip(pos, self._rig_offset(script)))
+        return View(self._follow(script, side), offset, rot, dist)

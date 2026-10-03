@@ -21,6 +21,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+import numpy as np
+
 from .. import battle_sim
 from ..battle_sim import rules_fe9
 from ..battle_sim import camera as battle_camera_sim
@@ -545,6 +547,8 @@ class _ScenePanel(ttk.Frame):
         self.spacing = tk.DoubleVar(value=1.0)
         self.facing = tk.IntVar(value=0)
         self.time_scale = tk.DoubleVar(value=1.0)
+        self.camera_scale = tk.DoubleVar(value=1.0)
+        self.offsets = [tk.DoubleVar(value=0.0) for _ in range(3)]  # X, height, Z
         self._camera: Optional[battle_camera_sim.GameCamera] = None
         self._effects: dict = {}  # EID -> EffectAsset or None
         self.codes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
@@ -575,10 +579,26 @@ class _ScenePanel(ttk.Frame):
         ttk.Label(row, text="Facing").pack(side="left")
         ttk.Spinbox(row, from_=0, to=270, increment=90, width=5, textvariable=self.facing, wrap=True,
                     command=self._placed).pack(side="left", padx=(6, 0))
+        ttk.Label(controls, text="Stage offset (X, height, Z)", style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
+        row = ttk.Frame(controls)
+        row.pack(fill="x")
+        self._offset_boxes = []
+        for var in self.offsets:
+            box = ttk.Spinbox(row, from_=-10000, to=10000, increment=1.0, width=7, textvariable=var,
+                              command=self._placed)
+            box.pack(side="left", padx=(0, 4))
+            box.bind("<Return>", self._placed)
+            box.bind("<FocusOut>", self._placed)
+            self._offset_boxes.append(box)
         row = ttk.Frame(controls)
         row.pack(fill="x", pady=(6, 0))
         ttk.Label(row, text="Camera time scale").pack(side="left")
         ttk.Spinbox(row, from_=0.25, to=8.0, increment=0.25, width=5, textvariable=self.time_scale,
+                    command=self._placed).pack(side="left", padx=(6, 0))
+        row = ttk.Frame(controls)
+        row.pack(fill="x", pady=(6, 0))
+        ttk.Label(row, text="Camera distance \u00d7").pack(side="left")
+        ttk.Spinbox(row, from_=0.1, to=10.0, increment=0.1, width=5, textvariable=self.camera_scale,
                     command=self._placed).pack(side="left", padx=(6, 0))
         ttk.Button(controls, text="Reload models", command=lambda: self._reload(force=True)).pack(
             anchor="w", pady=(10, 0))
@@ -586,9 +606,10 @@ class _ScenePanel(ttk.Frame):
         self._notes.pack(anchor="w", pady=(10, 0))
         ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text=(
             "Clips follow zu/<model>.dbx (attack, critical, dodge, damage, death). The blow lands on the clip's "
-            "combat event. Spacing and facing are the simulator's own: the engine's are not measured. Skill and "
-            "spell effects start when the blow lands (their real timing is not decoded). The game camera plays "
-            "the xcam/ scripts; their time unit is not measured, hence the time scale.")).pack(
+            "combat event. The units stand in the middle of the scenery's floor; spacing, facing and that spot "
+            "are the simulator's own (the engine's are not measured), hence the offsets. Skill and spell effects "
+            "start when the blow lands (their real timing is not decoded). The game camera plays the xcam/ "
+            "scripts; their time unit and distance scale are not measured, hence the two camera settings.")).pack(
             anchor="w", pady=(10, 0))
 
         self.view = battle_stage.StageView(self)
@@ -685,7 +706,10 @@ class _ScenePanel(ttk.Frame):
             height = max(u.height for u in units3d)
             self._spacing.configure(to=max(4.0 * height, 1.0))
             self.spacing.set(stage.spacing)
-            stage.facing = float(self.facing.get())
+            step = max(round(height / 10, 2), 0.01)
+            for box in self._offset_boxes:
+                box.configure(increment=step)
+            self._apply_placement(stage)
             stage.set_log(log, distance)
             self.view.set_stage(stage, (log.attacker.name, log.defender.name),
                                 (log.attacker.stats[0], log.defender.stats[0]))
@@ -701,6 +725,13 @@ class _ScenePanel(ttk.Frame):
             if found.weapon_model is None and units[side].weapon is not None:
                 what += ", no weapon model"
             notes.append(what + "".join(f"; {n}" for n in found.notes))
+        stage = self.view.stage
+        if stage is not None and stage.scenery:
+            x, y, z = stage.base.tolist()
+            notes.append(f"Scenery floor middle: {x:.1f}, {y:.1f}, {z:.1f}")
+            if stage.scenery_bones:
+                bones = ", ".join(stage.scenery_bones[:12]) + (" ..." if len(stage.scenery_bones) > 12 else "")
+                notes.append(f"Scenery bones: {bones}")
         self._notes.configure(text="\n".join(notes))
 
     def _placed(self, *_args) -> None:
@@ -709,12 +740,21 @@ class _ScenePanel(ttk.Frame):
             return
         try:
             stage.spacing = float(self.spacing.get())
-            stage.facing = float(self.facing.get())
+            self._apply_placement(stage)
             if self._camera is not None:
                 self._camera.time_scale = max(float(self.time_scale.get()), 0.05)
         except (tk.TclError, ValueError):
             return
         self.view.refresh()
+
+    def _apply_placement(self, stage) -> None:
+        """Facing, stage offset and camera distance from the controls (bad entries keep the old values)."""
+        try:
+            stage.facing = float(self.facing.get())
+            stage.offset = np.array([float(v.get()) for v in self.offsets])
+            stage.camera_scale = max(float(self.camera_scale.get()), 0.01)
+        except (tk.TclError, ValueError):
+            pass
 
     def cleanup(self) -> None:
         self.view.cleanup()

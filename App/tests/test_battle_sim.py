@@ -374,6 +374,14 @@ class CameraTests(unittest.TestCase):
         self.assertEqual(gc.view(shots, 20.0).dist, 75.0)
         self.assertEqual(camera.choose_script(gc.scripts, 1, False).name, "atk_l")  # any atk* fallback
 
+    def test_rig_offset_and_reference_distance(self):
+        from fe_modding.formats import battle_camera as bc
+        rig = bc.read_rigs("{\r\n\tclass\tCamera\r\n\tname\tcamCharaL0\r\n\toffs\t0.0, 2.0, 1.0\r\n}\r\n")[0]
+        gc = camera.GameCamera({"atk_l": bc.read_script(self.script())}, {"camCharaL0": rig})
+        self.assertEqual(gc.reference_dist(), 100.0)
+        self.assertEqual(gc.view([(0.0, 0, False)], 10.0).offset, (0.0, 7.0, 1.0))  # pos 5 + offs 2
+        self.assertIsNone(camera.GameCamera({}, {}).reference_dist())
+
 
 if __name__ == "__main__":
     unittest.main()

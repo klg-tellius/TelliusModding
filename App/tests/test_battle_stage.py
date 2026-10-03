@@ -1,4 +1,5 @@
 import os
+import math
 import random
 import sys
 import unittest
@@ -67,9 +68,14 @@ class SkinnedMeshTests(unittest.TestCase):
         stage.set_log(log)
         frame = stage.frame(0.0)
         self.assertEqual(len(frame), 2)
-        self.assertAlmostEqual(frame[0].a[2], -1.2)
-        self.assertAlmostEqual(frame[1].a[2], 1.2)
-        self.assertAlmostEqual(frame[1].b[0], -1.0)  # turned to face the attacker
+        # left and right on X, each turned to face the other (+Z, the model's front, turns to +X / -X)
+        self.assertAlmostEqual(frame[0].a[0], -1.2)
+        self.assertAlmostEqual(frame[1].a[0], 1.2)
+        self.assertAlmostEqual(frame[0].b[2], -1.0)
+        self.assertAlmostEqual(frame[1].b[2], 1.0)
+        stage.offset = np.array([5.0, 1.0, 0.0])
+        self.assertAlmostEqual(stage.frame(0.0)[0].a[0], 3.8)
+        self.assertAlmostEqual(stage.frame(0.0)[0].a[1], 1.0)
         self.assertEqual(len(stage.timeline.changes), 2)
 
 
@@ -102,12 +108,15 @@ class StageExtrasTests(unittest.TestCase):
         self.assertEqual(len(self.stage.frame(10)), 2)
         with_effect = self.stage.frame(25)
         self.assertEqual(len(with_effect), 3)  # luna has no pack: skipped
-        self.assertAlmostEqual(with_effect[2].a[2], 1.2)  # on the defender's spot
+        self.assertAlmostEqual(with_effect[2].a[0], 1.2)  # on the defender's spot
         self.assertEqual(len(self.stage.frame(31)), 2)  # past the effect's 10 frames
         flying = self.stage.frame(50)
         self.assertEqual(len(flying), 2 + 8)  # the stand-in arrow: two planes, both windings
-        zs = [p[2] for t in flying[2:] for p in (t.a, t.b, t.c)]
-        self.assertTrue(-1.2 < min(zs) and max(zs) < 1.2)
+        poses = self.stage.poses(50)
+        xs = poses[("projectile", 0)][0][..., 0]
+        self.assertTrue(-1.2 < xs.min() and xs.max() < 1.2)
+        self.assertIsNone(poses[("effect", 0)])  # hidden, not dropped: the canvas keeps the mesh
+        self.assertEqual(poses[("projectile", 0)][0].shape, (8, 3, 3))
 
     def test_game_camera_view(self):
         from fe_modding.battle_sim import camera
@@ -118,11 +127,95 @@ class StageExtrasTests(unittest.TestCase):
         tl.shots = [(0.0, 0, False)]
         self.stage.timeline = tl
         self.stage.frame(0)
-        center, yaw, pitch, dist = self.stage.camera(camera.GameCamera({"atk_l": script}, {}), 5)
-        self.assertEqual(center, (0.0, 1.0, 0.0))  # between the units, plus pos
-        self.assertAlmostEqual(yaw, 1.5707963, places=5)
-        self.assertEqual(dist, 40.0)
+        game = camera.GameCamera({"atk_l": script}, {})
+        center, yaw, pitch, dist = self.stage.camera(game, 5)
+        framing = self.stage.framing()[1]
+        scale = framing / 40.0  # the reference keyframe frames both units
+        np.testing.assert_allclose(center, (0.0, 1.0 * scale, 0.0))  # between the units, plus pos
+        self.assertAlmostEqual(yaw, math.radians(90.0 - 180.0))
+        self.assertAlmostEqual(pitch, math.radians(-10.0))  # rot x 10 looks down
+        self.assertAlmostEqual(dist, framing)
+        self.stage.camera_scale = 2.0
+        self.assertAlmostEqual(self.stage.camera(game, 5)[3], 2 * framing)
         self.assertIsNone(self.stage.camera(camera.GameCamera({}, {}), 5))
+
+    def test_side_view_puts_attacker_left_and_looks_down(self):
+        """rot (8, 180, 0) on the canvas: the attacker left of the defender, the camera above."""
+        from fe_modding.battle_sim import camera
+        from fe_modding.formats import battle_camera as bc
+        script = bc.read_script(bc.new_script("atk_l", "cam1", keyframes=[
+            bc.Keyframe((0.0, 0.0, 0.0), (8.0, 180.0, 0.0), 100.0, 0)]))
+        tl = self.tlm.Timeline(hp_start=(10, 10), length=100)
+        tl.shots = [(0.0, 0, False)]
+        self.stage.timeline = tl
+        self.stage.frame(0)
+        _center, yaw, pitch, _dist = self.stage.camera(camera.GameCamera({"atk_l": script}, {}), 0)
+        canvas = object.__new__(battle_stage._ModelCanvas)
+        canvas._yaw, canvas._pitch = yaw, pitch
+        rot = canvas._rotation_matrix()
+        left, right = rot @ self.stage.point(0, None), rot @ self.stage.point(1, None)
+        self.assertLess(left[0], right[0])  # screen x: attacker on the left
+        up = rot @ np.array([0.0, 1.0, 0.0])
+        self.assertLess(up[2], 0)  # what is above comes nearer: the camera looks down
+
+
+@unittest.skipIf(battle_stage is None, "needs tkinter and numpy")
+class StageOriginTests(unittest.TestCase):
+    @staticmethod
+    def _quad(corners, normal=(0.0, 1.0, 0.0)):
+        a, b, c, d = corners
+        return [_Triangle(a, b, c, normal, (1, 1, 1)), _Triangle(a, c, d, normal, (1, 1, 1))]
+
+    def test_middle_of_the_floor(self):
+        # a 20 x 10 floor at height 3 whose corner is the origin, a tall wall, a small high ledge
+        floor = self._quad([(0, 3, 0), (20, 3, 0), (20, 3, 10), (0, 3, 10)])
+        wall = self._quad([(0, 3, 0), (0, 30, 0), (20, 30, 0), (20, 3, 0)], (0.0, 0.0, 1.0))
+        ledge = self._quad([(0, 25, 0), (2, 25, 0), (2, 25, 1), (0, 25, 1)])
+        np.testing.assert_allclose(battle_stage.stage_origin(floor + wall + ledge), (10.0, 3.0, 5.0))
+
+    def test_sloped_ground_height_under_the_middle(self):
+        ground = self._quad([(-4, 0, -4), (4, 0.8, -4), (4, 0.8, 4), (-4, 0, 4)])
+        origin = battle_stage.stage_origin(ground)
+        self.assertAlmostEqual(origin[0], 0.0)
+        self.assertAlmostEqual(origin[1], 0.4)
+
+    def test_no_floor_and_no_scenery(self):
+        wall = self._quad([(0, 0, 0), (0, 4, 0), (6, 4, 0), (6, 0, 0)], (0.0, 0.0, 1.0))
+        np.testing.assert_allclose(battle_stage.stage_origin(wall), (3.0, 0.0, 0.0))
+        np.testing.assert_allclose(battle_stage.stage_origin([]), (0.0, 0.0, 0.0))
+
+    def test_stage_stands_on_the_scenery(self):
+        tri = _Triangle((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 2.0, 0.0), (0.0, 0.0, 1.0), (1, 2, 3))
+
+        class Loaded:
+            bones = []
+            triangles = [tri]
+
+        class Scenery:
+            bones = []
+            triangles = self._quad([(0, 3, 0), (20, 3, 0), (20, 3, 10), (0, 3, 10)])
+
+        units = []
+        for _ in (0, 1):
+            u = battle_stage.StageUnit(sa.UnitAssets(code="fig1"))
+            u.loaded, u.mesh, u.height = Loaded(), battle_stage.SkinnedMesh([tri]), 2.0
+            units.append(u)
+        stage = battle_stage.BattleStage(units, Scenery())
+        np.testing.assert_allclose(stage.point(0, None), (10.0 - 1.2, 3.0, 5.0))
+        np.testing.assert_allclose(stage.point(1, None), (10.0 + 1.2, 3.0, 5.0))
+        center, dist = stage.framing()
+        np.testing.assert_allclose(center, (10.0, 3.0 + 1.1, 5.0))
+        self.assertGreater(dist, 0)
+
+    def test_default_spacing_uses_the_attack_range_when_plausible(self):
+        units = []
+        for spacing in ("3.5", "2"):
+            u = battle_stage.StageUnit(sa.UnitAssets(code="fig1", params={"間合い": spacing}))
+            u.height = 2.0
+            units.append(u)
+        self.assertEqual(battle_stage.default_spacing(units), 3.5)
+        units[0].assets.params["間合い"] = "40"  # not the models' scale
+        self.assertAlmostEqual(battle_stage.default_spacing(units), 2.4)
 
 
 @unittest.skipIf(battle_stage is None, "needs tkinter and numpy")

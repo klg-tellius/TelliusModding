@@ -380,9 +380,27 @@ def _layer_list(tri) -> list:
     return []
 
 
+@dataclass
+class _Mesh:
+    """One uploaded triangle list: its vertex buffer, draw batches and the
+    order the triangles were regrouped into (to rewrite positions later)."""
+
+    vertex_buffer: object
+    vertices: np.ndarray
+    order: np.ndarray
+    batches: list
+    visible: bool = True
+
+
 class GpuSceneRenderer:
     """One canvas's GPU state: its model's vertex buffer, textures and batches
-    plus render targets sized to the canvas."""
+    plus render targets sized to the canvas.
+
+    The model set by ``set_triangles()`` is the static mesh. Named dynamic
+    meshes (``set_mesh()``) are drawn with it; their positions are rewritten
+    from numpy arrays each frame (``update_mesh()``) and they can be hidden,
+    so a scene whose small moving parts change every frame (the battle
+    simulator's units over a large scenery) never re-uploads the rest."""
 
     def __init__(self, shared: _Device) -> None:
         self._shared = shared
@@ -394,28 +412,61 @@ class GpuSceneRenderer:
             layout=shared.camera_layout,
             entries=[{"binding": 0, "resource": {"buffer": self._camera_buffer}}],
         )
-        self._batches: list[_Batch] = []
-        self._vertex_buffer = None
-        self._vertices: np.ndarray | None = None
-        self._order: np.ndarray | None = None
+        self._mesh: _Mesh | None = None
+        self._meshes: dict = {}
         self._textures: dict[int, object] = {}
         self._size: tuple[int, int] | None = None
         self._targets: tuple | None = None
+        self.uploads = 0  # meshes built so far (tests check the static mesh is not re-uploaded)
 
     # -- model --------------------------------------------------------------
     def set_triangles(self, triangles: list) -> None:
-        """Upload ``triangles`` (``model_viewer._Triangle``). Triangles are
-        grouped into draw batches by blend mode and texture-layer setup; the
-        batch order is kept so ``update_positions()`` can rewrite geometry
-        for a posed frame without regrouping."""
-        self._batches = []
+        """Upload ``triangles`` (``model_viewer._Triangle``) as the static
+        mesh, dropping the dynamic meshes. Triangles are grouped into draw
+        batches by blend mode and texture-layer setup; the batch order is
+        kept so ``update_positions()`` can rewrite geometry for a posed frame
+        without regrouping."""
         self._textures = {}
-        self._vertex_buffer = None
-        self._vertices = None
-        self._order = None
-        if not triangles:
-            return
+        self._meshes = {}
+        self._mesh = self._build_mesh(triangles)
 
+    def set_mesh(self, key, triangles: list) -> None:
+        """Upload (or replace) the dynamic mesh ``key``; an empty list removes it."""
+        mesh = self._build_mesh(triangles)
+        if mesh is None:
+            self._meshes.pop(key, None)
+        else:
+            self._meshes[key] = mesh
+
+    def clear_meshes(self) -> None:
+        self._meshes = {}
+
+    def show_mesh(self, key, visible: bool) -> None:
+        mesh = self._meshes.get(key)
+        if mesh is not None:
+            mesh.visible = bool(visible)
+
+    def update_mesh(self, key, positions: np.ndarray, normals: np.ndarray) -> bool:
+        """Rewrite the dynamic mesh ``key`` from ``positions`` (n, 3, 3) and
+        ``normals`` (n, 3) in the order its triangles were given; False when
+        there is no such mesh or the shapes don't match it."""
+        mesh = self._meshes.get(key)
+        if mesh is None:
+            return False
+        n = len(mesh.order)
+        positions = np.asarray(positions)
+        normals = np.asarray(normals)
+        if positions.shape != (n, 3, 3) or normals.shape != (n, 3):
+            return False
+        mesh.vertices[:, :, 0:3] = positions[mesh.order]
+        mesh.vertices[:, :, 3:6] = normals[mesh.order][:, None, :]
+        self._device.queue.write_buffer(mesh.vertex_buffer, 0, mesh.vertices)
+        return True
+
+    def _build_mesh(self, triangles: list) -> _Mesh | None:
+        if not triangles:
+            return None
+        self.uploads += 1
         groups: dict[tuple, list[int]] = {}
         layers_by_tri = []
         for index, tri in enumerate(triangles):
@@ -437,17 +488,16 @@ class GpuSceneRenderer:
             uvs = [layers_by_tri[i][slot][6] if slot < len(layers_by_tri[i]) else ((0, 0), (0, 0), (0, 0)) for i in order.tolist()]
             vertices[:, :, 10 + slot * 2 : 12 + slot * 2] = np.array(uvs, dtype=np.float32)
 
-        self._vertices = vertices
-        self._order = order
-        self._vertex_buffer = self._device.create_buffer_with_data(
+        buffer = self._device.create_buffer_with_data(
             data=vertices, usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST
         )
-
+        batches = []
         first = 0
         for (additive, _signature), idxs in groups.items():
             layers = layers_by_tri[idxs[0]]
-            self._batches.append(_Batch(first * 3, len(idxs) * 3, additive, self._batch_group(layers)))
+            batches.append(_Batch(first * 3, len(idxs) * 3, additive, self._batch_group(layers)))
             first += len(idxs)
+        return _Mesh(buffer, vertices, order, batches)
 
     @staticmethod
     def _fill_geometry(vertices: np.ndarray, ordered: list) -> None:
@@ -457,14 +507,15 @@ class GpuSceneRenderer:
         vertices[:, :, 3:6] = np.array([t.normal for t in ordered], dtype=np.float32)[:, None, :]
 
     def update_positions(self, triangles: list) -> bool:
-        """Rewrite positions/normals for a posed copy of the current model
+        """Rewrite positions/normals for a posed copy of the static model
         (same triangles, same order - see ``model_viewer._skin_triangles()``).
         Returns False when ``triangles`` doesn't match the uploaded model."""
-        if self._vertices is None or self._order is None or len(triangles) != len(self._order):
+        mesh = self._mesh
+        if mesh is None or len(triangles) != len(mesh.order):
             return False
-        ordered = [triangles[i] for i in self._order.tolist()]
-        self._fill_geometry(self._vertices, ordered)
-        self._device.queue.write_buffer(self._vertex_buffer, 0, self._vertices)
+        ordered = [triangles[i] for i in mesh.order.tolist()]
+        self._fill_geometry(mesh.vertices, ordered)
+        self._device.queue.write_buffer(mesh.vertex_buffer, 0, mesh.vertices)
         return True
 
     def _texture_view(self, array: np.ndarray):
@@ -598,19 +649,21 @@ class GpuSceneRenderer:
                 "depth_store_op": wgpu.StoreOp.discard,
             },
         )
-        if self._batches:
+        meshes = [m for m in [self._mesh, *self._meshes.values()] if m is not None and m.visible]
+        if meshes:
             render_pass.set_bind_group(0, self._camera_group)
-            render_pass.set_vertex_buffer(0, self._vertex_buffer)
             for pipeline, additive in (
                 (self._shared.opaque, False),
                 (self._shared.translucent, False),
                 (self._shared.additive, True),
             ):
                 render_pass.set_pipeline(pipeline)
-                for batch in self._batches:
-                    if batch.additive == additive:
-                        render_pass.set_bind_group(1, batch.bind_group)
-                        render_pass.draw(batch.vertex_count, 1, batch.first_vertex, 0)
+                for mesh in meshes:
+                    render_pass.set_vertex_buffer(0, mesh.vertex_buffer)
+                    for batch in mesh.batches:
+                        if batch.additive == additive:
+                            render_pass.set_bind_group(1, batch.bind_group)
+                            render_pass.draw(batch.vertex_count, 1, batch.first_vertex, 0)
         render_pass.end()
         encoder.copy_texture_to_buffer(
             {"texture": resolve},
