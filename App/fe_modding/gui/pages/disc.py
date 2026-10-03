@@ -83,6 +83,10 @@ class DiscPage(Page):
         self._caption(frame, f"Output folder: {project.build_dir}")
         ttk.Button(frame, text="Build disc", style="Accent.TButton", command=shell.build,
                    state="normal" if shell.extracted and not shell.task_running else "disabled").pack(anchor="w")
+        ttk.Button(frame, text="Build and play in Dolphin", command=shell.play,
+                   state="normal" if shell.extracted and not shell.task_running else "disabled").pack(
+            anchor="w", pady=(8, 0))
+        self._caption(frame, "Needs Dolphin: set its location in Settings if it is not found.", pady=(4, 0))
         if project.last_build_warning:
             self._caption(frame, project.last_build_warning, pady=(8, 0), style="SurfaceWarn.TLabel")
         return frame

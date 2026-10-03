@@ -26,7 +26,7 @@ from typing import Callable, Optional
 from ..exceptions import ModdingError, ProjectError
 from ..project import ModProject, sanitize_folder_name
 from ..project_index import ProjectIndex
-from .. import patch
+from .. import emulator, patch
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -505,6 +505,39 @@ class Shell(ttk.Frame):
         self._refresh_home()
         if self.project.last_build_warning:
             messagebox.showwarning("Disc image is oversized", self.project.last_build_warning, parent=self)
+
+    def play(self, *, build_first: bool = True) -> None:
+        """Build the disc (unless ``build_first`` is off and an image exists) and start it in Dolphin."""
+        if not self.extracted or self._task_running:
+            return
+        project = self.project
+        image = project.build_dir / f"{sanitize_folder_name(project.name)}{project.game_info.build_extension}"
+        if emulator.configured_dolphin() is None:
+            messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
+                                parent=self)
+            return
+        if not build_first and image.is_file():
+            self._launch(image)
+            return
+        names = self.unsaved(flush=True)
+        if names and not messagebox.askyesno(
+                "Unsaved changes",
+                "These editors have changes that aren't saved and won't be in the disc:\n\n  "
+                + "\n  ".join(names) + "\n\nBuild and play anyway?", parent=self):
+            return
+
+        def built(dest) -> None:
+            self._on_built(dest)
+            self._launch(dest)
+        self.run_task("Building disc image …", project.build, built)
+
+    def _launch(self, image) -> None:
+        try:
+            emulator.launch(image)
+        except emulator.EmulatorError as exc:
+            messagebox.showerror("Could not start Dolphin", str(exc), parent=self)
+            return
+        self.set_status(f"Started {image} in Dolphin")
 
     def create_patch(self) -> None:
         if not self.extracted or self._task_running:
