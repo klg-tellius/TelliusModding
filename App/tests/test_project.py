@@ -38,6 +38,18 @@ class ModProjectTests(unittest.TestCase):
         self.assertEqual(loaded.game, Game.PATH_OF_RADIANCE)
         self.assertEqual(loaded.description, "hello")
 
+    def test_mod_details_are_saved_and_older_projects_load(self):
+        project = ModProject.create(self.parent, "Details", Game.PATH_OF_RADIANCE)
+        project.author, project.version, project.credits = "Ana", "0.3", "Maps by Bo"
+        project.save()
+        loaded = ModProject.load(project.directory)
+        self.assertEqual((loaded.author, loaded.version, loaded.credits), ("Ana", "0.3", "Maps by Bo"))
+        data = project.to_dict()
+        for key in ("author", "version", "credits"):
+            del data[key]
+        project.project_file.write_text(__import__("json").dumps(data), encoding="utf-8")
+        self.assertEqual(ModProject.load(project.directory).author, "")
+
     def test_create_fails_if_folder_not_empty(self):
         target = self.parent / "Existing"
         target.mkdir()

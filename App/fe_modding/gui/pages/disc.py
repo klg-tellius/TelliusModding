@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ... import patch
+from ..mod_details_dialog import ModDetailsDialog
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
 
@@ -101,6 +102,11 @@ class DiscPage(Page):
         ttk.Button(frame, text="Create patch…", style="Accent.TButton", command=shell.create_patch,
                    state="normal" if shell.extracted and project.source_iso and not shell.task_running
                    else "disabled").pack(anchor="w")
+        ttk.Button(frame, text="Mod details…",
+                   command=lambda: ModDetailsDialog(self, project, on_saved=self._render)).pack(
+            anchor="w", pady=(8, 0))
+        who = " · ".join(part for part in (project.version, project.author) if part)
+        self._caption(frame, who or "No author or version set yet.", pady=(4, 0))
         if shell.last_patch:
             self._caption(frame, shell.last_patch, pady=(8, 0))
         return frame
