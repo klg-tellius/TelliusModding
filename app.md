@@ -25,7 +25,8 @@ The app has four main layers:
    - autolevelled stats use average growths;
    - the AI picks targets and tiles with its own score built from the MTYPE weights;
    - natives and AI ops that aren't modelled are logged and return 0;
-   - there is no fog, base or preparations screen (player sections are placed when the opening deploys nobody), and choice dialogs take their first entry.
+   - fog is a view only (`playthrough/fog.py`: tiles within the class's vision of a player unit; no torches, roofs or line of sight) and does not limit the AI; there is no base screen, and the preparations are reduced to choosing which units are placed (when the opening deploys nobody);
+   - choice dialogs take the first entry unless the window's **Choices...** plan names another (`GameState.choice_plan`).
 4. **External-tool layer** — `fe_modding/tools.py` invokes WIT and FFmpeg from developer-provided `tools/` binaries or the per-user tool cache for disc operations and general video decoding.
 
 Editors operate directly on files in a project's `extracted/` directory. Building a project packages the current contents of that directory; there is no separate apply or staging step.

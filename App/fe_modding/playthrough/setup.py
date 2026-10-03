@@ -115,8 +115,9 @@ def nearest_free(world: World, state: GameState, tile: tuple, unit: Optional[Sim
 
 
 def deploy(world: World, state: GameState, group: str, *, animate: bool = True, exact: bool = False,
-           force: Optional[int] = None, hidden: bool = False) -> list:
-    """Place a deployment group's units (``Dispos`` and friends). Returns the units."""
+           force: Optional[int] = None, hidden: bool = False, only: Optional[set] = None) -> list:
+    """Place a deployment group's units (``Dispos`` and friends). Returns the units.
+    ``only`` limits it to the units of those PIDs."""
     section = world.groups.get(group)
     if section is None:
         state.emit("warn", f"Deployment group {group!r} not found")
@@ -124,6 +125,8 @@ def deploy(world: World, state: GameState, group: str, *, animate: bool = True, 
     placed = []
     for record in section.units:
         pid = record[F["pid"]]
+        if only is not None and pid not in only:
+            continue
         unit = _reusable(state, pid, placed)
         if unit is None:
             unit = state.add_unit(make_unit(world, record, group))
@@ -201,3 +204,15 @@ def fallback_player_groups(world: World) -> list:
             if name.endswith("_c") or name.endswith(f"_{world.difficulty}"):
                 out.append(name)
     return out
+
+
+def preparation_roster(world: World) -> list:
+    """The PIDs the preparations would place when the opening deployed nobody: the units of
+    :func:`fallback_player_groups`, in file order. A choice among them goes in ``GameState.deploy_only``."""
+    roster = []
+    for group in fallback_player_groups(world):
+        for record in world.groups[group].units:
+            pid = record[F["pid"]]
+            if isinstance(pid, str) and pid not in roster:
+                roster.append(pid)
+    return roster

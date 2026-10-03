@@ -303,8 +303,9 @@ def _preparations(world: World, state: GameState, task: Preparations) -> Step:
     if state.living(PLAYER):
         return Step("action", "Preparations", "player units already deployed", task_done=True)
     groups = setup.fallback_player_groups(world)
+    only = set(state.deploy_only) if state.deploy_only is not None else None
     for group in groups:
-        setup.deploy(world, state, group, animate=False)
+        setup.deploy(world, state, group, animate=False, only=only)
     note = ", ".join(groups) if groups else "no player section found"
     state.emit("log", f"The opening deployed no player unit: placed {note}")
     return Step("action", "Preparations", note, task_done=True)

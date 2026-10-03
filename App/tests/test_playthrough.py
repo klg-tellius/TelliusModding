@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import cp_ai_lang, cp_data, dispo, fe8data  # noqa: E402
 from fe_modding.formats.cmb.compiler import compile_source  # noqa: E402
-from fe_modding.playthrough import actions, ai_vm, combat, movement, setup  # noqa: E402
+from fe_modding.playthrough import actions, ai_vm, combat, fog, movement, setup  # noqa: E402
 from fe_modding.playthrough.simulation import LINE, MESSAGE, Simulation  # noqa: E402
 from fe_modding.playthrough.state import ENEMY, PLAYER, GameState, SimUnit  # noqa: E402
 from fe_modding.playthrough.world import World  # noqa: E402
@@ -353,6 +353,81 @@ class AiTests(unittest.TestCase):
         sim.run(limit=5000)
         texts = [o.text for en in sim.history for o in en.outputs if o.kind == "ai"]
         self.assertTrue(any("built-in fallback" in t for t in texts))
+
+
+class ChoiceTests(unittest.TestCase):
+    SOURCE = ("@export\ndef Startup():\n    Dialog2Items(\"M1\", \"M2\")\n    if DialogResult() == 1:\n"
+              "        printf(\"second\")\n    else:\n        printf(\"first\")\n")
+
+    def _run(self, plan):
+        world = _world(scripts=[_script(self.SOURCE)], messages={"M1": "Yes", "M2": "No"})
+        state = setup.initial_state(world)
+        state.choice_plan = list(plan)
+        sim = Simulation(world, state)
+        sim.run()
+        return [o.text for e in sim.history for o in e.outputs if o.kind == "script" and "Choice" in o.text], sim
+
+    def test_default_is_the_first_entry(self):
+        texts, _ = self._run([])
+        self.assertEqual(len(texts), 1)
+        self.assertIn("entry 1 of 2", texts[0])
+        self.assertIn("default", texts[0])
+
+    def test_plan_picks_and_is_consumed(self):
+        texts, sim = self._run([1])
+        self.assertIn("entry 2 of 2", texts[0])
+        self.assertIn("your choice", texts[0])
+        self.assertEqual(sim.state.choice_plan, [])
+        self.assertEqual(sim.state.dialog_result, 1)
+
+    def test_out_of_range_is_clamped(self):
+        texts, _ = self._run([9])
+        self.assertIn("entry 2 of 2", texts[0])
+
+
+class FogTests(unittest.TestCase):
+    def setUp(self):
+        self.world = _world(width=10, height=4)
+        self.world.classes["JID_SWORD"].vision = 2
+        self.state = GameState()
+        self.player = _unit(self.state, "PID_A", 0, 0)
+        self.enemy_near = _unit(self.state, "PID_B", 2, 0, faction=ENEMY)
+        self.enemy_far = _unit(self.state, "PID_C", 6, 0, faction=ENEMY)
+
+    def test_fog_off_shows_everything(self):
+        self.assertEqual(len(fog.visible_tiles(self.world, self.state)), 40)
+        self.assertTrue(fog.can_see(self.world, self.state, self.enemy_far))
+
+    def test_vision_is_a_manhattan_radius_around_player_units(self):
+        self.state.fog = True
+        seen = fog.visible_tiles(self.world, self.state)
+        self.assertEqual(seen, {(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (0, 2)})
+        self.assertTrue(fog.can_see(self.world, self.state, self.enemy_near, seen))
+        self.assertFalse(fog.can_see(self.world, self.state, self.enemy_far, seen))
+        self.assertTrue(fog.can_see(self.world, self.state, self.player, seen))
+
+
+class PreparationTests(unittest.TestCase):
+    def _world_with_player_section(self):
+        world = _world()
+        F = setup.F
+        def record(pid):
+            rec = [0] * 80
+            rec[F["pid"]], rec[F["jid"]], rec[F["faction"]] = pid, "JID_SWORD", PLAYER
+            rec[F["pos_x"]], rec[F["pos_y"]] = 1, 1
+            return rec
+        section = type("Section", (), {"units": [record("PID_A"), record("PID_B")]})()
+        world.groups = {"Dispos_c": section}
+        return world
+
+    def test_roster_and_choice_of_deployed_units(self):
+        world = self._world_with_player_section()
+        self.assertEqual(setup.preparation_roster(world), ["PID_A", "PID_B"])
+        state = setup.initial_state(world)
+        state.deploy_only = ["PID_B"]
+        sim = Simulation(world, state)
+        sim.run()
+        self.assertEqual([u.pid for u in sim.state.living(PLAYER)], ["PID_B"])
 
 
 class SetupTests(unittest.TestCase):

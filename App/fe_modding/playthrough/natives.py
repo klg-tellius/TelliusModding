@@ -781,8 +781,12 @@ def _choice(count):
     def handler(vm, a):
         for msg_id in a[:count]:
             vm.insert(MessageShow(str(msg_id), vm.world.messages.get(str(msg_id), "")))
-        vm.state.dialog_result = 0
-        vm.state.emit("script", f"Choice dialog: the simulator picks the first entry ({a[0]})")
+        state = vm.state
+        from_plan = bool(state.choice_plan)
+        picked = min(max(int(state.choice_plan.pop(0) if from_plan else 0), 0), count - 1)
+        state.dialog_result = picked
+        how = "your choice" if from_plan else "the default"
+        state.emit("script", f"Choice dialog: entry {picked + 1} of {count} ({a[picked]}), by {how}")
         return 1
     return handler
 
