@@ -32,6 +32,8 @@ from .world import IMPASSABLE, World
 LOCATION_ACTIONS = {9: "visit", 11: "door", 12: "chest", 13: "seize", 14: "escape", 37: "destroy", 41: "arrive",
                     44: "event"}
 ACTION_IDS = {name: ident for ident, name in LOCATION_ACTIONS.items()}
+#: Visit and destroy: a village they were done at is spent (``GameState.visited``)
+VILLAGE_ACTIONS = (9, 37)
 
 
 @dataclass(frozen=True)
@@ -150,7 +152,7 @@ def choices(world: World, state: GameState, unit: SimUnit, dest: tuple) -> list:
         if can_shove(world, state, unit, dest, other):
             out.append(Choice("shove", other.uid, label=f"Shove {world.name(other.pid)}"))
     for action_id, name in LOCATION_ACTIONS.items():
-        if action_id == 9 and dest in state.visited:
+        if action_id in VILLAGE_ACTIONS and dest in state.visited:
             continue
         if triggers.location_events(world, state, dest, action_id):
             out.append(Choice(name, label=name.capitalize()))
@@ -185,23 +187,42 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
         raise CommandError(f"{world.name(unit.pid)} can't reach {dest}.")
     walked = movement.path(reach, dest)
     spent = reach[dest][0]
-    if dest != unit.tile:
-        state.emit("action", f"{world.name(unit.pid)} moves to {dest}", uid=unit.uid, path=walked)
-    unit.x, unit.y = dest
-    tasks: list[Task] = []
     action = command.action
     target = state.units.get(command.target) if command.target is not None else None
     if action in ("attack", "staff", "shove", "talk") and (target is None or not target.on_map):
         raise CommandError(f"{action}: no target.")
+    start, emitted = unit.tile, len(state.out)
+    if dest != unit.tile:
+        state.emit("action", f"{world.name(unit.pid)} moves to {dest}", uid=unit.uid, path=walked)
+    unit.x, unit.y = dest
+    try:
+        tasks = _act(world, state, unit, dest, action, target, command.item)
+    except CommandError:
+        # nothing happened: an AI unit that can't act waits where it stood
+        unit.x, unit.y = start
+        del state.out[emitted:]
+        raise
     acted = action != "wait"
+    left = unit.move - spent
+    canto = left if acted and not by_ai and left > 0 and has_canto(world, unit) else 0
+    tasks.append(AfterAction(unit.uid, canto, walked))
+    unit.done = True
+    state.push_front(*tasks)
+
+
+def _act(world: World, state: GameState, unit: SimUnit, dest: tuple, action: str, target, item) -> list:
+    """Do ``action`` with ``unit`` standing on ``dest``; returns the tasks that
+    follow it. Raises :class:`CommandError` before changing anything."""
+    tasks: list[Task] = []
     if action == "attack":
-        item = command.item if command.item is not None else combat.equipped(world, unit, movement.distance(dest, target.tile))[0]
+        if item is None:
+            item = combat.equipped(world, unit, movement.distance(dest, target.tile))[0]
         if item is None:
             raise CommandError("No weapon can reach that unit.")
         tasks.append(TriggerCheck(9, {"pid1": unit.pid, "pid2": target.pid, "me": unit.uid, "target": target.uid}))
         tasks.append(Combat(unit.uid, target.uid, item, movement.distance(dest, target.tile)))
     elif action == "staff":
-        heal_with_staff(world, state, unit, target, command.item)
+        heal_with_staff(world, state, unit, target, item)
     elif action == "shove":
         to = shove_destination(world, state, dest, target)
         if to is None or not can_shove(world, state, unit, dest, target):
@@ -216,18 +237,14 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
     elif action in ACTION_IDS:
         action_id = ACTION_IDS[action]
         state.emit("action", f"{world.name(unit.pid)}: {action} at {dest}")
-        if action_id == 9:
+        if action_id in VILLAGE_ACTIONS:
             state.visited.add(dest)
         tasks.append(TriggerCheck(5, {"x": dest[0], "y": dest[1], "action": action_id, "me": unit.uid}))
     elif action == "wait":
         state.emit("action", f"{world.name(unit.pid)} waits", uid=unit.uid)
     else:
         raise CommandError(f"Unknown action {action!r}")
-    left = unit.move - spent
-    canto = left if acted and not by_ai and left > 0 and has_canto(world, unit) else 0
-    tasks.append(AfterAction(unit.uid, canto, walked))
-    unit.done = True
-    state.push_front(*tasks)
+    return tasks
 
 
 def staff_heal(world: World, unit: SimUnit, item) -> int:

@@ -110,11 +110,11 @@ class Simulation:
 
     def command(self, command) -> list:
         """Give a command at the current entry. Returns its outputs; raises
-        :class:`actions.CommandError` when it isn't possible."""
-        self._truncate()
+        :class:`actions.CommandError` when it isn't possible (the history is then kept)."""
         state = self.state.snapshot()
         state.out = []
         actions.apply(self.world, state, command)
+        self._truncate()
         outputs = list(state.out)
         self._append(state, _command_label(self.world, state, command),
                      [engine.Step("command", "Command", outputs=outputs)])

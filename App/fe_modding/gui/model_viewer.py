@@ -3103,7 +3103,8 @@ def _populate_bone_tree(tree: ttk.Treeview, bones: list[skeleton.Bone]) -> None:
 
 # 300x the fit-to-view size: a single map tile fills a large part of the view
 ZOOM_MAX = 300.0
-#: Smallest perspective divisor; geometry nearer the eye than this is dropped.
+#: Smallest perspective divisor; geometry nearer the eye than this is dropped
+#: (gpu_renderer's shader repeats it as its near plane).
 PERSPECTIVE_NEAR = 0.05
 # the model's largest dimension spans this fraction of the canvas's short side
 # at zoom 1 (its 3D diagonal, up to sqrt(3) times that, still fits when orbiting)

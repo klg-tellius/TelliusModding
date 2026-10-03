@@ -33,6 +33,7 @@ class BattleAnimationWindow(tk.Toplevel):
         self._assets: Optional[sa.BattleAssets] = None
         self._effects: dict = {}
         self._on_done: Optional[Callable[[], None]] = None
+        self._finish_job: Optional[str] = None
         self.scenery = tk.StringVar(value="(none)")
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
@@ -44,7 +45,7 @@ class BattleAnimationWindow(tk.Toplevel):
         self._note.pack(side="left", fill="x", expand=True)
         self.view = battle_stage.StageView(self)
         self.view.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        self.view.on_finished = lambda: self.after(600, self._finish)
+        self.view.on_finished = lambda: self._finish_later(600)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
     def assets(self) -> sa.BattleAssets:
@@ -76,6 +77,7 @@ class BattleAnimationWindow(tk.Toplevel):
 
     def play(self, log, distance: int, on_done: Callable[[], None]) -> None:
         """Play ``log``; ``on_done()`` runs once it has finished or was skipped."""
+        self._cancel_finish()
         self._finish_pending()
         self._on_done = on_done
         self.deiconify()
@@ -87,7 +89,7 @@ class BattleAnimationWindow(tk.Toplevel):
             if not any(a.code for a in found):
                 self._note.configure(text="Neither unit has a battle model (jobList.dbx): nothing to play.")
                 self.view.set_stage(None)
-                self.after(800, self._finish)
+                self._finish_later(800)
                 return
             self.configure(cursor="watch")
             self.update_idletasks()
@@ -99,7 +101,7 @@ class BattleAnimationWindow(tk.Toplevel):
         except Exception as exc:  # noqa: BLE001 - no models: say so and go on with play
             self._note.configure(text=f"Could not load the battle models: {exc}")
             self.view.set_stage(None)
-            self.after(1200, self._finish)
+            self._finish_later(1200)
             return
         finally:
             self.configure(cursor="")
@@ -110,12 +112,23 @@ class BattleAnimationWindow(tk.Toplevel):
                             (log.attacker.stats[0], log.defender.stats[0]))
         self.view.toggle()
 
+    def _finish_later(self, ms: int) -> None:
+        self._cancel_finish()
+        self._finish_job = self.after(ms, self._finish)
+
+    def _cancel_finish(self) -> None:
+        """Drop a scheduled close, so it can't end the next battle early."""
+        if self._finish_job is not None:
+            self.after_cancel(self._finish_job)
+            self._finish_job = None
+
     def _finish_pending(self) -> None:
         if self._on_done is not None:
             done, self._on_done = self._on_done, None
             done()
 
     def _finish(self) -> None:
+        self._cancel_finish()
         self.view.stop()
         if self.winfo_exists():
             self.withdraw()

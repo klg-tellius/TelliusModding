@@ -102,6 +102,9 @@ struct VOut {
     @location(4) uv23: vec4<f32>,
 };
 
+// model_viewer.PERSPECTIVE_NEAR
+const PERSPECTIVE_NEAR: f32 = 0.05;
+
 fn rotate(p: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(dot(camera.rot0.xyz, p), dot(camera.rot1.xyz, p), dot(camera.rot2.xyz, p));
 }
@@ -111,13 +114,21 @@ fn vs_main(v: VIn) -> VOut {
     var out: VOut;
     let r = rotate(v.position - camera.center.xyz);
     let nz = rotate(v.normal).z;
+    // perspective divisor (1 when orthographic)
     let w = 1.0 + r.z * camera.scale.w;
-    if (nz >= 0.0 || w <= 0.05) {
-        // back-facing (the whole triangle shares this normal) or behind the
-        // eye: all three vertices land outside the clip volume and it is dropped
+    // depth = 1 - near / w under perspective: clip z stays linear in the
+    // position, so the clip stage cuts triangles crossing the near plane
+    // (w = near) correctly instead of stretching them
+    var z = 0.5 + r.z * camera.scale.z;
+    if (camera.scale.w > 0.0) {
+        z = w - PERSPECTIVE_NEAR;
+    }
+    if (nz >= 0.0) {
+        // back-facing: the whole triangle shares this normal, so all three
+        // vertices land outside the clip volume and it is dropped
         out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     } else {
-        out.clip = vec4<f32>(r.x * camera.scale.x, r.y * camera.scale.y, (0.5 + r.z * camera.scale.z) * w, w);
+        out.clip = vec4<f32>(r.x * camera.scale.x, r.y * camera.scale.y, z, w);
     }
     out.color = v.color / 255.0;
     out.alpha = v.alpha;

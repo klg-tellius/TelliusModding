@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import cp_ai_lang, cp_data, dispo, fe8data  # noqa: E402
 from fe_modding.formats.cmb.compiler import compile_source  # noqa: E402
-from fe_modding.playthrough import actions, ai_vm, movement, setup  # noqa: E402
+from fe_modding.playthrough import actions, ai_vm, combat, movement, setup  # noqa: E402
 from fe_modding.playthrough.simulation import LINE, MESSAGE, Simulation  # noqa: E402
 from fe_modding.playthrough.state import ENEMY, PLAYER, GameState, SimUnit  # noqa: E402
 from fe_modding.playthrough.world import World  # noqa: E402
@@ -174,6 +174,40 @@ class ActionTests(unittest.TestCase):
         a = _unit(self.state, "PID_A", 0, 0)
         with self.assertRaises(actions.CommandError):
             actions.apply(self.world, self.state, actions.Act(a.uid, (7, 7)))
+
+
+    def test_failed_action_leaves_the_unit_in_place(self):
+        a = _unit(self.state, "PID_HEALER", 0, 0, jid="JID_CLERIC", items=("IID_HEAL",))
+        b = _unit(self.state, "PID_B", 2, 0, faction=ENEMY)
+        with self.assertRaises(actions.CommandError):  # no weapon
+            actions.apply(self.world, self.state, actions.Act(a.uid, (1, 0), "attack", b.uid))
+        self.assertEqual(a.tile, (0, 0))
+        self.assertFalse(a.done)
+        self.assertEqual(self.state.out, [])
+
+    def test_rejected_command_keeps_the_forward_history(self):
+        a = _unit(self.state, "PID_A", 0, 0)
+        sim = Simulation(self.world, self.state)
+        sim.command(actions.Act(a.uid, (1, 0)))
+        sim.back()
+        entries = len(sim.history)
+        with self.assertRaises(actions.CommandError):
+            sim.command(actions.Act(a.uid, (7, 7)))
+        self.assertEqual(len(sim.history), entries)
+
+    def test_fallen_unit_gains_no_exp(self):
+        a = _unit(self.state, "PID_A", 1, 0)
+        b = _unit(self.state, "PID_B", 0, 0, faction=ENEMY, items=("IID_KILLER",))
+        a.exp = 99
+        self.state.forced = {}
+        combat.fight(self.world, self.state, b, a, 0, 1)
+        self.assertEqual(a.hp, 0)
+        self.assertEqual((a.exp, a.level), (99, 1))
+
+    def test_destroyed_village_is_spent(self):
+        b = _unit(self.state, "PID_B", 0, 0, faction=ENEMY)
+        actions.apply(self.world, self.state, actions.Act(b.uid, (1, 1), "destroy"), by_ai=True)
+        self.assertIn((1, 1), self.state.visited)
 
 
 VISIT_SCRIPT = '''
