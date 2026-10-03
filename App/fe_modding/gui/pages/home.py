@@ -56,6 +56,7 @@ class HomePage(Page):
             ("flags", "⚑", "Flags", "Campaign · Chapter · Save file", "On/off switches scripts remember things with"),
             ("saves", "◫", "Saves", "Units · Convoy · Forges · Flags", "Open a .gci save and edit its blocks"),
             ("assets", "▣", "Assets", "Portraits, art, music, videos, 3D models", "Browse and replace game files"),
+            ("check", "✓", "Check", "References · Chapter files", "Find broken references and missing files before the game does"),
             ("disc", "◎", "Disc & Patch", project.source_iso if shell.extracted else "Not extracted yet",
              "Extract the source disc, build a playable image, make a patch to share"),
         )

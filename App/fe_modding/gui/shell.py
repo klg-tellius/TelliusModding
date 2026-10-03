@@ -38,9 +38,10 @@ from .widgets import Link, PortraitCache, track_hover
 Route = tuple
 
 NAV = [("home", "Home"), ("chapters", "Chapters"), ("characters", "Characters"), ("data", "Game Data"),
-       ("flags", "Flags"), ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("disc", "Disc & Patch")]
+       ("flags", "Flags"), ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("check", "Check"),
+       ("disc", "Disc & Patch")]
 SECTION_OF = {"home": "home", "chapters": "chapters", "chapter": "chapters", "characters": "characters",
-              "character": "characters", "data": "data", "flags": "flags", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "disc": "disc"}
+              "character": "characters", "data": "data", "flags": "flags", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "check": "check", "disc": "disc"}
 # Sections that work before the source disc is extracted.
 UNEXTRACTED_KINDS = ("home", "disc")
 
