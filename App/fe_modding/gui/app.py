@@ -27,7 +27,7 @@ from .patch_dialog import ApplyPatchDialog
 from .settings_dialog import SettingsDialog
 from .pages import ASSET_TOOLS, PAGE_FACTORIES
 from .shell import NAV, Shell
-from .widgets import Card, CardGrid, ScrollFrame
+from .widgets import Card, CardGrid, ScrollFrame, disable_wheel_value_changes
 
 
 class MainWindow(tk.Tk):
@@ -37,6 +37,7 @@ class MainWindow(tk.Tk):
         self.geometry("1360x860")
         self.minsize(960, 600)
         theme.setup(self)
+        disable_wheel_value_changes(self)
 
         self._project: ModProject | None = None
         self._shell: Shell | None = None

@@ -44,7 +44,7 @@ class CheckPage(Page):
         self._tree.bind("<Return>", lambda e: self._open_selected())
 
     def crumbs(self, route):
-        return [("Home", ("home",)), ("Check", None)]
+        return [("Tools", ("tools",)), ("Check", None)]
 
     def show(self, route) -> bool:
         return True

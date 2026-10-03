@@ -1,5 +1,5 @@
-"""Flags: the 96 named on/off switches event scripts remember things with
-(``formats/event_flags.py``), in three tabs.
+"""Game Data › Flags: the 96 named on/off switches event scripts remember things with
+(``formats/event_flags.py``), in three sub-tabs.
 
 * **Campaign flags** - the engine's eight ``gf_*`` flags and the ones
   ``startup.cmb`` registers in ``RegistGlobalFlags``. New ones are appended
@@ -27,7 +27,6 @@ from ... import chapters, script_sources
 from ...formats import event_flags as ef
 from ...formats.cmb import CompileError
 from ...formats.cmb.parser import ParseError, parse
-from ..shell import Page
 from .chapters import open_script
 from .. import theme
 
@@ -35,53 +34,42 @@ TABS = {"campaign": "Campaign flags", "chapter": "Chapter flags", "save": "Save 
 ON, OFF = "☑", "☐"
 
 
-class FlagsPage(Page):
-    kind = "flags"
+class FlagsPanel(ttk.Frame):
+    """The Flags tab of Game Data (a panel, not a page: the Game Data page hosts it)."""
 
-    def __init__(self, shell):
-        super().__init__(shell)
-        head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
+    def __init__(self, parent: tk.Misc, shell):
+        super().__init__(parent, style="Page.TFrame")
+        self.shell = shell
+        head = ttk.Frame(self, style="Page.TFrame", padding=(8, 8, 8, 4))
         head.pack(fill="x")
-        ttk.Label(head, text="Flags", style="Title.TLabel").pack(anchor="w")
         ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
                   text="Scripts remember things (a chest opened, a character recruited) in 96 named on/off "
                        "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. "
                        "A save stores only the 96 bits, so a flag's meaning in a save is its slot: new flags "
                        "are always added after the existing ones.").pack(anchor="w", pady=(2, 8))
         self._notebook = ttk.Notebook(self)
-        self._notebook.pack(fill="both", expand=True, padx=28, pady=(0, 20))
+        self._notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self._campaign = _CampaignTab(self._notebook, self)
         self._chapter = _ChapterTab(self._notebook, self)
         self._save = _SaveTab(self._notebook, self)
         for key, tab in (("campaign", self._campaign), ("chapter", self._chapter), ("save", self._save)):
             self._notebook.add(tab, text=TABS[key])
         self._tab = "campaign"
-        self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._budget: Optional[dict] = None  # chapter id -> chapter flag count, from a background scan
         self._scan_running = False
 
-    # -- routing ----------------------------------------------------------------------
-    def show(self, route) -> bool:
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
+    @property
+    def project(self):
+        return self.shell.project
+
+    def show_sub(self, route_tail: tuple) -> None:
+        """Select a sub-tab (``route_tail``: ``(tab[, chapter id])``) and refresh."""
+        tab = route_tail[0] if route_tail and route_tail[0] in TABS else self._tab
         self._tab = tab
         self._notebook.select(list(TABS).index(tab))
-        if tab == "chapter" and len(route) > 2:
-            self._chapter.select(route[2])
+        if tab == "chapter" and len(route_tail) > 1:
+            self._chapter.select(route_tail[1])
         self.refresh()
-        return True
-
-    def crumbs(self, route):
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
-        return [("Flags", ("flags",)), (TABS[tab], None)]
-
-    def history_label(self, route):
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
-        return f"Flags › {TABS[tab]}"
-
-    def _on_tab(self) -> None:
-        self._tab = list(TABS)[self._notebook.index("current")]
-        if self.shell.route and self.shell.route[0] == self.kind and self.shell.route[1:2] != (self._tab,):
-            self.shell.replace_route((self.kind, self._tab))
 
     def refresh(self) -> None:
         self._campaign.refresh()
@@ -206,7 +194,7 @@ def _ask_name(parent: tk.Misc, title: str, prompt: str, taken, initial: str = ""
 
 
 class _CampaignTab(ttk.Frame):
-    def __init__(self, parent: tk.Misc, page: FlagsPage):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
         super().__init__(parent, padding=12)
         self._page = page
         ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
@@ -307,7 +295,7 @@ class _CampaignTab(ttk.Frame):
 
 
 class _ChapterTab(ttk.Frame):
-    def __init__(self, parent: tk.Misc, page: FlagsPage):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
         super().__init__(parent, padding=12)
         self._page = page
         top = ttk.Frame(self)
@@ -416,7 +404,7 @@ class _ChapterTab(ttk.Frame):
 
 
 class _SaveTab(ttk.Frame):
-    def __init__(self, parent: tk.Misc, page: FlagsPage):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
         super().__init__(parent, padding=12)
         self._page = page
         top = ttk.Frame(self)
