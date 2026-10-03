@@ -121,6 +121,12 @@ class ChaptersHub(Page):
         self._grid.add(("+", "add chapter"), Card(self._grid, title="Add chapter…",
                                                    subtitle="A new playable chapter, from a template",
                                                    icon="+", width=260, on_click=self._add_chapter))
+        self._grid.add(("+", "new campaign"), Card(self._grid, title="New campaign…",
+                                                    subtitle="Several chapters and characters at once",
+                                                    icon="+", width=260, on_click=self._new_campaign))
+        self._grid.add(("+", "story order"), Card(self._grid, title="Story order…",
+                                                   subtitle="Reorder the chapters you added",
+                                                   icon="↕", width=260, on_click=self._story_order))
         self._grid.done()
         self._filter()
         flow, _why = open_flow(self.project)
@@ -177,6 +183,87 @@ class ChaptersHub(Page):
         if page is not None:
             page.refresh_chapter_lists()
         self.shell.navigate(("chapter", padded))
+
+
+    def _new_campaign(self) -> None:
+        from ... import campaign
+        from ..campaign_dialog import NewCampaignDialog
+        from ...formats import fe8data
+
+        session = self.shell.session
+        ids = chapters.list_chapter_ids(self.project)
+        if not ids or not session.available:
+            messagebox.showerror("New campaign", "This project has no chapters or no FE8Data.bin.", parent=self)
+            return
+        records = fe8data.read_chapter_data(session.data)
+        titles = chapters.chapter_titles(self.project)
+        templates = {chapters.chapter_display_title(c, titles) + f"  ({c})": c
+                     for c in ids if any(r.chapter_id == int(c) for r in records)}
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("New campaign", f"The story flow can't be edited ({why}), so the chapters "
+                                 "could not be put in order.", parent=self)
+            return
+        order = flow.order()
+        after_choices = {_flow_label(c, titles): c for c in order}
+        characters = [c.pid for c in fe8data.read_fe8data(session.data).characters if c.pid]
+        dialog = NewCampaignDialog(self, templates, after_choices, characters, order[-1] if order else None)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        chapter_specs, cast, after = dialog.result
+        problems = campaign.check_campaign(self.project, session.data, chapter_specs, cast, after)
+        if problems:
+            messagebox.showerror("New campaign", "\n".join(problems), parent=self)
+            return
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?", "Creating the campaign saves FE8Data.bin, including its unsaved edits. Continue?",
+                parent=self):
+            return
+        try:
+            result = campaign.add_campaign(self.project, session.data, chapter_specs, cast, after, flow)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("New campaign", str(exc), parent=self)
+            return
+        session.data = result.fe8data
+        session.changed(self)
+        try:
+            session.save()
+        except OSError as exc:
+            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+        summary = f"{len(result.chapter_ids)} chapters ({', '.join(f'{c:02d}' for c in result.chapter_ids)}), " \
+                  f"{len(result.pids)} characters"
+        self.shell.changelog.append("Campaign", f"Added {summary}")
+        if result.warnings:
+            messagebox.showwarning("Campaign added", "\n".join(result.warnings), parent=self)
+        page = self.shell.existing_page("chapter")
+        if page is not None:
+            page.refresh_chapter_lists()
+        if result.chapter_ids:
+            self.shell.navigate(("chapter", f"{result.chapter_ids[0]:02d}"))
+
+    def _story_order(self) -> None:
+        from ... import campaign
+        from ..campaign_dialog import StoryOrderDialog
+
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Story order", f"The story flow can't be edited ({why}).", parent=self)
+            return
+        titles = chapters.chapter_titles(self.project)
+        order = flow.order()
+        labels = {c: _flow_label(c, titles) for c in order}
+        dialog = StoryOrderDialog(self, order, labels)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        try:
+            campaign.set_story_order(flow, dialog.result)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Story order", str(exc), parent=self)
+            return
+        self.shell.changelog.append("Story order", "Reordered the story: " + " → ".join(f"{c:02d}" for c in dialog.result))
+        self._build()
 
 
 class ChapterPage(Page):
