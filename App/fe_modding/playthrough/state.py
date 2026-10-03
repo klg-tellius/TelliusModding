@@ -202,6 +202,9 @@ class GameState:
     canto: Optional[tuple] = None  # (uid, movement left) while a unit may still move after acting
     forced: Optional[dict] = None  # outcome choices for the next battle (battle_sim.FixedOutcomes keys)
     money: int = 0
+    fog: bool = False  # show only what the player's units can see (a view; see fog.py)
+    choice_plan: list = field(default_factory=list)  # entries to pick at the next choice dialogs, in order (0-based)
+    deploy_only: Optional[list] = None  # PIDs the preparations place (None: every unit of the player's sections)
     over: str = ""  # "complete" / "gameover" once the chapter ended
     out: list = field(default_factory=list)  # what the last step did (cleared every step): Output
 

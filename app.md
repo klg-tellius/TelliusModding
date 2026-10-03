@@ -25,7 +25,8 @@ The app has four main layers:
    - autolevelled stats use average growths;
    - the AI picks targets and tiles with its own score built from the MTYPE weights;
    - natives and AI ops that aren't modelled are logged and return 0;
-   - there is no fog, base or preparations screen (player sections are placed when the opening deploys nobody), and choice dialogs take their first entry.
+   - fog is a view only (`playthrough/fog.py`: tiles within the class's vision of a player unit; no torches, roofs or line of sight) and does not limit the AI; there is no base screen, and the preparations are reduced to choosing which units are placed (when the opening deploys nobody);
+   - choice dialogs take the first entry unless the window's **Choices...** plan names another (`GameState.choice_plan`).
 4. **External-tool layer** — `fe_modding/tools.py` invokes WIT and FFmpeg from developer-provided `tools/` binaries or the per-user tool cache for disc operations and general video decoding.
 
 Editors operate directly on files in a project's `extracted/` directory. Building a project packages the current contents of that directory; there is no separate apply or staging step.
@@ -39,8 +40,10 @@ This file is the required high-level app overview. Agents should read the follow
 - [Project lifecycle](docs/app/project-lifecycle.md) — project layout, supported disc inputs, extraction, and building.
 - [Workspace and features](docs/app/workspace-and-features.md) — navigation, chapter handling, editors, viewers, and known user-facing limitations.
 - [Script language](docs/app/script-language.md) — the `.fe9s` event-script language, the Scripts tab and the script command line.
-- [Script modding tutorial](docs/app/script-tutorial.md) — progressive `.fe9s` lessons, chapter-overhaul workflow, validation, and the complete native/helper call index.
-- [AI scripts](docs/app/ai-scripts.md) — Game Data › AI (CP): the readable AI script code (`formats/cp_ai_lang.py`, opcodes in `formats/cp_ops.py`), the raw view and the other `cp_data.bin` tabs.
+- Script modding tutorial (`docs/app/script-tutorial.md`) — not written yet: progressive `.fe9s` lessons and the native/helper call index.
+- AI scripts (`docs/app/ai-scripts.md`) — not written yet: Game Data › AI (CP) readable AI code (`formats/cp_ai_lang.py`, opcodes in `formats/cp_ops.py`), the raw view and the other `cp_data.bin` tabs.
+- [Campaign-modding plan](docs/app/campaign-plan.md) — state of the work on supporting a full new campaign, and the checklist to run with a disc.
+- [Making a new campaign](docs/app/modder-guide.md) — a modder's workflow and where each step happens in the app.
 - [Formats and tools](docs/app/formats-and-tools.md) — format-module responsibilities, write-support boundaries, bundled tools, and test coverage.
 - [Known bugs](docs/app/known-bugs.md) — confirmed but unfixed app defects.
 

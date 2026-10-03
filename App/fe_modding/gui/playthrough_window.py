@@ -24,13 +24,13 @@ from __future__ import annotations
 import copy
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 from typing import Optional
 
 from PIL import Image, ImageTk
 
 from ..formats.cmb.decompiler import Decompiler, function_to_source
-from ..playthrough import actions, combat, engine, loader, movement, setup, triggers
+from ..playthrough import actions, combat, engine, fog, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
 from ..playthrough.simulation import ACTION, INPUT, LINE, MESSAGE, PHASE, UNIT, Simulation
@@ -94,6 +94,8 @@ class PlaythroughWindow(_Window):
         self._auto_messages = tk.BooleanVar(value=False)
         self._follow = tk.BooleanVar(value=True)
         self._show_zones = tk.BooleanVar(value=True)
+        self._fog = tk.BooleanVar(value=False)
+        self._deploy_only: Optional[list] = None  # PIDs chosen in "Preparations...", kept across restarts
         self._build()
         self.bind("<space>", lambda e: self.step())
         self.bind("<Left>", lambda e: self.back())
@@ -116,6 +118,11 @@ class PlaythroughWindow(_Window):
         ttk.Checkbutton(top, text="Follow the running code", variable=self._follow).pack(side="left", padx=(8, 0))
         ttk.Checkbutton(top, text="Script zones", variable=self._show_zones,
                         command=self._refresh_map).pack(side="left", padx=(8, 0))
+
+        ttk.Checkbutton(top, text="Fog (approximate)", variable=self._fog,
+                        command=self._toggle_fog).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Preparations...", command=self.preparations).pack(side="left", padx=(14, 0))
+        ttk.Button(top, text="Choices...", command=self.set_choices).pack(side="left", padx=(4, 0))
 
         transport = ttk.Frame(self, padding=(8, 0, 8, 4))
         transport.pack(fill="x")
@@ -245,6 +252,8 @@ class PlaythroughWindow(_Window):
             messagebox.showerror("Play chapter", str(exc), parent=self)
             return
         state = setup.initial_state(world, seed=seed)
+        state.deploy_only = list(self._deploy_only) if self._deploy_only is not None else None
+        state.fog = self._fog.get()
         self.sim = Simulation(world, state)
         self._source_cache.clear()
         self._selected, self._reach, self._watch = None, {}, None
@@ -406,6 +415,50 @@ class PlaythroughWindow(_Window):
                 pass
         self._command(actions.EndPhase())
 
+    def _toggle_fog(self) -> None:
+        if self.sim is None:
+            return
+        on = self._fog.get()
+        self.sim.edit(lambda s: setattr(s, "fog", on), "Fog on" if on else "Fog off")
+        self.refresh()
+
+    def set_choices(self) -> None:
+        """The entries to pick at the next choice dialogs (the game would ask; the default is the first)."""
+        if self.sim is None:
+            return
+        current = ", ".join(str(n + 1) for n in self.sim.state.choice_plan)
+        text = simpledialog.askstring(
+            "Choice dialogs",
+            "Entries to pick at the next choice dialogs, in order, counting from 1 (for example 2, 1).\n"
+            "Empty: always the first entry.", initialvalue=current, parent=self)
+        if text is None:
+            return
+        try:
+            plan = [int(part) - 1 for part in text.replace(";", ",").split(",") if part.strip()]
+            if any(n < 0 for n in plan):
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Choice dialogs", "Enter whole numbers from 1 up, separated by commas.", parent=self)
+            return
+        self.sim.edit(lambda s: setattr(s, "choice_plan", plan), f"Choices planned: {text.strip() or 'first entry'}")
+        self.refresh()
+
+    def preparations(self) -> None:
+        """Which units the preparations place (used when the opening deploys nobody), then restart."""
+        if self.sim is None:
+            return
+        roster = setup.preparation_roster(self.sim.world)
+        if not roster:
+            messagebox.showinfo("Preparations", "This chapter's script deploys its own player units, so there is "
+                                "nothing to choose here.", parent=self)
+            return
+        dialog = _RosterDialog(self, self.sim.world, roster, self._deploy_only)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        self._deploy_only = dialog.result
+        self.restart()
+
     def force_battle(self) -> None:
         if self.sim is None:
             return
@@ -559,7 +612,10 @@ class PlaythroughWindow(_Window):
         if canvas.backdrop is None and self._builder._backdrop is not None:
             canvas.backdrop = self._builder._backdrop
         canvas.units = []
+        visible = fog.visible_tiles(world, state) if state.fog else None
         for u in state.living():
+            if visible is not None and not fog.can_see(world, state, u, visible):
+                continue
             canvas.units.append({
                 "key": u.uid, "x": u.x, "y": u.y, "pos2": (u.x, u.y),
                 "color": FACTION_COLORS.get(u.faction, "#8a8a8a"), "text": world.name(u.pid)[:3],
@@ -572,6 +628,9 @@ class PlaythroughWindow(_Window):
                 color = "#4fc3f7" if side == 0 else "#ff8a65" if side == 1 else "#ce93d8"
                 zones.append({"rect": rect, "area": side >= 0, "color": color, "text": name, "selected": False})
         overlay = []
+        if visible is not None:
+            overlay += [((x, y), "#000000") for x in range(world.width) for y in range(world.height)
+                        if (x, y) not in visible]
         if self._selected is not None and self._selected in state.units:
             unit = state.units[self._selected]
             overlay += [(t, MOVE_COLOR) for t in self._reach]
@@ -767,6 +826,34 @@ class PlaythroughWindow(_Window):
             self._battle_window.cleanup()
             self._battle_window.destroy()
         super().close()
+
+
+class _RosterDialog(tk.Toplevel):
+    """Tick the player units the preparations place. ``result`` is the chosen PIDs, or None when cancelled."""
+
+    def __init__(self, parent, world, roster: list, chosen: Optional[list]):
+        super().__init__(parent)
+        self.title("Preparations")
+        self.transient(parent)
+        self.result = None
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Units placed at the start (only when the opening script deploys nobody).",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        self._vars = []
+        for pid in roster:
+            var = tk.BooleanVar(value=chosen is None or pid in chosen)
+            ttk.Checkbutton(body, text=f"{world.name(pid)} ({pid})", variable=var).pack(anchor="w")
+            self._vars.append((pid, var))
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Restart with these", command=self._ok).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=(0, 6))
+        self.grab_set()
+
+    def _ok(self) -> None:
+        self.result = [pid for pid, var in self._vars if var.get()]
+        self.destroy()
 
 
 class _ForceDialog(tk.Toplevel):

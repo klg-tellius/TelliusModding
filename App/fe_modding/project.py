@@ -67,6 +67,9 @@ class ModProject:
     description: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     source_iso: Optional[str] = None
+    author: str = ""
+    version: str = ""
+    credits: str = ""  # free text: who made or allowed what; goes into patches
     last_build_warning: Optional[str] = field(default=None, repr=False, compare=False)
 
     @property
@@ -217,6 +220,9 @@ class ModProject:
             "description": self.description,
             "created_at": self.created_at,
             "source_iso": self.source_iso,
+            "author": self.author,
+            "version": self.version,
+            "credits": self.credits,
         }
 
     def save(self) -> None:
@@ -283,4 +289,7 @@ class ModProject:
             description=data.get("description", ""),
             created_at=data.get("created_at", ""),
             source_iso=data.get("source_iso"),
+            author=data.get("author", ""),
+            version=data.get("version", ""),
+            credits=data.get("credits", ""),
         )

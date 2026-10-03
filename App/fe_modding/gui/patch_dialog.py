@@ -86,12 +86,13 @@ class ApplyPatchDialog(tk.Toplevel):
             return
         self._info = info
         game = get_game_info(info.game)
-        parts = [info.name or Path(path).stem, game.display_name]
+        parts = [info.title or Path(path).stem, game.display_name]
         if info.disc_id:
             parts.append(f"disc {info.disc_id}")
         counts = f"{len(info.replace)} replaced, {len(info.add)} added, {len(info.remove)} removed files"
         self._about.configure(text="  ·  ".join(parts) + f"\n{counts}"
-                              + (f"\n{info.description}" if info.description else ""))
+                              + (f"\n{info.description}" if info.description else "")
+                              + (f"\nCredits: {info.credits}" if info.credits else ""))
         if not self._output.get():
             name = Path(path).with_suffix(game.build_extension).name
             self._output.set(str(Path(path).with_name(name)))

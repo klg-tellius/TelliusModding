@@ -54,7 +54,7 @@ class HomePage(Page):
             ("characters", "☺", "Characters", characters, "Stats, portrait, models and every appearance"),
             ("data", "≡", "Game Data", "Classes · Items · Skills · Flags · AI", "Everything else in FE8Data.bin, plus script flags"),
             ("assets", "▣", "Assets", "Portraits, art, map objects, music, videos, 3D models", "Browse and replace game files"),
-            ("tools", "⚒", "Tools", "Battle Simulator · Saves · Game Code", "Simulate fights, edit saves, patch the game's code"),
+            ("tools", "⚒", "Tools", "Battle Simulator · Saves · Check · Game Code", "Simulate fights, edit saves, find broken references, patch the game's code"),
             ("disc", "◎", "Disc & Patch", project.source_iso if shell.extracted else "Not extracted yet",
              "Extract the source disc, build a playable image, make a patch to share"),
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .assets import ASSET_TOOLS, AssetPage, AssetsHub
 from .chapters import ChapterPage, ChaptersHub
+from .check import CheckPage
 from .code import CodePage
 from .characters import CharacterPage, CharactersHub
 from .data import GameDataPage
@@ -16,7 +17,7 @@ PAGE_FACTORIES = {
     page.kind: page
     for page in (HomePage, ChaptersHub, ChapterPage, CharactersHub, CharacterPage, GameDataPage,
                  SaveEditorPage, ToolsHub,
-                 AssetsHub, AssetPage, CodePage, DiscPage)
+                 AssetsHub, AssetPage, CodePage, CheckPage, DiscPage)
 }
 
 __all__ = ["ASSET_TOOLS", "PAGE_FACTORIES"]

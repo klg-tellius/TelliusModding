@@ -12,6 +12,7 @@ from ..widgets import Card, CardGrid, ScrollFrame
 TOOLS = [
     ("Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", ("asset", "battle_sim")),
     ("Saves", "◫", "Open a .gci save and edit its units, convoy, forges and flags", ("saves",)),
+    ("Check", "✓", "Find broken references and missing files before the game does", ("check",)),
     ("Game Code", "⌘", "Patches and tunable constants written into sys/main.dol", ("code",)),
 ]
 
