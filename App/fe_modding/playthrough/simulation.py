@@ -10,6 +10,7 @@ gives the same game.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -21,6 +22,7 @@ from .world import World
 LINE, MESSAGE, ACTION, UNIT, PHASE, INPUT = "line", "message", "action", "unit", "phase", "input"
 MAX_ENTRIES = 20_000
 MAX_RUN = 50_000
+UNFINISHED = "unfinished"  # :meth:`Simulation.fast_forward` ran out of time
 
 
 @dataclass
@@ -149,6 +151,25 @@ class Simulation:
             if (stop is not None and stop(result)) or self.boundary(until, result, start):
                 break
         return done
+
+    def fast_forward(self, *, budget_s: Optional[float] = None, limit: int = MAX_RUN) -> Optional[str]:
+        """Play on, without stopping for messages or fights, until the player
+        must give a command. The entries played stay in the history. Returns
+        None when it got there, :data:`UNFINISHED` when ``budget_s`` ran out
+        first (call again), else what went wrong."""
+        began = time.monotonic()
+        for _ in range(limit):
+            if self.needs_input:
+                self.entry.label = f"Turn {self.state.turn}: start"
+                return None
+            if self.state.over:
+                return f"The chapter ended ({self.state.over}) before the player phase."
+            result = self.step()
+            if result.kind in ("input", "over") and not result.outputs:
+                continue
+            if budget_s is not None and time.monotonic() - began > budget_s:
+                return UNFINISHED
+        return f"The player phase wasn't reached in {limit} steps."
 
     def mark(self) -> tuple:
         """Where a run starts, for :meth:`boundary`."""

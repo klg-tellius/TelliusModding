@@ -244,6 +244,42 @@ def reinforce():
         sim.forward(end)
         self.assertTrue(sim.state.awaiting_input)
 
+    def test_fast_forward_to_the_first_command_keeps_the_opening(self):
+        source = '''
+@export
+def Startup():
+    regist("f")
+    TalkEvent("MS_OPEN")
+
+@on_phase(turn_from=1, turn_to=1, phase="player")
+def turn1():
+    set("f")
+'''
+        world = _world(scripts=[_script(source)], messages={"MS_OPEN": "Welcome.$K"})
+        state = setup.initial_state(world)
+        _unit(state, "PID_A", 0, 0)
+        sim = Simulation(world, state)
+        self.assertIsNone(sim.fast_forward())
+        self.assertTrue(sim.needs_input)
+        self.assertEqual(sim.state.turn, 1)
+        self.assertTrue(sim.state.get_flag("f"))
+        self.assertEqual(sim.entry.label, "Turn 1: start")
+        self.assertIn("message", [s.kind for e in sim.history for s in e.steps])
+        sim.goto(0)
+        self.assertFalse(sim.state.get_flag("f"))
+
+    def test_fast_forward_reports_a_chapter_ending_in_the_opening(self):
+        source = '''
+@export
+def Startup():
+    set("gf_complete")
+'''
+        world = _world(scripts=[_script(source)])
+        state = setup.initial_state(world)
+        _unit(state, "PID_A", 0, 0)
+        problem = Simulation(world, state).fast_forward()
+        self.assertIn("ended", problem)
+
     def test_deterministic_replay(self):
         def play(seed):
             world = _world()

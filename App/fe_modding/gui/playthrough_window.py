@@ -33,7 +33,7 @@ from ..formats.cmb.decompiler import Decompiler, function_to_source
 from ..playthrough import actions, combat, engine, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
-from ..playthrough.simulation import ACTION, INPUT, LINE, MESSAGE, PHASE, UNIT, Simulation
+from ..playthrough.simulation import ACTION, INPUT, LINE, MESSAGE, PHASE, UNIT, UNFINISHED, Simulation
 from ..playthrough.state import FACTION_NAMES, PLAYER, AiTurn, MessageShow, ScriptRun
 from .map_builder import FACTION_COLORS, _BuildCanvas, _dim
 from .map_windows import _Window
@@ -41,6 +41,9 @@ from .map_windows import _Window
 GRANULARITIES = (("Line (instruction, message page, AI entry)", LINE), ("Message page", MESSAGE),
                  ("Action", ACTION), ("AI unit", UNIT), ("Phase", PHASE), ("Until my turn", INPUT))
 DIFFICULTIES = (("Normal", "n"), ("Hard", "h"), ("Maniac", "m"))
+#: Where Restart starts: turn 1 at the first command (the opening plays unseen), the opening, or a saved point.
+START_TURN1, START_OPENING, START_SAVED = "Turn 1", "Chapter opening", "Saved point"
+SKIP = "skip"  # the run mode that plays the opening unseen
 MOVE_COLOR, ATTACK_COLOR, CANTO_COLOR, THREAT_COLOR = "#4f8fe8", "#e85a4f", "#9be84f", "#e8a24f"
 RUN_BUDGET_S = 0.04
 MESSAGE_DELAY_MS = 1400
@@ -94,6 +97,8 @@ class PlaythroughWindow(_Window):
         self._auto_messages = tk.BooleanVar(value=False)
         self._follow = tk.BooleanVar(value=True)
         self._show_zones = tk.BooleanVar(value=True)
+        self._start_at = tk.StringVar(value=START_TURN1)
+        self._saved_start = None  # (GameState, label) saved with "Start here"
         self._build()
         self.bind("<space>", lambda e: self.step())
         self.bind("<Left>", lambda e: self.back())
@@ -106,6 +111,12 @@ class PlaythroughWindow(_Window):
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
         ttk.Button(top, text="Restart", command=self.restart).pack(side="left")
+        ttk.Label(top, text="Start at").pack(side="left", padx=(10, 2))
+        self._start_box = ttk.Combobox(top, textvariable=self._start_at, values=[START_TURN1, START_OPENING],
+                                       state="readonly", width=15)
+        self._start_box.pack(side="left")
+        self._start_box.bind("<<ComboboxSelected>>", lambda e: self.restart())
+        ttk.Button(top, text="Start here", command=self.save_start).pack(side="left", padx=(4, 0))
         ttk.Label(top, text="Difficulty").pack(side="left", padx=(10, 2))
         ttk.Combobox(top, textvariable=self._difficulty, values=[d for d, _ in DIFFICULTIES], state="readonly",
                      width=8).pack(side="left")
@@ -244,7 +255,13 @@ class PlaythroughWindow(_Window):
         except (ValueError, OSError) as exc:
             messagebox.showerror("Play chapter", str(exc), parent=self)
             return
-        state = setup.initial_state(world, seed=seed)
+        mode = self._start_at.get()
+        if mode == START_SAVED and self._saved_start is not None:
+            state = self._saved_start[0].snapshot()
+            problems.append(f"Started from the saved point \"{self._saved_start[1]}\" (it keeps its own random "
+                            "numbers: the seed doesn't apply).")
+        else:
+            state = setup.initial_state(world, seed=seed)
         self.sim = Simulation(world, state)
         self._source_cache.clear()
         self._selected, self._reach, self._watch = None, {}, None
@@ -258,7 +275,25 @@ class PlaythroughWindow(_Window):
             self.sim.history[0].steps.append(engine.Step("task", "Setup", outputs=list(state.out)))
             state.out = []
         self.refresh()
-        self.run()
+        if mode == START_TURN1:
+            self._running = (SKIP, None)
+            self._tick()
+        elif mode == START_OPENING:
+            self.run()
+
+    def save_start(self) -> None:
+        """Make the shown entry the point Restart starts from."""
+        if self.sim is None:
+            return
+        state = self.sim.state
+        label = f"turn {state.turn}, {FACTION_NAMES.get(state.phase, state.phase)} phase: {self.sim.entry.label}"
+        self._saved_start = (state.snapshot(), label)
+        self._start_box.configure(values=[START_TURN1, START_OPENING, START_SAVED])
+        self._start_at.set(START_SAVED)
+        note = f"Restart now starts from {label}."
+        if any(isinstance(t, (ScriptRun, MessageShow, AiTurn)) for t in state.pending):
+            note += " It is inside running code: Restart goes on from there, with the code as edited by then."
+        self._hover.configure(text=note)
 
     def _map_changed(self) -> None:
         self._hover.configure(text="The map changed in the Build tab: press Restart to play the new version.")
@@ -302,6 +337,9 @@ class PlaythroughWindow(_Window):
         if self._running is None or self.sim is None:
             return
         until, start = self._running
+        if until == SKIP:
+            self._skip()
+            return
         began = time.monotonic()
         while True:
             result = self.sim.step()
@@ -327,6 +365,20 @@ class PlaythroughWindow(_Window):
                 self.refresh(light=True)
                 self._after = self.after(1, self._tick)
                 return
+
+    def _skip(self) -> None:
+        """One slice of playing the opening unseen (Start at: Turn 1)."""
+        problem = self.sim.fast_forward(budget_s=RUN_BUDGET_S)
+        if problem == UNFINISHED:
+            self._status.configure(text=f"Playing the opening... ({len(self.sim.history) - 1} steps)")
+            self._after = self.after(1, self._tick)
+            return
+        if problem is not None:
+            self.sim.state.emit("warn", problem)
+            self.sim.entry.steps.append(engine.Step("task", "Start", outputs=list(self.sim.state.out)))
+            self.sim.state.out = []
+            self._hover.configure(text=problem)
+        self._stop()
 
     def _stop(self) -> None:
         self._running = None

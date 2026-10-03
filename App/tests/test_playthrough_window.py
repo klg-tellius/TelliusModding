@@ -95,8 +95,10 @@ class PlaythroughWindowTests(unittest.TestCase):
 
     def test_opening_runs_to_the_player_phase_and_a_command_plays_on(self):
         w = self.window
-        self._settle()  # the window starts the chapter itself
+        self._settle()  # the window plays the opening unseen and stops at turn 1's first command
         state = w.sim.state
+        self.assertEqual(w.sim.entry.label, "Turn 1: start")
+        self.assertGreater(len(w.sim.history), 1)
         self.assertEqual([u.pid for u in state.living()], ["PID_B", "PID_RIDER"])
         rider = next(u for u in state.living() if u.pid == "PID_RIDER")
         w._command(actions.Act(rider.uid, (4, 4), "visit"))  # stops on the message page
@@ -111,6 +113,22 @@ class PlaythroughWindowTests(unittest.TestCase):
         self.assertLess(w.sim.state.units[rider.uid].hp, 20)  # the enemy attacked
         w.back_command()
         self.assertFalse(w.sim.at_end)
+
+    def test_start_here_then_restart_comes_back_to_the_saved_point(self):
+        w = self.window
+        self._settle()
+        rider = next(u for u in w.sim.state.living() if u.pid == "PID_RIDER")
+        w._command(actions.Act(rider.uid, (3, 1)))
+        self._settle()
+        w.save_start()
+        self.assertEqual(w._start_at.get(), "Saved point")
+        w.restart()
+        self._settle()
+        self.assertEqual(len(w.sim.history), 1)
+        self.assertEqual(w.sim.state.units[rider.uid].tile, (3, 1))
+        w._start_at.set("Chapter opening")
+        w.restart()
+        self.assertNotIn("Turn 1: start", [e.label for e in w.sim.history])  # played as usual, not skipped
 
 
 if __name__ == "__main__":
