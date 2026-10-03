@@ -19,6 +19,7 @@ from typing import Callable, Optional
 from .. import chapters, map_props
 from ..formats import map_file
 from . import map_scene
+from .editor_panel import EditorPanel
 from .model_viewer import _ModelPreview, load_named_model_set
 
 ALL_MAPS = "All maps"
@@ -245,10 +246,10 @@ class PropBrowser(ttk.Frame):
         self._preview.cleanup()
 
 
-class MapObjectsPanel(ttk.Frame):
-    """The Game Data page's Map Objects tab: every map's props, read only."""
+class MapObjectsPanel(EditorPanel):
+    """Assets › Map Objects: every map's props, read only."""
 
-    def __init__(self, parent: tk.Misc, project) -> None:
+    def __init__(self, parent: tk.Misc, project, changelog=None) -> None:
         super().__init__(parent, style="Page.TFrame", padding=(12, 10))
         top = ttk.Frame(self, style="Page.TFrame")
         top.pack(fill="x", pady=(0, 6))
@@ -259,6 +260,9 @@ class MapObjectsPanel(ttk.Frame):
         self.browser = PropBrowser(self, project, on_select=lambda info: self._export.configure(
             state="normal" if info is not None else "disabled"))
         self.browser.pack(fill="both", expand=True)
+
+    def cleanup(self) -> None:
+        self.browser.cleanup()
 
 
 class PropPickerDialog(tk.Toplevel):
