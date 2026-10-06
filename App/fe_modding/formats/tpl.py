@@ -2,8 +2,8 @@
 
 A TPL holds one or more images, each with its own pixel format, using GX's
 standard texture format enum (the same public spec CMPR/C8 below come from -
-e.g. Dolphin's TextureDecoder/libogc's GX enum). Nine formats are decodable;
-all nine now have working *encoders* too (write support, used by the
+e.g. Dolphin's TextureDecoder/libogc's GX enum). Ten formats are decodable;
+all ten now have working *encoders* too (write support, used by the
 import/replace flow - see replace_image() / ENCODABLE_FORMATS):
 
 - CMPR (format 14, GX's S3TC-like 4x4 block compression) - confirmed
@@ -15,13 +15,15 @@ import/replace flow - see replace_image() / ENCODABLE_FORMATS):
   _rgb5a3()) - fixed after a real portrait decoded with a corrupted patch
   of wrong colors under the old logic.
 
-Seven more formats were added once real files outside backgrounds/portraits
+Eight more formats were added once real files outside backgrounds/portraits
 (files/window, files/gmap, files/etc, files/zu - see graphics_viewers.py)
-turned out to use them, raising TplError instead of displaying. All seven
+turned out to use them, raising TplError instead of displaying. All eight
 started as decode-only and later gained encoders too (see below):
 
-- I4 (format 0) - 4-bit grayscale, 8x8 tiling. Encoded by luminance-
-  converting the source image and quantizing to 4 bits/pixel.
+- I4 (format 0) - 4-bit grayscale, 8x8 tiling. Decoded like I8, with
+  alpha = intensity (Dolphin's TextureDecoder convention). Encoded by
+  luminance-converting the source image and quantizing to 4 bits/pixel;
+  the source alpha is ignored.
 - IA4 (format 2) - 4-bit intensity + 4-bit alpha packed in one byte (high
   nibble intensity, low nibble alpha), 8x4 tiling like C8.
 - IA8 (format 3) - 8-bit intensity + 8-bit alpha packed in one big-endian
@@ -36,6 +38,13 @@ started as decode-only and later gained encoders too (see below):
 - RGBA8 (format 6) - 32-bit color, 4x4 tiling but stored as two
   interleaved 32-byte AR/GB sub-blocks per tile - GX's one genuinely
   unusual tiling layout among the formats seen so far.
+- I8 (format 1) - 8-bit intensity, one byte/pixel, 8x4 tiling like C8.
+  Decoded the way Dolphin's TextureDecoder does (each byte copied to R, G,
+  B *and* A - GX's I8 sampling feeds intensity to both the color and alpha
+  TEV inputs), so a dark texel also reads as transparent. Encoded from
+  luminance only; the source alpha is ignored since the format has no
+  separate alpha. Used once on the disc: zmap/common.cmp's common.tpl
+  image 2, the 256x256 shared map texture.
 - C4 (format 8) - 4-bit palette index (packed 2/byte, same nibble order as
   I4), 8x8 tiling - otherwise the same palette-resolve path as C8
   (_read_palette()), just twice the pixels per index byte. This is also
@@ -49,20 +58,19 @@ started as decode-only and later gained encoders too (see below):
 
 A header-only scan of every real file under files/s, files/Face, and the
 six graphics_viewers.py folders (1517 files, 7371 images) found every
-image using one of these nine formats - no other format value has turned
+image using one of these formats - no other format value has turned
 up. Each decoder was spot-checked against a real image before being
 trusted (an achievement popup's alpha-blended RGBA8 background, small I4/
 RGB5A3 world-map icons) - all decoded clean, no corruption. The five
 formats with no natural alpha/palette precision loss beyond quantization
 (I4, IA4, IA8, RGB565, RGBA8) round-trip straightforwardly; RGB5A3 and C4
 carry the same kind of lossy-but-principled quantization CMPR/C8 already
-did before this. None of the seven encoders have been checked against a
+did before this; I8 round-trips exactly for grey images. None of the eight encoders have been checked against a
 real disc rebuild yet (unlike CMPR/C8) - see graphics_viewers.py's own
 validation notes for what has and hasn't been confirmed end-to-end.
 
 Any other format value still raises TplError rather than guessing - GX
-defines a couple more (I8, C14X2) that no real file examined by this app
-has needed yet.
+defines one more (C14X2) that no texture on the disc uses.
 
 Requires Pillow and numpy (not core dependencies of the rest of this app -
 only import this module if you need texture extraction). Decoding is
@@ -88,6 +96,7 @@ except ImportError as exc:
 
 MAGIC = 0x0020AF30
 FORMAT_I4 = 0
+FORMAT_I8 = 1
 FORMAT_IA4 = 2
 FORMAT_IA8 = 3
 FORMAT_RGB565 = 4
@@ -99,6 +108,7 @@ FORMAT_CMPR = 14
 CMPR_BLOCK = 8  # CMPR is tiled in 8x8 blocks, 32 bytes each (4 4x4 sub-blocks x 8 bytes)
 C8_BLOCK_W, C8_BLOCK_H = 8, 4  # C8 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 I4_BLOCK = 8  # I4 is tiled in 8x8 blocks, 32 bytes each (4 bits/pixel)
+I8_BLOCK_W, I8_BLOCK_H = 8, 4  # I8 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 IA4_BLOCK_W, IA4_BLOCK_H = 8, 4  # IA4 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 IA8_BLOCK = 4  # IA8 is tiled in 4x4 blocks, 32 bytes each (2 bytes/pixel)
 RGB565_BLOCK = 4  # RGB565 is tiled in 4x4 blocks, 32 bytes each (2 bytes/pixel)
@@ -108,6 +118,7 @@ C4_BLOCK = 8  # C4 is tiled in 8x8 blocks, 32 bytes each (4 bits/pixel, same nib
 
 _OTHER_FORMAT_NAMES = {
     FORMAT_I4: "I4",
+    FORMAT_I8: "I8",
     FORMAT_IA4: "IA4",
     FORMAT_IA8: "IA8",
     FORMAT_RGB565: "RGB565",
@@ -123,6 +134,7 @@ ENCODABLE_FORMATS = {
     FORMAT_C8,
     FORMAT_C4,
     FORMAT_I4,
+    FORMAT_I8,
     FORMAT_IA4,
     FORMAT_IA8,
     FORMAT_RGB565,
@@ -136,6 +148,7 @@ ENCODABLE_FORMATS = {
 # functions for backwards compatibility (both predate this table).
 _BLOCK_SPECS = {
     FORMAT_I4: (I4_BLOCK, I4_BLOCK, 32),
+    FORMAT_I8: (I8_BLOCK_W, I8_BLOCK_H, 32),
     FORMAT_IA4: (IA4_BLOCK_W, IA4_BLOCK_H, 32),
     FORMAT_IA8: (IA8_BLOCK, IA8_BLOCK, 32),
     FORMAT_RGB565: (RGB565_BLOCK, RGB565_BLOCK, 32),
@@ -262,6 +275,8 @@ def read_tpl_images(stream: BinaryIO) -> list["Image.Image"]:
             )
         elif info.format == FORMAT_I4:
             images.append(_decode_i4(stream, info.data_addr, info.width, info.height))
+        elif info.format == FORMAT_I8:
+            images.append(_decode_i8(stream, info.data_addr, info.width, info.height))
         elif info.format == FORMAT_IA4:
             images.append(_decode_ia4(stream, info.data_addr, info.width, info.height))
         elif info.format == FORMAT_IA8:
@@ -275,7 +290,7 @@ def read_tpl_images(stream: BinaryIO) -> list["Image.Image"]:
         else:
             raise TplError(
                 f"Unrecognized image format {info.format} (known formats: CMPR={FORMAT_CMPR}, C8={FORMAT_C8}, "
-                f"C4={FORMAT_C4}, I4={FORMAT_I4}, IA4={FORMAT_IA4}, IA8={FORMAT_IA8}, "
+                f"C4={FORMAT_C4}, I4={FORMAT_I4}, I8={FORMAT_I8}, IA4={FORMAT_IA4}, IA8={FORMAT_IA8}, "
                 f"RGB565={FORMAT_RGB565}, RGB5A3={FORMAT_RGB5A3}, RGBA8={FORMAT_RGBA8})."
             )
 
@@ -329,6 +344,8 @@ def replace_image(tpl_bytes: bytes, image_index: int, new_image: "Image.Image") 
         encoded = encode_c4(resized_rgba, palette)
     elif info.format == FORMAT_I4:
         encoded = encode_i4(resized_rgba)
+    elif info.format == FORMAT_I8:
+        encoded = encode_i8(resized_rgba)
     elif info.format == FORMAT_IA4:
         encoded = encode_ia4(resized_rgba)
     elif info.format == FORMAT_IA8:
@@ -703,7 +720,14 @@ def _decode_cmpr(stream: BinaryIO, addr: int, width: int, height: int) -> "Image
 def _decode_i4(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
     tiles = _read_tiles(stream, addr, width, height, I4_BLOCK, I4_BLOCK, 32)
     v = _nibbles(tiles) * 17  # scale 4-bit (0-15) to 8-bit (0-255)
-    return _untile(_gray_alpha(v, np.full_like(v, 255)), width, height, I4_BLOCK, I4_BLOCK)
+    # alpha = intensity, as Dolphin's TextureDecoder samples I4 (same as I8)
+    return _untile(_gray_alpha(v, v), width, height, I4_BLOCK, I4_BLOCK)
+
+
+def _decode_i8(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
+    tiles = _read_tiles(stream, addr, width, height, I8_BLOCK_W, I8_BLOCK_H, 32)
+    # alpha = intensity, as Dolphin's TextureDecoder samples I8
+    return _untile(_gray_alpha(tiles, tiles), width, height, I8_BLOCK_W, I8_BLOCK_H)
 
 
 def _decode_rgb5a3(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
@@ -869,8 +893,9 @@ def encode_c4(image: "Image.Image", palette: list[tuple[int, int, int, int]]) ->
 
 
 def encode_i4(image: "Image.Image") -> bytes:
-    """Encode as I4 (4-bit grayscale, no alpha, 2 pixels/byte, 8x8 tiling).
-    Luminance-converts the source image and quantizes to 4 bits/pixel."""
+    """Encode as I4 (4-bit grayscale, 2 pixels/byte, 8x8 tiling).
+    Luminance-converts the source image and quantizes to 4 bits/pixel; its
+    alpha is dropped (I4 samples alpha from the intensity itself)."""
     width, height = image.size
     gray = image.convert("L")
     pixels = gray.load()
@@ -888,6 +913,22 @@ def encode_i4(image: "Image.Image") -> bytes:
                     out.append((nibbles[0] << 4) | nibbles[1])
 
     return bytes(out)
+
+
+def encode_i8(image: "Image.Image") -> bytes:
+    """Encode as I8 (8-bit intensity, one byte/pixel, 8x4 tiling like C8).
+    Luminance-converts the source image; its alpha is dropped (I8 samples
+    alpha from the intensity itself)."""
+    width, height = image.size
+    gray = np.asarray(image.convert("L"), dtype=np.uint8)
+    blocks_x = (width + I8_BLOCK_W - 1) // I8_BLOCK_W
+    blocks_y = (height + I8_BLOCK_H - 1) // I8_BLOCK_H
+    # pad partial edge blocks by repeating the last row/column, like the other encoders
+    rows = np.minimum(np.arange(blocks_y * I8_BLOCK_H), height - 1)
+    cols = np.minimum(np.arange(blocks_x * I8_BLOCK_W), width - 1)
+    full = gray[rows][:, cols]
+    tiles = full.reshape(blocks_y, I8_BLOCK_H, blocks_x, I8_BLOCK_W).transpose(0, 2, 1, 3)
+    return tiles.tobytes()
 
 
 def encode_ia4(image: "Image.Image") -> bytes:
@@ -1066,6 +1107,7 @@ FILTER_LINEAR = 1
 _DIRECT_ENCODERS = {
     FORMAT_CMPR: lambda image: encode_cmpr(image.convert("RGBA")),
     FORMAT_I4: encode_i4,
+    FORMAT_I8: encode_i8,
     FORMAT_IA4: encode_ia4,
     FORMAT_IA8: encode_ia8,
     FORMAT_RGB565: encode_rgb565,
