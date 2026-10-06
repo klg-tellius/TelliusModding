@@ -9,8 +9,8 @@ modelled on these chapters, with these characters") and get all of it, checked f
 - :func:`add_campaign` adds the chapters in order (each leads to the next, the last leads where
   ``after`` used to) and then the characters, and returns the new ``FE8Data.bin`` bytes for the
   caller's session, like :func:`chapters.add_story_chapter`;
-- :func:`blank_chapter_units` empties a new chapter's deployments, for a chapter that should not
-  keep the template's army.
+- :func:`blank_chapter_units` empties a new chapter's deployments but the player's army, for a
+  chapter that should not keep the template's enemies and other units.
 
 Nothing here uses Tk.
 """
@@ -177,18 +177,25 @@ def set_story_order(flow, order: list) -> str:
     return "story order unchanged"
 
 
+#: Sections whose name holds this deploy the player's army (the game itself marks their units by
+#: it: ``load_reinforcement_group_placement_list``); emptying them leaves the chapter without one.
+PLAYER_SECTION_MARK = "mikata"
+
+
 def blank_dispos_bytes(data: bytes) -> bytes:
-    """One difficulty's deployment file with every unit removed (sections and their headers stay,
-    so the script's deployment calls still find their sections)."""
+    """One difficulty's deployment file with every unit removed except the player's army
+    (:data:`PLAYER_SECTION_MARK` sections). Sections and their headers stay, so the script's
+    deployment calls still find their sections."""
     doc = dispo.parse_dispo(data)
     for section in doc.sections:
-        if not section.is_link:
+        if not section.is_link and PLAYER_SECTION_MARK not in section.name:
             section.units.clear()
     return dispo.build_dispo(doc)
 
 
 def blank_chapter_units(project: ModProject, chapter_id: str) -> list:
-    """Empty every deployment of the chapter's map folders. Returns the files changed."""
+    """Empty every deployment of the chapter's map folders but the player's army. Returns the files
+    changed."""
     changed = []
     for folder in chapters.chapter_phases(project, chapter_id):
         path: Optional[Path] = chapters.phase_paths(project, folder)[0]

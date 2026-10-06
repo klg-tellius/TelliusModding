@@ -134,6 +134,12 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual([s.name for s in after.sections], [s.name for s in before.sections])
         self.assertEqual([len(s.units) for s in after.sections], [0] * len(after.sections))
 
+    def test_blank_dispos_keeps_the_player_army(self):
+        data = _build_minimal_dispo_bytes((b"bmap33_mikata_n", b"bmap33_first_n"))
+        after = dispo.parse_dispo(campaign.blank_dispos_bytes(data))
+        self.assertEqual({s.name: len(s.units) for s in after.sections if not s.is_link},
+                         {"bmap33_mikata_n": 1, "bmap33_first_n": 0})
+
     def test_blank_chapter_units_rewrites_the_pack(self):
         packed = pak.pack_pak([("dispos_n.bin", _build_minimal_dispo_bytes()), ("other.bin", b"keep")], [0, 0])
         self._write("zmap/bmap33/dispos.cmp", lz10.compress(packed))
