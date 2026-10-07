@@ -59,7 +59,9 @@ the meanings of level, faction and the bonuses also match every vanilla file:
   0x04 group commander (the unit its group's army list and Charisma bonus
   refer to: Ike, bosses); 0x08 a reinforcement spawns even when the
   character is absent; 0x40 bridge-cover barrier (the unit cannot enter
-  terrain 55 tiles; cleared on fliers). 0x10/0x20 are unused in vanilla.
+  terrain 55 tiles; cleared on fliers); 0x10 the AI may use a Door Key,
+  0x20 a Chest Key (thieves with ``SID_KEY0`` get both bits anyway). 0x80
+  is not read.
 - 39 ``ai_order``: enemy-phase turn order, lower acts first (0 on player
   units, 0-81 on enemies).
 
@@ -118,8 +120,8 @@ FLAG_AUTOLEVEL = 0x01
 FLAG_HOLD_POSITION = 0x02
 FLAG_COMMANDER = 0x04
 FLAG_SPAWN_WHEN_ABSENT = 0x08
-FLAG_UNLOCK_ROUTE = 0x10
-FLAG_BIT_20 = 0x20
+FLAG_AI_DOOR_KEY = 0x10
+FLAG_AI_CHEST_KEY = 0x20
 FLAG_BRIDGE_BARRIER = 0x40
 #: Every bit of field 38: (mask, short label, what the game does with it).
 FLAG_BITS = (
@@ -127,8 +129,8 @@ FLAG_BITS = (
     (FLAG_HOLD_POSITION, "Hold position", "The AI never moves the unit; it still attacks, heals and acts from its tile."),
     (FLAG_COMMANDER, "Group commander", "Leader of its army: the army list shows it and its Charisma helps its army."),
     (FLAG_SPAWN_WHEN_ABSENT, "Spawn if absent", "A reinforcement appears even when the character is not already in play."),
-    (FLAG_UNLOCK_ROUTE, "Bit 0x10", "Opens an extra route in the AI's door/chest checks; unused in vanilla."),
-    (FLAG_BIT_20, "Bit 0x20", "Sets an AI bit nothing reads before the game sets it itself; unused in vanilla."),
+    (FLAG_AI_DOOR_KEY, "AI uses Door Key", "The AI may use a Door Key: the unit walks to the nearest door and opens it."),
+    (FLAG_AI_CHEST_KEY, "AI uses Chest Key", "The AI may use a Chest Key on chests. Thieves with Lockpick (SID_KEY0) can do both without these bits."),
     (FLAG_BRIDGE_BARRIER, "Blocked by bridge cover", "Terrain 55 (bridge cover) costs 48 to enter. Cleared on fliers."),
     (0x80, "Bit 0x80", "Not read by the game."),
 )

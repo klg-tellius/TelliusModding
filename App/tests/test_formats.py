@@ -179,50 +179,7 @@ class DispoReplacementTableTests(unittest.TestCase):
         self.assertEqual(table, struct.pack(">II", 0, 8))
 
 
-def _build_minimal_dispo_bytes(names=(b"SECA", b"SECB")) -> bytes:
-    """A minimal dispo file in the vanilla layout: a date link section at
-    0x20 (pointing at the first label), then one-unit sections, the label
-    pool, the relocation table and the section table."""
-    from fe_modding.formats.common import HEADER_SIZE
-
-    buf = bytearray(HEADER_SIZE)
-    date_addr = len(buf)
-    buf += bytes(4)  # link word, patched below
-    section_addrs, unit_addrs = [], []
-    for _name in names:
-        section_addrs.append(len(buf))
-        buf += struct.pack(">bBBB", 1, 4, 0, 2)
-        unit_addrs.append(len(buf))
-        buf += bytes(dispo.RECORD_SIZE)
-
-    label_map_start = len(buf)
-    buf += b"DATE\x00PID_TEST\x00JID_TEST\x00"
-    buf += bytes(-len(buf) % 4)
-    label_map_end = len(buf)
-
-    date_key = label_map_start - HEADER_SIZE
-    pid_key = date_key + len(b"DATE\x00")
-    jid_key = pid_key + len(b"PID_TEST\x00")
-    struct.pack_into(">I", buf, date_addr, date_key)
-    for unit_addr in unit_addrs:
-        struct.pack_into(dispo.RECORD_FORMAT, buf, unit_addr, *([pid_key, jid_key] + [0] * 46))
-
-    relocations = [date_addr - HEADER_SIZE]
-    for unit_addr in unit_addrs:
-        relocations += [unit_addr - HEADER_SIZE, unit_addr - HEADER_SIZE + 4]
-    buf += b"".join(struct.pack(">I", r) for r in relocations)
-
-    all_names = [b"DATE"] + list(names)
-    offsets, position = [], 0
-    for name in all_names:
-        offsets.append(position)
-        position += len(name) + 1
-    for address, offset in zip([date_addr] + section_addrs, offsets):
-        buf += struct.pack(">II", address - HEADER_SIZE, offset)
-    buf += b"".join(name + b"\x00" for name in all_names)
-
-    struct.pack_into(">4I", buf, 0, len(buf), label_map_end - HEADER_SIZE, len(relocations), len(all_names))
-    return bytes(buf)
+from dispo_fixture import build_minimal_dispo_bytes as _build_minimal_dispo_bytes  # noqa: E402
 
 
 def _unit_sections(sections):
@@ -817,6 +774,17 @@ class MessageTests(unittest.TestCase):
         ]
         data = message.write_messages(original)
         self.assertEqual(message.read_messages(io.BytesIO(data)), original)
+
+    def test_texts_and_table_are_word_aligned(self):
+        # The engine's loader masks the table offset (header +4) and every
+        # text offset with & ~3: an unaligned one makes it register garbage IDs.
+        messages = [message.Message(speaker=f"MS_{i}", text="x" * i) for i in range(7)]
+        data = message.write_messages(messages)
+        table = struct.unpack_from(">I", data, 4)[0]
+        self.assertEqual(table % 4, 0)
+        offsets = [struct.unpack_from(">I", data, 0x20 + table + 8 * i)[0] for i in range(len(messages))]
+        self.assertTrue(all(o % 4 == 0 for o in offsets), offsets)
+        self.assertEqual(message.read_messages(io.BytesIO(data)), messages)
 
     def test_round_trip_empty(self):
         data = message.write_messages([])

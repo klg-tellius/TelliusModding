@@ -72,6 +72,26 @@ def _install_wheel(widget: tk.Misc) -> None:
     root.bind_all("<MouseWheel>", on_wheel, add="+")
 
 
+_WHEEL_SEQUENCES = ("MouseWheel", "Button-4", "Button-5")
+
+
+def disable_wheel_value_changes(root: tk.Misc) -> None:
+    """Stop the mouse wheel from changing dropdowns and spinboxes.
+
+    Tk's stock class bindings cycle a combobox's (or spinbox's) value when the
+    wheel turns over it, so scrolling a page often changed a field by accident.
+    Dropping those class bindings leaves the wheel to the page scroll handler
+    instead; values still change by clicking or with the keyboard."""
+    for widget_class in ("TCombobox", "TSpinbox", "Spinbox"):
+        try:
+            sequences = root.bind_class(widget_class)
+        except tk.TclError:
+            continue
+        for sequence in sequences:
+            if any(name in sequence for name in _WHEEL_SEQUENCES):
+                root.bind_class(widget_class, sequence, "")
+
+
 def pointer_inside(widget: tk.Misc) -> bool:
     """Whether the mouse pointer is over ``widget`` or one of its children."""
     try:

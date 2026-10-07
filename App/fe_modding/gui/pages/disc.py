@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ... import patch
+from ..mod_details_dialog import ModDetailsDialog
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
 
@@ -83,6 +84,10 @@ class DiscPage(Page):
         self._caption(frame, f"Output folder: {project.build_dir}")
         ttk.Button(frame, text="Build disc", style="Accent.TButton", command=shell.build,
                    state="normal" if shell.extracted and not shell.task_running else "disabled").pack(anchor="w")
+        ttk.Button(frame, text="Build and play in Dolphin", command=shell.play,
+                   state="normal" if shell.extracted and not shell.task_running else "disabled").pack(
+            anchor="w", pady=(8, 0))
+        self._caption(frame, "Needs Dolphin: set its location in Settings if it is not found.", pady=(4, 0))
         if project.last_build_warning:
             self._caption(frame, project.last_build_warning, pady=(8, 0), style="SurfaceWarn.TLabel")
         return frame
@@ -97,6 +102,11 @@ class DiscPage(Page):
         ttk.Button(frame, text="Create patch…", style="Accent.TButton", command=shell.create_patch,
                    state="normal" if shell.extracted and project.source_iso and not shell.task_running
                    else "disabled").pack(anchor="w")
+        ttk.Button(frame, text="Mod details…",
+                   command=lambda: ModDetailsDialog(self, project, on_saved=self._render)).pack(
+            anchor="w", pady=(8, 0))
+        who = " · ".join(part for part in (project.version, project.author) if part)
+        self._caption(frame, who or "No author or version set yet.", pady=(4, 0))
         if shell.last_patch:
             self._caption(frame, shell.last_patch, pady=(8, 0))
         return frame

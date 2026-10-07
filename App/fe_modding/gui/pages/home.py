@@ -1,5 +1,5 @@
 """Home: the project dashboard - the ways in (chapters, characters, game
-data, flags, assets, and Disc & Patch for extracting, building and
+data, assets, tools, and Disc & Patch for extracting, building and
 patches), where you were last and this session's changes."""
 
 from __future__ import annotations
@@ -52,10 +52,9 @@ class HomePage(Page):
         tiles = (
             ("chapters", "▦", "Chapters", chapters, "Maps, deployment, dialogue and scripts, per chapter"),
             ("characters", "☺", "Characters", characters, "Stats, portrait, models and every appearance"),
-            ("data", "≡", "Game Data", "Classes · Items · Skills · Terrain", "Everything else in FE8Data.bin"),
-            ("flags", "⚑", "Flags", "Campaign · Chapter · Save file", "On/off switches scripts remember things with"),
-            ("saves", "◫", "Saves", "Units · Convoy · Forges · Flags", "Open a .gci save and edit its blocks"),
-            ("assets", "▣", "Assets", "Portraits, art, music, videos, 3D models", "Browse and replace game files"),
+            ("data", "≡", "Game Data", "Classes · Items · Skills · Flags · AI", "Everything else in FE8Data.bin, plus script flags"),
+            ("assets", "▣", "Assets", "Portraits, art, map objects, music, videos, 3D models", "Browse and replace game files"),
+            ("tools", "⚒", "Tools", "Battle Simulator · Saves · Check · Game Code", "Simulate fights, edit saves, find broken references, patch the game's code"),
             ("disc", "◎", "Disc & Patch", project.source_iso if shell.extracted else "Not extracted yet",
              "Extract the source disc, build a playable image, make a patch to share"),
         )

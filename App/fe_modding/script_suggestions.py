@@ -4,12 +4,14 @@ Two things decide what the popup offers while typing ``.fe9s`` source:
 
 - **The argument the cursor is in.** ``MoviePlay(`` offers the project's
   videos, ``UnitGetByPID(`` its characters, ``Dispos(`` the deployment groups
-  of the chapter's maps, ``BGMPlay(0, `` the music cues... The kind of each
+  of the chapter's maps, ``BGMPlay(0, `` the music cues, ``SFXPlay(`` the
+  ``gcfesnd.bin`` sound effects, ``RectBuild(`` the ``RID_`` resources of
+  ``s/rect.bin`` and ``window/RectDesc.bin``... The kind of each
   argument comes from the extern catalogue (``pid``, ``iid``, ``mess``...)
   refined by :data:`ARG_KINDS` for the many arguments the catalogue only
   knows as ``str`` (names taken from ``docs/app/script-call-reference.md``).
 - **A well-known prefix.** Typing ``PID_``, ``IID_``, ``JID_``, ``SID_``,
-  ``BGM_``, ``RID_``, ``bmap`` or ``Movie/`` anywhere offers the matching
+  ``BGM_``, ``SFX_``, ``RID_``, ``bmap`` or ``Movie/`` anywhere offers the matching
   values too.
 
 Everything else falls back to function-name completion. Values are read
@@ -120,6 +122,7 @@ _IDENT = re.compile(r"[A-Za-z_]\w*$")
 _STRING_PARTIAL = re.compile(r"[^\s\"(),]*$")
 _CHAPTER_SCRIPT = re.compile(r"^C(\d+)\.cmb$", re.IGNORECASE)
 MAX_ITEMS = 60
+_SILENT_SFX_ID = 0x158
 
 
 def chapter_of_script(path: Optional[Path]) -> Optional[str]:
@@ -282,7 +285,8 @@ class ScriptSuggestions:
     def _load(self, kind: str, chapter_id: Optional[str]) -> list[Suggestion]:
         loader = {
             "pid": self._characters, "iid": self._items, "jid": self._classes, "skill": self._skills,
-            "bgm": self._bgm, "movie": self._movies, "map": self._maps, "chapter": self._chapters,
+            "bgm": self._bgm, "sfx": self._sfx, "rect": self._rects,
+            "movie": self._movies, "map": self._maps, "chapter": self._chapters,
             "group": lambda: self._groups(chapter_id), "mess": lambda: self._messages(chapter_id),
         }.get(kind)
         return loader() if loader else []
@@ -337,6 +341,45 @@ class ScriptSuggestions:
         from .formats import gcfesnd
         cues = gcfesnd.read_bgm_cues_path(self.files / "Sound" / "gcfesnd.bin")
         return [Suggestion(c.name, "(no file)" if c.is_dummy else c.path.rsplit("/", 1)[-1]) for c in cues]
+
+    def _sfx(self) -> list[Suggestion]:
+        """``SFX_*`` cue names of ``gcfesnd.bin`` (sound id 0x158 is the silent dummy)."""
+        from .formats import gcfesnd
+        out, seen = [], set()
+        for cue in gcfesnd.read_sfx_cues_path(self.files / "Sound" / "gcfesnd.bin"):
+            if cue.name in seen:
+                continue
+            seen.add(cue.name)
+            silent = " · silent" if cue.sound_id == _SILENT_SFX_ID else ""
+            out.append(Suggestion(cue.name, f"{cue.group.lower()} · sound {cue.sound_id:#x}{silent}"))
+        return out
+
+    def _rects(self) -> list[Suggestion]:
+        """``RID_*`` resources: backgrounds/illustrations of ``s/rect.bin`` and
+        window layouts of ``window/RectDesc.bin``."""
+        from .formats import rect
+        from .formats.fe9_conversation_assets import read_rect_resources
+        out, seen = [], set()
+        try:
+            for resource in rect.read_rect_file(self.files / "s" / "rect.bin").resources:
+                if resource.name not in seen:
+                    seen.add(resource.name)
+                    width, height = resource.size
+                    out.append(Suggestion(resource.name, f"image {width}×{height}" if width else "image"))
+        except Exception:  # noqa: BLE001 - keep whatever the other file offers
+            pass
+        desc = next((p for p in (self.files / "window" / "RectDesc.bin", self.files / "window" / "rectdesc.bin")
+                     if p.is_file()), None)
+        if desc is not None:
+            try:
+                names = read_rect_resources(desc.read_bytes())
+            except Exception:  # noqa: BLE001
+                names = {}
+            for name in names:
+                if name not in seen:
+                    seen.add(name)
+                    out.append(Suggestion(name, "window layout"))
+        return out
 
     def _movies(self) -> list[Suggestion]:
         movie_dir = self.files / "Movie"

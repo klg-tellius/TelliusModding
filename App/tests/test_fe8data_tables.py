@@ -180,7 +180,7 @@ class TableTests(unittest.TestCase):
             if kind == "chapter":
                 chapters = fe8data.read_chapter_data(data)
                 self.assertEqual(chapters[index].script, "C00")
-                self.assertEqual(chapters[index].chapter_id, 2)  # the lowest free id
+                self.assertEqual(chapters[index].chapter_id, 33)  # the first free story id after the ending (32)
             else:
                 fe8 = fe8data.read_fe8data(data)
                 table = {"character": fe8.characters, "class": fe8.classes, "item": fe8.items}[kind]

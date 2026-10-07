@@ -1805,8 +1805,8 @@ def add_record(data: bytes, kind: str, new_id: Optional[str] = None,
                copy_from: Optional[int] = None) -> tuple[bytes, int]:
     """Append a record: a copy of record ``copy_from``, or an empty one.
     Kinds with an ID field need ``new_id`` (a label no record of that kind
-    has yet; added to the string pool). A new chapter gets the lowest free
-    chapter id. Returns the file and the new record's index."""
+    has yet; added to the string pool). A new chapter gets the lowest
+    free story chapter id (33-89, see below). Returns the file and the new record's index."""
     rows = read_table(data, kind)
     size = TABLES[kind][1]
     if kind in RECORD_ID_FIELDS:
@@ -1819,8 +1819,10 @@ def add_record(data: bytes, kind: str, new_id: Optional[str] = None,
     else:
         row = RawRecord(bytes(size), frozenset())
     if kind == "chapter":
+        # 32 is "game cleared" (the ending plays) and 90+ are trial maps, so story ids come
+        # from 33-89 first (chapters.NEW_CHAPTER_IDS)
         used = {r.raw[0x3C] for r in rows}
-        free = next((i for i in range(1, 256) if i not in used), None)
+        free = next((i for i in (*range(33, 90), *range(1, 32), *range(90, 256)) if i not in used), None)
         if free is None:
             raise ValueError("Every chapter id 1-255 is taken.")
         raw = bytearray(row.raw)

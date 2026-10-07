@@ -75,9 +75,15 @@ class CodeEditor:
             if not (isinstance(hook, Patch) and hook.internal):
                 continue
             users = [e for e in CATALOG.entries.values() if isinstance(e, Tunable) and hook in e.requires]
+            if not users:
+                continue        # managed by its own owner (the story flow table), not by tunables
             if self.session.patch_status(hook).state == State.APPLIED and all(
                     self.session.tunable_status(u).state == State.ORIGINAL for u in users):
                 self.session.set_patch(hook, False)
+
+    def save(self) -> None:
+        """Write the DOL after an edit made through :attr:`session` (see ``chapter_flow``)."""
+        self._save()
 
     def _save(self) -> None:
         self._drop_idle_hooks()

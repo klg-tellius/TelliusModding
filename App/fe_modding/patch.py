@@ -77,6 +77,15 @@ class PatchInfo:
     replace: dict[str, dict]
     add: dict[str, dict]
     remove: dict[str, dict]
+    author: str = ""
+    version: str = ""
+    credits: str = ""
+
+    @property
+    def title(self) -> str:
+        """``Name 1.2 by Author``, whichever parts the patch has."""
+        text = " ".join(part for part in (self.name, self.version) if part)
+        return f"{text} by {self.author}" if text and self.author else text or (f"by {self.author}" if self.author else "")
 
 
 # -- trees -----------------------------------------------------------------------------------------
@@ -127,8 +136,10 @@ def _safe_relative(name: str) -> str:
 
 # -- creating --------------------------------------------------------------------------------------
 def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *, game: Game,
-                 name: str = "", description: str = "") -> PatchSummary:
-    """Write a patch turning the extracted tree ``base_dir`` into ``mod_dir``."""
+                 name: str = "", description: str = "", author: str = "", version: str = "",
+                 credits: str = "") -> PatchSummary:
+    """Write a patch turning the extracted tree ``base_dir`` into ``mod_dir``. ``author``,
+    ``version`` and ``credits`` are shown to whoever applies it."""
     base_dir, mod_dir, dest = Path(base_dir), Path(mod_dir), Path(dest)
     base, mod = _tree(base_dir), _tree(mod_dir)
     summary = PatchSummary()
@@ -138,6 +149,9 @@ def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *,
         "game": game.value,
         "name": name,
         "description": description,
+        "author": author,
+        "mod_version": version,  # "version" is the patch format's own
+        "credits": credits,
         "disc_id": disc_id(base_dir),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "replace": {}, "add": {}, "remove": {},
@@ -183,7 +197,8 @@ def create_project_patch(project: ModProject, dest: Path | str) -> PatchSummary:
         base = Path(temp) / "disc"
         tools.extract_disc(project.source_path, base, overwrite=True)
         return create_patch(base, project.extracted_dir, dest, game=project.game,
-                            name=project.name, description=project.description)
+                            name=project.name, description=project.description, author=project.author,
+                            version=project.version, credits=project.credits)
 
 
 # -- reading and applying --------------------------------------------------------------------------
@@ -204,7 +219,8 @@ def read_patch(path: Path | str) -> PatchInfo:
     return PatchInfo(game=game, name=manifest.get("name", ""), description=manifest.get("description", ""),
                      disc_id=manifest.get("disc_id", ""), created_at=manifest.get("created_at", ""),
                      replace=manifest.get("replace", {}), add=manifest.get("add", {}),
-                     remove=manifest.get("remove", {}))
+                     remove=manifest.get("remove", {}), author=manifest.get("author", ""),
+                     version=manifest.get("mod_version", ""), credits=manifest.get("credits", ""))
 
 
 def apply_patch(patch_path: Path | str, target_dir: Path | str) -> PatchInfo:

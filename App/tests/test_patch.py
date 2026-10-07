@@ -47,6 +47,18 @@ class PatchTests(unittest.TestCase):
         self.assertEqual(info.game, Game.PATH_OF_RADIANCE)
         self.assertEqual(info.disc_id, "GFEE01 rev 1")
 
+    def test_manifest_carries_author_version_and_credits(self):
+        patch.create_patch(self.base, self.mod, self.dest, game=Game.PATH_OF_RADIANCE, name="Quest",
+                           author="Ana", version="1.2", credits="Music by Bo")
+        info = patch.read_patch(self.dest)
+        self.assertEqual((info.author, info.version, info.credits), ("Ana", "1.2", "Music by Bo"))
+        self.assertEqual(info.title, "Quest 1.2 by Ana")
+
+    def test_older_patches_without_those_fields_still_read(self):
+        patch.create_patch(self.base, self.mod, self.dest, game=Game.PATH_OF_RADIANCE)
+        info = patch.read_patch(self.dest)
+        self.assertEqual((info.author, info.version, info.credits, info.title), ("", "", "", ""))
+
     def test_apply_turns_the_base_into_the_mod(self):
         patch.create_patch(self.base, self.mod, self.dest, game=Game.PATH_OF_RADIANCE)
         patch.apply_patch(self.dest, self.target)

@@ -3103,6 +3103,9 @@ def _populate_bone_tree(tree: ttk.Treeview, bones: list[skeleton.Bone]) -> None:
 
 # 300x the fit-to-view size: a single map tile fills a large part of the view
 ZOOM_MAX = 300.0
+#: Smallest perspective divisor; geometry nearer the eye than this is dropped
+#: (gpu_renderer's shader repeats it as its near plane).
+PERSPECTIVE_NEAR = 0.05
 # the model's largest dimension spans this fraction of the canvas's short side
 # at zoom 1 (its 3D diagonal, up to sqrt(3) times that, still fits when orbiting)
 FIT_FRACTION = 0.55
@@ -3145,6 +3148,9 @@ class _ModelCanvas(tk.Canvas):
     when wgpu or a GPU adapter is missing. Either way the frame goes into
     one persistent PhotoImage, and only the overlay items are recreated per
     frame."""
+
+    #: 0 = orthographic; else 1 / the eye's distance from the center (set_view)
+    _perspective = 0.0
 
     def __init__(self, parent: tk.Misc):
         super().__init__(parent, background="#2b2b2b", highlightthickness=0)
@@ -3228,6 +3234,15 @@ class _ModelCanvas(tk.Canvas):
         for both to revert to the static bind pose/mesh."""
         self._posed_positions = positions
         self._animated_triangles = triangles
+        self._schedule_redraw()
+
+    def set_view(self, center, yaw: float, pitch: float, zoom: float, perspective: float = 0.0) -> None:
+        """Place the camera directly (the battle simulator's game camera): look
+        at ``center`` turned by ``yaw``/``pitch`` (radians), ``perspective`` as
+        in ``_perspective`` (pass 0 to go back to the orthographic view)."""
+        self._center = tuple(center)
+        self._yaw, self._pitch, self._zoom = yaw, pitch, max(zoom, 1e-6)
+        self._perspective = max(perspective, 0.0)
         self._schedule_redraw()
 
     def set_show_mesh(self, show: bool) -> None:
@@ -3413,11 +3428,15 @@ class _ModelCanvas(tk.Canvas):
         tri_c = np.array([t.c for t in triangles])
         normals = np.array([t.normal for t in triangles])
 
+        perspective = self._perspective
+
         def to_screen(points: "np.ndarray") -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
             rotated = (points - center) @ rot.T
+            # perspective 0 keeps the orthographic view; else x/y shrink with depth
+            w = np.maximum(1.0 + rotated[:, 2] * perspective, PERSPECTIVE_NEAR)
             return (
-                cx0 + rotated[:, 0] * scale * self._screen_x_sign,
-                cy0 - rotated[:, 1] * scale * self._screen_y_sign,
+                cx0 + rotated[:, 0] * scale * self._screen_x_sign / w,
+                cy0 - rotated[:, 1] * scale * self._screen_y_sign / w,
                 rotated[:, 2],
             )
 
@@ -3439,6 +3458,8 @@ class _ModelCanvas(tk.Canvas):
         # dim," not "usually invisible") - backface culling is what actually
         # exposed it.
         visible = nz < 0.0
+        if perspective:  # behind the eye: dropped, like the GPU path
+            visible &= (1.0 + np.stack([az, bz, cz]) * perspective > PERSPECTIVE_NEAR).all(axis=0)
         brightness = 0.35 + 0.65 * np.maximum(-nz, 0.0)
 
         full_gx, full_gy = np.meshgrid(np.arange(width) + 0.5, np.arange(height) + 0.5)
@@ -3558,6 +3579,7 @@ class _ModelCanvas(tk.Canvas):
                 self._extent,
                 self._screen_x_sign,
                 self._screen_y_sign,
+                self._perspective,
             )
         except Exception:  # noqa: BLE001 - a driver/device failure falls back to the CPU rasterizer
             gpu_renderer.log.warning("GPU render failed - switching to the CPU rasterizer", exc_info=True)

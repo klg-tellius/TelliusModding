@@ -7,6 +7,10 @@ Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
 which one the Build and Battle scenes tabs show.
+
+**Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
+places it in the story flow; each chapter's Overview shows and changes which
+chapter comes next (``game_code.chapter_flow``, a table patched into ``main.dol``).
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from ... import chapters, script_sources
+from ...exceptions import ModdingError
+from ...game_code import chapter_flow
 from ...formats.cmb.catalog import TRIGGERS
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
@@ -33,6 +39,22 @@ TABS = ["overview", "build", "dialogue", "script", "shops", "battle"]
 TAB_ALIASES = {"map": "build", "deployment": "build"}
 TAB_LABELS = {"overview": "Overview", "build": "Build", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
               "battle": "Battle scenes"}
+
+
+def open_flow(project) -> tuple[chapter_flow.ChapterFlow | None, str]:
+    """The project's story flow, or None and why it can't be edited."""
+    from ...game_code.editor import CodeEditor
+    try:
+        flow = chapter_flow.ChapterFlow(CodeEditor(project.extracted_dir, project.write_keeping_original))
+    except (OSError, ModdingError) as exc:
+        return None, f"Could not open sys/main.dol: {exc}"
+    return (flow, "") if flow.available else (None, flow.unavailable_reason)
+
+
+def _flow_label(chapter: int, titles: dict) -> str:
+    if chapter == chapter_flow.GAME_CLEARED:
+        return "32 · Ending"
+    return f"{chapter:02d} · {chapters.chapter_display_title(f'{chapter:02d}', titles)}"
 
 
 class ChaptersHub(Page):
@@ -53,9 +75,9 @@ class ChaptersHub(Page):
         self._grid = CardGrid(self._scroll.body, card_width=260)
         self._grid.pack(fill="x")
         self._note = ttk.Label(self._scroll.body, style="Muted.TLabel", wraplength=900, justify="left",
-                               text="Chapter IDs are the disc's file numbers (the Prologue is 01). "
-                                    "An added chapter is a copy of another one's files: the game has no way to "
-                                    "reach it through normal play.")
+                               text="Chapter IDs are the disc's file numbers and the game's chapter numbers "
+                                    "(the Prologue is 01). An added chapter starts as a copy of another one and is "
+                                    "played after the chapter you pick; each chapter's Overview sets what comes next.")
         self._note.pack(anchor="w", pady=(12, 0))
         self._built_for = None
         self._keys: dict = {}
@@ -97,10 +119,21 @@ class ChaptersHub(Page):
                                      chips=tuple(chips), width=260,
                                      on_click=lambda cid=c.id: self.shell.navigate(("chapter", cid))))
         self._grid.add(("+", "add chapter"), Card(self._grid, title="Add chapter…",
-                                                   subtitle="Copy a chapter's files under a new number",
+                                                   subtitle="A new playable chapter, from a template",
                                                    icon="+", width=260, on_click=self._add_chapter))
+        self._grid.add(("+", "new campaign"), Card(self._grid, title="New campaign…",
+                                                    subtitle="Several chapters and characters at once",
+                                                    icon="+", width=260, on_click=self._new_campaign))
+        self._grid.add(("+", "story order"), Card(self._grid, title="Story order…",
+                                                   subtitle="Reorder the chapters you added",
+                                                   icon="↕", width=260, on_click=self._story_order))
         self._grid.done()
         self._filter()
+        flow, _why = open_flow(self.project)
+        overrides = flow.overrides() if flow is not None else {}
+        if overrides:
+            order = " → ".join(f"{c:02d}" for c in flow.order()) + " → Ending"
+            self._note.configure(text=f"Story order: {order}\n\n" + self._note.cget("text").split("\n\n")[-1])
 
     def _filter(self) -> None:
         words = self._query.get().casefold().split()
@@ -108,24 +141,129 @@ class ChaptersHub(Page):
 
     def _add_chapter(self) -> None:
         ids = chapters.list_chapter_ids(self.project)
-        if not ids:
+        session = self.shell.session
+        if not ids or not session.available:
+            messagebox.showerror("Could not add chapter", "This project has no chapters or no FE8Data.bin.", parent=self)
             return
-        dialog = AddChapterDialog(self, ids)
+        from ...formats import fe8data
+        records = fe8data.read_chapter_data(session.data)
+        templates = [c for c in ids if any(r.chapter_id == int(c) for r in records)]
+        free = chapters.free_chapter_ids(self.project, [r.chapter_id for r in records])
+        flow, why = open_flow(self.project)
+        if not templates or not free:
+            messagebox.showerror("Could not add chapter", "No template chapter or no free chapter number.", parent=self)
+            return
+        titles = chapters.chapter_titles(self.project)
+        dialog = AddChapterDialog(self, templates, free, titles, flow, why)
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        source_id, new_id = dialog.result
+        source_id, new_id, title, after = dialog.result
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?", "Adding a chapter saves FE8Data.bin, including its unsaved edits. Continue?",
+                parent=self):
+            return
         try:
-            chapters.duplicate_chapter(self.project, source_id, new_id)
-        except ValueError as exc:
+            plan = chapters.add_story_chapter(self.project, session.data, source_id, new_id, title, after, flow)
+        except (ValueError, OSError, ModdingError) as exc:
             messagebox.showerror("Could not add chapter", str(exc), parent=self)
             return
+        session.data = plan.fe8data
+        session.changed(self)
+        try:
+            session.save()
+        except OSError as exc:
+            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+        padded = f"{new_id:02d}"
+        where = f"after {after:02d}" if after is not None else "not in the story flow"
+        self.shell.changelog.append(f"Chapter {padded}", f"Added chapter {padded} from {source_id} ({where})")
+        if plan.warnings:
+            messagebox.showwarning("Chapter added", "\n".join(plan.warnings), parent=self)
         page = self.shell.existing_page("chapter")
         if page is not None:
             page.refresh_chapter_lists()
-        self.shell.changelog.append(
-            f"Chapter {new_id}", f"Added chapter {new_id} (duplicated from {source_id}) - not reachable via normal play")
-        self.shell.navigate(("chapter", new_id.zfill(2)))
+        self.shell.navigate(("chapter", padded))
+
+
+    def _new_campaign(self) -> None:
+        from ... import campaign
+        from ..campaign_dialog import NewCampaignDialog
+        from ...formats import fe8data
+
+        session = self.shell.session
+        ids = chapters.list_chapter_ids(self.project)
+        if not ids or not session.available:
+            messagebox.showerror("New campaign", "This project has no chapters or no FE8Data.bin.", parent=self)
+            return
+        records = fe8data.read_chapter_data(session.data)
+        titles = chapters.chapter_titles(self.project)
+        templates = {chapters.chapter_display_title(c, titles) + f"  ({c})": c
+                     for c in ids if any(r.chapter_id == int(c) for r in records)}
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("New campaign", f"The story flow can't be edited ({why}), so the chapters "
+                                 "could not be put in order.", parent=self)
+            return
+        order = flow.order()
+        after_choices = {_flow_label(c, titles): c for c in order}
+        characters = [c.pid for c in fe8data.read_fe8data(session.data).characters if c.pid]
+        dialog = NewCampaignDialog(self, templates, after_choices, characters, order[-1] if order else None)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        chapter_specs, cast, after = dialog.result
+        problems = campaign.check_campaign(self.project, session.data, chapter_specs, cast, after)
+        if problems:
+            messagebox.showerror("New campaign", "\n".join(problems), parent=self)
+            return
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?", "Creating the campaign saves FE8Data.bin, including its unsaved edits. Continue?",
+                parent=self):
+            return
+        try:
+            result = campaign.add_campaign(self.project, session.data, chapter_specs, cast, after, flow)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("New campaign", str(exc), parent=self)
+            return
+        session.data = result.fe8data
+        session.changed(self)
+        try:
+            session.save()
+        except OSError as exc:
+            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+        summary = f"{len(result.chapter_ids)} chapters ({', '.join(f'{c:02d}' for c in result.chapter_ids)}), " \
+                  f"{len(result.pids)} characters"
+        self.shell.changelog.append("Campaign", f"Added {summary}")
+        if result.warnings:
+            messagebox.showwarning("Campaign added", "\n".join(result.warnings), parent=self)
+        page = self.shell.existing_page("chapter")
+        if page is not None:
+            page.refresh_chapter_lists()
+        if result.chapter_ids:
+            self.shell.navigate(("chapter", f"{result.chapter_ids[0]:02d}"))
+
+    def _story_order(self) -> None:
+        from ... import campaign
+        from ..campaign_dialog import StoryOrderDialog
+
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Story order", f"The story flow can't be edited ({why}).", parent=self)
+            return
+        titles = chapters.chapter_titles(self.project)
+        order = flow.order()
+        labels = {c: _flow_label(c, titles) for c in order}
+        dialog = StoryOrderDialog(self, order, labels)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        try:
+            campaign.set_story_order(flow, dialog.result)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Story order", str(exc), parent=self)
+            return
+        self.shell.changelog.append("Story order", "Reordered the story: " + " → ".join(f"{c:02d}" for c in dialog.result))
+        self._build()
 
 
 class ChapterPage(Page):
@@ -347,9 +485,91 @@ class ChapterPage(Page):
         if index is None:
             ttk.Label(body, text="Indexing…", style="Muted.TLabel").pack(anchor="w")
             return
+        self._render_flow(body)
         self._render_cast(body, index)
         self._render_dialogue(body, index)
         self._render_script(body, index)
+
+    def _render_flow(self, body) -> None:
+        """Where the chapter sits in the story: what leads to it and what comes next."""
+        chapter = int(self._chapter)
+        head = section_header(body, "Story flow", "")
+        head.pack(fill="x", pady=(0, 8))
+        flow, why = open_flow(self.project)
+        if flow is None:
+            ttk.Label(body, text=f"The story flow can't be edited: {why}", style="Muted.TLabel").pack(anchor="w")
+            ttk.Frame(body, style="Page.TFrame", height=20).pack()
+            return
+        if not chapter_flow.can_have_successor(chapter):
+            ttk.Label(body, text="Trial maps are played from the trial menu, not in the story.",
+                      style="Muted.TLabel").pack(anchor="w")
+            ttk.Frame(body, style="Page.TFrame", height=20).pack()
+            return
+        titles = chapters.chapter_titles(self.project)
+        in_story = chapter in flow.order()
+        box = ttk.Frame(body, style="Surface.TFrame", padding=(14, 10))
+        box.pack(fill="x", pady=(0, 20))
+        before = flow.predecessors(chapter)
+        line = ttk.Frame(box, style="Surface.TFrame")
+        line.pack(fill="x", pady=(0, 6))
+        ttk.Label(line, text="Played after:", style="SurfaceHeading.TLabel").pack(side="left")
+        if before:
+            for c in before:
+                Link(line, _flow_label(c, titles), lambda c=c: self.shell.navigate(("chapter", f"{c:02d}")),
+                     bg_token="surface").pack(side="left", padx=(8, 0))
+        else:
+            ttk.Label(line, text="no chapter leads here: the game never reaches it" if chapter > 1 else
+                      "the start of a new game", style="SurfaceMuted.TLabel").pack(side="left", padx=(8, 0))
+
+        line = ttk.Frame(box, style="Surface.TFrame")
+        line.pack(fill="x")
+        ttk.Label(line, text="Next chapter:", style="SurfaceHeading.TLabel").pack(side="left")
+        choices = [c for c in range(1, chapter_flow.FIRST_TRIAL)
+                   if c == chapter_flow.GAME_CLEARED or f"{c:02d}" in self._ids]
+        labels = {_flow_label(c, titles): c for c in choices}
+        current = flow.next_of(chapter)
+        var = tk.StringVar(value=_flow_label(current, titles))
+        combo = ttk.Combobox(line, textvariable=var, values=list(labels), state="readonly", width=40)
+        combo.pack(side="left", padx=(8, 0))
+        combo.bind("<<ComboboxSelected>>", lambda e: self._set_next(chapter, labels[var.get()]))
+        if chapter > chapter_flow.LAST_RETAIL_STORY and in_story:
+            ttk.Button(line, text="Take out of the story", command=lambda: self._remove_from_flow(chapter)).pack(
+                side="right")
+        notes = []
+        if chapter == chapter_flow.CONTINUED_PART or chapter - 1 == chapter_flow.CONTINUED_PART:
+            notes.append("Chapters 28 and 29 are the two halves of Ch.27: the game skips the save menu and the "
+                         "army cleanup between them, whatever the flow says.")
+        if chapter > chapter_flow.LAST_RETAIL_STORY and not in_story:
+            notes.append("Not reached from the Prologue: pick it as the next chapter of a story chapter.")
+        for note in notes:
+            ttk.Label(box, text=note, style="SurfaceMuted.TLabel", wraplength=820, justify="left").pack(
+                anchor="w", pady=(6, 0))
+
+    def _set_next(self, chapter: int, nxt: int) -> None:
+        flow, why = open_flow(self.project)
+        try:
+            if flow is None:
+                raise ValueError(why)
+            if nxt == flow.next_of(chapter):
+                return
+            description = flow.set_next(chapter, nxt)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not change the story flow", str(exc), parent=self)
+        else:
+            self.shell.changelog.append("main.dol", f"Story flow: {description}")
+        self._render_overview()
+
+    def _remove_from_flow(self, chapter: int) -> None:
+        flow, why = open_flow(self.project)
+        try:
+            if flow is None:
+                raise ValueError(why)
+            description = flow.remove(chapter)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not change the story flow", str(exc), parent=self)
+        else:
+            self.shell.changelog.append("main.dol", f"Story flow: {description}")
+        self._render_overview()
 
     def _render_cast(self, body, index) -> None:
         head = section_header(body, "Cast", self._phase or "")
@@ -488,48 +708,90 @@ def _message_group(message_id: str) -> str:
 
 
 class AddChapterDialog(tk.Toplevel):
-    """Pick a chapter to copy and a new chapter number. The caveat that the
-    game can't reach the copy is shown here, where the choice is made."""
+    """Pick a template chapter, a free number, a title, and the chapter the new
+    one is played after. ``result`` is ``(template id, number, title, after)``,
+    ``after`` None for a chapter left out of the story."""
 
-    def __init__(self, parent: tk.Misc, existing_chapter_ids: list[str]):
+    NOT_IN_STORY = "Not in the story (reach it later)"
+
+    def __init__(self, parent: tk.Misc, templates: list[str], free_ids: list[int], titles: dict,
+                 flow: chapter_flow.ChapterFlow | None, flow_problem: str = ""):
         super().__init__(parent)
         self.title("Add Chapter")
         self.resizable(False, False)
-        self.result: tuple[str, str] | None = None
+        self.result: tuple[str, int, str, int | None] | None = None
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
         ttk.Label(
             frame,
-            text="Copies an existing chapter's dialogue, script, deployment and map\n"
-                 "as a starting template for a new chapter number.\n\n"
-                 "This does NOT make the new chapter playable: nothing in the\n"
-                 "chapter scripts says which chapter comes after which, so the\n"
-                 "game has no way to load it through normal play.",
-            style="Warn.TLabel", justify="left",
+            text="Creates a new chapter from a copy of another: its dialogue, script, maps and\n"
+                 "deployments (renamed to the new number), its chapter record, battle scenes\n"
+                 "and base shops. Edit them afterwards on the new chapter's page.",
+            justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
-        ttk.Label(frame, text="Duplicate from:").grid(row=1, column=0, sticky="w", pady=4)
-        self._source_var = tk.StringVar(value=existing_chapter_ids[0])
-        ttk.Combobox(frame, textvariable=self._source_var, values=existing_chapter_ids, state="readonly",
-                     width=12).grid(row=1, column=1, sticky="w", padx=(6, 0))
-        ttk.Label(frame, text="New chapter number:").grid(row=2, column=0, sticky="w", pady=4)
-        self._new_id_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self._new_id_var, width=14).grid(row=2, column=1, sticky="w", padx=(6, 0))
-        self._existing_ids = set(existing_chapter_ids)
+
+        self._templates = {chapters.chapter_display_title(c, titles) + f"  ({c})": c for c in templates}
+        ttk.Label(frame, text="Copy of:").grid(row=1, column=0, sticky="w", pady=4)
+        self._source_var = tk.StringVar(value=next(iter(self._templates)))
+        ttk.Combobox(frame, textvariable=self._source_var, values=list(self._templates), state="readonly",
+                     width=44).grid(row=1, column=1, sticky="w", padx=(6, 0))
+
+        ttk.Label(frame, text="Chapter number:").grid(row=2, column=0, sticky="w", pady=4)
+        self._id_var = tk.StringVar(value=f"{free_ids[0]:02d}")
+        ttk.Combobox(frame, textvariable=self._id_var, values=[f"{n:02d}" for n in free_ids], state="readonly",
+                     width=8).grid(row=2, column=1, sticky="w", padx=(6, 0))
+
+        ttk.Label(frame, text="Title:").grid(row=3, column=0, sticky="w", pady=4)
+        self._title_var = tk.StringVar(value=f"Chapter {free_ids[0]}")
+        ttk.Entry(frame, textvariable=self._title_var, width=46).grid(row=3, column=1, sticky="w", padx=(6, 0))
+        self._id_var.trace_add("write", lambda *_: self._title_var.set(f"Chapter {int(self._id_var.get())}")
+                               if self._title_var.get().startswith("Chapter ") else None)
+
+        ttk.Label(frame, text="Played after:").grid(row=4, column=0, sticky="w", pady=4)
+        self._after = {self.NOT_IN_STORY: None}
+        if flow is not None:
+            for c in flow.order():
+                self._after[_flow_label(c, titles)] = c
+        self._after_var = tk.StringVar(value=list(self._after)[-1] if flow is not None else self.NOT_IN_STORY)
+        after_box = ttk.Combobox(frame, textvariable=self._after_var, values=list(self._after), state="readonly",
+                                 width=44)
+        after_box.grid(row=4, column=1, sticky="w", padx=(6, 0))
+        self._hint = ttk.Label(frame, text="", style="Muted.TLabel", wraplength=460, justify="left")
+        self._hint.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self._flow, self._titles = flow, titles
+        if flow is None:
+            after_box.configure(state="disabled")
+            self._hint.configure(text=f"The story flow can't be edited ({flow_problem}); the chapter is created "
+                                      "but not reached.")
+        self._after_var.trace_add("write", lambda *_: self._update_hint())
+        self._update_hint()
+
         buttons = ttk.Frame(frame)
-        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Add Chapter", style="Accent.TButton", command=self._on_apply).pack(
             side="right", padx=(0, 6))
         self.transient(parent.winfo_toplevel())
         self.grab_set()
 
+    def _update_hint(self) -> None:
+        if self._flow is None:
+            return
+        after = self._after.get(self._after_var.get())
+        if after is None:
+            text = "The chapter is created but the game won't reach it until a chapter leads to it."
+        else:
+            nxt = self._flow.next_of(after)
+            text = f"{after:02d} will lead to the new chapter, and the new chapter to {_flow_label(nxt, self._titles)}."
+            if after == chapter_flow.CONTINUED_PART:
+                text += " Chapter 28 is the first half of Ch.27: the game treats whatever follows it as the second half."
+        self._hint.configure(text=text)
+
     def _on_apply(self) -> None:
-        new_id = self._new_id_var.get().strip()
-        if not new_id or not new_id.isdigit():
-            messagebox.showerror("Invalid chapter number", "Enter a whole number.", parent=self)
+        title = self._title_var.get().strip()
+        if not title.isascii():
+            messagebox.showerror("Invalid title", "Use plain ASCII text for the title.", parent=self)
             return
-        if new_id in self._existing_ids or new_id.zfill(2) in self._existing_ids:
-            messagebox.showerror("Already exists", f"Chapter {new_id} already exists.", parent=self)
-            return
-        self.result = (self._source_var.get(), new_id)
+        self.result = (self._templates[self._source_var.get()], int(self._id_var.get()), title,
+                       self._after.get(self._after_var.get()))
         self.destroy()

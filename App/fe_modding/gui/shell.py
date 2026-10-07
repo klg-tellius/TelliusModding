@@ -26,7 +26,7 @@ from typing import Callable, Optional
 from ..exceptions import ModdingError, ProjectError
 from ..project import ModProject, sanitize_folder_name
 from ..project_index import ProjectIndex
-from .. import patch
+from .. import emulator, patch
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -38,9 +38,11 @@ from .widgets import Link, PortraitCache, track_hover
 Route = tuple
 
 NAV = [("home", "Home"), ("chapters", "Chapters"), ("characters", "Characters"), ("data", "Game Data"),
-       ("flags", "Flags"), ("saves", "Saves"), ("assets", "Assets"), ("code", "Game Code"), ("disc", "Disc & Patch")]
+       ("assets", "Assets"), ("tools", "Tools")]
 SECTION_OF = {"home": "home", "chapters": "chapters", "chapter": "chapters", "characters": "characters",
-              "character": "characters", "data": "data", "flags": "flags", "saves": "saves", "assets": "assets", "asset": "assets", "code": "code", "disc": "disc"}
+              "character": "characters", "data": "data", "assets": "assets", "asset": "assets", "tools": "tools", "saves": "tools", "code": "tools", "check": "tools"}
+#: Asset-page tools that belong to the Tools section.
+TOOL_ASSETS = ("battle_sim",)
 # Sections that work before the source disc is extracted.
 UNEXTRACTED_KINDS = ("home", "disc")
 
@@ -161,6 +163,8 @@ class Shell(ttk.Frame):
         right.pack(side="right", padx=12)
         settings = ttk.Button(right, text="⚙", width=3, command=self.open_settings)
         settings.pack(side="right", padx=(8, 0))
+        disc = ttk.Button(right, text="💿", width=3, command=lambda: self.navigate(("disc",)))
+        disc.pack(side="right", padx=(8, 0))
         search = ttk.Button(right, text="⌕  Search everything…      Ctrl+K", command=self.open_search, width=34)
         search.pack(side="right")
 
@@ -330,6 +334,8 @@ class Shell(ttk.Frame):
 
     def _after_route_change(self) -> None:
         section = SECTION_OF.get(self.route[0], "")
+        if self.route[0] == "asset" and self.route[1:2] and self.route[1] in TOOL_ASSETS:
+            section = "tools"
         for key, item in self._nav.items():
             item.set_active(key == section)
         label = self._current.history_label(self.route) if self._current else None
@@ -418,13 +424,15 @@ class Shell(ttk.Frame):
     def search_items(self) -> list[tuple[str, str, str, Route]]:
         """``(kind, label, detail, route)`` for everything the palette finds."""
         items: list[tuple[str, str, str, Route]] = [("Go to", label, "", (key,)) for key, label in NAV]
+        items.append(("Go to", "Disc & Patch", "", ("disc",)))
+        items += [("Tool", label, "Tools", (key,)) for key, label in (("saves", "Saves"), ("code", "Game Code"))]
         for key, label in self._asset_tools:
-            items.append(("Tool", label, "Assets", ("asset", key)))
+            items.append(("Tool", label, "Tools" if key in TOOL_ASSETS else "Assets", ("asset", key)))
         items += [("Tool", label, "Game Data", ("data", key))
                   for key, label in (("classes", "Classes"), ("items", "Items"), ("skills", "Skills"),
                                      ("terrain", "Terrain"), ("supports", "Supports"),
-                                     ("props", "Map Objects"))]
-        items += [("Tool", label, "Flags", ("flags", key))
+                                     ("flags", "Flags"))]
+        items += [("Tool", label, "Game Data › Flags", ("data", "flags", key))
                   for key, label in (("campaign", "Campaign flags"), ("chapter", "Chapter flags"),
                                      ("save", "Save file flags"))]
         index = self.index
@@ -504,6 +512,39 @@ class Shell(ttk.Frame):
         self._refresh_home()
         if self.project.last_build_warning:
             messagebox.showwarning("Disc image is oversized", self.project.last_build_warning, parent=self)
+
+    def play(self, *, build_first: bool = True) -> None:
+        """Build the disc (unless ``build_first`` is off and an image exists) and start it in Dolphin."""
+        if not self.extracted or self._task_running:
+            return
+        project = self.project
+        image = project.build_dir / f"{sanitize_folder_name(project.name)}{project.game_info.build_extension}"
+        if emulator.configured_dolphin() is None:
+            messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
+                                parent=self)
+            return
+        if not build_first and image.is_file():
+            self._launch(image)
+            return
+        names = self.unsaved(flush=True)
+        if names and not messagebox.askyesno(
+                "Unsaved changes",
+                "These editors have changes that aren't saved and won't be in the disc:\n\n  "
+                + "\n  ".join(names) + "\n\nBuild and play anyway?", parent=self):
+            return
+
+        def built(dest) -> None:
+            self._on_built(dest)
+            self._launch(dest)
+        self.run_task("Building disc image …", project.build, built)
+
+    def _launch(self, image) -> None:
+        try:
+            emulator.launch(image)
+        except emulator.EmulatorError as exc:
+            messagebox.showerror("Could not start Dolphin", str(exc), parent=self)
+            return
+        self.set_status(f"Started {image} in Dolphin")
 
     def create_patch(self) -> None:
         if not self.extracted or self._task_running:

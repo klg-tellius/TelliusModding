@@ -384,6 +384,8 @@ class CharacterPage(Page):
                   text="Models are shared by every unit that resolves to them. To give this character a model of "
                        "their own, open the model and use New slot…; Model tables… shows the lines that pick it.").grid(
             row=len(rows), column=0, columnspan=4, sticky="w", pady=(10, 0))
+        ttk.Button(body, text="Simulate a battle…", command=lambda: self.shell.navigate(
+            ("asset", "battle_sim", info.pid))).pack(anchor="w", pady=(16, 0))
 
     def _render_appearances(self, index, family) -> None:
         frame = self._appearances

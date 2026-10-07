@@ -247,7 +247,7 @@ class SaveEditorPage(Page):
         return True
 
     def crumbs(self, route):
-        return [("Saves", ("saves",)), (TABS[self._tab], None)]
+        return [("Tools", ("tools",)), ("Saves", ("saves",)), (TABS[self._tab], None)]
 
     def history_label(self, route):
         return "Saves"

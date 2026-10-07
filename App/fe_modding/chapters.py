@@ -20,21 +20,16 @@ change; ``chapter_paths()`` resolves the primary (unsuffixed) folder, and
 chapter page's Phase selector). Chapter titles come from the game's own
 text (``chapter_titles()``, ``MCTnn``).
 
-``duplicate_chapter()`` adds a brand-new chapter number by copying an
-existing one's full file set - since ``list_chapter_ids()``/``chapter_paths()``
-above already discover chapters by an unbounded glob with no fixed range,
-nothing here needs to change for a new chapter number to be picked up
-automatically, by this module and by every chapter-scoped editor's own
-independent glob. **This does not make the new chapter reachable by the
-game.** Every real chapter script was searched for anything that says "load
-chapter N+1" and nothing was found - no script, no table anywhere in disc
-file data references what chapter comes after which (see GAME_NOTES.md's
-Music section for the same kind of wall this project hit with the
-background-music track lookup). That's almost certainly baked into
-``main.dol`` (the executable), which this project has never disassembled.
-A duplicated chapter's files exist, are fully browsable/editable through
-every existing editor, and will decode/rebuild correctly into a disc image
-- they just won't ever load through normal play.
+``duplicate_chapter()`` copies an existing chapter's file set (dialogue,
+script, every map folder) under a new number, renaming the ``bmapNN``
+names its deployments and script use. ``add_story_chapter()`` builds a
+playable chapter on top of that: a ``ChapterData`` record naming the new
+files, a battle-scene row, base shops, a title (``MCTnn``) and its place in
+the story flow (``game_code.chapter_flow``: the next-chapter table patched
+into ``main.dol``). Chapter numbers are the ``ChapterData`` ids the game
+loads by; 0-31 are the retail story, 32 plays the ending, 51/52/58 and
+80-82 are other records and 90 up are trial maps, so new story chapters
+take the free ids of :data:`NEW_CHAPTER_IDS`.
 """
 
 from __future__ import annotations
@@ -127,14 +122,20 @@ def chapter_of_map_folder(folder: str) -> Optional[str]:
 
 
 def chapter_titles(project: ModProject) -> dict[str, str]:
-    """Chapter id -> the game's own title (``MCTnn`` in ``system.cmp``, e.g.
-    ``"Prologue: Mercenaries"``). Empty when the text can't be read (Radiant
-    Dawn keeps it elsewhere)."""
+    """Chapter id -> the game's own title (``MCTnn`` in ``mess/common.m``, e.g.
+    ``"Prologue: Mercenaries"``). The loose ``Mess/common.m`` is read when it
+    exists (it holds titles added since the last build; the build copies it
+    into ``system.cmp``), else the copy in ``system.cmp``. Empty when the text
+    can't be read (Radiant Dawn keeps it elsewhere)."""
     from .formats import fe8data
 
-    system_cmp = project.extracted_dir / "files" / "system.cmp"
     try:
-        texts = fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
+        loose = _common_messages_path(project)
+        if loose is not None:
+            texts = {key: m.text for key, m in _common_messages(loose).items()}
+        else:
+            system_cmp = project.extracted_dir / "files" / "system.cmp"
+            texts = fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
     except Exception:  # noqa: BLE001 - titles are presentation only
         return {}
     titles = {}
@@ -145,36 +146,69 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
     return titles
 
 
+def _common_messages_path(project: ModProject) -> Optional[Path]:
+    path = project.extracted_dir / "files" / "Mess" / "common.m"
+    return path if path.is_file() else None
+
+
+def _common_messages(path: Path) -> dict:
+    """``common.m``'s messages by key (keys re-decoded from the reader's cp437 as Shift-JIS)."""
+    from .formats import message
+
+    result = {}
+    for m in message.read_messages_path(path):
+        try:
+            key = m.speaker.encode(message.ENCODING).decode("shift_jis")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            key = m.speaker
+        result.setdefault(key, m)
+    return result
+
+
 def chapter_display_title(chapter_id: str, titles: dict[str, str]) -> str:
     """The game's title, else ``Chapter <id>`` (ids are disc numbers)."""
     return titles.get(chapter_id.zfill(2)) or f"Chapter {chapter_id}"
 
 
+#: Free numbers for new story chapters: above 32 (the ending) and below the trial maps (90+).
+#: Numbers a ``ChapterData`` record already uses (51, 52, 58, 80-82 in retail) are skipped.
+NEW_CHAPTER_IDS = range(33, 90)
+
+
+def free_chapter_ids(project: ModProject, used_record_ids=()) -> list[int]:
+    """Numbers a new story chapter can take: in :data:`NEW_CHAPTER_IDS`, used by no
+    ``ChapterData`` record and by no chapter file or map folder."""
+    taken = {int(c) for c in list_chapter_ids(project)} | set(used_record_ids)
+    zmap = project.extracted_dir / "files" / "zmap"
+    if zmap.is_dir():
+        taken |= {int(m.group(1)) for f in zmap.iterdir() if (m := _PHASE_FOLDER_RE.match(f.name))}
+    return [n for n in NEW_CHAPTER_IDS if n not in taken]
+
+
+def _phase_target(folder: str, source_padded: str, new_padded: str) -> str:
+    """``bmap09_2`` -> ``bmap33_2``."""
+    return "bmap" + new_padded + folder[len("bmap") + len(source_padded):]
+
+
 def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> ChapterPaths:
-    """Copy an existing chapter's full file set (dialogue/script/deployment/
-    map) to a new chapter number, as a starting template for a brand-new
-    chapter - see the module docstring for the "not reachable by the game"
-    caveat, which applies regardless of how this is used.
+    """Copy an existing chapter's file set - dialogue, script and every map
+    folder (``bmapNN``, ``bmapNN_2``...) - to a new chapter number.
 
-    Files are copied byte-for-byte except ``dispos.cmp``, whose section
-    names embed the source chapter number as an ASCII substring (e.g.
-    ``"bmap01_date_c"``, confirmed against a real file) - those get
-    renumbered via dispo.rename_chapter_sections() so the deployment
-    editor's section list reads correctly under the new chapter number.
-    That only works for a same-length chapter number (real ones are always
-    2 digits); if the new number has a different digit count, the rename is
-    skipped and the section names are carried through unchanged rather than
-    failing the whole duplicate over a cosmetic mismatch.
+    The deployments' section names and the script's ``bmapNN`` strings
+    (``MapLoad("bmap01")``, ``DisposFirst("bmap01_mikata_c")``) embed the
+    chapter number; both are renamed to the new one, so the copy loads its
+    own maps and deploys its own units. Names of *other* chapters' maps (a
+    script that loads a neighbouring chapter's map) are left alone. The
+    rename needs a same-length number (real ones are 2 digits); with a
+    different digit count the names are carried through unchanged.
 
-    Everything else - map.cmp's own bundled model filenames, the script's
-    debug/achievement-flag strings, dialogue text - is left exactly as
-    copied. None of that affects whether this app's own editors can open
-    and edit the new chapter; it's cosmetic only (confirmed: map.bin's
-    placed-object records reference the pak archive's own model filenames
-    internally and consistently, and its section names are fixed format
-    constants, not per-chapter strings - nothing there needs renaming).
+    Dialogue text, ``map.cmp`` (its bundled model names are internal and
+    consistent) and the script's message keys are copied as they are.
+    This only copies files: :func:`add_story_chapter` also makes the game
+    load and reach the chapter.
     """
-    if new_id in list_chapter_ids(project):
+    existing = list_chapter_ids(project)
+    if new_id in existing or new_id.zfill(2) in existing:
         raise ValueError(f"Chapter {new_id} already exists.")
     source = chapter_paths(project, source_id)
     if source.dialogue is None:
@@ -183,6 +217,12 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
     new_padded = new_id.zfill(2)
     source_padded = source_id.zfill(2)
     extracted = project.extracted_dir / "files"
+    zmap = extracted / "zmap"
+    phases = chapter_phases(project, source_id)
+    for folder in phases:
+        target = zmap / _phase_target(folder, source_padded, new_padded)
+        if target.exists():
+            raise ValueError(f"zmap/{target.name} already exists.")
 
     new_dialogue = extracted / "Mess" / f"c{new_padded}.m"
     new_dialogue.parent.mkdir(parents=True, exist_ok=True)
@@ -191,19 +231,34 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
     if source.script is not None:
         new_script = extracted / "Scripts" / f"C{new_padded}.cmb"
         new_script.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source.script, new_script)
+        new_script.write_bytes(_renumber_script(source.script.read_bytes(), source_padded, new_padded))
 
-    if source.map is not None:
-        new_map = extracted / "zmap" / f"bmap{new_padded}" / "map.cmp"
-        new_map.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source.map, new_map)
+    for folder in phases:
+        target = zmap / _phase_target(folder, source_padded, new_padded)
+        target.mkdir(parents=True)
+        for item in (zmap / folder).iterdir():
+            if item.is_dir():
+                shutil.copytree(item, target / item.name)
+            elif item.name.lower() == "dispos.cmp":
+                (target / item.name).write_bytes(_renumber_dispos(item.read_bytes(), source_padded, new_padded))
+            else:
+                shutil.copyfile(item, target / item.name)
 
-    if source.deployment is not None:
-        new_deployment = extracted / "zmap" / f"bmap{new_padded}" / "dispos.cmp"
-        new_deployment.parent.mkdir(parents=True, exist_ok=True)
-        new_deployment.write_bytes(_renumber_dispos(source.deployment.read_bytes(), source_padded, new_padded))
+    return chapter_paths(project, new_padded)
 
-    return chapter_paths(project, new_id)
+
+def _renumber_script(data: bytes, source_padded: str, new_padded: str) -> bytes:
+    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings renamed.
+    A same-length rename keeps every string offset, so the code is untouched."""
+    if len(source_padded) != len(new_padded):
+        return data
+    import struct
+
+    pool_start, table_start = struct.unpack_from("<II", data, 0x24)
+    old, new = f"bmap{source_padded}".encode("ascii"), f"bmap{new_padded}".encode("ascii")
+    entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else e
+               for e in data[pool_start:table_start].split(b"\x00")]
+    return data[:pool_start] + b"\x00".join(entries) + data[table_start:]
 
 
 def _renumber_dispos(compressed: bytes, source_padded: str, new_padded: str) -> bytes:
@@ -225,3 +280,124 @@ def _renumber_dispos(compressed: bytes, source_padded: str, new_padded: str) -> 
 
     new_pak_bytes = pak.pack_pak(files, reserved)
     return lz10.compress(new_pak_bytes)
+
+
+# -- playable chapters -----------------------------------------------------------------------------
+
+
+@dataclass
+class NewChapterPlan:
+    """What :func:`add_story_chapter` changes besides the copied files."""
+    fe8data: bytes                          # FE8Data.bin with the record and battle-scene row added
+    record_index: int
+    shops: dict                             # shop file path -> new bytes
+    common: Optional[tuple]                 # (Mess/common.m path, new bytes) with the title
+    warnings: list
+
+
+def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int,
+                       title: str = "") -> NewChapterPlan:
+    """Every data change for a new chapter ``new_id`` modelled on ``source_id``, without
+    writing anything (``fe8`` is the current ``FE8Data.bin``, unsaved edits included):
+
+    - a ``ChapterData`` record copied from the template's, with the new id and the new
+      ``bmapNN`` / ``CNN`` / ``MCTNN`` names (objectives, music, backgrounds stay the template's);
+    - a ``BattleTerrData`` row for the new map, copied from the template map's;
+    - the three shop sections in each difficulty's shop file, copied from the template's;
+    - the ``MCTNN`` title in ``Mess/common.m``."""
+    from .formats import fe8data, message, shop
+
+    if new_id not in NEW_CHAPTER_IDS:
+        raise ValueError(f"New chapters take a number from {NEW_CHAPTER_IDS.start} to {NEW_CHAPTER_IDS.stop - 1}.")
+    records = fe8data.read_chapter_data(fe8)
+    if any(r.chapter_id == new_id for r in records):
+        raise ValueError(f"A ChapterData record already uses the number {new_id}.")
+    if f"{new_id:02d}" in list_chapter_ids(project):
+        raise ValueError(f"Chapter {new_id:02d} already has files.")
+    source_number = int(source_id)
+    template = next((r for r in records if r.chapter_id == source_number), None)
+    if template is None:
+        raise ValueError(f"Chapter {source_id} has no ChapterData record to copy.")
+    padded = f"{new_id:02d}"
+    warnings: list[str] = []
+
+    data, index = fe8data.add_record(fe8, "chapter", copy_from=template.index)
+    data = fe8data.patch_chapter_field(data, index, "chapter_id", new_id)
+    data = fe8data.patch_chapter_field(data, index, "map_name", f"bmap{padded}")
+    data = fe8data.patch_chapter_field(data, index, "script", f"C{padded}")
+    if template.message is not None:
+        data = fe8data.patch_chapter_field(data, index, "message", f"C{padded}")
+    data = fe8data.patch_chapter_field(data, index, "title_key", f"MCT{padded}")
+
+    rows = fe8data.read_battle_terrain(data)
+    row = next((r for r in rows if r.map_name == template.map_name), None)
+    if row is not None and not any(r.map_name == f"bmap{padded}" for r in rows):
+        data = fe8data.write_battle_terrain(data, rows + [fe8data.BattleTerrainRow(f"bmap{padded}", list(row.scenes))])
+
+    shops: dict[Path, bytes] = {}
+    folder = project.extracted_dir / "files" / "shop"
+    for name in shop.DIFFICULTY_FILES.values():
+        path = folder / name
+        if not path.is_file():
+            continue
+        doc = shop.parse_shop(path.read_bytes())
+        if any(doc.shop(kind, new_id) for kind in shop.SHOP_KINDS):
+            continue
+        has_template = any(doc.shop(kind, source_number) for kind in shop.SHOP_KINDS)
+        shop.add_chapter(doc, new_id, source_number if has_template else None)
+        shops[path] = shop.build_shop(doc)
+
+    common = None
+    common_path = _common_messages_path(project)
+    title = title.strip() or f"Chapter {new_id}"
+    if common_path is None:
+        warnings.append("No Mess/common.m: the chapter has no title text.")
+    else:
+        try:
+            title.encode("ascii")
+        except UnicodeEncodeError:
+            raise ValueError("Chapter titles are limited to plain ASCII text.") from None
+        messages = message.read_messages_path(common_path)
+        key = f"MCT{padded}"
+        key_hash = message.engine_name_hash(key)
+        clash = next((m.speaker for m in messages
+                      if m.speaker != key and message.engine_name_hash(m.speaker) == key_hash), None)
+        if clash is not None:
+            warnings.append(f"{key} shares its lookup hash with {clash!r}: the game may show that text instead.")
+        existing = next((i for i, m in enumerate(messages) if m.speaker == key), None)
+        if existing is None:
+            messages.append(message.Message(key, title))
+        else:
+            messages[existing] = message.Message(key, title)
+        common = (common_path, message.write_messages(messages))
+    return NewChapterPlan(data, index, shops, common, warnings)
+
+
+def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int, title: str = "",
+                      after: Optional[int] = None, flow=None) -> NewChapterPlan:
+    """Add a playable chapter ``new_id``: copy ``source_id``'s files (:func:`duplicate_chapter`),
+    write the shop and title changes of :func:`plan_story_chapter`, and - when ``after`` is
+    given - insert it in the story flow (``flow``, a ``game_code.chapter_flow.ChapterFlow``):
+    ``after`` then leads to the new chapter, which leads to where ``after`` used to go.
+
+    ``FE8Data.bin`` is not written: the plan's ``fe8data`` is returned for the caller to put in
+    its shared session and save. Nothing is written when planning fails."""
+    plan = plan_story_chapter(project, fe8, source_id, new_id, title)
+    changes = None
+    if after is not None:
+        from .game_code import chapter_flow
+
+        if flow is None or not flow.available:
+            reason = flow.unavailable_reason if flow is not None else "it could not be opened."
+            raise ValueError(f"main.dol cannot hold a story flow: {reason}")
+        if not chapter_flow.can_have_successor(after):
+            raise ValueError(f"Chapter {after} cannot be followed by another chapter.")
+        changes = {after: new_id, new_id: flow.next_of(after)}
+    duplicate_chapter(project, source_id, f"{new_id:02d}")
+    for path, data in plan.shops.items():
+        project.write_keeping_original(path, data)
+    if plan.common is not None:
+        project.write_keeping_original(*plan.common)
+    if changes is not None:
+        flow.set_many(changes)
+    return plan

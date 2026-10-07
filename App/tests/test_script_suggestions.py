@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import struct
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 from fe_modding import script_suggestions as ss
+from fe_modding.formats import rect
 from fe_modding.formats.cmb.catalog import load_externs
 
 
@@ -99,6 +101,42 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(self.complete("    M"), [])
         self.assertEqual(self.complete("    x = 1 "), [])
         self.assertEqual(self.complete('    x = "Mo'), [])
+
+    def _write_sfx(self, names_and_ids):
+        """A minimal gcfesnd.bin: 20-byte SFX records, a zero-length end record, the name pool."""
+        root = Path(self._tmp.name) / "files" / "Sound"
+        root.mkdir(parents=True, exist_ok=True)
+        pool_start = 0x20 + 20 * len(names_and_ids) + 8
+        records, pool = b"", b""
+        for name, sound_id in names_and_ids:
+            records += struct.pack(">IBBBBI4sI", pool_start + len(pool) - 0x20, 20, 0, 0x7F, 0x40, sound_id, bytes(4), 0)
+            pool += name.encode("ascii") + b"\0"
+        (root / "gcfesnd.bin").write_bytes(bytes(0x20) + records + bytes(8) + pool)
+
+    def _write_rects(self, path, names):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = rect.RectFile([rect.new_background(n, "s/aaa", 608, 448) for n in names], list(names), [])
+        path.write_bytes(rect.build_rect(doc))
+
+    def test_sound_effects(self):
+        self._write_sfx([("SFX_DUMMY", 0x158), ("SFX_SYS_SELECT1", 0x5D), ("SFX_SYS_CANCEL1", 0x60)])
+        items = self.complete("    SFXPlay(")
+        self.assertEqual([c.text for c in items], ['"SFX_DUMMY"', '"SFX_SYS_SELECT1"', '"SFX_SYS_CANCEL1"'])
+        self.assertIn("silent", items[0].label)
+        items = self.complete('    SFXPlay("SFX_SYS_C')
+        self.assertEqual([(c.text, c.replace) for c in items], [('SFX_SYS_CANCEL1"', 9)])
+        self.assertEqual([c.text for c in self.complete("    var s = SFX_SYS_S")], ['"SFX_SYS_SELECT1"'])
+
+    def test_rect_resources_from_both_files(self):
+        files = Path(self._tmp.name) / "files"
+        self._write_rects(files / "s" / "rect.bin", ["RID_街-夜", "RID_OPENING"])
+        self._write_rects(files / "window" / "RectDesc.bin", ["RID_3S", "RID_OPENING"])
+        items = self.complete("    RectBuild(")
+        self.assertEqual([c.text for c in items], ['"RID_街-夜"', '"RID_OPENING"', '"RID_3S"'])
+        self.assertIn("608×448", items[0].label)
+        self.assertIn("window layout", items[2].label)
+        self.assertEqual([c.text for c in self.complete('    RectFadeIn("RID_街')], ['RID_街-夜"'])
+        self.assertEqual([c.text for c in self.complete("    x = RID_3")], ['"RID_3S"'])
 
     def test_chapter_script_names(self):
         self.assertEqual(ss.chapter_of_script(Path("C06.cmb")), "06")

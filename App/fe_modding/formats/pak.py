@@ -9,10 +9,11 @@ the entry table; content blocks follow, each one padded up to the next
 always a multiple of 32). Verified byte-for-byte: extracting and repacking
 a real 9-file archive unchanged reproduced the original file exactly.
 
-The "reserved" field has only ever been seen as 0 (checked against one
-archive with 9 entries) - pack_pak() always writes 0 there. If a real file
-turns up with something else in that field, extract_pak()/PakEntry will
-surface it (via the ``reserved`` attribute) so it can be investigated.
+The "reserved" field is 0 on every entry except 176 on the US disc, which
+hold 1: 154 of the 292 ``yme/`` effect meshes, 8 map-prop meshes and
+``bmap28_2``'s ``map.bin`` (``coverage.py`` survey). Its meaning is open.
+PakEntry keeps it (``reserved``) and ``pack_pak(files, reserved)`` writes it
+back; without that list ``pack_pak()`` writes 0.
 """
 
 from __future__ import annotations
