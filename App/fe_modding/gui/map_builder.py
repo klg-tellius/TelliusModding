@@ -92,8 +92,7 @@ TOOL_HELP = {
     "terrain": "Click or drag over tiles to paint the chosen type.\nRight-click a tile to pick its type.",
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
-    "unit": "Click a tile to add a unit there, in the chosen section (or use Add unit... above, "
-            "then drag the unit).",
+    "unit": "Click a tile to add a unit there; the dialog asks for its section (each says what it is for).",
     "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
             "Delete removes the selected zone.",
@@ -381,7 +380,7 @@ class _NewUnitDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
         if sections:
-            ttk.Label(body, text=f"On tile {tile} (drag it afterwards)", style="Muted.TLabel").grid(
+            ttk.Label(body, text=f"On tile {tile}", style="Muted.TLabel").grid(
                 row=0, column=0, columnspan=2, sticky="w")
             self._section = tk.StringVar(value=next((c for c in sections if c.split("  (", 1)[0] == section),
                                                     sections[0]))
@@ -551,8 +550,6 @@ class MapBuilder(EditorPanel):
         self._canvas.redraw()
 
     def _build_tools(self, parent: ttk.Frame) -> None:
-        ttk.Button(parent, text="Add unit...", style="Accent.TButton", command=self.add_unit).pack(
-            anchor="w", fill="x", pady=(0, 10))
         ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         self._tool = tk.StringVar(value="select")
         for key, text in (("select", "Select / move"), ("terrain", "Paint terrain"), ("prop", "Place prop"),
@@ -1427,34 +1424,13 @@ class MapBuilder(EditorPanel):
         self._tool_changed()
         self._refresh_prop_list(select=name)
 
-    def add_unit(self) -> None:
-        """Add a unit without picking a tile first: the Place unit dialog, then the unit stands on a free
-        tile near the middle of the playable area, selected, ready to be dragged where it belongs."""
-        data = self._map.map_data
-        if data is None or data.capacity is None:
-            messagebox.showinfo("Add unit", "Open a chapter with a map first.", parent=self)
-            return
-        self._tool.set("unit")
-        self._tool_changed()
-        cap = data.capacity
-        x0, x1, y0, y1 = self._canvas.playable or (0, cap.x_size, 0, cap.y_size)
-        doc = self._doc()
-        taken = {(u[F["pos_x"]], u[F["pos_y"]]) for section in (doc.sections if doc else ()) for u in section.units}
-        centre = ((x0 + x1 - 1) / 2, (y0 + y1 - 1) / 2)
-        free = sorted(((x, y) for x in range(x0, x1) for y in range(y0, y1) if (x, y) not in taken),
-                      key=lambda t: (abs(t[0] - centre[0]) + abs(t[1] - centre[1]), t[1], t[0]))
-        if not free:
-            messagebox.showinfo("Add unit", "Every tile of the map already has a unit.", parent=self)
-            return
+    def _prefer_battle_section(self) -> None:
+        """Start the Place unit tool on the battle-start section, the usual place for a new enemy."""
         battle = self._battle_section()
         if battle is not None and "battle start" not in self._section_var.get():
-            self._section_var.set(battle)  # the usual place for a new enemy; the dialog can change it
-        before = self._selection
-        self._place_unit(free[0], choose_section=True)
-        if self._selection != before and self._selection and self._selection[0] == "unit":
-            self._hover.configure(text=f"Unit added on tile {free[0]}: drag it to where it should stand.")
+            self._section_var.set(battle)
 
-    def _place_unit(self, tile, choose_section: bool = False) -> None:
+    def _place_unit(self, tile, choose_section: bool = True) -> None:
         section = self._target_section()
         current = self._variant()
         if not section or current is None:
@@ -1949,6 +1925,8 @@ class MapBuilder(EditorPanel):
 
     def _tool_changed(self) -> None:
         tool = self._tool.get()
+        if tool == "unit":
+            self._prefer_battle_section()
         if tool == "zone":
             self._refresh_zone_tool()
             if not self._layer_vars["zones"].get():
@@ -2176,6 +2154,20 @@ class MapBuilder(EditorPanel):
         ttk.Label(body, text=info.label if info else str(pid), font=("Segoe UI", 11, "bold")).pack(anchor="w")
         ttk.Label(body, text=f"{section_name} [{index}] in {self._variant_name(variant)}", style="Muted.TLabel").pack(anchor="w")
 
+        # the buttons first, so they are in view without scrolling down the long form
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="w", pady=(8, 0))
+        ttk.Button(buttons, text="Apply", style="Accent.TButton",
+                   command=lambda: self._apply_unit(section_name, index)).pack(side="left")
+        ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
+            side="left", padx=(6, 0))
+        if isinstance(pid, str) and self._on_navigate_to_character is not None:
+            ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
+        ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
+                             "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
+                  justify="left").pack(anchor="w", pady=(4, 0))
+
         form = ttk.Frame(body)
         form.pack(anchor="w", fill="x", pady=(8, 0))
         row = 0
@@ -2316,18 +2308,6 @@ class MapBuilder(EditorPanel):
                 ttk.Spinbox(table, from_=-128 if field != "level" else 1, to=127 if field != "level" else 40,
                             textvariable=var, width=4 if field == "level" else 3).grid(row=r, column=c, padx=1)
             self._variant_rows[v] = {"present": present, "found": found, "values": values}
-
-        buttons = ttk.Frame(body)
-        buttons.pack(anchor="w", pady=(12, 0))
-        ttk.Button(buttons, text="Apply", command=lambda: self._apply_unit(section_name, index)).pack(side="left")
-        ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
-        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
-            side="left", padx=(6, 0))
-        if isinstance(pid, str) and self._on_navigate_to_character is not None:
-            ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
-                             "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
-                  justify="left").pack(anchor="w", pady=(8, 0))
 
     def _is_laguz(self):
         """``is_laguz(jid, pid)`` for the loaded FE8Data (cached with the choices)."""

@@ -217,6 +217,26 @@ class ActionTests(unittest.TestCase):
             sim.command(actions.Act(a.uid, (7, 7)))
         self.assertEqual(len(sim.history), entries)
 
+    def test_battle_exp_follows_calculate_battle_exp(self):
+        def unit(level, *skills):
+            return SimUnit(uid=0, pid="PID_X", jid="JID_X", faction=PLAYER, x=0, y=0, level=level, skills=list(skills))
+
+        exp = combat.battle_exp
+        # Normal constants: level 20, mode 20, promotion 0, boss 30, thief 20
+        self.assertEqual(exp(unit(5), unit(5), True, False), 10)  # (20 + 5 - 5 + 1) / 2
+        self.assertEqual(exp(unit(5), unit(5), True, True), 30)  # + 20 + 5 - 5
+        # a promoted unit counts 20 levels higher: Titania (Paladin 4) killing a level-3 soldier
+        self.assertEqual(exp(unit(4, "SID_HIGHER"), unit(3), True, True), 1)
+        self.assertEqual(exp(unit(5), unit(5, "SID_BOSS"), True, True), 60)
+        self.assertEqual(exp(unit(5), unit(5, "SID_STEAL"), True, True), 50)
+        self.assertEqual(exp(unit(5), unit(5), False, True), 1)  # no damage dealt
+        self.assertEqual(exp(unit(5, "SID_ELITE"), unit(5), True, False), 20)
+        self.assertEqual(exp(unit(5), unit(5, "SID_FINAL"), True, True), 0)
+        self.assertEqual(exp(unit(1), unit(20, "SID_HIGHER", "SID_BOSS"), True, True), 100)  # capped
+        hard = {"battle_exp_mode_bonus": 15, "battle_exp_level_constant": 20, "promotion_exp_bonus_base": 0,
+                "boss_exp_bonus": 25, "thief_exp_bonus": 20}
+        self.assertEqual(exp(unit(5), unit(5), True, True, hard), 25)
+
     def test_fallen_unit_gains_no_exp(self):
         a = _unit(self.state, "PID_A", 1, 0)
         b = _unit(self.state, "PID_B", 0, 0, faction=ENEMY, items=("IID_KILLER",))

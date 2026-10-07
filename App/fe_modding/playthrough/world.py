@@ -39,6 +39,14 @@ class World:
     difficulty: str = "n"  # n (normal), h (hard), m (maniac)
     names: dict = field(default_factory=dict)  # PID_ -> display name
     item_names: dict = field(default_factory=dict)  # IID_ -> display name
+    game_data: dict = field(default_factory=dict)  # fe8data.read_game_data: row -> (Normal, Hard, Maniac, Easy)
+
+    def exp_constants(self) -> Optional[dict]:
+        """The difficulty's GameData EXP values (``calculate_battle_exp``), or None without GameData."""
+        if not self.game_data:
+            return None
+        column = {"n": 0, "h": 1, "m": 2}.get(self.difficulty, 0)
+        return {name: values[column] for name, values in self.game_data.items()}
 
     def __post_init__(self) -> None:
         self.rules = Fe9Rules(self.fe8.skills)
