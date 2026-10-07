@@ -27,8 +27,7 @@ class NewCampaignDialog(tk.Toplevel):
         ttk.Label(frame, justify="left", text=(
             "Adds the chapters below in this order, each leading to the next, and the characters.\n"
             "Every chapter is a copy of a chapter you choose (its maps, script, dialogue, shops);\n"
-            "tick 'Empty' to remove the copied units but the player's army. Edit everything afterwards
-"
+            "tick 'Empty' to remove the copied units but the player's army. Edit everything afterwards\n"
             "on its own page.")
         ).pack(anchor="w", pady=(0, 10))
 
