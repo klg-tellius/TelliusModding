@@ -538,6 +538,29 @@ class Shell(ttk.Frame):
             self._launch(dest)
         self.run_task("Building disc image …", project.build, built)
 
+    def play_chapter(self, chapter_id: int, difficulty: int) -> None:
+        """Start Dolphin on the extracted files, booting straight into ``chapter_id`` on
+        ``difficulty`` (``emulator.prepare_chapter_run``); no disc is built."""
+        if not self.extracted or self._task_running:
+            return
+        if emulator.configured_dolphin() is None:
+            messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
+                                parent=self)
+            return
+        names = self.unsaved(flush=True)
+        if names and not messagebox.askyesno(
+                "Unsaved changes",
+                "These editors have changes that aren't saved and won't be played:\n\n  "
+                + "\n  ".join(names) + "\n\nPlay anyway?", parent=self):
+            return
+        project = self.project
+
+        def work():
+            project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
+            return emulator.prepare_chapter_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+                                                chapter_id, difficulty)
+        self.run_task(f"Preparing chapter {chapter_id:02d} for Dolphin …", work, self._launch)
+
     def _launch(self, image) -> None:
         try:
             emulator.launch(image)

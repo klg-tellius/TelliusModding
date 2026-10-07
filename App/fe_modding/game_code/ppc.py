@@ -143,6 +143,10 @@ def lbz(rd: int, offset: int, ra: int) -> int:
     return _d_form(34, rd, ra, offset)
 
 
+def stb(rs: int, offset: int, ra: int) -> int:
+    return _d_form(38, rs, ra, offset)
+
+
 def stfd(frs: int, offset: int, ra: int) -> int:
     return _d_form(54, frs, ra, offset)
 

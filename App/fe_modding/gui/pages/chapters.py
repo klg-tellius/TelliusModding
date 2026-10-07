@@ -11,6 +11,9 @@ which one the Build and Battle scenes tabs show.
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
 chapter comes next (``game_code.chapter_flow``, a table patched into ``main.dol``).
+
+**Play in Dolphin** boots the extracted files straight into the chapter, with a fresh army, on
+the chosen difficulty (``emulator.prepare_chapter_run``, ``game_code.chapter_jump``).
 """
 
 from __future__ import annotations
@@ -21,7 +24,8 @@ from tkinter import messagebox, ttk
 
 from ... import chapters, script_sources
 from ...exceptions import ModdingError
-from ...game_code import chapter_flow
+from ...config import load_setting, save_setting
+from ...game_code import chapter_flow, chapter_jump
 from ...formats.cmb.catalog import TRIGGERS
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
@@ -298,6 +302,7 @@ class ChapterPage(Page):
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
         self._prev.pack(side="right", padx=(0, 6))
+        ttk.Button(right, text="▶ Play in Dolphin…", command=self._play_in_dolphin).pack(side="right", padx=(0, 18))
 
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=16, pady=(0, 8))
@@ -437,6 +442,14 @@ class ChapterPage(Page):
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
+
+    def _play_in_dolphin(self) -> None:
+        if self._chapter is None:
+            return
+        dialog = PlayChapterDialog(self, self._title_of(self._chapter))
+        self.wait_window(dialog)
+        if dialog.result is not None:
+            self.shell.play_chapter(int(self._chapter), dialog.result)
 
     def _title_of(self, chapter_id) -> str:
         index = self.shell.index
@@ -794,4 +807,48 @@ class AddChapterDialog(tk.Toplevel):
             return
         self.result = (self._templates[self._source_var.get()], int(self._id_var.get()), title,
                        self._after.get(self._after_var.get()))
+        self.destroy()
+
+
+class PlayChapterDialog(tk.Toplevel):
+    """Pick the difficulty a chapter is started on in Dolphin. ``result`` is a
+    ``current_difficulty_id`` value (``chapter_jump.DIFFICULTIES``)."""
+
+    SETTING = "play_chapter_difficulty"
+
+    def __init__(self, parent: tk.Misc, chapter_title: str):
+        super().__init__(parent)
+        self.title("Play in Dolphin")
+        self.resizable(False, False)
+        self.result: int | None = None
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text=chapter_title, style="Heading.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            frame,
+            text="Starts Dolphin on the project's extracted files (no build) and goes straight to this\n"
+                 "chapter, past the title screen and the file menu, with a fresh army: only the units\n"
+                 "the chapter itself brings in. Saved edits are played; unsaved ones are not.",
+            justify="left", style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 12))
+        row = ttk.Frame(frame)
+        row.grid(row=2, column=0, columnspan=2, sticky="w")
+        ttk.Label(row, text="Difficulty:").pack(side="left")
+        saved = load_setting(self.SETTING)
+        self._var = tk.StringVar(value=saved if saved in chapter_jump.DIFFICULTIES else "Normal")
+        ttk.Combobox(row, textvariable=self._var, values=list(chapter_jump.DIFFICULTIES), state="readonly",
+                     width=12).pack(side="left", padx=(8, 0))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Play", style="Accent.TButton", command=self._on_play).pack(side="right", padx=(0, 6))
+        self.bind("<Return>", lambda e: self._on_play())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+
+    def _on_play(self) -> None:
+        name = self._var.get()
+        save_setting(self.SETTING, name)
+        self.result = chapter_jump.DIFFICULTIES[name]
         self.destroy()

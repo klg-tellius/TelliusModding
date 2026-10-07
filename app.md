@@ -27,7 +27,7 @@ The app has four main layers:
    - natives and AI ops that aren't modelled are logged and return 0;
    - fog is a view only (`playthrough/fog.py`: tiles within the class's vision of a player unit; no torches, roofs or line of sight) and does not limit the AI; there is no base screen, and the preparations are reduced to choosing which units are placed (when the opening deploys nobody);
    - choice dialogs take the first entry unless the window's **Choices...** plan names another (`GameState.choice_plan`).
-4. **External-tool layer** — `fe_modding/tools.py` invokes WIT and FFmpeg from developer-provided `tools/` binaries or the per-user tool cache for disc operations and general video decoding.
+4. **External-tool layer** — `fe_modding/tools.py` invokes WIT and FFmpeg from developer-provided `tools/` binaries or the per-user tool cache for disc operations and general video decoding. `fe_modding/emulator.py` finds and starts Dolphin on a built image; a chapter page's **Play in Dolphin...** button skips the build: it copies `extracted/sys` into `build/dolphin_run/` with a `main.dol` that boots straight into that chapter on the chosen difficulty with a fresh army (`game_code/chapter_jump.py`), links `files` there as a directory junction to `extracted/files`, and has Dolphin boot that folder's `sys/main.dol` (Dolphin plays an extracted disc tree directly). The project's own `main.dol` is never patched for it.
 
 Editors operate directly on files in a project's `extracted/` directory. Building a project packages the current contents of that directory; there is no separate apply or staging step.
 
