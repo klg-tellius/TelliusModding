@@ -63,19 +63,20 @@ _TYPING_SOUNDS = (("0", "Silent ($O0)"), ("1", "Dialogue ($O1)"), ("2", "Ancient
                   ("3", "Narration ($O3)"), ("4", "Tutorial ($O4)"))
 
 # English names for the $R layouts (window/rectdesc.bin descriptors with
-# textbox parts). Vanilla US use counts in brackets; the unused ones differ
-# from a used sibling only by the "draw background" flag.
+# textbox parts), most used first: layout pickers list them in this order.
+# Vanilla US use counts in the comments; the unused ones differ from a used
+# sibling only by the "draw background" flag.
 LAYOUT_NAMES: dict[str, str] = {
     "上下会話": "Two-box talk",                         # 896: top/bottom boxes, $c/$s
-    "背景上下会話": "Two-box talk over background",     # unused
     "背景会話": "Background scene",                     # 695: lined-up $F seats over a $B backdrop
-    "背景なし会話": "Scene without background",         # 36: same seats over the map/3D view
-    "のみ会話": "Text box only",                        # 25: one box, portraits kept off-screen
-    "背景のみ会話": "Text box over background",         # unused
-    "GMAP会話": "World map narration",                  # 43
     "TUT会話": "Tutorial talk",                         # 344: four boxes in tutorial frames
+    "GMAP会話": "World map narration",                  # 43
+    "背景なし会話": "Scene without background",         # 36: same seats over the map/3D view
     "TUT小会話": "Tutorial info windows",               # 31: small $W windows, no portraits
+    "のみ会話": "Text box only",                        # 25: one box, portraits kept off-screen
     "ダイアログ会話": "Dialog popup",                   # 1: the centred tutorial-intro dialog
+    "背景上下会話": "Two-box talk over background",     # unused
+    "背景のみ会話": "Text box over background",         # unused
     "チュ会話": "Plain text, no window",                # unused
 }
 
