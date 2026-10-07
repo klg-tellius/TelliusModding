@@ -476,6 +476,7 @@ class MapBuilder(EditorPanel):
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
         ttk.Button(top, text="Save Chapter", command=self._save).pack(side="left")
+        ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play).pack(side="left", padx=(6, 0))
         self._undo_button = ttk.Button(top, text="Undo", command=self._do_undo, state="disabled")
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
@@ -528,7 +529,6 @@ class MapBuilder(EditorPanel):
         ttk.Button(view, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
         ttk.Button(view, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
         ttk.Button(view, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
-        ttk.Button(view, text="Play...", command=self.open_play).pack(side="left", padx=(4, 0))
         xbar.pack(side="bottom", fill="x")
         ybar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -1937,6 +1937,8 @@ class MapBuilder(EditorPanel):
             classes = [(f"{class_names.get(c.jid) or c.jid} ({c.jid})", c.jid) for c in fe8.classes if c.jid]
             items = [(f"{item_names.get(i.iid) or i.iid} ({i.iid})", i.iid) for i in fe8.items if i.iid]
             skills = [(s.sid, s.sid) for s in fe8.skills if s.sid]
+            for choices in (characters, classes, items):  # pickers list them by name
+                choices.sort(key=lambda choice: choice[0].casefold())
         self._choices_cache = (characters, classes, items, skills)
         return self._choices_cache
 

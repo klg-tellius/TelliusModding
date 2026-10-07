@@ -6,6 +6,11 @@ cursor; stepping or giving a command from an earlier entry drops the entries
 after it and plays on from there. Play is deterministic - the random stream
 is part of the state - so replaying the same commands from the same entry
 gives the same game.
+
+Copying the state for every entry is what costs time (a chapter opening runs thousands of script
+instructions). Unless :attr:`Simulation.fine` is set, consecutive script instructions share one entry:
+they run on a working copy that becomes an entry at the next step of another kind, or when
+:meth:`Simulation.flush` is called (any navigation or command does).
 """
 
 from __future__ import annotations
@@ -40,11 +45,22 @@ class Simulation:
         self.history: list[Entry] = [Entry(state.snapshot(), "Start")]
         self.cursor = 0
         self.dropped = 0  # entries removed from the front when the history grew too long
+        self.fine = False  # one entry per script instruction (line-by-line stepping)
+        self._live: Optional[GameState] = None  # script steps not stored yet (see the module docstring)
+        self._live_steps: list = []
 
     # -- position -------------------------------------------------------------------------------
     @property
     def state(self) -> GameState:
-        return self.history[self.cursor].state
+        return self._live if self._live is not None else self.history[self.cursor].state
+
+    def flush(self) -> None:
+        """Store the script steps run since the last entry as one entry."""
+        if self._live is not None:
+            state, steps = self._live, self._live_steps
+            self._live, self._live_steps = None, []
+            if steps:
+                self._append(state, steps[-1].title, steps)
 
     @property
     def entry(self) -> Entry:
@@ -55,22 +71,27 @@ class Simulation:
         return self.cursor == len(self.history) - 1
 
     def back(self, count: int = 1) -> None:
+        self.flush()
         self.cursor = max(0, self.cursor - count)
 
     def forward(self, count: int = 1) -> None:
+        self.flush()
         self.cursor = min(len(self.history) - 1, self.cursor + count)
 
     def goto(self, index: int) -> None:
+        self.flush()
         self.cursor = max(0, min(len(self.history) - 1, index))
 
     def back_to(self, kinds: tuple) -> None:
         """Back to the previous entry whose step was one of ``kinds`` (e.g. a command or a phase)."""
+        self.flush()
         for i in range(self.cursor - 1, -1, -1):
             if self._kind(self.history[i]) in kinds or i == 0:
                 self.cursor = i
                 return
 
     def forward_to(self, kinds: tuple) -> None:
+        self.flush()
         for i in range(self.cursor + 1, len(self.history)):
             if self._kind(self.history[i]) in kinds:
                 self.cursor = i
@@ -80,6 +101,7 @@ class Simulation:
     def forward_by(self, until: str) -> bool:
         """Move forward through the recorded entries to the next ``until`` boundary.
         False when the end of the history came first."""
+        self.flush()
         start = self.mark()
         while self.cursor < len(self.history) - 1:
             self.cursor += 1
@@ -109,6 +131,7 @@ class Simulation:
     def command(self, command) -> list:
         """Give a command at the current entry. Returns its outputs; raises
         :class:`actions.CommandError` when it isn't possible (the history is then kept)."""
+        self.flush()
         state = self.state.snapshot()
         state.out = []
         actions.apply(self.world, state, command)
@@ -120,6 +143,7 @@ class Simulation:
 
     def edit(self, change: Callable[[GameState], None], label: str) -> None:
         """Change the state at the current entry (a new entry; later ones are dropped)."""
+        self.flush()
         self._truncate()
         state = self.state.snapshot()
         change(state)
@@ -128,11 +152,19 @@ class Simulation:
     def step(self) -> engine.Step:
         """One engine step from the current entry."""
         self._truncate()
-        state = self.state.snapshot()
+        if self._live is None:
+            self._live = self.history[self.cursor].state.snapshot()
+        state = self._live
         result = engine.step(self.world, state)
         if result.kind in ("input", "over") and not result.outputs:
+            if not self._live_steps:
+                self._live = None
+            else:
+                self.flush()
             return result  # nothing happened: no entry
-        self._append(state, result.title, [result])
+        self._live_steps.append(result)
+        if self.fine or result.kind != "script":
+            self.flush()
         return result
 
     def run(self, until: str = INPUT, *, stop: Optional[Callable[[engine.Step], bool]] = None,
@@ -148,6 +180,7 @@ class Simulation:
             done.append(result)
             if (stop is not None and stop(result)) or self.boundary(until, result, start):
                 break
+        self.flush()
         return done
 
     def mark(self) -> tuple:
