@@ -394,10 +394,44 @@ class AiTests(unittest.TestCase):
         self.assertGreater(len(ranking), 1)
         self.assertEqual([c["score"] for c in ranking], sorted((c["score"] for c in ranking), reverse=True))
         self.assertIn("C", ranking[0]["row"])  # PID_C, the one it can finish
-        self.assertEqual(set(ranking[0]["terms"]), {"damage_dealt", "hp_ratio", "class_bonus", "turn_number",
-                                                    "damage_taken", "terrain", "hp_after_ratio"})
+        self.assertEqual(set(ranking[0]["terms"]), set(ai_vm.SCORE_TERMS))
+        self.assertIn("kill bonus +50", ranking[0]["row"])
         self.assertLess(sim.state.units[weak.uid].hp, 3)
         self.assertEqual(sim.state.units[strong.uid].hp, sim.state.units[strong.uid].stats[0])
+
+    def test_damage_term_and_its_bonuses(self):
+        from types import SimpleNamespace as S
+
+        hit = S(damage=10, hit=100, doubles=False)
+        miss = S(damage=10, hit=0, doubles=False)
+        # weight 64 = x2: 10 expected -> 20; the target has 25 HP: no kill bonus, 20 HP: +50
+        self.assertEqual(ai_vm._damage_term(hit, None, 30, 25, 64), (20, False))
+        self.assertEqual(ai_vm._damage_term(hit, None, 30, 20, 64), (70, True))
+        # double attack, 50% hit: 2 x 10 x (1 - 0.25)^1.75
+        self.assertEqual(ai_vm._expected(S(damage=10, hit=50, doubles=True), 1.75), int(20 * 0.75 ** 1.75))
+        # no damage: minus the expected counter, capped at 15; +50 first when it reaches the attacker's HP
+        self.assertEqual(ai_vm._damage_term(miss, S(damage=8, hit=100, doubles=False), 30, 25, 64), (-8, False))
+        self.assertEqual(ai_vm._damage_term(miss, S(damage=8, hit=100, doubles=False), 5, 25, 64), (-15, False))
+
+    def test_provoke_draws_the_attack_and_shade_avoids_it(self):
+        cp = _cp({"SEQ_ATK": "attack(chance=100)\nend()\n"})
+        for skill, expected in (("SID_PROVOKE", "PID_A"), ("SID_SHADE", "PID_C")):
+            world = _world(cp=cp)
+            state = GameState()
+            a = _unit(state, "PID_A", 2, 0)
+            _unit(state, "PID_C", 0, 2)
+            a.skills.append(skill)
+            e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_ATK")
+            from fe_modding.playthrough.state import AiTurn
+
+            state.pending = [AiTurn(e.uid)]
+            sim = Simulation(world, state)
+            sim.run()
+            decision = next(o.data["decision"] for en in sim.history for o in en.outputs
+                            if o.kind == "ai" and o.data.get("decision"))
+            self.assertIn(expected.removeprefix("PID_"), decision["ranking"][0]["row"], skill)
+            self.assertEqual(decision["ranking"][0]["terms"]["skill_bonus"][0],
+                             50 if skill == "SID_PROVOKE" and expected == "PID_A" else 0)
 
     def test_negative_mov_change_slows_the_move(self):
         # retail SEQ_NEARESTUNITMOVE_BLACKNIGHT: move_stat(add=-3), move, move_stat(add=3)

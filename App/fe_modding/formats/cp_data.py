@@ -102,15 +102,19 @@ HEAL_WORDS = 2
 # MTYPE byte layout, offsets within the 24-byte record (offset 0..3 = name pointer).
 MTYPE_FIELDS = (
     (4, "id", "Position in MTYPE_TABLEID_LIST (saved in the save file)"),
-    (5, "damage_dealt", "Weight of the damage the unit would deal (range-gated curve)"),
-    (6, "hp_ratio", "Weight of the target's HP removed, as % of its HP"),
-    (7, "adjacent_foes", "Weight of the sum of enemy-occupied neighbour tiles (3-byte (dx, dy, weight) table)"),
+    (5, "damage_dealt", "Weight (32nds) of the expected damage, damage x hit^1.75 (x2 on a double attack); "
+                        "+50 when the weighted value reaches the target's HP"),
+    (6, "hp_ratio", "Weight of how wounded the target already is, 10 x (max HP - HP) / max HP"),
+    (7, "adjacent_foes", "Weight of the units of the attacker's side around the attack tile "
+                         "(the (dx, dy, weight) table at 0x80272F44)"),
     (8, "class_bonus", "Weight of the per-class bonuses below (summed over the target's class flags)"),
     (9, "turn_number", "Weight x current turn number"),
-    (10, "skill_bonus", "Weight of the 0x3d/0x3e skill-based modifier"),
-    (11, "damage_taken", "Weight of the expected counter-damage"),
-    (12, "terrain", "Weight of the tile's defensive terrain value"),
-    (13, "hp_after_ratio", "Weight of the attacker's HP lost, as % of its HP"),
+    (10, "skill_bonus", "Weight of the target's Provoke (+50) or Shade (-50)"),
+    (11, "damage_taken", "Weight of the expected counter damage, hit^2.125 (subtracted; +50 when it reaches "
+                         "the attacker's HP)"),
+    (12, "terrain", "Weight of the attack tile's threat (ai_threat_map), subtracted"),
+    (13, "hp_after_ratio", "Weight of how wounded the attacker already is, 10 x (max HP - HP) / max HP "
+                           "(subtracted)"),
     (14, "class_flag_0", "Bonus when the target's class flag bit 0 is set"),
     (15, "class_flag_1", "Bonus for class flag bit 1"),
     (16, "class_flag_2", "Bonus for class flag bit 2"),

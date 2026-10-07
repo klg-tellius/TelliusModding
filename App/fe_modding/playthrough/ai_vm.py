@@ -16,14 +16,17 @@ What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
 - action entries roll their chance (``rn <= chance``), register a candidate
   and set the found flag; a later action replaces the candidate.
 
-The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_*``:
-each (weapon, foe, tile) scores sum(MTYPE weight x term) / 16 over the battle
-forecast - expected damage, % of the foe's HP, the class bonuses of the foe's
-class flags, the turn number, expected counter damage and % of own HP lost
-(subtracted), the tile's terrain - and the best wins (ties: the shorter walk).
-The simulator's own parts: the adjacent-foes and skill terms are left out (their
-weight table and skills are not decoded), "expected" is damage x hit%, and the
-engine's range-gated damage curve is not applied. Movement towards a goal takes
+The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_a``
+(0x800F5B14), each term ``(int)(value x MTYPE weight / 32)``: the expected damage
+(damage x hit^1.75, 2 x damage x (1-(1-hit)^2)^1.75 on a double attack; +50 when
+the weighted value reaches the target's HP, the kill bonus; under 1, minus the
+expected counter instead, at most 15), how wounded the target already is (0-10),
+the weighted units of the unit's side around the tile (table 0x80272F44), the
+foe's class bonuses, the turn number, the foe's Provoke (+50) or Shade (-50);
+minus the expected counter (hit^2.125, the same +50 near the attacker's death),
+the tile's threat and how wounded the attacker is. The best wins (ties: the
+shorter walk). The simulator's own part: the tile threat counts the hostile units
+that could strike it (the engine's ai_threat_map scale is not decoded). Movement towards a goal takes
 the reachable tile with the shortest remaining path. Steal, ballistas, rocks, skills other
 than Shove and item use are logged as not simulated.
 """
@@ -161,6 +164,71 @@ def targets(world: World, state: GameState, unit: SimUnit, table=None, exclude: 
     return out
 
 
+#: The MTYPE weights the attack score reads (cp_data.MTYPE_FIELDS), in its order.
+SCORE_TERMS = ("damage_dealt", "hp_ratio", "adjacent_foes", "class_bonus", "turn_number", "skill_bonus",
+               "damage_taken", "terrain", "hp_after_ratio")
+WEIGHT_SCALE = 0.03125  # 0x8036A06C: every weight is in 32nds
+ATTACK_CURVE, COUNTER_CURVE = 1.75, 2.125  # 0x8036A098 / 0x8036A088: pow() exponents on the hit chance
+NEAR_KILL_BONUS = 50  # added when a damage term reaches the HP it is compared with
+NO_DAMAGE_CAP = 15  # 0x80366E68 / 0x80366E6C
+#: 0x80272F44: (dx, dy, weight) around the attack tile counted by the adjacent-units term.
+NEAR_TABLE = ((0, -3, 1), (-3, 1, 0), (0, -2, 2), (1, -2, 1), (-2, -1, 1), (-1, -1, 2), (0, -1, 3), (1, -1, 2),
+              (2, -1, 1), (-3, 0, 1), (-2, 0, 2), (-1, 0, 3), (1, 0, 3), (2, 0, 2), (3, 0, 1), (-2, 1, 1),
+              (-1, 1, 2), (0, 1, 3), (1, 1, 2), (2, 1, 1), (-1, 2, 1), (0, 2, 2), (1, 2, 1), (0, 3, 1))
+
+
+def _weighted(value: float, weight: int) -> int:
+    """``(int)(0.03125 * value * weight)``, as every term is weighted."""
+    return int(WEIGHT_SCALE * value * weight)
+
+
+def _hurt(unit: SimUnit) -> int:
+    """``(int)(10 * (max HP - HP) / max HP)``: how wounded a unit already is, 0-10."""
+    top = max(1, unit.stats[0])
+    return int(10 * (top - unit.hp) / top)
+
+
+def _expected(side, curve: float) -> int:
+    """Expected damage of one side of a forecast: damage x hit^curve, or on a double attack (attack speed
+    4 or more above) 2 x damage x (1 - (1 - hit)^2)^curve; truncated."""
+    if side is None:
+        return 0
+    p = min(1.0, max(0.0, side.hit / 100))
+    if side.doubles:
+        return int(2.0 * side.damage * (1 - (1 - p) ** 2) ** curve)
+    return int(side.damage * p ** curve)
+
+
+def _damage_term(side, other, side_hp: int, other_hp: int, weight: int, counter: bool = False) -> tuple:
+    """``compute_range_gated_curve_stat`` (``counter`` False: the attack, MTYPE +5) and
+    ``ai_score_damage_taken_term`` (True: the counter, +0xB). ``side`` deals the damage to the unit with
+    ``other_hp`` HP; ``other`` is the opposite side (None when it can't strike back). Returns (points,
+    near kill): the expected damage, weighted; when that is under 1 the term is instead minus the
+    other side's expected damage (at most 15, +50 first when it reaches ``side_hp``); +50 when the
+    result reaches ``other_hp``."""
+    curve, other_curve = (COUNTER_CURVE, ATTACK_CURVE) if counter else (ATTACK_CURVE, COUNTER_CURVE)
+    value = _weighted(_expected(side, curve), weight)
+    if value < 1:
+        back = _expected(other, other_curve)
+        if side_hp <= back:
+            back += NEAR_KILL_BONUS
+        value = -min(back, NO_DAMAGE_CAP)
+    near = other_hp <= value
+    if near:
+        value += NEAR_KILL_BONUS
+    return value, near
+
+
+def skill_term(foe: SimUnit) -> int:
+    """``compute_skill_based_stat_modifier_0x3d_0x3e`` on the target: +50 with Provoke (skill 0x3D),
+    -50 with Shade (0x3E, which wins when both are held), else 0."""
+    if "SID_SHADE" in foe.skills:
+        return -50
+    if "SID_PROVOKE" in foe.skills:
+        return 50
+    return 0
+
+
 def threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
     """Tile -> number of units hostile to ``unit`` that could strike it next turn."""
     out: dict = {}
@@ -176,8 +244,9 @@ def threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
 
 
 def _mtype(world: World, unit: SimUnit) -> dict:
-    defaults = {"damage_dealt": 64, "hp_ratio": 16, "class_bonus": 32, "damage_taken": 32, "terrain": 32,
-                "hp_after_ratio": 16, "class_flag_0": 5, "class_flag_10": 10}  # retail MTYPE_NORMAL
+    defaults = {"damage_dealt": 64, "hp_ratio": 16, "adjacent_foes": 32, "class_bonus": 32, "turn_number": 32,
+                "skill_bonus": 32, "damage_taken": 32, "terrain": 32, "hp_after_ratio": 16,
+                "class_flag_0": 5, "class_flag_10": 10}  # retail MTYPE_NORMAL
     if world.cp is None or not isinstance(unit.mtype, str):
         return defaults
     section = world.cp.section(unit.mtype)
@@ -406,6 +475,9 @@ class AiStep:
         tiles = self._tiles(in_place)
         original = unit.tile
         flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
+        threat = threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
+        w = {key: weights.get(key, 0) for key in SCORE_TERMS}
+        own_hurt = _hurt(unit)
         candidates = []
         for index, item in combat.weapon_items(world, unit):
             low, high = combat.item_range(unit, item)
@@ -421,36 +493,48 @@ class AiStep:
                     finally:
                         unit.x, unit.y = original
                     a, b = f.attacker, f.defender
-                    strikes = a.strikes * (2 if a.doubles else 1)
-                    dealt = min(foe.hp, a.damage * strikes) * a.hit / 100
-                    taken = min(unit.hp, b.damage * b.strikes * (2 if b.doubles else 1) * b.hit / 100) \
-                        if b.can_attack else 0
-                    t = world.terrain_at(*tile)
-                    terms = {  # term -> (value, signed weight)
-                        "damage_dealt": (dealt, weights.get("damage_dealt", 0)),
-                        "hp_ratio": (dealt * 100 / max(1, foe.hp), weights.get("hp_ratio", 0)),
-                        "class_bonus": (class_sum, weights.get("class_bonus", 0)),
-                        "turn_number": (self.state.turn, weights.get("turn_number", 0)),
-                        "damage_taken": (taken, -weights.get("damage_taken", 0)),
-                        "terrain": ((t.avoid + t.defense) if t is not None else 0, weights.get("terrain", 0)),
-                        "hp_after_ratio": (taken * 100 / max(1, unit.hp), -weights.get("hp_after_ratio", 0)),
+                    dealt, kill = _damage_term(a, b if b.can_attack else None, unit.hp, foe.hp, w["damage_dealt"])
+                    taken, death = _damage_term(b if b.can_attack else None, a, foe.hp, unit.hp,
+                                                w["damage_taken"], counter=True)
+                    terms = {  # term -> (the value before weighting, its points in the score)
+                        "damage_dealt": (dealt, dealt),  # already weighted, +50 kill bonus included
+                        "hp_ratio": (_hurt(foe), _weighted(_hurt(foe), w["hp_ratio"])),
+                        "adjacent_foes": (n := self._allies_near(tile), _weighted(n, w["adjacent_foes"])),
+                        "class_bonus": (class_sum, _weighted(class_sum, w["class_bonus"])),
+                        "turn_number": (self.state.turn, _weighted(self.state.turn, w["turn_number"])),
+                        "skill_bonus": (s := skill_term(foe), _weighted(s, w["skill_bonus"])),
+                        "damage_taken": (taken, -taken),  # already weighted, +50 death risk included
+                        "terrain": (t := threat.get(tile, 0), -_weighted(t, w["terrain"])),
+                        "hp_after_ratio": (own_hurt, -_weighted(own_hurt, w["hp_after_ratio"])),
                     }
-                    score = sum(value * weight for value, weight in terms.values()) / 16
+                    score = sum(points for _value, points in terms.values())
                     candidates.append({
                         "action": "attack", "dest": tile, "target": foe.uid, "item": index,
-                        "score": score, "path": tiles[tile][0],
-                        "terms": {k: (round(v, 1), w) for k, (v, w) in terms.items()},
+                        "score": score, "path": tiles[tile][0], "terms": terms, "weights": w,
                         "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})",
                         "row": f"{world.name(foe.pid)} at {foe.tile}, from {tile}, {world.item_name(item.iid)}: "
-                               f"hit {a.hit} dmg {a.damage}{' x2' if a.doubles else ''}",
+                               f"hit {a.hit} dmg {a.damage}{' x2' if a.doubles else ''}"
+                               + (", kill bonus +50" if kill else "") + (", death risk -50" if death else ""),
                     })
         if not candidates:
             return None
         candidates.sort(key=lambda c: (-c["score"], c["path"]))  # ties: the shorter walk
         best = dict(candidates[0])
-        best["ranking"] = [{k: c[k] for k in ("score", "terms", "row")} for c in candidates[:RANKING_SIZE]]
+        best["ranking"] = [{k: c[k] for k in ("score", "terms", "row", "weights")} for c in candidates[:RANKING_SIZE]]
         best["ranking_total"] = len(candidates)
         return best
+
+    def _allies_near(self, tile: tuple) -> int:
+        """The adjacent-units term (MTYPE +7): the 0x80272F44 weights of the tiles around ``tile`` that hold
+        a unit not hostile to this one (``compare_faction_byte_fields`` != 1; the unit itself counts on
+        its own tile)."""
+        occupied = {u.tile: u for u in self.state.units.values() if u.on_map}
+        total = 0
+        for dx, dy, weight in NEAR_TABLE:
+            other = occupied.get((tile[0] + dx, tile[1] + dy))
+            if other is not None and not ((other.faction == 1) != (self.unit.faction == 1)):
+                total += weight
+        return total
 
     def _attack(self, e, foes, in_place=False):
         if not self._roll(e.a):

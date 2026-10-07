@@ -826,8 +826,9 @@ class PlaythroughWindow(_Window):
         self._write(self._ai_text, lines, current)
 
     #: Short headers of the attack-score terms (``ai_vm._best_attack``), in its order.
-    TERM_HEADERS = (("damage_dealt", "dmg"), ("hp_ratio", "hp%"), ("class_bonus", "class"), ("turn_number", "turn"),
-                    ("damage_taken", "taken"), ("terrain", "terr"), ("hp_after_ratio", "own%"))
+    TERM_HEADERS = (("damage_dealt", "dmg"), ("hp_ratio", "hurt"), ("adjacent_foes", "near"), ("class_bonus", "class"),
+                    ("turn_number", "turn"), ("skill_bonus", "skill"), ("damage_taken", "taken"),
+                    ("terrain", "threat"), ("hp_after_ratio", "own"))
 
     def _last_decision(self) -> Optional[tuple]:
         """(who acted and how, its decision) of the latest AI action up to the current entry, this phase."""
@@ -844,27 +845,32 @@ class PlaythroughWindow(_Window):
         return None
 
     def _ranking_lines(self, candidate: dict) -> list:
-        """How the attack was chosen: every scored (target, tile, weapon), best first, with each term
-        as value x weight (weights are the unit's MTYPE, in sixteenths; counter terms subtract)."""
+        """How the attack was chosen: every scored (target, tile, weapon), best first, with the points
+        each term adds (the unit's MTYPE weights, in 32nds, are in the header row)."""
         ranking = candidate.get("ranking")
         if not ranking:
             return []
         total = candidate.get("ranking_total", len(ranking))
-        weights = ranking[0]["terms"]  # the unit's MTYPE: the same weight in every row
+        weights = ranking[0].get("weights", {})  # the unit's MTYPE: the same in every row
         lines = ["", (f"How the target was chosen ({total} possible attacks, best first)", "head"),
-                 ("score = sum(value x weight) / 16; the weight is under each term, the counter terms subtract",
-                  "muted")]
-        lines.append(("              " + "".join(f"{short:>8s}" for _key, short in self.TERM_HEADERS), "muted"))
-        lines.append(("     weight   " + "".join(f"{weights[key][1]:>8d}" for key, _short in self.TERM_HEADERS),
+                 ("Each column is the points the term adds; score = their sum. Highest wins.", "muted")]
+        lines.append(("            " + "".join(f"{short:>7s}" for _key, short in self.TERM_HEADERS), "muted"))
+        lines.append(("    weight  " + "".join(f"{weights.get(key, 0):>7d}" for key, _short in self.TERM_HEADERS),
                       "muted"))
         for i, c in enumerate(ranking, 1):
-            cells = "".join(f"{c['terms'][key][0]:>8g}" for key, _short in self.TERM_HEADERS)
-            lines.append((f"{i:3d}. {c['score']:7.1f} {cells}", None if i > 1 else "current"))
+            cells = "".join(f"{c['terms'][key][1]:>+7d}" if c["terms"][key][1] else f"{'.':>7s}"
+                            for key, _short in self.TERM_HEADERS)
+            lines.append((f"{i:3d}. {c['score']:>+5d} {cells}", None if i > 1 else "current"))
             lines.append((f"        {c['row']}", "muted"))
         if total > len(ranking):
             lines.append((f"        ... {total - len(ranking)} more, lower", "muted"))
-        lines.append(("Not simulated: the adjacent-foes and skill terms; expected damage is damage x hit%.",
-                      "muted"))
+        lines += [("dmg: expected damage x weight/32 (damage x hit^1.75, doubled on a double attack), +50 when it "
+                   "reaches the target's HP (kill bonus); when it is under 1, minus the expected counter (at most 15).",
+                   "muted"),
+                  ("taken: the same for the counter (hit^2.125), subtracted: +50 near a death becomes -50.", "muted"),
+                  ("hurt / own: how wounded the target / the attacker already is (0-10). near: units of its side "
+                   "around the attack tile. skill: Provoke +50, Shade -50.", "muted"),
+                  ("Approximate: threat counts the hostile units that could strike the attack tile.", "muted")]
         return lines
 
     def _refresh_message(self) -> None:
