@@ -205,6 +205,8 @@ class _Triangle:
     texture_layers: tuple[_TextureLayer, ...] = ()
     alpha: float = 1.0
     blend_mode: str = "normal"
+    material: int = -1  # the .gs material index (effect animations fade materials by index)
+    cull: str = "back"  # the shape's GX cull mode (flags 0x1800): "back", "none" (both sides) or "front"
 
 
 @dataclass
@@ -301,6 +303,13 @@ def _material_alpha(gs_model: model_fmt.GsModel, material_index: int) -> float:
     if 0 <= material_index < len(gs_model.materials):
         return gs_model.materials[material_index].color0[3] / 255.0
     return 1.0
+
+
+def _chunk_cull(chunk: model_fmt.TriChunk) -> str:
+    """Shape flag bits 0x1800 (``apply_shape_cull_mode_from_flags``): 0x1000 culls back faces,
+    0x0800 front faces, 0x1800 nothing. Most shipped shapes (cloth, hair, foliage) are 0x1800."""
+    bits = chunk.format & 0x1800
+    return "none" if bits == 0x1800 else "front" if bits == 0x0800 else "back"
 
 
 def _chunk_blend_mode(chunk: model_fmt.TriChunk) -> str:
@@ -632,6 +641,7 @@ def _accumulate_mesh(
             continue
         material_index = chunk.material_index
         blend_mode = _chunk_blend_mode(chunk)
+        cull = _chunk_cull(chunk)
         texture_image = None
         material_textures: list[tuple[int, _LoadedTexture, np.ndarray, str]] = []
         if 0 <= material_index < len(gs_model.materials):
@@ -749,6 +759,8 @@ def _accumulate_mesh(
                         tuple(texture_layers),
                         material_alpha,
                         blend_mode,
+                        material_index,
+                        cull,
                     )
                 )
 
@@ -806,6 +818,8 @@ def _skin_triangles(triangles: list[_Triangle], world, palette) -> list[_Triangl
                 tri.texture_layers,
                 tri.alpha,
                 tri.blend_mode,
+                tri.material,
+                tri.cull,
             )
         )
     return skinned
@@ -3114,6 +3128,14 @@ PERSPECTIVE_NEAR = 0.05
 FIT_FRACTION = 0.55
 
 
+def posed_triangles(triangles: list[_Triangle], positions: "np.ndarray",
+                    normals: "np.ndarray | None" = None) -> list[_Triangle]:
+    """``triangles`` moved to ``positions`` (n, 3, 3) / ``normals`` (n, 3)."""
+    normal_list = normals.tolist() if normals is not None else [t.normal for t in triangles]
+    return [replace(t, a=tuple(p[0]), b=tuple(p[1]), c=tuple(p[2]), normal=tuple(n))
+            for t, p, n in zip(triangles, positions.tolist(), normal_list)]
+
+
 class _ModelCanvas(tk.Canvas):
     """Orbiting orthographic renderer. Rasterizes the whole mesh into an
     off-screen numpy framebuffer + real per-pixel Z-buffer every frame -
@@ -3154,6 +3176,12 @@ class _ModelCanvas(tk.Canvas):
 
     #: 0 = orthographic; else 1 / the eye's distance from the center (set_view)
     _perspective = 0.0
+    #: set_camera(): the view rotation (rows: screen right, up, into the screen)
+    #: and the world height seen at the center's depth (the vertical field of view)
+    _view_rotation: "np.ndarray | None" = None
+    _view_span = 0.0
+    #: set_pose_arrays(): posed positions (n, 3, 3) and normals (n, 3) of the model's triangles
+    _pose_arrays: "tuple | None" = None
 
     def __init__(self, parent: tk.Misc):
         super().__init__(parent, background="#2b2b2b", highlightthickness=0)
@@ -3221,6 +3249,7 @@ class _ModelCanvas(tk.Canvas):
         self._bone_names = bone_names
         self._posed_positions = None
         self._animated_triangles = None
+        self._pose_arrays = None
         self._highlighted_bone = None
         self._gpu_model = None
         self._fit_to_content()
@@ -3247,6 +3276,54 @@ class _ModelCanvas(tk.Canvas):
         self._yaw, self._pitch, self._zoom = yaw, pitch, max(zoom, 1e-6)
         self._perspective = max(perspective, 0.0)
         self._schedule_redraw()
+
+    def set_camera(self, eye, center, fovy_degrees: float) -> None:
+        """Place a game camera (the battle stage's): look from ``eye`` at
+        ``center`` with +Y up, in perspective, ``fovy_degrees`` of vertical
+        field of view. The view is right-handed, as ``C_MTXLookAt`` builds it
+        (the orbit view is not). ``clear_camera()`` goes back to orbiting."""
+        eye = np.asarray(eye, dtype=np.float64)
+        center = np.asarray(center, dtype=np.float64)
+        forward = center - eye
+        distance = float(np.linalg.norm(forward)) or 1e-6
+        forward /= distance
+        right = np.array([-forward[2], 0.0, forward[0]])  # forward x up
+        length = float(np.linalg.norm(right))
+        right = right / length if length > 1e-9 else np.array([1.0, 0.0, 0.0])
+        self._view_rotation = np.stack([right, np.cross(right, forward), forward])
+        self._center = tuple(center.tolist())
+        self._perspective = 1.0 / distance
+        self._view_span = 2.0 * distance * math.tan(math.radians(fovy_degrees) / 2.0)
+        self._schedule_redraw()
+
+    def clear_camera(self) -> None:
+        self._view_rotation = None
+        self._view_span = 0.0
+        self._perspective = 0.0
+        self._schedule_redraw()
+
+    def set_pose_arrays(self, positions: "np.ndarray | None", normals: "np.ndarray | None" = None,
+                        changed: "np.ndarray | None" = None, alphas: "np.ndarray | None" = None) -> None:
+        """Pose the model's own triangles from arrays: ``positions`` (n, 3, 3)
+        and ``normals`` (n, 3), in ``set_model``'s triangle order. Cheaper than
+        ``set_pose`` for a whole animated scene (no triangle objects per frame,
+        and the GPU path rewrites its vertex buffer in place). ``changed``, a
+        boolean mask, says which triangles can move (the rest keep what the
+        GPU already holds). ``alphas`` (n,) overrides each triangle's alpha
+        (animated effect materials; GPU path only). None goes back to the model as set."""
+        self._pose_arrays = None if positions is None else (positions, normals, changed, alphas)
+        self._schedule_redraw()
+
+    def render_now(self) -> None:
+        """Draw the pending frame at once (playback that paces itself)."""
+        self._redraw_pending = False
+        self._redraw()
+
+    def _scale(self, width: int, height: int) -> float:
+        """Screen pixels per world unit at the center's depth."""
+        if self._view_span > 0.0:
+            return height / self._view_span
+        return (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
 
     def set_show_mesh(self, show: bool) -> None:
         """Toggle the mesh's visibility - the skeleton overlay (markers and
@@ -3346,9 +3423,7 @@ class _ModelCanvas(tk.Canvas):
         self._schedule_redraw()
 
     def _view_scale(self) -> float:
-        width = self.winfo_width() or 480
-        height = self.winfo_height() or 360
-        return (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
+        return self._scale(self.winfo_width() or 480, self.winfo_height() or 360)
 
     def _shift_center(self, dx: float, dy: float) -> None:
         """Move the orbit center by (dx, dy) screen pixels - the inverse of
@@ -3383,9 +3458,16 @@ class _ModelCanvas(tk.Canvas):
         self._redraw_pending = True
         # the GPU path renders in a few ms, so don't cap it at the timer;
         # input events arriving during a frame still coalesce into one redraw
-        self.after(1 if self._gpu is not None else 16, self._redraw)
+        self.after(1 if self._gpu is not None else 16, self._scheduled_redraw)
+
+    def _scheduled_redraw(self) -> None:
+        # render_now may already have drawn this frame
+        if self._redraw_pending:
+            self._redraw()
 
     def _rotate(self, vector: tuple[float, float, float]) -> tuple[float, float, float]:
+        if self._view_rotation is not None:
+            return tuple((self._view_rotation @ np.asarray(vector, dtype=np.float64)).tolist())
         x, y, z = vector
         cosy, siny = math.cos(self._yaw), math.sin(self._yaw)
         cosp, sinp = math.cos(self._pitch), math.sin(self._pitch)
@@ -3398,7 +3480,10 @@ class _ModelCanvas(tk.Canvas):
     def _rotation_matrix(self) -> "np.ndarray":
         """The same yaw-then-pitch composition as _rotate(), as a 3x3 numpy
         matrix R such that R @ column_vector reproduces _rotate()'s result -
-        for a batch of row-vectors this is `points @ R.T`."""
+        for a batch of row-vectors this is `points @ R.T`. A game camera
+        (set_camera) replaces it."""
+        if self._view_rotation is not None:
+            return self._view_rotation
         cosy, siny = math.cos(self._yaw), math.sin(self._yaw)
         cosp, sinp = math.cos(self._pitch), math.sin(self._pitch)
         r_yaw = np.array([[cosy, 0.0, siny], [0.0, 1.0, 0.0], [-siny, 0.0, cosy]])
@@ -3424,7 +3509,7 @@ class _ModelCanvas(tk.Canvas):
         ccx, ccy, ccz = self._center
         center = np.array([ccx, ccy, ccz])
         cx0, cy0 = width / 2.0, height / 2.0
-        scale = (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
+        scale = self._scale(width, height)
 
         tri_a = np.array([t.a for t in triangles])
         tri_b = np.array([t.b for t in triangles])
@@ -3460,8 +3545,16 @@ class _ModelCanvas(tk.Canvas):
         # brightness floor - so a backwards sign there just meant "usually
         # dim," not "usually invisible") - backface culling is what actually
         # exposed it.
-        visible = nz < 0.0
-        if perspective:  # behind the eye: dropped, like the GPU path
+        facing = nz
+        if perspective:
+            # under perspective a face is seen when its normal opposes the ray from the eye (at
+            # z = -1 / perspective), not the view axis: a low camera looking up still sees the ground
+            rays = (tri_a - center) @ rot.T * perspective + np.array([0.0, 0.0, 1.0])
+            facing = (rotated_normals * rays).sum(axis=1)
+        culls = np.array([t.cull for t in triangles])
+        visible = np.where(culls == "none", True, np.where(culls == "front", facing > 0.0, facing < 0.0))
+        if perspective:
+            # behind the eye: dropped, like the GPU path
             visible &= (1.0 + np.stack([az, bz, cz]) * perspective > PERSPECTIVE_NEAR).all(axis=0)
         brightness = 0.35 + 0.65 * np.maximum(-nz, 0.0)
 
@@ -3567,7 +3660,10 @@ class _ModelCanvas(tk.Canvas):
                 self._gpu.set_triangles(self._triangles)
                 self._gpu_model = self._triangles
                 self._gpu_uploaded = self._triangles
-            if self._gpu_uploaded is not triangles:
+            if self._pose_arrays is not None and triangles is self._triangles:
+                self._gpu.update_arrays(*self._pose_arrays)
+                self._gpu_uploaded = self._triangles
+            elif self._gpu_uploaded is not triangles:
                 # a posed frame (or back to the bind pose) of the same model
                 if not self._gpu.update_positions(triangles):
                     self._gpu.set_triangles(triangles)
@@ -3613,7 +3709,7 @@ class _ModelCanvas(tk.Canvas):
         width = self.winfo_width() or 480
         height = self.winfo_height() or 360
         cx, cy = width / 2, height / 2
-        scale = (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
+        scale = self._scale(width, height)
         if not self._show_mesh or (not self._triangles and not self._bone_markers):
             if self._image_item is not None:
                 self.itemconfigure(self._image_item, state="hidden")
@@ -3627,6 +3723,8 @@ class _ModelCanvas(tk.Canvas):
             triangles = self._animated_triangles if self._animated_triangles is not None else self._triangles
             frame = self._gpu_frame(triangles, width, height, scale)
             if frame is None:
+                if self._pose_arrays is not None and triangles is self._triangles:
+                    triangles = posed_triangles(self._triangles, *self._pose_arrays[:2])
                 frame = Image.fromarray(self._rasterize(triangles, width, height), mode="RGB")
             self._show_frame(frame)
 

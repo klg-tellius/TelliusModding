@@ -96,6 +96,11 @@ class ProjectIndexTests(unittest.TestCase):
         self.assertTrue(ike.battle_model and ike.battle_model.startswith("zu/"))
         self.assertTrue(ike.map_model and ike.map_model.startswith("ymu/"))
 
+    def test_only_unpromoted_playable_units_promote(self):
+        self.assertTrue(self.index.by_pid["PID_IKE"].promotes)
+        self.assertFalse(self.index.by_pid["PID_TIAMAT"].promotes)  # Titania, a prepromoted Paladin
+        self.assertFalse(any(c.promotes for c in self.index.characters if c.category != "playable"))
+
     def test_story_copies_group_under_main_record(self):
         boyd_map1 = self.index.by_pid["PID_BOLE_MAP1"]
         self.assertEqual(boyd_map1.main_pid, "PID_BOLE")

@@ -592,6 +592,28 @@ class Shell(ttk.Frame):
                                                 chapter_id, difficulty)
         self.run_task(f"Preparing chapter {chapter_id:02d} for Dolphin …", work, self._launch)
 
+    def open_play_chapter(self) -> None:
+        """Play in Dolphin from the menu: the open chapter if a chapter page shows
+        one, else a dialog that also picks the chapter."""
+        if not self.extracted or self._task_running:
+            return
+        play = getattr(self._current, "play_in_dolphin", None)
+        if play is not None and play():
+            return
+        from .. import chapters
+        from .pages.chapters import PlayChapterDialog
+        index = self.index
+        choices = {cid: (index.by_chapter[cid].title if index is not None and cid in index.by_chapter
+                         else f"Chapter {cid}")
+                   for cid in chapters.list_chapter_ids(self.project)}
+        if not choices:
+            messagebox.showinfo("No chapters", "The extracted files have no chapters to play.", parent=self)
+            return
+        dialog = PlayChapterDialog(self, choices=choices)
+        self.wait_window(dialog)
+        if dialog.result is not None and dialog.chapter is not None:
+            self.play_chapter(int(dialog.chapter), dialog.result)
+
     def _launch(self, image) -> None:
         try:
             emulator.launch(image)

@@ -2,9 +2,10 @@
 
 - :class:`MapObjectsWindow` - every placed object (``mapbuildinst``) in a
   table, each editable: object, tile, angle, height and the tiles it covers.
-- :class:`MapSettingsWindow` - capacity scale, light, fog, grid colour and
-  the ``mapextra`` record, the water surface (import, flow), and the
-  chapter's Game Data › Chapters record (``stats_editor.ChapterRecordPanel``,
+- :class:`MapSettingsWindow` - :class:`MapSettingsForm` (capacity scale,
+  lighting, fog, grid colour, the grid border and the rest of ``mapextra``,
+  the water surface: import, flow; each chapter's Settings tab shows it too),
+  and the chapter's Game Data › Chapters record (``stats_editor.ChapterRecordPanel``,
   FE8Data.bin: title, objectives, music, backgrounds, enemy levels...).
 - :class:`Map3DWindow` - the whole chapter in 3D (``map_scene.build_map_scene``),
   rebuilt on a worker thread after each edit.
@@ -19,7 +20,7 @@ import queue
 import struct
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import colorchooser, messagebox, ttk
 
 from .. import map_props
 from ..formats import map_file
@@ -29,18 +30,6 @@ from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame
 
 ANGLES = {"0°": 0, "90°": 192, "180°": 128, "270°": 64}
-LIGHT_FIELDS = ["enabled", "unknown1", "unknown2", "model_red", "model_green", "model_blue", "light_red", "light_green", "light_blue"]
-FOG_FIELDS = ["enabled", "unused1", "effect_type", "transparency", "red", "green", "blue", "unused2"]
-GRID_FIELDS = ["unknown", "red", "green", "blue"]
-EXTRA_FIELDS = [
-    "panel_offset_x",
-    "panel_offset_y",
-    "half_x_size",
-    "half_y_size",
-    "texture_projection_extent_x2",
-    "grid_buffer",
-    "unknown_tail",  # map flags: 0x20 water, 0x10000000 roof/house tile rectangles
-]
 
 
 def angle_label(angle: int) -> str:
@@ -370,84 +359,119 @@ class MapObjectsWindow(_Window):
 
 # -- map settings -----------------------------------------------------------------------------
 
+#: The map-wide records the settings form edits: ``(attribute, title, patch, rows)``, a row being
+#: ``(field, label)`` or ``("rgb", label, (red, green, blue))`` (three byte fields and a colour picker).
+SETTINGS_SECTIONS = [
+    ("light", "Lighting", map_file.patch_light_field, [
+        ("enabled", "Enabled"), ("unknown1", "Unknown 1"), ("unknown2", "Unknown 2"),
+        ("rgb", "Model colour", ("model_red", "model_green", "model_blue")),
+        ("rgb", "Light colour", ("light_red", "light_green", "light_blue")),
+    ]),
+    ("fog", "Fog", map_file.patch_fog_field, [
+        ("enabled", "Enabled"), ("effect_type", "Effect type"), ("transparency", "Transparency"),
+        ("rgb", "Fog colour", ("red", "green", "blue")),
+        ("unused1", "Unused 1"), ("unused2", "Unused 2"),
+    ]),
+    ("grid", "Grid colour", map_file.patch_grid_field, [
+        ("unknown", "Unknown"), ("rgb", "Grid colour", ("red", "green", "blue")),
+    ]),
+    ("extra", "Grid size & map extra (mapextra)", map_file.patch_extra_field, [
+        ("grid_buffer", "Grid border (tiles)"), ("half_x_size", "Half width"), ("half_y_size", "Half height"),
+        ("panel_offset_x", "Panel offset X"), ("panel_offset_y", "Panel offset Y"),
+        ("texture_projection_extent_x2", "Texture extent ×2"), ("unknown_tail", "Map flags"),
+    ]),
+]
 
-class MapSettingsWindow(_Window):
-    """The map-wide records (capacity scale, light, fog, grid colour, extra),
-    the water surface, and the chapter's record in Game Data › Chapters."""
 
-    SECTIONS = [
-        ("light", "Light", LIGHT_FIELDS, map_file.patch_light_field),
-        ("fog", "Fog", FOG_FIELDS, map_file.patch_fog_field),
-        ("grid", "Grid colour", GRID_FIELDS, map_file.patch_grid_field),
-        ("extra", "Extra (mapextra)", EXTRA_FIELDS, map_file.patch_extra_field),
-    ]
+def _section_fields(rows) -> list[str]:
+    return [f for row in rows for f in (row[2] if row[0] == "rgb" else (row[0],))]
 
-    def __init__(self, builder) -> None:
-        super().__init__(builder, "Map settings", "1000x800")
-        scroll = ScrollFrame(self, padding=12)
-        scroll.pack(fill="both", expand=True)
-        self._body = ttk.Frame(scroll.body)
-        self._body.pack(fill="x", anchor="w")
+
+LIGHT_FIELDS, FOG_FIELDS, GRID_FIELDS, EXTRA_FIELDS = (_section_fields(rows) for _a, _t, _p, rows in SETTINGS_SECTIONS)
+
+
+def _hex_colour(rgb) -> str | None:
+    """``#rrggbb`` of three byte values (ints or text), None when one isn't a byte."""
+    try:
+        values = [int(v, 0) if isinstance(v, str) else int(v) for v in rgb]
+    except ValueError:
+        return None
+    return "#%02x%02x%02x" % tuple(values) if len(values) == 3 and all(0 <= v <= 255 for v in values) else None
+
+
+class MapSettingsForm(ttk.Frame):
+    """The open map's map-wide records - capacity scale, lighting, fog, grid
+    colour, the grid border (``mapextra.grid_buffer``) and the rest of
+    ``mapextra`` - and its water surface. Edits go through the builder
+    (``edit_map``), so they are on the Build tab's Undo/Redo and Save Chapter
+    writes them. Follows the builder's map."""
+
+    def __init__(self, parent, builder) -> None:
+        super().__init__(parent)
+        self.builder = builder
+        self.map = builder.map_editor
         self._vars: dict[str, tk.StringVar] = {}
-        self._render()
-        self._chapter = None
-        session = builder.fe8_session
-        if session is not None and session.available:
-            ttk.Label(scroll.body, text="Chapter (Game Data › Chapters)", font=("Segoe UI", 10, "bold")).pack(
-                anchor="w", pady=(18, 4))
-            self._chapter = ChapterRecordPanel(scroll.body, builder.project, builder.changelog, session,
-                                               navigate=builder.navigate)
-            self._chapter.pack(fill="x", anchor="w")
-            self._chapter.show_map(self.map.map_name or None)
+        self.map.add_listener(self._on_map_changed)
+        self.bind("<Destroy>", self._on_destroy)
+        self.render()
 
-    def _map_changed(self) -> None:
-        self._render()
-        if self._chapter is not None:
-            self._chapter.show_map(self.map.map_name or None)
+    def _on_destroy(self, event) -> None:
+        if event.widget is self:
+            self.map.remove_listener(self._on_map_changed)
 
-    def close(self) -> None:
-        if self._chapter is not None:
-            self._chapter.cleanup()
-        super().close()
+    def _on_map_changed(self) -> None:
+        if self.winfo_exists():
+            self.render()
 
-    def _render(self) -> None:
-        for child in self._body.winfo_children():
+    def render(self) -> None:
+        for child in self.winfo_children():
             child.destroy()
         self._vars = {}
         data = self.map.map_data
         if data is None or data.capacity is None:
-            ttk.Label(self._body, text="No map is open.", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(self, text="This chapter has no map open.", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
             return
-        form = self._body
+        form = self
         cap = data.capacity
+        size = f"Map {cap.x_size} × {cap.y_size} tiles"
+        buffer = data.extra.grid_buffer if data.extra is not None else 0
+        if 0 < buffer * 2 < min(cap.x_size, cap.y_size):
+            size += f"   ·   playable grid {cap.x_size - 2 * buffer} × {cap.y_size - 2 * buffer} (inside a {buffer}-tile border)"
         ttk.Label(form, text="Map capacity", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=8, sticky="w")
-        ttk.Label(form, text=f"Grid {cap.x_size} × {cap.y_size}   ·   {cap.build_desc_count} object types   ·   "
-                             f"{cap.build_inst_count} placed objects", style="Muted.TLabel").grid(
-            row=1, column=0, columnspan=8, sticky="w", pady=(0, 4))
-        ttk.Label(form, text="scale_unit").grid(row=2, column=0, sticky="w")
+        ttk.Label(form, text=f"{size}   ·   {cap.build_desc_count} object types   ·   {cap.build_inst_count} placed objects",
+                  style="Muted.TLabel").grid(row=1, column=0, columnspan=8, sticky="w", pady=(0, 4))
+        ttk.Label(form, text="Scale unit").grid(row=2, column=0, sticky="w")
         var = tk.StringVar(value=str(cap.scale_unit))
         ttk.Entry(form, textvariable=var, width=10).grid(row=2, column=1, sticky="w")
         self._vars["capacity:scale_unit"] = var
         row = 3
-        for prefix, title, fields, _patch in self.SECTIONS:
+        for prefix, title, _patch, rows in SETTINGS_SECTIONS:
             record = getattr(data, prefix)
             if record is None:
                 continue
             ttk.Label(form, text=title, font=("Segoe UI", 10, "bold")).grid(row=row, column=0, columnspan=8, sticky="w", pady=(12, 2))
             row += 1
             col = 0
-            for f in fields:
-                ttk.Label(form, text=f).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 10, 4))
-                var = tk.StringVar(value=str(getattr(record, f)))
+            for spec in rows:
+                if spec[0] == "rgb":
+                    if col:
+                        col, row = 0, row + 1
+                    row = self._colour_row(form, row, prefix, record, spec[1], spec[2])
+                    continue
+                f, label = spec
+                ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 10, 4))
+                value = getattr(record, f)
+                var = tk.StringVar(value=hex(value) if f == "unknown_tail" else str(value))
                 ttk.Entry(form, textvariable=var, width=10).grid(row=row, column=col + 1, sticky="w", pady=1)
                 self._vars[f"{prefix}:{f}"] = var
                 col += 2
                 if col >= 6:
                     col, row = 0, row + 1
             row += 1 if col else 0
-        ttk.Label(form, text="unknown_tail holds the map flags: 0x20 water, 0x10000000 roof/house tile rectangles.",
-                  style="Muted.TLabel").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
-        ttk.Button(form, text="Apply", command=self._apply).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(form, text="Grid border: the tiles around the map edge outside the playable grid. "
+                             "Map flags: 0x20 water, 0x10000000 roof/house tile rectangles.",
+                  style="Muted.TLabel", wraplength=720, justify="left").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
+        ttk.Button(form, text="Apply", style="Accent.TButton", command=self._apply).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
 
         waters = self.map.water_names()
         ttk.Label(form, text="Water", font=("Segoe UI", 10, "bold")).grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(18, 2))
@@ -458,6 +482,38 @@ class MapSettingsWindow(_Window):
         ttk.Button(water, text="Import water .glb...", command=lambda: self._undoable(lambda: self.map.import_water(self))).pack(side="left")
         ttk.Button(water, text="Water flow...", command=lambda: self._undoable(lambda: self.map.water_flow(self))).pack(side="left", padx=(6, 0))
 
+    def _colour_row(self, form, row: int, prefix: str, record, label: str, fields) -> int:
+        """Red, green and blue byte fields with a swatch and a colour picker
+        (which applies at once); returns the next free row."""
+        ttk.Label(form, text=f"{label} (R, G, B)").grid(row=row, column=0, sticky="w")
+        names = [f"{prefix}:{f}" for f in fields]
+        for i, (f, name) in enumerate(zip(fields, names)):
+            var = tk.StringVar(value=str(getattr(record, f)))
+            self._vars[name] = var
+            ttk.Entry(form, textvariable=var, width=10).grid(row=row, column=1 + 2 * i, sticky="w", pady=1)
+        swatch = tk.Label(form, width=4, relief="solid", borderwidth=1,
+                          bg=_hex_colour([getattr(record, f) for f in fields]) or "#000000")
+        swatch.grid(row=row, column=6, sticky="w", padx=(10, 4))
+
+        def refresh(*_):
+            colour = _hex_colour([self._vars[n].get() for n in names])
+            if colour is not None and swatch.winfo_exists():
+                swatch.configure(bg=colour)
+
+        for name in names:
+            self._vars[name].trace_add("write", refresh)
+
+        def pick():
+            initial = _hex_colour([self._vars[n].get() for n in names])
+            rgb, _hex = colorchooser.askcolor(initial, parent=self, title=label)
+            if rgb is not None:
+                for name, value in zip(names, rgb):
+                    self._vars[name].set(str(int(value)))
+                self._apply()
+
+        ttk.Button(form, text="Pick...", command=pick).grid(row=row, column=7, sticky="w")
+        return row + 1
+
     def _undoable(self, action) -> None:
         self.builder.run_undoable(action)
 
@@ -467,11 +523,11 @@ class MapSettingsWindow(_Window):
             return
         try:
             pending = [(data.capacity, "scale_unit", float(self._vars["capacity:scale_unit"].get()), map_file.patch_capacity_field)]
-            for prefix, _title, fields, patch in self.SECTIONS:
+            for prefix, _title, patch, rows in SETTINGS_SECTIONS:
                 record = getattr(data, prefix)
                 if record is None:
                     continue
-                for f in fields:
+                for f in _section_fields(rows):
                     value = int(self._vars[f"{prefix}:{f}"].get(), 0)
                     if value != getattr(record, f):
                         pending.append((record, f, value, patch))
@@ -493,6 +549,35 @@ class MapSettingsWindow(_Window):
             self.builder.edit_map(edit, "Changed " + ", ".join(sorted({f for _r, f, _v, _p in pending})), raise_errors=True)
         except (struct.error, OverflowError, map_file.MapFileError) as exc:
             messagebox.showerror("Could not apply", str(exc), parent=self)
+
+
+class MapSettingsWindow(_Window):
+    """:class:`MapSettingsForm` and the chapter's record in Game Data ›
+    Chapters, in a window (each chapter's Settings tab shows the same)."""
+
+    def __init__(self, builder) -> None:
+        super().__init__(builder, "Map settings", "1000x800")
+        scroll = ScrollFrame(self, padding=12)
+        scroll.pack(fill="both", expand=True)
+        MapSettingsForm(scroll.body, builder).pack(fill="x", anchor="w")
+        self._chapter = None
+        session = builder.fe8_session
+        if session is not None and session.available:
+            ttk.Label(scroll.body, text="Chapter (Game Data › Chapters)", font=("Segoe UI", 10, "bold")).pack(
+                anchor="w", pady=(18, 4))
+            self._chapter = ChapterRecordPanel(scroll.body, builder.project, builder.changelog, session,
+                                               navigate=builder.navigate)
+            self._chapter.pack(fill="x", anchor="w")
+            self._chapter.show_map(self.map.map_name or None)
+
+    def _map_changed(self) -> None:
+        if self._chapter is not None:
+            self._chapter.show_map(self.map.map_name or None)
+
+    def close(self) -> None:
+        if self._chapter is not None:
+            self._chapter.cleanup()
+        super().close()
 
 
 # -- 3D view ----------------------------------------------------------------------------------

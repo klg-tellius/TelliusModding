@@ -44,7 +44,9 @@ BACKGROUND = (43, 43, 43)
 MSAA_SAMPLES = 4
 
 # vertex: position(3) normal(3) color(3) alpha(1) uv x MAX_LAYERS (8)
-_FLOATS_PER_VERTEX = 18
+_FLOATS_PER_VERTEX = 19
+#: Vertex float 18: the shape's cull mode (model_viewer._chunk_cull).
+CULL_CODES = {"back": 0.0, "none": 1.0, "front": 2.0}
 
 _ROLE_CODES = {
     "callback_uv2_detail": 1,
@@ -91,6 +93,7 @@ struct VIn {
     @location(3) alpha: f32,
     @location(4) uv01: vec4<f32>,
     @location(5) uv23: vec4<f32>,
+    @location(6) cull: f32,  // 0 back faces, 1 none (both sides), 2 front faces
 };
 
 struct VOut {
@@ -113,7 +116,23 @@ fn rotate(p: vec3<f32>) -> vec3<f32> {
 fn vs_main(v: VIn) -> VOut {
     var out: VOut;
     let r = rotate(v.position - camera.center.xyz);
-    let nz = rotate(v.normal).z;
+    let n = rotate(v.normal);
+    let nz = n.z;
+    // facing: the normal against the ray from the eye. The eye sits at z = -1 / w-scale under
+    // perspective (the ray, scaled by w-scale: r * w + (0, 0, 1)); orthographic rays are all +Z.
+    // The normal is the face's, so all three corners agree (n . (corner - eye) is the same)
+    var facing = nz;
+    if (camera.scale.w > 0.0) {
+        facing = dot(n, r * camera.scale.w + vec3<f32>(0.0, 0.0, 1.0));
+    }
+    // an alpha below -0.5 marks an effect triangle (battle_stage.effect_alpha): unlit, seen from both sides,
+    // its real alpha being -1 - value
+    let effect = v.alpha < -0.5;
+    if (effect || (v.cull > 0.5 && v.cull < 1.5)) {
+        facing = -1.0;  // drawn from both sides
+    } else if (v.cull >= 1.5) {
+        facing = -facing;  // front faces culled
+    }
     // perspective divisor (1 when orthographic)
     let w = 1.0 + r.z * camera.scale.w;
     // depth = 1 - near / w under perspective: clip z stays linear in the
@@ -123,7 +142,9 @@ fn vs_main(v: VIn) -> VOut {
     if (camera.scale.w > 0.0) {
         z = w - PERSPECTIVE_NEAR;
     }
-    if (nz >= 0.0) {
+    // a corner behind the eye is never culled here: the clip stage cuts that triangle at the near
+    // plane (corners can disagree when the stored normal is not exactly the face's)
+    if (facing >= 0.0 && (camera.scale.w <= 0.0 || w > PERSPECTIVE_NEAR)) {
         // back-facing: the whole triangle shares this normal, so all three
         // vertices land outside the clip volume and it is dropped
         out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
@@ -133,6 +154,10 @@ fn vs_main(v: VIn) -> VOut {
     out.color = v.color / 255.0;
     out.alpha = v.alpha;
     out.brightness = 0.35 + 0.65 * max(-nz, 0.0);
+    if (effect) {
+        out.alpha = -1.0 - v.alpha;
+        out.brightness = 1.0;
+    }
     out.uv01 = v.uv01;
     out.uv23 = v.uv23;
     return out;
@@ -290,6 +315,7 @@ class _Device:
                         {"format": wgpu.VertexFormat.float32, "offset": 36, "shader_location": 3},
                         {"format": wgpu.VertexFormat.float32x4, "offset": 40, "shader_location": 4},
                         {"format": wgpu.VertexFormat.float32x4, "offset": 56, "shader_location": 5},
+                        {"format": wgpu.VertexFormat.float32, "offset": 72, "shader_location": 6},
                     ],
                 }
             ],
@@ -444,6 +470,8 @@ class GpuSceneRenderer:
         self._fill_geometry(vertices, ordered)
         vertices[:, :, 6:9] = np.array([t.color for t in ordered], dtype=np.float32)[:, None, :]
         vertices[:, :, 9] = np.array([t.alpha for t in ordered], dtype=np.float32)[:, None]
+        vertices[:, :, 18] = np.array([CULL_CODES.get(getattr(t, "cull", "back"), 0.0) for t in ordered],
+                                      dtype=np.float32)[:, None]
         for slot in range(MAX_LAYERS):
             uvs = [layers_by_tri[i][slot][6] if slot < len(layers_by_tri[i]) else ((0, 0), (0, 0), (0, 0)) for i in order.tolist()]
             vertices[:, :, 10 + slot * 2 : 12 + slot * 2] = np.array(uvs, dtype=np.float32)
@@ -477,6 +505,48 @@ class GpuSceneRenderer:
         self._fill_geometry(self._vertices, ordered)
         self._device.queue.write_buffer(self._vertex_buffer, 0, self._vertices)
         return True
+
+    def update_arrays(self, positions: np.ndarray, normals: np.ndarray | None = None,
+                      changed: np.ndarray | None = None, alphas: np.ndarray | None = None) -> bool:
+        """``update_positions()`` from arrays: ``positions`` (n, 3, 3) and
+        ``normals`` (n, 3) in the uploaded triangles' order, and optionally
+        each triangle's alpha (n,) (animated effect materials). ``changed`` (a
+        boolean mask in that order) limits the upload to those triangles:
+        they are written in the few contiguous runs they occupy."""
+        if self._vertices is None or self._order is None or len(positions) != len(self._order):
+            return False
+        if changed is None:
+            self._vertices[:, :, 0:3] = positions[self._order]
+            if normals is not None:
+                self._vertices[:, :, 3:6] = normals[self._order][:, None, :]
+            if alphas is not None:
+                self._vertices[:, :, 9] = alphas[self._order][:, None]
+            self._device.queue.write_buffer(self._vertex_buffer, 0, self._vertices)
+            return True
+        runs = self._runs(changed)
+        stride = self._vertices[0].nbytes  # bytes per triangle
+        for start, end in runs:
+            source = self._order[start:end]
+            self._vertices[start:end, :, 0:3] = positions[source]
+            if normals is not None:
+                self._vertices[start:end, :, 3:6] = normals[source][:, None, :]
+            if alphas is not None:
+                self._vertices[start:end, :, 9] = alphas[source][:, None]
+            self._device.queue.write_buffer(self._vertex_buffer, start * stride,
+                                            np.ascontiguousarray(self._vertices[start:end]))
+        return True
+
+    def _runs(self, changed: np.ndarray) -> list[tuple[int, int]]:
+        """Contiguous ``[start, end)`` runs of the ordered buffer holding ``changed`` triangles."""
+        key = (id(changed), id(self._order))
+        cached = getattr(self, "_runs_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        flags = np.asarray(changed, dtype=bool)[self._order].astype(np.int8)
+        edges = np.diff(np.concatenate(([0], flags, [0])))
+        runs = list(zip(np.nonzero(edges == 1)[0].tolist(), np.nonzero(edges == -1)[0].tolist()))
+        self._runs_cache = (key, runs, changed)  # keep the mask alive so its id stays its own
+        return runs
 
     def _texture_view(self, array: np.ndarray):
         key = id(array)
