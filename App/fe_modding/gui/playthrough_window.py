@@ -80,6 +80,7 @@ class PlaythroughWindow(_Window):
         self._selected: Optional[int] = None
         self._reach: dict = {}
         self._watch: Optional[int] = None  # a unit whose threat range is shown
+        self._menu_target: Optional[int] = None  # the target of the action-menu entry under the mouse
         self._running: Optional[tuple] = None  # (until, start mark) while running
         self._after = None
         self._waiting_animation = False
@@ -290,6 +291,11 @@ class PlaythroughWindow(_Window):
             return
         self.refresh()
         self.run()
+
+    def backdrop_ready(self, image) -> None:
+        """The Build tab finished rendering the map picture."""
+        self.canvas.backdrop = image
+        self.canvas.redraw()
 
     def _map_changed(self) -> None:
         self._hover.configure(text="The map changed in the Build tab: press Restart to play the new version.")
@@ -559,15 +565,35 @@ class PlaythroughWindow(_Window):
         world, state = self.sim.world, self.sim.state
         unit = state.units[self._selected]
         menu = tk.Menu(self, tearoff=0)
+        targets = []  # per menu entry: the unit it acts on, to mark it on the map
         for choice in actions.choices(world, state, unit, dest):
             label = choice.label
+            target = state.units.get(choice.target) if choice.target is not None else None
+            if target is not None:  # two units can share a name: say which one
+                label += f"  [{target.x}, {target.y}  HP {target.hp}/{target.stats[0]}]"
             if choice.action == "attack":
-                label += "   " + self._forecast_text(unit, dest, state.units[choice.target], choice.item)
+                label += "   " + self._forecast_text(unit, dest, target, choice.item)
             menu.add_command(label=label, command=lambda c=choice: self._command(
                 actions.Act(unit.uid, dest, c.action, c.target, c.item)))
+            targets.append(choice.target)
         menu.add_separator()
         menu.add_command(label="Cancel", command=self._deselect)
-        menu.tk_popup(event.x_root, event.y_root)
+
+        def hovered(_event) -> None:
+            index = menu.index("active")
+            target = targets[index] if isinstance(index, int) and index < len(targets) else None
+            if target != self._menu_target:
+                self._menu_target = target
+                self._refresh_map()
+
+        menu.bind("<<MenuSelect>>", hovered)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+            if self._menu_target is not None:
+                self._menu_target = None
+                self._refresh_map()
 
     def _forecast_text(self, unit, dest: tuple, target, item_index: int) -> str:
         world = self.sim.world
@@ -669,7 +695,7 @@ class PlaythroughWindow(_Window):
             canvas.units.append({
                 "key": u.uid, "x": u.x, "y": u.y, "pos2": (u.x, u.y),
                 "color": FACTION_COLORS.get(u.faction, "#8a8a8a"), "text": world.name(u.pid)[:3],
-                "selected": u.uid in (self._selected, self._watch), "highlight": False,
+                "selected": u.uid in (self._selected, self._watch, self._menu_target), "highlight": False,
                 "done": u.done and u.faction == state.phase, "hp": u.hp / max(1, u.stats[0]), "boss": u.boss,
             })
         zones = []

@@ -1528,13 +1528,15 @@ class Fe8DataTests(unittest.TestCase):
     def test_patch_character_field_round_trips(self):
         data = _build_synthetic_fe8data()
         patched = fe8data.patch_character_field(data, 0, "level", 99)
-        patched = fe8data.patch_character_field(patched, 0, "stat_bonus3", 255)
+        patched = fe8data.patch_character_field(patched, 0, "stat_bonus3", -1)  # signed, like retail Rhys's Def
         patched = fe8data.patch_character_field(patched, 0, "jid", "JID_TESTCLASS2")
         patched = fe8data.patch_character_field(patched, 0, "fixed_growth_start2", 35)
 
         fe8 = fe8data.read_fe8data(patched)
         self.assertEqual(fe8.characters[0].level, 99)
-        self.assertEqual(fe8.characters[0].stat_bonus[3], 255)
+        self.assertEqual(fe8.characters[0].stat_bonus[3], -1)
+        with self.assertRaises(ValueError):
+            fe8data.patch_character_field(patched, 0, "stat_bonus3", 128)
         self.assertEqual(fe8.characters[0].jid, "JID_TESTCLASS2")
         self.assertEqual(fe8.characters[0].fixed_growth_start[2], 35)
         # untouched fixed_growth_start entries and other fields survive

@@ -744,7 +744,7 @@ def _read_character(data: bytes, index: int, base: Optional[int] = None) -> Char
         level=rec[0x36],
         build=rec[0x37],
         weight=rec[0x38],
-        stat_bonus=list(rec[0x39:0x41]),
+        stat_bonus=_signed(rec[0x39:0x41]),  # signed: retail PID_KILROY has Def -1 (0xFF)
         growth=list(rec[0x41:0x49]),
         fixed_growth_start=list(rec[0x49:0x51]),
         mpid=_resolve(data, mpid_ptr),
@@ -1224,7 +1224,7 @@ def patch_character_field(data: bytes, index: int, field: str, value) -> bytes:
     - ``level``, ``build``, ``weight``, ``start_transform_gauge``,
       ``biorhythm_phase`` (0-255), ``roster_order``, ``biorhythm_pattern``
       (0-65535);
-    - ``stat_bonus0..7``, ``growth0..7``, ``fixed_growth_start0..7`` (0-255)."""
+    - ``stat_bonus0..7`` (-128..127), ``growth0..7``, ``fixed_growth_start0..7`` (0-255)."""
     off = table_start(data, "character") + index * CHARACTER_RECORD_SIZE
     if field == "pid":
         return _patch_id(data, "character", index, value)
@@ -1246,7 +1246,13 @@ def patch_character_field(data: bytes, index: int, field: str, value) -> bytes:
         struct.pack_into(">H", out, off + (0x30 if field == "roster_order" else 0x32), int(value))
     elif re.fullmatch(r"(stat_bonus|growth|fixed_growth_start)[0-7]", field):
         name, i = field[:-1], int(field[-1])
-        out[off + {"stat_bonus": 0x39, "growth": 0x41, "fixed_growth_start": 0x49}[name] + i] = _byte(value)
+        if name == "stat_bonus":  # signed
+            if not -128 <= int(value) <= 127:
+                raise ValueError("must be -128 to 127")
+            byte = int(value) & 0xFF
+        else:
+            byte = _byte(value)
+        out[off + {"stat_bonus": 0x39, "growth": 0x41, "fixed_growth_start": 0x49}[name] + i] = byte
     else:
         raise ValueError(f"Unknown character field {field!r}")
     return bytes(out)

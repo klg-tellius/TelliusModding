@@ -355,6 +355,22 @@ class AiTests(unittest.TestCase):
         self.assertEqual(sim.state.turn, 2)
         self.assertNotEqual(sim.state.units[e2.uid].tile, (7, 7))  # moved towards the player
 
+    def test_negative_mov_change_slows_the_move(self):
+        # retail SEQ_NEARESTUNITMOVE_BLACKNIGHT: move_stat(add=-3), move, move_stat(add=3)
+        cp = _cp({"SEQ_ATK": "end()\n", "SEQ_SLOW": "r0 = move_stat(add=-3)\nmove_nearest()\n"
+                                                    "r0 = move_stat(add=3)\nend()\n"})
+        world = _world(width=12, height=1, cp=cp)
+        state = GameState()
+        _unit(state, "PID_A", 11, 0)
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_SLOW")
+        from fe_modding.playthrough.state import AiTurn
+
+        state.pending = [AiTurn(e.uid)]
+        sim = Simulation(world, state)
+        sim.run()
+        self.assertEqual(sim.state.units[e.uid].tile, (2, 0))  # Mov 5 - 3
+        self.assertEqual(sim.state.units[e.uid].move, 5)
+
     def test_label_fallthrough_into_next_section(self):
         cp = _cp({"SEQ_A": "goto L5\n", "SEQ_B": "L5:\nend()\n"})
         world = _world(cp=cp)

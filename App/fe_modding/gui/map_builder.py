@@ -996,6 +996,9 @@ class MapBuilder(EditorPanel):
         self._rendered_props = signature
         self._hover.configure(text="")
         self._refresh_canvas()
+        play = self._windows.get("play")
+        if play is not None and play.winfo_exists():
+            play.backdrop_ready(payload)  # the Play window may have drawn before the picture was ready
 
     # -- undo ------------------------------------------------------------------------------
     def _state(self) -> tuple:

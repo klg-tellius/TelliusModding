@@ -724,7 +724,9 @@ class AiStep:
         return "item use not simulated"
 
     def _op_600(self, e, prog):
-        self.unit.move += int(e.d or 0)
+        change = int(e.d or 0)
+        change = change - (1 << 32) if change & 0x80000000 else change  # signed: Black Knight scripts use -3
+        self.unit.move = max(0, self.unit.move + change)
         self.turn.registers[int(e.a) & 3] = self.unit.move
         return f"Mov = {self.unit.move}"
 
