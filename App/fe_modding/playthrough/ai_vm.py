@@ -16,11 +16,15 @@ What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
 - action entries roll their chance (``rn <= chance``), register a candidate
   and set the found flag; a later action replaces the candidate.
 
-What is the simulator's own choice: the target and tile of an attack are
-picked by a score built from the unit's MTYPE weights (damage dealt, share
-of the target's HP, counter damage taken, terrain) over the battle forecast,
-not the engine's exact formula; movement towards a goal takes the reachable
-tile with the shortest remaining path. Steal, ballistas, rocks, skills other
+The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_*``:
+each (weapon, foe, tile) scores sum(MTYPE weight x term) / 16 over the battle
+forecast - expected damage, % of the foe's HP, the class bonuses of the foe's
+class flags, the turn number, expected counter damage and % of own HP lost
+(subtracted), the tile's terrain - and the best wins (ties: the shorter walk).
+The simulator's own parts: the adjacent-foes and skill terms are left out (their
+weight table and skills are not decoded), "expected" is damage x hit%, and the
+engine's range-gated damage curve is not applied. Movement towards a goal takes
+the reachable tile with the shortest remaining path. Steal, ballistas, rocks, skills other
 than Shove and item use are logged as not simulated.
 """
 
@@ -42,6 +46,12 @@ ATTACK, MOVE = 0, 1
 FALLBACK = {ATTACK: [cp_data.Entry(101, a=100), cp_data.Entry(1001)],
             MOVE: [cp_data.Entry(206), cp_data.Entry(1001)]}
 DEFAULT_SCRIPTS = {ATTACK: "SEQ_NOATTACK", MOVE: "SEQ_NOMOVE"}
+#: Class category tokens -> the bit of the class flag halfword the MTYPE class_flag_N bonuses read
+#: (``ai_score_attack_tile_mtype_*``, class +0x3A).
+CLASS_FLAG_BITS = {"mage": 0, "fly": 1, "knight": 2, "armor": 3, "alize": 4, "human": 5, "beast": 6, "dragon": 7,
+                   "bird": 8, "hero": 10}
+#: Attack candidates kept with the chosen one, for the window.
+RANKING_SIZE = 12
 
 
 # -- programs ---------------------------------------------------------------------------------------
@@ -166,7 +176,8 @@ def threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
 
 
 def _mtype(world: World, unit: SimUnit) -> dict:
-    defaults = {"damage_dealt": 4, "hp_ratio": 1, "damage_taken": 2, "terrain": 1, "turn_number": 0}
+    defaults = {"damage_dealt": 64, "hp_ratio": 16, "class_bonus": 32, "damage_taken": 32, "terrain": 32,
+                "hp_after_ratio": 16, "class_flag_0": 5, "class_flag_10": 10}  # retail MTYPE_NORMAL
     if world.cp is None or not isinstance(unit.mtype, str):
         return defaults
     section = world.cp.section(unit.mtype)
@@ -387,14 +398,19 @@ class AiStep:
         return movement.destinations(self.world, self.state, self.unit)
 
     def _best_attack(self, foes: list, in_place: bool) -> Optional[dict]:
+        """Score every (weapon, foe, tile) the unit could attack with, as the engine's
+        ``ai_score_attack_tile_mtype_*`` do: sum(MTYPE weight x term) / 16, best first. The best
+        carries ``ranking``, the top candidates with their terms, for the window's AI tab."""
         world, unit = self.world, self.unit
         weights = _mtype(world, unit)
-        best, best_score = None, None
         tiles = self._tiles(in_place)
         original = unit.tile
+        flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
+        candidates = []
         for index, item in combat.weapon_items(world, unit):
             low, high = combat.item_range(unit, item)
             for foe in foes:
+                class_sum = sum(flag_bonus[c] for c in set(foe.categories) if c in flag_bonus)
                 for tile in tiles:
                     d = movement.distance(tile, foe.tile)
                     if not low <= d <= high:
@@ -407,19 +423,33 @@ class AiStep:
                     a, b = f.attacker, f.defender
                     strikes = a.strikes * (2 if a.doubles else 1)
                     dealt = min(foe.hp, a.damage * strikes) * a.hit / 100
-                    taken = (b.damage * b.strikes * (2 if b.doubles else 1) * b.hit / 100) if b.can_attack else 0
+                    taken = min(unit.hp, b.damage * b.strikes * (2 if b.doubles else 1) * b.hit / 100) \
+                        if b.can_attack else 0
                     t = world.terrain_at(*tile)
-                    terrain = (t.avoid + t.defense) if t is not None else 0
-                    score = (weights.get("damage_dealt", 0) * dealt
-                             + weights.get("hp_ratio", 0) * dealt * 100 / max(1, foe.hp)
-                             - weights.get("damage_taken", 0) * taken
-                             + weights.get("terrain", 0) * terrain
-                             + (1000 if dealt >= foe.hp and a.hit >= 50 else 0)
-                             - 0.01 * tiles[tile][0])
-                    if best_score is None or score > best_score:
-                        best_score = score
-                        best = {"action": "attack", "dest": tile, "target": foe.uid, "item": index,
-                                "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})"}
+                    terms = {  # term -> (value, signed weight)
+                        "damage_dealt": (dealt, weights.get("damage_dealt", 0)),
+                        "hp_ratio": (dealt * 100 / max(1, foe.hp), weights.get("hp_ratio", 0)),
+                        "class_bonus": (class_sum, weights.get("class_bonus", 0)),
+                        "turn_number": (self.state.turn, weights.get("turn_number", 0)),
+                        "damage_taken": (taken, -weights.get("damage_taken", 0)),
+                        "terrain": ((t.avoid + t.defense) if t is not None else 0, weights.get("terrain", 0)),
+                        "hp_after_ratio": (taken * 100 / max(1, unit.hp), -weights.get("hp_after_ratio", 0)),
+                    }
+                    score = sum(value * weight for value, weight in terms.values()) / 16
+                    candidates.append({
+                        "action": "attack", "dest": tile, "target": foe.uid, "item": index,
+                        "score": score, "path": tiles[tile][0],
+                        "terms": {k: (round(v, 1), w) for k, (v, w) in terms.items()},
+                        "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})",
+                        "row": f"{world.name(foe.pid)} at {foe.tile}, from {tile}, {world.item_name(item.iid)}: "
+                               f"hit {a.hit} dmg {a.damage}{' x2' if a.doubles else ''}",
+                    })
+        if not candidates:
+            return None
+        candidates.sort(key=lambda c: (-c["score"], c["path"]))  # ties: the shorter walk
+        best = dict(candidates[0])
+        best["ranking"] = [{k: c[k] for k in ("score", "terms", "row")} for c in candidates[:RANKING_SIZE]]
+        best["ranking_total"] = len(candidates)
         return best
 
     def _attack(self, e, foes, in_place=False):
@@ -429,7 +459,8 @@ class AiStep:
         if best is None:
             return "no target in reach"
         self._register(best)
-        return best["text"]
+        return best["text"] + "".join(f"\n    {i}. {c['score']:7.1f}  {c['row']}"
+                                      for i, c in enumerate(best["ranking"][:5], 1))
 
     def _op_100(self, e, prog):
         pid = e.e
@@ -761,7 +792,8 @@ class AiStep:
             self.state.emit("action", f"{self.world.name(unit.pid)} escapes", uid=unit.uid)
             return
         command = Act(unit.uid, cand["dest"], action, cand.get("target"), cand.get("item"))
-        self.emit(f"acts: {cand['text']}")
+        self.emit(f"acts: {cand['text']}", decision={k: cand[k] for k in ("text", "ranking", "ranking_total")
+                                                      if k in cand})
         try:
             apply_command(self.world, self.state, command, by_ai=True)
         except ValueError as exc:

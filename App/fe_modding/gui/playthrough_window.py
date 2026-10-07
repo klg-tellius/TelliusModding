@@ -795,7 +795,11 @@ class PlaythroughWindow(_Window):
         state, world = self.sim.state, self.sim.world
         turn = next((t for t in state.pending if isinstance(t, AiTurn)), None)
         if turn is None:
-            self._write(self._ai_text, [("No AI unit is acting.", "muted")])
+            lines = [("No AI unit is acting.", "muted")]
+            last = self._last_decision()
+            if last is not None:
+                lines += ["", (f"Last decision: {last[0]}", "head")] + self._ranking_lines(last[1])
+            self._write(self._ai_text, lines)
             return
         unit = state.units.get(turn.uid)
         lines = [(f"{world.name(unit.pid) if unit else turn.uid}: {turn.stage}", "head"),
@@ -803,6 +807,7 @@ class PlaythroughWindow(_Window):
                  f"{'none' if turn.threat_limit == 0xFFFF else turn.threat_limit}   entries run {turn.steps}"]
         if turn.candidate:
             lines.append(f"candidate: {turn.candidate.get('text')}")
+            lines += self._ranking_lines(turn.candidate)
         current = None
         prog = None
         if turn.stage in ("attack", "move"):
@@ -819,6 +824,48 @@ class PlaythroughWindow(_Window):
                     owner = "" if prog.owners[i] == prog.name else f"   [{prog.owners[i]}]"
                     lines.append((f"  {i:3d}  {line}{owner}", "muted" if i >= prog.body else None))
         self._write(self._ai_text, lines, current)
+
+    #: Short headers of the attack-score terms (``ai_vm._best_attack``), in its order.
+    TERM_HEADERS = (("damage_dealt", "dmg"), ("hp_ratio", "hp%"), ("class_bonus", "class"), ("turn_number", "turn"),
+                    ("damage_taken", "taken"), ("terrain", "terr"), ("hp_after_ratio", "own%"))
+
+    def _last_decision(self) -> Optional[tuple]:
+        """(who acted and how, its decision) of the latest AI action up to the current entry, this phase."""
+        sim = self.sim
+        for i in range(sim.cursor, max(-1, sim.cursor - 400), -1):
+            for out in reversed(sim.history[i].outputs):
+                if out.kind == "phase":
+                    return None
+                decision = out.data.get("decision") if out.kind == "ai" else None
+                if decision and decision.get("ranking"):
+                    unit = sim.state.units.get(out.data.get("uid"))
+                    who = sim.world.name(unit.pid) if unit is not None else "?"
+                    return f"{who} {decision['text']}", decision
+        return None
+
+    def _ranking_lines(self, candidate: dict) -> list:
+        """How the attack was chosen: every scored (target, tile, weapon), best first, with each term
+        as value x weight (weights are the unit's MTYPE, in sixteenths; counter terms subtract)."""
+        ranking = candidate.get("ranking")
+        if not ranking:
+            return []
+        total = candidate.get("ranking_total", len(ranking))
+        weights = ranking[0]["terms"]  # the unit's MTYPE: the same weight in every row
+        lines = ["", (f"How the target was chosen ({total} possible attacks, best first)", "head"),
+                 ("score = sum(value x weight) / 16; the weight is under each term, the counter terms subtract",
+                  "muted")]
+        lines.append(("              " + "".join(f"{short:>8s}" for _key, short in self.TERM_HEADERS), "muted"))
+        lines.append(("     weight   " + "".join(f"{weights[key][1]:>8d}" for key, _short in self.TERM_HEADERS),
+                      "muted"))
+        for i, c in enumerate(ranking, 1):
+            cells = "".join(f"{c['terms'][key][0]:>8g}" for key, _short in self.TERM_HEADERS)
+            lines.append((f"{i:3d}. {c['score']:7.1f} {cells}", None if i > 1 else "current"))
+            lines.append((f"        {c['row']}", "muted"))
+        if total > len(ranking):
+            lines.append((f"        ... {total - len(ranking)} more, lower", "muted"))
+        lines.append(("Not simulated: the adjacent-foes and skill terms; expected damage is damage x hit%.",
+                      "muted"))
+        return lines
 
     def _refresh_message(self) -> None:
         sim = self.sim

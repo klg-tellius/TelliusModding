@@ -375,6 +375,30 @@ class AiTests(unittest.TestCase):
         self.assertEqual(sim.state.turn, 2)
         self.assertNotEqual(sim.state.units[e2.uid].tile, (7, 7))  # moved towards the player
 
+    def test_attack_choice_comes_with_its_ranking(self):
+        cp = _cp({"SEQ_ATK": "attack(chance=100)\nend()\n"})
+        world = _world(cp=cp)
+        state = GameState()
+        strong = _unit(state, "PID_A", 2, 0)
+        weak = _unit(state, "PID_C", 0, 2)
+        weak.hp = 3  # the attack removes all of its HP: the better target
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_ATK")
+        from fe_modding.playthrough.state import AiTurn
+
+        state.pending = [AiTurn(e.uid)]
+        sim = Simulation(world, state)
+        sim.run()
+        decision = next(o.data["decision"] for en in sim.history for o in en.outputs
+                        if o.kind == "ai" and o.data.get("decision"))
+        ranking = decision["ranking"]
+        self.assertGreater(len(ranking), 1)
+        self.assertEqual([c["score"] for c in ranking], sorted((c["score"] for c in ranking), reverse=True))
+        self.assertIn("C", ranking[0]["row"])  # PID_C, the one it can finish
+        self.assertEqual(set(ranking[0]["terms"]), {"damage_dealt", "hp_ratio", "class_bonus", "turn_number",
+                                                    "damage_taken", "terrain", "hp_after_ratio"})
+        self.assertLess(sim.state.units[weak.uid].hp, 3)
+        self.assertEqual(sim.state.units[strong.uid].hp, sim.state.units[strong.uid].stats[0])
+
     def test_negative_mov_change_slows_the_move(self):
         # retail SEQ_NEARESTUNITMOVE_BLACKNIGHT: move_stat(add=-3), move, move_stat(add=3)
         cp = _cp({"SEQ_ATK": "end()\n", "SEQ_SLOW": "r0 = move_stat(add=-3)\nmove_nearest()\n"
