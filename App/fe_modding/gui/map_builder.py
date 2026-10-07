@@ -386,8 +386,14 @@ class _NewUnitDialog(tk.Toplevel):
             self._section = tk.StringVar(value=next((c for c in sections if c.split("  (", 1)[0] == section),
                                                     sections[0]))
             ttk.Label(body, text="Section").grid(row=5, column=0, sticky="w", pady=3)
-            ttk.Combobox(body, textvariable=self._section, values=sections, state="readonly", width=34).grid(
+            ttk.Combobox(body, textvariable=self._section, values=sections, state="readonly", width=60).grid(
                 row=5, column=1, sticky="w", pady=3, padx=(8, 0))
+            if not any(c.endswith(", battle start)") for c in sections):
+                ttk.Label(body, style="Muted.TLabel", wraplength=460, justify="left", text=(
+                    "This deployment file has no battle-start section. The enemies of the battle are usually "
+                    "in the Normal, Hard and Maniac files: choose one in Deployment file at the top first. "
+                    "Units of an 'event scene only' section appear only during that scene.")).grid(
+                    row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
         else:
             ttk.Label(body, text=f"On tile {tile}, section {section}", style="Muted.TLabel").grid(
                 row=0, column=0, columnspan=2, sticky="w")
@@ -401,7 +407,7 @@ class _NewUnitDialog(tk.Toplevel):
             ttk.Label(body, text=label).grid(row=row, column=0, sticky="w", pady=3)
             widget.grid(row=row, column=1, sticky="w", pady=3, padx=(8, 0))
         buttons = ttk.Frame(body)
-        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        buttons.grid(row=8, column=0, columnspan=2, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Add", command=self._ok).pack(side="left")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
         self._character.focus_set()
@@ -451,6 +457,8 @@ class MapBuilder(EditorPanel):
         self._undo: list = []
         self._redo: list = []
         self._backdrop: Image.Image | None = None
+        self._script_strings_key = None  # (script path, mtime) the cache below was read from
+        self._script_strings_cache: Optional[set] = None
         self._render_generation = 0
         self._render_after = None
         self._render_wanted = False
@@ -707,10 +715,48 @@ class MapBuilder(EditorPanel):
         self._filter_combo.configure(values=["All sections"] + names)
         if self._filter_var.get() not in names:
             self._filter_var.set("All sections")
-        labelled = [f"{name}  ({self._section_army(doc.section(name))})" for name in names]
+        deployed = self._script_strings()
+        labelled = [f"{name}  ({self._section_army(doc.section(name))}{self._section_role(name, deployed)})"
+                    for name in names]
         self._section_combo.configure(values=labelled)
         if self._section_var.get() not in labelled:
             self._section_var.set(labelled[0] if labelled else "")
+
+    def _script_strings(self) -> Optional[set]:
+        """The strings of the chapter's saved script (the section names it deploys), or None."""
+        path = self._script.chapter_path if self._script is not None else None
+        if path is None or not path.is_file():
+            return None
+        if self._script_strings_key != (path, path.stat().st_mtime_ns):
+            self._script_strings_key = (path, path.stat().st_mtime_ns)
+            self._script_strings_cache = {m.decode("latin-1") for m in re.findall(rb"[\w.]{3,}", path.read_bytes())}
+        return self._script_strings_cache
+
+    @staticmethod
+    def _section_role(name: str, deployed: Optional[set]) -> str:
+        """What a section is for, from its name (the retail naming) and whether the script names it."""
+        base = re.sub(r"_[cnhm]$", "", name)
+        if deployed is not None and name not in deployed and base not in deployed:
+            return ", not deployed by the script"
+        lowered = base.lower()
+        if "mikata" in lowered:
+            return ", player army"
+        if "boss" in lowered:
+            return ", boss"
+        if "event" in lowered or re.search(r"_ev\d", lowered):
+            return ", event scene only, not in the battle"
+        if "zoen" in lowered or re.search(r"_z\d", lowered):
+            return ", reinforcements"
+        if "first" in lowered:
+            return ", battle start"
+        return ""
+
+    def _battle_section(self) -> Optional[str]:
+        """The section new enemies of the battle usually go to: the first 'battle start' one."""
+        for label in self._section_combo.cget("values"):
+            if label.endswith(", battle start)"):
+                return label
+        return None
 
     def _filter_changed(self) -> None:
         """Show the picked section's units (or every section's); placed units go to it."""
@@ -1400,6 +1446,9 @@ class MapBuilder(EditorPanel):
         if not free:
             messagebox.showinfo("Add unit", "Every tile of the map already has a unit.", parent=self)
             return
+        battle = self._battle_section()
+        if battle is not None and "battle start" not in self._section_var.get():
+            self._section_var.set(battle)  # the usual place for a new enemy; the dialog can change it
         before = self._selection
         self._place_unit(free[0], choose_section=True)
         if self._selection != before and self._selection and self._selection[0] == "unit":

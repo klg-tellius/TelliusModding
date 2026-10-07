@@ -22,17 +22,24 @@ NOUNS = {"character": "character", "class": "class", "item": "item", "chapter": 
 EMPTY = "(empty record)"
 
 
-class NewRecordDialog(tk.Toplevel):
-    """Ask for a new record's ID and the record it starts as a copy of.
-    ``result`` is ``(new_id or None, copy_from index or None)``."""
+ALL_TYPES = "(all types)"
 
-    def __init__(self, parent: tk.Misc, kind: str, templates: list[str], selected: Optional[int] = None):
+
+class NewRecordDialog(tk.Toplevel):
+    """Ask for a new record's ID and the record it starts as a copy of (listed by name; with
+    ``groups``, one per template, a Type box narrows the list). ``result`` is
+    ``(new_id or None, copy_from index or None)``."""
+
+    def __init__(self, parent: tk.Misc, kind: str, templates: list[str], selected: Optional[int] = None,
+                 groups: Optional[list[str]] = None):
         super().__init__(parent)
         self.title(f"New {NOUNS[kind]}")
         self.transient(parent)
         self.result: Optional[tuple[Optional[str], Optional[int]]] = None
         self._kind = kind
         self._templates = templates
+        self._groups = groups if groups is not None and len(groups) == len(templates) else None
+        self._order = sorted(range(len(templates)), key=lambda i: templates[i].casefold())
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
         row = 0
@@ -46,10 +53,22 @@ class NewRecordDialog(tk.Toplevel):
             entry.focus_set()
             entry.icursor("end")
             row += 1
+        self._type = tk.StringVar(value=ALL_TYPES)
+        if self._groups is not None:
+            types = list(dict.fromkeys(self._groups))
+            if selected is not None and 0 <= selected < len(self._groups):
+                self._type.set(self._groups[selected])
+            ttk.Label(body, text="Type").grid(row=row, column=0, sticky="w", pady=2)
+            combo = ttk.Combobox(body, textvariable=self._type, values=[ALL_TYPES] + types, width=44,
+                                 state="readonly")
+            combo.grid(row=row, column=1, sticky="we", pady=2, padx=(8, 0))
+            combo.bind("<<ComboboxSelected>>", lambda e: self._fill())
+            row += 1
         self._template = tk.StringVar(value=templates[selected] if selected is not None else EMPTY)
         ttk.Label(body, text="Start as a copy of").grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Combobox(body, textvariable=self._template, values=[EMPTY] + templates, width=44,
-                     state="readonly").grid(row=row, column=1, sticky="we", pady=2, padx=(8, 0))
+        self._template_combo = ttk.Combobox(body, textvariable=self._template, width=44, state="readonly")
+        self._template_combo.grid(row=row, column=1, sticky="we", pady=2, padx=(8, 0))
+        self._fill()
         row += 1
         ttk.Label(body, style="Muted.TLabel", wraplength=420, justify="left", text=(
             "The record is added at the end of the table, so the numbers saves hold for the others stay valid. "
@@ -65,6 +84,15 @@ class NewRecordDialog(tk.Toplevel):
         self.bind("<Escape>", lambda e: self.destroy())
         self.grab_set()
 
+    def _fill(self) -> None:
+        """The template list: sorted by name, only the chosen type's."""
+        wanted = self._type.get()
+        shown = [self._templates[i] for i in self._order
+                 if self._groups is None or wanted == ALL_TYPES or self._groups[i] == wanted]
+        self._template_combo.configure(values=[EMPTY] + shown)
+        if self._template.get() not in shown:
+            self._template.set(shown[0] if shown and wanted != ALL_TYPES else EMPTY)
+
     def _ok(self) -> None:
         template = self._template.get()
         copy_from = self._templates.index(template) if template in self._templates else None
@@ -77,7 +105,11 @@ def add_record(parent: tk.Misc, session: Fe8DataSession, kind: str, templates: l
                selected: Optional[int] = None, source: object = None) -> Optional[int]:
     """Ask for and append a record; returns its index, or None when
     cancelled or refused (the error is shown)."""
-    dialog = NewRecordDialog(parent, kind, templates, selected)
+    groups = None
+    fe8 = getattr(session, "fe8", None)
+    if kind == "item" and fe8 is not None and len(fe8.items) == len(templates):
+        groups = [fe8data.item_category(item) for item in fe8.items]  # the Type filter
+    dialog = NewRecordDialog(parent, kind, templates, selected, groups)
     parent.wait_window(dialog)
     if dialog.result is None:
         return None

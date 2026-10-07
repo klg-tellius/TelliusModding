@@ -72,6 +72,8 @@ class _PlayCanvas(_BuildCanvas):
 class PlaythroughWindow(_Window):
     def __init__(self, builder) -> None:
         super().__init__(builder, "Play chapter", "1500x920")
+        self.transient("")  # a transient window has no maximize button on Windows
+        self.minsize(900, 560)
         self._builder = builder
         self._project = builder._project
         self._files = self._project.extracted_dir / "files"
@@ -689,13 +691,14 @@ class PlaythroughWindow(_Window):
             canvas.backdrop = self._builder._backdrop
         canvas.units = []
         visible = fog.visible_tiles(world, state) if state.fog else None
+        acting = next((t.uid for t in state.pending if isinstance(t, AiTurn)), None)  # marked like a selection
         for u in state.living():
             if visible is not None and not fog.can_see(world, state, u, visible):
                 continue
             canvas.units.append({
                 "key": u.uid, "x": u.x, "y": u.y, "pos2": (u.x, u.y),
                 "color": FACTION_COLORS.get(u.faction, "#8a8a8a"), "text": world.name(u.pid)[:3],
-                "selected": u.uid in (self._selected, self._watch, self._menu_target), "highlight": False,
+                "selected": u.uid in (self._selected, self._watch, self._menu_target, acting), "highlight": False,
                 "done": u.done and u.faction == state.phase, "hp": u.hp / max(1, u.stats[0]), "boss": u.boss,
             })
         zones = []
@@ -807,7 +810,9 @@ class PlaythroughWindow(_Window):
             lines += ["", (f"{turn.script}" + (" (built-in fallback)" if turn.fallback else ""), "head")]
             if prog is not None:
                 for i, line in enumerate(prog.lines):
-                    if i >= prog.body and i > turn.pc + 8:
+                    # the lines after the script's own (other scripts it falls through into) only once
+                    # the run gets there, and then a few around the current one
+                    if i >= prog.body and (turn.pc < prog.body or i > turn.pc + 8):
                         break
                     if i == turn.pc:
                         current = len(lines)
