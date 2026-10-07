@@ -399,6 +399,46 @@ class AiTests(unittest.TestCase):
         self.assertLess(sim.state.units[weak.uid].hp, 3)
         self.assertEqual(sim.state.units[strong.uid].hp, sim.state.units[strong.uid].stats[0])
 
+    def test_enemy_threat_map_is_the_hostiles_expected_damage(self):
+        from fe_modding.playthrough import combat as cb
+
+        # a corridor: the deciding enemy at 0 (Mov 9), two swordsmen (Mov 5) at 9 and 11
+        world = _world(width=12, height=1)
+        state = GameState()
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, move=9)
+        q1 = _unit(state, "PID_A", 9, 0)
+        q2 = _unit(state, "PID_C", 11, 0)
+        threat = ai_vm.enemy_threat_map(world, state, e)
+
+        def value(p):
+            f = cb.forecast(world, p, e, world.items["IID_SWORD"], 1).attacker
+            return ai_vm.expected_hit_damage(f)
+
+        v1, v2 = value(q1), value(q2)
+        self.assertGreater(v1, 0)
+        # q1 stands on a free tile it reaches (4-8, 10; not its own 9 nor q2's 11): strikes 3-9 and 11.
+        # q2 stands on 6-8, 10: strikes 5-9 and 11. The enemy reaches 0-8 (q1 blocks the corridor).
+        expected = {(3, 0): v1, (4, 0): v1, **{(x, 0): v1 + v2 for x in range(5, 9)}}
+        self.assertEqual(threat, expected)
+        # the attack score reads the map >> 4
+        self.assertEqual((threat[(5, 0)] >> 4) & 0xFFF, (v1 + v2) // 16)
+
+    def test_object_tiles_are_left_out_of_the_threat_map(self):
+        world = _world(width=8, height=1)
+        world.terrain_types = [fe8data.TerrainType(0, PLAIN, "MT_" + PLAIN, 0, avoid=0, defense=0, heal=0,
+                                                   move_costs=tuple([1] * 15)),
+                               fe8data.TerrainType(1, FOREST, "MT_" + FOREST, 0, avoid=0, defense=0, heal=0,
+                                                   move_costs=tuple([1] * 15), flag7=1)]
+        world.terrain_by_name = {t.name: t for t in world.terrain_types}
+        world.terrain[3][0] = FOREST
+        state = GameState()
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, move=6)
+        _unit(state, "PID_A", 6, 0)
+        threat = ai_vm.enemy_threat_map(world, state, e)
+        # the swordsman stands on 1, 2, 4, 5 or 7 (3 is an object tile, 6 its own): strikes 0-6;
+        # the enemy reaches 0-5 but not 3, where nobody can stand
+        self.assertEqual(set(threat), {(0, 0), (1, 0), (2, 0), (4, 0), (5, 0)})
+
     def test_damage_term_and_its_bonuses(self):
         from types import SimpleNamespace as S
 

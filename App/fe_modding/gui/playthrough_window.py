@@ -870,7 +870,8 @@ class PlaythroughWindow(_Window):
                   ("taken: the same for the counter (hit^2.125), subtracted: +50 near a death becomes -50.", "muted"),
                   ("hurt / own: how wounded the target / the attacker already is (0-10). near: units of its side "
                    "around the attack tile. skill: Provoke +50, Shade -50.", "muted"),
-                  ("Approximate: threat counts the hostile units that could strike the attack tile.", "muted")]
+                  ("threat: the summed expected damage (damage x hit%) of the hostile units that could strike the "
+                   "attack tile next turn, / 16.", "muted")]
         return lines
 
     def _refresh_message(self) -> None:

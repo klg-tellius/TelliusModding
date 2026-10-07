@@ -9,8 +9,9 @@ What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
   next run starts) or SET_SCRIPTS replaces it; after 256 entries the built-in
   fallback runs (``attack(chance=100)``, ``move_nearest()``);
 - a non-zero ``b`` word sets the threat limit before the entry runs; moves
-  then only stop on tiles whose threat (here: how many hostile units could
-  strike the tile next turn) is at most the limit;
+  then only stop on tiles whose ``ai_threat_map`` value is at most the limit
+  (:func:`enemy_threat_map`: the summed expected damage of the hostile units
+  that could strike the tile, 0-255, built for each deciding unit);
 - jumps go to the first LABEL entry with that number, reading on past the
   end of the script into the sections that follow it (``fallthrough``);
 - action entries roll their chance (``rn <= chance``), register a candidate
@@ -24,10 +25,11 @@ expected counter instead, at most 15), how wounded the target already is (0-10),
 the weighted units of the unit's side around the tile (table 0x80272F44), the
 foe's class bonuses, the turn number, the foe's Provoke (+50) or Shade (-50);
 minus the expected counter (hit^2.125, the same +50 near the attacker's death),
-the tile's threat and how wounded the attacker is. The best wins (ties: the
-shorter walk). The simulator's own part: the tile threat counts the hostile units
-that could strike it (the engine's ai_threat_map scale is not decoded). Movement towards a goal takes
-the reachable tile with the shortest remaining path. Steal, ballistas, rocks, skills other
+the tile's threat (``ai_threat_map`` >> 4) and how wounded the attacker is. The
+best wins (ties: the shorter walk). Not reproduced: the Warp staff routine (which
+rebuilds the map mid-phase; the simulator has no Warp) and the order of equal
+scores. Movement towards a goal takes the reachable tile with the
+shortest remaining path. Steal, ballistas, rocks, skills other
 than Shove and item use are logged as not simulated.
 """
 
@@ -229,18 +231,85 @@ def skill_term(foe: SimUnit) -> int:
     return 0
 
 
-def threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
-    """Tile -> number of units hostile to ``unit`` that could strike it next turn."""
-    out: dict = {}
+#: Terrain types an ally (green) phase leaves out of the threat map (``build_enemy_threat_map``).
+ALLY_PHASE_SKIPPED_TERRAIN = frozenset({0x26, 0x27, 0x28, 0x2A})
+THREAT_CAP = 255  # 0x80366E70 / 0x80366E72, and the per-tile sum
+
+
+def threat_weapons(world: World, unit: SimUnit) -> list:
+    """The weapons ``FUN_800fd774`` / ``build_ai_weapon_threat_map`` count for a unit: among its first
+    four items, the best close weapon (max range under 2: the highest might, the first on a tie) and
+    the best ranged one (the longest max range, then the highest might). [(index, item)]."""
+    close = ranged = None
+    for index, item in combat.weapon_items(world, unit):
+        if index >= 4:
+            continue
+        high = combat.item_range(unit, item)[1]
+        if high < 2:
+            if close is None or item.might > close[1].might:
+                close = (index, item)
+        else:
+            best = combat.item_range(unit, ranged[1])[1] if ranged is not None else -1
+            if ranged is None or high > best or (high == best and item.might > ranged[1].might):
+                ranged = (index, item)
+    return [w for w in (close, ranged) if w is not None]
+
+
+def expected_hit_damage(side) -> int:
+    """``FUN_800fd774``'s expected damage, linear in the hit chance: damage x hit, or on a double attack
+    2 x damage x (1 - (1 - hit)^2); truncated."""
+    p = min(1.0, max(0.0, side.hit * 0.01))
+    damage = max(0, side.damage)
+    if side.doubles:
+        return int(2.0 * damage * (1.0 - (1.0 - p) * (1.0 - p)))
+    return int(damage * p)
+
+
+def enemy_threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
+    """``ai_threat_map`` as ``E_CP_Decide`` builds it for the deciding ``unit`` (``FUN_800fd774`` then
+    ``build_enemy_threat_map``), tile -> 0..255: on every tile the unit can move to, the sum over the
+    hostile units of the expected damage of their close or ranged weapon (the larger where both reach)
+    on the unit as it stands, for each weapon that passes the reach gate (distance <= both Movs + the
+    weapon's max range) and on the tiles it could strike from a free tile it can move to."""
+    def standable(tile) -> bool:
+        """Byte 7 of the terrain's stats (``init_full_map_passability_grid`` copies it to the grid at
+        +0xE18E: object tiles) is 0, and in an ally phase not an objective-like terrain
+        (``check_terrain_type_during_enemy_phase``)."""
+        t = world.terrain_at(*tile)
+        if t is None:
+            return True
+        if getattr(t, "flag7", 0):
+            return False
+        return not (state.phase == 2 and t.index in ALLY_PHASE_SKIPPED_TERRAIN)
+
+    reach = {t for t in movement.destinations(world, state, unit) if standable(t)}
+    occupied = {u.tile for u in state.units.values() if u.on_map}
+    total: dict = {}
+    original = unit.tile
     for other in state.living():
-        if not hostile(unit.faction, other.faction):
+        if not other.on_map or not hostile(unit.faction, other.faction):
             continue
-        ranges = combat.attack_ranges(world, other)
-        if not ranges:
-            continue
-        for tile in movement.threat_tiles(world, state, other, ranges):
-            out[tile] = out.get(tile, 0) + 1
-    return out
+        best: dict = {}
+        stands = None
+        for _index, item in threat_weapons(world, other):
+            low, high = combat.item_range(other, item)
+            if movement.distance(original, other.tile) > unit.move + other.move + high:
+                continue  # check_reachability_with_movement
+            forecast = combat.forecast(world, other, unit, item, max(1, low))
+            value = min(THREAT_CAP, expected_hit_damage(forecast.attacker))
+            if value == 0:
+                continue
+            if stands is None:  # ai_build_weapon_threat_range_map: free tiles it can move to
+                stands = [t for t in movement.destinations(world, state, other)
+                          if t not in occupied and standable(t)]
+            for stand in stands:
+                for tile in movement.tiles_in_range(world, stand, low, high):
+                    if tile in reach and best.get(tile, 0) < value:
+                        best[tile] = value
+        for tile, value in best.items():
+            total[tile] = min(THREAT_CAP, total.get(tile, 0) + value)
+    return total
+
 
 
 def _mtype(world: World, unit: SimUnit) -> dict:
@@ -475,7 +544,7 @@ class AiStep:
         tiles = self._tiles(in_place)
         original = unit.tile
         flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
-        threat = threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
+        threat = enemy_threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
         w = {key: weights.get(key, 0) for key in SCORE_TERMS}
         own_hurt = _hurt(unit)
         candidates = []
@@ -504,7 +573,8 @@ class AiStep:
                         "turn_number": (self.state.turn, _weighted(self.state.turn, w["turn_number"])),
                         "skill_bonus": (s := skill_term(foe), _weighted(s, w["skill_bonus"])),
                         "damage_taken": (taken, -taken),  # already weighted, +50 death risk included
-                        "terrain": (t := threat.get(tile, 0), -_weighted(t, w["terrain"])),
+                        # ai_threat_map read as (value >> 4) & 0xFFF
+                        "terrain": (t := (threat.get(tile, 0) >> 4) & 0xFFF, -_weighted(t, w["terrain"])),
                         "hp_after_ratio": (own_hurt, -_weighted(own_hurt, w["hp_after_ratio"])),
                     }
                     score = sum(points for _value, points in terms.values())
@@ -644,7 +714,7 @@ class AiStep:
             return None
         reach = movement.destinations(world, state, unit)
         dist = _goal_distances(world, state, unit, goals)
-        threat = threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
+        threat = enemy_threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
         here = dist.get(unit.tile, 1 << 30)
         candidates = [t for t in reach if t in dist]
         if threat:
@@ -725,7 +795,7 @@ class AiStep:
 
     def _op_205(self, e, prog):
         reach = movement.destinations(self.world, self.state, self.unit)
-        threat = threat_map(self.world, self.state, self.unit)
+        threat = enemy_threat_map(self.world, self.state, self.unit)
         best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
         if best != self.unit.tile and not _hold(self.unit):
             self._register({"action": "wait", "dest": best, "text": f"move to the safest tile {best}"})
@@ -859,7 +929,7 @@ class AiStep:
         if percent >= record.retreat_below or record.retreat_below <= 0:
             return False
         reach = movement.destinations(self.world, self.state, unit)
-        threat = threat_map(self.world, self.state, unit)
+        threat = enemy_threat_map(self.world, self.state, unit)
         best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
         self._register({"action": "wait", "dest": best, "text": f"retreat to {best} (HP {percent}%)"})
         self.emit(f"HP {percent}% < {record.retreat_below}%: retreats to {best}")
