@@ -12,7 +12,7 @@ from fe_modding import emulator
 
 class FindTests(unittest.TestCase):
     def test_configured_path_wins_and_must_exist(self):
-        exists = lambda p: str(p) == "/opt/Dolphin.exe"  # noqa: E731
+        exists = lambda p: Path(p) == Path("/opt/Dolphin.exe")  # noqa: E731
         self.assertEqual(emulator.find_dolphin("/opt/Dolphin.exe", is_file=exists), Path("/opt/Dolphin.exe"))
         self.assertIsNone(emulator.find_dolphin("/missing/Dolphin.exe", is_file=exists, which=lambda n: "/usr/bin/x"))
 
