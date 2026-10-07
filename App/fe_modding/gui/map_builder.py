@@ -92,7 +92,8 @@ TOOL_HELP = {
     "terrain": "Click or drag over tiles to paint the chosen type.\nRight-click a tile to pick its type.",
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
-    "unit": "Click a tile to add a unit there, in the chosen section.",
+    "unit": "Click a tile to add a unit there, in the chosen section (or use Add unit... above, "
+            "then drag the unit).",
     "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
             "Delete removes the selected zone.",
@@ -369,14 +370,27 @@ class _BuildCanvas(tk.Canvas):
 
 
 class _NewUnitDialog(tk.Toplevel):
-    def __init__(self, parent, characters, classes, tile, section: str) -> None:
+    def __init__(self, parent, characters, classes, tile, section: str, sections: Optional[list] = None) -> None:
+        """``sections`` (the Build tab's section choices): show a section picker, starting on ``section``;
+        ``result`` then ends with the chosen one."""
         super().__init__(parent)
         self.title("New unit")
         self.transient(parent)
         self.result = None
+        self._sections = sections
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text=f"On tile {tile}, section {section}", style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        if sections:
+            ttk.Label(body, text=f"On tile {tile} (drag it afterwards)", style="Muted.TLabel").grid(
+                row=0, column=0, columnspan=2, sticky="w")
+            self._section = tk.StringVar(value=next((c for c in sections if c.split("  (", 1)[0] == section),
+                                                    sections[0]))
+            ttk.Label(body, text="Section").grid(row=5, column=0, sticky="w", pady=3)
+            ttk.Combobox(body, textvariable=self._section, values=sections, state="readonly", width=34).grid(
+                row=5, column=1, sticky="w", pady=3, padx=(8, 0))
+        else:
+            ttk.Label(body, text=f"On tile {tile}, section {section}", style="Muted.TLabel").grid(
+                row=0, column=0, columnspan=2, sticky="w")
         self._character = _LabelPicker(body, width=34)
         self._character.set_choices(characters)
         self._class = _LabelPicker(body, width=34)
@@ -387,7 +401,7 @@ class _NewUnitDialog(tk.Toplevel):
             ttk.Label(body, text=label).grid(row=row, column=0, sticky="w", pady=3)
             widget.grid(row=row, column=1, sticky="w", pady=3, padx=(8, 0))
         buttons = ttk.Frame(body)
-        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Add", command=self._ok).pack(side="left")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
         self._character.focus_set()
@@ -403,7 +417,7 @@ class _NewUnitDialog(tk.Toplevel):
         if not isinstance(pid, str):
             messagebox.showerror("New unit", "Choose a character.", parent=self)
             return
-        self.result = (pid, jid, level)
+        self.result = (pid, jid, level) + ((self._section.get(),) if self._sections else ())
         self.destroy()
 
 
@@ -529,6 +543,8 @@ class MapBuilder(EditorPanel):
         self._canvas.redraw()
 
     def _build_tools(self, parent: ttk.Frame) -> None:
+        ttk.Button(parent, text="Add unit...", style="Accent.TButton", command=self.add_unit).pack(
+            anchor="w", fill="x", pady=(0, 10))
         ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         self._tool = tk.StringVar(value="select")
         for key, text in (("select", "Select / move"), ("terrain", "Paint terrain"), ("prop", "Place prop"),
@@ -1362,18 +1378,46 @@ class MapBuilder(EditorPanel):
         self._tool_changed()
         self._refresh_prop_list(select=name)
 
-    def _place_unit(self, tile) -> None:
+    def add_unit(self) -> None:
+        """Add a unit without picking a tile first: the Place unit dialog, then the unit stands on a free
+        tile near the middle of the playable area, selected, ready to be dragged where it belongs."""
+        data = self._map.map_data
+        if data is None or data.capacity is None:
+            messagebox.showinfo("Add unit", "Open a chapter with a map first.", parent=self)
+            return
+        self._tool.set("unit")
+        self._tool_changed()
+        cap = data.capacity
+        x0, x1, y0, y1 = self._canvas.playable or (0, cap.x_size, 0, cap.y_size)
+        doc = self._doc()
+        taken = {(u[F["pos_x"]], u[F["pos_y"]]) for section in (doc.sections if doc else ()) for u in section.units}
+        centre = ((x0 + x1 - 1) / 2, (y0 + y1 - 1) / 2)
+        free = sorted(((x, y) for x in range(x0, x1) for y in range(y0, y1) if (x, y) not in taken),
+                      key=lambda t: (abs(t[0] - centre[0]) + abs(t[1] - centre[1]), t[1], t[0]))
+        if not free:
+            messagebox.showinfo("Add unit", "Every tile of the map already has a unit.", parent=self)
+            return
+        before = self._selection
+        self._place_unit(free[0], choose_section=True)
+        if self._selection != before and self._selection and self._selection[0] == "unit":
+            self._hover.configure(text=f"Unit added on tile {free[0]}: drag it to where it should stand.")
+
+    def _place_unit(self, tile, choose_section: bool = False) -> None:
         section = self._target_section()
         current = self._variant()
         if not section or current is None:
             messagebox.showinfo("Place unit", "This chapter has no deployment section.", parent=self)
             return
         characters, classes, _items, _skills = self._choices()
-        dialog = _NewUnitDialog(self, characters, classes, tile, section)
+        sections = list(self._section_combo.cget("values")) if choose_section else None
+        dialog = _NewUnitDialog(self, characters, classes, tile, section, sections)
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        pid, jid, level = dialog.result
+        pid, jid, level = dialog.result[:3]
+        if choose_section:
+            self._section_var.set(dialog.result[3])
+            section = self._target_section()
         docs_now = {v: self._deploy.document(v) for v in self._deploy.variants()}
         template_section = docs_now[current].section(section)
         template = list(template_section.units[0]) if template_section.units else dispo.new_unit_values()

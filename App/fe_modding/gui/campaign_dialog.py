@@ -13,12 +13,14 @@ class NewCampaignDialog(tk.Toplevel):
     """Rows of chapters (title, the chapter to copy, empty units) and characters (ID, name, the character
     to copy). ``result`` is ``(chapter specs, character specs, after)`` or None."""
 
-    def __init__(self, parent: tk.Misc, templates: dict, after_choices: dict, characters: list, default_after):
+    def __init__(self, parent: tk.Misc, templates: dict, after_choices: dict, characters: dict, default_after):
+        """``characters`` maps a shown label (``"Oscar  (PID_OSCAR)"``) to the PID; shown sorted."""
         super().__init__(parent)
         self.title("New campaign")
         self.transient(parent.winfo_toplevel())
         self.result = None
-        self._templates, self._after_choices, self._characters = templates, after_choices, characters
+        self._templates, self._after_choices = templates, after_choices
+        self._characters = dict(sorted(characters.items(), key=lambda kv: kv[0].casefold()))
         self._chapter_rows: list = []
         self._cast_rows: list = []
 
@@ -44,7 +46,15 @@ class NewCampaignDialog(tk.Toplevel):
         self._chapters.pack(fill="x")
         ttk.Button(frame, text="Add chapter row", command=self._add_chapter_row).pack(anchor="w", pady=(4, 0))
 
-        ttk.Label(frame, text="Characters (optional)", style="Strong.TLabel").pack(anchor="w", pady=(12, 2))
+        ttk.Label(frame, text="Characters (optional)", style="Strong.TLabel").pack(anchor="w", pady=(12, 0))
+        ttk.Label(frame, style="Muted.TLabel", justify="left", text=(
+            "Each new character is a copy of an existing one (class, stats, portrait, models).\n"
+            "ID: the character's internal ID, PID_ then capital letters, digits or _.\n"
+            "Name: the name shown in game; empty keeps the copied character's name.")).pack(anchor="w", pady=(0, 4))
+        header = ttk.Frame(frame)
+        header.pack(fill="x")
+        for text, width, pad in (("ID", 18, 0), ("Name in game", 18, 4), ("Copy of", 24, 6)):
+            ttk.Label(header, text=text, width=width, style="Muted.TLabel").pack(side="left", padx=(pad, 0))
         self._cast = ttk.Frame(frame)
         self._cast.pack(fill="x")
         ttk.Button(frame, text="Add character row", command=self._add_cast_row).pack(anchor="w", pady=(4, 0))
@@ -79,11 +89,11 @@ class NewCampaignDialog(tk.Toplevel):
         row = ttk.Frame(self._cast)
         row.pack(fill="x", pady=1)
         pid, name = tk.StringVar(value="PID_NEW"), tk.StringVar()
-        template = tk.StringVar(value=self._characters[0] if self._characters else "")
+        template = tk.StringVar(value=next(iter(self._characters), ""))
         ttk.Entry(row, textvariable=pid, width=18).pack(side="left")
         ttk.Entry(row, textvariable=name, width=18).pack(side="left", padx=(4, 0))
-        ttk.Label(row, text="copy of").pack(side="left", padx=(6, 2))
-        ttk.Combobox(row, textvariable=template, values=self._characters, state="readonly", width=24).pack(side="left")
+        ttk.Combobox(row, textvariable=template, values=list(self._characters), state="readonly",
+                     width=30).pack(side="left")
         entry = (row, pid, name, template)
         ttk.Button(row, text="✕", width=3, command=lambda: self._remove(self._cast_rows, entry)).pack(
             side="left", padx=(6, 0))
@@ -97,7 +107,7 @@ class NewCampaignDialog(tk.Toplevel):
     def _ok(self) -> None:
         chapters = [campaign.ChapterSpec(title.get().strip(), self._templates[template.get()], blank.get())
                     for _row, title, template, blank in self._chapter_rows]
-        cast = [campaign.CharacterSpec(pid.get().strip(), template.get(), name.get().strip())
+        cast = [campaign.CharacterSpec(pid.get().strip(), self._characters[template.get()], name.get().strip())
                 for _row, pid, name, template in self._cast_rows]
         if not chapters and not cast:
             messagebox.showerror("New campaign", "Add at least one chapter or character.", parent=self)
