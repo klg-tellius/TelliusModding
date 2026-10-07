@@ -975,12 +975,15 @@ def replace_set_with_static_glb(container_path: Path, gltf_path: Path) -> ModelI
     original = gs_file.read_gs(files[gs_names[0]])
     first = next(iter(original.chunks), None)
     bone = first.bone if first is not None else 0
+    # Battle scenery (zbg/) textures carry a mip level; the new ones match the replaced file.
+    mip_count = tpl.typical_mip_count(files[tpl_names[0]]) if len(tpl_names) == 1 else 0
     gs_bytes, tpl_bytes, warnings = gltf_import.import_static_model(
         gltf_path.read_bytes(),
         skeleton_data=files[g_names[0]] if g_names else None,
         bone=bone,
         base_dir=gltf_path.parent,
         name=Path(gs_names[0]).stem,
+        mip_count=mip_count,
     )
     files[gs_names[0]] = gs_bytes
     if tpl_bytes is not None:
@@ -1231,7 +1234,7 @@ def replace_map_terrain_with_glb(
         appended.append(last_key)
         added.append(last_entry)
     if added:
-        files[texpack], first_new = tpl.append_images(files[texpack], added)
+        files[texpack], first_new = tpl.append_images(files[texpack], added, tpl.typical_mip_count(files[texpack]))
         reuse.update({k: first_new + j for j, k in enumerate(appended)})
     final = {base + k: new_id for k, new_id in reuse.items()}
     for material in build.gs.materials:
