@@ -9,6 +9,8 @@ from ..games import Game
 from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
+from ..formats.fe9_message_scene import layout_from_label, layout_label
+from .scene_editor import layout_labels
 
 
 def ConversationPreview(parent, project):
@@ -40,7 +42,7 @@ class FE9ConversationPreview(ttk.Frame):
         self._auto = tk.BooleanVar(value=True)
         self._position = tk.DoubleVar(value=0)
         self._context_open = tk.BooleanVar(value=False)
-        self._layout = tk.StringVar(value="上下会話")
+        self._layout = tk.StringVar(value=layout_label("上下会話"))
         self._background = tk.StringVar()
         self._portraits = [tk.StringVar() for _ in range(9)]
         self._aliases = {key: tk.StringVar() for key in ("ME", "LME", "IKE", "L_IKE", "VOKE", "L_VOKE")}
@@ -78,7 +80,7 @@ class FE9ConversationPreview(ttk.Frame):
         self._context = ttk.Frame(self, padding=4)
         ttk.Label(self._context, text="For context inherited from earlier events; resets when selecting another message.").grid(row=0, column=0, columnspan=6, sticky="w")
         ttk.Label(self._context, text="Layout").grid(row=1, column=0, sticky="w")
-        self._layout_combo = ttk.Combobox(self._context, textvariable=self._layout, width=23)
+        self._layout_combo = ttk.Combobox(self._context, textvariable=self._layout, width=30)
         self._layout_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
         ttk.Label(self._context, text="Background RID").grid(row=1, column=3, sticky="w")
         ttk.Entry(self._context, textvariable=self._background, width=25).grid(row=1, column=4, columnspan=2, sticky="ew")
@@ -124,12 +126,12 @@ class FE9ConversationPreview(ttk.Frame):
         self._goto(max((e.index for e in self._timeline.events if e.source_offset < offset), default=0))
 
     def _get_context(self):
-        return InitialContext(self._layout.get().strip(), self._background.get().strip(),
+        return InitialContext(layout_from_label(self._layout.get()), self._background.get().strip(),
                               tuple(v.get().strip() for v in self._portraits),
                               tuple((k, v.get().strip()) for k, v in self._aliases.items() if v.get().strip()))
 
     def _reset_context(self):
-        self._layout.set("上下会話")
+        self._layout.set(layout_label("上下会話"))
         self._background.set("")
         for var in [*self._portraits, *self._aliases.values()]:
             var.set("")
@@ -172,7 +174,7 @@ class FE9ConversationPreview(ttk.Frame):
             self._reset_position = True
         self._message_id = key
         if context is not None:
-            self._layout.set(context.layout)
+            self._layout.set(layout_label(context.layout))
             self._background.set(context.background)
             for var, fid in zip(self._portraits, context.portraits):
                 var.set(fid)
@@ -187,8 +189,7 @@ class FE9ConversationPreview(ttk.Frame):
         try:
             self._assets = ConversationAssets(self._project.extracted_dir)
             self._renderer = ConversationRenderer(self._assets)
-            self._layout_combo.configure(values=[r.removeprefix("RID_") for r in self._assets.rects
-                                                 if any(p.kind == 2 for p in self._assets.rects[r].parts)])
+            self._layout_combo.configure(values=layout_labels(self._assets))
         except Exception as error:
             self._assets = self._renderer = None
             self._set_diagnostics([str(error)])

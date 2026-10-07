@@ -62,10 +62,44 @@ _RELEASE = (("UB", "$UB"), ("Ub", "$Ub (identical)"))
 _TYPING_SOUNDS = (("0", "Silent ($O0)"), ("1", "Dialogue ($O1)"), ("2", "Ancient language ($O2)"),
                   ("3", "Narration ($O3)"), ("4", "Tutorial ($O4)"))
 
+# English names for the $R layouts (window/rectdesc.bin descriptors with
+# textbox parts). Vanilla US use counts in brackets; the unused ones differ
+# from a used sibling only by the "draw background" flag.
+LAYOUT_NAMES: dict[str, str] = {
+    "上下会話": "Two-box talk",                         # 896: top/bottom boxes, $c/$s
+    "背景上下会話": "Two-box talk over background",     # unused
+    "背景会話": "Background scene",                     # 695: lined-up $F seats over a $B backdrop
+    "背景なし会話": "Scene without background",         # 36: same seats over the map/3D view
+    "のみ会話": "Text box only",                        # 25: one box, portraits kept off-screen
+    "背景のみ会話": "Text box over background",         # unused
+    "GMAP会話": "World map narration",                  # 43
+    "TUT会話": "Tutorial talk",                         # 344: four boxes in tutorial frames
+    "TUT小会話": "Tutorial info windows",               # 31: small $W windows, no portraits
+    "ダイアログ会話": "Dialog popup",                   # 1: the centred tutorial-intro dialog
+    "チュ会話": "Plain text, no window",                # unused
+}
+
+
+def layout_label(name: str) -> str:
+    """'English name (ID)' for a known layout, otherwise the ID itself."""
+    english = LAYOUT_NAMES.get(name)
+    return f"{english} ({name})" if english else name
+
+
+def layout_from_label(label: str) -> str:
+    """Inverse of ``layout_label``; anything else is taken as a raw ID."""
+    label = label.strip()
+    if label.endswith(")") and " (" in label:
+        name = label[label.rindex(" (") + 2:-1]
+        if name in LAYOUT_NAMES:
+            return name
+    return label
+
+
 STEP_KINDS: dict[str, StepKind] = {k.kind: k for k in (
     StepKind("layout", "Set layout", "Scene",
-             "$R: conversation layout (window/seat descriptor), e.g. 上下会話 two-box talk, "
-             "背景会話 background scene, GMAP会話 world-map narration. Clears every textbox.",
+             "$R: conversation layout (window/seat descriptor), e.g. Two-box talk, "
+             "Background scene, World map narration. Clears every textbox.",
              (FieldSpec("layout", "Layout", "layout"),)),
     StepKind("background", "Set background", "Scene",
              "$B: background image descriptor drawn behind the portraits.",
@@ -381,7 +415,7 @@ def summary(step: Step) -> str:
     f, kind = step.fields, step.kind
     seat = f"seat {f['seat']}" if f.get("seat") is not None else "current seat"
     if kind == "layout":
-        text = f["layout"]
+        text = layout_label(f["layout"])
     elif kind == "background":
         text = f["background"]
     elif kind == "transition":
@@ -527,10 +561,10 @@ def _template(*parts: str) -> str:
 
 TEMPLATES: dict[str, str] = {
     "Empty message": "",
-    "Two-person talk (上下会話)": _template(
+    "Two-box talk (上下会話)": _template(
         "$R上下会話|$c0IKE|$s0First line.$K\n", "$c1MIST|$s1Reply.$K"),
     "Background scene (背景会話)": _template(
         "$R背景会話|$B村-崖|$<$F1$FCL_IKE|$F4$FCL_MIST|",
         "$F1$PFirst line.$K\n", "$F4$PReply.$K"),
-    "World-map narration (GMAP会話)": _template("$RGMAP会話|$O3$GNarration text.$K"),
+    "World map narration (GMAP会話)": _template("$RGMAP会話|$O3$GNarration text.$K"),
 }
