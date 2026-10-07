@@ -294,6 +294,49 @@ class Shell(ttk.Frame):
             names.append("FE8Data.bin")
         return names
 
+    def confirm_unsaved(self, consequence: str, proceed: str) -> bool:
+        """Ask before an action that leaves unsaved edits out. The message reads
+        "These editors have changes that aren't saved``consequence``:" and offers
+        to save them all first; ``proceed`` describes going on without saving.
+        False when the user goes back or a save failed."""
+        names = self.unsaved(flush=True)
+        if not names:
+            return True
+        answer = messagebox.askyesnocancel(
+            "Unsaved changes", f"These editors have changes that aren't saved{consequence}:\n\n  "
+            + "\n  ".join(names) + f"\n\nSave all of them first?\n\nYes: save everything, then continue.\n"
+            f"No: {proceed}\nCancel: go back.", icon="warning", parent=self)
+        if answer is None:
+            return False
+        if not answer:
+            return True
+        failed = self.save_all()
+        if failed:
+            messagebox.showerror(
+                "Unsaved changes", "These could not be saved, so nothing else was done:\n\n  " + "\n  ".join(failed),
+                parent=self)
+            return False
+        self.set_status("Saved " + ", ".join(names))
+        return True
+
+    def save_all(self) -> list[str]:
+        """Save every editor holding unsaved edits, then FE8Data.bin. Returns
+        the names of those still unsaved (each reported its own error)."""
+        self.flush_pages()
+        failed = []
+        for page in self._pages.values():
+            for panel in page.panels():
+                if panel.dirty and not getattr(panel, "shares_fe8_session", False) and not panel.save_changes():
+                    failed.append(panel.display_name or type(panel).__name__)
+        session = self._session
+        if session is not None and session.dirty:
+            try:
+                session.save()
+            except OSError as exc:
+                messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+                failed.append("FE8Data.bin")
+        return failed
+
     def _poll_unsaved(self) -> None:
         try:
             names = self.unsaved()
@@ -499,11 +542,7 @@ class Shell(ttk.Frame):
     def build(self) -> None:
         if not self.extracted or self._task_running:
             return
-        names = self.unsaved(flush=True)
-        if names and not messagebox.askyesno(
-                "Unsaved changes",
-                "These editors have changes that aren't saved and won't be in the disc:\n\n  "
-                + "\n  ".join(names) + "\n\nBuild anyway?", parent=self):
+        if not self.confirm_unsaved(" and won't be in the disc", "build without them."):
             return
         self.run_task("Building disc image …", self.project.build, self._on_built)
 
@@ -526,11 +565,7 @@ class Shell(ttk.Frame):
         if not build_first and image.is_file():
             self._launch(image)
             return
-        names = self.unsaved(flush=True)
-        if names and not messagebox.askyesno(
-                "Unsaved changes",
-                "These editors have changes that aren't saved and won't be in the disc:\n\n  "
-                + "\n  ".join(names) + "\n\nBuild and play anyway?", parent=self):
+        if not self.confirm_unsaved(" and won't be in the disc", "build and play without them."):
             return
 
         def built(dest) -> None:
@@ -547,11 +582,7 @@ class Shell(ttk.Frame):
             messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
                                 parent=self)
             return
-        names = self.unsaved(flush=True)
-        if names and not messagebox.askyesno(
-                "Unsaved changes",
-                "These editors have changes that aren't saved and won't be played:\n\n  "
-                + "\n  ".join(names) + "\n\nPlay anyway?", parent=self):
+        if not self.confirm_unsaved(" and won't be played", "play without them."):
             return
         project = self.project
 
@@ -572,11 +603,7 @@ class Shell(ttk.Frame):
     def create_patch(self) -> None:
         if not self.extracted or self._task_running:
             return
-        names = self.unsaved(flush=True)
-        if names and not messagebox.askyesno(
-                "Unsaved changes",
-                "These editors have changes that aren't saved and won't be in the patch:\n\n  "
-                + "\n  ".join(names) + "\n\nCreate the patch anyway?", parent=self):
+        if not self.confirm_unsaved(" and won't be in the patch", "create the patch without them."):
             return
         project = self.project
         dest = filedialog.asksaveasfilename(

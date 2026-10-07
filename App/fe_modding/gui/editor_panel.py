@@ -47,6 +47,18 @@ class EditorPanel(ttk.Frame):
             return True
         return bool(confirm())
 
+    def save_changes(self) -> bool:
+        """Save this panel's unsaved edits with its own Save (``save()``, else
+        ``_save()``; they report their own errors). True when nothing is left
+        unsaved."""
+        if not self.dirty:
+            return True
+        save = getattr(self, "save", None) or getattr(self, "_save", None)
+        if save is None:
+            return False
+        save()
+        return not self.dirty
+
     def cleanup(self) -> None:
         """Called once, when the project closes or the app exits - panels
         are created lazily and then kept alive (shown/hidden, never

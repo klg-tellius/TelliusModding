@@ -170,16 +170,10 @@ class MainWindow(tk.Tk):
         self.title(f"{project.name} - Tellius Modding")
 
     def _confirm_leave_project(self) -> bool:
-        """Ask before closing a project with unsaved edits."""
+        """Before closing a project with unsaved edits, offer to save them all."""
         if self._shell is None:
             return True
-        names = self._shell.unsaved(flush=True)
-        if not names:
-            return True
-        return messagebox.askyesno(
-            "Unsaved changes",
-            "These editors have unsaved changes:\n\n  " + "\n  ".join(names) + "\n\nClose and discard them?",
-            icon="warning", parent=self)
+        return self._shell.confirm_unsaved("", "close without saving (the changes are lost).")
 
     def _close_project(self) -> None:
         if not self._confirm_leave_project():
