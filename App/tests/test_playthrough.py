@@ -170,6 +170,28 @@ class ActionTests(unittest.TestCase):
         actions.apply(self.world, self.state, actions.Act(healer.uid, (1, 0), "staff", choice.target, choice.item))
         self.assertEqual(self.state.units[hurt.uid].hp, 5 + 5 + 10)
 
+    def test_move_through_an_ally(self):
+        # a corridor: the ally's tile is on the path but is not a destination
+        world = _world(width=4, height=1)
+        state = GameState()
+        a = _unit(state, "PID_A", 0, 0)
+        _unit(state, "PID_B", 1, 0)
+        actions.apply(world, state, actions.Act(a.uid, (2, 0)))
+        self.assertEqual(state.units[a.uid].tile, (2, 0))
+
+    def test_link_sections_list_exceptions(self):
+        # retail maps list only the tiles with closed directions; the others are open
+        from fe_modding.formats import map_file
+        from fe_modding.playthrough import loader
+
+        data = map_file.MapData(capacity=map_file.MapCapacity(3, 1, 0, 0, 2000.0),
+                                link=[[-1], [map_file.LINK_PASS_WEST], [-1]], link_at=None, link_abs=None)
+        world = _world(width=3, height=1)
+        world.link = loader.link_grid(data)
+        state = GameState()
+        a = _unit(state, "PID_A", 0, 0)
+        self.assertEqual(set(movement.destinations(world, state, a)), {(0, 0), (1, 0)})  # (1,0) opens west only
+
     def test_unreachable_destination_rejected(self):
         a = _unit(self.state, "PID_A", 0, 0)
         with self.assertRaises(actions.CommandError):

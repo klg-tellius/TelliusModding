@@ -12,8 +12,9 @@ from .world import World
 
 
 def link_grid(map_data) -> Optional[list]:
-    """The composed link grid, or None when the map has no link sections (everything open)."""
-    if map_data is None or not any(g is not None for g in (map_data.link, map_data.link_at, map_data.link_abs)):
+    """The composed link grid: tiles open in every direction unless the link sections say otherwise or
+    the height rule closes an edge. None (everything open) without a map capacity."""
+    if map_data is None or map_data.capacity is None:
         return None
     try:
         return map_file.compose_link_status_grid(map_data)

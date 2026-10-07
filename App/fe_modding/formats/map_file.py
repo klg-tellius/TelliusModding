@@ -444,6 +444,11 @@ LINK_PASS_WEST = 0x01
 LINK_PASS_EAST = 0x02
 LINK_PASS_SOUTH = 0x04
 LINK_PASS_NORTH = 0x08
+#: A tile ``maplink`` does not list starts open in every direction. The sections only list the
+#: exceptions (``bmap03`` lists 8 of its 1,156 tiles, mostly with one or two directions closed), 43
+#: retail maps have no ``maplink`` at all and units move on them, and walls between unlisted tiles come
+#: from the height post-pass clearing these bits.
+LINK_DEFAULT_OPEN = LINK_PASS_WEST | LINK_PASS_EAST | LINK_PASS_SOUTH | LINK_PASS_NORTH
 LINK_PASS_DIRECTIONS = (
     ("west", LINK_PASS_WEST),
     ("east", LINK_PASS_EAST),
@@ -503,7 +508,8 @@ def compose_link_status_grid(data: "MapData", apply_height_rules: bool = True) -
     This mirrors the real loader at ``build_maplink_grid`` (0x80045604):
     ``maplink`` writes the low byte, ``maplinkAt`` writes bits 8-11, and
     ``maplinkAbs`` runs last and replaces the cell with ``value`` in the low
-    nibble plus its inverse in bits 4-7. If ``apply_height_rules`` is true,
+    nibble plus its inverse in bits 4-7. Unlisted tiles start as :data:`LINK_DEFAULT_OPEN`.
+    If ``apply_height_rules`` is true,
     the low directional passability bits are then filtered the same way
     ``apply_wall_height_passability`` (0x800237A0) does: west/east/south/
     north openings are cleared when the matching edge's two corner-height
@@ -512,7 +518,7 @@ def compose_link_status_grid(data: "MapData", apply_height_rules: bool = True) -
     if data.capacity is None:
         raise MapFileError("link status grid requires mapcapacity.")
     width, height = data.capacity.x_size, data.capacity.y_size
-    status: Grid = [[0] * height for _ in range(width)]
+    status: Grid = [[LINK_DEFAULT_OPEN] * height for _ in range(width)]
 
     if data.link is not None:
         for x in range(min(width, len(data.link))):

@@ -336,7 +336,8 @@ class MapFileGridTests(unittest.TestCase):
         # maplinkAbs is applied after maplinkAt by the native loader and
         # replaces the cell with low nibble + inverted low nibble.
         self.assertEqual(status[0][0], 0x96)
-        self.assertEqual(status[1][1], 0x0500)
+        self.assertEqual(status[1][1], 0x0500 | map_file.LINK_DEFAULT_OPEN)  # not in maplink: open
+        self.assertEqual(status[0][1], map_file.LINK_DEFAULT_OPEN)  # listed nowhere
         self.assertEqual(map_file.link_passable_directions(status[0][0]), ("east", "south"))
 
     def test_link_height_rules_clear_only_blocked_direction_bits(self):

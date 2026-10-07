@@ -65,22 +65,32 @@ def search(world: World, state: GameState, unit: SimUnit, budget: Optional[int] 
     return best
 
 
+class Reach(dict):
+    """:func:`destinations`' tiles; ``found`` keeps the whole search, whose paths may cross the tiles
+    of units passed through (which are not destinations)."""
+    found: dict
+
+
 def destinations(world: World, state: GameState, unit: SimUnit, budget: Optional[int] = None,
-                 start: Optional[tuple] = None) -> dict:
+                 start: Optional[tuple] = None) -> Reach:
     """The tiles ``unit`` can stop on: :func:`search` without other units' tiles."""
     found = search(world, state, unit, budget, start)
     occupied = {u.tile for u in state.units.values() if u.on_map and u.uid != unit.uid}
-    return {tile: v for tile, v in found.items() if tile not in occupied}
+    reach = Reach((tile, v) for tile, v in found.items() if tile not in occupied)
+    reach.found = found
+    return reach
 
 
 def path(found: dict, tile: tuple) -> list:
-    """The tiles from the search's start to ``tile``, both included."""
+    """The tiles from the search's start to ``tile``, both included (``found``: a :func:`search` or
+    :func:`destinations` result)."""
     if tile not in found:
         return []
+    chain = getattr(found, "found", found)
     out = []
     while tile is not None:
         out.append(tile)
-        tile = found[tile][1]
+        tile = chain[tile][1]
     return out[::-1]
 
 
