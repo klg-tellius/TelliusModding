@@ -38,6 +38,7 @@ class LogicalFile:
 
 # Features the app implements per game. A key missing from GameProfile.features is "not available yet".
 GAME_DATA = "game_data"        # characters, classes, items, skills, terrain, chapters, supports
+DATA_TABLES = "data_tables"    # the character/class/item/skill tables alone (Radiant Dawn's FE10Data)
 CHAPTERS = "chapters"          # per-chapter file set, hub, maps, deployments
 DIALOGUE = "dialogue"          # Mess/*.m editing and the conversation preview
 SCRIPTS = "scripts"            # chapter event scripts
@@ -58,7 +59,7 @@ PATCHES = "patches"            # .tpatch create / apply
 DISC = "disc"                  # extract / rebuild
 
 FEATURE_LABELS = {
-    GAME_DATA: "Game data editing", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
+    GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
     SCRIPTS: "Script editing", SHOPS: "Shop editing", AI: "AI editing", BATTLE_TABLES: "Battle tables",
     ANIM: "The map model registry", MODELS: "Model editing", FONTS: "Fonts", ICONS: "Icons",
     EFFECTS: "Effects", AUDIO: "Audio editing", VIDEO: "Video editing", SAVES: "Save files",
@@ -208,7 +209,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_file="shopitem_{diff}.bin",
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
-    features=frozenset({PATCHES, DISC}),
+    features=frozenset({DATA_TABLES, PATCHES, DISC}),
 )
 
 PROFILES: dict[Game, GameProfile] = {

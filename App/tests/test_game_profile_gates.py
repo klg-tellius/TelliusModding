@@ -28,12 +28,12 @@ class UnavailableStateTests(unittest.TestCase):
         files.mkdir(parents=True, exist_ok=True)
         (files / "FE8Data.bin").write_bytes(bytes(64))
 
-    def test_validator_reports_instead_of_checking(self):
+    def test_validator_checks_the_radiant_dawn_database_not_the_leftover(self):
         from fe_modding import validator
 
-        report = validator.validate_project(self.project)
-        self.assertEqual([i.severity for i in report.issues], [validator.WARNING])
-        self.assertIn("not available for Radiant Dawn yet", report.issues[0].message)
+        report = validator.validate_project(self.project)  # no FE10Data.cms extracted in this stand-in
+        self.assertEqual([i.severity for i in report.issues], [validator.ERROR])
+        self.assertIn("FE10Data.cms", report.issues[0].message)
 
     def test_character_index_is_not_built(self):
         from fe_modding import project_index
@@ -48,6 +48,12 @@ class UnavailableStateTests(unittest.TestCase):
         self.assertFalse(session.available)
         self.assertIn("not available for Radiant Dawn yet", session.unavailable_reason)
         self.assertEqual(session.file_label, "FE10Data.cms")
+
+    def test_radiant_dawn_gets_the_tables_only_game_data(self):
+        from fe_modding.game_profile import DATA_TABLES, GAME_DATA
+
+        self.assertTrue(self.project.profile.supports(DATA_TABLES))
+        self.assertFalse(self.project.profile.supports(GAME_DATA))
 
     def test_model_slots_refuse_the_other_games_battle_and_anim_files(self):
         from fe_modding import model_slots
