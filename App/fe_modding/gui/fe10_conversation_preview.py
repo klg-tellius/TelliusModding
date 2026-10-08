@@ -11,14 +11,15 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 
 from ..formats import fe10_conversation
-from ..formats.fe10_conversation_render import SCENE_SIZE, Fe10ConversationAssets, render
+from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, render
 
 
 class Fe10ConversationPreview(ttk.Frame):
     def __init__(self, parent, project):
         super().__init__(parent)
         self._files = Path(project.extracted_dir) / "files"
-        self._assets: dict[str, Fe10ConversationAssets] = {}
+        self._assets: dict[tuple[str, bool], Fe10ConversationAssets] = {}
+        self._wide = tk.BooleanVar(value=False)
         self._prefix = "e_"
         self._frames: list[fe10_conversation.Frame] = []
         self._index = 0
@@ -34,6 +35,7 @@ class Fe10ConversationPreview(ttk.Frame):
         for label, command in (("Restart", lambda: self._show(0)), ("Previous", lambda: self._show(self._index - 1)),
                                ("Next", lambda: self._show(self._index + 1))):
             ttk.Button(controls, text=label, command=command).pack(side="left", padx=(0, 4))
+        ttk.Checkbutton(controls, text="16:9", variable=self._wide, command=self._schedule).pack(side="left", padx=4)
         self._status = ttk.Label(controls, style="Muted.TLabel")
         self._status.pack(side="left", padx=8)
         ttk.Button(controls, text="Reload assets", command=self._reload).pack(side="right")
@@ -46,9 +48,10 @@ class Fe10ConversationPreview(ttk.Frame):
 
     @property
     def assets(self) -> Fe10ConversationAssets:
-        if self._prefix not in self._assets:
-            self._assets[self._prefix] = Fe10ConversationAssets(self._files, self._prefix)
-        return self._assets[self._prefix]
+        key = (self._prefix, self._wide.get())
+        if key not in self._assets:
+            self._assets[key] = Fe10ConversationAssets(self._files, self._prefix, wide=key[1])
+        return self._assets[key]
 
     # -- what the Dialogue tab calls -------------------------------------------------------
     def update_message(self, speaker: str, text: str, *, context=None, message_id=None) -> None:
@@ -106,8 +109,9 @@ class Fe10ConversationPreview(ttk.Frame):
             error = f"  ·  preview error: {exc}"
         width = max(160, self._canvas.winfo_width() - 4)
         height = max(120, self._canvas.winfo_height() - 4)
-        scale = min(width / SCENE_SIZE[0], height / SCENE_SIZE[1])
-        size = (max(1, int(SCENE_SIZE[0] * scale)), max(1, int(SCENE_SIZE[1] * scale)))
+        shown = WIDE_SIZE if self._wide.get() else SCENE_SIZE
+        scale = min(width / shown[0], height / shown[1])
+        size = (max(1, int(shown[0] * scale)), max(1, int(shown[1] * scale)))
         self._photo = ImageTk.PhotoImage(image.resize(size, Image.LANCZOS))
         self._canvas.configure(image=self._photo, text="")
         kind = {"wait": "waits for A", "suspend": "suspended (script resumes it)", "end": "end of the message"}

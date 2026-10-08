@@ -20,6 +20,7 @@ from .fe10_faces import FaceLibrary
 from .fe9_font import GameFont
 
 SCENE_SIZE = (640, 480)
+WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
 PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
@@ -28,9 +29,13 @@ NAME_PANEL = (60, 40, 20, 235)
 class Fe10ConversationAssets:
     """Everything the renderer reads from an extracted Radiant Dawn disc (loaded lazily)."""
 
-    def __init__(self, files_dir: Path | str, language_prefix: str = "e_"):
+    def __init__(self, files_dir: Path | str, language_prefix: str = "e_", wide: bool = False):
+        """``wide``: the 16:9 assets (``Face/wide``, ``_w`` fonts and layouts). They use the same
+        640x480 coordinates, with art squeezed horizontally that the console stretches back; show
+        the rendered frame stretched to 854x480 (:data:`WIDE_SIZE`)."""
         self.files = Path(files_dir)
         self.prefix = language_prefix
+        self.wide = wide
         self._layouts = self._backgrounds = self._font = self._names = None
         self._faces = None
         self._textures: dict[tuple[str, int], Image.Image] = {}
@@ -38,14 +43,14 @@ class Fe10ConversationAssets:
     @property
     def faces(self) -> FaceLibrary:
         if self._faces is None:
-            self._faces = FaceLibrary(self.files)
+            self._faces = FaceLibrary(self.files, wide=self.wide)
         return self._faces
 
     @property
     def layouts(self) -> dict[str, fe10_rect.Resource]:
         if self._layouts is None:
             self._layouts = {}
-            suffix = "_en" if self.prefix else ""
+            suffix = ("_en" if self.prefix else "") + ("_w" if self.wide else "")
             # RectDesc holds the conversation layouts; RectBase the base screens (BASE_SHOP_MESS).
             for name in (f"window/RectBase{suffix}.bin", f"window/RectDesc{suffix}.bin"):
                 path = self.files / name
@@ -63,7 +68,7 @@ class Fe10ConversationAssets:
     @property
     def font(self) -> GameFont | None:
         if self._font is None:
-            path = self.files / "Fonts" / "talk.cms"
+            path = self.files / "Fonts" / ("talk_w.cms" if self.wide else "talk.cms")
             if path.is_file():
                 self._font = GameFont(lz10.decompress(path.read_bytes()))
         return self._font
