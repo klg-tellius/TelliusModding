@@ -54,8 +54,9 @@ SKILL_RECORD_SIZE = 0x2C
 class FieldDef:
     key: str
     label: str
-    kind: str        # "label", "u8", "s8", "u16"
+    kind: str        # "label", "u8", "s8", "u16", "u32"
     group: str = ""  # form section
+    offset: int = -1  # record-relative offset (fixed-size tables; -1: fields follow each other)
 
 
 def _labels(*pairs: tuple[str, str], group: str = "") -> list[FieldDef]:
@@ -177,19 +178,32 @@ class Record:
 
     @property
     def id(self) -> Optional[str]:
-        return self.values.get({"character": "pid", "class": "jid", "item": "iid", "skill": "sid"}[self.kind])
+        key = ID_FIELD.get(self.kind)
+        return self.values.get(key) if key else None
 
 
 @dataclass
 class Fe10Data:
-    characters: list
-    classes: list
-    items: list
-    skills: list
+    tables: dict
 
     def table(self, kind: str) -> list:
-        return {"character": self.characters, "class": self.classes, "item": self.items,
-                "skill": self.skills}[kind]
+        return self.tables[kind]
+
+    @property
+    def characters(self) -> list:
+        return self.tables["character"]
+
+    @property
+    def classes(self) -> list:
+        return self.tables["class"]
+
+    @property
+    def items(self) -> list:
+        return self.tables["item"]
+
+    @property
+    def skills(self) -> list:
+        return self.tables["skill"]
 
 
 # -- reading ---------------------------------------------------------------------------------------
@@ -234,8 +248,14 @@ def is_fe10data(data: bytes) -> bool:
 def _read_fields(data: bytes, record: Record, defs: Sequence[FieldDef], at: int) -> int:
     for d in defs:
         record.offsets[d.key] = at
+        if d.offset >= 0:
+            at = record.start + d.offset
+            record.offsets[d.key] = at
         if d.kind == "label":
             record.values[d.key] = resolve(data, _u32(data, at))
+            at += 4
+        elif d.kind == "u32":
+            record.values[d.key] = _u32(data, at)
             at += 4
         elif d.kind == "u16":
             record.values[d.key] = struct.unpack_from(">H", data, at)[0]
@@ -258,6 +278,10 @@ def _read_label_list(data: bytes, record: Record, key: str, at: int, count: int)
 def _walk(data: bytes, kind: str) -> list[Record]:
     if kind == "skill":
         return _read_skills(data)
+    if kind in FIXED_TABLES:
+        return _read_fixed(data, kind)
+    if kind == "support":
+        return _read_supports(data)
     start = table_start(data, kind)
     count = _u32(data, start)
     at = start + 4
@@ -335,7 +359,7 @@ def _read_skills(data: bytes) -> list[Record]:
 
 
 def read_fe10data(data: bytes) -> Fe10Data:
-    return Fe10Data(*(_walk(data, kind) for kind in KINDS))
+    return Fe10Data({kind: _walk(data, kind) for kind in ALL_KINDS})
 
 
 def read_table(data: bytes, kind: str) -> list[Record]:
@@ -356,7 +380,9 @@ def field_defs(kind: str) -> list[FieldDef]:
         "class": CLASS_LABELS + CLASS_FIXED + CLASS_BEFORE_SKILLS + CLASS_AFTER_SKILLS + CLASS_TAIL,
         "item": ITEM_LABELS + ITEM_FIXED,
         "skill": SKILL_LABELS + SKILL_FIXED,
-    }[kind]
+    }.get(kind)
+    if defs is None:
+        defs = FIXED_TABLES[kind].fields if kind in FIXED_TABLES else []
     return [d for d in defs if d.key not in COUNT_FIELDS]
 
 
@@ -452,7 +478,8 @@ def patch_field(data: bytes, kind: str, index: int, key: str, value) -> bytes:
         fe8data._pack_pointer(out, offset, ptr)
         return bytes(out)
     value = int(value)
-    fmt, low, high = {"u8": (">B", 0, 255), "s8": (">b", -128, 127), "u16": (">H", 0, 0xFFFF)}[definition.kind]
+    fmt, low, high = {"u8": (">B", 0, 255), "s8": (">b", -128, 127), "u16": (">H", 0, 0xFFFF),
+                      "u32": (">I", 0, 0xFFFFFFFF)}[definition.kind]
     if not low <= value <= high:
         raise ValueError(f"{definition.label} must be between {low} and {high}.")
     out = bytearray(data)
@@ -560,3 +587,187 @@ def labels_with_prefix(data: bytes, prefix: str) -> list[str]:
         if label and label.startswith(prefix):
             seen.add(label)
     return sorted(seen)
+
+
+# -- fixed-size tables -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FixedTable:
+    """A table of same-size records: ``symbol`` points at a count word (``counted``) or straight at
+    the first record (then the records run while their word at +4, the name, is a listed pointer)."""
+    symbol: str
+    size: int
+    fields: tuple
+    counted: bool = True
+
+
+def _f(key: str, label: str, kind: str, offset: int, group: str = "") -> FieldDef:
+    return FieldDef(key, label, kind, group, offset)
+
+
+def _chapter_fields() -> tuple:
+    fields = [_f("cid", "ID", "label", 0x00, "Chapter"), _f("title", "Title key", "label", 0x04, "Chapter"),
+              _f("map", "Map folder", "label", 0x08, "Chapter"), _f("script", "Script", "label", 0x0C, "Chapter"),
+              _f("messages", "Message file", "label", 0x10, "Chapter")]
+    for d in range(3):
+        base, group = 0x20 + 0x20 * d, f"Objectives, difficulty {d + 1}"
+        fields += [_f(f"win_{d}", "Victory", "label", base + 0x04, group),
+                   _f(f"win2_{d}", "Victory 2", "label", base + 0x08, group)]
+        fields += [_f(f"lose{i}_{d}", f"Defeat {i + 1}", "label", base + 0x10 + 4 * i, group) for i in range(4)]
+    fields += [_f("number", "Number", "u8", 0x84, "Settings")]
+    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x88, 0x90)]
+    fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
+               _f("base_scene", "Base scene", "label", 0x94, "Settings"),
+               _f("battle_background", "Battle background", "label", 0x98, "Settings"),
+               _f("weather", "Weather", "label", 0x9C, "Settings"),
+               _f("scene_2", "Second scene", "label", 0xA0, "Settings"),
+               _f("lord", "Lord", "label", 0xA4, "Settings")]
+    return tuple(fields)
+
+
+TERRAIN_BLOCK_SIZE = 0x2C
+MOVE_COST_COUNT = 23
+_TERRAIN_GROUP = "Terrain stats (shared block)"
+TERRAIN_BLOCK_FIELDS = (
+    tuple(FieldDef(key, label, "s8", _TERRAIN_GROUP, o) for o, (key, label) in enumerate((
+        ("avoid", "Avoid"), ("defense", "Defense"), ("resistance", "Resistance"), ("alt_avoid", "Avoid (alt)"),
+        ("alt_defense", "Defense (alt)"), ("alt_resistance", "Resistance (alt)"))))
+    + (FieldDef("heal", "Heal % per turn", "u8", _TERRAIN_GROUP, 6),
+       FieldDef("flags", "Flags", "u8", _TERRAIN_GROUP, 7),
+       FieldDef("step_effect", "Step effect", "label", _TERRAIN_GROUP, 8),
+       FieldDef("move_sound", "Move sound", "label", _TERRAIN_GROUP, 0x0C),
+       FieldDef("move_sound_2", "Move sound 2", "label", _TERRAIN_GROUP, 0x10))
+    + tuple(FieldDef(f"cost_{i}", f"Movement type {i}", "u8", "Movement costs (255: impassable)", 0x14 + i)
+            for i in range(MOVE_COST_COUNT))
+)
+
+FIXED_TABLES = {
+    "chapter": FixedTable("ChapterData", 0xB4, _chapter_fields()),
+    "terrain": FixedTable("TerrainData", 0x10, (
+        _f("number", "Number", "u8", 0, "Terrain"), _f("name", "Name", "label", 4, "Terrain"),
+        _f("name_key", "Name key", "label", 8, "Terrain")) + TERRAIN_BLOCK_FIELDS, counted=False),
+    "group": FixedTable("GroupData", 0x0C, (
+        _f("number", "Number", "u32", 0, "Army"), _f("name", "Name", "label", 4, "Army"),
+        _f("name_key", "Name key", "label", 8, "Army"))),
+    "bond": FixedTable("KiznaData", 0x0C, (
+        _f("pid", "Character", "label", 0, "Bond"), _f("partner", "Partner", "label", 4, "Bond"),
+        _f("unknown_08", "Unknown +8", "u8", 8, "Bond"), _f("bonus", "Bonus", "u8", 9, "Bond"))),
+    "affinity": FixedTable("DivineData", 0x0C, (
+        _f("affinity", "Affinity", "label", 0, "Affinity"), _f("attack", "Attack", "s8", 4, "Affinity"),
+        _f("defense", "Defense", "s8", 5, "Affinity"), _f("hit", "Hit", "s8", 6, "Affinity"),
+        _f("avoid", "Avoid", "s8", 7, "Affinity"))),
+    "affinity_pair": FixedTable("DivineParam", 0x0C, (
+        _f("affinity", "Affinity", "label", 0, "Pair"), _f("partner", "Partner affinity", "label", 4, "Pair"),
+        _f("value_0", "Value 1", "s8", 8, "Pair"), _f("value_1", "Value 2", "s8", 9, "Pair"),
+        _f("value_2", "Value 3", "s8", 10, "Pair"), _f("value_3", "Value 4", "s8", 11, "Pair"))),
+    "triangle": FixedTable("3SukumiData", 0x0C, (
+        _f("weapon", "Weapon type", "label", 0, "Weapon triangle"),
+        _f("against", "Against", "label", 4, "Weapon triangle"),
+        _f("damage", "Damage", "s8", 8, "Weapon triangle"), _f("hit", "Hit", "s8", 9, "Weapon triangle"))),
+    "difficulty": FixedTable("GameData", 0x08, tuple(
+        _f(f"value_{i}", f"Difficulty {i + 1}", "u16", 2 * i, "Constants") for i in range(4)), counted=False),
+}
+#: GameData holds ten rows of four u16 values (one per difficulty) before the terrain blocks.
+DIFFICULTY_ROWS = 10
+
+ID_FIELD = {"character": "pid", "class": "jid", "item": "iid", "skill": "sid", "chapter": "cid",
+            "terrain": "name", "group": "name", "bond": "pid", "affinity": "affinity",
+            "affinity_pair": "affinity", "triangle": "weapon", "support": "pid"}
+ALL_KINDS = KINDS + tuple(FIXED_TABLES) + ("support",)
+FIELD_NOTES.update({
+    "flags": "Bit flags of the terrain type (byte 7 of Path of Radiance's block marks object tiles).",
+    "bonus": "Bonus between bonded units (5 or 10 in the retail data).",
+    "damage": "Weapon-triangle damage and hit change (+1/+10 with the advantage, -1/-10 against).",
+})
+
+
+def _read_fixed(data: bytes, kind: str) -> list[Record]:
+    table = FIXED_TABLES[kind]
+    start = fe8data.section_start(data, table.symbol)
+    if kind == "difficulty":
+        count, at = DIFFICULTY_ROWS, start
+    elif table.counted:
+        count, at = _u32(data, start), start + 4
+    else:  # no count word: the records run while their name field (+4) is a listed pointer
+        count, at = 0, start
+        listed = fe8data.listed_pointer_fields(data)
+        while count < 0x400 and at + table.size * count + 4 in listed:
+            count += 1
+    own = [d for d in table.fields if kind != "terrain" or d.key not in TERRAIN_FIELDS]  # block fields read below
+    records = []
+    for i in range(count):
+        r = Record(kind, i, at + i * table.size, at + (i + 1) * table.size)
+        _read_fields(data, r, own, r.start)
+        if kind == "terrain":
+            block = _u32(data, r.start + 0x0C)
+            r.values["block"] = block
+            if block:
+                b = Record(kind, i, HEADER_SIZE + block, HEADER_SIZE + block + TERRAIN_BLOCK_SIZE)
+                _read_fields(data, b, TERRAIN_BLOCK_FIELDS, b.start)
+                r.values.update(b.values)
+                r.offsets.update(b.offsets)
+        records.append(r)
+    return records
+
+
+TERRAIN_FIELDS = frozenset(d.key for d in TERRAIN_BLOCK_FIELDS)
+
+
+def terrain_block_users(data: bytes, index: int) -> list[int]:
+    """Terrain types sharing type ``index``'s stats block (editing it changes all of them)."""
+    types = _read_fixed(data, "terrain")
+    return [t.index for t in types if t.values["block"] == types[index].values["block"]]
+
+
+def own_terrain_block(data: bytes, index: int) -> bytes:
+    """Give terrain type ``index`` a copy of its stats block, so its edits stop reaching the types
+    it shared the block with."""
+    rec = _read_fixed(data, "terrain")[index]
+    block = rec.values["block"]
+    raw = bytes(data[HEADER_SIZE + block:HEADER_SIZE + block + TERRAIN_BLOCK_SIZE])
+    listed = fe8data.listed_pointer_fields(data)
+    pointer_fields = [o for o in (8, 0x0C, 0x10) if HEADER_SIZE + block + o in listed]
+    data, base = fe8data.append_block(data, raw, pointer_fields)
+    out = bytearray(data)
+    fe8data._pack_pointer(out, rec.start + 0x0C, base)
+    return bytes(out)
+
+
+# -- supports (RelianceData) -----------------------------------------------------------------------
+
+SUPPORT_ENTRY_SIZE = 8
+
+
+def _read_supports(data: bytes) -> list[Record]:
+    """RelianceData: a count, then per character its PID, a partner count and one 8-byte entry per
+    partner (``partner PID, u8 flag, u8 speed, 2 zero bytes``). The retail table lists all 71
+    supporting characters against all 71 (themselves included)."""
+    start = fe8data.section_start(data, "RelianceData")
+    count = _u32(data, start)
+    at = start + 4
+    records = []
+    for i in range(count):
+        r = Record("support", i, at, at)
+        r.offsets["pid"] = at
+        r.values["pid"] = resolve(data, _u32(data, at))
+        partners = _u32(data, at + 4)
+        r.offsets["partners"] = at + 8
+        r.lists["partners"] = [(resolve(data, _u32(data, at + 8 + 8 * k)), data[at + 12 + 8 * k],
+                                data[at + 13 + 8 * k]) for k in range(partners)]
+        r.end = at + 8 + SUPPORT_ENTRY_SIZE * partners
+        records.append(r)
+        at = r.end
+    return records
+
+
+def set_support(data: bytes, index: int, partner: int, flag: int, speed: int) -> bytes:
+    """Set the flag and speed of character ``index``'s ``partner``-th support entry."""
+    rec = _read_supports(data)[index]
+    if not 0 <= partner < len(rec.lists["partners"]):
+        raise IndexError(f"{rec.values['pid']} has no support entry {partner}.")
+    if not (0 <= flag <= 255 and 0 <= speed <= 255):
+        raise ValueError("The flag and speed are bytes (0-255).")
+    out = bytearray(data)
+    at = rec.offsets["partners"] + SUPPORT_ENTRY_SIZE * partner + 4
+    out[at], out[at + 1] = flag, speed
+    return bytes(out)

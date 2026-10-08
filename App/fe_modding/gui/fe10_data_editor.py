@@ -1,4 +1,5 @@
-"""Game Data for Radiant Dawn: the character, class, item and skill tables of ``FE10Data.cms``.
+"""Game Data for Radiant Dawn: the tables of ``FE10Data.cms`` (characters, classes, items, skills,
+chapters, terrain, supports, army groups, bonds, affinities, the weapon triangle, difficulty constants).
 
 One panel, one tab per table (the Game Data hub picks the tab). Each tab lists the records with
 their English names (``Mess/e_common.m``, else the Japanese ``common.m``) and shows the selected
@@ -22,10 +23,18 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import ScrollFrame
 
-TAB_KEYS = ("characters", "classes", "items", "skills")
-KIND_OF_TAB = {"characters": "character", "classes": "class", "items": "item", "skills": "skill"}
-TAB_TITLES = {"characters": "Characters", "classes": "Classes", "items": "Items", "skills": "Skills"}
-NAME_KEY = {"character": "mpid", "class": "mjid", "item": "miid", "skill": "msid"}
+TAB_KEYS = ("characters", "classes", "items", "skills", "chapters", "terrain", "supports", "groups", "bonds",
+            "affinities", "affinity_pairs", "triangle", "difficulty")
+KIND_OF_TAB = {"characters": "character", "classes": "class", "items": "item", "skills": "skill",
+               "chapters": "chapter", "terrain": "terrain", "supports": "support", "groups": "group",
+               "bonds": "bond", "affinities": "affinity", "affinity_pairs": "affinity_pair",
+               "triangle": "triangle", "difficulty": "difficulty"}
+TAB_TITLES = {"characters": "Characters", "classes": "Classes", "items": "Items", "skills": "Skills",
+              "chapters": "Chapters", "terrain": "Terrain", "supports": "Supports", "groups": "Army groups",
+              "bonds": "Bonds", "affinities": "Affinities", "affinity_pairs": "Affinity pairs",
+              "triangle": "Weapon triangle", "difficulty": "Difficulty constants"}
+NAME_KEY = {"character": "mpid", "class": "mjid", "item": "miid", "skill": "msid", "chapter": "title",
+            "terrain": "name_key", "group": "name_key"}
 
 #: Label fields picked from labels with this prefix (the rest offer the values the table uses).
 LABEL_PREFIXES = {
@@ -34,7 +43,10 @@ LABEL_PREFIXES = {
     "mjid": "MJID_", "demotes_to": "JID_", "promotes_to": "JID_", "other_form": "JID_",
     "innate_weapon": "IID_", "iid": "IID_", "miid": "MIID_", "effect": "EID_", "effect_2": "EID_",
     "effect_3": "EID_", "sid": "SID_", "msid": "MSID_", "item": "IID_", "extra_skill": "SID_",
+    "lord": "PID_", "title": "MCT", "step_effect": "EID_", "move_sound": "SFX_", "move_sound_2": "SFX_",
 }
+#: Label fields named by a prefix of their key (chapter objectives per difficulty).
+KEY_PREFIXES = (("win", "MW_"), ("lose", "ML_"))
 HELP_PREFIX = {"character": "MNPID_", "class": "MH_J_", "item": "MH_I_", "skill": "MH_SKILL_"}
 LIST_PREFIXES = {"skills": ("SID_",), "sounds": ("SFXC_",), "requirements": ("SFXC_",),
                  "conditions": ("SID_", "JID_", "PID_")}
@@ -164,8 +176,19 @@ class Fe10DataEditor(EditorPanel):
                 self._refresh_list()
                 return
 
+    @staticmethod
+    def _record_label(r: fe10data.Record) -> str:
+        if r.kind == "difficulty":
+            return f"Row {r.index + 1}"
+        if r.kind in ("bond", "affinity_pair", "triangle"):
+            other = r.values.get("partner") or r.values.get("against") or ""
+            return f"{r.id or '-'} / {other}"
+        return r.id or f"#{r.index}"
+
     def _record_name(self, r: fe10data.Record) -> str:
-        key = r.values.get(NAME_KEY[r.kind])
+        if r.kind in ("support", "bond") and r.values.get("pid", "").startswith("PID_"):
+            return self._names.get("M" + r.values["pid"], "")
+        key = r.values.get(NAME_KEY.get(r.kind, ""))
         return self._names.get(key, "") if key else ""
 
     def _refresh_list(self) -> None:
@@ -179,7 +202,7 @@ class Fe10DataEditor(EditorPanel):
             name = self._record_name(r)
             if query and query not in (r.id or "").lower() and query not in name.lower():
                 continue
-            self._tree.insert("", "end", iid=str(r.index), values=(r.id or f"#{r.index}", name))
+            self._tree.insert("", "end", iid=str(r.index), values=(self._record_label(r), name))
             shown += 1
         if not self._dirty:
             self._status.configure(text=f"{shown} of {len(self._db.table(self.kind))} records")
@@ -210,6 +233,10 @@ class Fe10DataEditor(EditorPanel):
             prefixes = (HELP_PREFIX[self.kind],)
         if prefixes is None and key in LABEL_PREFIXES:
             prefixes = (LABEL_PREFIXES[key],)
+        if prefixes is None and self.kind == "bond" and key in ("pid", "partner"):
+            prefixes = ("PID_",)
+        if prefixes is None:
+            prefixes = next(((p,) for start, p in KEY_PREFIXES if key.startswith(start)), None)
         if prefixes is not None:
             values = sorted({v for p in prefixes for v in fe10data.labels_with_prefix(self._data, p)})
         else:  # the values this table already uses (affinities, weapon types, ranks...)
@@ -233,9 +260,15 @@ class Fe10DataEditor(EditorPanel):
             ttk.Label(body, text="Pick a record on the left.", style="Muted.TLabel").pack(anchor="w")
             return
         r = self._db.table(self.kind)[index]
-        ttk.Label(body, text=f"{self._record_name(r) or r.id}", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(body, text=f"{r.id}  ·  record {r.index}  ·  {r.end - r.start} bytes at {r.start:#x}",
+        label = self._record_label(r)
+        ttk.Label(body, text=self._record_name(r) or label, style="Title.TLabel").pack(anchor="w")
+        ttk.Label(body, text=f"{label}  ·  record {r.index}  ·  {r.end - r.start} bytes at {r.start:#x}",
                   style="Muted.TLabel").pack(anchor="w", pady=(0, 8))
+        if self.kind == "terrain":
+            self._terrain_block_note(body, r)
+        if self.kind == "support":
+            self._support_editor(body, r)
+            return
         groups: dict[str, ttk.Frame] = {}
         for d in fe10data.field_defs(self.kind):
             frame = groups.get(d.group)
@@ -259,7 +292,7 @@ class Fe10DataEditor(EditorPanel):
             if note:
                 ttk.Label(frame, text=note, style="Muted.TLabel", wraplength=320, justify="left").grid(
                     row=row, column=2, sticky="w", padx=(10, 0))
-        for key, title in fe10data.LISTS[self.kind].items():
+        for key, title in fe10data.LISTS.get(self.kind, {}).items():
             self._list_editor(body, r, key, title)
         if self.kind == "item":
             self._bonus_editor(body, r)
@@ -287,7 +320,7 @@ class Fe10DataEditor(EditorPanel):
             self._vars[key].set(self._text(old))
             return
         self._replace(data, f"{r.id}: {definition.label} = {text or '(none)'}")
-        if key == NAME_KEY[self.kind] or key in ("pid", "jid", "iid", "sid"):
+        if key == NAME_KEY.get(self.kind) or key == fe10data.ID_FIELD.get(self.kind):
             self._refresh_list()
 
     # -- lists --------------------------------------------------------------------------------
@@ -396,3 +429,57 @@ class Fe10DataEditor(EditorPanel):
             entry.grid(row=2, column=i, padx=2)
             entry.bind("<FocusOut>", apply)
             entry.bind("<Return>", apply)
+
+    # -- terrain and supports -----------------------------------------------------------------
+    def _terrain_block_note(self, body, r: fe10data.Record) -> None:
+        users = fe10data.terrain_block_users(self._data, r.index)
+        others = [self._db.table("terrain")[i].values.get("name") or str(i) for i in users if i != r.index]
+        if not others:
+            text = "This type has its own stats block."
+        else:
+            more = "..." if len(others) > 8 else ""
+            text = (f"The stats below are shared with {len(others)} other type(s): {', '.join(others[:8])}{more}. "
+                    "Editing them changes all of them.")
+        row = ttk.Frame(body)
+        row.pack(anchor="w", fill="x", pady=(0, 6))
+        ttk.Label(row, text=text, style="Muted.TLabel", wraplength=520, justify="left").pack(side="left")
+        if others:
+            def split():
+                self._replace(fe10data.own_terrain_block(self._data, r.index), f"{r.id}: own terrain stats block")
+                self._show_record(r.index)
+            ttk.Button(row, text="Give this type its own stats", command=split).pack(side="left", padx=(8, 0))
+
+    def _support_editor(self, body, r: fe10data.Record) -> None:
+        ttk.Label(body, text="Partners: flag (0 or 255) and support speed", style="Strong.TLabel").pack(
+            anchor="w", pady=(4, 2))
+        grid = ttk.Frame(body)
+        grid.pack(anchor="w")
+        for column, title in enumerate(("Partner", "", "Flag", "Speed")):
+            ttk.Label(grid, text=title, style="Muted.TLabel").grid(row=0, column=column, sticky="w", padx=(0, 8))
+        for k, (pid, flag, speed) in enumerate(r.lists["partners"]):
+            ttk.Label(grid, text=pid or "-").grid(row=k + 1, column=0, sticky="w", padx=(0, 8))
+            ttk.Label(grid, text=self._names.get("M" + (pid or ""), ""), style="Muted.TLabel").grid(
+                row=k + 1, column=1, sticky="w", padx=(0, 8))
+            flag_var, speed_var = tk.StringVar(value=str(flag)), tk.StringVar(value=str(speed))
+            for column, var in ((2, flag_var), (3, speed_var)):
+                entry = ttk.Entry(grid, textvariable=var, width=5)
+                entry.grid(row=k + 1, column=column, sticky="w", padx=(0, 8), pady=1)
+                apply = (lambda _e, k=k, f=flag_var, v=speed_var: self._apply_support(r, k, f, v))
+                entry.bind("<FocusOut>", apply)
+                entry.bind("<Return>", apply)
+
+    def _apply_support(self, r: fe10data.Record, k: int, flag_var: tk.StringVar, speed_var: tk.StringVar) -> None:
+        if r.index != self._selected.get(self._tab) or self.kind != "support":
+            return
+        current = self._db.table("support")[r.index].lists["partners"][k]
+        try:
+            flag, speed = int(flag_var.get(), 0), int(speed_var.get(), 0)
+            if (flag, speed) == tuple(current[1:]):
+                return
+            data = fe10data.set_support(self._data, r.index, k, flag, speed)
+        except ValueError as exc:
+            messagebox.showerror("Invalid value", str(exc), parent=self)
+            flag_var.set(str(current[1]))
+            speed_var.set(str(current[2]))
+            return
+        self._replace(data, f"{r.id} / {current[0]}: support flag {flag}, speed {speed}")

@@ -206,7 +206,20 @@ FE10_TILES = {
     "classes": ("♞", "Caps, bases, growths, promotion gains, skills, movement, capacity"),
     "items": ("⚔", "Weapons, staves and items: combat, price, attributes, stat bonuses"),
     "skills": ("✦", "Capacity, icon, effects and who can or cannot have each skill"),
+    "chapters": ("⚑", "Files, objectives per difficulty, scenes, weather, lord"),
+    "terrain": ("▦", "Bonuses, healing, step effects and movement costs per type"),
+    "supports": ("♥", "Support speed between every pair of characters"),
+    "bonds": ("∞", "Bond pairs and their bonus"),
+    "affinities": ("☯", "Attack, defense, hit and avoid per affinity"),
+    "affinity_pairs": ("⚭", "Values between two affinities"),
+    "triangle": ("△", "Weapon triangle damage and hit"),
+    "groups": ("⚐", "Army groups and their names"),
+    "difficulty": ("≡", "Constants per difficulty (rows not named yet)"),
 }
+FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills")),
+                 ("Chapters and maps", ("chapters", "terrain")),
+                 ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
+                 ("Rules", ("triangle", "groups", "difficulty")))
 
 
 class Fe10GameDataPage(Page):
@@ -224,18 +237,18 @@ class Fe10GameDataPage(Page):
         scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
         ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
         data_file = self.project.profile.file_label("game_data")
-        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}. Terrain, "
-                  "chapters, supports and the general tables are not decoded for "
-                  f"{self.project.profile.display_name} yet.", style="Muted.TLabel",
+        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}. Fields whose "
+                  "meaning is not known yet are shown as Unknown and edit as numbers.", style="Muted.TLabel",
                   wraplength=720, justify="left").pack(anchor="w", pady=(2, 16))
-        section_header(scroll.body, data_file).pack(anchor="w", pady=(12, 8))
-        grid = CardGrid(scroll.body, card_width=280)
-        grid.pack(fill="x")
-        for key in FE10_TAB_KEYS:
-            icon, description = FE10_TILES[key]
-            grid.add(key, Card(grid, title=FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
-                               on_click=lambda k=key: self.shell.navigate((self.kind, k))))
-        grid.done()
+        for title, keys in FE10_SECTIONS:
+            section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
+            grid = CardGrid(scroll.body, card_width=280)
+            grid.pack(fill="x")
+            for key in keys:
+                icon, description = FE10_TILES[key]
+                grid.add(key, Card(grid, title=FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
+                                   on_click=lambda k=key: self.shell.navigate((self.kind, k))))
+            grid.done()
         return scroll
 
     def show(self, route) -> bool:

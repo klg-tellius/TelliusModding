@@ -152,5 +152,45 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(fe10data.record(cleared, "skill", parity.index).lists["conditions"], [])
 
 
+    def test_fixed_tables_end_at_the_next_symbol(self):
+        expected = {"chapter": ("GroupData", 60), "group": ("KiznaData", 45), "affinity_pair": ("3SukumiData", 64),
+                    "triangle": ("BioData", 27), "affinity": ("GameData", 9), "support": ("ChapterData", 71)}
+        for kind, (following, count) in expected.items():
+            records = self.db.table(kind)
+            self.assertEqual(len(records), count, kind)
+            self.assertEqual(records[-1].end, fe8data.section_start(self.data, following), kind)
+        self.assertEqual(len(self.db.table("terrain")), 199)
+        self.assertEqual(len(self.db.table("bond")), 46)
+
+    def test_fixed_table_values(self):
+        chapter = {r.id: r for r in self.db.table("chapter")}["C0101"].values
+        self.assertEqual((chapter["map"], chapter["lord"], chapter["number"]), ("bmap0101", "PID_MICAIAH", 1))
+        affinities = {r.id: r.values for r in self.db.table("affinity")}
+        self.assertEqual([affinities["fire"][k] for k in ("attack", "defense", "hit", "avoid")], [1, 0, 5, 0])
+        plain = self.db.table("terrain")[1].values
+        self.assertEqual((plain["name"], plain["cost_0"]), ("平地", 1))
+        ike = self.db.table("support")[0]
+        self.assertEqual(ike.values["pid"], "PID_IKE")
+        self.assertEqual(len(ike.lists["partners"]), 71)
+        self.assertEqual(ike.lists["partners"][1], ("PID_ENA", 0, 2))
+
+    def test_fixed_table_edits(self):
+        out = fe10data.patch_field(self.data, "chapter", 1, "lord", "PID_IKE")
+        self.assertEqual(fe10data.record(out, "chapter", 1).values["lord"], "PID_IKE")
+        out = fe10data.patch_field(out, "difficulty", 0, "value_1", 33)
+        self.assertEqual(fe10data.record(out, "difficulty", 0).values["value_1"], 33)
+        out = fe10data.set_support(out, 0, 1, 255, 4)
+        self.assertEqual(fe10data.record(out, "support", 0).lists["partners"][1], ("PID_ENA", 255, 4))
+
+    def test_shared_terrain_block_and_own_copy(self):
+        users = fe10data.terrain_block_users(self.data, 1)
+        self.assertGreater(len(users), 1)
+        shared = fe10data.patch_field(self.data, "terrain", 1, "cost_0", 2)
+        self.assertEqual(fe10data.record(shared, "terrain", users[-1]).values["cost_0"], 2)
+        own = fe10data.patch_field(fe10data.own_terrain_block(self.data, 1), "terrain", 1, "cost_0", 2)
+        self.assertEqual(fe10data.record(own, "terrain", 1).values["cost_0"], 2)
+        self.assertEqual(fe10data.record(own, "terrain", users[-1]).values["cost_0"], 1)
+        self.assertEqual(fe10data.terrain_block_users(own, 1), [1])
+
 if __name__ == "__main__":
     unittest.main()
