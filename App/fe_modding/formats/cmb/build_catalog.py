@@ -1,6 +1,6 @@
 """Regenerate ``externs_fe9.json`` (or ``externs_fe10.json`` with ``--fe10``).
 
-    python -m fe_modding.formats.cmb.build_catalog [--fe10] <extern tsv> <extracted Scripts dir>
+    python -m fe_modding.formats.cmb.build_catalog [--fe10] [--notes TSV]... <extern tsv> <extracted Scripts dir>
 
 * ``<extern tsv>``: ``research/main_dol/fe9_script_externs.tsv`` (Radiant
   Dawn: ``research/rd/fe10_script_externs.tsv``), exported from ``main.dol``
@@ -9,12 +9,17 @@
   exported by ``startup.cmb`` are callable from every chapter, so they are
   catalogued too; every call site in every script is used to infer each
   argument's kind from the literal values vanilla passes.
+* ``--notes``: ``name <TAB> description`` files (``#`` comments) whose text
+  becomes each extern's ``note`` (the editor shows it); the first file that
+  describes a name wins. Radiant Dawn's are ``research/rd/fe10_native_notes.tsv``
+  then ``research/rd/fe10_native_notes_from_por.tsv``.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -110,13 +115,39 @@ def build(tsv: Path, scripts_dir: Path, fe10: bool = False) -> dict:
     return {"externs": dict(sorted(externs.items()))}
 
 
+def read_notes(paths: list[Path]) -> dict[str, str]:
+    notes: dict[str, str] = {}
+    for path in paths:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() and not line.startswith("#"):
+                name, _, text = line.partition("\t")
+                notes.setdefault(name, text.strip())
+    return notes
+
+
 def main(argv: list[str]) -> int:
     fe10 = "--fe10" in argv
     argv = [a for a in argv if a != "--fe10"]
+    note_files = []
+    while "--notes" in argv:
+        at = argv.index("--notes")
+        note_files.append(Path(argv[at + 1]))
+        del argv[at:at + 2]
     if len(argv) != 2:
         print(__doc__)
         return 2
     data = build(Path(argv[0]), Path(argv[1]), fe10)
+    for name, text in read_notes(note_files).items():
+        entry = data["externs"].get(name)
+        if entry is None:
+            continue
+        entry["note"] = text
+        # a note starting "(unit, slot): ..." names the arguments
+        match = re.match(r"\(([A-Za-z_][\w, ]*)\):", text)
+        names = [n.strip() for n in match.group(1).split(",")] if match else []
+        if len(names) == entry["argc"] and all(n.isidentifier() for n in names):
+            for arg, arg_name in zip(entry["args"], names):
+                arg["name"] = arg_name
     path = CATALOG_PATHS["fe10" if fe10 else "fe9"]
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(data, ensure_ascii=False, indent=1) + "\n")

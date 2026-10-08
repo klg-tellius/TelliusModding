@@ -6,16 +6,16 @@
    "group": "chapter_objective",
    "args": [
     {
-     "name": "",
+     "name": "label",
      "kind": "mess"
     },
     {
-     "name": "",
+     "name": "amount",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(label, amount): records one line of the chapter's bonus-experience results. Radiant Dawn halves the amount on difficulty 2 (Maniac) and adds half on difficulty 3 (Easy); a line of 0 or less is skipped."
   },
   "Achieve_CLEAR_BONUS": {
    "argc": 2,
@@ -148,20 +148,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pid1",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "pid2",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "amount",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(pid1, pid2, amount): adds amount (clamped to -128..127) to the bond between two characters; 0 if either PID is unknown."
   },
   "AddTT": {
    "argc": 6,
@@ -194,7 +194,7 @@
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "Adds a raw entry to the map's special-terrain list."
   },
   "AddToCurrentWarehouseWhatever": {
    "argc": 1,
@@ -202,12 +202,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "iid",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(iid): adds a new item to the current army's convoy; 0 when there is none or the item cannot be stored."
   },
   "AddToWarehouseWhatever": {
    "argc": 2,
@@ -215,16 +215,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "convoy",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "iid",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(convoy, iid): adds a new item to convoy 1-5."
   },
   "AllPop": {
    "argc": 0,
@@ -232,7 +232,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Restores the game state saved by AllPush and frees the buffer."
   },
   "AllPush": {
    "argc": 0,
@@ -240,7 +240,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Saves the whole game state into the temporary buffer (party data, camera, every unit, convoy, forge records and map state), then resets units, chapter flags, map state, convoy and forge records."
   },
   "AllUnitEscape": {
    "argc": 0,
@@ -248,7 +248,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 56,
-   "note": ""
+   "note": "Removes every unit of forces 0–3 from the map: carried units are dropped first, player units go to the reserve marked as escaped, all other units are deleted."
   },
   "AllUnitsBreakup": {
    "argc": 0,
@@ -269,7 +269,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Releases one reference to a relocatable game resource."
   },
   "ArcLoad": {
    "argc": 1,
@@ -282,7 +282,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Loads a relocatable game resource."
   },
   "AreaUnitCheck": {
    "argc": 4,
@@ -315,7 +315,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Debug stub: does nothing in Radiant Dawn."
   },
   "BGM0Continue": {
    "argc": 0,
@@ -750,7 +750,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Resumes a channel paused by BGMMute and fades it back to its remembered volume."
   },
   "BGMContinue": {
    "argc": 1,
@@ -784,7 +784,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Starts a track on a music channel, fading it in from silence to full volume. If any channel is already playing this same track, nothing changes."
   },
   "BGMFadeOut": {
    "argc": 2,
@@ -801,7 +801,7 @@
     }
    ],
    "uses": 79,
-   "note": ""
+   "note": "Fades a playing channel to silence and stops it."
   },
   "BGMMute": {
    "argc": 2,
@@ -818,7 +818,7 @@
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "Fades a playing channel to silence and pauses it, remembering its volume and position so BGMCont can bring it back."
   },
   "BGMPause": {
    "argc": 1,
@@ -848,7 +848,7 @@
     }
    ],
    "uses": 18,
-   "note": ""
+   "note": "Starts a track on a music channel at full volume. If any channel is already playing this same track, nothing changes. The channel's previous track is stopped."
   },
   "BGMPlayAlways": {
    "argc": 2,
@@ -856,16 +856,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "channel",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "bgm_id",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(channel, bgm_id): plays a track on a channel even if it is already playing; channel 0 also marks the map music as started."
   },
   "BGMPlayVol": {
    "argc": 3,
@@ -886,7 +886,7 @@
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "Starts a track on a music channel at the given volume."
   },
   "BGMQuietOff": {
    "argc": 1,
@@ -899,7 +899,7 @@
     }
    ],
    "uses": 18,
-   "note": ""
+   "note": "Ends the music 'quiet' state started by BGMQuietOn, restoring the level over about a quarter of a second."
   },
   "BGMQuietOn": {
    "argc": 1,
@@ -912,7 +912,7 @@
     }
    ],
    "uses": 20,
-   "note": ""
+   "note": "Starts lowering the music for a dialogue box or a reward window (the game's music 'quiet' state), over about a quarter of a second."
   },
   "BGMResume": {
    "argc": 1,
@@ -920,12 +920,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(duration_ms): restores the music after an event: fades the volume back and resumes the paused channels (one argument in Radiant Dawn)."
   },
   "BGMSetVol": {
    "argc": 3,
@@ -946,7 +946,7 @@
     }
    ],
    "uses": 42,
-   "note": ""
+   "note": "Changes a channel's volume gradually."
   },
   "BGMSilentOff": {
    "argc": 1,
@@ -954,12 +954,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(duration_ms): fades the music volume group back to full."
   },
   "BGMSilentOn": {
    "argc": 1,
@@ -967,12 +967,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(duration_ms): fades the music volume group to silence."
   },
   "BGMStop": {
    "argc": 1,
@@ -985,7 +985,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Stops a playing channel almost immediately (a one-millisecond fade)."
   },
   "BGMVolumeDown": {
    "argc": 1,
@@ -1032,12 +1032,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "weapon_type",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(weapon_type): raises the forge experience of weapon type 0-5 by 50 (capped at 4950)."
   },
   "BMGetChapter": {
    "argc": 0,
@@ -1045,7 +1045,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Returns the current chapter number."
   },
   "BMGetMoney": {
    "argc": 0,
@@ -1053,7 +1053,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Returns the party's gold."
   },
   "BMGetPhase": {
    "argc": 0,
@@ -1061,7 +1061,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 16,
-   "note": ""
+   "note": "Returns whose phase it is."
   },
   "BMGetScore": {
    "argc": 0,
@@ -1069,7 +1069,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "The battle-map score."
   },
   "BMGetTanto": {
    "argc": 1,
@@ -1077,12 +1077,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index): byte index of the battle-map table at 0x803CAB4C (\"tanto\": in charge); meaning of the entries not checked."
   },
   "BMGetTurn": {
    "argc": 0,
@@ -1090,7 +1090,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 4,
-   "note": ""
+   "note": "Returns the turn number."
   },
   "BMGetValue": {
    "argc": 1,
@@ -1103,7 +1103,7 @@
     }
    ],
    "uses": 28,
-   "note": ""
+   "note": "Reads a signed 16-bit field from battle-map state."
   },
   "BMSetChapter": {
    "argc": 1,
@@ -1111,12 +1111,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "chapter",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(chapter): sets the battle map's chapter number byte."
   },
   "BMSetLoseTerm": {
    "argc": 2,
@@ -1124,16 +1124,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "line",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "message_id",
      "kind": "str"
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "(line, message_id): sets defeat-condition line number line of the map's objective panel (vanilla counts lines with a variable: BMSetLoseTerm(n++, ...))."
   },
   "BMSetMoney": {
    "argc": 1,
@@ -1146,7 +1146,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Sets the party's gold."
   },
   "BMSetPhase": {
    "argc": 1,
@@ -1159,7 +1159,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Overwrites the current-phase value."
   },
   "BMSetScore": {
    "argc": 1,
@@ -1167,12 +1167,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(value): sets the battle-map score."
   },
   "BMSetTanto": {
    "argc": 4,
@@ -1197,7 +1197,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Sets who controls each of the four active map forces."
   },
   "BMSetTurn": {
    "argc": 1,
@@ -1210,7 +1210,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Overwrites the turn counter."
   },
   "BMSetValue": {
    "argc": 2,
@@ -1227,7 +1227,7 @@
     }
    ],
    "uses": 22,
-   "note": ""
+   "note": "Writes a 16-bit field in battle-map state."
   },
   "BMSetWinTerm": {
    "argc": 2,
@@ -1235,16 +1235,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "line",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "message_id",
      "kind": "str"
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "(line, message_id): sets victory-condition line number line (0, 1, ...) of the map's objective panel."
   },
   "BeginFinale": {
    "argc": 0,
@@ -1252,7 +1252,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Enables finale mode and its input mask for A/B/X/Y/Z/L/R/Start."
   },
   "BeginMapHoldCursor": {
    "argc": 0,
@@ -1260,7 +1260,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Starts the map cursor-hold process."
   },
   "BgmCh": {
    "argc": 1,
@@ -1577,7 +1577,7 @@
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "Destroys the village or house at a tile: the camera moves to it, the ruin animation plays and the script waits for it."
   },
   "BuildInstAnim": {
    "argc": 3,
@@ -1598,7 +1598,7 @@
     }
    ],
    "uses": 29,
-   "note": ""
+   "note": "Plays or sets the two-state animation of an animated map prop at a tile."
   },
   "BuildInstExtinction": {
    "argc": 3,
@@ -1606,20 +1606,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "(x, y, duration_ms): puts out the torch at (x, y)."
   },
   "BuildInstGetX": {
    "argc": 2,
@@ -1627,16 +1627,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "kind",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(index, kind): X of a map object (the first argument back if not found)."
   },
   "BuildInstGetY": {
    "argc": 2,
@@ -1644,16 +1644,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "kind",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(index, kind): Y of a map object (the second argument back if not found)."
   },
   "BuildInstHide": {
    "argc": 2,
@@ -1670,7 +1670,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Hides a hideable map prop at a tile."
   },
   "BuildInstReject": {
    "argc": 3,
@@ -1678,20 +1678,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y, on): blocks or unblocks the map object at (x, y) (objects with flag 0x80000: barricades, walls)."
   },
   "BuildInstRejectByName": {
    "argc": 2,
@@ -1699,16 +1699,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(name, on): blocks or unblocks every map object of that name; returns how many."
   },
   "BuildInstShow": {
    "argc": 2,
@@ -1725,7 +1725,7 @@
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "Shows a hideable map prop at a tile."
   },
   "BuildInstTorch": {
    "argc": 4,
@@ -1733,24 +1733,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 41,
-   "note": ""
+   "note": "(x, y, a, duration_ms): lights the torch at (x, y), redrawing the fog; suspends the script during the animation."
   },
   "CameraClear": {
    "argc": 0,
@@ -2031,7 +2031,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Plays the movie of a chapter and pauses the script until it ends."
   },
   "ChapterTitle": {
    "argc": 1,
@@ -2052,7 +2052,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 106,
-   "note": ""
+   "note": "Tests whether a base-conversation event is being evaluated for availability rather than being played."
   },
   "CheckAttackable": {
    "argc": 1,
@@ -2065,7 +2065,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether this unit can reach a position from which its equipped weapon can attack an eligible enemy."
   },
   "CheckForceByPID": {
    "argc": 2,
@@ -2090,7 +2090,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 18,
-   "note": ""
+   "note": "Releases the event camera."
   },
   "ClrTT": {
    "argc": 3,
@@ -2098,20 +2098,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "type",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(x, y, type): removes the map trap/tile effect of that type at (x, y) (with a 60-frame fade)."
   },
   "CmFreeScript": {
    "argc": 0,
@@ -2119,7 +2119,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Unloads the most recently loaded script file and removes its named functions."
   },
   "CmLoadScript": {
    "argc": 1,
@@ -2132,7 +2132,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Loads a CMB script module and makes its exported functions available."
   },
   "CmSleepScript": {
    "argc": 1,
@@ -2145,7 +2145,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Suspends a module’s event enumeration and temporarily removes its exported functions."
   },
   "CmWakeupScripts": {
    "argc": 0,
@@ -2153,7 +2153,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Wakes every script file put to sleep by CmSleepScript and makes its named functions callable again."
   },
   "CmbMessLoad": {
    "argc": 2,
@@ -2161,16 +2161,16 @@
    "group": "bmap_scene",
    "args": [
     {
-     "name": "",
+     "name": "script",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "message_file",
      "kind": "str"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(script, message_file): loads a .cmb script and its message file Mess/<language prefix><message_file>.m (tutorial scripts)."
   },
   "CmbMessUnload": {
    "argc": 1,
@@ -2178,12 +2178,12 @@
    "group": "bmap_scene",
    "args": [
     {
-     "name": "",
+     "name": "message_file",
      "kind": "str"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(message_file): frees the script and message file loaded by CmbMessLoad."
   },
   "Comeback": {
    "argc": 0,
@@ -2191,7 +2191,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 136,
-   "note": ""
+   "note": "Consumes the current event skip/cancel state and performs its cleanup."
   },
   "ComebackFunc": {
    "argc": 0,
@@ -2207,12 +2207,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "route",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(route): ends a branching chapter; route 1, 2 or 3 picks continuation state 5, 6 or 7 (others 0) and sets matching route bits in the game state."
   },
   "Config_TutGet_sfx_vol": {
    "argc": 0,
@@ -2220,7 +2220,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Reads the stored tutorial sound-effect volume byte."
   },
   "Config_TutSet_XinfoPage": {
    "argc": 1,
@@ -2233,7 +2233,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Sets the tutorial information-page selection."
   },
   "Config_TutSet_ctrlInfo": {
    "argc": 1,
@@ -2241,12 +2241,12 @@
    "group": "bmap_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(on): option 1 turns the controls-help setting on (play settings bits 0x000C0000), any other value off."
   },
   "Config_TutSet_otheridoshowing": {
    "argc": 1,
@@ -2259,7 +2259,7 @@
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "Sets the tutorial setting for other-unit movement display."
   },
   "Config_TutSet_sfx_vol": {
    "argc": 1,
@@ -2272,7 +2272,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Stores the tutorial sound-effect volume and applies the settings."
   },
   "Config_TutSet_terInfo": {
    "argc": 1,
@@ -2285,7 +2285,7 @@
     }
    ],
    "uses": 44,
-   "note": ""
+   "note": "Sets the tutorial setting for terrain information."
   },
   "Config_TutSet_unitInfo": {
    "argc": 1,
@@ -2298,7 +2298,7 @@
     }
    ],
    "uses": 77,
-   "note": ""
+   "note": "Sets the tutorial setting for unit information."
   },
   "Config_Tutorial": {
    "argc": 0,
@@ -2306,7 +2306,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 52,
-   "note": ""
+   "note": "Resets the tutorial configuration block to defaults, including internal difficulty ID 1."
   },
   "CopyMapCamera": {
    "argc": 0,
@@ -2314,7 +2314,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "Saves the map camera's angles and distance so PastMapCamera can return to them."
   },
   "CpClrNoMoveFlag": {
    "argc": 1,
@@ -2327,7 +2327,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Clears the two no-move control bits from a unit’s AI state."
   },
   "CreateEventCamera": {
    "argc": 0,
@@ -2335,7 +2335,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 11,
-   "note": ""
+   "note": "Creates an empty event-camera path. Fill it with SetEventCameraAt and SetEventCameraRot keyframes, then play it with StartEventCamera."
   },
   "CreateNoticeFrame": {
    "argc": 4,
@@ -2360,7 +2360,7 @@
     }
    ],
    "uses": 175,
-   "note": ""
+   "note": "Creates or updates an animated rectangular highlight around a screen area."
   },
   "CreateNoticeLFrame": {
    "argc": 7,
@@ -2397,7 +2397,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Creates or updates an animated six-edge L-shaped screen highlight."
   },
   "CreateVMCThread": {
    "argc": 1,
@@ -2405,12 +2405,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "function",
      "kind": "str"
     }
    ],
    "uses": 132,
-   "note": ""
+   "note": "(function): runs a script function by name in a new script thread (own 256-byte stack); returns the thread handle."
   },
   "CreateVMCThread1": {
    "argc": 2,
@@ -2418,16 +2418,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "function",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     }
    ],
    "uses": 29,
-   "note": ""
+   "note": "(function, a): CreateVMCThread passing one argument."
   },
   "CreateVMCThread2": {
    "argc": 3,
@@ -2435,20 +2435,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "function",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(function, a, b): CreateVMCThread passing two arguments."
   },
   "CreateVMCThread3": {
    "argc": 4,
@@ -2456,24 +2456,24 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "function",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "c",
      "kind": "int"
     }
    ],
    "uses": 13,
-   "note": ""
+   "note": "(function, a, b, c): CreateVMCThread passing three arguments."
   },
   "CreateVMCThread4": {
    "argc": 5,
@@ -2481,28 +2481,28 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "function",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "c",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "d",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(function, a, b, c, d): CreateVMCThread passing four arguments."
   },
   "CritEffect": {
    "argc": 2,
@@ -2527,7 +2527,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Turns on Library extra entry 0x7F (Almedha)."
   },
   "DDFlagCheck": {
    "argc": 1,
@@ -2535,12 +2535,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "flag",
      "kind": "str"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(flag): whether a Library (dictionary.bin) entry flag DF_... is on."
   },
   "DDFlagOff": {
    "argc": 1,
@@ -2548,12 +2548,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "flag",
      "kind": "str"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(flag): turns a Library entry flag off."
   },
   "DDFlagOn": {
    "argc": 1,
@@ -2561,12 +2561,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "flag",
      "kind": "str"
     }
    ],
    "uses": 263,
-   "note": ""
+   "note": "(flag): turns a Library entry flag on (unlocks the entry)."
   },
   "DebugDisplayCtrl": {
    "argc": 2,
@@ -2583,7 +2583,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Debug stub; returns 1."
   },
   "DefaultDieTalk": {
    "argc": 0,
@@ -2591,7 +2591,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Looks up and starts the defeated unit’s default death message when that message exists. For player or inactive units it also selects death music."
   },
   "DefaultEscapeTalk": {
    "argc": 0,
@@ -2599,7 +2599,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Looks up and starts the current acting unit’s default escape message when available."
   },
   "DelItemsFromCurrentWarehouse": {
    "argc": 1,
@@ -2607,12 +2607,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "iid",
      "kind": "iid"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(iid): deletes every copy of the item from the current army's convoy; 1 if any was deleted."
   },
   "DelItemsFromForce": {
    "argc": 2,
@@ -2620,16 +2620,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "iid",
      "kind": "iid"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(force, iid): deletes every copy of the item from the units of a force; 1 if any was deleted."
   },
   "DeleteEventCamera": {
    "argc": 0,
@@ -2637,7 +2637,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 9,
-   "note": ""
+   "note": "Removes the event camera and gives control back to the normal map camera."
   },
   "DeleteNoticeFrame": {
    "argc": 0,
@@ -2645,7 +2645,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 126,
-   "note": ""
+   "note": "Removes the active E_NoticeFrame highlight frame."
   },
   "Dialog": {
    "argc": 1,
@@ -2658,7 +2658,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Opens a message dialog and suspends this script until the dialog process releases it."
   },
   "Dialog2Items": {
    "argc": 2,
@@ -2675,7 +2675,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Opens a choice dialog with 2 entries and suspends the calling script."
   },
   "Dialog3Items": {
    "argc": 3,
@@ -2696,7 +2696,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Opens a choice dialog with 3 entries and suspends the calling script."
   },
   "Dialog3ItemsWithSt": {
    "argc": 6,
@@ -2704,32 +2704,32 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "choice_1",
      "kind": "mess"
     },
     {
-     "name": "",
+     "name": "choice_2",
      "kind": "mess"
     },
     {
-     "name": "",
+     "name": "choice_3",
      "kind": "mess"
     },
     {
-     "name": "",
+     "name": "state_1",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "state_2",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "state_3",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(choice_1, choice_2, choice_3, state_1, state_2, state_3): three-choice dialog where each choice has a state 0-3 (enabled, greyed...); suspends the script; read DialogResult after."
   },
   "Dialog4Items": {
    "argc": 4,
@@ -2754,7 +2754,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Opens a choice dialog with 4 entries and suspends the calling script."
   },
   "DialogDirect": {
    "argc": 1,
@@ -2767,7 +2767,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Opens a message dialog and suspends this script until the dialog process releases it."
   },
   "DialogGetRes": {
    "argc": 0,
@@ -2775,7 +2775,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Reads the last dialog result."
   },
   "DialogResult": {
    "argc": 0,
@@ -2783,7 +2783,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 53,
-   "note": ""
+   "note": "Reads the last dialog result."
   },
   "DialogSetDefault": {
    "argc": 1,
@@ -2796,7 +2796,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Sets the default selection byte used by dialogs."
   },
   "DialogTutorial": {
    "argc": 1,
@@ -2809,7 +2809,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Opens a tutorial dialog and suspends this script until the dialog process releases it."
   },
   "DisableSkip": {
    "argc": 0,
@@ -2817,7 +2817,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 83,
-   "note": ""
+   "note": "Stops the player from skipping the current event until EnableSkip is called."
   },
   "DispFreeWholeForce": {
    "argc": 1,
@@ -2830,7 +2830,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Releases display resources for every actor in a force list."
   },
   "DispLoadWholeForce": {
    "argc": 1,
@@ -2843,7 +2843,7 @@
     }
    ],
    "uses": 16,
-   "note": ""
+   "note": "Loads display resources for every actor in a force list."
   },
   "DispPreLoadWholeForce": {
    "argc": 1,
@@ -2856,7 +2856,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Queues battle-animation assets for every actor in a force list."
   },
   "Dispos": {
    "argc": 1,
@@ -2908,7 +2908,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Deploys the units the player picked for the second team (SelectAuxiliary) onto the group's tiles and moves them from the reserve to the player force."
   },
   "DisposContinue": {
    "argc": 1,
@@ -3031,12 +3031,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "file",
      "kind": "str"
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "(file): frees a loaded deployment file."
   },
   "DisposGetCount": {
    "argc": 0,
@@ -3044,7 +3044,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Number of units in the last deployment."
   },
   "DisposGetGroupCenter": {
    "argc": 3,
@@ -3065,7 +3065,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Computes the center of a named deployment group and writes its coordinates into two variables."
   },
   "DisposGetRankGroup": {
    "argc": 1,
@@ -3073,12 +3073,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "(group): the deployment group's entry name for the current difficulty."
   },
   "DisposGetUnit": {
    "argc": 1,
@@ -3086,12 +3086,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index): unit handle of the index-th unit of the last deployment."
   },
   "DisposLoad": {
    "argc": 1,
@@ -3099,12 +3099,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "file",
      "kind": "str"
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "(file): loads a deployment file (dispos_<difficulty>.bin)."
   },
   "DisposNetuzo": {
    "argc": 2,
@@ -3307,7 +3307,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Opens the army-splitting screen (part 3 and 4 army assignment) and suspends the script."
   },
   "DoorClose": {
    "argc": 2,
@@ -3324,7 +3324,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Closes the door at a tile with its animation and waits for it."
   },
   "DoorOpen": {
    "argc": 2,
@@ -3341,7 +3341,7 @@
     }
    ],
    "uses": 32,
-   "note": ""
+   "note": "Opens the door at a tile with its animation and waits for it. The door stops blocking movement."
   },
   "DumpUnit": {
    "argc": 0,
@@ -3349,7 +3349,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 35,
-   "note": ""
+   "note": "Debug stub, does nothing."
   },
   "ECamSet": {
    "argc": 10,
@@ -3648,12 +3648,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(duration_ms): fades the ambient group back to normal."
   },
   "ENVNoisyOn": {
    "argc": 1,
@@ -3661,12 +3661,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(duration_ms): fades the ambient group louder."
   },
   "ENVNoisyOn_WhenNotEvtSkip": {
    "argc": 0,
@@ -3706,16 +3706,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "sfx",
      "kind": "sfx"
     },
     {
-     "name": "",
+     "name": "volume",
      "kind": "int"
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "(sfx, volume): starts an ambient loop; returns its channel, -1 when skipping or invalid."
   },
   "ENVPlay3D": {
    "argc": 5,
@@ -3723,28 +3723,28 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "sfx",
      "kind": "sfx"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "height",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "volume",
      "kind": "int"
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "(sfx, x, y, height, volume): starts a positioned ambient loop at map tile (x, y); returns its channel or -1."
   },
   "ENVPlayUnit": {
    "argc": 2,
@@ -3786,12 +3786,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(duration_ms): fades the ambient group back to full."
   },
   "ENVQuietOn": {
    "argc": 1,
@@ -3799,12 +3799,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(duration_ms): fades the ambient sound group to a low volume (one argument in Radiant Dawn)."
   },
   "ENVSetVol": {
    "argc": 3,
@@ -3812,20 +3812,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "channel",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "volume",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 25,
-   "note": ""
+   "note": "(channel, volume, duration_ms): fades an ambient channel to volume (0-100)."
   },
   "ENVSilentOff": {
    "argc": 1,
@@ -3833,12 +3833,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 13,
-   "note": ""
+   "note": "(duration_ms): fades the ambient group back to full after ENVSilentOn."
   },
   "ENVSilentOff_WhenNotEvtSkip": {
    "argc": 0,
@@ -3859,7 +3859,7 @@
     }
    ],
    "uses": 15,
-   "note": ""
+   "note": "Silences the ambient (environment) sound."
   },
   "ENVStart": {
    "argc": 1,
@@ -3880,16 +3880,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "channel",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 39,
-   "note": ""
+   "note": "(channel, duration_ms): fades out and stops an ambient channel."
   },
   "ENVVolumeDown": {
    "argc": 0,
@@ -3913,7 +3913,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "1 on the difficulty whose setting byte is 3 (Easy), else 0."
   },
   "EffectCamera": {
    "argc": 2,
@@ -3921,16 +3921,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "distance",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(effect, distance): attaches an effect in front of the camera."
   },
   "EffectCycle": {
    "argc": 2,
@@ -3938,16 +3938,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(effect, on): turns an effect's cycling flag (0x2000) on or off."
   },
   "EffectDelete": {
    "argc": 1,
@@ -3955,12 +3955,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     }
    ],
    "uses": 42,
-   "note": ""
+   "note": "(effect): deletes an effect (-1: every event effect)."
   },
   "EffectDepth": {
    "argc": 2,
@@ -3968,16 +3968,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "depth",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(effect, depth): sets an effect's drawing depth."
   },
   "EffectEditor": {
    "argc": 3,
@@ -4006,16 +4006,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "(effect, duration_ms): fades an effect out."
   },
   "EffectLoop": {
    "argc": 2,
@@ -4023,16 +4023,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 89,
-   "note": ""
+   "note": "(effect, on): makes an effect loop or play once."
   },
   "EffectPlay": {
    "argc": 1,
@@ -4040,12 +4040,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "eid",
      "kind": "str"
     }
    ],
    "uses": 63,
-   "note": ""
+   "note": "(eid): plays an effect (EID_...) and suspends the script one frame; returns its handle (one argument in Radiant Dawn); 0 while skipping."
   },
   "EffectPlay2D": {
    "argc": 1,
@@ -4053,12 +4053,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "eid",
      "kind": "str"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(eid): plays a screen-space effect; returns its handle."
   },
   "EffectPlayPos": {
    "argc": 3,
@@ -4087,20 +4087,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "(effect, x, y): moves an effect to map tile (x, y) at ground height."
   },
   "EffectPreLoad": {
    "argc": 1,
@@ -4108,12 +4108,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "eid",
      "kind": "str"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(eid): preloads an effect; ignored while skipping."
   },
   "EffectPriority": {
    "argc": 2,
@@ -4121,16 +4121,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "priority",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(effect, priority): sets an effect's drawing priority (-1 = default 0x98)."
   },
   "EffectRotate": {
    "argc": 4,
@@ -4138,24 +4138,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(effect, x, y, z): rotates an effect (degrees)."
   },
   "EffectScale": {
    "argc": 2,
@@ -4163,16 +4163,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "percent",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(effect, percent): scales an effect."
   },
   "EffectSky": {
    "argc": 2,
@@ -4197,16 +4197,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "speed",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(effect, speed): sets an effect's playback speed."
   },
   "EffectUnit": {
    "argc": 4,
@@ -4214,24 +4214,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "bone",
      "kind": "str"
     }
    ],
    "uses": 33,
-   "note": ""
+   "note": "(effect, unit, a, bone): attaches an effect to a unit, at a bone or node of its model when bone names one."
   },
   "EffectWait": {
    "argc": 1,
@@ -4252,24 +4252,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(effect, x, y, z): moves an effect to a 3D position (z above the ground)."
   },
   "EnableSkip": {
    "argc": 0,
@@ -4277,7 +4277,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 82,
-   "note": ""
+   "note": "Lets the player skip the current event again."
   },
   "EndFinale": {
    "argc": 0,
@@ -4285,7 +4285,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Disables finale mode and its input mask for A/B/X/Y/Z/L/R/Start."
   },
   "EndMapHoldCursor": {
    "argc": 0,
@@ -4293,7 +4293,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Ends the map cursor-hold process."
   },
   "EnemyDeadCheck": {
    "argc": 0,
@@ -4301,7 +4301,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether the enemy force is empty."
   },
   "EnemyMonkCheck": {
    "argc": 0,
@@ -4309,7 +4309,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts enemy-force actors with class JID_PRIEST, JID_BISHOP, or JID_BISHOP_F."
   },
   "EnemySelfDefenceCheck": {
    "argc": 0,
@@ -4317,7 +4317,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts enemy-force actors with PID PID_12_SELFDEFENCE."
   },
   "EnemyTigerCheck": {
    "argc": 0,
@@ -4325,7 +4325,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts enemy-force actors with class JID_TIGER."
   },
   "EnemyUnitCheckByPID": {
    "argc": 1,
@@ -4338,7 +4338,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Counts actors with the specified PID in the enemy force."
   },
   "EnvFadeOut_Fast": {
    "argc": 1,
@@ -4443,7 +4443,7 @@
    "group": "epilogue",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Runs the epilogue (EpilogueProc, which fires the type-20 events per character) and suspends the script until it ends."
   },
   "EvArrayDispos": {
    "argc": 3,
@@ -4796,7 +4796,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Adds a timed waypoint to a map-event arrow’s path."
   },
   "EventArrowColor": {
    "argc": 5,
@@ -4825,7 +4825,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Sets the arrow’s RGBA color."
   },
   "EventArrowDelete": {
    "argc": 0,
@@ -4833,7 +4833,7 @@
    "group": "event_arrow",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Deletes the map-event arrow process and all of its arrows."
   },
   "EventArrowFadeOut": {
    "argc": 1,
@@ -4846,7 +4846,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Requests fade-out of the selected map-event arrow."
   },
   "EventArrowFocus": {
    "argc": 2,
@@ -4863,7 +4863,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Changes the arrow’s focus-following flag."
   },
   "EventArrowStart": {
    "argc": 2,
@@ -4880,7 +4880,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts an arrow path transition from its current progress using the supplied time."
   },
   "EventArrowWait": {
    "argc": 0,
@@ -4888,7 +4888,7 @@
    "group": "event_arrow",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Suspends the script while map-event arrows are animating."
   },
   "EventCameraWait": {
    "argc": 0,
@@ -4904,7 +4904,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 122,
-   "note": ""
+   "note": "Returns the X coordinate of the tile that started the current location event (visit, area, chest, door)."
   },
   "EventGetY": {
    "argc": 0,
@@ -4912,7 +4912,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 122,
-   "note": ""
+   "note": "Returns the Y coordinate of the tile that started the current location event."
   },
   "EventMapFree": {
    "argc": 1,
@@ -4963,7 +4963,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Starts a repeating camera shake."
   },
   "EventQuakeStop": {
    "argc": 0,
@@ -4971,7 +4971,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Requests the active camera shake to stop."
   },
   "FE8UnitCheckExistsByPID": {
    "argc": 1,
@@ -4979,12 +4979,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pid",
      "kind": "pid"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(pid): from the imported Path of Radiance clear data, the byte recorded for that character (0 when no data was imported or the character is not in it)."
   },
   "FRAME2MSEC": {
    "argc": 1,
@@ -4997,7 +4997,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Converts a 60 Hz frame count to milliseconds."
   },
   "FaceCreate": {
    "argc": 6,
@@ -5005,32 +5005,32 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "fid",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "fade_ms",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "flags",
      "kind": "int"
     }
    ],
    "uses": 167,
-   "note": ""
+   "note": "(name, fid, x, y, fade_ms, flags): shows a portrait outside a conversation (world map scenes); x is converted to 16:9 or world-map coordinates."
   },
   "FaceDelete": {
    "argc": 2,
@@ -5038,16 +5038,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "fade_ms",
      "kind": "int"
     }
    ],
    "uses": 88,
-   "note": ""
+   "note": "(name, fade_ms): fades a FaceCreate portrait out and deletes it."
   },
   "FaceDeleteImm": {
    "argc": 1,
@@ -5055,12 +5055,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): deletes a FaceCreate portrait at once."
   },
   "FaceDeleteImmAll": {
    "argc": 0,
@@ -5068,7 +5068,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 39,
-   "note": ""
+   "note": "Deletes every FaceCreate portrait at once."
   },
   "FaceMove": {
    "argc": 5,
@@ -5076,28 +5076,28 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "curve",
      "kind": "int"
     }
    ],
    "uses": 19,
-   "note": ""
+   "note": "(name, x, y, duration_ms, curve): moves a FaceCreate portrait; curve 0 linear, 1 and 2 eased."
   },
   "FacePreLoad": {
    "argc": 1,
@@ -5105,12 +5105,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "fid",
      "kind": "str"
     }
    ],
    "uses": 154,
-   "note": ""
+   "note": "(fid): preloads a portrait for FaceCreate; ignored while skipping."
   },
   "FaceSetBright": {
    "argc": 3,
@@ -5118,20 +5118,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "brightness",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "(name, brightness, duration_ms): fades a portrait's brightness."
   },
   "Fade": {
    "argc": 2,
@@ -5148,7 +5148,7 @@
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "Starts a screen transition."
   },
   "FadeIn": {
    "argc": 1,
@@ -5182,7 +5182,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "1 while the screen is held black."
   },
   "FadeIsWhiteHolding": {
    "argc": 0,
@@ -5190,7 +5190,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "1 while the screen is held white."
   },
   "FadeNone": {
    "argc": 0,
@@ -5240,24 +5240,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name, x, y, z): plays a camera animation file from map position (x, y) and height z."
   },
   "FileCameraWait": {
    "argc": 0,
@@ -5273,7 +5273,7 @@
    "group": "epilogue",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Starts the closing effect process and suspends the script."
   },
   "Flash": {
    "argc": 5,
@@ -5302,7 +5302,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts a colored screen flash."
   },
   "FlashWait": {
    "argc": 0,
@@ -5310,7 +5310,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Suspends the script while the screen flash is transitioning."
   },
   "FlyerAnim_SetStand": {
    "argc": 1,
@@ -5353,7 +5353,7 @@
     }
    ],
    "uses": 103,
-   "note": ""
+   "note": "Moves the map camera smoothly so it looks at the centre of a tile."
   },
   "FocusBetweenAB": {
    "argc": 5,
@@ -5390,7 +5390,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 7,
-   "note": ""
+   "note": "Like FocusWait, but waits until the camera is within 0.1 tile of its target point and 1 unit of its target angles and distance."
   },
   "FocusTalk": {
    "argc": 3,
@@ -5419,7 +5419,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 56,
-   "note": ""
+   "note": "Waits until the map camera has nearly reached its target."
   },
   "Focus_Wait": {
    "argc": 2,
@@ -5478,12 +5478,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     }
    ],
    "uses": 27,
-   "note": ""
+   "note": "(force): number of units in force 0-10."
   },
   "ForceGetFirst": {
    "argc": 1,
@@ -5491,12 +5491,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     }
    ],
    "uses": 145,
-   "note": ""
+   "note": "(force): first unit of force 0-10 (Radiant Dawn has eleven force lists), to walk it with UnitGetNext; 0 if empty or out of range."
   },
   "ForceRotateDir": {
    "argc": 3,
@@ -5716,16 +5716,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "pid",
      "kind": "pid"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(force, pid): the unit with this PID in the given force's list, 0 if none."
   },
   "ForceUnitMoveDir": {
    "argc": 2,
@@ -5822,7 +5822,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 84,
-   "note": ""
+   "note": "Returns the event system's state flags."
   },
   "GMapBGMPlay": {
    "argc": 0,
@@ -5830,7 +5830,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 37,
-   "note": ""
+   "note": "Plays the world-map music of the current chapter (FUN_800684A0) on channel 0."
   },
   "GMapBGMStop": {
    "argc": 0,
@@ -5838,7 +5838,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 37,
-   "note": ""
+   "note": "Fades out the world-map music (1.5 s)."
   },
   "GMapBuild": {
    "argc": 1,
@@ -5846,12 +5846,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "gid",
      "kind": "str"
     }
    ],
    "uses": 47,
-   "note": ""
+   "note": "(gid): opens a world map scene."
   },
   "GMapCurveDarkOnOff": {
    "argc": 2,
@@ -5859,16 +5859,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name, on): darkens or restores a curve."
   },
   "GMapCurveDispOnOff": {
    "argc": 2,
@@ -5876,16 +5876,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 28,
-   "note": ""
+   "note": "(name, on): shows or hides a curve."
   },
   "GMapCurveDraw": {
    "argc": 1,
@@ -5893,12 +5893,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 47,
-   "note": ""
+   "note": "(name): draws a curve progressively; GMapCurveDrawWait waits for the end."
   },
   "GMapCurveDrawInstant": {
    "argc": 1,
@@ -5906,12 +5906,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): draws a curve at once."
   },
   "GMapCurveDrawWait": {
    "argc": 0,
@@ -5919,7 +5919,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Suspends the script until the current world map's curves finish drawing."
   },
   "GMapCurveEntry": {
    "argc": 1,
@@ -5927,12 +5927,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 49,
-   "note": ""
+   "note": "(name): registers a curve (an army's route line) on the current world map."
   },
   "GMapCurveReset": {
    "argc": 1,
@@ -5940,12 +5940,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): erases a drawn curve."
   },
   "GMapFin": {
    "argc": 1,
@@ -5953,12 +5953,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(duration): fades the world map in."
   },
   "GMapFlagMarkOff": {
    "argc": 1,
@@ -5966,12 +5966,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 16,
-   "note": ""
+   "note": "(name): hides a flag marker (one argument in Radiant Dawn)."
   },
   "GMapFlagMarkOffAll": {
    "argc": 0,
@@ -5979,7 +5979,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Hides every flag marker (no argument in Radiant Dawn)."
   },
   "GMapFlagMarkOn": {
    "argc": 5,
@@ -6008,7 +6008,7 @@
     }
    ],
    "uses": 25,
-   "note": ""
+   "note": "Creates or resets a flag marker on a world-map image."
   },
   "GMapFout": {
    "argc": 1,
@@ -6016,12 +6016,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "duration",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(duration): fades the world map out."
   },
   "GMapHazeOff": {
    "argc": 1,
@@ -6029,12 +6029,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): hides a haze overlay."
   },
   "GMapHazeOn": {
    "argc": 1,
@@ -6042,12 +6042,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): shows a haze overlay on the world map."
   },
   "GMapKill": {
    "argc": 1,
@@ -6055,12 +6055,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "gid",
      "kind": "str"
     }
    ],
    "uses": 47,
-   "note": ""
+   "note": "(gid): closes the world map scene."
   },
   "GMapMove": {
    "argc": 6,
@@ -6068,32 +6068,32 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "zoom_x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "zoom_y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "curve",
      "kind": "int"
     }
    ],
    "uses": 67,
-   "note": ""
+   "note": "(x, y, zoom_x, zoom_y, duration, curve): scrolls the current world map so (x, y) is centred at the given zoom; instant while the event is skipped."
   },
   "GMapMoveOffset": {
    "argc": 6,
@@ -6101,32 +6101,32 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "dx",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "dy",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "zoom_x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "zoom_y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "curve",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(dx, dy, zoom_x, zoom_y, duration, curve): scrolls the current world map by an offset."
   },
   "GMapPointOff": {
    "argc": 1,
@@ -6134,12 +6134,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 87,
-   "note": ""
+   "note": "(name): hides a point marker (one argument in Radiant Dawn)."
   },
   "GMapPointOffAll": {
    "argc": 0,
@@ -6147,7 +6147,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Hides every point marker (no argument in Radiant Dawn)."
   },
   "GMapPointOn": {
    "argc": 5,
@@ -6155,28 +6155,28 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "size",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "color",
      "kind": "int"
     }
    ],
    "uses": 190,
-   "note": ""
+   "note": "(name, x, y, size, color): shows a named point marker on the world map (Path of Radiance took 6 arguments); ignored while skipping."
   },
   "GMapPos": {
    "argc": 2,
@@ -6184,16 +6184,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y): sets the current world map's scroll position."
   },
   "GMapRegionOff": {
    "argc": 1,
@@ -6201,12 +6201,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 15,
-   "note": ""
+   "note": "(name): hides a region overlay (one argument in Radiant Dawn)."
   },
   "GMapRegionOffAll": {
    "argc": 0,
@@ -6214,7 +6214,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Hides every region overlay (no argument in Radiant Dawn)."
   },
   "GMapRegionOn": {
    "argc": 2,
@@ -6231,7 +6231,7 @@
     }
    ],
    "uses": 25,
-   "note": ""
+   "note": "Turns on the selected region overlay on a world-map image."
   },
   "GMapSetCurrentGID": {
    "argc": 1,
@@ -6239,12 +6239,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "gid",
      "kind": "str"
     }
    ],
    "uses": 51,
-   "note": ""
+   "note": "(gid): selects the world map (GID_...) the GMap* natives act on."
   },
   "GameBind": {
    "argc": 0,
@@ -6252,7 +6252,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 16,
-   "note": ""
+   "note": "Freezes the map's normal game flow (phases, cursor, menus) while the script works."
   },
   "GameGetRound": {
    "argc": 0,
@@ -6260,7 +6260,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 17,
-   "note": ""
+   "note": "Byte +0x34 of the game state (FUN_8024BCA0); by its name the playthrough round, not checked in game."
   },
   "GameUnbind": {
    "argc": 0,
@@ -6268,7 +6268,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 16,
-   "note": ""
+   "note": "Lets the map's game flow continue after GameBind."
   },
   "GetBattleType": {
    "argc": 0,
@@ -6276,7 +6276,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Returns the flag word of the current or most recent battle."
   },
   "GetButton": {
    "argc": 1,
@@ -6284,12 +6284,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pad",
      "kind": "int"
     }
    ],
    "uses": 20,
-   "note": ""
+   "note": "(pad): controller buttons held (pad driver call +0x34)."
   },
   "GetConfig": {
    "argc": 1,
@@ -6297,12 +6297,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index): option index 0 (two bits), 0 for other indexes."
   },
   "GetDiedPlayerCount": {
    "argc": 0,
@@ -6310,7 +6310,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts actors in force 6 whose death-record flag is set."
   },
   "GetFadeType": {
    "argc": 0,
@@ -6318,7 +6318,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "The current screen fade state (0 none, 2 and 5 are the black-out states REventStart tests)."
   },
   "GetFragileHP": {
    "argc": 2,
@@ -6326,16 +6326,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(x, y): current HP of the breakable object at (x, y) (tile effect type 4), 0 if none."
   },
   "GetFragileMaxHP": {
    "argc": 2,
@@ -6343,16 +6343,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(x, y): maximum HP of the breakable object at (x, y)."
   },
   "GetFrame": {
    "argc": 0,
@@ -6360,7 +6360,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 10,
-   "note": ""
+   "note": "The frame counter."
   },
   "GetFukiPosX": {
    "argc": 0,
@@ -6368,7 +6368,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 9,
-   "note": ""
+   "note": "Reads the X coordinate of the active tutorial speech-bubble display."
   },
   "GetFukiPosY": {
    "argc": 0,
@@ -6376,7 +6376,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 9,
-   "note": ""
+   "note": "Reads the Y coordinate of the active tutorial speech-bubble display."
   },
   "GetLanguage": {
    "argc": 0,
@@ -6384,7 +6384,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "The language byte of the system save (+0x1BC8; the index of the Mess/ file prefix table, -1 = the disc's default)."
   },
   "GetMapHeight": {
    "argc": 2,
@@ -6401,7 +6401,7 @@
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "Samples the alternate terrain-surface height at the supplied map coordinates."
   },
   "GetMapHeightBase": {
    "argc": 2,
@@ -6418,7 +6418,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Samples the base terrain height at the supplied map coordinates."
   },
   "GetNumDiedBrothers": {
    "argc": 0,
@@ -6426,7 +6426,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Number of allied units that died on this map."
   },
   "GetNumDiedEnemies": {
    "argc": 0,
@@ -6434,7 +6434,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 8,
-   "note": ""
+   "note": "Number of enemy units that died on this map."
   },
   "GetNumDiedPlayers": {
    "argc": 0,
@@ -6442,7 +6442,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Number of player units that died on this map."
   },
   "GetNumDiedThirds": {
    "argc": 0,
@@ -6450,7 +6450,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Number of other-army (third party) units that died on this map."
   },
   "GetPress": {
    "argc": 1,
@@ -6458,12 +6458,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pad",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(pad): controller buttons pressed this frame (call +0x48)."
   },
   "GetRank": {
    "argc": 0,
@@ -6471,7 +6471,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "The difficulty byte: 0 Normal, 1 Hard, 2 Maniac, 3 Easy (Radiant Dawn's numbering)."
   },
   "GetRelease": {
    "argc": 1,
@@ -6479,12 +6479,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pad",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(pad): controller buttons released this frame (call +0x4C)."
   },
   "GetRepeat": {
    "argc": 1,
@@ -6492,12 +6492,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pad",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(pad): controller buttons with auto-repeat (call +0x3C)."
   },
   "GetRnd": {
    "argc": 1,
@@ -6510,7 +6510,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Draws a random integer using the game random-number generator."
   },
   "GetRndTreasure": {
    "argc": 2,
@@ -6535,20 +6535,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "type",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(x, y, type): the value of the tile effect of that type at (x, y), 0 if none."
   },
   "GetTTCount": {
    "argc": 1,
@@ -6556,12 +6556,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "type",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(type): number of tile effects of a type on the map."
   },
   "GetTime": {
    "argc": 0,
@@ -6569,7 +6569,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 9,
-   "note": ""
+   "note": "The frame counter converted to milliseconds."
   },
   "GetTutorial": {
    "argc": 0,
@@ -6577,7 +6577,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Reads whether tutorial help is enabled in configuration."
   },
   "GetWeather": {
    "argc": 0,
@@ -6585,7 +6585,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "The current weather byte."
   },
   "Get_LIVE_BONUS": {
    "argc": 2,
@@ -6651,7 +6651,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "1 on Hard (difficulty 1)."
   },
   "HeroFocus": {
    "argc": 0,
@@ -6675,7 +6675,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 25,
-   "note": ""
+   "note": "Removes every map cursor shown by ShowMapCursor."
   },
   "HidePoint": {
    "argc": 2,
@@ -6683,16 +6683,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y): removes the marker at (x, y)."
   },
   "HidePrim2D": {
    "argc": 1,
@@ -6705,7 +6705,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Starts or ends the scene process that hides 2D primitives."
   },
   "HitEffect": {
    "argc": 2,
@@ -6738,7 +6738,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Clears the map's tile-effect table (0x803CB770)."
   },
   "InstantDispos": {
    "argc": 1,
@@ -6908,7 +6908,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Closes the door at a tile without animation and restores its hit points."
   },
   "InstantDoorOpen": {
    "argc": 2,
@@ -6925,7 +6925,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Opens the door at a tile without animation."
   },
   "InstantFocus": {
    "argc": 2,
@@ -6942,7 +6942,7 @@
     }
    ],
    "uses": 81,
-   "note": ""
+   "note": "Points the map camera at the centre of a tile at once."
   },
   "InstantForceUnitAnim": {
    "argc": 2,
@@ -6988,7 +6988,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Restores the angles and distance saved by CopyMapCamera at once."
   },
   "InstantRoofClose": {
    "argc": 2,
@@ -7005,7 +7005,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Puts back the roof at a tile without animation."
   },
   "InstantRoofOpen": {
    "argc": 2,
@@ -7022,7 +7022,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Lifts the roof at a tile without animation."
   },
   "InstantSetMapCamera": {
    "argc": 3,
@@ -7043,7 +7043,7 @@
     }
    ],
    "uses": 57,
-   "note": ""
+   "note": "Sets the map camera's angles and distance at once."
   },
   "InstantUnitAnim": {
    "argc": 2,
@@ -7068,12 +7068,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(unit): promotes the unit at once if it has the SID_EVENT_CC skill and its class has a promotion; returns 1 if it did."
   },
   "InstantUnitFocus": {
    "argc": 1,
@@ -7137,7 +7137,7 @@
     }
    ],
    "uses": 39,
-   "note": ""
+   "note": "Changes a unit to the requested transformed/untransformed state immediately and refreshes its display."
   },
   "InstantUnitTransformByPID": {
    "argc": 2,
@@ -7194,7 +7194,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 102,
-   "note": ""
+   "note": "1 while the conversation room (E_ConversationRoom) is running."
   },
   "IsDispos": {
    "argc": 0,
@@ -7202,7 +7202,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "1 when the deployment list is empty (no deployment pending)."
   },
   "IsE3Version": {
    "argc": 0,
@@ -7210,7 +7210,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests the E3/demo-build condition in this US executable."
   },
   "IsEffect": {
    "argc": 1,
@@ -7218,12 +7218,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(effect): 1 while the effect (or any event effect, for -1) exists; 0 while skipping."
   },
   "IsEventCamera": {
    "argc": 0,
@@ -7231,7 +7231,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "1 while the event camera is active."
   },
   "IsExtraTutoIn": {
    "argc": 0,
@@ -7239,7 +7239,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Always 0 in the retail game."
   },
   "IsFaceEnable": {
    "argc": 1,
@@ -7247,12 +7247,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 35,
-   "note": ""
+   "note": "(name): whether that FaceCreate portrait exists."
   },
   "IsFileCamera": {
    "argc": 0,
@@ -7260,7 +7260,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "1 while a FileCameraPlay animation runs (skipping stops it)."
   },
   "IsFinalVersion": {
    "argc": 0,
@@ -7268,7 +7268,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "Always 1 in the retail game."
   },
   "IsFlyingBirdHuman": {
    "argc": 1,
@@ -7302,12 +7302,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): whether a flag marker is shown."
   },
   "IsGMapPointEnable": {
    "argc": 1,
@@ -7315,12 +7315,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 15,
-   "note": ""
+   "note": "(name): whether a point marker is shown."
   },
   "IsGMapRegionEnable": {
    "argc": 1,
@@ -7328,12 +7328,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): whether a region overlay is shown."
   },
   "IsInheritFE8Data": {
    "argc": 0,
@@ -7341,7 +7341,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "1 when this game imported Path of Radiance clear data (game-state bit 0x1), else 0."
   },
   "IsJPVersion": {
    "argc": 0,
@@ -7349,7 +7349,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 12,
-   "note": ""
+   "note": "0 on this (US) disc."
   },
   "IsNOAVersion": {
    "argc": 0,
@@ -7357,7 +7357,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "1 on this (US, Nintendo of America) disc."
   },
   "IsNOEVersion": {
    "argc": 0,
@@ -7365,7 +7365,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "0 on this (US) disc."
   },
   "IsPrivateViewVersion": {
    "argc": 0,
@@ -7373,7 +7373,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "Always 0 in the retail game (a preview-build switch)."
   },
   "IsSFXPlay": {
    "argc": 1,
@@ -7381,12 +7381,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "sfx",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(sfx): whether the sound effect is playing (0 while skipping)."
   },
   "IsShowVersion": {
    "argc": 0,
@@ -7394,7 +7394,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Always 0 in the retail game (trade-show build switch)."
   },
   "IsSkipping": {
    "argc": 0,
@@ -7410,12 +7410,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit): 1 while the unit (or any unit, for -1) is moving."
   },
   "IsVOICEPlay": {
    "argc": 1,
@@ -7423,12 +7423,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "voice",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(voice): whether the voice clip is playing (0 while skipping)."
   },
   "ItemGetIndex": {
    "argc": 1,
@@ -7441,7 +7441,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Resolves an item ID to its numeric item index."
   },
   "Join": {
    "argc": 2,
@@ -7449,16 +7449,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "pid",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "(pid, value): adds the character to the party; the second argument (new in Radiant Dawn) is passed to the join routine FUN_8010C8EC."
   },
   "JoinRank": {
    "argc": 2,
@@ -7483,7 +7483,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Captures the status-map display and suspends the script while capture completes."
   },
   "JyokyoMapDelete": {
    "argc": 0,
@@ -7491,7 +7491,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Deletes the status-map display."
   },
   "JyokyoMapEnemyOn": {
    "argc": 0,
@@ -7499,7 +7499,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Enables enemy markers on the status map."
   },
   "JyokyoMapHide": {
    "argc": 0,
@@ -7507,7 +7507,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Hides the status-map display."
   },
   "JyokyoMapPlayerOn": {
    "argc": 0,
@@ -7515,7 +7515,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Enables player markers on the status map."
   },
   "JyokyoMapShow": {
    "argc": 0,
@@ -7523,7 +7523,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Starts the status-map display."
   },
   "KillAllVMCThread": {
    "argc": 0,
@@ -7539,12 +7539,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "thread",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(thread): stops a thread made by CreateVMCThread*; 0 for another handle."
   },
   "LocalDieTalkWithBgmChange": {
    "argc": 2,
@@ -7591,7 +7591,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Converts milliseconds to 60 Hz frames."
   },
   "MStoF": {
    "argc": 1,
@@ -7599,12 +7599,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "ms",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(ms): milliseconds to 60 Hz frames."
   },
   "Maniac": {
    "argc": 0,
@@ -7612,7 +7612,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "1 on Maniac (difficulty 2)."
   },
   "MapEnvPause": {
    "argc": 1,
@@ -7620,12 +7620,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(name): pauses a map environment animation (water, flags...)."
   },
   "MapEnvResume": {
    "argc": 1,
@@ -7633,12 +7633,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(name): resumes a paused map environment animation."
   },
   "MapFree": {
    "argc": 0,
@@ -7646,7 +7646,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 51,
-   "note": ""
+   "note": "Frees the current map and suspends the script until it is released."
   },
   "MapGetSight": {
    "argc": 2,
@@ -7663,7 +7663,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Reads the visibility-grid byte at a tile."
   },
   "MapGetTerrain": {
    "argc": 2,
@@ -7680,7 +7680,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Reads the terrain ID stored at a map tile."
   },
   "MapHide": {
    "argc": 1,
@@ -7688,12 +7688,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(duration_ms): fades the map out (hides it), suspending the script during the fade; instant when 0 or skipping."
   },
   "MapInfoHide": {
    "argc": 0,
@@ -7722,7 +7722,7 @@
     }
    ],
    "uses": 48,
-   "note": ""
+   "note": "Loads a map by name and makes it the current map."
   },
   "MapReload": {
    "argc": 0,
@@ -7730,7 +7730,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Reloads the current chapter's map, reapplies its recorded map state (opened doors, visited villages, ...) and points the camera at the saved cursor tile."
   },
   "MapShow": {
    "argc": 1,
@@ -7738,12 +7738,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(duration_ms): fades the map back in."
   },
   "MapUpdate": {
    "argc": 0,
@@ -7751,7 +7751,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Recalculates the map's occupancy, movement ranges and danger areas after units or terrain changed."
   },
   "MaskBG": {
    "argc": 0,
@@ -7793,16 +7793,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index, value): sets numbered argument index of the next message to an integer."
   },
   "MessSetPersonNameArg": {
    "argc": 2,
@@ -7810,16 +7810,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index, unit): sets numbered argument index of the next message to the unit's name."
   },
   "MessSetStringArg": {
    "argc": 2,
@@ -7827,16 +7827,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "text",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index, text): sets numbered argument index of the next message to a string."
   },
   "MindGetItem": {
    "argc": 1,
@@ -7857,7 +7857,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 78,
-   "note": ""
+   "note": "Returns the unit performing the current action (the unit that visited, talked, opened a chest, etc.)."
   },
   "MindGetMind": {
    "argc": 0,
@@ -7865,7 +7865,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 54,
-   "note": ""
+   "note": "Reads the current map-action ID."
   },
   "MindGetMoney": {
    "argc": 1,
@@ -7878,7 +7878,7 @@
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "Adds gold to the party and starts a reward notification associated with the current acting unit."
   },
   "MindGetSkill": {
    "argc": 1,
@@ -7899,7 +7899,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 17,
-   "note": ""
+   "note": "Returns the target of the current action (the unit talked to or fought)."
   },
   "MindSetMind": {
    "argc": 1,
@@ -7907,12 +7907,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit): makes the unit the current acting unit (\"Me\" of the event context)."
   },
   "MindUnitQueryPID": {
    "argc": 1,
@@ -7938,7 +7938,7 @@
     }
    ],
    "uses": 15,
-   "note": ""
+   "note": "Plays a movie file and pauses the script until it ends."
   },
   "NetuzoBG": {
    "argc": 1,
@@ -7946,12 +7946,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "(name): picks the scripted battle's background."
   },
   "NetuzoBattle": {
    "argc": 3,
@@ -7972,7 +7972,7 @@
     }
    ],
    "uses": 27,
-   "note": ""
+   "note": "Resolves and starts a scripted combat exchange between two actors, then suspends the script for the battle process."
   },
   "NetuzoDisableBGM": {
    "argc": 0,
@@ -7980,7 +7980,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Keeps the scripted battle from changing the music."
   },
   "NetuzoDisableFlatter": {
    "argc": 0,
@@ -7988,7 +7988,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 15,
-   "note": ""
+   "note": "Turns off a flag (0x803C8E42) of the scripted battle."
   },
   "NetuzoInit": {
    "argc": 0,
@@ -7996,7 +7996,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 52,
-   "note": ""
+   "note": "Clears all 32 scripted-strike override slots and resets the scripted-battle counters."
   },
   "NetuzoSet": {
    "argc": 3,
@@ -8004,20 +8004,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "outcome",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     }
    ],
    "uses": 53,
-   "note": ""
+   "note": "(slot, outcome, effect): overrides one scripted strike of the next NetuzoBattle."
   },
   "NetuzoSetD": {
    "argc": 4,
@@ -8025,24 +8025,24 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "outcome",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "damage",
      "kind": "int"
     }
    ],
    "uses": 50,
-   "note": ""
+   "note": "(slot, outcome, effect, damage): like NetuzoSet for one scripted strike of a NetuzoBattle, with a forced damage value (12345 = none)."
   },
   "NetuzoSkill": {
    "argc": 1,
@@ -8050,12 +8050,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(on): lets skills activate in the scripted battle."
   },
   "NetuzoWeapon": {
    "argc": 2,
@@ -8063,16 +8063,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "iid",
      "kind": "iid"
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "(slot, iid): sets the weapon of a side in the scripted battle; 0 if the item is unknown."
   },
   "NetuzoWeather": {
    "argc": 1,
@@ -8080,12 +8080,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "weather",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(weather): sets the scripted battle's weather."
   },
   "Normal": {
    "argc": 0,
@@ -8093,7 +8093,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 161,
-   "note": ""
+   "note": "1 on Normal (difficulty 0) only; Radiant Dawn has a separate Easy()."
   },
   "OpEvtSub_CrossFade": {
    "argc": 3,
@@ -8161,7 +8161,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Looks up a character’s current actor and checks that its dead flag is clear."
   },
   "PadResetMask": {
    "argc": 1,
@@ -8174,7 +8174,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Removes buttons from the input mask."
   },
   "PadSetMask": {
    "argc": 1,
@@ -8187,7 +8187,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Adds buttons to the input mask used by event/tutorial control."
   },
   "PastMapCamera": {
    "argc": 0,
@@ -8195,7 +8195,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Turns the camera smoothly back to the angles and distance saved by CopyMapCamera."
   },
   "PelleasIsAlive": {
    "argc": 0,
@@ -8220,7 +8220,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Returns the support rank between two characters."
   },
   "PersonSetYellLevel": {
    "argc": 3,
@@ -8241,7 +8241,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Sets two support partners' support points to the threshold of a rank."
   },
   "PlayerDeadCheck": {
    "argc": 0,
@@ -8249,7 +8249,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether the inactive force list is empty."
   },
   "PlayerEscapeCheck": {
    "argc": 0,
@@ -8257,7 +8257,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether every existing actor in player force 0 or reserve force 5 has the escaped flag."
   },
   "PlayerEscapeCount": {
    "argc": 0,
@@ -8265,7 +8265,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts escaped actors in player force 0 and reserve force 5."
   },
   "PostEffectColor": {
    "argc": 4,
@@ -8273,24 +8273,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "r",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "g",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(effect, r, g, b): sets a post effect's colour."
   },
   "PostEffectStart": {
    "argc": 4,
@@ -8298,24 +8298,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 31,
-   "note": ""
+   "note": "(name, a, value, duration_ms): starts a full-screen post effect (blur, colour filter...); returns its handle."
   },
   "PostEffectStop": {
    "argc": 2,
@@ -8323,16 +8323,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "effect",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 31,
-   "note": ""
+   "note": "(effect, duration_ms): fades a post effect out (-1: every one)."
   },
   "PreLoadWait": {
    "argc": 0,
@@ -8353,7 +8353,7 @@
     }
    ],
    "uses": 12,
-   "note": ""
+   "note": "Tests whether an engine process with a given name is running."
   },
   "ProcKill": {
    "argc": 1,
@@ -8366,7 +8366,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Stops every engine process with a given name."
   },
   "QueryLesson": {
    "argc": 1,
@@ -8379,7 +8379,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether the active lesson has the given name."
   },
   "REventEnd": {
    "argc": 2,
@@ -8447,7 +8447,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Aligns a rectangle’s source image inside the 608 × 448 layout area."
   },
   "RectBuild": {
    "argc": 1,
@@ -8460,7 +8460,7 @@
     }
    ],
    "uses": 127,
-   "note": ""
+   "note": "Creates an image (rectangle) from its RID definition, attached to the current event. RID_GMAP_... names create a world-map view."
   },
   "RectFadeIn": {
    "argc": 2,
@@ -8477,7 +8477,7 @@
     }
    ],
    "uses": 74,
-   "note": ""
+   "note": "Fades in a rectangle."
   },
   "RectFadeOut": {
    "argc": 2,
@@ -8494,7 +8494,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Fades out a rectangle."
   },
   "RectFadeOutDelete": {
    "argc": 2,
@@ -8511,7 +8511,7 @@
     }
    ],
    "uses": 93,
-   "note": ""
+   "note": "Fades out and then deletes a rectangle."
   },
   "RectGet": {
    "argc": 2,
@@ -8528,7 +8528,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Reads a rectangle property and truncates it to an integer."
   },
   "RectGetDepth": {
    "argc": 1,
@@ -8536,12 +8536,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "rect",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(rect): a rectangle's drawing depth, -1 if it does not exist."
   },
   "RectKill": {
    "argc": 1,
@@ -8554,7 +8554,7 @@
     }
    ],
    "uses": 152,
-   "note": ""
+   "note": "Removes an image created by RectBuild or RectLeave."
   },
   "RectKillAll": {
    "argc": 0,
@@ -8562,7 +8562,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 43,
-   "note": ""
+   "note": "Deletes every rectangle (UI picture) the event created."
   },
   "RectLeave": {
    "argc": 1,
@@ -8575,7 +8575,7 @@
     }
    ],
    "uses": 52,
-   "note": ""
+   "note": "Creates a rectangle/world-map image without attaching it to the current event as its parent."
   },
   "RectMove": {
    "argc": 6,
@@ -8608,7 +8608,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Animates a rectangle/world-map image so a source point is centered at (304, 240) at the requested scale."
   },
   "RectMoveOffset": {
    "argc": 5,
@@ -8637,7 +8637,7 @@
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "Animates a rectangle/world-map image to an explicit offset and restores its scale to 100%."
   },
   "RectPreLoad": {
    "argc": 1,
@@ -8650,7 +8650,7 @@
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "Starts loading the image files of a RID definition, so a later RectBuild shows it without delay."
   },
   "RectSet": {
    "argc": 3,
@@ -8671,7 +8671,7 @@
     }
    ],
    "uses": 75,
-   "note": ""
+   "note": "Sets a rectangle property immediately."
   },
   "RectSetAlpha": {
    "argc": 2,
@@ -8721,7 +8721,7 @@
     }
    ],
    "uses": 242,
-   "note": ""
+   "note": "Animates one rectangle property between two values."
   },
   "RectSetDepth": {
    "argc": 2,
@@ -8729,16 +8729,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "rect",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "depth",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(rect, depth): sets a rectangle's drawing depth; 0 if the rectangle does not exist."
   },
   "RectSetPos": {
    "argc": 3,
@@ -8759,7 +8759,7 @@
     }
    ],
    "uses": 105,
-   "note": ""
+   "note": "Sets a rectangle or world-map image’s position immediately."
   },
   "RectSetScale": {
    "argc": 2,
@@ -8909,7 +8909,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Removes the backdrop process."
   },
   "RepairAllWeaponsWholeForce": {
    "argc": 1,
@@ -8917,12 +8917,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(force): restores every weapon of a force's units to its full uses."
   },
   "ResumeEvent": {
    "argc": 0,
@@ -8930,7 +8930,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Continues the event frozen by SuspendEvent."
   },
   "RoofClose": {
    "argc": 2,
@@ -8947,7 +8947,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Puts back the roof at a tile with its animation and waits for it."
   },
   "RoofOpen": {
    "argc": 2,
@@ -8964,7 +8964,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Lifts the roof at a tile with its animation, revealing the building's inside, and waits for it."
   },
   "SFXPlay": {
    "argc": 1,
@@ -8977,7 +8977,7 @@
     }
    ],
    "uses": 75,
-   "note": ""
+   "note": "Plays a sound effect once at full volume."
   },
   "SFXPlay3D": {
    "argc": 4,
@@ -8985,24 +8985,24 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "sfx",
      "kind": "sfx"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "height",
      "kind": "int"
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "(sfx, x, y, height): plays a positioned sound effect at map tile (x, y) (height below -999 = the ground height there)."
   },
   "SFXPlayUnit": {
    "argc": 2,
@@ -9044,12 +9044,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "sfx",
      "kind": "sfx"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(sfx): stops a sound effect."
   },
   "SallyAddByGroup": {
    "argc": 1,
@@ -9062,7 +9062,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Adds the tiles of a group to the preparation screen's deployment tiles."
   },
   "SallyAddByGroupRank": {
    "argc": 1,
@@ -9070,12 +9070,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "str"
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "(group): adds deployment slots from a group, for the current difficulty."
   },
   "SallyAddByPos": {
    "argc": 2,
@@ -9092,7 +9092,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Appends a deployment-selection position."
   },
   "SallyGetSurplus": {
    "argc": 0,
@@ -9100,7 +9100,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Reads the deployment surplus recorded when the deployment-selection flow finishes."
   },
   "SallySetByGroup": {
    "argc": 1,
@@ -9113,7 +9113,7 @@
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "Replaces the preparation screen's deployment tiles with the tiles of a group."
   },
   "SallySetByGroupRank": {
    "argc": 1,
@@ -9121,12 +9121,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "str"
     }
    ],
    "uses": 44,
-   "note": ""
+   "note": "(group): sets the deployment slots from a deployment group, picking the group's entry for the current difficulty."
   },
   "SallySetByPos": {
    "argc": 2,
@@ -9143,7 +9143,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Clears the deployment-selection position list, then adds this position."
   },
   "SaveMenu": {
    "argc": 0,
@@ -9151,7 +9151,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Opens the save menu and suspends the script."
   },
   "ScriptDbgMenu": {
    "argc": -1,
@@ -9175,7 +9175,7 @@
    "group": "script_movie",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Ends the scripted movie scene and restores the map and sound."
   },
   "ScriptMoviePlay": {
    "argc": 1,
@@ -9183,12 +9183,12 @@
    "group": "script_movie",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): plays the scene's animation for name."
   },
   "ScriptMoviePreLoad": {
    "argc": 1,
@@ -9196,12 +9196,12 @@
    "group": "script_movie",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): preloads a scene animation file."
   },
   "ScriptMovieReference": {
    "argc": 1,
@@ -9209,12 +9209,12 @@
    "group": "script_movie",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(name): loads the scene's model, skeleton, animation and texture files for name and attaches them to the scene camera."
   },
   "ScriptMovieStart": {
    "argc": 0,
@@ -9222,7 +9222,7 @@
    "group": "script_movie",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Starts a scripted 3D movie scene (map environment hidden, other sound muted) and suspends the script; ignored while skipping."
   },
   "ScriptMovieWait": {
    "argc": 0,
@@ -9230,7 +9230,7 @@
    "group": "script_movie",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "1 while the scripted movie is still playing (use in a wait loop)."
   },
   "SelectAuxiliary": {
    "argc": 1,
@@ -9243,7 +9243,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts the auxiliary-unit selection flow for a deployment group and suspends the calling script."
   },
   "SelectAuxiliaryRank": {
    "argc": 1,
@@ -9251,12 +9251,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(group): opens the auxiliary-unit selection for a group's entry on the current difficulty and suspends the script."
   },
   "SelectSally": {
    "argc": 0,
@@ -9264,7 +9264,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Opens the unit-selection (deployment) screen and suspends the script until it closes."
   },
   "SelectSallyEx": {
    "argc": 1,
@@ -9272,12 +9272,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(mode): opens the unit-selection screen in a mode and suspends the script."
   },
   "SetAmbient": {
    "argc": 4,
@@ -9285,24 +9285,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "light",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "r",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "g",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(light, r, g, b): sets the colour of ambient light index light and suspends the script one frame (an index argument is new in Radiant Dawn)."
   },
   "SetAvailableGrandOpening": {
    "argc": 0,
@@ -9310,7 +9310,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Sets bit 0x20 of the system save state (unlocks the full opening movie)."
   },
   "SetBomber": {
    "argc": 3,
@@ -9318,20 +9318,20 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(x, y, value): adds a bomber tile effect (type 0x0F)."
   },
   "SetCamHold": {
    "argc": 1,
@@ -9339,12 +9339,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "(on): holds the map camera in place (flag 0x08 of 0x804CB838)."
   },
   "SetCamSuspend": {
    "argc": 1,
@@ -9357,7 +9357,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Sets the camera-suspension flag for map scenes."
   },
   "SetCameraDecel_At": {
    "argc": 4,
@@ -9494,7 +9494,7 @@
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "Debug stub; returns 0."
   },
   "SetCameraEx_At": {
    "argc": 5,
@@ -9879,7 +9879,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Enables or disables the scene’s unit-circle display setting."
   },
   "SetClimb": {
    "argc": 2,
@@ -9887,16 +9887,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y): adds a climbable tile effect (type 0x0B: ladders/ropes)."
   },
   "SetConfig": {
    "argc": 2,
@@ -9904,16 +9904,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "index",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(index, value): sets option index 0 (two bits of the play settings); other indexes do nothing."
   },
   "SetDiffuse": {
    "argc": 4,
@@ -9921,24 +9921,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "light",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "r",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "g",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(light, r, g, b): sets the colour of diffuse light index light and suspends the script one frame."
   },
   "SetEventBattle": {
    "argc": 1,
@@ -9951,7 +9951,7 @@
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "Selects the special event presentation branch when the next battle animation is initialized."
   },
   "SetEventCameraAt": {
    "argc": 4,
@@ -9976,7 +9976,7 @@
     }
    ],
    "uses": 23,
-   "note": ""
+   "note": "Adds a keyframe for the point the event camera looks at."
   },
   "SetEventCameraCurve": {
    "argc": 2,
@@ -9984,16 +9984,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "curve",
      "kind": "int"
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "(mode, curve): sets the event camera easing curve."
   },
   "SetEventCameraEye": {
    "argc": 4,
@@ -10001,24 +10001,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(mode, x, y, z): points the event camera eye at a position (scaled by the event camera unit)."
   },
   "SetEventCameraPrec": {
    "argc": 1,
@@ -10031,7 +10031,7 @@
     }
    ],
    "uses": 13,
-   "note": ""
+   "note": "Sets the divisor applied to later SetEventCameraAt coordinates, allowing positions finer than a tile."
   },
   "SetEventCameraRot": {
    "argc": 4,
@@ -10056,7 +10056,7 @@
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "Adds a keyframe for the event camera's angles and distance."
   },
   "SetEventCameraUnit": {
    "argc": 2,
@@ -10064,16 +10064,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(mode, unit): makes the event camera follow a unit (-1: none)."
   },
   "SetFog": {
    "argc": 6,
@@ -10106,7 +10106,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Sets the map’s rendering fog and refreshes its render state."
   },
   "SetFragile": {
    "argc": 3,
@@ -10127,7 +10127,7 @@
     }
    ],
    "uses": 25,
-   "note": ""
+   "note": "Adds a breakable terrain entry with the requested HP."
   },
   "SetGrid": {
    "argc": 1,
@@ -10140,7 +10140,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Sets the map-grid display intensity or restores the value saved when scene settings were created."
   },
   "SetLava": {
    "argc": 5,
@@ -10148,28 +10148,28 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "c",
      "kind": "int"
     }
    ],
    "uses": 67,
-   "note": ""
+   "note": "(x, y, a, b, c): adds a lava tile effect (type 0x0E) with three parameters."
   },
   "SetLisner": {
    "argc": 3,
@@ -10177,20 +10177,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(x, y, z): moves the sound listener (-1 keeps a coordinate)."
   },
   "SetLisnerDefault": {
    "argc": 0,
@@ -10219,7 +10219,7 @@
     }
    ],
    "uses": 26,
-   "note": ""
+   "note": "Turns the map camera smoothly to new angles and distance; the point it looks at does not change."
   },
   "SetMapCameraWeight": {
    "argc": 1,
@@ -10227,12 +10227,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "weight",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(weight): sets the map camera's smoothing weight."
   },
   "SetMapLamp": {
    "argc": 1,
@@ -10240,12 +10240,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(on): turns every lamp object of the map (flag 0x10000000) on or off and relights the map."
   },
   "SetOnBtFocus": {
    "argc": 1,
@@ -10258,7 +10258,7 @@
     }
    ],
    "uses": 52,
-   "note": ""
+   "note": "Enables or disables automatic battle-focus behavior."
   },
   "SetOutLink": {
    "argc": 1,
@@ -10271,7 +10271,7 @@
     }
    ],
    "uses": 15,
-   "note": ""
+   "note": "Enables or disables the outer-link portion of the map-link grid and rebuilds that grid."
   },
   "SetPit": {
    "argc": 2,
@@ -10288,7 +10288,7 @@
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "Adds a pit terrain entry at the given tile."
   },
   "SetPreSallyFlag": {
    "argc": 1,
@@ -10296,12 +10296,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(on): sets or clears game-state bit 0x40 (the pre-deployment flag); 0 when no game state is loaded."
   },
   "SetPullCursor": {
    "argc": 1,
@@ -10314,7 +10314,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Enables or disables automatic cursor pulling."
   },
   "SetRock": {
    "argc": 4,
@@ -10339,7 +10339,7 @@
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "Adds a rolling-rock terrain entry connected to a registered motion path."
   },
   "SetRoofEnable": {
    "argc": 3,
@@ -10360,7 +10360,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Changes the enabled state of the roof section found at the supplied map position and refreshes the map."
   },
   "SetShooter": {
    "argc": 4,
@@ -10385,7 +10385,7 @@
     }
    ],
    "uses": 22,
-   "note": ""
+   "note": "Places a ballista on a tile."
   },
   "SetSight": {
    "argc": 1,
@@ -10393,12 +10393,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "radius",
      "kind": "int"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(radius): sets the fog-of-war vision and redraws the fog (one argument in Radiant Dawn)."
   },
   "SetTalkTick": {
    "argc": 1,
@@ -10406,12 +10406,12 @@
    "group": "script_movie",
    "args": [
     {
-     "name": "",
+     "name": "ticks",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(ticks): sets the conversation text speed byte (+0x23 of the play settings)."
   },
   "SetTerrData": {
    "argc": 3,
@@ -10419,20 +10419,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "terrain",
      "kind": "str"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(x, y, terrain): overrides tile (x, y)'s terrain (tile effect 0x11) and refreshes the map; an empty name removes it."
   },
   "SetTerrName": {
    "argc": 3,
@@ -10440,20 +10440,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(x, y, name): overrides the terrain name shown for tile (x, y) (tile effect 0x10); an empty name removes it."
   },
   "SetTimeScale": {
    "argc": 1,
@@ -10461,12 +10461,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "percent",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(percent): slows down or speeds up the game clock (100 = normal)."
   },
   "SetTutorial": {
    "argc": 1,
@@ -10474,12 +10474,12 @@
    "group": "bmap_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(on): 1 enables tutorials, anything else disables them (play settings bit 0x20000)."
   },
   "SetUnitAlways": {
    "argc": 1,
@@ -10487,12 +10487,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(on): turns the \"units always shown\" event flag on or off (0x804CB740)."
   },
   "SetUnitGauge": {
    "argc": 1,
@@ -10500,12 +10500,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(on): shows or hides the map's unit HP gauges during events."
   },
   "SetUnitIcon": {
    "argc": 1,
@@ -10513,12 +10513,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(on): shows or hides the map's unit icons during events."
   },
   "SetUnitMask": {
    "argc": 1,
@@ -10526,12 +10526,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(on): turns the event unit mask flag on or off (0x804CB73F)."
   },
   "SetWeather": {
    "argc": 1,
@@ -10544,7 +10544,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Changes the map weather byte and refreshes weather, lighting and visibility rendering."
   },
   "SetWeatherAlpha": {
    "argc": 3,
@@ -10552,20 +10552,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "duration_ms",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(a, b, duration_ms): fades the weather effect's opacity."
   },
   "SetWhiteBackdrop": {
    "argc": 0,
@@ -10573,7 +10573,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Starts the solid-white backdrop process."
   },
   "ShooterBulletCheck": {
    "argc": 0,
@@ -10581,7 +10581,7 @@
    "group": "chapter_objective",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Counts the ballista shots spent on the map."
   },
   "ShowHealWindow": {
    "argc": 2,
@@ -10589,16 +10589,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "amount",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit, amount): shows the unit's HP window healing by amount and suspends the script until it closes."
   },
   "ShowMapCursor": {
    "argc": 2,
@@ -10615,7 +10615,7 @@
     }
    ],
    "uses": 25,
-   "note": ""
+   "note": "Shows the blinking map cursor on a tile."
   },
   "ShowPoint": {
    "argc": 5,
@@ -10623,28 +10623,28 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "r",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "g",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y, r, g, b): shows a coloured marker on map tile (x, y); ignored while skipping."
   },
   "SoundBossTalkEnd": {
    "argc": 0,
@@ -10673,7 +10673,7 @@
    "group": "epilogue",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Runs the staff roll and suspends the script (no argument in Radiant Dawn; vanilla still passes a duration)."
   },
   "StartEventCamera": {
    "argc": 1,
@@ -10686,7 +10686,7 @@
     }
    ],
    "uses": 20,
-   "note": ""
+   "note": "Plays the event-camera path. Keyframes are joined with a smooth curve; if the path has no keyframe at time 0, the camera's current state is added as the first one."
   },
   "SuspendEvent": {
    "argc": 0,
@@ -10694,7 +10694,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Freezes the running event so another script (a tutorial) can run, saving the event's state."
   },
   "SysGetEventFlag": {
    "argc": 0,
@@ -10702,7 +10702,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Always 1 (debug stub)."
   },
   "SysGetRound": {
    "argc": 0,
@@ -10710,7 +10710,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Reads the playthrough ordinal from the clear-data record."
   },
   "TBoxOpen": {
    "argc": 2,
@@ -10727,7 +10727,7 @@
     }
    ],
    "uses": 28,
-   "note": ""
+   "note": "Plays the opening of the chest at a tile and waits for it, and marks the chest as opened."
   },
   "TEAM_0106_ED_00": {
    "argc": 0,
@@ -11015,7 +11015,7 @@
    "group": "tfx_signal_handler",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "1 once when a conversation sends its TFX signal (message flag 0x800), then clears it."
   },
   "TalkEvent": {
    "argc": 1,
@@ -11028,7 +11028,7 @@
     }
    ],
    "uses": 1003,
-   "note": ""
+   "note": "Opens the conversation window with a message and pauses the script until the conversation ends or reaches a $H hold point."
   },
   "TalkEventDirect": {
    "argc": 1,
@@ -11041,7 +11041,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts the supplied event message, or passes it to the existing conversation process."
   },
   "TalkEvent_BGM": {
    "argc": 2,
@@ -11195,7 +11195,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Tests whether a conversation is still running."
   },
   "TalkLeave": {
    "argc": 1,
@@ -11203,12 +11203,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "message_id",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(message_id): plays a message in a talk process that removes its speakers when done."
   },
   "TalkResume": {
    "argc": 0,
@@ -11216,7 +11216,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1111,
-   "note": ""
+   "note": "Continues a conversation stopped at a $H hold point and pauses the script again until it ends or reaches the next hold."
   },
   "TargetPointDisp": {
    "argc": 1,
@@ -11486,7 +11486,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Fades the terrain-info window in."
   },
   "TerInfoFadeOut": {
    "argc": 0,
@@ -11494,7 +11494,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Fades the terrain-info window out."
   },
   "TerInfoHide": {
    "argc": 0,
@@ -11502,7 +11502,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Hides the terrain-info window."
   },
   "TerInfoShow": {
    "argc": 0,
@@ -11510,7 +11510,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Shows the terrain-info window."
   },
   "TimeiShow": {
    "argc": 7,
@@ -11518,36 +11518,36 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "message_id",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "c",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "d",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(x, y, a, message_id, b, c, d): shows a time/place caption (seven arguments in Radiant Dawn: Path of Radiance took six)."
   },
   "TimeiShowHold": {
    "argc": 5,
@@ -11576,7 +11576,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Shows a location-name caption that stays visible until explicitly released."
   },
   "TimeiShowHoldOff": {
    "argc": 2,
@@ -11593,7 +11593,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts disappearance of the held caption with this ID."
   },
   "TimeiShowHoldOffAll": {
    "argc": 1,
@@ -11606,7 +11606,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts disappearance of every held caption."
   },
   "TrialAddUnit": {
    "argc": 0,
@@ -11622,12 +11622,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "(name): whether a conversation flag of the system save is set (conversation room unlocks)."
   },
   "Tut3SArrowABAnim": {
    "argc": 3,
@@ -11648,7 +11648,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Continuously oscillates a tutorial arrow rectangle along its positive diagonal axis."
   },
   "Tut3SArrowBCAnim": {
    "argc": 3,
@@ -11669,7 +11669,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Continuously oscillates a tutorial arrow rectangle along its horizontal axis."
   },
   "Tut3SArrowCAAnim": {
    "argc": 3,
@@ -11690,7 +11690,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Continuously oscillates a tutorial arrow rectangle along its negative diagonal axis."
   },
   "Tut3SArrowDAnim": {
    "argc": 3,
@@ -11711,7 +11711,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Continuously oscillates a tutorial arrow rectangle along its downward vertical axis."
   },
   "Tut3SArrowUAnim": {
    "argc": 3,
@@ -11732,7 +11732,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Continuously oscillates a tutorial arrow rectangle along its upward vertical axis."
   },
   "TutBaseCreate": {
    "argc": 0,
@@ -11773,7 +11773,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Frees the tutorial map overlay and suspends the script until it is released."
   },
   "TutMapLoad": {
    "argc": 1,
@@ -11781,12 +11781,12 @@
    "group": "bmap_scene",
    "args": [
     {
-     "name": "",
+     "name": "name",
      "kind": "str"
     }
    ],
    "uses": 57,
-   "note": ""
+   "note": "(name): loads a tutorial map overlay and suspends the script until it is loaded."
   },
   "TutPadActor": {
    "argc": 1,
@@ -11836,7 +11836,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Starts a tutorial text display."
   },
   "TutShowKari": {
    "argc": 5,
@@ -11865,7 +11865,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Shows a temporary tutorial caption with matching appearance and disappearance durations."
   },
   "TutTalkEvent": {
    "argc": 1,
@@ -11973,7 +11973,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Starts the base-tutorial overlay."
   },
   "TutorialBaseDelete": {
    "argc": 0,
@@ -11981,7 +11981,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Closes the base-tutorial overlay."
   },
   "TutorialCall": {
    "argc": 1,
@@ -11994,7 +11994,7 @@
     }
    ],
    "uses": 53,
-   "note": ""
+   "note": "Starts a named function of a loaded tutorial script and stops the AI phase."
   },
   "TutorialDialog": {
    "argc": 1,
@@ -12028,7 +12028,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Clears a tutorial’s learned mark."
   },
   "TutorialIn": {
    "argc": 2,
@@ -12061,7 +12061,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Starts tutorial initialization and suspends the calling script until it completes."
   },
   "TutorialLearn": {
    "argc": 1,
@@ -12074,7 +12074,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Marks a tutorial as learned."
   },
   "TutorialLock": {
    "argc": 1,
@@ -12087,7 +12087,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Locks a tutorial."
   },
   "TutorialOut": {
    "argc": 0,
@@ -12103,7 +12103,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Returns to the tutorial menu after a tutorial ends (the last step of ComebackFunc)."
   },
   "TutorialResumeOut": {
    "argc": 0,
@@ -12194,7 +12194,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Opens the preparations screen inside a tutorial."
   },
   "TutorialSallyDelete": {
    "argc": 0,
@@ -12202,7 +12202,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Closes the preparations screen opened by TutorialSallyCreate."
   },
   "TutorialUnitRotate_1": {
    "argc": 1,
@@ -12257,7 +12257,7 @@
     }
    ],
    "uses": 46,
-   "note": ""
+   "note": "Unlocks a tutorial."
   },
   "Tutorial_FadeIn": {
    "argc": 0,
@@ -12357,7 +12357,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Puts an item in a unit's inventory, silently: depending on the item type it goes to the first free weapon slot (0–3) or the first free item slot (4–7)."
   },
   "UnitAddSkill": {
    "argc": 2,
@@ -12374,7 +12374,7 @@
     }
    ],
    "uses": 13,
-   "note": ""
+   "note": "Gives a unit a skill."
   },
   "UnitAddSkillWhatever": {
    "argc": 2,
@@ -12382,16 +12382,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "sid",
      "kind": "str"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit, sid): adds the skill, then removes the unit's lowest-priority removable skills until the skills fit the capacity."
   },
   "UnitAngleRotate": {
    "argc": 3,
@@ -12399,20 +12399,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "angle",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "frames",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit, angle, frames): turns the unit to an angle in degrees."
   },
   "UnitAnim": {
    "argc": 2,
@@ -12429,7 +12429,7 @@
     }
    ],
    "uses": 625,
-   "note": ""
+   "note": "Loads and plays a unit animation with the default blend length of 16, replacing an existing scripted animation for that unit."
   },
   "UnitAnimByPID": {
    "argc": 2,
@@ -12454,28 +12454,28 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "animation",
      "kind": "str"
     },
     {
-     "name": "",
+     "name": "speed",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "blend_frames",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "flags",
      "kind": "int"
     }
    ],
    "uses": 98,
-   "note": ""
+   "note": "(unit, animation, speed, blend_frames, flags): plays a map animation on the unit (animation 0 = its idle; ids from 100); speed in percent (-1 = 100)."
   },
   "UnitAnimPreLoad": {
    "argc": 2,
@@ -12483,16 +12483,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "animation",
      "kind": "str"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(unit, animation): preloads one of the unit's map animations."
   },
   "UnitAnim_Loop": {
    "argc": 2,
@@ -12611,7 +12611,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Separates a carrying pair: the carried unit is put back on the map on the carrier's tile. Either unit of the pair can be given."
   },
   "UnitCanParty": {
    "argc": 1,
@@ -12619,12 +12619,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(unit): 1 if the unit can join the party (deployable), else 0."
   },
   "UnitCanUseIt": {
    "argc": 2,
@@ -12641,7 +12641,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Checks whether the unit can use the item in the specified inventory slot."
   },
   "UnitCheckDeadHere": {
    "argc": 1,
@@ -12964,16 +12964,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "target",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(unit, target): unit gives the unit it carries to target (Give)."
   },
   "UnitClassChange": {
    "argc": 1,
@@ -12981,12 +12981,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "(unit): plays the promotion scene and promotes the unit, suspending the script; only for a unit with the SID_EVENT_CC skill whose class can promote (instant while skipping)."
   },
   "UnitClrCpFlag": {
    "argc": 2,
@@ -12994,16 +12994,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mask",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, mask): clears mask from a non-player unit's AI flags; returns the new flags."
   },
   "UnitClrSkill": {
    "argc": 2,
@@ -13020,7 +13020,7 @@
     }
    ],
    "uses": 17,
-   "note": ""
+   "note": "Removes a skill from a unit."
   },
   "UnitClrStatus": {
    "argc": 2,
@@ -13037,7 +13037,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Clears state flags on a unit."
   },
   "UnitCritEffect": {
    "argc": 1,
@@ -13063,7 +13063,7 @@
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "Plays the death fade-out of a unit's map model (with its sound) and waits for it."
   },
   "UnitDeadEscape": {
    "argc": 1,
@@ -13084,12 +13084,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): deletes the unit's seven items and refreshes its equipment."
   },
   "UnitDelItem": {
    "argc": 2,
@@ -13106,7 +13106,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Removes the item in an inventory slot and closes the gap."
   },
   "UnitDispReload": {
    "argc": 0,
@@ -13114,7 +13114,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Unloads and reloads the map models of every unit in forces 0–3, then refreshes their positions."
   },
   "UnitDontMoveSally": {
    "argc": 1,
@@ -13122,12 +13122,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit): locks the starting tile of a unit of force 0, 5 or 7-10 in the preparations (status bit 0x20000); returns 1."
   },
   "UnitDontMoveSallyByPID": {
    "argc": 1,
@@ -13148,16 +13148,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "direction",
      "kind": "int"
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "(unit, direction): unit drops the unit it carries on the side given by direction (1 left, 2 right, 4 down, 8 up; negative: the nearest free tile)."
   },
   "UnitEscape": {
    "argc": 1,
@@ -13165,12 +13165,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 124,
-   "note": ""
+   "note": "(unit): removes the unit from the map as escaped (one argument in Radiant Dawn) and refreshes the map."
   },
   "UnitEscapeByPID": {
    "argc": 1,
@@ -13191,7 +13191,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 6,
-   "note": ""
+   "note": "Makes later scripted movement fade units in (they appear as they move)."
   },
   "UnitFadeOff": {
    "argc": 0,
@@ -13199,7 +13199,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 31,
-   "note": ""
+   "note": "Ends UnitFadeIn/UnitFadeOut: later movement shows units normally."
   },
   "UnitFadeOut": {
    "argc": 0,
@@ -13207,7 +13207,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 26,
-   "note": ""
+   "note": "Makes later scripted movement fade units out (they disappear as they move)."
   },
   "UnitFocus": {
    "argc": 1,
@@ -13220,7 +13220,7 @@
     }
    ],
    "uses": 39,
-   "note": ""
+   "note": "Moves the map camera smoothly towards a unit's tile."
   },
   "UnitFocusByPID": {
    "argc": 1,
@@ -13254,7 +13254,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 22,
-   "note": ""
+   "note": "Stops the camera from following units during later scripted movement."
   },
   "UnitFocusOffsetByPID": {
    "argc": 3,
@@ -13304,7 +13304,7 @@
    "group": "map_scene",
    "args": [],
    "uses": 12,
-   "note": ""
+   "note": "Makes the camera follow units during later scripted movement (the default)."
   },
   "UnitFocusTalk": {
    "argc": 2,
@@ -13359,12 +13359,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(unit): makes a unit of force 0, 5 or 7-10 mandatory in the preparations (status bit 0x10000); returns 1."
   },
   "UnitForcedSallyByPID": {
    "argc": 1,
@@ -13394,7 +13394,7 @@
     }
    ],
    "uses": 30,
-   "note": ""
+   "note": "Reads a selected property of a runtime unit."
   },
   "UnitGetAmlita": {
    "argc": 0,
@@ -13410,12 +13410,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     }
    ],
    "uses": 24,
-   "note": ""
+   "note": "(group): number of active, deployed units of the player-side forces whose belong group is group."
   },
   "UnitGetByPID": {
    "argc": 1,
@@ -13428,7 +13428,7 @@
     }
    ],
    "uses": 994,
-   "note": ""
+   "note": "Finds the current runtime actor for a character ID."
   },
   "UnitGetByPos": {
    "argc": 2,
@@ -13445,7 +13445,7 @@
     }
    ],
    "uses": 720,
-   "note": ""
+   "note": "Finds an eligible visible actor occupying a map tile."
   },
   "UnitGetChild": {
    "argc": 1,
@@ -13453,12 +13453,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): the unit this one carries (the rescue partner while this unit is the carrier), else 0."
   },
   "UnitGetDie": {
    "argc": 0,
@@ -13466,7 +13466,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "The unit that just died (the death context), 0 outside a death event."
   },
   "UnitGetDir": {
    "argc": 1,
@@ -13474,12 +13474,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): the unit's facing direction."
   },
   "UnitGetDispX": {
    "argc": 1,
@@ -13487,12 +13487,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): the unit's displayed X position (model position, truncated), 0 for no unit."
   },
   "UnitGetDispY": {
    "argc": 1,
@@ -13500,12 +13500,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): the unit's displayed Y position (model position, truncated), 0 for no unit."
   },
   "UnitGetEquipAccI": {
    "argc": 1,
@@ -13518,7 +13518,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Gets the active accessory slot in the combined inventory numbering."
   },
   "UnitGetEquipWepI": {
    "argc": 1,
@@ -13531,7 +13531,7 @@
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "Gets the active equipped-weapon slot index."
   },
   "UnitGetForce": {
    "argc": 1,
@@ -13544,7 +13544,7 @@
     }
    ],
    "uses": 68,
-   "note": ""
+   "note": "Returns a unit's force."
   },
   "UnitGetForceByPID": {
    "argc": 1,
@@ -13565,12 +13565,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): like UnitGetStrike for the animation's miss frame."
   },
   "UnitGetHP": {
    "argc": 1,
@@ -13583,7 +13583,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Returns a unit's current HP."
   },
   "UnitGetHero": {
    "argc": 0,
@@ -13591,7 +13591,7 @@
    "group": "unit_and_battlemap",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "The army's hero unit (first lookup of force 0, else the fallback list), 0 if none."
   },
   "UnitGetItemCount": {
    "argc": 1,
@@ -13604,7 +13604,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Counts the items a unit carries, weapons included."
   },
   "UnitGetItemShowing": {
    "argc": 2,
@@ -13651,7 +13651,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Returns a unit's maximum HP, including the bonus of the equipped weapon and item, capped by the class."
   },
   "UnitGetMoveCost": {
    "argc": 2,
@@ -13668,7 +13668,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Reads this unit’s movement cost for a terrain-table entry."
   },
   "UnitGetNext": {
    "argc": 1,
@@ -13681,7 +13681,7 @@
     }
    ],
    "uses": 145,
-   "note": ""
+   "note": "Returns the next unit in the same force."
   },
   "UnitGetParent": {
    "argc": 1,
@@ -13689,12 +13689,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(unit): the unit carrying this one (the rescue partner while this unit is carried), else 0."
   },
   "UnitGetRace": {
    "argc": 1,
@@ -13707,7 +13707,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Reports the unit’s beorc/laguz transformation category."
   },
   "UnitGetSagi": {
    "argc": 0,
@@ -13753,7 +13753,7 @@
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "Returns a unit's state flags."
   },
   "UnitGetStrike": {
    "argc": 1,
@@ -13761,12 +13761,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): 1 when the unit's current animation has reached its hit frame (or the unit is not moving); 1 while skipping."
   },
   "UnitGetTauroneo": {
    "argc": 0,
@@ -13782,12 +13782,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit): the unit's team byte (+0x117), used to group units for the AI."
   },
   "UnitGetTeamCommander": {
    "argc": 1,
@@ -13795,12 +13795,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "team",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(team): the deployed, living unit that commands the team (status bits 0x4000000 set, 0x8 clear); -1 if none."
   },
   "UnitGetTeamCount": {
    "argc": 1,
@@ -13808,12 +13808,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "team",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(team): number of deployed, living units in the team (-1 for team 0 or less)."
   },
   "UnitGetWeaponCount": {
    "argc": 1,
@@ -13826,7 +13826,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Counts the weapons a unit carries (its four weapon slots)."
   },
   "UnitGetX": {
    "argc": 1,
@@ -13839,7 +13839,7 @@
     }
    ],
    "uses": 67,
-   "note": ""
+   "note": "Returns a unit's tile X."
   },
   "UnitGetXByPID": {
    "argc": 1,
@@ -13865,7 +13865,7 @@
     }
    ],
    "uses": 67,
-   "note": ""
+   "note": "Returns a unit's tile Y."
   },
   "UnitGetYByPID": {
    "argc": 1,
@@ -13886,12 +13886,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 71,
-   "note": ""
+   "note": "(unit): hides the unit's map model."
   },
   "UnitHitEffect": {
    "argc": 1,
@@ -13938,12 +13938,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit): clears the \"sub item\" flag (0x08) of the unit's seven items."
   },
   "UnitItemClrAllSubItemsByPID": {
    "argc": 1,
@@ -13973,7 +13973,7 @@
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "Returns a value score for an inventory item, used to pick which item to send away."
   },
   "UnitItemSendToHouseByPID": {
    "argc": 1,
@@ -13994,16 +13994,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit, slot): sends the item in that slot to the current army's convoy; 0 when there is no current convoy or the item cannot be stored."
   },
   "UnitItemSendtoCurrentWarehouseAll": {
    "argc": 1,
@@ -14011,12 +14011,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(unit): sends every item of the unit that may go to a convoy to the current army's convoy (others are deleted); refreshes the equipment."
   },
   "UnitItemSendtoWarehouse": {
    "argc": 3,
@@ -14024,20 +14024,20 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "convoy",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(convoy, unit, slot): like UnitItemSendtoCurrentWarehouse with convoy 1-5."
   },
   "UnitItemSendtoWarehouseAll": {
    "argc": 2,
@@ -14045,16 +14045,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "convoy",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(convoy, unit): like UnitItemSendtoCurrentWarehouseAll with convoy 1-5 (the per-army convoys); new first argument in Radiant Dawn."
   },
   "UnitItemSetBless": {
    "argc": 2,
@@ -14062,16 +14062,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(unit, slot): marks the item in slot 0-6 as blessed (flag 0x10) when the item can be blessed; 1 if it did."
   },
   "UnitItemSetDrop": {
    "argc": 2,
@@ -14088,7 +14088,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Marks one inventory item as dropped when the unit is defeated."
   },
   "UnitItemSetEndurance": {
    "argc": 3,
@@ -14096,20 +14096,20 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "uses",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit, slot, uses): sets the remaining uses of the item in slot 0-6."
   },
   "UnitItemSetSealSteal": {
    "argc": 2,
@@ -14117,16 +14117,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "slot",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, slot): makes the item in that slot unstealable (item flag 0x04)."
   },
   "UnitLiveTalkByPID": {
    "argc": 2,
@@ -14151,16 +14151,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(unit, on): gives or removes the SID_LOOKSCHANGE skill (alternate look) and reloads the unit's model."
   },
   "UnitMoveDelete": {
    "argc": 1,
@@ -14168,12 +14168,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 16,
-   "note": ""
+   "note": "(unit): stops the unit's scripted movement (-1: every unit's)."
   },
   "UnitMoveDir": {
    "argc": 2,
@@ -14190,7 +14190,7 @@
     }
    ],
    "uses": 69,
-   "note": ""
+   "note": "Walks a unit along a list of steps, ignoring terrain and other units."
   },
   "UnitMoveDirByPID": {
    "argc": 2,
@@ -14249,7 +14249,7 @@
     }
    ],
    "uses": 163,
-   "note": ""
+   "note": "Walks a unit to a tile along a real path. If the tile is taken, the nearest free tile the unit can reach is used."
   },
   "UnitMovePosByPID": {
    "argc": 3,
@@ -14374,16 +14374,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "route",
      "kind": "str"
     }
    ],
    "uses": 333,
-   "note": ""
+   "note": "(unit, route): walks the unit along a route written as a string of coordinates; teleports it to the end while skipping."
   },
   "UnitMoveRouteByPID": {
    "argc": 2,
@@ -14572,12 +14572,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit): marks a unit of force 0, 5 or 7-10 as never deployable (status bit 0x200000); returns 1."
   },
   "UnitNeverSallyByPID": {
    "argc": 1,
@@ -14607,7 +14607,7 @@
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "Links two actors using the game’s carrying/pairing operation, first moving the second actor to the tile right of the first."
   },
   "UnitPartyTalkByPID": {
    "argc": 2,
@@ -14632,24 +14632,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "frames",
      "kind": "int"
     }
    ],
    "uses": 39,
-   "note": ""
+   "note": "(unit, x, y, frames): turns the unit to face map position (x, y) (frames < 0: speed from the angle)."
   },
   "UnitPosRotateByPID": {
    "argc": 4,
@@ -14682,20 +14682,20 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "direction",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "tiles",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(unit, direction, tiles): slides the unit tiles squares; direction 1 left, 2 right, 4 down, 8 up."
   },
   "UnitQueryEquip": {
    "argc": 2,
@@ -14712,7 +14712,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Tests the equipped bit of an inventory slot."
   },
   "UnitQueryJID": {
    "argc": 2,
@@ -14729,7 +14729,7 @@
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "Tests whether a unit has a given class."
   },
   "UnitQueryJIDByPID": {
    "argc": 2,
@@ -14763,7 +14763,7 @@
     }
    ],
    "uses": 83,
-   "note": ""
+   "note": "Tests whether a unit is a given character."
   },
   "UnitRanking": {
    "argc": 0,
@@ -14771,7 +14771,7 @@
    "group": "epilogue",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Shows the unit ranking screen and suspends the script."
   },
   "UnitReorderSkill": {
    "argc": 1,
@@ -14779,12 +14779,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(unit): re-sorts the unit's skill list."
   },
   "UnitReplace": {
    "argc": 2,
@@ -14792,16 +14792,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit_a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "unit_b",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit_a, unit_b): swaps the positions and facings of two units."
   },
   "UnitReplaceItem": {
    "argc": 3,
@@ -14822,7 +14822,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Replaces the selected inventory slot using an item ID."
   },
   "UnitRescue": {
    "argc": 2,
@@ -14830,16 +14830,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "target",
      "kind": "int"
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "(unit, target): unit picks target up (rescue), animated unless skipping; both must be free (not carrying nor carried)."
   },
   "UnitResetStatus": {
    "argc": 1,
@@ -14847,12 +14847,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "(unit): clears the unit's temporary status bits and status effects and recomputes its stats and HP display."
   },
   "UnitResetStatusWholeForce": {
    "argc": 1,
@@ -14860,12 +14860,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "force",
      "kind": "int"
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "(force): UnitResetStatus on every unit of a force."
   },
   "UnitRotate": {
    "argc": 3,
@@ -14886,7 +14886,7 @@
     }
    ],
    "uses": 443,
-   "note": ""
+   "note": "Turns a unit to face a direction."
   },
   "UnitRotateAnim": {
    "argc": 1,
@@ -14894,12 +14894,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 29,
-   "note": ""
+   "note": "(on): units play a turning animation when scripted rotations turn them."
   },
   "UnitRotateByPID": {
    "argc": 3,
@@ -15160,12 +15160,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit): plays the unit fleeing off the map; while skipping it is removed at once."
   },
   "UnitSearchItem": {
    "argc": 2,
@@ -15182,7 +15182,7 @@
     }
    ],
    "uses": 8,
-   "note": ""
+   "note": "Finds an item in a unit's inventory."
   },
   "UnitSee": {
    "argc": 2,
@@ -15237,7 +15237,7 @@
     }
    ],
    "uses": 18,
-   "note": ""
+   "note": "Writes one of the supported mutable unit fields."
   },
   "UnitSetAID": {
    "argc": 2,
@@ -15245,16 +15245,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "aid",
      "kind": "str"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(unit, aid): replaces the unit's map model by an animation ID (AID_...; \"\" restores its own); 0 if the AID is unknown."
   },
   "UnitSetAccAway": {
    "argc": 1,
@@ -15267,7 +15267,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Unequips the unit's equipped item (band or ring)."
   },
   "UnitSetAnim": {
    "argc": 2,
@@ -15275,16 +15275,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "animation",
      "kind": "str"
     }
    ],
    "uses": 29,
-   "note": ""
+   "note": "(unit, animation): overrides the unit's map animation by name (\"\" restores it)."
   },
   "UnitSetBelong": {
    "argc": 2,
@@ -15292,16 +15292,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, group): moves the unit into belong group group (+0xFD); 0 if the group does not exist."
   },
   "UnitSetColor": {
    "argc": 5,
@@ -15309,28 +15309,28 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "r",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "g",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "(unit, r, g, b, a): tints the unit's map model."
   },
   "UnitSetCpAttackSeq": {
    "argc": 2,
@@ -15347,7 +15347,7 @@
     }
    ],
    "uses": 147,
-   "note": ""
+   "note": "Changes the attack AI script of a unit."
   },
   "UnitSetCpFlag": {
    "argc": 2,
@@ -15355,16 +15355,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mask",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, mask): ORs mask into a non-player unit's AI flags (+0x3B4); returns the new flags."
   },
   "UnitSetCpForceNoMoveFlag": {
    "argc": 2,
@@ -15372,16 +15372,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 78,
-   "note": ""
+   "note": "(unit, on): sets or clears the AI \"never move\" flag (0x2000000 in the AI flags +0x3B4) of a non-player unit."
   },
   "UnitSetCpHealSeq": {
    "argc": 2,
@@ -15398,7 +15398,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Changes the healing AI record of a unit."
   },
   "UnitSetCpMTypeID": {
    "argc": 2,
@@ -15415,7 +15415,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Changes the MTYPE AI table of a unit (how it values targets)."
   },
   "UnitSetCpMoveSeq": {
    "argc": 2,
@@ -15432,7 +15432,7 @@
     }
    ],
    "uses": 154,
-   "note": ""
+   "note": "Changes the movement AI script of a unit."
   },
   "UnitSetCpTwiceMoveSeq": {
    "argc": 2,
@@ -15440,16 +15440,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "sequence",
      "kind": "str"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit, sequence): sets the AI's second-move sequence of a non-player unit; 0 for player units."
   },
   "UnitSetCpTypeByPID": {
    "argc": 3,
@@ -15487,7 +15487,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Sets a unit's experience."
   },
   "UnitSetEquip": {
    "argc": 2,
@@ -15504,7 +15504,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Equips an inventory item."
   },
   "UnitSetFirst": {
    "argc": 2,
@@ -15559,7 +15559,7 @@
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "Sets or clears the unit’s fixed-state flag."
   },
   "UnitSetHP": {
    "argc": 2,
@@ -15576,7 +15576,7 @@
     }
    ],
    "uses": 11,
-   "note": ""
+   "note": "Sets a unit's current HP."
   },
   "UnitSetHand": {
    "argc": 2,
@@ -15584,16 +15584,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit, on): turns the unit model's hand flag (0x800) on or off."
   },
   "UnitSetLeader": {
    "argc": 2,
@@ -15601,16 +15601,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, on): sets or clears the unit's leader status bit (0x100)."
   },
   "UnitSetOffset": {
    "argc": 4,
@@ -15618,24 +15618,24 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "x",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "y",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "z",
      "kind": "int"
     }
    ],
    "uses": 19,
-   "note": ""
+   "note": "(unit, x, y, z): offsets the unit's map model (in hundredths of a tile)."
   },
   "UnitSetOrigin": {
    "argc": 2,
@@ -15643,16 +15643,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "value",
      "kind": "int"
     }
    ],
    "uses": 5,
-   "note": ""
+   "note": "(unit, value): sets the unit's origin byte (+0x380)."
   },
   "UnitSetPos": {
    "argc": 3,
@@ -15673,7 +15673,7 @@
     }
    ],
    "uses": 198,
-   "note": ""
+   "note": "Places a unit on a tile at once. If the tile is taken, the nearest free tile is used."
   },
   "UnitSetPosDir": {
    "argc": 4,
@@ -15760,16 +15760,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "scale",
      "kind": "int"
     }
    ],
    "uses": 10,
-   "note": ""
+   "note": "(unit, scale): sets the unit model's scale byte (+0xC6)."
   },
   "UnitSetScaleAll": {
    "argc": 1,
@@ -15777,12 +15777,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "scale",
      "kind": "int"
     }
    ],
    "uses": 17,
-   "note": ""
+   "note": "(scale): default model scale for event units."
   },
   "UnitSetStatus": {
    "argc": 2,
@@ -15799,7 +15799,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Sets state flags on a unit."
   },
   "UnitSetTeam": {
    "argc": 2,
@@ -15807,16 +15807,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "team",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, team): sets the unit's team."
   },
   "UnitSetWalk": {
    "argc": 1,
@@ -15837,12 +15837,12 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 4,
-   "note": ""
+   "note": "(unit): unequips the unit's weapon and returns its slot; -1 for a laguz (SID_ANIMALIZE) or a unit without one."
   },
   "UnitSetWeaponAwayByPID": {
    "argc": 1,
@@ -15863,12 +15863,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     }
    ],
    "uses": 23,
-   "note": ""
+   "note": "(unit): shows the unit's map model again."
   },
   "UnitTackle": {
    "argc": 3,
@@ -15889,7 +15889,7 @@
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "Moves the target away from the acting unit and starts shove/smite motion."
   },
   "UnitTransferToForce": {
    "argc": 2,
@@ -15906,7 +15906,7 @@
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "Moves a unit to another force, for example to recruit it (force 0) or turn it into an ally (2)."
   },
   "UnitTransferToForceALL": {
    "argc": 2,
@@ -15957,7 +15957,7 @@
     }
    ],
    "uses": 34,
-   "note": ""
+   "note": "Changes a unit to the requested transformed/untransformed state with its transformation animation."
   },
   "UnitTstCpFlag": {
    "argc": 2,
@@ -15965,16 +15965,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mask",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(unit, mask): a non-player unit's AI flags ANDed with mask."
   },
   "UnitTstSkill": {
    "argc": 2,
@@ -15991,7 +15991,7 @@
     }
    ],
    "uses": 18,
-   "note": ""
+   "note": "Tests whether a unit holds a skill."
   },
   "UnitTstStatus": {
    "argc": 2,
@@ -15999,16 +15999,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mask",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(unit, mask): the unit's status word (+0x10C) ANDed with mask; 0 for no unit."
   },
   "UnitWaitAnim": {
    "argc": 1,
@@ -16016,12 +16016,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "animation",
      "kind": "str"
     }
    ],
    "uses": 20,
-   "note": ""
+   "note": "(animation): animation units play after next scripted moves (\"\" = default)."
   },
   "UnitWalkAnim": {
    "argc": 1,
@@ -16029,12 +16029,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "animation",
      "kind": "str"
     }
    ],
    "uses": 70,
-   "note": ""
+   "note": "(animation): walking animation for next scripted moves (\"\" = default)."
   },
   "UnitWalkDir": {
    "argc": 1,
@@ -16047,7 +16047,7 @@
     }
    ],
    "uses": 262,
-   "note": ""
+   "note": "Sets the direction bits used by subsequent scene walking."
   },
   "UnitWalkEnd": {
    "argc": 0,
@@ -16063,12 +16063,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(on): next scripted moves follow the ground height (walk flag 0x1000)."
   },
   "UnitWalkHold": {
    "argc": 1,
@@ -16076,12 +16076,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 16,
-   "note": ""
+   "note": "(on): next scripted moves keep units in place facing the move (walk flag 0x100)."
   },
   "UnitWalkManual": {
    "argc": 1,
@@ -16089,12 +16089,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 2,
-   "note": ""
+   "note": "(on): next scripted moves turn automatically (0) or keep the set facing (1) (walk flag 0x80, inverted)."
   },
   "UnitWalkPush": {
    "argc": 1,
@@ -16102,12 +16102,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(on): next scripted moves push other units out of the way (walk flag 0x200)."
   },
   "UnitWalkReverse": {
    "argc": 1,
@@ -16115,12 +16115,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "on",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(on): next scripted moves walk backwards (walk flag 0x800)."
   },
   "UnitWalkSpeed": {
    "argc": 1,
@@ -16128,12 +16128,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "speed",
      "kind": "int"
     }
    ],
    "uses": 9,
-   "note": ""
+   "note": "(speed): walking speed for next scripted moves."
   },
   "UnitWalkStart": {
    "argc": 1,
@@ -16154,12 +16154,12 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "frames",
      "kind": "int"
     }
    ],
    "uses": 149,
-   "note": ""
+   "note": "(frames): duration of next scripted moves."
   },
   "UnitWarpOut": {
    "argc": 1,
@@ -16172,7 +16172,7 @@
     }
    ],
    "uses": 7,
-   "note": ""
+   "note": "Plays the Warp effect on a unit and waits for it."
   },
   "UnitsInitialize": {
    "argc": 0,
@@ -16180,7 +16180,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 18,
-   "note": ""
+   "note": "Removes every unit: all forces are emptied and all unit slots freed."
   },
   "UnitsPop": {
    "argc": 0,
@@ -16188,7 +16188,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Restores the units saved by UnitsPush, refreshes the map and reloads the unit models. Frees the buffer."
   },
   "UnitsPopWithoutMap": {
    "argc": 0,
@@ -16196,7 +16196,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Same as UnitsPop, without the map refresh."
   },
   "UnitsPush": {
    "argc": 0,
@@ -16204,7 +16204,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Saves every unit (and the forge records) into a temporary buffer, then empties the forces."
   },
   "UnitsPush_Uninitialize": {
    "argc": 0,
@@ -16212,7 +16212,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 4,
-   "note": ""
+   "note": "Saves every unit (and the forge records) into the temporary buffer, leaving the units in place."
   },
   "VOICEAllStop": {
    "argc": 0,
@@ -16220,7 +16220,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Stops every voice clip (registered with no argument; vanilla passes a fade time that the handler reads anyway)."
   },
   "VOICEPlay": {
    "argc": 1,
@@ -16228,12 +16228,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "voice",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(voice): plays a voice clip; returns its channel or -1."
   },
   "VOICEStop": {
    "argc": 1,
@@ -16241,12 +16241,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "voice",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(voice): stops a voice clip."
   },
   "VisitIn": {
    "argc": 3,
@@ -16267,7 +16267,7 @@
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "Does nothing (kept for the visit-event scripts)."
   },
   "VisitOut": {
    "argc": 3,
@@ -16288,7 +16288,7 @@
     }
    ],
    "uses": 14,
-   "note": ""
+   "note": "Closes the village at a tile after a visit: plays its closing animation, waits for it and marks the village as visited."
   },
   "WFadeIn": {
    "argc": 1,
@@ -16411,7 +16411,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Suspends the calling script until the input-wait process completes after a key press."
   },
   "WarRecord": {
    "argc": 0,
@@ -16419,7 +16419,7 @@
    "group": "epilogue",
    "args": [],
    "uses": 2,
-   "note": ""
+   "note": "Shows the war record screen and suspends the script (no argument in Radiant Dawn; vanilla still passes one)."
   },
   "Warning": {
    "argc": 1,
@@ -16427,12 +16427,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "text",
      "kind": "str"
     }
    ],
    "uses": 258,
-   "note": ""
+   "note": "(text): debug message, ignored in the retail game; returns 1."
   },
   "WhiteOut": {
    "argc": 0,
@@ -16448,7 +16448,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Resets the screen-wipe state to idle."
   },
   "WipeIn": {
    "argc": 1,
@@ -16461,7 +16461,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts a screen wipe in."
   },
   "WipeOut": {
    "argc": 1,
@@ -16474,7 +16474,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Starts a screen wipe out."
   },
   "WipeWait": {
    "argc": 0,
@@ -16482,7 +16482,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Suspends the script while a wipe-in or wipe-out transition is active."
   },
   "XFade": {
    "argc": 1,
@@ -16550,7 +16550,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Resets the chapter for a tutorial: chapter number 0 (so the convoy is available), turn 1, the player controls force 0 and the computer forces 1–3, 1,000 gold, chapter flags and gf_complete/gf_gameover cleared, no units, empty convoy, no forge records, map state cleared."
   },
   "_dispos": {
    "argc": 2,
@@ -16558,16 +16558,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     }
    ],
    "uses": 6,
-   "note": ""
+   "note": "(group, mode): deploys a deployment group with the animated deployment process."
   },
   "_gi": {
    "argc": 2,
@@ -16584,7 +16584,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Gives an item to a unit and shows the result window (the step behind UnitGetItemShowing)."
   },
   "_gs": {
    "argc": 2,
@@ -16592,16 +16592,16 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "unit",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "function",
      "kind": "int"
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "(unit, function): starts a process that runs the named script function for the unit (the \"go script\" helper); 0 if the name is unknown."
   },
   "_idispos": {
    "argc": 2,
@@ -16609,16 +16609,16 @@
    "group": "map_scene",
    "args": [
     {
-     "name": "",
+     "name": "group",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "mode",
      "kind": "int"
     }
    ],
    "uses": 3,
-   "note": ""
+   "note": "(group, mode): deploys a deployment group at once (no animation)."
   },
   "_intr": {
    "argc": 0,
@@ -16626,7 +16626,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Runs the chapter-checkpoint save sequence and suspends the calling script until it finishes."
   },
   "_pa": {
    "argc": 1,
@@ -16639,7 +16639,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Plays a scripted controller input (the 'pad actor' that moves the cursor and presses buttons in tutorials). Each character is one step: a one-frame press, then a pause until the next step."
   },
   "_pldone": {
    "argc": 0,
@@ -16647,7 +16647,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Tests whether files queued for loading (RectPreLoad, PreLoad) are ready."
   },
   "_seqini": {
    "argc": 0,
@@ -16655,7 +16655,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Clears the map for a tutorial: removes conversations, images, scripted input, the preparations, AI phase and phase banner, the notice frame and the unit models."
   },
   "_tr": {
    "argc": 0,
@@ -16663,7 +16663,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Continues a held tutorial conversation (the step behind TutTalkResume)."
   },
   "_tt": {
    "argc": 1,
@@ -16676,7 +16676,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Starts a tutorial conversation with a message (the step behind TutTalkEvent)."
   },
   "clr": {
    "argc": 1,
@@ -16689,7 +16689,7 @@
     }
    ],
    "uses": 58,
-   "note": ""
+   "note": "Clears a flag."
   },
   "get": {
    "argc": 1,
@@ -16702,7 +16702,7 @@
     }
    ],
    "uses": 178,
-   "note": ""
+   "note": "Reads a flag."
   },
   "global": {
    "argc": 1,
@@ -16710,12 +16710,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "flag",
      "kind": "str"
     }
    ],
    "uses": 19,
-   "note": ""
+   "note": "(flag): registers a campaign flag in the lowest free slot of the 128-slot flag table and clears its bit."
   },
   "intplGetValue": {
    "argc": 5,
@@ -16744,7 +16744,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Computes one interpolated value without starting an animation."
   },
   "isFading": {
    "argc": 0,
@@ -16752,7 +16752,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 3,
-   "note": ""
+   "note": "Tests whether a screen fade started by Fade is still running."
   },
   "isFlash": {
    "argc": 0,
@@ -16760,7 +16760,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether the screen flash is in either transition phase."
   },
   "isWipe": {
    "argc": 0,
@@ -16768,7 +16768,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 0,
-   "note": ""
+   "note": "Tests whether a wipe-in or wipe-out transition is active."
   },
   "regist": {
    "argc": 1,
@@ -16776,12 +16776,12 @@
    "group": "native_externcalls",
    "args": [
     {
-     "name": "",
+     "name": "flag",
      "kind": "str"
     }
    ],
    "uses": 798,
-   "note": ""
+   "note": "(flag): registers a chapter flag in the highest free slot of the 128-slot flag table, leaving its bit as it is."
   },
   "report": {
    "argc": 1,
@@ -16794,7 +16794,7 @@
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "Writes text to the game’s debug-report output."
   },
   "set": {
    "argc": 1,
@@ -16807,7 +16807,7 @@
     }
    ],
    "uses": 1037,
-   "note": ""
+   "note": "Sets a flag."
   },
   "strcmp": {
    "argc": 2,
@@ -16815,16 +16815,16 @@
    "group": "unit_and_battlemap",
    "args": [
     {
-     "name": "",
+     "name": "a",
      "kind": "int"
     },
     {
-     "name": "",
+     "name": "b",
      "kind": "int"
     }
    ],
    "uses": 0,
-   "note": ""
+   "note": "(a, b): the C library strcmp of two strings (0 when equal)."
   },
   "taikitk": {
    "argc": 0,
@@ -16832,7 +16832,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Starts a waiting token that lasts until a unit's next Wait command (E_TaikiToken)."
   },
   "td": {
    "argc": 1,
@@ -16845,7 +16845,7 @@
     }
    ],
    "uses": 1,
-   "note": ""
+   "note": "Opens a tutorial dialog with a message and pauses the script until it closes."
   },
   "tde": {
    "argc": 0,
@@ -16853,7 +16853,7 @@
    "group": "native_externcalls",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Sets the 'event suspended' state flag again after a tutorial dialog cleared it (the last step of TutorialDialog)."
   },
   "turnatk": {
    "argc": 0,
@@ -16861,7 +16861,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Starts a waiting token that lasts until the next end of turn (E_TurnAToken)."
   },
   "turntk": {
    "argc": 0,
@@ -16869,7 +16869,7 @@
    "group": "bmap_scene",
    "args": [],
    "uses": 1,
-   "note": ""
+   "note": "Starts a waiting token that lasts until the next turn change (E_TurnToken)."
   }
  }
 }
