@@ -17,6 +17,10 @@ On-disk layout (every vanilla Path of Radiance script, checked on all 43):
 Header/table/record words are little-endian; instruction operands are
 big-endian and signed. A branch's target is ``opcode_offset + 1 +
 operand`` (the VM does ``pc += operand - 2`` after reading the operand).
+
+Radiant Dawn uses the same layout; its bytecode differences are described
+by :class:`~.model.Dialect` (picked from the header's build stamp unless the
+caller passes one).
 """
 
 from __future__ import annotations
@@ -28,17 +32,23 @@ from typing import Optional
 from .model import (
     BRANCH_OPS,
     EXTERN_CALL,
+    LOCAL_CALL,
     OPCODES,
     OPERAND_WIDTHS,
     PUSHSTR_OPS,
     PUSH_OPS,
+    RET0,
     RETURN,
+    RETURN_OPS,
+    Dialect,
     Function,
     Instr,
     Label,
     RawStr,
     ScriptFile,
+    detect_dialect,
     fits_signed,
+    local_call_width,
     var_op_info,
 )
 
@@ -58,9 +68,10 @@ def _align4(value: int) -> int:
 # -- reading ----------------------------------------------------------------
 
 
-def read_cmb(data: bytes) -> ScriptFile:
+def read_cmb(data: bytes, dialect: Optional[Dialect] = None) -> ScriptFile:
     if len(data) < HEADER_SIZE:
         raise CmbError("File too small to be a .cmb script.")
+    dialect = dialect or detect_dialect(data)
     pool_start, table_start = struct.unpack_from("<II", data, 0x24)
 
     pool_bytes = data[pool_start:table_start]
@@ -87,7 +98,7 @@ def read_cmb(data: bytes) -> ScriptFile:
     functions = []
     for i, addr in enumerate(addresses):
         end = addresses[i + 1] if i + 1 < len(addresses) else len(data)
-        functions.append(_read_function(data, addr, end, offset_to_text))
+        functions.append(_read_function(data, addr, end, offset_to_text, dialect))
 
     return ScriptFile(
         header=data[:0x24],
@@ -95,14 +106,15 @@ def read_cmb(data: bytes) -> ScriptFile:
         functions=functions,
         raw_pool_tail=pool_bytes[len(raw):],
         raw_pool_tail_entries=len(pool),
+        dialect=dialect,
     )
 
 
-def read_cmb_path(path: Path | str) -> ScriptFile:
-    return read_cmb(Path(path).read_bytes())
+def read_cmb_path(path: Path | str, dialect: Optional[Dialect] = None) -> ScriptFile:
+    return read_cmb(Path(path).read_bytes(), dialect)
 
 
-def _read_function(data: bytes, addr: int, end: int, strings: dict[int, str]) -> Function:
+def _read_function(data: bytes, addr: int, end: int, strings: dict[int, str], dialect: Dialect) -> Function:
     id_ptr, code_start, parent, fn_type, num_args, num_params, reserved, index, num_vars = RECORD.unpack_from(data, addr)
     params_end = addr + RECORD.size + 2 * num_params
     params = list(struct.unpack_from(f"<{num_params}H", data, addr + RECORD.size))
@@ -117,8 +129,8 @@ def _read_function(data: bytes, addr: int, end: int, strings: dict[int, str]) ->
     else:
         params_pad = data[params_end:code_start]
 
-    code_end = _find_code_end(data, code_start, end)
-    code = _decode_code(data, code_start, code_end, strings)
+    code_end = _find_code_end(data, code_start, end, dialect)
+    code = _decode_code(data, code_start, code_end, strings, dialect)
     return Function(
         id_string=id_string,
         type=fn_type,
@@ -135,27 +147,39 @@ def _read_function(data: bytes, addr: int, end: int, strings: dict[int, str]) ->
     )
 
 
-def _find_code_end(data: bytes, start: int, end: int) -> int:
+def _operand_widths(data: bytes, pos: int, dialect: Dialect) -> tuple[int, ...]:
+    """Operand widths of the instruction at ``pos`` (localCall's varint
+    depends on its first operand byte in FE10)."""
+    op = data[pos]
+    if op == LOCAL_CALL and dialect.varint_local_call and pos + 1 < len(data) and data[pos + 1] & 0x80:
+        return (2,)
+    return OPERAND_WIDTHS[op]
+
+
+def _find_code_end(data: bytes, start: int, end: int, dialect: Dialect) -> int:
     """Code is followed by 1-4 padding bytes (sometimes garbage), so the
     code ends at an instruction boundary 1-4 bytes before ``end`` that
     follows a ``return``.
 
     Garbage padding can itself decode as instructions (C01 function 6 ends
     ``push8 0; return`` then pads with ``00 39 07``, which reads as ``nop;
-    return``). The compiler ends every function with ``push8 0; return``
-    and no branch goes past it, so the earliest end that fits both wins."""
+    return``). The FE9 compiler ends every function with ``push8 0;
+    return`` (FE10's ends triggered functions that way and callable ones
+    with ``ret0``) and no branch goes past it, so the earliest end that fits
+    both wins."""
     pos = start
     return_ends = set()
     epilogue_ends = set()
     targets = []
+    returns = RETURN_OPS if dialect.extended_ops else (RETURN,)
     while pos < end:
         op = data[pos]
         if op >= len(OPCODES):
             break
-        nxt = pos + 1 + sum(OPERAND_WIDTHS[op])
-        if op == RETURN:
+        nxt = pos + 1 + sum(_operand_widths(data, pos, dialect))
+        if op in returns:
             return_ends.add(nxt)
-            if pos - start >= 2 and data[pos - 2] == 0x19 and data[pos - 1] == 0:
+            if op == RET0 or (op == RETURN and pos - start >= 2 and data[pos - 2] == 0x19 and data[pos - 1] == 0):
                 epilogue_ends.add(nxt)
         elif op in BRANCH_OPS and nxt <= end:
             targets.append(pos + 1 + _read_operand(data, pos + 1, OPERAND_WIDTHS[op][0]))
@@ -176,7 +200,7 @@ def _read_operand(data: bytes, pos: int, width: int) -> int:
     return int.from_bytes(data[pos:pos + width], "big", signed=True)
 
 
-def _decode_code(data: bytes, start: int, end: int, strings: dict[int, str]) -> list:
+def _decode_code(data: bytes, start: int, end: int, strings: dict[int, str], dialect: Dialect) -> list:
     raw: list[tuple[int, Instr, Optional[int]]] = []  # (offset, instr, branch target offset)
     pos = start
     while pos < end:
@@ -184,11 +208,14 @@ def _decode_code(data: bytes, start: int, end: int, strings: dict[int, str]) -> 
         if op >= len(OPCODES):
             raise CmbError(f"Unknown opcode 0x{op:02X} at 0x{pos:X}.")
         offset = pos - start
+        widths = _operand_widths(data, pos, dialect)
         pos += 1
         operands = []
-        for width in OPERAND_WIDTHS[op]:
+        for width in widths:
             operands.append(_read_operand(data, pos, width))
             pos += width
+        if op == LOCAL_CALL and dialect.varint_local_call:
+            operands[0] &= 0x7FFF if widths == (2,) else 0x7F
         target = None
         if op in BRANCH_OPS:
             target = offset + 1 + operands[0]
@@ -268,7 +295,13 @@ def _widen(op: int, value: int) -> int:
     raise CmbError(f"{OPCODES[op]}: value {value} doesn't fit its operand.")
 
 
-def _encode_code(code: list, offsets: dict[str, int]) -> bytes:
+def _instr_widths(op: int, operands: list, dialect: Dialect) -> tuple[int, ...]:
+    if op == LOCAL_CALL:
+        return (local_call_width(operands[0], dialect),)
+    return OPERAND_WIDTHS[op]
+
+
+def _encode_code(code: list, offsets: dict[str, int], dialect: Dialect) -> bytes:
     """Two passes: fix every opcode/width first, then place labels and
     resolve branches (branch operands are always 2 bytes)."""
     items = []
@@ -287,6 +320,9 @@ def _encode_code(code: list, offsets: dict[str, int]) -> bytes:
         elif op in BRANCH_OPS:
             if not isinstance(operands[0], Label):
                 raise CmbError(f"{OPCODES[op]} needs a Label target.")
+        elif op == LOCAL_CALL and dialect.varint_local_call:
+            if not 0 <= operands[0] < 0x8000:
+                raise CmbError(f"localCall index {operands[0]} doesn't fit its operand (0-32767).")
         elif OPERAND_WIDTHS[op]:
             op = _widen(op, operands[0])
         items.append((op, operands))
@@ -297,7 +333,7 @@ def _encode_code(code: list, offsets: dict[str, int]) -> bytes:
         if isinstance(item, Label):
             label_pos[id(item)] = pos
         else:
-            pos += 1 + sum(OPERAND_WIDTHS[item[0]])
+            pos += 1 + sum(_instr_widths(item[0], item[1], dialect))
 
     out = bytearray()
     for item in items:
@@ -313,6 +349,12 @@ def _encode_code(code: list, offsets: dict[str, int]) -> bytes:
             if not fits_signed(rel, 2):
                 raise CmbError("Branch distance exceeds 32 KB.")
             out += rel.to_bytes(2, "big", signed=True)
+            continue
+        if op == LOCAL_CALL and dialect.varint_local_call:
+            if local_call_width(operands[0], dialect) == 2:
+                out += (operands[0] | 0x8000).to_bytes(2, "big")
+            else:
+                out.append(operands[0])
             continue
         for width, value in zip(OPERAND_WIDTHS[op], operands):
             if op == EXTERN_CALL and width == 1:
@@ -347,7 +389,7 @@ def write_cmb(script: ScriptFile) -> bytes:
             need = _align4(params_end) - params_end
             blob += fn.raw_params_pad if fn.raw_params_pad is not None and len(fn.raw_params_pad) == need else b"\x00" * need
             code_start = params_end + need
-        code = _encode_code(fn.code, offsets)
+        code = _encode_code(fn.code, offsets, script.dialect)
         pad_len = 4 - len(code) % 4
         pad = fn.raw_code_pad if fn.raw_code_pad is not None and len(fn.raw_code_pad) == pad_len else b"\x00" * pad_len
 

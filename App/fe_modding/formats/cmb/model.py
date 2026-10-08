@@ -56,6 +56,49 @@ BRANCH_OPS = frozenset(range(0x3A, 0x3F))
 LOCAL_CALL = 0x37
 EXTERN_CALL = 0x38
 RETURN = 0x39
+INC, DEC, DUP, RET0, RET1, ASSIGN = range(0x42, 0x48)
+RETURN_OPS = frozenset((RETURN, RET0, RET1))
+
+
+@dataclass(frozen=True)
+class Dialect:
+    """What differs between the two games' script bytecode.
+
+    Radiant Dawn's interpreter (``script_vm_run`` @ ``0x801D0EC0`` in RFEE01)
+    runs the same 0x00-0x41 instruction set as Path of Radiance, with two
+    changes: ``localCall``'s index is a 1-or-2-byte varint (high bit of the
+    first byte set = 15-bit index over two bytes), and 0x42-0x47 are real
+    instructions its compiler emits:
+
+    * ``inc`` / ``dec``: pop an address, add/subtract 1 there, push nothing;
+    * ``dup``: push the top value again;
+    * ``ret0`` / ``ret1``: return 0 / 1 (every function ends with ``ret0``);
+    * ``assign``: pop a value and an address, store, push nothing.
+
+    ``build_date`` is the compiler build stamp at header +0x18 (BCD
+    yyyymmdd, little-endian), which tells the two apart."""
+
+    name: str
+    build_date: int
+    varint_local_call: bool
+    extended_ops: bool
+
+
+FE9 = Dialect("fe9", 0x20041125, varint_local_call=False, extended_ops=False)
+FE10 = Dialect("fe10", 0x20061024, varint_local_call=True, extended_ops=True)
+DIALECTS = {d.name: d for d in (FE9, FE10)}
+
+
+def detect_dialect(data: bytes) -> Dialect:
+    """FE10 when the header's compiler build stamp is from 2006 or later."""
+    stamp = int.from_bytes(data[0x18:0x1C], "little") if len(data) >= 0x1C else 0
+    return FE10 if stamp >= 0x20060000 else FE9
+
+
+def local_call_width(index: int, dialect: Dialect) -> int:
+    if dialect.varint_local_call and index >= 0x80:
+        return 2
+    return 1
 
 # The 0x01-0x18 family: (base name, is_global) per 8/16-bit pair.
 VAR_MODES = ("pushvar", "pusharray", "pusharrayP", "pushaddr", "pushaddrarray", "pushaddrarrayP")
@@ -163,6 +206,7 @@ class ScriptFile:
     functions: list[Function]
     raw_pool_tail: bytes = b"\x00"
     raw_pool_tail_entries: int = -1  # len(pool) when raw_pool_tail was read; -1 = none
+    dialect: Dialect = FE9
 
     @property
     def global_count(self) -> int:

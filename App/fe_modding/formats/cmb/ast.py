@@ -78,7 +78,17 @@ class Walrus:
     value: "Expr"
 
 
-Expr = Union[Walrus, Num, Str, StrOffset, Name, Index, AddrOf, BinOp, BoolOp, UnOp, Call]
+@dataclass
+class IncDec:
+    """``x++`` / ``x--`` (value before) or ``++x`` / ``--x`` (value after):
+    Radiant Dawn's ``inc``/``dec`` instructions."""
+
+    target: Union[Name, Index]
+    op: str  # "++" | "--"
+    prefix: bool = False
+
+
+Expr = Union[Walrus, Num, Str, StrOffset, Name, Index, AddrOf, BinOp, BoolOp, UnOp, Call, IncDec]
 
 # -- statements -------------------------------------------------------------
 
@@ -148,6 +158,23 @@ class While(Stmt):
 class DoWhile(Stmt):
     body: list
     cond: Expr  # checked after each pass: `do:` ... `while cond`
+
+
+@dataclass
+class Case:
+    values: list  # case values; [] = the ``default:`` branch (always last)
+    body: list
+    line: int = 0
+
+
+@dataclass
+class Switch(Stmt):
+    """``switch value:`` with ``case a, b:`` / ``default:`` branches (Radiant
+    Dawn only: compiled with ``dup`` tests). A case without ``break`` goes
+    on to the next case's tests."""
+
+    value: Expr
+    cases: list  # [Case]
 
 
 @dataclass
