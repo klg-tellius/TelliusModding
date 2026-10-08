@@ -23,6 +23,20 @@ that moves one of the rigs through keyframes during a battle action
 moved), ``num`` (keyframe count) and then ``num`` times ``pos``, ``rot``,
 ``dist`` and ``time``. ``time`` is the keyframe's duration in engine time
 units (0 = cut straight to it); the unit has not been measured.
+
+**Packs** - more scripts sit in ``xcam/<folder>/cam.cmp`` (an LZ10 pak, read with
+:func:`read_script_pack`):
+
+- ``xcam/<model>/cam.cmp``: one script per battle clip, named like the clip
+  (``fig1_at1_ax``, ``mgm1_at1_no``), plus lists (``fig1_ax.dbx``,
+  ``num``/``camanim``) per weapon. Loaded with the model
+  (``load_camera_compare_script`` in ``setup_battle_scene``); whenever an
+  actor switches clip (``gactor_switch_animation_module``) the script named
+  by the clip's first 11 characters plays, if there is one.
+- ``xcam/magic/cam.cmp``: ``<NAME>_at0`` (the spell leaves the caster) and
+  ``<NAME>_at1`` (it hits) per tome (``WIND_at0``...), created by
+  ``gactor_create_weapon_instance`` for magic weapons. The sibling
+  ``magic.cmp`` (also ``_cr0``/``_sk0``...) is never loaded.
 """
 
 from __future__ import annotations
@@ -30,7 +44,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from . import dbx
+from . import dbx, lz10, pak
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 VEC_KEYS = ("pos", "rot", "dest", "offs")
@@ -165,6 +179,21 @@ def read_script(text: str) -> CameraScript:
             raise CameraError(f"Bad pos/rot keyframe: {p!r} / {r!r}.")
         frames.append(Keyframe(vp, vr, _number(d), int(_number(t))))
     return CameraScript(block.name or "", block.get("caption", ""), block.get("camera", ""), tuple(frames))
+
+
+def read_script_pack(data: bytes) -> list[CameraScript]:
+    """The ``CameraAnime`` scripts of an ``xcam/<folder>/cam.cmp`` pack (lists are skipped)."""
+    raw = lz10.decompress(data)
+    scripts = []
+    for entry in pak.read_pak_entries(raw):
+        text = pak.read_pak_file_content(raw, entry).decode("cp932", errors="replace")
+        if "CameraAnime" not in text:
+            continue
+        try:
+            scripts.append(read_script(text))
+        except (CameraError, dbx.DbxError, ValueError):
+            continue
+    return scripts
 
 
 def _check_frame(frame: Keyframe) -> list[tuple[str, str]]:

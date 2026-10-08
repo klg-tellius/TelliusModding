@@ -47,6 +47,8 @@ class MainWindow(tk.Tk):
         self._build_menu()
         for key in ("<Control-k>", "<Control-K>"):
             self.bind(key, lambda e: self._shell.on_search_key(e) if self._shell else None)
+        self.bind("<F5>", lambda e: self._shell and self._shell.open_play_chapter())
+        self.bind("<Control-F5>", lambda e: self._shell and self._shell.play())
         self.bind("<Alt-Left>", lambda e: self._shell and self._shell.back())
         self.bind("<Alt-Right>", lambda e: self._shell and self._shell.forward())
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)
@@ -80,6 +82,13 @@ class MainWindow(tk.Tk):
         go_menu.add_command(label="Forward", accelerator="Alt+Right",
                             command=lambda: self._shell and self._shell.forward())
         menubar.add_cascade(label="Go", menu=go_menu)
+
+        play_menu = tk.Menu(menubar, tearoff=False)
+        play_menu.add_command(label="Play chapter in Dolphin...", accelerator="F5",
+                              command=lambda: self._shell and self._shell.open_play_chapter())
+        play_menu.add_command(label="Build and play disc in Dolphin", accelerator="Ctrl+F5",
+                              command=lambda: self._shell and self._shell.play())
+        menubar.add_cascade(label="Play", menu=play_menu)
 
         view_menu = tk.Menu(menubar, tearoff=False)
         view_menu.add_command(label="Changes this session", command=lambda: self._shell and self._shell.toggle_activity())
@@ -170,16 +179,10 @@ class MainWindow(tk.Tk):
         self.title(f"{project.name} - Tellius Modding")
 
     def _confirm_leave_project(self) -> bool:
-        """Ask before closing a project with unsaved edits."""
+        """Before closing a project with unsaved edits, offer to save them all."""
         if self._shell is None:
             return True
-        names = self._shell.unsaved(flush=True)
-        if not names:
-            return True
-        return messagebox.askyesno(
-            "Unsaved changes",
-            "These editors have unsaved changes:\n\n  " + "\n  ".join(names) + "\n\nClose and discard them?",
-            icon="warning", parent=self)
+        return self._shell.confirm_unsaved("", "close without saving (the changes are lost).")
 
     def _close_project(self) -> None:
         if not self._confirm_leave_project():

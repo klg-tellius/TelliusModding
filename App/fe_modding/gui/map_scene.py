@@ -251,6 +251,8 @@ def _transform_triangle(tri: _Triangle, matrix) -> _Triangle:
         texture_layers=tri.texture_layers,
         alpha=tri.alpha,
         blend_mode=tri.blend_mode,
+        material=tri.material,
+        cull=tri.cull,
     )
 
 

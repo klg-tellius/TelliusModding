@@ -82,12 +82,16 @@ def local_bind_matrix(bone: Bone) -> Mat3x4:
 
 
 def mul_3x4(a: Mat3x4, b: Mat3x4) -> Mat3x4:
-    """``a x b`` for 3x4 affine matrices (implicit ``0 0 0 1`` last row)."""
+    """``a x b`` for 3x4 affine matrices (implicit ``0 0 0 1`` last row).
+    Unrolled: posing a battle scene calls this hundreds of times a frame."""
+    b0, b1, b2 = b
+    b00, b01, b02, b03 = b0
+    b10, b11, b12, b13 = b1
+    b20, b21, b22, b23 = b2
     rows = []
-    for i in range(3):
-        row = [sum(a[i][k] * b[k][j] for k in range(3)) for j in range(4)]
-        row[3] += a[i][3]
-        rows.append(tuple(row))
+    for a0, a1, a2, a3 in a:
+        rows.append((a0 * b00 + a1 * b10 + a2 * b20, a0 * b01 + a1 * b11 + a2 * b21,
+                     a0 * b02 + a1 * b12 + a2 * b22, a0 * b03 + a1 * b13 + a2 * b23 + a3))
     return tuple(rows)  # type: ignore[return-value]
 
 

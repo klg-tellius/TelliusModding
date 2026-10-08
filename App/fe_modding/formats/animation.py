@@ -73,7 +73,17 @@ code_count: u16, codes: u16...)``. Each frame the engine collects (up to
 four) codes whose frame was crossed and acts on them - ``3``/``4`` mark a
 loop start/end, ``0x1C``/``0x1D`` set/clear a battle flag, ``0x28``/``0x29``
 spawn camera/light effects; the rest are read elsewhere (``1`` sits on
-the hit frame of every attack, codes above 1000 look like sound ids). The
+the hit frame of every attack, codes above 1000 look like sound ids).
+Slot 1 holds **material alpha tracks** (:func:`read_material_tracks`,
+``interpolate_animation_keyframe_value``, ``0x80064938``): the same head
+(count, pad, runtime pointer word, ``count`` ``u16`` offsets, ``0xFFFF`` for
+none) with one track per ``.gs`` material, each a ``u16`` key count, a
+``u16`` mode (0 linear, 1 step) and ``(frame: u16, value: s16)`` keys; the
+value (0-255) replaces the material's alpha, which is how effects fade in
+and out. Slot 2 is laid out the same with RGB565 colours
+(``interpolate_keyframe_color``; no vanilla effect uses it), slots 3/4 are
+the U/V scroll tracks (``interpolate_animation_channel_uv_scale_u``/``_v``)
+and slot 8 the particle emitters (``update_actor_material_runtime``). The
 other slots appear on effect (``yme/``) and scenery (``zbg/``, ``zmap/``)
 animations and are kept as raw bytes. A footer whose nine slots are all
 zero is a valid empty footer.
@@ -231,9 +241,64 @@ class GaAnimation:
     def curves_for_bone(self, bone_index: int) -> list[AnimCurve]:
         return [c for c in self.curves if c.bone_index == bone_index]
 
+    def material_alphas(self) -> dict[int, "MaterialTrack"]:
+        """Footer slot 1's alpha track per material index (empty when there is none)."""
+        block = self.footer.blocks[MATERIAL_ALPHA_SLOT] if self.footer is not None else None
+        return read_material_tracks(block) if block else {}
+
     @property
     def length_in_frames(self) -> int:
         return max((c.end_frame for c in self.curves), default=0)
+
+
+MATERIAL_ALPHA_SLOT = 1
+
+
+@dataclass(frozen=True)
+class MaterialTrack:
+    """One material's keys in a footer track table (slot 1 alpha, slot 2 colour)."""
+
+    mode: int  # 0 linear, 1 step (any other mode reads 0 between keys)
+    keys: tuple  # (frame, value) pairs, frames ascending
+
+    def value(self, frame: float) -> int:
+        """The track at ``frame`` as ``interpolate_animation_keyframe_value`` reads it: the
+        first key's value before it, the last one's after it, linear (mode 0) or held (mode 1)
+        between keys."""
+        keys = self.keys
+        if not keys:
+            return 0
+        whole = int(frame)
+        index = -1
+        for i, (key_frame, _value) in enumerate(keys):
+            if key_frame <= whole:
+                index = i
+            else:
+                break
+        if index < 0:
+            return keys[0][1]
+        if index >= len(keys) - 1 or self.mode == 1:
+            return keys[index][1]
+        if self.mode != 0:
+            return 0
+        (f0, v0), (f1, v1) = keys[index], keys[index + 1]
+        return int(v0 + (v1 - v0) * (frame - f0) / (f1 - f0)) if f1 != f0 else v0
+
+
+def read_material_tracks(block: bytes) -> dict[int, MaterialTrack]:
+    """Decode a footer track table (slot 1 or 2): ``{material index: MaterialTrack}``."""
+    if len(block) < 8:
+        return {}
+    (count,) = struct.unpack(">H", block[0:2])
+    offsets = struct.unpack(f">{count}H", block[8:8 + 2 * count])
+    tracks = {}
+    for index, offset in enumerate(offsets):
+        if offset == 0xFFFF or offset + 4 > len(block):
+            continue
+        keys, mode = struct.unpack(">HH", block[offset:offset + 4])
+        values = struct.unpack(f">{2 * keys}h", block[offset + 4:offset + 4 + 4 * keys])
+        tracks[index] = MaterialTrack(mode, tuple(zip(values[0::2], values[1::2])))
+    return tracks
 
 
 def read_event_block(block: bytes) -> list[EventKey]:

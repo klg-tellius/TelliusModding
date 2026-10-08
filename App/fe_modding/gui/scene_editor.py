@@ -101,6 +101,14 @@ def layout_names(assets) -> list[str]:
             if any(p.kind == 2 for p in resource.parts)]
 
 
+def layout_labels(assets) -> list[str]:
+    """Combobox entries: 'English name (ID)', vanilla's most common layouts first."""
+    names = layout_names(assets)
+    order = list(ms.LAYOUT_NAMES)
+    names.sort(key=lambda n: (order.index(n) if n in order else len(order), n))
+    return [ms.layout_label(n) for n in names]
+
+
 class _Picker(tk.Toplevel):
     """Searchable list with a preview image of the selected entry."""
 
@@ -295,7 +303,7 @@ class SceneEditor(ttk.Frame):
         seats = [f"{i}: {_short(f)}" for i, f in enumerate(context.portraits) if f]
         if context == InitialContext():
             return "Fresh scene (no layout inherited, nothing on stage)"
-        parts = [context.layout or "no layout"]
+        parts = [ms.layout_label(context.layout) if context.layout else "no layout"]
         if context.background:
             parts.append(context.background)
         parts.append(("seats " + ", ".join(seats)) if seats else "no portraits")
@@ -467,10 +475,10 @@ class SceneEditor(ttk.Frame):
             ttk.Checkbutton(row, text=spec.label, variable=var, command=commit).pack(side="left")
             self._getters[spec.name] = var.get
         elif spec.type in ("fid", "background", "layout"):
-            var = tk.StringVar(value=value or "")
+            var = tk.StringVar(value=ms.layout_label(value or "") if spec.type == "layout" else value or "")
             assets = self._get_assets()
             if spec.type == "layout":
-                entry = ttk.Combobox(row, textvariable=var, values=layout_names(assets) if assets else (), width=24)
+                entry = ttk.Combobox(row, textvariable=var, values=layout_labels(assets) if assets else (), width=24)
                 entry.bind("<<ComboboxSelected>>", lambda e: commit())
             else:
                 entry = ttk.Entry(row, textvariable=var, width=24)
@@ -483,7 +491,10 @@ class SceneEditor(ttk.Frame):
                 name.configure(text=display_name(assets, var.get()))
                 var.trace_add("write", lambda *_: name.configure(text=display_name(self._get_assets(), var.get())))
             var.trace_add("write", lambda *_: commit())
-            self._getters[spec.name] = lambda: var.get().strip()
+            if spec.type == "layout":
+                self._getters[spec.name] = lambda: ms.layout_from_label(var.get())
+            else:
+                self._getters[spec.name] = lambda: var.get().strip()
         elif spec.type == "line_target":
             options = [("", 0, "Current box/seat (no select)")]
             options += [("F", i, f"Seat {i}  ($F{i})") for i in range(9)]
@@ -689,7 +700,7 @@ class SceneEditor(ttk.Frame):
         except ValueError:
             count = 9
         box_style = self._box_style(scene.layout)
-        self._stage_info.configure(text=f"Layout {scene.layout or '—'}   ·   Background {scene.background or '—'}"
+        self._stage_info.configure(text=f"Layout {ms.layout_label(scene.layout) if scene.layout else '—'}   ·   Background {scene.background or '—'}"
                                         f"   ·   {'box style ($c/$s/$d)' if box_style else 'seat style ($F)'}")
         if count == 0:
             ttk.Label(self._tiles, text="This layout has no portrait seats.").pack(side="left")

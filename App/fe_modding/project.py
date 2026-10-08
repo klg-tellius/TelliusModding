@@ -184,6 +184,8 @@ class ModProject:
         if self.game == Game.PATH_OF_RADIANCE:
             if dest.exists() and not overwrite:
                 raise ProjectError(f"{dest} already exists.")
+            from .chapters import ensure_name_images
+            ensure_name_images(self)       # before the sync: nothing it writes is in system.cmp
             self.sync_system_archive()
         self.last_build_warning = build_image(self.game, self.extracted_dir, dest, overwrite=overwrite)
         return dest

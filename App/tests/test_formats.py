@@ -1082,7 +1082,8 @@ class TplTests(unittest.TestCase):
         patched = tpl.replace_image(container, 0, source)
         self.assertEqual(len(patched), len(container))
         (decoded,) = tpl.read_tpl_images(io.BytesIO(patched))
-        self.assertEqual(decoded.getpixel((0, 0))[:3], (136, 136, 136))
+        self.assertEqual(decoded.getpixel((0, 0)), (136, 136, 136, 136))  # alpha = intensity, like I8
+        self.assertEqual(tpl.replace_image(patched, 0, decoded), patched)
 
     def test_replace_ia4_image_round_trip(self):
         from PIL import Image
@@ -1093,6 +1094,36 @@ class TplTests(unittest.TestCase):
         patched = tpl.replace_image(container, 0, source)
         (decoded,) = tpl.read_tpl_images(io.BytesIO(patched))
         self.assertEqual(decoded.getpixel((0, 0)), (170, 170, 170, 85))
+
+    def test_replace_i8_image_round_trip(self):
+        from PIL import Image
+
+        container = _build_minimal_format_tpl(12, 6, tpl.FORMAT_I8)  # partial 8x4 blocks on both axes
+        info = tpl.read_tpl_image_info(io.BytesIO(container))[0]
+        self.assertEqual(tpl.format_name(info.format), "I8")
+        self.assertEqual(info.data_length, 2 * 2 * 32)
+        source = Image.new("L", (12, 6))
+        source.putdata([(x * 21 + y * 7) % 256 for y in range(6) for x in range(12)])
+
+        patched = tpl.replace_image(container, 0, source)
+        self.assertEqual(len(patched), len(container))
+        (decoded,) = tpl.read_tpl_images(io.BytesIO(patched))
+        for y in range(6):
+            for x in range(12):
+                v = source.getpixel((x, y))
+                self.assertEqual(decoded.getpixel((x, y)), (v, v, v, v))  # alpha = intensity
+        self.assertEqual(tpl.encode_i8(decoded), patched[info.data_addr : info.data_addr + info.data_length])
+
+    def test_i8_tiling_is_8x4_row_major(self):
+        from PIL import Image
+
+        source = Image.new("L", (16, 4))
+        source.putdata([y * 16 + x for y in range(4) for x in range(16)])
+        encoded = tpl.encode_i8(source)
+        # first block: columns 0-7 of rows 0-3, then the block to its right
+        self.assertEqual(list(encoded[:8]), list(range(8)))
+        self.assertEqual(list(encoded[8:16]), list(range(16, 24)))
+        self.assertEqual(list(encoded[32:40]), list(range(8, 16)))
 
     def test_replace_ia8_image_round_trip(self):
         from PIL import Image
@@ -2511,6 +2542,23 @@ class ShopTests(unittest.TestCase):
         self.assertEqual(parsed.chapters(), [0, 1, 90])
         self.assertEqual(shop.parse_section_name("ISHOP_ITEMS_C07"), ("I", 7))
         self.assertEqual(shop.parse_section_name("SHOP_PERSON_C0000"), (None, None))
+
+
+@unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
+class RealI8TextureTests(unittest.TestCase):
+    def test_zmap_common_tpl_image_2_is_i8(self):
+        from fe_modding.formats import lz10, pak
+
+        data = lz10.decompress((Path(os.environ["FE9_EXTRACTED_FILES"]) / "zmap" / "common.cmp").read_bytes())
+        (entry,) = [e for e in pak.read_pak_entries(data) if e.name.endswith("common.tpl")]
+        tpl_bytes = pak.read_pak_file_content(data, entry)
+        info = tpl.read_tpl_image_info(io.BytesIO(tpl_bytes))[2]
+        self.assertEqual((info.format, info.width, info.height, info.data_addr), (tpl.FORMAT_I8, 256, 256, 0x2A00))
+
+        image = tpl.read_tpl_images(io.BytesIO(tpl_bytes))[2]
+        raw = tpl_bytes[info.data_addr : info.data_addr + info.data_length]
+        self.assertEqual(tpl.encode_i8(image), raw)
+        self.assertEqual(tpl.replace_image(tpl_bytes, 2, image), tpl_bytes)
 
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")

@@ -713,3 +713,4 @@ for _key, _name, _what, _default, _minimum, _maximum, _unit, _at, _kind in (
 
 
 from . import chapter_flow  # noqa: E402,F401  (registers the story-flow hook)
+from . import chapter_jump  # noqa: E402,F401  (registers the boot-into-a-chapter patch)

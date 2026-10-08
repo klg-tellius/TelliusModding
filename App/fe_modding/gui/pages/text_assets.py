@@ -136,6 +136,9 @@ class ConversationsPanel(_FileList):
     def _confirm_discard(self) -> bool:
         return self._editor is None or self._editor.confirm_navigate_away()
 
+    def save_changes(self) -> bool:
+        return self._editor is None or self._editor.save_changes()
+
     def cleanup(self) -> None:
         if self._editor is not None:
             self._editor.cleanup()

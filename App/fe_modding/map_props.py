@@ -97,7 +97,7 @@ def _place_images(files: dict[str, bytes], gs: gs_file.GsFile, images: list, bas
             new.append(k)
     if new:
         added = [(*gltf_import.texture_for_tpl(images[k], TEXTURE_SIZE), tpl.WRAP_REPEAT) for k in new]
-        files[name], first = tpl.append_images(files[name], added)
+        files[name], first = tpl.append_images(files[name], added, tpl.typical_mip_count(files[name]))
         ids.update({base + k: first + j for j, k in enumerate(new)})
     for material in gs.materials:
         material.textures = [replace(t, tex_id=ids.get(t.tex_id, t.tex_id)) for t in material.textures]
@@ -589,7 +589,7 @@ def import_water(
              tpl.WRAP_REPEAT)
             for i in ids
         ]
-        files[texpack], first = tpl.append_images(files[texpack], added)
+        files[texpack], first = tpl.append_images(files[texpack], added, tpl.typical_mip_count(donor_tpl))
         records = [replace(t, tex_id=first + ids.index(t.tex_id)) for t in records]
 
     scene = gltf_import.read_gltf(gltf_data, base_dir)
