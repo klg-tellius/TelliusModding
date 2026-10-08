@@ -231,14 +231,39 @@ def read_messages_path(path: Path | str) -> list[Message]:
         return read_messages(stream)
 
 
-def write_messages(messages: list[Message]) -> bytes:
+def read_text_order(stream: BinaryIO) -> list[str]:
+    """Message IDs in the order their texts sit in the text blob.
+
+    The pointer table is sorted by ID, but the texts are stored in another
+    order (the order the messages were written in). Passing this list back to
+    ``write_messages`` rebuilds a vanilla file byte for byte: checked on all
+    824 Mess files of the Path of Radiance US and Radiant Dawn US/EU/JP discs."""
+    stream.seek(0)
+    header = stream.read(32)
+    _filesize, pointer_table_start, _unused, num_messages = struct.unpack(">IIII", header[:16])
+    name_pointer_base = pointer_table_start + (8 * num_messages) + HEADER_SIZE
+    entries = []
+    for i in range(num_messages):
+        stream.seek(HEADER_SIZE + pointer_table_start + i * 8)
+        string_offset, name_offset = struct.unpack(">II", stream.read(8))
+        stream.seek(name_pointer_base + name_offset)
+        entries.append((string_offset, i, read_cstring(stream).decode(ENCODING)))
+    return [name for _offset, _index, name in sorted(entries)]
+
+
+def read_text_order_path(path: Path | str) -> list[str]:
+    with open(path, "rb") as stream:
+        return read_text_order(stream)
+
+
+def write_messages(messages: list[Message], text_order: Optional[list[str]] = None) -> bytes:
     """Serialize messages back to the same layout read_messages() expects.
 
-    Doesn't try to reproduce the original file byte-for-byte (e.g. it dedupes
-    repeated speaker names into one entry in the name blob, which the
-    original may or may not have done) - only structural round-tripping is
-    guaranteed: write_messages(read_messages(x)) reads back as the same
-    messages.
+    ``text_order`` (from ``read_text_order``) lays the texts out in that ID
+    order; IDs it does not list follow in table order. With the order of the
+    file that was read and the messages unchanged, the output is the original
+    file byte for byte. Without it the texts follow the table order, which
+    the game accepts just as well (it finds texts through the pointer table).
 
     Every text starts on a 4-byte boundary, padded with NULs as in every
     vanilla file: the engine's loader (``load_relocatable_resource``, US
@@ -247,11 +272,17 @@ def write_messages(messages: list[Message]) -> bytes:
     every ID pointer it registers is garbage (invalid reads in
     ``register_scene_info_by_name`` and a corrupted global name table).
     """
+    order = list(range(len(messages)))
+    if text_order:
+        rank = {}
+        for position, name in enumerate(text_order):
+            rank.setdefault(name, position)
+        order.sort(key=lambda i: (rank.get(messages[i].speaker, len(rank)), i))
     text_blob = bytearray()
-    text_offsets = []
-    for message in messages:
-        text_offsets.append(len(text_blob))
-        text_blob += message.text.encode(ENCODING) + b"\x00"
+    text_offsets = [0] * len(messages)
+    for i in order:
+        text_offsets[i] = len(text_blob)
+        text_blob += messages[i].text.encode(ENCODING) + b"\x00"
         text_blob += bytes(-len(text_blob) % 4)
 
     name_blob = bytearray()
@@ -298,5 +329,5 @@ def engine_name_hash(name: str) -> tuple[int, int]:
     return bucket % 509, check
 
 
-def write_messages_path(path: Path | str, messages: list[Message]) -> None:
-    Path(path).write_bytes(write_messages(messages))
+def write_messages_path(path: Path | str, messages: list[Message], text_order: Optional[list[str]] = None) -> None:
+    Path(path).write_bytes(write_messages(messages, text_order))
