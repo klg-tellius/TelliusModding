@@ -187,5 +187,100 @@ class ShellRoutingTests(unittest.TestCase):
         self.assertEqual(s.route, ("home",))
 
 
+class SaveAllTests(unittest.TestCase):
+    """Closing (or building) with unsaved edits can save them all first."""
+
+    def setUp(self):
+        try:
+            self.root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"no display: {exc}")
+        self.root.withdraw()
+        self.tmp = tempfile.TemporaryDirectory()
+        from fe_modding.gui.changelog import ChangeLog
+        from fe_modding.gui.editor_panel import EditorPanel
+        from fe_modding.gui.shell import Page, Shell
+
+        class Public(EditorPanel):  # a ``save() -> bool`` editor
+            display_name = "Public"
+
+            def save(self):
+                self._dirty = False
+                return True
+
+        class Private(EditorPanel):  # a ``_save() -> None`` editor
+            display_name = "Private"
+
+            def _save(self):
+                self._dirty = False
+
+        class Failing(EditorPanel):  # its save reports an error and keeps the edits
+            display_name = "Failing"
+
+            def _save(self):
+                pass
+
+        self.panels = {}
+        outer = self
+
+        def page(shell):
+            class P(Page):
+                kind = "home"
+
+                def show(self, route):
+                    return True
+
+                def crumbs(self, route):
+                    return [("home", None)]
+
+                def panels(self):
+                    return list(outer.panels.values())
+
+            for cls in (Public, Private, Failing):
+                outer.panels[cls.display_name] = cls(shell)
+            return P(shell)
+
+        self.shell = Shell(self.root, _fake_project(Path(self.tmp.name)), ChangeLog(), {"home": page},
+                           on_close_project=lambda: None)
+        self.shell.navigate(("home",))
+
+    def tearDown(self):
+        self.root.destroy()
+        self.tmp.cleanup()
+
+    def _dirty(self, *names):
+        for name in names:
+            self.panels[name]._dirty = True
+
+    def test_save_all_saves_every_kind_of_editor(self):
+        self._dirty("Public", "Private")
+        self.assertEqual(self.shell.save_all(), [])
+        self.assertEqual(self.shell.unsaved(), [])
+
+    def test_save_all_reports_what_stayed_unsaved(self):
+        self._dirty("Public", "Failing")
+        self.assertEqual(self.shell.save_all(), ["Failing"])
+        self.assertEqual(self.shell.unsaved(), ["Failing"])
+
+    def test_confirm_unsaved_choices(self):
+        from unittest import mock
+        ask = "fe_modding.gui.shell.messagebox.askyesnocancel"
+        self.assertTrue(self.shell.confirm_unsaved("", "close."))  # nothing unsaved: no question
+        self._dirty("Public")
+        with mock.patch(ask, return_value=None):
+            self.assertFalse(self.shell.confirm_unsaved("", "close."))  # Cancel
+        self.assertEqual(self.shell.unsaved(), ["Public"])
+        with mock.patch(ask, return_value=False):
+            self.assertTrue(self.shell.confirm_unsaved("", "close."))  # No: go on, nothing saved
+        self.assertEqual(self.shell.unsaved(), ["Public"])
+        with mock.patch(ask, return_value=True):
+            self.assertTrue(self.shell.confirm_unsaved("", "close."))  # Yes: saved, then go on
+        self.assertEqual(self.shell.unsaved(), [])
+        self._dirty("Failing")
+        with mock.patch(ask, return_value=True), mock.patch("fe_modding.gui.shell.messagebox.showerror") as error:
+            self.assertFalse(self.shell.confirm_unsaved("", "close."))  # a failed save stops the close
+        error.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
