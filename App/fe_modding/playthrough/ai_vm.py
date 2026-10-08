@@ -29,8 +29,12 @@ the tile's threat (``ai_threat_map`` >> 4) and how wounded the attacker is. The
 best wins (ties: the shorter walk). Not reproduced: the Warp staff routine (which
 rebuilds the map mid-phase; the simulator has no Warp) and the order of equal
 scores. Movement towards a goal takes the reachable tile with the
-shortest remaining path. Steal, ballistas, rocks, skills other
-than Shove and item use are logged as not simulated.
+shortest remaining path.
+
+Before the attack script runs, the heal step, staves (each staff's own
+routine), Steal, item use and the skill routines follow :mod:`.ai_actions`.
+Ballistas, rocks, breakable objects, Chant and Flutter are logged as not
+simulated; a sleeping unit loses its turn.
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ from typing import Optional
 
 from ..formats import cp_data
 from ..formats.cp_ai_lang import entry_source
-from . import combat, movement, triggers
+from . import ai_actions, combat, movement, triggers
 from .actions import Act, apply as apply_command, can_shove
 from .state import AiTurn, GameState, SimUnit, hostile
 from .world import IMPASSABLE, World
@@ -359,7 +363,7 @@ def _goal_distances(world: World, state: GameState, unit: SimUnit, goals: set) -
 # -- the turn ---------------------------------------------------------------------------------------
 
 
-class AiStep:
+class AiStep(ai_actions.ActionRoutines):
     def __init__(self, world: World, state: GameState, turn: AiTurn):
         self.world, self.state, self.turn = world, state, turn
         self.unit: SimUnit = state.units[turn.uid]
@@ -376,7 +380,13 @@ class AiStep:
         if t.stage == "start":
             t.found, t.candidate = False, None
             self.emit(f"{self.world.name(unit.pid)}'s turn")
-            if self._retreat():
+            if unit.status == "sleep":
+                self.emit("asleep: the turn is lost")
+                t.stage = "act"
+                return False
+            cand = self.heal_step()
+            if cand is not None:
+                self._register(cand)
                 t.stage = "act"
                 return False
             self._begin(ATTACK)
@@ -535,13 +545,13 @@ class AiStep:
             return {self.unit.tile: (0, None)}
         return movement.destinations(self.world, self.state, self.unit)
 
-    def _best_attack(self, foes: list, in_place: bool) -> Optional[dict]:
+    def _best_attack(self, foes: list, in_place: bool, tiles: Optional[dict] = None) -> Optional[dict]:
         """Score every (weapon, foe, tile) the unit could attack with, as the engine's
         ``ai_score_attack_tile_mtype_*`` do: sum(MTYPE weight x term) / 16, best first. The best
         carries ``ranking``, the top candidates with their terms, for the window's AI tab."""
         world, unit = self.world, self.unit
         weights = _mtype(world, unit)
-        tiles = self._tiles(in_place)
+        tiles = self._tiles(in_place) if tiles is None else tiles
         original = unit.tile
         flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
         threat = enemy_threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
@@ -644,37 +654,59 @@ class AiStep:
     def _staff(self, e, in_place: bool):
         if not self._roll(e.a):
             return f"chance {e.a}%: no"
-        world, state, unit = self.world, self.state, self.unit
-        staves = combat.staff_items(world, unit)
-        if not staves:
-            return "no staff"
-        tiles = self._tiles(in_place)
-        pids = pid_table(world, e.e)
-        best = None
-        for index, item in staves:
-            low, high = combat.item_range(unit, item)
-            for ally in state.living():
-                if hostile(unit.faction, ally.faction) or ally.hp >= ally.stats[0]:
-                    continue
-                if pids is not None and ally.pid not in pids:
-                    continue
-                for tile in tiles:
-                    if low <= movement.distance(tile, ally.tile) <= high:
-                        need = ally.stats[0] - ally.hp
-                        if best is None or need > best[0]:
-                            best = (need, {"action": "staff", "dest": tile, "target": ally.uid, "item": index,
-                                           "text": f"heal {world.name(ally.pid)} from {tile}"})
-                        break
-        if best is None:
-            return "nobody to heal"
-        self._register(best[1])
-        return best[1]["text"]
+        cand = self.try_use_staff(self._predicate(e.e, bool(e.d)), in_place)
+        notes = "; ".join(getattr(self, "_staff_notes", []))
+        if cand is None:
+            return "no staff use" + (f" ({notes})" if notes else "")
+        self._register(cand)
+        return cand["text"] + (f"  [{notes}]" if notes else "")
 
     def _op_105(self, e, prog):
         return self._staff(e, False)
 
     def _op_106(self, e, prog):
         return self._staff(e, True)
+
+    def _steal(self, e, in_place: bool):
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        cand = self.try_steal(self._predicate(e.e, bool(e.d)), self._reach(in_place))
+        if cand is None:
+            return "nothing to steal" if "SID_STEAL" in self.unit.skills else "no Steal skill"
+        self._register(cand)
+        return cand["text"]
+
+    def _op_107(self, e, prog):
+        return self._steal(e, False)
+
+    def _op_108(self, e, prog):
+        return self._steal(e, True)
+
+    def _skill(self, e, in_place: bool):
+        """``lookup_and_invoke_skill_callback``: only Gamble's routine does something here (a weapon attack,
+        action 21); Flutter's (action 0x1D on an ally) is not simulated; the other listed skills' routines
+        return nothing."""
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        sid = e.f if isinstance(e.f, str) else getattr(e.f, "name", "")
+        if sid not in self.unit.skills:
+            return f"doesn't have {sid}"
+        if sid == "SID_GAMBLE":
+            best = self._best_attack(targets(self.world, self.state, self.unit, e.e, bool(e.d)), in_place)
+            if best is None:
+                return "no target in reach"
+            best["text"] = "Gamble: " + best["text"]
+            self._register(best)
+            return best["text"]
+        if sid == "SID_FLUTTER":
+            return "Flutter not simulated"
+        return f"{sid} has no AI routine"
+
+    def _op_110(self, e, prog):
+        return self._skill(e, False)
+
+    def _op_111(self, e, prog):
+        return self._skill(e, True)
 
     def _op_115(self, e, prog):
         if not self._roll(e.a):
@@ -700,7 +732,7 @@ class AiStep:
         self.turn.registers[0] = 9
         return "not simulated (r0 = 9)"
 
-    _op_107 = _op_108 = _op_110 = _op_111 = _op_112 = _op_113 = _op_114 = _op_212 = _not_simulated
+    _op_112 = _op_113 = _op_114 = _op_212 = _not_simulated
 
     def _nop(self, e, prog):
         return ""
@@ -904,9 +936,23 @@ class AiStep:
         return f"r{int(e.a) & 3} = {value}"
 
     def _op_502(self, e, prog):
-        if not any(it[0] == e.e for it in self.unit.items):
-            return "doesn't hold it"
-        return "item use not simulated"
+        """``cp_op_use_item``: held and usable -> use it where the registered move ends (or here); otherwise
+        the found flag is cleared."""
+        iid = e.e if isinstance(e.e, str) else getattr(e.e, "name", "")
+        index = next((i for i, it in enumerate(self.unit.items) if it[0] == iid), None)
+        if index is None or not self.item_usable(iid):
+            self.turn.found, self.turn.candidate = False, None
+            return ("doesn't hold it" if index is None else "can't use it now") + ": found cleared"
+        cand = self.turn.candidate
+        if self.turn.found and cand is not None and cand.get("action") == "wait":
+            dest = cand["dest"]
+        elif self.turn.found and cand is not None:
+            return "an action is already registered"
+        else:
+            dest = self.unit.tile
+        self._register({"action": "item", "dest": dest, "item": index,
+                        "text": f"use {self.world.item_name(iid)} at {dest}"})
+        return self.turn.candidate["text"]
 
     def _op_600(self, e, prog):
         change = int(e.d or 0)
@@ -916,25 +962,6 @@ class AiStep:
         return f"Mov = {self.unit.move}"
 
     # -- retreat and acting ----------------------------------------------------------------------
-    def _retreat(self) -> bool:
-        unit = self.unit
-        name = unit.seq_heal
-        if not isinstance(name, str) or self.world.cp is None:
-            return False
-        section = self.world.cp.section(name)
-        if section is None or not cp_data.is_heal_section(section):
-            return False
-        record = cp_data.read_heal(section)
-        percent = unit.hp * 100 // max(1, unit.stats[0])
-        if percent >= record.retreat_below or record.retreat_below <= 0:
-            return False
-        reach = movement.destinations(self.world, self.state, unit)
-        threat = enemy_threat_map(self.world, self.state, unit)
-        best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
-        self._register({"action": "wait", "dest": best, "text": f"retreat to {best} (HP {percent}%)"})
-        self.emit(f"HP {percent}% < {record.retreat_below}%: retreats to {best}")
-        return True
-
     def _act(self) -> None:
         unit, cand = self.unit, self.turn.candidate
         if cand is None:
@@ -945,7 +972,7 @@ class AiStep:
             unit.hidden, unit.done = True, True
             self.state.emit("action", f"{self.world.name(unit.pid)} escapes", uid=unit.uid)
             return
-        command = Act(unit.uid, cand["dest"], action, cand.get("target"), cand.get("item"))
+        command = Act(unit.uid, cand["dest"], action, cand.get("target"), cand.get("item"), cand.get("to"))
         self.emit(f"acts: {cand['text']}", decision={k: cand[k] for k in ("text", "ranking", "ranking_total")
                                                       if k in cand})
         try:

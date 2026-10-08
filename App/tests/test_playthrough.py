@@ -621,5 +621,135 @@ class SetupTests(unittest.TestCase):
         self.assertEqual((unit.x, unit.y, unit.faction), (2, 3, 1))
 
 
+def _ai_world(scripts=None, steal=(), width=8, height=8):
+    cp = _cp(scripts or {"SEQ_ATK": "end()\n"})
+    heal = cp_data.Section("SEQ_NORMALHEAL")
+    cp_data.write_heal(heal, cp_data.HealRecord("SEQ_NORMALHEAL", 2, 30, 80, 1))
+    table = cp_data.Section(cp_data.STEAL_SECTION)
+    cp_data.write_list(table, list(steal))
+    cp.sections += [heal, table]
+    world = _world(width=width, height=height, cp=cp)
+    for item in (_item("IID_LIVE", weapon_type="rod", might=0, attack_type="rod"),
+                 _item("IID_SLEEP", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255)),
+                 _item("IID_VULNERARY", weapon_type="item", might=0, uses=3),
+                 _item("IID_ELIXIR", weapon_type="item", might=0, uses=3),
+                 _item("IID_POWERDROP", weapon_type="item", might=0, uses=1, weight=1),
+                 _item("IID_SPEEDDROP", weapon_type="item", might=0, uses=1, weight=1)):
+        world.items[item.iid] = item
+    return world
+
+
+def _ai_step(world, state, unit):
+    from fe_modding.playthrough.state import AiTurn
+
+    return ai_vm.AiStep(world, state, AiTurn(unit.uid))
+
+
+class AiActionTests(unittest.TestCase):
+    """The heal step, staves, Steal and item use (ai_actions, CP_DATA_NOTES 3.4)."""
+
+    def test_needs_heal_has_hysteresis(self):
+        from fe_modding.playthrough import ai_actions
+
+        world, state = _ai_world(), GameState()
+        u = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_heal="SEQ_NORMALHEAL")
+        u.hp = 7  # 35%: not under 30
+        self.assertFalse(ai_actions.update_needs_heal(world, u))
+        u.hp = 5  # 25%
+        self.assertTrue(ai_actions.update_needs_heal(world, u))
+        u.hp = 15  # 75%: still under resume_at 80
+        self.assertTrue(ai_actions.update_needs_heal(world, u))
+        u.hp = 16  # 80%
+        self.assertFalse(ai_actions.update_needs_heal(world, u))
+
+    def test_healer_only_heals_units_flagged_by_their_heal_record(self):
+        world, state = _ai_world(), GameState()
+        healer = _unit(state, "PID_HEALER", 0, 0, faction=ENEMY, jid="JID_CLERIC", items=("IID_LIVE",))
+        flagged = _unit(state, "PID_B", 4, 0, faction=ENEMY, seq_heal="SEQ_NORMALHEAL")
+        other = _unit(state, "PID_C", 0, 4, faction=ENEMY)  # no heal record: never flagged
+        flagged.hp, other.hp = 5, 2
+        from fe_modding.playthrough import ai_actions
+
+        ai_actions.refresh_needs_heal(world, state)
+        step = _ai_step(world, state, healer)
+        cand = step.try_use_staff(step._predicate(), False)
+        self.assertEqual(cand["target"], flagged.uid)
+        self.assertEqual(movement.distance(cand["dest"], flagged.tile), 1)
+        flagged.needs_heal = False
+        self.assertIsNone(step.try_use_staff(step._predicate(), False))
+
+    def test_sleep_staff_needs_hit_over_4_and_takes_the_best_hit_plus_level(self):
+        world, state = _ai_world(), GameState()
+        caster = _unit(state, "PID_HEALER", 0, 0, faction=ENEMY, jid="JID_CLERIC", items=("IID_SLEEP",))
+        caster.stats[2] = 10
+        low = _unit(state, "PID_A", 3, 0)
+        high = _unit(state, "PID_C", 0, 3, level=5)
+        step = _ai_step(world, state, caster)
+        cand = step.try_use_staff(step._predicate(), False)
+        self.assertEqual(cand["target"], high.uid)  # same hit, higher level
+        high.status = "silence"  # Sleep wants a target with no status
+        self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], low.uid)
+        low.stats[7] = high.stats[7] = 30  # (10 - 30) x 5 + 5 + 30 - 6 < 5
+        self.assertIsNone(step.try_use_staff(step._predicate(), False))
+
+    def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
+        world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])
+        state = GameState()
+        thief = _unit(state, "PID_B", 0, 0, faction=ENEMY)
+        thief.skills.append("SID_STEAL")
+        thief.stats[4] = 10
+        a = _unit(state, "PID_A", 2, 0, items=("IID_SWORD", "IID_POWERDROP"))
+        c = _unit(state, "PID_C", 0, 2, items=("IID_SPEEDDROP",))
+        step = _ai_step(world, state, thief)
+        cand = step.try_steal(step._predicate(), step._reach())
+        self.assertEqual(cand["target"], c.uid)  # Speed Drop is listed first
+        self.assertEqual(c.items[cand["item"]][0], "IID_SPEEDDROP")
+        c.stats[4] = 10  # not strictly slower: skipped
+        cand = step.try_steal(step._predicate(), step._reach())
+        self.assertEqual(cand["target"], a.uid)
+        self.assertEqual(thief.steals, 2)
+        thief.skills.remove("SID_STEAL")
+        self.assertIsNone(step.try_steal(step._predicate(), step._reach()))
+
+    def test_heal_step_uses_the_item_closest_to_the_hp_missing(self):
+        world, state = _ai_world(), GameState()
+        u = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_heal="SEQ_NORMALHEAL",
+                  items=("IID_SWORD", "IID_ELIXIR", "IID_VULNERARY"))
+        u.hp = 5  # 15 missing: closer to Vulnerary's 10 than Elixir's 20
+        cand = _ai_step(world, state, u).heal_step()
+        self.assertEqual((cand["action"], u.items[cand["item"]][0]), ("item", "IID_VULNERARY"))
+        u.hp = 2  # 18 missing: the Elixir
+        u.needs_heal = False
+        cand = _ai_step(world, state, u).heal_step()
+        self.assertEqual(u.items[cand["item"]][0], "IID_ELIXIR")
+        actions.apply(world, state, actions.Act(u.uid, cand["dest"], "item", item=cand["item"]), by_ai=True)
+        self.assertEqual(state.units[u.uid].hp, 20)
+
+    def test_use_item_entry_clears_found_when_not_held(self):
+        world = _ai_world({"SEQ_ATK": "use_item(iid=IID_VULNERARY)\nend()\n"})
+        state = GameState()
+        u = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_ATK")
+        step = _ai_step(world, state, u)
+        step.turn.found, step.turn.candidate = True, {"action": "wait", "dest": (1, 0), "text": ""}
+        entry = cp_data.Entry(502, e="IID_VULNERARY")
+        step._op_502(entry, None)
+        self.assertFalse(step.turn.found)
+        u.items.append(["IID_VULNERARY", 3, False])
+        u.hp = 10
+        step.turn.found, step.turn.candidate = True, {"action": "wait", "dest": (1, 0), "text": ""}
+        step._op_502(entry, None)
+        self.assertEqual((step.turn.candidate["action"], step.turn.candidate["dest"]), ("item", (1, 0)))
+
+    def test_mag_half_ranges_are_clamped_5_to_15(self):
+        world = _ai_world()
+        state = GameState()
+        u = _unit(state, "PID_HEALER", 0, 0, jid="JID_CLERIC", items=("IID_SLEEP",))
+        sleep = world.items["IID_SLEEP"]
+        u.stats[2] = 4
+        self.assertEqual(combat.item_range(u, sleep), (1, 5))
+        u.stats[2] = 40
+        self.assertEqual(combat.item_range(u, sleep), (1, 15))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1019,8 +1019,90 @@ k = 1.75 for the attacker, 2.125 for the counter; E is truncated to a whole numb
   </ol>
   <p>During an allied phase, tiles of terrain types 38 (Objective), 39 (Target), 40 (Sanctuary) and 42 (Visit) are left out. The attack score reads the map divided by 16, so threats under 16 cost nothing and a full 255 costs 15 points at weight 32. The move entries read the raw value: they stop only where it is at most the script's threat limit, and "move to the safest tile" picks the tile with the lowest value. ${badge("confirmed","engine")}</p>
   <p>A second map, built once per phase from each hostile's weapon might plus Strength (Magic for magic weapons) without the reach test, is overwritten by the per-unit map before any script runs.</p>
-  <h2>Heal records</h2>
-  <p>A heal record holds the HP percentage at which a unit begins retreating, the percentage at which it stops, and whether it tries healing items first. ${badge("confirmed","confirmed")}</p>
+  <h2>Heal records and the heal step</h2>
+  <p>A heal record holds three bytes after its name and id: <code>retreat_below</code>, <code>resume_at</code> and <code>priority</code>. The game turns them into a per-unit <em>needs healing</em> flag (unit <code>+0x254</code> bit 0). ${badge("confirmed","engine")}</p>
+  <ul>
+    <li>HP% is computed as <code>(int)(100 &times; HP &divide; max HP)</code>.</li>
+    <li>When the flag is clear, it is set as soon as HP% is under <code>retreat_below</code>. When it is set, it is cleared once HP% reaches <code>resume_at</code>. A unit at 75% with <code>SEQ_NORMALHEAL</code> (30 / 80) is therefore still flagged if it fell under 30% earlier and has not recovered to 80%.</li>
+    <li>The flag is refreshed for every unit at the start of each phase, for the acting unit and its target after every action, and by the heal step.</li>
+    <li>Healing staves only ever target flagged units. A unit whose record never flags it (<code>SEQ_NOHEAL</code>, 0 / 0) is never healed by an AI staff user.</li>
+  </ul>
+  <p>The <strong>heal step</strong> runs before the attack script, and only for a flagged unit whose record has a non-zero <code>priority</code> (every vanilla record except <code>SEQ_BEARHEAL_NOACT</code>). It stops at the first option that works: ${badge("confirmed","engine")}</p>
+  <ol>
+    <li><strong>Its own healing item.</strong> Among its Vulneraries (10 HP) and Elixirs (full HP), the unit takes the one whose heal is closest to the HP it is missing; on a tie, the smaller. Between two equal items it keeps the one with fewer uses. It walks to the reachable tile with the lowest threat and uses the item there.</li>
+    <li><strong>An ally's healing item.</strong> If it has a free item slot, it takes the best healing item (same rule) from a unit of its own side next to a tile it can reach, then uses it.</li>
+    <li><strong>A refuge.</strong> If it is not escaping, it looks for, in order:
+      <ul>
+        <li>an empty healing tile it can reach this turn (a fort, a throne, any terrain with a heal value);</li>
+        <li>anywhere on the map, a healing tile that is empty or held by its own side, or the tile of an ally that carries a usable healing staff;</li>
+        <li>an ally that holds a Vulnerary or Elixir.</li>
+      </ul>
+      A candidate replaces the best one only when it has <em>both</em> no more hostile units within 3 tiles <em>and</em> a strictly lower path cost. The unit then walks toward it as far as it can.</li>
+  </ol>
+  <p>After such a move, from the tile it reached, the unit tries Chant, then Steal, then a weapon attack on a hostile in range.</p>
+
+  <h2>Staves</h2>
+  <p>An AI unit walks its four weapon slots in order. ${badge("confirmed","engine")}</p>
+  <ul>
+    <li>A <strong>healing staff</strong> (Heal, Mend, Recover, Physic, Fortify) is tried when its rank is at least that of the last healing staff that found a target.</li>
+    <li><strong>Any other staff</strong> is tried only while no healing staff has found a target, and when its rank is at least that of the last other staff that did.</li>
+    <li>Each staff that finds a use replaces the previous one, so the last one in this order wins.</li>
+    <li>A silenced unit uses no staff.</li>
+  </ul>
+  <p>Torch, Hammerne and Unlock have no AI routine, so the AI never uses them. Each other staff has its own rule:</p>
+  <div class="table-wrap"><table class="tight"><thead><tr><th>Staff</th><th>Target</th><th>Where the caster stands</th></tr></thead><tbody>
+    <tr><td>Heal, Mend, Recover</td><td>A unit of its own side (not itself) that needs healing, with the lowest HP%</td><td>Next to the target</td></tr>
+    <tr><td>Physic, Rescue</td><td>The same</td><td>Any tile within the staff's range</td></tr>
+    <tr><td>Fortify</td><td>Used only when at least 3 units of its own side need healing anywhere on the map</td><td>The reachable tile with the most of them in range (1 to Mag/2 tiles); on a tie, the better-scored tile</td></tr>
+    <tr><td>Restore</td><td>A unit of its own side with a status, the highest effective level (level + 20 when promoted)</td><td>Next to the target</td></tr>
+    <tr><td>Ward</td><td>A unit of its own side with the lowest Resistance</td><td>Next to the target</td></tr>
+    <tr><td>Silence</td><td>A foe that is not silenced, holds a usable tome or staff, and can be hit (hit chance above 4); the highest hit + Magic</td><td>Any tile within range</td></tr>
+    <tr><td>Sleep, Berserk</td><td>A foe with no status that holds a usable weapon, hit chance above 4; the highest hit + effective level</td><td>Any tile within range</td></tr>
+    <tr><td>Warp</td><td>A unit of its own side that has not acted, doesn't need healing and isn't escaping, with the highest effective level</td><td>Next to the target</td></tr>
+  </tbody></table></div>
+  <ul>
+    <li><strong>Hit chance of a status staff:</strong> <code>(Mag &minus; Res) &times; 5 + Skl + 30 &minus; 2 &times; distance</code>, clamped to 0&ndash;100. When choosing, the AI measures the distance from where the caster stands before it moves.</li>
+    <li><strong>Mag/2 range:</strong> a staff or tome whose maximum range is stored as 255 reaches Mag &divide; 2 tiles, but never fewer than 5 or more than 15. Warp's range is the same.</li>
+    <li><strong>Warp destination:</strong>
+      <ol>
+        <li>The game takes the last unit of the acting side that stands in danger. Danger here means the per-phase map of the target's foes: each foe's might + Strength, or + Magic for magic.</li>
+        <li>It finds that unit's nearest foe by path.</li>
+        <li>Among the empty tiles the warped unit could reach from that foe's tile and that are within the Warp range of the warped unit, it sends the unit to the one with the lowest danger.</li>
+      </ol></li>
+  </ul>
+  <p><strong>Choosing among equals.</strong> Targets are examined row by row, top to bottom and left to right, in a box of Mov + the staff's range around the caster. When two targets are equally good, the one examined <em>last</em> wins. ${badge("confirmed","engine")}</p>
+  <p><strong>Tile score.</strong> A tile is scored as the sum of three parts. ${badge("confirmed","engine")}</p>
+  <ol>
+    <li>The terrain's avoid, defence, resistance and heal values added up and halved. Flying units use the terrain's flier values.</li>
+    <li>Plus the weights of the 24 tiles within 3 steps (the attack score's table): plus the weight for each unit of the caster's side standing there, the caster itself included, and minus it for each hostile unit.</li>
+    <li>Minus the tile's threat &divide; 16.</li>
+  </ol>
+  <p>The caster stands on the best-scored tile; on a tie, the first one examined wins. Next to a target, it tries right, left, below, then above.</p>
+
+  <h2>Steal</h2>
+  <p>A unit with <code>SID_STEAL</code> considers every unit next to a tile it can reach (through the map's links) that it is <strong>strictly faster</strong> than. ${badge("confirmed","engine")}</p>
+  <ol>
+    <li>For each such unit, it walks the inventory in slot order (weapons first, then items) and picks the <em>first</em> item that <code>TBL_STEALITEMS</code> lists and that it can carry: the item's weight must be below its Strength, and it needs a free slot of that kind.</li>
+    <li>That item's position in <code>TBL_STEALITEMS</code> is its priority. The lowest wins, so the list's order is the thieves' order of preference: Member Card and Silver Card first, then skill scrolls, gems, rings, stat drops, keys and healing items.</li>
+    <li>On a tie, the first unit found wins.</li>
+    <li>The thief steals from the best-scored tile next to the target.</li>
+  </ol>
+  <p>The thief only ever looks at the first stealable item of each unit. A unit carrying a Vulnerary in an earlier slot and a Member Card in a later one counts as a Vulnerary. ${badge("confirmed","engine")}</p>
+
+  <h2>Items and skills</h2>
+  <p><code>use_item(iid)</code> uses the named item when the unit holds it and the item is usable now. ${badge("confirmed","engine")}</p>
+  <ul>
+    <li>If the script has already registered a move, the unit uses the item where that move ends.</li>
+    <li>Otherwise it uses the item where it stands.</li>
+    <li>When the item is missing or unusable, the entry clears the found flag, which cancels an action registered earlier.</li>
+  </ul>
+  <p><code>use_skill</code> acts only for skills that have an AI routine:</p>
+  <ul>
+    <li>Gamble: a normal weapon attack, flagged as a Gamble.</li>
+    <li>Flutter: an action aimed at an ally.</li>
+    <li>Fairness, Tackle, Snarl and the two Blessings: the AI never uses them.</li>
+  </ul>
+  <p style="color:var(--ink-muted);font-size:13px">Open: how many turns Sleep, Silence and Berserk last. The per-item "usable now" checks are also not documented here. ${badge("open","open")}</p>
   <p style="color:var(--ink-muted);font-size:13px">Open: the order among pairings with exactly equal scores, and which entries use the two simpler variants of the scorer (one of them leaves out damage taken and threat), are not documented here. ${badge("open","open")}</p>
   <div class="callout">
     <p class="callout-t">Editing</p>
@@ -1938,7 +2020,7 @@ skills: {
 "skill-steal": {
   ns:"system", title:"Steal", dek:"A map-action skill that exposes eligible enemy inventory items as targets",
   infobox:{ type:"Skill", status:"confirmed", fields:[["Internal ID","<code>SID_STEAL</code>"],["Table index","60 (<code>0x3C</code>)"],["Parameters","<code>(35, 0, 0)</code>"]] }, categories:["Skills","Map Actions","Items"],
-  body:`<p>Steal is a map command that exposes eligible items in a nearby enemy's inventory. It is selected before combat and therefore belongs to the ${wl("map-actions","map-action system")}, not the combat-proc pipeline.</p><h2>Availability flow</h2><p>The acting unit must own <code>SID_STEAL</code>. The checker scans nearby enemies, examines as many as eight runtime item slots per unit, and tests each item against the stealability table. At least one legal unit/item pair must exist before the menu can register Steal.</p><h2>Example</h2><p>If an adjacent enemy carries three items but only its Vulnerary passes the stealability rule, the action is available with that item as a candidate. An empty inventory or only prohibited items produces no legal Steal target.</p><h2>Shared inventory machinery</h2><p>Taking an item from an ally uses the same underlying target search. Steal broadens the eligible allegiance to enemies and adds stealing restrictions. The definition is table index 60 with parameters <code>(35, 0, 0)</code>.</p>`
+  body:`<p>Steal is a map command that exposes eligible items in a nearby enemy's inventory. It is selected before combat and therefore belongs to the ${wl("map-actions","map-action system")}, not the combat-proc pipeline.</p><h2>Availability flow</h2><p>The acting unit must own <code>SID_STEAL</code>. The checker scans nearby enemies, examines as many as eight runtime item slots per unit, and tests each item against the stealability table. At least one legal unit/item pair must exist before the menu can register Steal.</p><h2>Example</h2><p>If an adjacent enemy carries three items but only its Vulnerary passes the stealability rule, the action is available with that item as a candidate. An empty inventory or only prohibited items produces no legal Steal target.</p><h2>Shared inventory machinery</h2><p>Taking an item from an ally uses the same underlying target search. Steal broadens the eligible allegiance to enemies and adds stealing restrictions. The definition is table index 60 with parameters <code>(35, 0, 0)</code>.</p><h2>How an AI thief chooses</h2><p>An AI thief only considers units it is strictly faster than, takes from each the first item in slot order that the steal list names and that it can carry (weight below its Strength), and prefers the item listed earliest in <code>TBL_STEALITEMS</code>. The details are in ${wl("cp-data-format","cp_data.bin")}. ${badge("confirmed","engine")}</p>`
 },
 
 "skill-chant": {
