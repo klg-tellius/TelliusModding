@@ -2,8 +2,8 @@
 
 A TPL holds one or more images, each with its own pixel format, using GX's
 standard texture format enum (the same public spec CMPR/C8 below come from -
-e.g. Dolphin's TextureDecoder/libogc's GX enum). Nine formats are decodable;
-all nine now have working *encoders* too (write support, used by the
+e.g. Dolphin's TextureDecoder/libogc's GX enum). Ten formats are decodable;
+all ten now have working *encoders* too (write support, used by the
 import/replace flow - see replace_image() / ENCODABLE_FORMATS):
 
 - CMPR (format 14, GX's S3TC-like 4x4 block compression) - confirmed
@@ -15,13 +15,15 @@ import/replace flow - see replace_image() / ENCODABLE_FORMATS):
   _rgb5a3()) - fixed after a real portrait decoded with a corrupted patch
   of wrong colors under the old logic.
 
-Seven more formats were added once real files outside backgrounds/portraits
+Eight more formats were added once real files outside backgrounds/portraits
 (files/window, files/gmap, files/etc, files/zu - see graphics_viewers.py)
-turned out to use them, raising TplError instead of displaying. All seven
+turned out to use them, raising TplError instead of displaying. All eight
 started as decode-only and later gained encoders too (see below):
 
-- I4 (format 0) - 4-bit grayscale, 8x8 tiling. Encoded by luminance-
-  converting the source image and quantizing to 4 bits/pixel.
+- I4 (format 0) - 4-bit grayscale, 8x8 tiling. Decoded like I8, with
+  alpha = intensity (Dolphin's TextureDecoder convention). Encoded by
+  luminance-converting the source image and quantizing to 4 bits/pixel;
+  the source alpha is ignored.
 - IA4 (format 2) - 4-bit intensity + 4-bit alpha packed in one byte (high
   nibble intensity, low nibble alpha), 8x4 tiling like C8.
 - IA8 (format 3) - 8-bit intensity + 8-bit alpha packed in one big-endian
@@ -36,6 +38,13 @@ started as decode-only and later gained encoders too (see below):
 - RGBA8 (format 6) - 32-bit color, 4x4 tiling but stored as two
   interleaved 32-byte AR/GB sub-blocks per tile - GX's one genuinely
   unusual tiling layout among the formats seen so far.
+- I8 (format 1) - 8-bit intensity, one byte/pixel, 8x4 tiling like C8.
+  Decoded the way Dolphin's TextureDecoder does (each byte copied to R, G,
+  B *and* A - GX's I8 sampling feeds intensity to both the color and alpha
+  TEV inputs), so a dark texel also reads as transparent. Encoded from
+  luminance only; the source alpha is ignored since the format has no
+  separate alpha. Used once on the disc: zmap/common.cmp's common.tpl
+  image 2, the 256x256 shared map texture.
 - C4 (format 8) - 4-bit palette index (packed 2/byte, same nibble order as
   I4), 8x8 tiling - otherwise the same palette-resolve path as C8
   (_read_palette()), just twice the pixels per index byte. This is also
@@ -49,20 +58,29 @@ started as decode-only and later gained encoders too (see below):
 
 A header-only scan of every real file under files/s, files/Face, and the
 six graphics_viewers.py folders (1517 files, 7371 images) found every
-image using one of these nine formats - no other format value has turned
+image using one of these formats - no other format value has turned
 up. Each decoder was spot-checked against a real image before being
 trusted (an achievement popup's alpha-blended RGBA8 background, small I4/
 RGB5A3 world-map icons) - all decoded clean, no corruption. The five
 formats with no natural alpha/palette precision loss beyond quantization
 (I4, IA4, IA8, RGB565, RGBA8) round-trip straightforwardly; RGB5A3 and C4
 carry the same kind of lossy-but-principled quantization CMPR/C8 already
-did before this. None of the seven encoders have been checked against a
+did before this; I8 round-trips exactly for grey images. None of the eight encoders have been checked against a
 real disc rebuild yet (unlike CMPR/C8) - see graphics_viewers.py's own
 validation notes for what has and hasn't been confirmed end-to-end.
 
 Any other format value still raises TplError rather than guessing - GX
-defines a couple more (I8, C14X2) that no real file examined by this app
-has needed yet.
+defines one more (C14X2) that no texture on the disc uses.
+
+Mip levels: when an image header's max LOD (+0x22) exceeds its min LOD
+(+0x21), max - min further levels follow the base level's texel data, each
+half the previous width/height (at least 1), same format and tiling, back
+to back. Vanilla map and battle-scenery texpacks give nearly every image
+one level (MAP_MIP_COUNT) with a trilinear min filter, and the stored level
+matches a box-filtered halving of the base. Every writer here keeps the
+chain consistent: replace_image()/replace_region() regenerate each level
+(mip_chain()), the block copiers move the whole chain with its image, and
+build_tpl()/append_images() write ``mip_count`` levels on request.
 
 Requires Pillow and numpy (not core dependencies of the rest of this app -
 only import this module if you need texture extraction). Decoding is
@@ -88,6 +106,7 @@ except ImportError as exc:
 
 MAGIC = 0x0020AF30
 FORMAT_I4 = 0
+FORMAT_I8 = 1
 FORMAT_IA4 = 2
 FORMAT_IA8 = 3
 FORMAT_RGB565 = 4
@@ -99,6 +118,7 @@ FORMAT_CMPR = 14
 CMPR_BLOCK = 8  # CMPR is tiled in 8x8 blocks, 32 bytes each (4 4x4 sub-blocks x 8 bytes)
 C8_BLOCK_W, C8_BLOCK_H = 8, 4  # C8 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 I4_BLOCK = 8  # I4 is tiled in 8x8 blocks, 32 bytes each (4 bits/pixel)
+I8_BLOCK_W, I8_BLOCK_H = 8, 4  # I8 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 IA4_BLOCK_W, IA4_BLOCK_H = 8, 4  # IA4 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 IA8_BLOCK = 4  # IA8 is tiled in 4x4 blocks, 32 bytes each (2 bytes/pixel)
 RGB565_BLOCK = 4  # RGB565 is tiled in 4x4 blocks, 32 bytes each (2 bytes/pixel)
@@ -108,6 +128,7 @@ C4_BLOCK = 8  # C4 is tiled in 8x8 blocks, 32 bytes each (4 bits/pixel, same nib
 
 _OTHER_FORMAT_NAMES = {
     FORMAT_I4: "I4",
+    FORMAT_I8: "I8",
     FORMAT_IA4: "IA4",
     FORMAT_IA8: "IA8",
     FORMAT_RGB565: "RGB565",
@@ -123,6 +144,7 @@ ENCODABLE_FORMATS = {
     FORMAT_C8,
     FORMAT_C4,
     FORMAT_I4,
+    FORMAT_I8,
     FORMAT_IA4,
     FORMAT_IA8,
     FORMAT_RGB565,
@@ -136,6 +158,7 @@ ENCODABLE_FORMATS = {
 # functions for backwards compatibility (both predate this table).
 _BLOCK_SPECS = {
     FORMAT_I4: (I4_BLOCK, I4_BLOCK, 32),
+    FORMAT_I8: (I8_BLOCK_W, I8_BLOCK_H, 32),
     FORMAT_IA4: (IA4_BLOCK_W, IA4_BLOCK_H, 32),
     FORMAT_IA8: (IA8_BLOCK, IA8_BLOCK, 32),
     FORMAT_RGB565: (RGB565_BLOCK, RGB565_BLOCK, 32),
@@ -177,9 +200,13 @@ class TplImageInfo:
     min_filter: int
     mag_filter: int
     lod_bias: float
+    edge_lod: int = 0
+    min_lod: int = 0
+    max_lod: int = 0
 
     @property
     def data_length(self) -> int:
+        """Size of the base level alone (see mip_data_length for the chain)."""
         if self.format == FORMAT_CMPR:
             return cmpr_data_length(self.width, self.height)
         if self.format == FORMAT_C8:
@@ -187,6 +214,40 @@ class TplImageInfo:
         if self.format in _BLOCK_SPECS:
             return _block_data_length(self.width, self.height, *_BLOCK_SPECS[self.format])
         raise TplError(f"data_length is not defined for format {self.format}.")
+
+    @property
+    def mip_count(self) -> int:
+        """Extra mip levels stored after the base level (max LOD - min LOD)."""
+        return max(0, self.max_lod - self.min_lod)
+
+    @property
+    def level_sizes(self) -> list[tuple[int, int]]:
+        """(width, height) of the base level and of each mip level."""
+        return mip_level_sizes(self.width, self.height, self.mip_count)
+
+    @property
+    def mip_data_length(self) -> int:
+        """Size of the whole chain: the base level then every mip level."""
+        return sum(_block_data_length(w, h, *_block_geometry(self.format)) for w, h in self.level_sizes)
+
+
+def mip_level_sizes(width: int, height: int, mip_count: int) -> list[tuple[int, int]]:
+    """Sizes of a base level and ``mip_count`` levels after it, each half
+    the previous one (at least 1 pixel a side)."""
+    sizes = [(width, height)]
+    for _ in range(mip_count):
+        width, height = max(1, width // 2), max(1, height // 2)
+        sizes.append((width, height))
+    return sizes
+
+
+def mip_chain(image: "Image.Image", mip_count: int) -> list["Image.Image"]:
+    """``image`` and ``mip_count`` box-filtered reductions of it, each made
+    from the previous level (what GX's own mipmap generation does)."""
+    levels = [image]
+    for width, height in mip_level_sizes(image.width, image.height, mip_count)[1:]:
+        levels.append(levels[-1].resize((width, height), Image.BOX))
+    return levels
 
 
 def cmpr_data_length(width: int, height: int) -> int:
@@ -216,6 +277,7 @@ def _iter_image_headers(stream: BinaryIO):
         stream.seek(offset)
         height, width, fmt, data_addr = struct.unpack(">HHII", stream.read(12))
         wrap_s, wrap_t, min_filter, mag_filter, lod_bias = struct.unpack(">IIIIf", stream.read(20))
+        edge_lod, min_lod, max_lod = struct.unpack(">3B", stream.read(3))
 
         yield TplImageInfo(
             index=i,
@@ -229,6 +291,9 @@ def _iter_image_headers(stream: BinaryIO):
             min_filter=min_filter,
             mag_filter=mag_filter,
             lod_bias=lod_bias,
+            edge_lod=edge_lod,
+            min_lod=min_lod,
+            max_lod=max_lod,
         )
 
 
@@ -242,44 +307,54 @@ def read_tpl_image_info_path(path: Path | str) -> list[TplImageInfo]:
 
 
 def read_tpl_images(stream: BinaryIO) -> list["Image.Image"]:
-    images = []
+    """Every image's base level (mip levels are left out - see read_mip_levels())."""
     palette_cache: dict[int, list[tuple[int, int, int, int]]] = {}
+    return [
+        _decode_level(stream, info, info.data_addr, info.width, info.height, palette_cache)
+        for info in _iter_image_headers(stream)
+    ]
 
-    for info in _iter_image_headers(stream):
-        if info.format == FORMAT_CMPR:
-            images.append(_decode_cmpr(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_C8:
-            if info.palette_offset not in palette_cache:
-                palette_cache[info.palette_offset] = _read_palette(stream, info.palette_offset)
-            images.append(
-                _decode_palette_indexed(stream, info.data_addr, info.width, info.height, palette_cache[info.palette_offset])
-            )
-        elif info.format == FORMAT_C4:
-            if info.palette_offset not in palette_cache:
-                palette_cache[info.palette_offset] = _read_palette(stream, info.palette_offset)
-            images.append(
-                _decode_c4(stream, info.data_addr, info.width, info.height, palette_cache[info.palette_offset])
-            )
-        elif info.format == FORMAT_I4:
-            images.append(_decode_i4(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_IA4:
-            images.append(_decode_ia4(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_IA8:
-            images.append(_decode_ia8(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_RGB565:
-            images.append(_decode_rgb565(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_RGB5A3:
-            images.append(_decode_rgb5a3(stream, info.data_addr, info.width, info.height))
-        elif info.format == FORMAT_RGBA8:
-            images.append(_decode_rgba8(stream, info.data_addr, info.width, info.height))
-        else:
-            raise TplError(
-                f"Unrecognized image format {info.format} (known formats: CMPR={FORMAT_CMPR}, C8={FORMAT_C8}, "
-                f"C4={FORMAT_C4}, I4={FORMAT_I4}, IA4={FORMAT_IA4}, IA8={FORMAT_IA8}, "
-                f"RGB565={FORMAT_RGB565}, RGB5A3={FORMAT_RGB5A3}, RGBA8={FORMAT_RGBA8})."
-            )
 
-    return images
+def read_mip_levels(tpl_bytes: bytes, image_index: int) -> list["Image.Image"]:
+    """One image's base level followed by each of its mip levels."""
+    stream = io.BytesIO(tpl_bytes)
+    infos = read_tpl_image_info(stream)
+    if image_index >= len(infos):
+        raise TplError(f"Image index {image_index} out of range (this file has {len(infos)} images).")
+    info = infos[image_index]
+    levels, addr, palette_cache = [], info.data_addr, {}
+    for width, height in info.level_sizes:
+        levels.append(_decode_level(stream, info, addr, width, height, palette_cache))
+        addr += _block_data_length(width, height, *_block_geometry(info.format))
+    return levels
+
+
+def _decode_level(
+    stream: BinaryIO, info: TplImageInfo, addr: int, width: int, height: int, palette_cache: dict
+) -> "Image.Image":
+    if info.format == FORMAT_CMPR:
+        return _decode_cmpr(stream, addr, width, height)
+    if info.format in (FORMAT_C8, FORMAT_C4):
+        if info.palette_offset not in palette_cache:
+            palette_cache[info.palette_offset] = _read_palette(stream, info.palette_offset)
+        decode = _decode_palette_indexed if info.format == FORMAT_C8 else _decode_c4
+        return decode(stream, addr, width, height, palette_cache[info.palette_offset])
+    decoders = {
+        FORMAT_I4: _decode_i4,
+        FORMAT_I8: _decode_i8,
+        FORMAT_IA4: _decode_ia4,
+        FORMAT_IA8: _decode_ia8,
+        FORMAT_RGB565: _decode_rgb565,
+        FORMAT_RGB5A3: _decode_rgb5a3,
+        FORMAT_RGBA8: _decode_rgba8,
+    }
+    if info.format in decoders:
+        return decoders[info.format](stream, addr, width, height)
+    raise TplError(
+        f"Unrecognized image format {info.format} (known formats: CMPR={FORMAT_CMPR}, C8={FORMAT_C8}, "
+        f"C4={FORMAT_C4}, I4={FORMAT_I4}, I8={FORMAT_I8}, IA4={FORMAT_IA4}, IA8={FORMAT_IA8}, "
+        f"RGB565={FORMAT_RGB565}, RGB5A3={FORMAT_RGB5A3}, RGBA8={FORMAT_RGBA8})."
+    )
 
 
 def read_tpl_images_path(path: Path | str) -> list["Image.Image"]:
@@ -311,43 +386,65 @@ def replace_image(tpl_bytes: bytes, image_index: int, new_image: "Image.Image") 
     exactly - this overwrites that one byte range in place, same approach as
     dispo.patch_unit_field(): no container structure to regenerate, so
     nothing else in the file can get corrupted by this.
+
+    A slot with mip levels (max LOD above min LOD - map and battle-scenery
+    texpacks) gets every level rewritten too: each one is a box-filtered
+    halving of the previous (mip_chain()), encoded in the slot's format, so
+    the game never samples the old picture at a distance.
     """
     infos = read_tpl_image_info(io.BytesIO(tpl_bytes))
     if image_index >= len(infos):
         raise TplError(f"Image index {image_index} out of range (this file has {len(infos)} images).")
     info = infos[image_index]
-
     resized_rgba = new_image.convert("RGBA").resize((info.width, info.height), Image.LANCZOS)
+    return _write_chain(tpl_bytes, info, resized_rgba)
 
+
+def _encode_level(tpl_bytes: bytes, info: TplImageInfo, rgba: "Image.Image") -> bytes:
+    """``rgba`` (already at the level's size) encoded in ``info``'s format;
+    palette formats use the slot's existing palette."""
     if info.format == FORMAT_CMPR:
-        encoded = encode_cmpr(resized_rgba.convert("RGB"))
-    elif info.format == FORMAT_C8:
-        palette = _read_palette(io.BytesIO(tpl_bytes), info.palette_offset)
-        encoded = encode_palette_indexed(resized_rgba, palette)
-    elif info.format == FORMAT_C4:
-        palette = _read_palette(io.BytesIO(tpl_bytes), info.palette_offset)
-        encoded = encode_c4(resized_rgba, palette)
-    elif info.format == FORMAT_I4:
-        encoded = encode_i4(resized_rgba)
-    elif info.format == FORMAT_IA4:
-        encoded = encode_ia4(resized_rgba)
-    elif info.format == FORMAT_IA8:
-        encoded = encode_ia8(resized_rgba)
-    elif info.format == FORMAT_RGB565:
-        encoded = encode_rgb565(resized_rgba)
-    elif info.format == FORMAT_RGB5A3:
-        encoded = encode_rgb5a3(resized_rgba)
-    elif info.format == FORMAT_RGBA8:
-        encoded = encode_rgba8(resized_rgba)
-    else:
+        return encode_cmpr(rgba.convert("RGB"))
+    if info.format == FORMAT_C8:
+        return encode_palette_indexed(rgba, _read_palette(io.BytesIO(tpl_bytes), info.palette_offset))
+    if info.format == FORMAT_C4:
+        return encode_c4(rgba, _read_palette(io.BytesIO(tpl_bytes), info.palette_offset))
+    encoders = {
+        FORMAT_I4: encode_i4,
+        FORMAT_I8: encode_i8,
+        FORMAT_IA4: encode_ia4,
+        FORMAT_IA8: encode_ia8,
+        FORMAT_RGB565: encode_rgb565,
+        FORMAT_RGB5A3: encode_rgb5a3,
+        FORMAT_RGBA8: encode_rgba8,
+    }
+    if info.format not in encoders:
         raise TplError(f"Can't encode format {info.format} - no encoder implemented.")
+    return encoders[info.format](rgba)
 
-    if len(encoded) != info.data_length:
-        raise TplError(  # pragma: no cover - would indicate a bug in *_data_length()/encode_*() agreeing
-            f"Encoded size {len(encoded)} doesn't match the {info.data_length}-byte slot for "
-            f"{info.width}x{info.height} - this is an internal bug, not a bad input image."
+
+def _write_chain(
+    tpl_bytes: bytes, info: TplImageInfo, base_rgba: "Image.Image", base_encoded: bytes | None = None
+) -> bytes:
+    """tpl_bytes with ``info``'s base level and every mip level rewritten
+    from ``base_rgba``. ``base_encoded`` stands in for the base level's
+    encoding when the caller already has it (replace_region())."""
+    if info.data_addr + info.mip_data_length > len(tpl_bytes):
+        raise TplError(
+            f"Image {info.index}'s {info.mip_count} mip level(s) run past the end of the file "
+            f"({info.data_addr:#x} + {info.mip_data_length:#x} > {len(tpl_bytes):#x})."
         )
-
+    encoded = bytearray()
+    for level, rgba in enumerate(mip_chain(base_rgba, info.mip_count)):
+        width, height = rgba.size
+        data = base_encoded if level == 0 and base_encoded is not None else _encode_level(tpl_bytes, info, rgba)
+        expected = _block_data_length(width, height, *_block_geometry(info.format))
+        if len(data) != expected:
+            raise TplError(  # pragma: no cover - would indicate a bug in *_data_length()/encode_*() agreeing
+                f"Encoded size {len(data)} doesn't match the {expected}-byte slot for "
+                f"{width}x{height} - this is an internal bug, not a bad input image."
+            )
+        encoded += data
     out = bytearray(tpl_bytes)
     out[info.data_addr : info.data_addr + len(encoded)] = encoded
     return bytes(out)
@@ -379,7 +476,8 @@ def replace_region(
     the icon keeps its own colors instead of snapping to the old palette;
     only when those run out is it quantized to fit. Any other format is
     re-encoded as replace_image() would, then only the blocks touching
-    ``box`` are copied back.
+    ``box`` are copied back. Mip levels, if any, are regenerated from the
+    edited sheet.
     """
     infos = read_tpl_image_info(io.BytesIO(tpl_bytes))
     if image_index >= len(infos):
@@ -406,6 +504,8 @@ def replace_region(
         for bx in range(left // block_w, (right - 1) // block_w + 1):
             start = info.data_addr + (by * blocks_x + bx) * block_bytes
             out[start : start + block_bytes] = encoded[start : start + block_bytes]
+    mips_at, mips_end = info.data_addr + info.data_length, info.data_addr + info.mip_data_length
+    out[mips_at:mips_end] = encoded[mips_at:mips_end]  # mip levels follow the edited sheet
     return bytes(out)
 
 
@@ -525,6 +625,9 @@ def _replace_region_own_palette(
         tiled = (tiled[..., 0::2] << 4) | tiled[..., 1::2]
     data = tiled.astype(np.uint8).tobytes()
     out[info.data_addr : info.data_addr + len(data)] = data
+    if info.mip_count:
+        sheet = read_tpl_images(io.BytesIO(bytes(out)))[info.index].convert("RGBA")
+        return _write_chain(bytes(out), info, sheet, base_encoded=data)
     return bytes(out)
 
 
@@ -703,7 +806,14 @@ def _decode_cmpr(stream: BinaryIO, addr: int, width: int, height: int) -> "Image
 def _decode_i4(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
     tiles = _read_tiles(stream, addr, width, height, I4_BLOCK, I4_BLOCK, 32)
     v = _nibbles(tiles) * 17  # scale 4-bit (0-15) to 8-bit (0-255)
-    return _untile(_gray_alpha(v, np.full_like(v, 255)), width, height, I4_BLOCK, I4_BLOCK)
+    # alpha = intensity, as Dolphin's TextureDecoder samples I4 (same as I8)
+    return _untile(_gray_alpha(v, v), width, height, I4_BLOCK, I4_BLOCK)
+
+
+def _decode_i8(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
+    tiles = _read_tiles(stream, addr, width, height, I8_BLOCK_W, I8_BLOCK_H, 32)
+    # alpha = intensity, as Dolphin's TextureDecoder samples I8
+    return _untile(_gray_alpha(tiles, tiles), width, height, I8_BLOCK_W, I8_BLOCK_H)
 
 
 def _decode_rgb5a3(stream: BinaryIO, addr: int, width: int, height: int) -> "Image.Image":
@@ -869,8 +979,9 @@ def encode_c4(image: "Image.Image", palette: list[tuple[int, int, int, int]]) ->
 
 
 def encode_i4(image: "Image.Image") -> bytes:
-    """Encode as I4 (4-bit grayscale, no alpha, 2 pixels/byte, 8x8 tiling).
-    Luminance-converts the source image and quantizes to 4 bits/pixel."""
+    """Encode as I4 (4-bit grayscale, 2 pixels/byte, 8x8 tiling).
+    Luminance-converts the source image and quantizes to 4 bits/pixel; its
+    alpha is dropped (I4 samples alpha from the intensity itself)."""
     width, height = image.size
     gray = image.convert("L")
     pixels = gray.load()
@@ -888,6 +999,22 @@ def encode_i4(image: "Image.Image") -> bytes:
                     out.append((nibbles[0] << 4) | nibbles[1])
 
     return bytes(out)
+
+
+def encode_i8(image: "Image.Image") -> bytes:
+    """Encode as I8 (8-bit intensity, one byte/pixel, 8x4 tiling like C8).
+    Luminance-converts the source image; its alpha is dropped (I8 samples
+    alpha from the intensity itself)."""
+    width, height = image.size
+    gray = np.asarray(image.convert("L"), dtype=np.uint8)
+    blocks_x = (width + I8_BLOCK_W - 1) // I8_BLOCK_W
+    blocks_y = (height + I8_BLOCK_H - 1) // I8_BLOCK_H
+    # pad partial edge blocks by repeating the last row/column, like the other encoders
+    rows = np.minimum(np.arange(blocks_y * I8_BLOCK_H), height - 1)
+    cols = np.minimum(np.arange(blocks_x * I8_BLOCK_W), width - 1)
+    full = gray[rows][:, cols]
+    tiles = full.reshape(blocks_y, I8_BLOCK_H, blocks_x, I8_BLOCK_W).transpose(0, 2, 1, 3)
+    return tiles.tobytes()
 
 
 def encode_ia4(image: "Image.Image") -> bytes:
@@ -1062,10 +1189,14 @@ def _encode_cmpr_subblock_transparent(pixels: list[tuple[int, ...]]) -> bytes:
 
 WRAP_CLAMP, WRAP_REPEAT = 0, 1
 FILTER_LINEAR = 1
+FILTER_LIN_MIP_LIN = 5  # GX_LIN_MIP_LIN: trilinear, the min filter of every vanilla mipmapped image
+#: Mip levels vanilla map and battle-scenery texpacks give each image (max LOD 1).
+MAP_MIP_COUNT = 1
 
 _DIRECT_ENCODERS = {
     FORMAT_CMPR: lambda image: encode_cmpr(image.convert("RGBA")),
     FORMAT_I4: encode_i4,
+    FORMAT_I8: encode_i8,
     FORMAT_IA4: encode_ia4,
     FORMAT_IA8: encode_ia8,
     FORMAT_RGB565: encode_rgb565,
@@ -1074,9 +1205,28 @@ _DIRECT_ENCODERS = {
 }
 
 
-def build_tpl(images: list[tuple["Image.Image", int]], wrap: int = WRAP_REPEAT) -> bytes:
-    """Build a new TPL from ``(image, format)`` pairs - no palette formats,
-    no mipmaps (linear min/mag filter, LOD fields zero).
+def _encode_chain(image: "Image.Image", fmt: int, mip_count: int) -> bytes:
+    """An image and its ``mip_count`` box-filtered levels, encoded back to back."""
+    if fmt not in _DIRECT_ENCODERS:
+        raise TplError(f"Cannot encode format {fmt} without an existing palette.")
+    return b"".join(_DIRECT_ENCODERS[fmt](level) for level in mip_chain(image.convert("RGBA"), mip_count))
+
+
+def _image_header(image: "Image.Image", fmt: int, data_addr: int, wrap: int, mip_count: int) -> bytes:
+    """A 0x24-byte image header: no mips is a linear min filter and LOD 0..0,
+    mips are trilinear with LOD 0..mip_count, as in vanilla map texpacks."""
+    min_filter = FILTER_LIN_MIP_LIN if mip_count else FILTER_LINEAR
+    width, height = image.size
+    return struct.pack(
+        ">HHIIIIIIf4B", height, width, fmt, data_addr, wrap, wrap, min_filter, FILTER_LINEAR, 0.0, 0, 0, mip_count, 0
+    )
+
+
+def build_tpl(images: list[tuple["Image.Image", int]], wrap: int = WRAP_REPEAT, mip_count: int = 0) -> bytes:
+    """Build a new TPL from ``(image, format)`` pairs - no palette formats.
+    ``mip_count`` box-filtered levels follow each image (0: none, linear
+    min/mag filter and LOD fields zero; vanilla map and battle-scenery
+    texpacks use MAP_MIP_COUNT with a trilinear min filter).
 
     Same layout as real single- and multi-image files (``etc/curb.tpl``,
     ``zbg/*/texpack.tpl``): the 12-byte header, one 8-byte table entry per
@@ -1094,22 +1244,22 @@ def build_tpl(images: list[tuple["Image.Image", int]], wrap: int = WRAP_REPEAT) 
     for i, (image, fmt) in enumerate(images):
         if fmt not in _DIRECT_ENCODERS:
             raise TplError(f"build_tpl cannot encode format {fmt} (palette formats need an existing palette).")
-        data = _DIRECT_ENCODERS[fmt](image.convert("RGBA"))
+        data = _encode_chain(image, fmt, mip_count)
         pad = -(offset + len(blobs)) % 32
         blobs += bytes(pad)
         data_addr = offset + len(blobs)
         blobs += data
         out += struct.pack(">II", headers_at + 0x24 * i, 0)
-        width, height = image.size
-        headers += struct.pack(
-            ">HHIIIIIIf4B", height, width, fmt, data_addr, wrap, wrap, FILTER_LINEAR, FILTER_LINEAR, 0.0, 0, 0, 0, 0
-        )
+        headers += _image_header(image, fmt, data_addr, wrap, mip_count)
     return bytes(out + headers + blobs)
 
 
-def append_images(tpl_bytes: bytes, images: list[tuple["Image.Image", int, int]]) -> tuple[bytes, int]:
+def append_images(
+    tpl_bytes: bytes, images: list[tuple["Image.Image", int, int]], mip_count: int = 0
+) -> tuple[bytes, int]:
     """Add ``(image, format, wrap)`` images to the end of an existing TPL
-    and return ``(new bytes, index of the first added image)``.
+    and return ``(new bytes, index of the first added image)``. Each added
+    image gets ``mip_count`` box-filtered levels (see build_tpl()).
 
     Existing images keep their index and their bytes (no re-encoding): the
     image table grows in place, everything after it moves down by a
@@ -1143,15 +1293,20 @@ def append_images(tpl_bytes: bytes, images: list[tuple["Image.Image", int, int]]
         out += bytes(-len(out) % 32)
         header_at = len(out)
         data_at = header_at + 0x40
-        width, height = image.size
-        out += struct.pack(
-            ">HHIIIIIIf4B", height, width, fmt, data_at, wrap, wrap, FILTER_LINEAR, FILTER_LINEAR, 0.0, 0, 0, 0, 0
-        )
+        out += _image_header(image, fmt, data_at, wrap, mip_count)
         out += bytes(data_at - len(out))
-        out += _DIRECT_ENCODERS[fmt](image.convert("RGBA"))
+        out += _encode_chain(image, fmt, mip_count)
         struct.pack_into(">II", out, table_end + 8 * k, header_at, 0)
     out += bytes(-len(out) % 32)
     return bytes(out), count
+
+
+def typical_mip_count(tpl_bytes: bytes) -> int:
+    """The mip level count most of a TPL's images carry (0 for an empty
+    file) - what images added to it should get to match the rest
+    (MAP_MIP_COUNT in every vanilla map and battle-scenery texpack)."""
+    counts = [info.mip_count for info in read_tpl_image_info(io.BytesIO(tpl_bytes))]
+    return max(set(counts), key=counts.count) if counts else 0
 
 
 def truncate_images(tpl_bytes: bytes, keep: int) -> bytes:
@@ -1164,7 +1319,9 @@ def truncate_images(tpl_bytes: bytes, keep: int) -> bytes:
 
 class _Blocks:
     """A TPL's images as blocks (image header, palette header, palette data,
-    pixel data); a block runs to the next block or the end of the file."""
+    pixel data); a block runs to the next block or the end of the file. A
+    pixel-data block holds the image's whole mip chain (the levels follow
+    the base level, before any other block), so copying it copies them."""
 
     def __init__(self, tpl_bytes: bytes) -> None:
         magic, count, table_at = struct.unpack(">III", tpl_bytes[:12])
@@ -1180,6 +1337,12 @@ class _Blocks:
             self.entries.append((header, palette, data, palette_data))
             starts |= {header, data} | ({palette, palette_data} if palette else set())
         self._ordered = sorted(starts)
+        for info in read_tpl_image_info(io.BytesIO(tpl_bytes)):
+            if info.format in ENCODABLE_FORMATS and len(self.block(info.data_addr)) < info.mip_data_length:
+                raise TplError(
+                    f"Image {info.index}'s pixel data ({info.mip_count} mip level(s), {info.mip_data_length:#x} "
+                    f"bytes) overlaps the next block of the file."
+                )
 
     def block(self, offset: int) -> bytes:
         return self.data[offset : self._ordered[self._ordered.index(offset) + 1]]

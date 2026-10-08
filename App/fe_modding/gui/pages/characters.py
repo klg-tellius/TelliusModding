@@ -94,7 +94,7 @@ class CharactersHub(Page):
             return
         for c in index.main_characters():
             subtitle = c.class_name or c.jid or ""
-            if c.promoted_class_name and c.promoted_class_name != c.class_name:
+            if c.promotes and c.promoted_class_name and c.promoted_class_name != c.class_name:
                 subtitle += f" → {c.promoted_class_name}"
             caption = c.pid + (f"  ·  +{len(c.variants)} cop{'ies' if len(c.variants) > 1 else 'y'}" if c.variants else "")
             card = Card(self._grid, title=c.name or c.pid, subtitle=subtitle, caption=caption, width=250,

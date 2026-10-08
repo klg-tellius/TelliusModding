@@ -1,10 +1,19 @@
 """Battle simulator: pick two units and their weapons, adjust them, read the
-forecast and run the fight with random or fixed outcomes.
+forecast and run the fight with random or fixed outcomes, then watch it.
 
-Each side starts from a character (at base level, in its own class or
-another) or a bare class, read from the shared ``FE8Data.bin`` session.
+Each side starts from a character (in its own class or another) or a bare
+class, read from the shared ``FE8Data.bin`` session. Its level can be raised
+and an unpromoted unit can be promoted (at a chosen level) into its linked
+class; the stats then follow the game's fixed growth mode
+(:func:`fe_modding.battle_sim.units.from_character`).
 Stats, current HP, Con, skills, terrain and a few flags can then be changed;
 those changes live in the simulator only and are never written to the game.
+
+The page puts the attacker above the defender on the left, and the
+forecast, outcome, rolls and fight log on the right. Under the units sit the
+distance, the battle scenery (a ``zbg/`` folder) and **Render fight**, which
+opens :class:`.battle_window.BattleWindow` and plays the fight as the game
+stages it.
 
 The maths is :mod:`fe_modding.battle_sim` (Path of Radiance rules). In
 **Random** mode the fight is rolled from a seed, so the same seed replays the
@@ -23,22 +32,24 @@ from typing import Optional
 
 from .. import battle_sim
 from ..battle_sim import rules_fe9
-from ..battle_sim import camera as battle_camera_sim
+from ..battle_sim import units as bsu
 from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
-from ..formats import effects as effects_fmt
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
 from ..project import ModProject
-from . import battle_stage
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
+from .widgets import ScrollFrame
 
 #: Weapon types the simulator offers (staves are filtered out by might).
 COMBAT_WEAPON_TYPES = ("sword", "lance", "axe", "bow", "knife", "flame", "thunder", "wind", "rod", "fang")
 SIDE_NAMES = ("Attacker", "Defender")
 RERUN_DELAY_MS = 120
+NO_SCENERY = "(none)"
+#: The scenery picked first, when the project has it (a Crimean plain).
+DEFAULT_SCENERY = "map03_ground01"
 
 
 class _Names:
@@ -86,10 +97,10 @@ def _label_id(text: str) -> str:
 
 
 class _Side(ttk.LabelFrame):
-    """One combatant's settings."""
+    """One combatant's settings, laid out in a few compact rows."""
 
-    def __init__(self, sim: "BattleSimulator", index: int):
-        super().__init__(sim._sides_frame, text=SIDE_NAMES[index], padding=8)
+    def __init__(self, sim: "BattleSimulator", parent: tk.Misc, index: int):
+        super().__init__(parent, text=SIDE_NAMES[index], padding=(10, 6))
         self.sim, self.index = sim, index
         self._loading = False
         self.source = tk.StringVar(value="character")
@@ -101,58 +112,105 @@ class _Side(ttk.LabelFrame):
         self.hp = tk.IntVar(value=1)
         self.con = tk.IntVar(value=0)
         self.stats = [tk.IntVar(value=0) for _ in STAT_NAMES]
+        self.level = tk.IntVar(value=1)
+        self.promoted = tk.BooleanVar(value=False)
+        self.promoted_at = tk.IntVar(value=bsu.MAX_LEVEL)
         self.boss = tk.BooleanVar(value=False)
         self.blessed = tk.BooleanVar(value=False)
         self.status = tk.BooleanVar(value=False)
         self.skills: list[str] = []
+        self.columnconfigure(1, weight=1)
+        self.columnconfigure(3, weight=1)
 
         row = ttk.Frame(self)
-        row.pack(fill="x")
+        row.grid(row=0, column=0, columnspan=4, sticky="ew")
         for value, text in (("character", "Character"), ("class", "Class only")):
             ttk.Radiobutton(row, text=text, value=value, variable=self.source,
-                            command=self._source_changed).pack(side="left", padx=(0, 8))
-        self._unit_box = self._combo("Unit", self.unit, lambda: self._unit_changed(keep_class=False))
-        self._class_box = self._combo("Class", self.cls, self._unit_changed)
-        self._weapon_box = self._combo("Weapon", self.weapon, self.sim.rerun)
-        ttk.Checkbutton(self, text="List every weapon, not just the class's types", variable=self.all_weapons,
-                        command=self._fill_weapons).pack(anchor="w")
+                            command=self._source_changed).pack(side="left", padx=(0, 10))
+        ttk.Button(row, text="Reset from game data", command=self._unit_changed).pack(side="right")
+
+        self._unit_box = self._combo(1, 0, "Unit", self.unit, lambda: self._unit_changed(keep_class=False), span=3)
+        self._class_box = self._combo(2, 0, "Class", self.cls, self._class_selected)
+        self._terrain_box = self._combo(2, 2, "Terrain", self.terrain, self.sim.rerun)
+        levels = ttk.Frame(self)
+        levels.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        ttk.Label(levels, text="Level", width=8).pack(side="left")
+        self._level_entry = self._small_entry(levels, self.level, self._level_changed)
+        self._level_entry.pack(side="left")
+        self._promoted_check = ttk.Checkbutton(levels, text="Promoted", variable=self.promoted,
+                                               command=self._promotion_changed)
+        self._promoted_check.pack(side="left", padx=(14, 0))
+        self._at_label = ttk.Label(levels, text="at level")
+        self._at_label.pack(side="left", padx=(8, 4))
+        self._at_entry = self._small_entry(levels, self.promoted_at, self._level_changed)
+        self._at_entry.pack(side="left")
+        ttk.Label(levels, text="fixed growth", style="Caption.TLabel").pack(side="left", padx=(12, 0))
+
+        self._weapon_box = self._combo(4, 0, "Weapon", self.weapon, self.sim.rerun)
+        ttk.Checkbutton(self, text="Any weapon type", variable=self.all_weapons,
+                        command=self._fill_weapons).grid(row=4, column=2, columnspan=2, sticky="w", padx=(10, 0))
 
         grid = ttk.Frame(self)
-        grid.pack(fill="x", pady=(8, 0))
-        for i, name in enumerate(STAT_NAMES + ["Con", "Cur HP"]):
-            ttk.Label(grid, text=name, style="Muted.TLabel").grid(row=0, column=i, padx=2)
-        for i, var in enumerate(self.stats + [self.con, self.hp]):
-            spin = ttk.Spinbox(grid, from_=0, to=255, width=4, textvariable=var, command=self.sim.rerun)
-            spin.grid(row=1, column=i, padx=2)
-            spin.bind("<KeyRelease>", lambda _e: self.sim.rerun())
+        grid.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        for i, (name, var) in enumerate(zip(STAT_NAMES + ["Con", "Cur HP"], self.stats + [self.con, self.hp])):
+            ttk.Label(grid, text=name, style="Caption.TLabel").grid(row=0, column=i, padx=(0, 6), sticky="w")
+            entry = ttk.Entry(grid, width=4, textvariable=var, justify="center")
+            entry.grid(row=1, column=i, padx=(0, 6), sticky="w")
+            entry.bind("<KeyRelease>", lambda _e: self.sim.rerun())
+            entry.bind("<Up>", lambda _e, v=var: self._nudge(v, 1))
+            entry.bind("<Down>", lambda _e, v=var: self._nudge(v, -1))
 
         skills = ttk.Frame(self)
-        skills.pack(fill="both", expand=True, pady=(8, 0))
-        ttk.Label(skills, text="Skills", style="Muted.TLabel").pack(anchor="w")
-        self._skill_list = tk.Listbox(skills, height=5, exportselection=False)
-        self._skill_list.pack(fill="both", expand=True)
-        add = ttk.Frame(skills)
-        add.pack(fill="x", pady=(4, 0))
-        self._skill_add = ttk.Combobox(add, state="readonly")
-        self._skill_add.pack(side="left", fill="x", expand=True)
-        ttk.Button(add, text="Add", command=self._add_skill).pack(side="left", padx=(4, 0))
-        ttk.Button(add, text="Remove", command=self._remove_skill).pack(side="left", padx=(4, 0))
+        skills.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        skills.columnconfigure(1, weight=1)
+        ttk.Label(skills, text="Skills", width=8).grid(row=0, column=0, sticky="nw")
+        self._skill_list = tk.Listbox(skills, height=3, exportselection=False, activestyle="none")
+        self._skill_list.grid(row=0, column=1, rowspan=2, sticky="ew")
+        self._skill_add = ttk.Combobox(skills, state="readonly", width=24, height=24)
+        self._skill_add.grid(row=0, column=2, columnspan=2, sticky="ew", padx=(8, 0))
+        ttk.Button(skills, text="Add", command=self._add_skill).grid(row=1, column=2, sticky="ew", padx=(8, 0),
+                                                                   pady=(4, 0))
+        ttk.Button(skills, text="Remove", command=self._remove_skill).grid(row=1, column=3, sticky="ew",
+                                                                         padx=(4, 0), pady=(4, 0))
 
-        self._terrain_box = self._combo("Terrain", self.terrain, self.sim.rerun)
         flags = ttk.Frame(self)
-        flags.pack(fill="x", pady=(4, 0))
+        flags.grid(row=7, column=0, columnspan=4, sticky="w", pady=(6, 0))
         for text, var in (("Boss", self.boss), ("Blessed armour", self.blessed), ("Status condition", self.status)):
-            ttk.Checkbutton(flags, text=text, variable=var, command=self.sim.rerun).pack(side="left", padx=(0, 8))
-        ttk.Button(self, text="Reset from game data", command=self._unit_changed).pack(anchor="w", pady=(8, 0))
+            ttk.Checkbutton(flags, text=text, variable=var, command=self.sim.rerun).pack(side="left", padx=(0, 12))
 
-    def _combo(self, label: str, var, on_change) -> ttk.Combobox:
-        row = ttk.Frame(self)
-        row.pack(fill="x", pady=(6, 0))
-        ttk.Label(row, text=label, width=8).pack(side="left")
-        box = ttk.Combobox(row, textvariable=var, state="readonly", height=24)
-        box.pack(side="left", fill="x", expand=True)
+    def _combo(self, row: int, column: int, label: str, var, on_change, span: int = 1) -> ttk.Combobox:
+        ttk.Label(self, text=label, width=8 if column == 0 else 0).grid(
+            row=row, column=column, sticky="w", pady=(6, 0), padx=(0 if column == 0 else 10, 4))
+        box = ttk.Combobox(self, textvariable=var, state="readonly", height=24, width=20)
+        box.grid(row=row, column=column + 1, columnspan=span, sticky="ew", pady=(6, 0))
         box.bind("<<ComboboxSelected>>", lambda _e: on_change())
         return box
+
+    def _nudge(self, var, step: int) -> str:
+        try:
+            var.set(max(0, min(255, int(var.get()) + step)))
+        except (tk.TclError, ValueError):
+            var.set(0)
+        self.sim.rerun()
+        return "break"
+
+    def _small_entry(self, parent: tk.Misc, var, on_change) -> ttk.Entry:
+        """A 4-wide number entry: Up/Down step it, Return or leaving it applies it."""
+        entry = ttk.Entry(parent, width=4, textvariable=var, justify="center")
+
+        def step(delta: int) -> str:
+            try:
+                var.set(int(var.get()) + delta)
+            except (tk.TclError, ValueError):
+                pass
+            on_change()
+            return "break"
+
+        entry.bind("<Up>", lambda _e: step(1))
+        entry.bind("<Down>", lambda _e: step(-1))
+        entry.bind("<Return>", lambda _e: on_change())
+        entry.bind("<FocusOut>", lambda _e: on_change())
+        return entry
 
     # -- choices --------------------------------------------------------------------------------
     def fill(self) -> None:
@@ -177,6 +235,111 @@ class _Side(ttk.LabelFrame):
         pid = _label_id(self.unit.get())
         return next((c for c in self.sim.fe8.characters if c.pid == pid), None)
 
+    def _class_entry(self, jid: Optional[str]):
+        return next((c for c in self.sim.fe8.classes if c.jid == jid), None) if jid else None
+
+    def _start_class(self):
+        """The class the unit levels in before any promotion: the character's own class, or in
+        class mode the unpromoted class of the selected promoted one."""
+        fe8 = self.sim.fe8
+        char = self._character() if self.source.get() == "character" else None
+        if char is not None:
+            return self._class_entry(char.jid)
+        cls = self._class_entry(_label_id(self.cls.get()))
+        linked = bsu.linked_class(fe8, cls)
+        if bsu.class_kind(fe8, cls) == "Promoted" and bsu.promotion_of(fe8, linked) is cls:
+            return linked
+        return cls
+
+    def _promotion_path(self) -> bool:
+        """True when the unit levels in its start class, then promotes into the selected one."""
+        start = self._start_class()
+        return (self.promoted.get() and start is not None and bsu.class_kind(self.sim.fe8, start) == "Unpromoted"
+                and _label_id(self.cls.get()) not in (None, "", start.jid))
+
+    def _class_selected(self) -> None:
+        cls = self._class_entry(_label_id(self.cls.get()))
+        start = self._start_class()
+        self.promoted.set(bsu.class_kind(self.sim.fe8, cls) == "Promoted")
+        if start is not None and bsu.class_kind(self.sim.fe8, start) == "Promoted":
+            self.promoted.set(True)
+        self._unit_changed()
+
+    def _promotion_changed(self) -> None:
+        """Switch to the start class's promotion, or back to the start class."""
+        start = self._start_class()
+        target = bsu.promotion_of(self.sim.fe8, start) if self.promoted.get() else start
+        if target is not None:
+            self.cls.set(self.sim.names.cls(target))
+        self._unit_changed()
+
+    def _level_bounds(self) -> tuple[int, int]:
+        char = self._character() if self.source.get() == "character" else None
+        low = 1 if self._promotion_path() or char is None else char.level
+        return max(1, min(low, bsu.MAX_LEVEL)), bsu.MAX_LEVEL
+
+    def _clamp_levels(self) -> None:
+        low, high = self._level_bounds()
+        for var, lo, default in ((self.level, low, low), (self.promoted_at, bsu.PROMOTION_LEVEL, high)):
+            try:
+                value = int(var.get())
+            except (tk.TclError, ValueError):
+                value = default
+            var.set(max(lo, min(high, value)))
+        char = self._character() if self.source.get() == "character" else None
+        if char is not None and self.promoted_at.get() < char.level:
+            self.promoted_at.set(min(high, char.level))
+
+    def _build(self) -> Optional[Combatant]:
+        """The unit from the game data at the chosen level, class and promotion."""
+        fe8 = self.sim.fe8
+        char = self._character() if self.source.get() == "character" else None
+        jid = _label_id(self.cls.get()) or None
+        self._clamp_levels()
+        path = self._promotion_path()
+        try:
+            if char is not None:
+                return battle_sim.from_character(fe8, char.pid, jid=jid, level=self.level.get(),
+                                                 promoted_at=self.promoted_at.get() if path else None)
+            start = self._start_class()
+            return battle_sim.from_class(fe8, jid, level=self.level.get(),
+                                         promoted_from=start.jid if path else None,
+                                         promoted_at=self.promoted_at.get())
+        except KeyError:
+            return None
+
+    def _refresh_promotion_controls(self) -> None:
+        fe8 = self.sim.fe8
+        start = self._start_class()
+        kind = bsu.class_kind(fe8, start)
+        can_promote = kind == "Unpromoted" and bsu.promotion_of(fe8, start) is not None
+        if kind == "Promoted":
+            self.promoted.set(True)
+        self._promoted_check.configure(state="normal" if can_promote else "disabled")
+        path = self._promotion_path()
+        self._at_entry.configure(state="normal" if path else "disabled")
+        self._at_label.configure(state="normal" if path else "disabled")
+
+    def _set_stats(self, base: Combatant) -> None:
+        self._loading = True
+        for var, value in zip(self.stats, base.stats):
+            var.set(value)
+        self.hp.set(base.hp)
+        self.con.set(base.build)
+        self._loading = False
+
+    def _level_changed(self) -> None:
+        """Recompute the stats for the new level; skills and weapon stay as they are."""
+        if self.sim.fe8 is None or not hasattr(self, "_base"):
+            return
+        base = self._build()
+        if base is None:
+            return
+        self._set_stats(base)
+        base.skills = list(self.skills)
+        self._base = base
+        self.sim.rerun()
+
     def _unit_changed(self, keep_class: bool = True) -> None:
         """Reload the stats, skills and weapons from the game data."""
         fe8 = self.sim.fe8
@@ -184,26 +347,21 @@ class _Side(ttk.LabelFrame):
             return
         char = self._character() if self.source.get() == "character" else None
         if char is not None and (not keep_class or not self.cls.get()):
-            cls = next((c for c in fe8.classes if c.jid == char.jid), None)
+            cls = self._class_entry(char.jid)
             if cls is not None:
                 self.cls.set(self.sim.names.cls(cls))
         if self.source.get() == "class" and not self.cls.get() and self._class_box["values"]:
             self.cls.set(self._class_box["values"][0])
-        jid = _label_id(self.cls.get()) or None
-        try:
-            if char is not None:
-                base = battle_sim.from_character(fe8, char.pid, jid=jid)
-            else:
-                base = battle_sim.from_class(fe8, jid)
-        except KeyError:
+        if not keep_class:
+            self.level.set(char.level if char is not None else 1)
+            self.promoted_at.set(bsu.MAX_LEVEL)
+            self.promoted.set(bsu.class_kind(fe8, self._class_entry(_label_id(self.cls.get()))) == "Promoted")
+        self._refresh_promotion_controls()
+        base = self._build()
+        if base is None:
             return
-        self._loading = True
-        for var, value in zip(self.stats, base.stats):
-            var.set(value)
-        self.hp.set(base.hp)
-        self.con.set(base.build)
+        self._set_stats(base)
         self.skills = list(base.skills)
-        self._loading = False
         self._base = base
         self._fill_skills()
         self._fill_weapons()
@@ -292,38 +450,40 @@ class BattleSimulator(EditorPanel):
                  session: Fe8DataSession | None = None):
         super().__init__(parent, padding=12)
         self._project = project
+        self._files = project.extracted_dir / "files"
         self._session = session or Fe8DataSession(project, changelog)
         self.names = _Names(project)
         self.rules = rules_fe9.Fe9Rules()
         self.terrains: list = []
         self._choices: dict = {}  # fixed mode: (strike, kind) -> bool
         self._log: Optional[battle_sim.BattleLog] = None
+        self._distance = 1
         self._pending = None
+        self._window = None  # battle_window.BattleWindow, made on the first render
         self.mode = tk.StringVar(value="random")
         self.seed = tk.StringVar(value="1")
         self.distance = tk.IntVar(value=1)
+        self.scenery = tk.StringVar(value=NO_SCENERY)
 
         ttk.Label(self, text="Battle Simulator", style="Title.TLabel").pack(anchor="w")
         ttk.Label(self, text="Path of Radiance rules. Changes here stay in the simulator; nothing is written "
                              "to the game.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
-        self._tabs = ttk.Notebook(self)
-        self._tabs.pack(fill="both", expand=True)
-        body = ttk.Frame(self._tabs, padding=(0, 8, 0, 0))
-        self._tabs.add(body, text="Setup and forecast")
-        self._sides_frame = body
-        self.sides = [_Side(self, 0), _Side(self, 1)]
-        self.sides[0].grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        middle = ttk.Frame(body)
-        middle.grid(row=0, column=1, sticky="nsew", padx=6)
-        self.sides[1].grid(row=0, column=2, sticky="nsew", padx=(6, 0))
-        body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
-        body.columnconfigure(2, weight=1)
+        body = ttk.Frame(self)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=3, uniform="half")
+        body.columnconfigure(1, weight=2, uniform="half")
         body.rowconfigure(0, weight=1)
-        self._build_middle(middle)
-        self._scene = _ScenePanel(self, self._tabs, project)
-        self._tabs.add(self._scene, text="3D fight")
-        self._tabs.bind("<<NotebookTabChanged>>", lambda _e: self._scene.tab_shown())
+
+        left = ScrollFrame(body, padding=(0, 0, 8, 0))
+        left.grid(row=0, column=0, sticky="nsew")
+        self.sides = [_Side(self, left.body, 0), _Side(self, left.body, 1)]
+        self.sides[0].pack(fill="x")
+        self._build_battle_bar(left.body)
+        self.sides[1].pack(fill="x")
+
+        right = ttk.Frame(body)
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        self._build_results(right)
 
         self._session.subscribe(self._on_session_changed)
         self._on_session_changed(None)
@@ -345,33 +505,43 @@ class BattleSimulator(EditorPanel):
         return self._session.fe8
 
     # -- layout ---------------------------------------------------------------------------------
-    def _build_middle(self, parent: ttk.Frame) -> None:
-        top = ttk.Frame(parent)
-        top.pack(fill="x")
-        ttk.Label(top, text="Distance").pack(side="left")
-        ttk.Spinbox(top, from_=1, to=10, width=3, textvariable=self.distance, command=self.rerun).pack(
+    def _build_battle_bar(self, parent: tk.Misc) -> None:
+        bar = ttk.Frame(parent, padding=(0, 8))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Distance").pack(side="left")
+        ttk.Spinbox(bar, from_=1, to=10, width=3, textvariable=self.distance, command=self.rerun).pack(
             side="left", padx=(4, 12))
-        ttk.Button(top, text="Swap sides", command=self._swap).pack(side="left")
+        ttk.Label(bar, text="Scenery").pack(side="left")
+        self._scenery_box = ttk.Combobox(bar, textvariable=self.scenery, state="readonly", width=20, height=24)
+        self._scenery_box.pack(side="left", padx=(4, 12))
+        ttk.Button(bar, text="Swap sides", command=self._swap).pack(side="left")
+        self._render_button = ttk.Button(bar, text="Render fight", style="Accent.TButton", command=self._render)
+        self._render_button.pack(side="right")
 
-        forecast = ttk.LabelFrame(parent, text="Forecast", padding=8)
-        forecast.pack(fill="x", pady=(8, 0))
+    def _build_results(self, parent: tk.Misc) -> None:
+        forecast = ttk.LabelFrame(parent, text="Forecast", padding=(10, 6))
+        forecast.pack(fill="x")
         self._forecast_cells = {}
+        self._forecast_heads = []
         rows = ("HP", "Atk", "Damage", "Hit", "Crit", "Attack speed", "Strikes")
-        for c, name in enumerate(("", SIDE_NAMES[0], SIDE_NAMES[1])):
-            ttk.Label(forecast, text=name, style="Muted.TLabel").grid(row=0, column=c, sticky="w", padx=6)
+        forecast.columnconfigure(1, weight=1, uniform="fc")
+        forecast.columnconfigure(2, weight=1, uniform="fc")
+        for c in (1, 2):
+            head = ttk.Label(forecast, text=SIDE_NAMES[c - 1], style="Strong.TLabel")
+            head.grid(row=0, column=c, sticky="w", padx=6)
+            self._forecast_heads.append(head)
         for r, name in enumerate(rows, start=1):
-            ttk.Label(forecast, text=name).grid(row=r, column=0, sticky="w", padx=6)
+            ttk.Label(forecast, text=name, style="Muted.TLabel").grid(row=r, column=0, sticky="w", padx=(0, 6))
             for side in (0, 1):
                 cell = ttk.Label(forecast, text="-")
                 cell.grid(row=r, column=side + 1, sticky="w", padx=6)
                 self._forecast_cells[(name, side)] = cell
-        self._forecast_note = ttk.Label(
-            forecast, style="Muted.TLabel", wraplength=320, justify="left",
-            text="Unverified: the Hit, Avoid, Crit, attack speed and weapon triangle formulas are the community's, "
-                 "not confirmed in the game code.")
-        self._forecast_note.grid(row=len(rows) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(forecast, style="Caption.TLabel", wraplength=360, justify="left",
+                  text="Unverified: the Hit, Avoid, Crit, attack speed and weapon triangle formulas are the "
+                       "community's, not confirmed in the game code.").grid(
+            row=len(rows) + 1, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
-        mode = ttk.LabelFrame(parent, text="Outcome", padding=8)
+        mode = ttk.LabelFrame(parent, text="Outcome", padding=(10, 6))
         mode.pack(fill="x", pady=(8, 0))
         ttk.Radiobutton(mode, text="Random", value="random", variable=self.mode, command=self.rerun).grid(
             row=0, column=0, sticky="w")
@@ -383,28 +553,29 @@ class BattleSimulator(EditorPanel):
         ttk.Radiobutton(mode, text="Fixed", value="fixed", variable=self.mode, command=self.rerun).grid(
             row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Button(mode, text="Fix this fight", command=self._fix_current).grid(
-            row=1, column=1, columnspan=2, sticky="w", pady=(4, 0))
+            row=1, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(4, 0))
         ttk.Button(mode, text="Clear choices", command=self._clear_choices).grid(
             row=1, column=3, sticky="w", pady=(4, 0), padx=(6, 0))
 
         rolls = ttk.LabelFrame(parent, text="Rolls (Fixed: double-click to flip)", padding=4)
         rolls.pack(fill="both", expand=True, pady=(8, 0))
-        cols = (("strike", "#", 36), ("who", "Who", 110), ("what", "Roll", 120), ("chance", "%", 46),
+        cols = (("strike", "#", 32), ("who", "Who", 100), ("what", "Roll", 100), ("chance", "%", 40),
                 ("result", "Result", 70))
-        self._rolls = ttk.Treeview(rolls, columns=[c[0] for c in cols], show="headings", height=8)
+        self._rolls = ttk.Treeview(rolls, columns=[c[0] for c in cols], show="headings", height=6)
         for key, text, width in cols:
             self._rolls.heading(key, text=text)
-            self._rolls.column(key, width=width, anchor="w", stretch=key == "what")
+            self._rolls.column(key, width=width, minwidth=width, anchor="w", stretch=key in ("who", "what"))
         self._rolls.pack(fill="both", expand=True)
         self._rolls.bind("<Double-1>", self._flip)
 
         log = ttk.LabelFrame(parent, text="Fight", padding=4)
         log.pack(fill="both", expand=True, pady=(8, 0))
-        self._log_text = tk.Text(log, height=9, wrap="word", state="disabled")
+        self._log_text = tk.Text(log, height=7, wrap="word", state="disabled", relief="flat")
         self._log_text.pack(fill="both", expand=True)
 
     # -- data -----------------------------------------------------------------------------------
     def _on_session_changed(self, _source) -> None:
+        self._fill_sceneries()
         if self._session.fe8 is None:
             self._set_log("FE8Data.bin was not found in this project.")
             return
@@ -420,6 +591,12 @@ class BattleSimulator(EditorPanel):
             self.terrains = []
         for side in self.sides:
             side.fill()
+
+    def _fill_sceneries(self) -> None:
+        names = list(sa.BattleAssets(self._files, b"").sceneries())
+        self._scenery_box["values"] = [NO_SCENERY] + names
+        if self.scenery.get() not in names:
+            self.scenery.set(DEFAULT_SCENERY if DEFAULT_SCENERY in names else (names[0] if names else NO_SCENERY))
 
     def _swap(self) -> None:
         a, b = self.sides
@@ -481,11 +658,12 @@ class BattleSimulator(EditorPanel):
                 seed = sum(map(ord, self.seed.get()))
             outcomes = battle_sim.RngOutcomes(seed)
         self._log = battle_sim.simulate(units[0], units[1], rules=self.rules, outcomes=outcomes, distance=distance)
+        self._distance = distance
         self._show(self._log)
-        self._scene.fight_changed(self._log, units, distance)
 
     def _show(self, log: battle_sim.BattleLog) -> None:
         for side, unit in enumerate((log.attacker, log.defender)):
+            self._forecast_heads[side].configure(text=unit.name or SIDE_NAMES[side])
             f = log.forecast.side(side)
             values = {
                 "HP": f"{log.hp_start[side]} / {unit.stats[0]}",
@@ -519,202 +697,27 @@ class BattleSimulator(EditorPanel):
         self._log_text.insert("1.0", text)
         self._log_text.configure(state="disabled")
 
+    # -- render ---------------------------------------------------------------------------------
+    def _render(self) -> None:
+        """Play the current fight in the battle window, as the game stages it."""
+        if self._pending is not None:
+            self.after_cancel(self._pending)
+            self._run()
+        if self._log is None:
+            return
+        from .battle_window import BattleWindow
+
+        if self._window is None or not self._window.winfo_exists():
+            self._window = BattleWindow(self, self._files, self.rules, self.fe8, title="Battle Simulator - fight")
+        scenery = self.scenery.get()
+        self._window.play(self._log, self._distance, None if scenery == NO_SCENERY else scenery)
+
     def cleanup(self) -> None:
-        self._scene.cleanup()
         self._session.unsubscribe(self._on_session_changed)
         if self._pending is not None:
             self.after_cancel(self._pending)
             self._pending = None
-
-
-class _ScenePanel(ttk.Frame):
-    """The "3D fight" tab: the fight played by the units' battle models in a scenery.
-
-    Loading models is slow, so the scene is (re)loaded only while the tab is
-    shown; a new fight with the same models only rebuilds the timeline."""
-
-    def __init__(self, sim: "BattleSimulator", parent: tk.Misc, project: ModProject):
-        super().__init__(parent, padding=(0, 8, 0, 0))
-        self.sim = sim
-        self._files = project.extracted_dir / "files"
-        self._assets: Optional[sa.BattleAssets] = None
-        self._cache = battle_stage.SetCache()
-        self._loaded_key = None
-        self._fight = None  # (log, units, distance)
-        self.scenery = tk.StringVar(value="(none)")
-        self.spacing = tk.DoubleVar(value=1.0)
-        self.facing = tk.IntVar(value=0)
-        self.time_scale = tk.DoubleVar(value=1.0)
-        self._camera: Optional[battle_camera_sim.GameCamera] = None
-        self._effects: dict = {}  # EID -> EffectAsset or None
-        self.codes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
-        self.prefixes = [tk.StringVar(value="(automatic)") for _ in (0, 1)]
-
-        controls = ttk.Frame(self, width=260)
-        controls.pack(side="left", fill="y", padx=(0, 10))
-        ttk.Label(controls, text="Scenery").pack(anchor="w")
-        self._scenery_box = ttk.Combobox(controls, textvariable=self.scenery, state="readonly", height=24)
-        self._scenery_box.pack(fill="x")
-        self._scenery_box.bind("<<ComboboxSelected>>", lambda _e: self._reload())
-        self._code_boxes, self._prefix_boxes = [], []
-        for side in (0, 1):
-            ttk.Label(controls, text=f"{SIDE_NAMES[side]} model", style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
-            code = ttk.Combobox(controls, textvariable=self.codes[side], state="readonly", height=24)
-            code.pack(fill="x")
-            code.bind("<<ComboboxSelected>>", lambda _e: self._reload())
-            prefix = ttk.Combobox(controls, textvariable=self.prefixes[side], state="readonly")
-            prefix.pack(fill="x", pady=(2, 0))
-            prefix.bind("<<ComboboxSelected>>", lambda _e: self._reload())
-            self._code_boxes.append(code)
-            self._prefix_boxes.append(prefix)
-        ttk.Label(controls, text="Spacing", style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
-        self._spacing = ttk.Scale(controls, from_=0.0, to=4.0, variable=self.spacing, command=self._placed)
-        self._spacing.pack(fill="x")
-        row = ttk.Frame(controls)
-        row.pack(fill="x", pady=(6, 0))
-        ttk.Label(row, text="Facing").pack(side="left")
-        ttk.Spinbox(row, from_=0, to=270, increment=90, width=5, textvariable=self.facing, wrap=True,
-                    command=self._placed).pack(side="left", padx=(6, 0))
-        row = ttk.Frame(controls)
-        row.pack(fill="x", pady=(6, 0))
-        ttk.Label(row, text="Camera time scale").pack(side="left")
-        ttk.Spinbox(row, from_=0.25, to=8.0, increment=0.25, width=5, textvariable=self.time_scale,
-                    command=self._placed).pack(side="left", padx=(6, 0))
-        ttk.Button(controls, text="Reload models", command=lambda: self._reload(force=True)).pack(
-            anchor="w", pady=(10, 0))
-        self._notes = ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text="")
-        self._notes.pack(anchor="w", pady=(10, 0))
-        ttk.Label(controls, style="Muted.TLabel", wraplength=250, justify="left", text=(
-            "Clips follow zu/<model>.dbx (attack, critical, dodge, damage, death). The blow lands on the clip's "
-            "combat event. Spacing and facing are the simulator's own: the engine's are not measured. Skill and "
-            "spell effects start when the blow lands (their real timing is not decoded). The game camera plays "
-            "the xcam/ scripts; their time unit is not measured, hence the time scale.")).pack(
-            anchor="w", pady=(10, 0))
-
-        self.view = battle_stage.StageView(self)
-        self.view.pack(side="left", fill="both", expand=True)
-
-    def _visible(self) -> bool:
-        try:
-            return self.sim._tabs.select() == str(self)
-        except tk.TclError:
-            return False
-
-    def assets(self) -> Optional[sa.BattleAssets]:
-        if self._assets is None:
-            try:
-                self._assets = sa.BattleAssets.from_files(self._files)
-            except Exception:  # noqa: BLE001 - a damaged zdbx.cmp leaves the 3D tab empty
-                self._assets = sa.BattleAssets(self._files, b"")
-            codes = ["(automatic)"] + self._assets.model_codes()
-            for box in self._code_boxes:
-                box["values"] = codes
-            self._scenery_box["values"] = ["(none)"] + list(self._assets.sceneries())
-            try:
-                self._camera = battle_camera_sim.GameCamera.from_zdbx(self._assets.zdbx_data)
-            except Exception:  # noqa: BLE001 - no camera scripts: the free camera still works
-                self._camera = None
-            self.view.game_camera = self._camera
-        return self._assets
-
-    def _effect(self, kind: str, key: str):
-        """The effect pack of a timeline cue: a skill's EID (the skill record's 0x14) or a spell's."""
-        eid = key
-        if kind == "skill":
-            fe8 = self.sim.fe8
-            eid = next((sk.effect for sk in (fe8.skills if fe8 else ()) if sk.effect and sk.sid
-                        and self.sim.rules.skill_key(sk.sid) == key), None)
-        if not eid:
-            return None
-        if eid not in self._effects:
-            try:
-                self._effects[eid] = battle_stage.load_effect(effects_fmt.pack_path(self._files, eid))
-            except Exception:  # noqa: BLE001 - a broken effect pack is skipped
-                self._effects[eid] = None
-        return self._effects[eid]
-
-    def fight_changed(self, log, units, distance: int) -> None:
-        previous = self._fight
-        self._fight = (log, units, distance)
-        same = (previous is not None and previous[2] == distance and previous[0].text() == log.text()
-                and [u.__dict__ for u in previous[1]] == [u.__dict__ for u in units])
-        if self._visible() and not same:
-            self._reload()
-
-    def tab_shown(self) -> None:
-        if self._visible():
-            self._reload()
-
-    def _unit_assets(self) -> list:
-        log, units, distance = self._fight
-        found = []
-        for side, unit in enumerate(units):
-            code = self.codes[side].get()
-            prefix = self.prefixes[side].get()
-            found.append(self.assets().unit(
-                unit, code=None if code.startswith("(") else code, prefix=None if prefix.startswith("(") else prefix,
-                ranged=distance > 1))
-        return found
-
-    def _reload(self, force: bool = False) -> None:
-        if self._fight is None or self.assets() is None:
-            return
-        log, units, distance = self._fight
-        unit_assets = self._unit_assets()
-        for side, found in enumerate(unit_assets):
-            self._prefix_boxes[side]["values"] = ["(automatic)"] + found.prefixes
-        scenery = self.assets().sceneries().get(self.scenery.get())
-        key = (tuple((a.pack, a.texture, a.weapon_model, a.weapon_kind, tuple(sorted(a.roles.items())))
-                     for a in unit_assets), scenery)
-        if force or key != self._loaded_key or self.view.stage is None:
-            self.configure(cursor="watch")
-            self.update_idletasks()
-            try:
-                units3d = [battle_stage.load_unit(self._cache, a) for a in unit_assets]
-                scene = self._cache.get(("scenery", scenery), lambda: battle_stage.load_scenery(scenery)) \
-                    if scenery is not None else None
-                stage = battle_stage.BattleStage(units3d, scene, self._effect)
-            except Exception as exc:  # noqa: BLE001 - show what failed instead of a dead tab
-                self._notes.configure(text=f"Could not load the models: {exc}")
-                self.view.set_stage(None)
-                self._loaded_key = None
-                return
-            finally:
-                self.configure(cursor="")
-            self._loaded_key = key
-            height = max(u.height for u in units3d)
-            self._spacing.configure(to=max(4.0 * height, 1.0))
-            self.spacing.set(stage.spacing)
-            stage.facing = float(self.facing.get())
-            stage.set_log(log, distance)
-            self.view.set_stage(stage, (log.attacker.name, log.defender.name),
-                                (log.attacker.stats[0], log.defender.stats[0]))
-        else:
-            self.view.stage.set_log(log, distance)
-            self.view.set_stage(self.view.stage, (log.attacker.name, log.defender.name),
-                                (log.attacker.stats[0], log.defender.stats[0]))
-        notes = []
-        for side, found in enumerate(unit_assets):
-            what = f"{SIDE_NAMES[side]}: {found.code or 'no model'}"
-            if found.prefix:
-                what += f", {found.prefix} clips ({len(found.roles)})"
-            if found.weapon_model is None and units[side].weapon is not None:
-                what += ", no weapon model"
-            notes.append(what + "".join(f"; {n}" for n in found.notes))
-        self._notes.configure(text="\n".join(notes))
-
-    def _placed(self, *_args) -> None:
-        stage = self.view.stage
-        if stage is None:
-            return
-        try:
-            stage.spacing = float(self.spacing.get())
-            stage.facing = float(self.facing.get())
-            if self._camera is not None:
-                self._camera.time_scale = max(float(self.time_scale.get()), 0.05)
-        except (tk.TclError, ValueError):
-            return
-        self.view.refresh()
-
-    def cleanup(self) -> None:
-        self.view.cleanup()
+        if self._window is not None and self._window.winfo_exists():
+            self._window.cleanup()
+            self._window.destroy()
+        self._window = None

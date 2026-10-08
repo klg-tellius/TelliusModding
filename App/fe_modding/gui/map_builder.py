@@ -1089,6 +1089,10 @@ class MapBuilder(EditorPanel):
                 break
         self._update_buttons()
 
+    def save_chapter(self) -> None:
+        """Save Chapter: the map, deployment and chapter script edits."""
+        self._save()
+
     # -- windows ------------------------------------------------------------------------------
     @property
     def map_editor(self):

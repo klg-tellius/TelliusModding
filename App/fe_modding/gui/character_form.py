@@ -1,8 +1,7 @@
 """The editable ``FE8Data.bin`` record of one character, as shown on the
 character page: identity and class, skills, map/battle animation IDs, level
 and build, biorhythm, the personal stat bonus and growth rows next to the
-class's own values for reference, the fixed level-up accumulators and the
-whole record as hex.
+class's own values for reference, and the fixed level-up accumulators.
 
 Edits go to the shared :class:`~.fe8_session.Fe8DataSession` on **Apply**;
 **Save** writes the file for every view of it. **New character…** appends a
@@ -139,18 +138,6 @@ class CharacterForm(ttk.Frame):
                   style="SurfaceCaption.TLabel", wraplength=760, justify="left").grid(
             row=2, column=0, columnspan=12, sticky="w", pady=(8, 0))
 
-        raw = self._group(self._body, "Whole record (hex)")
-        raw.master.pack(fill="x", pady=(12, 0))
-        protected = sorted(fe8data.protected_record_words(self._session.data, "character", index))
-        ttk.Label(raw, text="84 bytes. Everything but the pointer words at "
-                  + ", ".join(f"0x{o:02X}" for o in protected) + " (edit those above). Applied with Apply.",
-                  style="SurfaceCaption.TLabel", wraplength=760, justify="left").pack(anchor="w")
-        self._hex = tk.Text(raw, width=52, height=6, wrap="none", font=("Consolas", 10))
-        self._hex.pack(anchor="w", pady=(4, 0))
-        record = fe8data.record_bytes(self._session.data, "character", index)
-        self._hex_shown = "\n".join(record[o:o + 16].hex(" ") for o in range(0, len(record), 16))
-        self._hex.insert("1.0", self._hex_shown)
-
     def _group(self, parent: tk.Misc, title: str) -> ttk.Frame:
         outer = ttk.Frame(parent, style="Surface.TFrame", padding=14)
         ttk.Label(outer, text=title, style="SurfaceHeading.TLabel").pack(anchor="w", pady=(0, 8))
@@ -177,13 +164,6 @@ class CharacterForm(ttk.Frame):
         data = self._session.data
         index = self._index
         try:
-            hex_text = self._hex.get("1.0", "end-1c")
-            if hex_text != self._hex_shown:  # first, so the fields below win over its copy of them
-                try:
-                    new = bytes.fromhex(" ".join(hex_text.split()))
-                except ValueError:
-                    raise ValueError("Whole record: not valid hex") from None
-                data = fe8data.patch_record_bytes(data, "character", index, new)
             current = fe8data.read_fe8data(data).characters[index]
             for field in POINTER_FIELDS:
                 raw = self._vars[field].get().strip()

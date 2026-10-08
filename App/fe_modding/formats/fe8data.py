@@ -627,7 +627,7 @@ class CharacterEntry:
     level: int
     build: int
     weight: int
-    stat_bonus: list  # 8 ints, STAT_NAMES order - personal bonus added atop class base + growths, not a displayed total
+    stat_bonus: list  # 8 signed ints, STAT_NAMES order - personal bonus added atop class base + growths, not a displayed total
     growth: list  # 8 ints, STAT_NAMES order, growth rate percentage points
     fixed_growth_start: list  # 0x49-0x50, starting accumulators of the fixed ("Fraction") level-up mode, STAT_NAMES order
     mpid: Optional[str] = None  # +0x04, the name key ("MPID_IKE") looked up in Mess/common.m
@@ -1134,14 +1134,14 @@ def chant_stat_name(skills: list, skill: SkillEntry) -> Optional[str]:
 
 def label_index_by_prefix(fe8: Fe8Data, data: bytes) -> dict:
     """Every label this file's records actually reference, grouped by prefix
-    (PID/JID/IID/FID/SID/AID/MJID/MIID/MH_J/MH_I/EID) - mirrors dispo.py's
+    (PID/MPID/JID/IID/FID/SID/AID/MJID/MIID/MH_J/MH_I/EID) - mirrors dispo.py's
     label_index_by_prefix(), for offering "pick an existing label" dropdowns
     in an editor. Built from the label pool directly (every NUL-terminated
     ASCII run following a recognized prefix), not just labels seen on
     already-read records, so it also covers labels that only appear on
     not-yet-decoded fields."""
     grouped: dict = {}
-    prefixes = [b"PID_", b"JID_", b"IID_", b"FID_", b"SID_", b"MSID_", b"AID_", b"MJID_", b"MIID_", b"MH_J_",
+    prefixes = [b"PID_", b"MPID_", b"JID_", b"IID_", b"FID_", b"SID_", b"MSID_", b"AID_", b"MJID_", b"MIID_", b"MH_J_",
                 b"MH_I_", b"EID_"]
     for prefix in prefixes:
         start = 0
@@ -1151,7 +1151,8 @@ def label_index_by_prefix(fe8: Fe8Data, data: bytes) -> dict:
             if idx == -1:
                 break
             end = data.find(b"\x00", idx)
-            if end != -1 and 0 < end - idx < 64:
+            inside = idx > 0 and (chr(data[idx - 1]).isalnum() or data[idx - 1] == ord("_"))  # PID_ in MPID_...
+            if not inside and end != -1 and 0 < end - idx < 64:
                 raw = data[idx:end]
                 if raw.isascii() and all(32 <= b < 127 for b in raw):
                     names.append((raw.decode("ascii"), idx - HEADER_SIZE))
@@ -1246,13 +1247,8 @@ def patch_character_field(data: bytes, index: int, field: str, value) -> bytes:
         struct.pack_into(">H", out, off + (0x30 if field == "roster_order" else 0x32), int(value))
     elif re.fullmatch(r"(stat_bonus|growth|fixed_growth_start)[0-7]", field):
         name, i = field[:-1], int(field[-1])
-        if name == "stat_bonus":  # signed
-            if not -128 <= int(value) <= 127:
-                raise ValueError("must be -128 to 127")
-            byte = int(value) & 0xFF
-        else:
-            byte = _byte(value)
-        out[off + {"stat_bonus": 0x39, "growth": 0x41, "fixed_growth_start": 0x49}[name] + i] = byte
+        signed = (-128, 127) if name == "stat_bonus" else (0, 255)
+        out[off + {"stat_bonus": 0x39, "growth": 0x41, "fixed_growth_start": 0x49}[name] + i] = _byte(value, *signed)
     else:
         raise ValueError(f"Unknown character field {field!r}")
     return bytes(out)
