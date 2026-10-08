@@ -295,7 +295,7 @@ class _FunctionCompiler:
             self.declare(s.name, 1, line)
             self.address(A.Name(s.name), line)
             self.expr(s.value, line)
-            self.emit(_I("store"))
+            self.emit(_I("assign" if self.fe10 else "store"))
         elif isinstance(s, A.Printf):
             for a in s.args:
                 self.expr(a, line)
@@ -354,7 +354,9 @@ class _FunctionCompiler:
             if loop is None:
                 self.error(line, "'continue' outside a loop")
                 return
-            self.emit(_I("branch", loop.top))
+            # leaving a switch skips its closing pop: drop each switch value first
+            switches = len(self.loops) - 1 - self.loops.index(loop)
+            self.emit(*[_I("pop") for _ in range(switches)], _I("branch", loop.top))
         elif isinstance(s, A.Goto):
             target = self.label(s.label)
             if s.when is None:

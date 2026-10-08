@@ -1,5 +1,5 @@
-"""Game Data › Flags: the 96 named on/off switches event scripts remember things with
-(``formats/event_flags.py``), in three sub-tabs.
+"""Game Data › Flags: the named on/off switches event scripts remember things with
+(``formats/event_flags.py``; 96 on Path of Radiance, 128 on Radiant Dawn), in three sub-tabs.
 
 * **Campaign flags** - the engine's eight ``gf_*`` flags and the ones
   ``startup.cmb`` registers in ``RegistGlobalFlags``. New ones are appended
@@ -8,7 +8,8 @@
   used, and how many slots are left. New ones are appended after the last
   registration.
 * **Save file** - the flags of a ``.gci`` save block, by name; ticking one
-  rewrites the block and its checksum.
+  rewrites the block and its checksum (Path of Radiance only: Radiant Dawn's
+  saves are not decoded yet).
 
 Adding a flag rewrites the script right away (compiled onto the current
 ``.cmb``, source kept in ``script_sources/``). The Script tab of a chapter
@@ -25,6 +26,7 @@ from typing import Optional
 
 from ... import chapters, script_sources
 from ...exceptions import ProjectError
+from ...game_profile import SAVES, profile_of
 from ...formats import event_flags as ef
 from ...formats.cmb import CompileError
 from ...formats.cmb.parser import ParseError, parse
@@ -41,23 +43,31 @@ class FlagsPanel(ttk.Frame):
     def __init__(self, parent: tk.Misc, shell):
         super().__init__(parent, style="Page.TFrame")
         self.shell = shell
+        self.table = ef.flag_table(profile_of(shell.project).script_dialect)
+        slots = self.table.slot_count
         head = ttk.Frame(self, style="Page.TFrame", padding=(8, 8, 8, 4))
         head.pack(fill="x")
         ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
-                  text="Scripts remember things (a chest opened, a character recruited) in 96 named on/off "
+                  text=f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
                        "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. "
-                       "A save stores only the 96 bits, so a flag's meaning in a save is its slot: new flags "
+                       f"A save stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags "
                        "are always added after the existing ones.").pack(anchor="w", pady=(2, 8))
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self._campaign = _CampaignTab(self._notebook, self)
         self._chapter = _ChapterTab(self._notebook, self)
-        self._save = _SaveTab(self._notebook, self)
-        for key, tab in (("campaign", self._campaign), ("chapter", self._chapter), ("save", self._save)):
+        tabs = [("campaign", self._campaign), ("chapter", self._chapter)]
+        self._save = None
+        if profile_of(shell.project).supports(SAVES):
+            self._save = _SaveTab(self._notebook, self)
+            tabs.append(("save", self._save))
+        self._tab_keys = [key for key, _tab in tabs]
+        for key, tab in tabs:
             self._notebook.add(tab, text=TABS[key])
         self._tab = "campaign"
         self._budget: Optional[dict] = None  # chapter id -> chapter flag count, from a background scan
         self._scan_running = False
+        self._titles: Optional[dict] = None
 
     @property
     def project(self):
@@ -65,9 +75,9 @@ class FlagsPanel(ttk.Frame):
 
     def show_sub(self, route_tail: tuple) -> None:
         """Select a sub-tab (``route_tail``: ``(tab[, chapter id])``) and refresh."""
-        tab = route_tail[0] if route_tail and route_tail[0] in TABS else self._tab
+        tab = route_tail[0] if route_tail and route_tail[0] in self._tab_keys else self._tab
         self._tab = tab
-        self._notebook.select(list(TABS).index(tab))
+        self._notebook.select(self._tab_keys.index(tab))
         if tab == "chapter" and len(route_tail) > 1:
             self._chapter.select(route_tail[1])
         self.refresh()
@@ -85,19 +95,20 @@ class FlagsPanel(ttk.Frame):
         """The project's global flags (engine flags first), from its startup.cmb."""
         path = script_sources.startup_path(self.project)
         try:
-            return ef.global_flags(parse(script_sources.peek(self.project, path)))
+            return ef.global_flags(parse(script_sources.peek(self.project, path)), self.table)
         except (OSError, ValueError, ParseError, ProjectError):
-            return ef.global_flags_vanilla()
+            return ef.global_flags_vanilla(self.table)
 
     def chapter_title(self, chapter_id: str) -> str:
         index = self.shell.index
         if index is not None and chapter_id in index.by_chapter:
             return index.by_chapter[chapter_id].title
-        return f"Chapter {chapter_id}"
-
-    def script_editor(self):
-        page = self.shell.existing_page("chapter")
-        return getattr(page, "_script", None) if page is not None else None
+        if self._titles is None:  # no chapter index for this game yet: the titles alone
+            try:
+                self._titles = chapters.chapter_titles(self.project)
+            except Exception:  # noqa: BLE001 - titles are cosmetic
+                self._titles = {}
+        return chapters.chapter_display_title(chapter_id, self._titles) if self._titles else f"Chapter {chapter_id}"
 
     def edit_script(self, path: Path, transform, what: str) -> bool:
         """Rewrite ``path``'s source with ``transform`` and save it. Refuses when
@@ -134,6 +145,16 @@ class FlagsPanel(ttk.Frame):
         """Show ``path`` in a chapter's Script tab (startup.cmb opens in the
         current or first chapter's)."""
         open_script(self.shell, path, function, chapter_id)
+
+    def script_editor(self):
+        """The open script editor: a chapter page's Script tab, else Assets › Scripts' (Radiant Dawn)."""
+        page = self.shell.existing_page("chapter")
+        editor = getattr(page, "_script", None) if page is not None else None
+        if editor is None:
+            assets = self.shell.existing_page("asset")
+            panel = getattr(assets, "_panels", {}).get("scripts") if assets is not None else None
+            editor = getattr(panel, "editor", None)
+        return editor
 
     # -- chapter budget scan ----------------------------------------------------------------
     def budget(self) -> Optional[dict]:
@@ -226,19 +247,21 @@ class _CampaignTab(ttk.Frame):
             self._sites = ef.registration_sites(module, "RegistGlobalFlags", "global")
         except (OSError, ValueError, ParseError, ProjectError):
             self._sites = []
-        self._flags = list(ef.ENGINE_FLAGS) + [s.name for s in self._sites]
+        table = self._page.table
+        engine = table.engine_flags
+        self._flags = list(engine) + [s.name for s in self._sites]
         self._tree.delete(*self._tree.get_children())
         seen = set()
         for slot, name in enumerate(self._flags):
-            if slot < len(ef.ENGINE_FLAGS):
-                meaning, source = ef.FLAG_GLOSSES.get(name, ""), "engine"
+            if slot < len(engine):
+                meaning, source = table.glosses.get(name, ""), "engine"
             else:
-                meaning = ef.FLAG_GLOSSES.get(name, "")
-                if name == ef.RESERVED_GLOBAL:
+                meaning = table.glosses.get(name, "")
+                if name == table.reserved_global:
                     meaning = "Reserved, unused" + (" (and unreachable by name)" if name in seen else "")
                 source = "startup.cmb"
             seen.add(name)
-            tags = ("muted",) if name == ef.RESERVED_GLOBAL or slot < len(ef.ENGINE_FLAGS) else ()
+            tags = ("muted",) if name == table.reserved_global or slot < len(engine) else ()
             self._tree.insert("", "end", iid=str(slot), values=(slot, name, meaning, source), tags=tags)
         self.refresh_budget()
         self._sync_buttons()
@@ -246,13 +269,14 @@ class _CampaignTab(ttk.Frame):
     def refresh_budget(self) -> None:
         budget = self._page.budget()
         used = len(self._flags)
+        slots = self._page.table.slot_count
         if not budget:
-            self._budget.config(text=f"{used} of 96 slots · counting chapter flags…")
+            self._budget.config(text=f"{used} of {slots} slots · counting chapter flags…")
             return
         chapter_id, most = max(budget.items(), key=lambda kv: kv[1])
-        free = ef.SLOT_COUNT - used - most - 1
+        free = slots - used - most - 1
         self._budget.config(
-            text=f"{used} of 96 slots · busiest chapter: {self._page.chapter_title(chapter_id)} with {most} "
+            text=f"{used} of {slots} slots · busiest chapter: {self._page.chapter_title(chapter_id)} with {most} "
                  f"chapter flags · {free} slot(s) to spare", style="Muted.TLabel" if free > 0 else "Warn.TLabel")
 
     def _selected_slot(self) -> Optional[int]:
@@ -261,7 +285,9 @@ class _CampaignTab(ttk.Frame):
 
     def _sync_buttons(self) -> None:
         slot = self._selected_slot()
-        renamable = slot is not None and slot >= len(ef.ENGINE_FLAGS) and self._flags[slot] == ef.RESERVED_GLOBAL
+        table = self._page.table
+        renamable = (slot is not None and slot >= len(table.engine_flags) and table.reserved_global is not None
+                     and self._flags[slot] == table.reserved_global)
         self._rename_button.configure(state="normal" if renamable else "disabled")
 
     def _add(self) -> None:
@@ -271,7 +297,7 @@ class _CampaignTab(ttk.Frame):
             return
         budget = self._page.budget() or {}
         most = max(budget.values(), default=0)
-        problem = ef.capacity_problem(len(self._flags) + 1, most)
+        problem = ef.capacity_problem(len(self._flags) + 1, most, self._page.table.slot_count)
         if problem and not messagebox.askyesno("Table nearly full", f"{problem}.\n\nAdd it anyway?", parent=self):
             return
         self._page.edit_script(script_sources.startup_path(self._page.project),
@@ -280,9 +306,10 @@ class _CampaignTab(ttk.Frame):
 
     def _rename(self) -> None:
         slot = self._selected_slot()
-        if slot is None or slot < len(ef.ENGINE_FLAGS):
+        engine = self._page.table.engine_flags
+        if slot is None or slot < len(engine):
             return
-        site = self._sites[slot - len(ef.ENGINE_FLAGS)]
+        site = self._sites[slot - len(engine)]
         name = _ask_name(self, "Rename reserved slot",
                          f"New name for slot {slot} (unused in vanilla, so no save depends on it):", self._flags)
         if name is None:
@@ -309,7 +336,8 @@ class _ChapterTab(ttk.Frame):
         self._summary = ttk.Label(top, style="Muted.TLabel")
         self._summary.pack(side="left")
         ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
-                  text="Registered by the chapter's Startup, from slot 95 downward, and cleared when the next "
+                  text=f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, "
+                       "and cleared when the next "
                        "chapter starts. Talk, battle and base-conversation events use a flag named by their "
                        "label to run only once.").pack(anchor="w", pady=(8, 0))
         bar = ttk.Frame(self)
@@ -356,9 +384,10 @@ class _ChapterTab(ttk.Frame):
         self._sites = ef.registration_sites(module, "Startup", "regist")
         uses = ef.flag_uses(module)
         globals_ = self._page.global_flags()
-        slots = ef.slot_names(globals_, [s.name for s in self._sites])
-        # Registration i lands in the i-th filled slot counting down from 95 (none if the table is full).
-        positions = [n for n in range(ef.SLOT_COUNT - 1, len(globals_) - 1, -1) if slots[n] is not None]
+        count = self._page.table.slot_count
+        slots = ef.slot_names(globals_, [s.name for s in self._sites], count)
+        # Registration i lands in the i-th filled slot counting down from the top (none if the table is full).
+        positions = [n for n in range(count - 1, len(globals_) - 1, -1) if slots[n] is not None]
         for i, site in enumerate(self._sites):
             users = sorted({f"{fn} ({kind})" for fn, kind in uses.get(site.name, [])
                             if not (fn == site.function and kind == "regist")})
@@ -368,8 +397,9 @@ class _ChapterTab(ttk.Frame):
         self._summary.config(text=self._capacity_text(len(globals_), len(self._sites)))
 
     def _capacity_text(self, global_count: int, local_count: int) -> str:
-        free = ef.SLOT_COUNT - global_count - local_count - 1
-        problem = ef.capacity_problem(global_count, local_count)
+        count = self._page.table.slot_count
+        free = count - global_count - local_count - 1
+        problem = ef.capacity_problem(global_count, local_count, count)
         if problem:
             return problem
         return f"{local_count} chapter flags · {global_count} campaign flags · {free} slot(s) free"
@@ -386,7 +416,8 @@ class _ChapterTab(ttk.Frame):
                          "registration in Startup):", taken)
         if name is None:
             return
-        problem = ef.capacity_problem(len(self._page.global_flags()), len(self._sites) + 1)
+        problem = ef.capacity_problem(len(self._page.global_flags()), len(self._sites) + 1,
+                                      self._page.table.slot_count)
         if problem:
             messagebox.showerror("Table full", f"{problem}.", parent=self)
             return

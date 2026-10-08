@@ -83,19 +83,21 @@ class UnavailableStateTests(unittest.TestCase):
             (mess / f"{name}.m").write_bytes(b"")
         self.assertEqual(chapters.list_chapter_ids(self.project), ["0000", "0101", "0102", "0407a", "final"])
 
-    def test_scripts_report_instead_of_decompiling_the_wrong_opcodes(self):
+    def test_scripts_load_and_save_in_the_radiant_dawn_dialect(self):
         from fe_modding import script_sources
-        from fe_modding.exceptions import ProjectError
+        from fe_modding.formats.cmb import compile_source, read_cmb, write_cmb
+        from fe_modding.formats.cmb.model import FE10
 
         scripts = self.project.files_dir / "Scripts"
         scripts.mkdir(parents=True)
-        (scripts / "C0101.cmb").write_bytes(bytes(64))
-        self.assertIsNone(script_sources.chapter_script(self.project, "0101"))
-        with self.assertRaises(ProjectError) as caught:
-            script_sources.load(self.project, scripts / "C0101.cmb")
-        self.assertIn("not available for Radiant Dawn yet", str(caught.exception))
-        with self.assertRaises(ProjectError):
-            script_sources.peek(self.project, scripts / "C0101.cmb")
+        path = scripts / "C0101.cmb"
+        path.write_bytes(write_cmb(compile_source("def f(a):\n    a = 1\n    return 0\n", dialect=FE10).script))
+        self.assertEqual(script_sources.chapter_script(self.project, "0101"), path)
+        loaded = script_sources.load(self.project, path)
+        self.assertIn("    arg0 = 1\n", loaded.source)
+        script_sources.save(self.project, loaded, loaded.source.replace("arg0 = 1", "arg0 += 2"))
+        self.assertIs(read_cmb(path.read_bytes()).dialect, FE10)
+        self.assertIn("arg0 += 2", script_sources.peek(self.project, path))
 
     def test_asset_lists_group_files_by_radiant_dawn_chapter(self):
         from fe_modding.gui.pages import text_assets

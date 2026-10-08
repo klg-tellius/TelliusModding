@@ -18,7 +18,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Optional
 
 from ..exceptions import ProjectError
-from ..formats import fe10data, fe10growth, message
+from ..formats import fe10data, fe10growth
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -55,26 +55,9 @@ LIST_PREFIXES = {"skills": ("SID_",), "sounds": ("SFXC_",), "requirements": ("SF
                  "conditions": ("SID_", "JID_", "PID_")}
 
 
-def _key(speaker: str) -> str:
-    """A message key as FE10Data names it: :mod:`message` decodes key bytes one to one (cp437), and
-    the Japanese keys (``MT_平地``, ``MG_...``) are Shift-JIS."""
-    try:
-        return speaker.encode(message.ENCODING).decode("shift_jis")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return speaker
-
-
 def read_names(project: ModProject) -> dict[str, str]:
     """Message key -> first line of its text, English when the disc has it."""
-    mess = project.files_dir / "Mess"
-    for name in ("e_common.m", "common.m"):
-        path = mess / name
-        if path.is_file():
-            try:
-                return {_key(m.speaker): m.text.split("\n", 1)[0] for m in message.read_messages_path(path)}
-            except Exception:  # noqa: BLE001 - names are a convenience
-                return {}
-    return {}
+    return fe10data.message_names(project.files_dir / "Mess")
 
 
 class Fe10DataEditor(EditorPanel):

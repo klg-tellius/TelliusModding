@@ -20,8 +20,9 @@ def run(report_path):
         for info in pkgutil.walk_packages(fe_modding.__path__, "fe_modding."):
             if not info.name.endswith(".__main__"):
                 importlib.import_module(info.name)
-        catalog = Path(__file__).parent / "formats" / "cmb" / "externs_fe9.json"
-        assert json.loads(catalog.read_text(encoding="utf-8"))["externs"]
+        for name in ("externs_fe9.json", "externs_fe10.json"):
+            catalog = Path(__file__).parent / "formats" / "cmb" / name
+            assert json.loads(catalog.read_text(encoding="utf-8"))["externs"]
         assert np.asarray(Image.new("RGBA", (2, 2))).shape == (2, 2, 4)
         from .gui.app import MainWindow
         window = MainWindow()

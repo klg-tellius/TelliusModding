@@ -9,6 +9,7 @@ project's global flags and ``startup.cmb``'s exported helpers."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -48,7 +49,8 @@ def shared_scripts(project: ModProject) -> list[Path]:
     folder = scripts_dir(project)
     if not folder.is_dir():
         return []
-    shared = [p for p in folder.glob("*.cmb") if not (p.stem[:1] in "Cc" and p.stem[1:].isdigit())]
+    chapter = re.compile(rf"^C({profile_of(project).chapter_id_pattern})$", re.IGNORECASE)
+    shared = [p for p in folder.glob("*.cmb") if not chapter.match(p.stem)]
     return sorted(shared, key=lambda p: (p.stem.lower() != "startup", p.stem.lower()))
 
 
@@ -145,8 +147,10 @@ class CompileContext:
         cached = cls._cache.get(path)
         if cached is None or cached[0] != stamp:
             try:
-                module = parse(decompile(read_cmb(path.read_bytes()), path.name)[0])
-                context = cls(event_flags.global_flags(module), event_flags.exported_functions(module))
+                script = read_cmb(path.read_bytes())
+                module = parse(decompile(script, path.name)[0])
+                table = event_flags.flag_table(script.dialect)
+                context = cls(event_flags.global_flags(module, table), event_flags.exported_functions(module))
             except (OSError, ValueError, ParseError, CompileError):
                 context = cls(None, {})  # a broken startup.cmb must not block chapter editing
             cached = (stamp, context)
@@ -159,7 +163,8 @@ class CompileContext:
         if cmb_path.name.lower() == "startup.cmb":
             try:
                 module = parse(source)
-                return cls(event_flags.global_flags(module), {})
+                table = event_flags.flag_table(profile_of(project).script_dialect)
+                return cls(event_flags.global_flags(module, table), {})
             except ParseError:
                 return cls(None, {})
         return cls.for_project(project)

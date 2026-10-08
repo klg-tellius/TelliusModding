@@ -5,7 +5,10 @@ A chapter's own file opens where its chapter page shows it: the Dialogue or
 Script tab. A shared script (``startup.cmb``) opens in a chapter's Script tab
 too, whose File box is made for it. A message file that is no chapter's
 (``common.m``) has no chapter page, so it opens here, in the same editor the
-Dialogue tab uses (route ``("asset", "conversations", file name)``)."""
+Dialogue tab uses (route ``("asset", "conversations", file name)``). While a
+game has no chapter pages (Radiant Dawn until its chapters are decoded), every
+file opens here: scripts in the Script tab's editor (route ``("asset",
+"scripts", file name)``)."""
 
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from ...formats import fe10_message
 from ...game_profile import CHAPTERS, profile_of
 from ..dialogue_editor import DialogueEditor
 from ..editor_panel import EditorPanel
+from ..script_editor import ScriptEditor
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 from .chapters import open_script
 
@@ -106,7 +110,12 @@ class _FileList(EditorPanel):
         index = self._shell.index
         if index is not None and chapter_id in index.by_chapter:
             return index.by_chapter[chapter_id].title
-        return f"Chapter {chapter_id}"
+        if getattr(self, "_titles", None) is None:  # no chapter index for this game yet: the titles alone
+            try:
+                self._titles = chapters.chapter_titles(self._project)
+            except Exception:  # noqa: BLE001 - titles are cosmetic
+                self._titles = {}
+        return chapters.chapter_display_title(chapter_id, self._titles) if self._titles else f"Chapter {chapter_id}"
 
     def files(self) -> list[tuple[Path, str | None]]:
         raise NotImplementedError
@@ -200,17 +209,85 @@ class ConversationsPanel(_FileList):
 
 
 class ScriptsPanel(_FileList):
-    """Every event script; each opens in a chapter's Script tab."""
+    """Every event script; each opens in a chapter's Script tab, or here where
+    the game has no chapter pages yet. Its unsaved state is the hosted editor's."""
 
     title = "Scripts"
-    intro = ("Every event script (Scripts/). A chapter's script opens in its Script tab; a shared one "
-             "(startup.cmb) opens in the Script tab of the chapter you have open, where the File box lists it.")
     shared_heading = "Shared scripts"
+
+    def __init__(self, parent, shell):
+        super().__init__(parent, shell)
+        self.editor: ScriptEditor | None = None
+        self._editor_frame = ttk.Frame(self, style="Page.TFrame")
+        bar = ttk.Frame(self._editor_frame, style="Page.TFrame", padding=(16, 6, 16, 0))
+        bar.pack(fill="x")
+        Link(bar, "‹ All scripts", lambda: shell.navigate(("asset", "scripts"))).pack(side="left")
+        self._file_label = ttk.Label(bar, text="", style="Muted.TLabel")
+        self._file_label.pack(side="left", padx=(12, 0))
+
+    @property
+    def intro(self) -> str:
+        if self._hosts_all():
+            return ("Every event script (Scripts/). Each one opens here in the script editor; startup.cmb holds "
+                    "the helpers every chapter calls and the campaign flags.")
+        return ("Every event script (Scripts/). A chapter's script opens in its Script tab; a shared one "
+                "(startup.cmb) opens in the Script tab of the chapter you have open, where the File box lists it.")
+
+    def _hosts_all(self) -> bool:
+        """No chapter pages for this game yet (Radiant Dawn): every script opens in this panel."""
+        return not profile_of(self._project).supports(CHAPTERS)
+
+    @property
+    def display_name(self) -> str:
+        path = self.editor.current_path if self.editor is not None else None
+        return f"Script ({path.name})" if path is not None else "Scripts"
+
+    @property
+    def dirty(self) -> bool:
+        return self.editor is not None and self.editor.dirty
+
+    def _confirm_discard(self) -> bool:
+        return self.editor is None or self.editor.confirm_navigate_away()
+
+    def save_changes(self) -> bool:
+        return self.editor is None or self.editor.save_changes()
+
+    def cleanup(self) -> None:
+        if self.editor is not None:
+            self.editor.cleanup()
 
     def files(self):
         return script_files(self._project)
 
+    def show_list(self) -> None:
+        self._editor_frame.pack_forget()
+        self._list.pack(fill="both", expand=True)
+        super().show_list()
+
+    def open_file(self, name: str) -> bool:
+        """Show the script ``name`` in the hosted editor (only where the game has no chapter
+        pages). False if there is no such file, or the editor kept another file's unsaved edits."""
+        path = next((p for p, _cid in self.files() if p.name.lower() == name.lower()), None)
+        if path is None or not self._hosts_all():
+            return False
+        if self.editor is None:
+            self.editor = ScriptEditor(self._editor_frame, self._project, self._shell.changelog)
+            self.editor.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        if self.editor.current_path != path and not self.editor.open_file(path):
+            return False
+        self._list.pack_forget()
+        self._editor_frame.pack(fill="both", expand=True)
+        self._file_label.configure(text=path.name)
+        return True
+
     def _card(self, grid, path, chapter_id):
+        if self._hosts_all():
+            if chapter_id is None:
+                what = "Shared helpers and campaign flags" if path.stem.lower() == "startup" else "Shared script"
+            else:
+                what = f"{self._chapter_title(chapter_id)}  ·  Disc {chapter_id}"
+            return Card(grid, title=path.name, subtitle=what, width=260,
+                        on_click=lambda: self._shell.navigate(("asset", "scripts", path.name)))
         if chapter_id is None:
             what = "Shared helpers and campaign flags" if path.stem.lower() == "startup" else "Shared script"
             return Card(grid, title=path.name, subtitle=what, width=260,

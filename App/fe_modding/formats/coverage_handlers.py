@@ -588,14 +588,16 @@ def message_file(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("cmb", lambda name, data: _ext(name) == "cmb")
 def cmb_file(cov: FileCoverage, walker: Walker) -> None:
-    """Event script (CHAPTER_DATA_NOTES, script layout). Header +0x18 is a
-    constant the loader never reads; function record byte +0x0F likewise."""
+    """Event script (CHAPTER_DATA_NOTES, script layout; Radiant Dawn's bytecode
+    differences in research/rd/SCRIPT_NOTES.md). Header +0x18 is the script
+    compiler's build stamp, which the loader never reads (the codec picks the
+    game's dialect from it); function record byte +0x0F is never read either."""
     from .cmb import binary
 
     data = cov.data
     _roundtrip(cov, binary.write_cmb(binary.read_cmb(data)))
     cov.fill(DECODED)
-    cov.mark(0x18, 4, UNREAD, "header +0x18 (build date?)")
+    cov.mark(0x18, 4, UNREAD, "header +0x18 (compiler build stamp)")
     cov.zero(0x1C, 4, "header +0x1C")
     table = struct.unpack_from("<I", data, 0x28)[0]
     pos = table

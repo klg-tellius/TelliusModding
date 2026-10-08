@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from ... import chapters, script_sources
@@ -30,6 +31,7 @@ from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
 from ...game_code import chapter_flow, chapter_jump
 from ...formats.cmb.catalog import TRIGGERS
+from ...game_profile import CHAPTERS, profile_of
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
 from ..chapter_settings import ChapterSettingsPanel
@@ -725,7 +727,13 @@ class ChapterPage(Page):
 def open_script(shell, path, function: str | None = None, chapter_id: str | None = None) -> None:
     """Show ``path`` in a chapter's Script tab: ``chapter_id``'s, else the open
     chapter's, else the first chapter with a script (a shared script such as
-    ``startup.cmb`` has no chapter of its own; the tab's File box lists it)."""
+    ``startup.cmb`` has no chapter of its own; the tab's File box lists it).
+    A game without chapter pages yet (Radiant Dawn) shows it in Assets › Scripts."""
+    if not profile_of(shell.project).supports(CHAPTERS):
+        if shell.navigate(("asset", "scripts", Path(path).name)) and function:
+            editor = shell.page("asset")._panels["scripts"].editor
+            editor.after_idle(lambda: editor.select_function(function))
+        return
     page = shell.existing_page("chapter")
     chapter_id = chapter_id or getattr(page, "_chapter", None)
     if chapter_id is None:
