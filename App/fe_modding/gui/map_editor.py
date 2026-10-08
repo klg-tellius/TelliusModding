@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, simpledialog
 
 from .. import map_props
 from ..formats import fe8data, lz10, map_file, pak
+from ..game_profile import GAME_DATA, profile_of
 from ..project import ModProject
 from . import map_scene
 from .changelog import ChangeLog
@@ -353,11 +354,15 @@ class MapEditor(EditorPanel):
     # -- terrain types (painted from the Build tab) --------------------------------------
     def _load_terrain_catalog(self) -> None:
         files = self._project.extracted_dir / "files"
+        profile = profile_of(self._project)
         self._terrain_types: list[fe8data.TerrainType] = []
         self._terrain_labels: dict[str, str] = {}
         try:
-            self._terrain_types = fe8data.read_terrain_types((files / "FE8Data.bin").read_bytes())
-            texts = fe8data.read_message_texts(files / "system.cmp") if (files / "system.cmp").is_file() else {}
+            if not profile.supports(GAME_DATA):
+                raise ValueError(profile.unavailable(GAME_DATA))
+            self._terrain_types = fe8data.read_terrain_types(profile.path(files, "game_data").read_bytes())
+            system = profile.path(files, "system_archive")
+            texts = fe8data.read_message_texts(system) if system.is_file() else {}
         except Exception:  # noqa: BLE001 - the Build tab then lists names as stored
             texts = {}
         for t in self._terrain_types:

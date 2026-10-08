@@ -18,7 +18,7 @@ from .project import ModProject
 
 
 def _archive(project: ModProject) -> Path:
-    return model_slots._files(project) / "zdbx.cmp"
+    return model_slots._logical(project, "battle_data")
 
 
 def entry_names(project: ModProject, folder: str, suffix: str = ".dbx") -> list[str]:

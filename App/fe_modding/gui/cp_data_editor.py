@@ -35,7 +35,7 @@ from .. import fe8_references
 from ..formats import cp_ai_lang as lang
 from ..formats import cp_data as cp
 from ..formats import cp_ops
-from ..games import Game
+from ..game_profile import AI, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .code_editor import CodeEditor
@@ -63,7 +63,8 @@ class CpDataPanel(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._session_provider = session_provider
-        self._path = project.extracted_dir / "files" / FILE_NAME
+        self._path = (profile_of(project).path(project.extracted_dir / "files", "ai_data")
+                      if profile_of(project).supports(AI) else project.extracted_dir / "files" / FILE_NAME)
         self._doc: Optional[cp.CpDocument] = None
         self._dirty = False
         self._loading = False
@@ -332,8 +333,9 @@ class CpDataPanel(EditorPanel):
         self._dirty = False
         self._source_pending = False
         self._script = None
-        if self._project.game != Game.PATH_OF_RADIANCE:
-            self._message.configure(text="The AI data editor works on Path of Radiance projects only.")
+        profile = profile_of(self._project)
+        if not profile.supports(AI):
+            self._message.configure(text=profile.unavailable(AI))
             return
         if not self._path.is_file():
             self._message.configure(text=f"{FILE_NAME} was not found in the extracted files.")

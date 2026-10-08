@@ -14,13 +14,21 @@ from pathlib import Path
 from tkinter import ttk
 
 from ... import chapters, script_sources
+from ...game_profile import profile_of
 from ..dialogue_editor import DialogueEditor
 from ..editor_panel import EditorPanel
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 from .chapters import open_script
 
-_CHAPTER_MESSAGES_RE = re.compile(r"^c(\d+)\.m$", re.IGNORECASE)
-_CHAPTER_SCRIPT_RE = re.compile(r"^c(\d+)\.cmb$", re.IGNORECASE)
+
+def _chapter_file_re(project, extension: str) -> re.Pattern:
+    """``c<id>.<extension>`` with the id pattern of the project's game."""
+    return re.compile(rf"^c({profile_of(project).chapter_id_pattern})\.{extension}$", re.IGNORECASE)
+
+
+def _chapter_key(chapter_id: str) -> str:
+    """Compare ids across file kinds: ``01`` and ``1`` are one chapter, ``0407A`` and ``0407a`` too."""
+    return (chapter_id.lstrip("0") or "0") if chapter_id.isdigit() else chapter_id.lower()
 
 
 def message_files(project) -> list[tuple[Path, str | None]]:
@@ -28,7 +36,7 @@ def message_files(project) -> list[tuple[Path, str | None]]:
     chapter order, then the others by name."""
     folder = project.extracted_dir / "files" / "Mess"
     ids = set(chapters.list_chapter_ids(project))
-    return _ordered(folder.glob("*.m") if folder.is_dir() else (), _CHAPTER_MESSAGES_RE, ids)
+    return _ordered(project, folder.glob("*.m") if folder.is_dir() else (), _chapter_file_re(project, "m"), ids)
 
 
 def script_files(project) -> list[tuple[Path, str | None]]:
@@ -37,17 +45,17 @@ def script_files(project) -> list[tuple[Path, str | None]]:
     ``cNN.m``) counts as shared."""
     folder = script_sources.scripts_dir(project)
     ids = set(chapters.list_chapter_ids(project))
-    return _ordered(folder.glob("*.cmb") if folder.is_dir() else (), _CHAPTER_SCRIPT_RE, ids)
+    return _ordered(project, folder.glob("*.cmb") if folder.is_dir() else (), _chapter_file_re(project, "cmb"), ids)
 
 
-def _ordered(paths, pattern: re.Pattern, chapter_ids: set[str]) -> list[tuple[Path, str | None]]:
-    by_number = {int(cid): cid for cid in chapter_ids}
+def _ordered(project, paths, pattern: re.Pattern, chapter_ids: set[str]) -> list[tuple[Path, str | None]]:
+    by_key = {_chapter_key(cid): cid for cid in chapter_ids}
     owned, shared = [], []
     for path in paths:
         match = pattern.match(path.name)
-        cid = by_number.get(int(match.group(1))) if match else None
+        cid = by_key.get(_chapter_key(match.group(1))) if match else None
         (owned if cid is not None else shared).append((path, cid))
-    owned.sort(key=lambda entry: int(entry[1]))
+    owned.sort(key=lambda entry: profile_of(project).chapter_sort_key(entry[1]))
     shared.sort(key=lambda entry: (entry[0].stem.lower() != "startup", entry[0].name.lower()))
     return owned + shared
 

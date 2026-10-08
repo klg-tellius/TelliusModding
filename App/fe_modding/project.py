@@ -18,7 +18,8 @@ from typing import Optional
 from . import tools
 from .formats import gcdisc, lz10, pak
 from .exceptions import ProjectError
-from .games import Game, get_game_info
+from .game_profile import GameProfile, game_for_disc_id
+from .games import Game, get_game_info, profile as game_profile, read_disc_id, read_image_disc_id
 
 PROJECT_FILENAME = "project.json"
 
@@ -44,7 +45,7 @@ def sanitize_folder_name(name: str) -> str:
 def build_image(game: Game, extracted_dir: Path, dest: Path, *, overwrite: bool = True) -> Optional[str]:
     """Pack an extracted disc tree into ``dest`` in the game's build format
     and return a warning to show the user, if any."""
-    if game == Game.PATH_OF_RADIANCE:
+    if not game_profile(game).wii:
         # WIT composes every extracted tree as a Wii disc - see gcdisc.py.
         result = gcdisc.build_gamecube_ciso(extracted_dir, dest)
         if result.oversized:
@@ -79,6 +80,41 @@ class ModProject:
     @property
     def game_info(self):
         return get_game_info(self.game)
+
+    @property
+    def profile(self) -> GameProfile:
+        """Where this game keeps its files and which features the app has for it."""
+        return game_profile(self.game)
+
+    @property
+    def files_dir(self) -> Path:
+        """``extracted/files``: the disc's file tree, where the profile's paths are relative to."""
+        return self.extracted_dir / "files"
+
+    def logical_path(self, name: str) -> Path:
+        """Path of a logical game file (``game_data``, ``battle_data``...) in this project."""
+        return self.profile.path(self.files_dir, name)
+
+    def read_logical(self, name: str) -> bytes:
+        """The bytes of a logical game file, LZ10-decompressed when the game stores it compressed
+        (Radiant Dawn's ``.cms`` files). Raises ProjectError when the file is missing."""
+        path = self.logical_path(name)
+        if not path.is_file():
+            raise ProjectError(f"{self.profile.file_label(name)} was not found. Extract the project first.")
+        data = path.read_bytes()
+        if self.profile.logical(name).compressed:
+            try:
+                return lz10.decompress(data)
+            except lz10.LZ10Error as exc:
+                raise ProjectError(f"{path.name} could not be decompressed: {exc}") from exc
+        return data
+
+    def write_logical(self, name: str, data: bytes) -> None:
+        """Write a logical game file, LZ10-compressing it where the game stores it compressed. The
+        extracted file is first kept in ``originals/`` (:meth:`write_keeping_original`)."""
+        if self.profile.logical(name).compressed:
+            data = lz10.compress(data)
+        self.write_keeping_original(self.logical_path(name), data)
 
     @property
     def source_path(self) -> Optional[Path]:
@@ -172,8 +208,33 @@ class ModProject:
         """Extract the source disc image into the project's extracted/ folder."""
         if self.source_path is None:
             raise ProjectError("No source disc image set for this project yet.")
-        tools.extract_disc(self.source_path, self.extracted_dir, overwrite=overwrite)
+        tools.extract_disc(self.source_path, self.extracted_dir, overwrite=overwrite, wii=self.profile.wii)
         return self.extracted_dir
+
+    def _mismatch_message(self, disc_id: str) -> Optional[str]:
+        detected = game_for_disc_id(disc_id)
+        if detected == self.game:
+            return None
+        if detected is None:
+            return (f"The disc ID {disc_id} is not a Path of Radiance or Radiant Dawn disc, so this "
+                    f"{self.game_info.display_name} project may not work with it.")
+        return (f"This is a {get_game_info(detected).display_name} disc ({disc_id}), but the project is "
+                f"set to {self.game_info.display_name}. Create the project again with the right game.")
+
+    def disc_mismatch_warning(self) -> Optional[str]:
+        """A warning when the extracted disc is not the project's game (e.g. a Radiant Dawn disc in
+        a Path of Radiance project), from the disc ID in ``sys/boot.bin``; None when it matches or
+        there is no ID to read."""
+        disc_id = read_disc_id(self.extracted_dir)
+        return self._mismatch_message(disc_id) if disc_id else None
+
+    def source_mismatch_warning(self) -> Optional[str]:
+        """The same check on the source image's header, before extracting (plain ISO/WBFS/CISO only;
+        None for formats whose ID needs a tool to read)."""
+        if self.source_path is None:
+            return None
+        disc_id = read_image_disc_id(self.source_path)
+        return self._mismatch_message(disc_id) if disc_id else None
 
     def build(self, *, overwrite: bool = True) -> Path:
         """Rebuild a disc image from the project's extracted/ folder."""
@@ -181,7 +242,7 @@ class ModProject:
             raise ProjectError("Nothing extracted yet - extract the source disc image first.")
         dest = self.build_dir / f"{sanitize_folder_name(self.name)}{self.game_info.build_extension}"
         self.last_build_warning = None
-        if self.game == Game.PATH_OF_RADIANCE:
+        if self.profile.has_file("system_archive"):
             if dest.exists() and not overwrite:
                 raise ProjectError(f"{dest} already exists.")
             from .chapters import ensure_name_images
@@ -197,7 +258,9 @@ class ModProject:
         ``mess/common.m`` and other loose files. The game loads it at boot and
         its file lookup searches loaded archives before the disc, so the copies
         are the ones it reads; the loose files stay the ones editors change."""
-        path = self.extracted_dir / "files" / "system.cmp"
+        if not self.profile.has_file("system_archive"):
+            return []
+        path = self.logical_path("system_archive")
         if not path.is_file():
             return []
         unpacked = lz10.decompress(path.read_bytes())

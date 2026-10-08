@@ -35,6 +35,31 @@ class FileCoverageTest(unittest.TestCase):
         self.assertEqual(totals.counts[UNCLASSIFIED], 4)
 
 
+class Fe10ContainerTest(unittest.TestCase):
+    def test_decompressed_cms_container_is_walked(self):
+        import struct
+
+        data_size = 0x10
+        body = struct.pack(">I", 4) + b"ABC" + bytes([0]) + bytes(8)  # a pointer to the string "ABC"
+        relocations = struct.pack(">I", 0)
+        symbols = struct.pack(">II", 0, 0) + b"Sym" + bytes([0])
+        size = 0x20 + data_size + len(relocations) + len(symbols)
+        blob = struct.pack(">4I", size, data_size, 1, 1) + bytes(16) + body + relocations + symbols
+        report = Report()
+        Walker(report).child("FE10Test.cms#", blob)
+        totals = report.formats["fe10 container"]
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+        # the 16 body bytes: the pointer word (4) and the string (4) are decoded, the rest is records
+        self.assertEqual(totals.counts[UNDECODED], 8)
+        self.assertEqual(totals.fields[(UNDECODED, "Sym records")][0], 8)
+
+    def test_other_cms_names_are_not_taken_for_containers(self):
+        report = Report()
+        Walker(report).child("Fonts/system.cms", bytes(64))
+        self.assertNotIn("fe10 container", report.formats)
+
+
 FILES = os.environ.get("FE9_EXTRACTED_FILES")
 #: Small real files, one per handler family that has no other test here.
 SAMPLES = ("FE8Data.bin", "FE8Anim.bin", "FE8Effect.bin", "cp_data.bin", "s/rect.bin", "window/RectDesc.bin",

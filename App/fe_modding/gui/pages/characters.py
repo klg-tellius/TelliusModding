@@ -14,6 +14,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from ...game_profile import GAME_DATA
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from .. import record_actions
 from ..character_form import CharacterForm
@@ -89,7 +90,7 @@ class CharactersHub(Page):
             return
         if not supported(self.project):
             self._grid.add(None, ttk.Label(self._grid, style="Muted.TLabel",
-                                           text="Character pages are available for Path of Radiance only for now."))
+                                           text=self.project.profile.unavailable(GAME_DATA)))
             self._grid.done()
             return
         for c in index.main_characters():
@@ -173,7 +174,7 @@ class CharacterPage(Page):
         session = self.shell.session
         self._supports = None
         if not session.available:
-            ttk.Label(body, text="FE8Data.bin not found. Extract the project first.", style="Muted.TLabel").pack(
+            ttk.Label(body, text=session.unavailable_reason, style="Muted.TLabel").pack(
                 anchor="w")
             return
         bar = ttk.Frame(body, style="Page.TFrame")

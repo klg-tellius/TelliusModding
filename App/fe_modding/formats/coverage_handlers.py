@@ -419,6 +419,36 @@ def fe8data_file(cov: FileCoverage, walker: Walker) -> None:
         cov.mark(span.start, span.end - span.start, status[span.status], f"{span.section}.{span.name}")
 
 
+def _is_fe10_container(name: str, data: bytes) -> bool:
+    return name.endswith(".cms#") and len(data) >= HEADER_SIZE and _u32(data, 0) == len(data)
+
+
+@handles("fe10 container", _is_fe10_container)
+def fe10_container(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's decompressed ``.cms`` data files (``FE10Data``, ``FE10Anim``, ``cp_data``...):
+    the same relocatable container as ``FE8Data.bin``. The container structure, every listed pointer
+    and the text it points at are decoded; each exported section's records are not (their layouts
+    belong to the format phases of the Radiant Dawn plan)."""
+    data = cov.data
+    sections = hsdarc(cov)
+    data_end = HEADER_SIZE + _u32(data, 4)
+    for name, start, end in sections:
+        cov.mark(start, end - start, UNDECODED, f"{name} records")
+    count = _u32(data, 8)
+    for i in range(count):
+        field = HEADER_SIZE + _u32(data, data_end + 4 * i)
+        if field + 4 > data_end:
+            continue
+        cov.mark(data_end + 4 * i, 4, DECODED)
+        cov.mark(field, 4, DECODED)
+        target = HEADER_SIZE + _u32(data, field)
+        if HEADER_SIZE <= target < data_end:
+            end = data.find(b"\0", target, data_end)
+            text = data[target:end] if end > target else b""
+            if text and len(text) <= 256 and all(b >= 0x20 and b != 0x7F for b in text):
+                cov.mark(target, end + 1 - target, DECODED)
+
+
 @handles("FE8Anim.bin", lambda name, data: _base(name) == "fe8anim.bin")
 def fe8anim(cov: FileCoverage, walker: Walker) -> None:
     sections = hsdarc(cov)

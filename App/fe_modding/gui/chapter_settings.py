@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
+from ..game_profile import profile_of
 from .map_windows import MapSettingsForm
 from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame
@@ -47,7 +48,7 @@ class ChapterSettingsPanel(ttk.Frame):
         self._record_host = ttk.Frame(body)
         self._record_host.pack(fill="x", anchor="w", pady=(4, 0))
         self._no_record = ttk.Label(self._record_host, style="Muted.TLabel",
-                                    text="FE8Data.bin is not available in this project.")
+                                    text=f"{profile_of(builder.project).file_label('game_data')} is not available in this project.")
         self._no_record.pack(anchor="w")
 
         self._map.add_listener(self._on_map_changed)

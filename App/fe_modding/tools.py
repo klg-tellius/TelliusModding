@@ -12,6 +12,9 @@ output came out at the 4.7 GB Wii single-layer size). Dolphin boots such an
 image in Wii mode and crashes at once. GameCube builds go through
 fe_modding.formats.gcdisc instead - see ModProject.build().
 
+**DolphinTool** (next to the configured Dolphin.exe) converts a ``.rvz`` image to an ISO, because
+WIT cannot read RVZ; the temporary ISO is extracted by WIT and deleted.
+
 **FFmpeg** (tools/ffmpeg/win64/ffmpeg.exe) decodes an arbitrary input video
 (whatever container/codec) into a PNG frame sequence and a WAV audio track,
 for the video importer (fe_modding.formats.thp / video_viewer.py) - the
@@ -28,9 +31,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import Optional
 
 from .exceptions import ModdingError
+from .games import DOLPHIN_ONLY_FORMATS
 from .runtime_tools import tool_directory
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +48,11 @@ FFMPEG_DIR = REPO_ROOT / "tools" / "ffmpeg" / "win64"
 if not (FFMPEG_DIR / "ffmpeg.exe").is_file():
     FFMPEG_DIR = tool_directory("ffmpeg")
 FFMPEG_EXE = FFMPEG_DIR / "ffmpeg.exe"
+
+
+DOLPHIN_TOOL_NAMES = ("DolphinTool.exe", "DolphinTool", "dolphin-tool")
+GAMECUBE_LAYOUT = ("sys", "files")
+WII_LAYOUT_EXTRA = ("disc", "ticket.bin", "tmd.bin", "cert.bin")
 
 
 class ToolError(ModdingError):
@@ -73,16 +84,79 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
     return result
 
 
-def extract_disc(source: Path, dest_dir: Path, *, overwrite: bool = False) -> None:
-    """Extract every file of a disc image into dest_dir (flat, no ID subfolder)."""
+def dolphin_tool_path(dolphin: Optional[Path | str] = None) -> Path:
+    """``DolphinTool`` next to the configured Dolphin executable (Dolphin's release ships both)."""
+    if dolphin is None:
+        from .emulator import configured_dolphin
+        dolphin = configured_dolphin()
+    if not dolphin:
+        raise ToolError(
+            ".rvz discs are converted with DolphinTool, which ships with Dolphin. "
+            "Set the Dolphin path in Settings first (or use a .wbfs/.iso/.ciso dump)."
+        )
+    folder = Path(dolphin).parent
+    for name in DOLPHIN_TOOL_NAMES:
+        candidate = folder / name
+        if candidate.is_file():
+            return candidate
+    raise ToolError(f"DolphinTool was not found next to {dolphin}. It is needed to read .rvz discs.")
+
+
+def convert_to_iso(source: Path, dest_iso: Path) -> None:
+    """Convert a Dolphin-only disc image (.rvz) to a plain ISO with DolphinTool."""
+    exe = dolphin_tool_path()
+    result = subprocess.run(
+        [str(exe), "convert", "-i", str(source), "-o", str(dest_iso), "-f", "iso"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise ToolError(f"DolphinTool convert failed (exit {result.returncode}):\n{detail}")
+    if not Path(dest_iso).is_file():
+        raise ToolError(f"DolphinTool reported success but wrote no ISO for {source}.")
+
+
+def check_extracted_layout(dest_dir: Path, *, wii: bool) -> None:
+    """Raise ToolError unless ``dest_dir`` holds a complete extracted disc: ``sys/`` and ``files/``
+    plus, for a Wii disc, ``disc/``, ``ticket.bin``, ``tmd.bin`` and ``cert.bin`` (what WIT needs to
+    compose the disc again)."""
+    dest_dir = Path(dest_dir)
+    required = list(GAMECUBE_LAYOUT) + (list(WII_LAYOUT_EXTRA) if wii else [])
+    missing = [name for name in required if not (dest_dir / name).exists()]
+    if missing:
+        raise ToolError(
+            f"The extracted disc is incomplete - missing {', '.join(missing)}. "
+            "Was the right partition extracted?"
+        )
+
+
+def extract_disc(source: Path, dest_dir: Path, *, overwrite: bool = False, wii: bool = False) -> None:
+    """Extract every file of a disc image into dest_dir (flat, no ID subfolder).
+
+    ``wii`` marks a Wii disc: its DATA partition is selected explicitly and the extracted layout
+    is checked. A ``.rvz`` image is first converted to a temporary ISO beside ``dest_dir``."""
     source = Path(source)
+    dest_dir = Path(dest_dir)
     if not source.exists():
         raise ToolError(f"Source disc image not found: {source}")
 
-    args = ["EXTRACT", "--pmode", "NONE", str(source), str(dest_dir)]
+    if source.suffix.lower() in DOLPHIN_ONLY_FORMATS:
+        dest_dir.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".rvz_", dir=dest_dir.parent) as temp:
+            iso = Path(temp) / (source.stem + ".iso")
+            convert_to_iso(source, iso)
+            extract_disc(iso, dest_dir, overwrite=overwrite, wii=wii)
+        return
+
+    args = ["EXTRACT", "--pmode", "NONE"]
+    if wii:
+        args += ["--psel", "DATA"]
+    args += [str(source), str(dest_dir)]
     if overwrite:
         args.append("-o")
     _run(args)
+    check_extracted_layout(dest_dir, wii=wii)
 
 
 def build_disc(source_dir: Path, dest_file: Path, *, overwrite: bool = False) -> None:

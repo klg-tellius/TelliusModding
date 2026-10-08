@@ -121,6 +121,7 @@ from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file,
 from ..formats import model as model_fmt
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from ..formats import anim_registry, fe8data, zdbx
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_path_of
 from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
@@ -1999,7 +2000,7 @@ def export_rig_kit(container_path: Path, target: Path) -> list[Path]:
     roles: dict[str, list[str]] = {}
     hidden: dict[str, set[str]] = {}
     if battle:
-        zdbx_path = _files_root(container_path) / "zdbx.cmp"
+        zdbx_path = PATH_OF_RADIANCE_PROFILE.path(_files_root(container_path), "battle_data")
         if zdbx_path.is_file():
             for key, stem in rig_contract.read_battle_roles(zdbx_path.read_bytes(), container_path.parent.name):
                 roles.setdefault(stem.lower(), []).append(rig_contract.describe_role(key))
@@ -2123,7 +2124,7 @@ class _NewSlotDialog(tk.Toplevel):
         self._project = project
         self._battle = label.startswith("zu/")
         self._source = label.split("/", 1)[1]
-        fe8 = fe8data.read_fe8data((project.extracted_dir / "files" / "FE8Data.bin").read_bytes())
+        fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
         self._characters = {c.pid: c for c in fe8.characters if c.pid}
         jids = sorted({c.jid for c in fe8.classes if c.jid})
 
@@ -2218,7 +2219,7 @@ class _ModelTablesDialog(tk.Toplevel):
         self.geometry("900x560")
         self._project = project
         self._on_change = on_change
-        fe8 = fe8data.read_fe8data((project.extracted_dir / "files" / "FE8Data.bin").read_bytes())
+        fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
         self._characters = {c.pid: c for c in fe8.characters if c.pid}
         self._classes = {c.jid: c for c in fe8.classes if c.jid}
         notebook = ttk.Notebook(self)

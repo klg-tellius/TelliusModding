@@ -40,7 +40,7 @@ TILES = {
     "flags": ("⚐", "The 96 named script flags: campaign, chapter and save file"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
 }
-SECTIONS = (("FE8Data.bin", ("classes", "items", "skills", "terrain", "chapters", "general", "supports")),
+SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "chapters", "general", "supports")),
             ("Scripts and AI", ("flags", "ai")))
 
 
@@ -81,10 +81,14 @@ class GameDataPage(Page):
     def _build_hub(self) -> ScrollFrame:
         scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
         ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(scroll.body, text="The game's tables, shared by every chapter: FE8Data.bin, the script flags "
+        data_file = self.project.profile.file_label("game_data")
+        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}, the script flags "
                   "and the AI scripts.", style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
+        if not self.shell.session.available:
+            ttk.Label(scroll.body, text=self.shell.session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
         available = self._tab_widgets()
         for title, keys in SECTIONS:
+            title = data_file if title == "game_data" else title
             keys = [key for key in keys if key in available]
             if not keys:
                 continue

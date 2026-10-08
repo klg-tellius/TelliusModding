@@ -24,6 +24,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
 from ... import chapters, script_sources
+from ...exceptions import ProjectError
 from ...formats import event_flags as ef
 from ...formats.cmb import CompileError
 from ...formats.cmb.parser import ParseError, parse
@@ -85,7 +86,7 @@ class FlagsPanel(ttk.Frame):
         path = script_sources.startup_path(self.project)
         try:
             return ef.global_flags(parse(script_sources.peek(self.project, path)))
-        except (OSError, ValueError, ParseError):
+        except (OSError, ValueError, ParseError, ProjectError):
             return ef.global_flags_vanilla()
 
     def chapter_title(self, chapter_id: str) -> str:
@@ -223,7 +224,7 @@ class _CampaignTab(ttk.Frame):
         try:
             module = parse(script_sources.peek(project, path))
             self._sites = ef.registration_sites(module, "RegistGlobalFlags", "global")
-        except (OSError, ValueError, ParseError):
+        except (OSError, ValueError, ParseError, ProjectError):
             self._sites = []
         self._flags = list(ef.ENGINE_FLAGS) + [s.name for s in self._sites]
         self._tree.delete(*self._tree.get_children())

@@ -7,6 +7,7 @@ from typing import Optional
 
 from ..formats import cp_data, map_file, message
 from ..formats.cmb.binary import read_cmb
+from ..game_profile import PATH_OF_RADIANCE_PROFILE
 from . import setup
 from .world import World
 
@@ -84,7 +85,7 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
         except Exception as exc:  # noqa: BLE001
             problems.append(f"startup.cmb could not be read: {exc}")
     cp = None
-    cp_path = files / "cp_data.bin"
+    cp_path = PATH_OF_RADIANCE_PROFILE.path(files, "ai_data")  # the playthrough is Path of Radiance only
     if cp_path.exists():
         try:
             cp = cp_data.parse_cp_data(cp_path.read_bytes())
@@ -96,7 +97,7 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
         scripts=scripts, script_names=script_names, cp=cp, messages=load_messages(files, chapter_stem),
         groups=setup.groups(documents), difficulty=difficulty, names=dict(names or {}),
     )
-    fe8_path = files / "FE8Data.bin"
+    fe8_path = PATH_OF_RADIANCE_PROFILE.path(files, "game_data")
     if fe8_path.exists():
         try:
             from ..formats import fe8data

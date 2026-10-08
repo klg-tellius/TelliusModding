@@ -24,6 +24,8 @@ from typing import Callable, Optional
 
 from .config import load_setting
 from .exceptions import ModdingError
+from .game_profile import PLAY
+from .games import Game, detect_from_extracted, profile
 
 SETTING_KEY = "dolphin_path"
 EXECUTABLE_NAMES = ("Dolphin.exe", "Dolphin", "dolphin-emu")
@@ -152,7 +154,11 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str, chapter_
     source_sys, files = extracted_dir / "sys", extracted_dir / "files"
     if not (source_sys / "main.dol").is_file() or not files.is_dir():
         raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    position = chapter_position((files / "FE8Data.bin").read_bytes(), chapter_id)
+    detected = detect_from_extracted(extracted_dir)
+    if detected is not None and not profile(detected).supports(PLAY):
+        raise EmulatorError(profile(detected).unavailable(PLAY))
+    position = chapter_position(profile(detected or Game.PATH_OF_RADIANCE).path(files, "game_data").read_bytes(),
+                                chapter_id)
     dol = Dol.open(source_sys / "main.dol")
     version = identify(dol, read_boot_code(extracted_dir)).version
     if version is None:

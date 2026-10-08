@@ -31,7 +31,7 @@ from typing import Optional
 from . import chapters
 from .formats import anim_registry, dispo, fe8data, lz10, message, pak, zdbx
 from .formats.fe9_portraits import read_face_table
-from .games import Game
+from .game_profile import CHAPTERS, GAME_DATA, profile_of
 from .project import ModProject
 
 PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
@@ -45,7 +45,8 @@ _TRAILING_DIGITS_RE = re.compile(r"\d+$")
 
 
 def supported(project: ModProject) -> bool:
-    return project.game == Game.PATH_OF_RADIANCE
+    """Whether the project's game has decoded game data (the character index needs it)."""
+    return profile_of(project).supports(GAME_DATA)
 
 
 def difficulty_name(code: str) -> str:
@@ -129,6 +130,7 @@ class ProjectIndex:
     def __init__(self, project: ModProject):
         self.project = project
         self.files = project.extracted_dir / "files"
+        self.profile = profile_of(project)
         self._lock = threading.Lock()
         self.ready = False
         self.error: Optional[str] = None
@@ -171,7 +173,9 @@ class ProjectIndex:
         self._script_refs = None
 
     def _read_texts(self) -> dict[str, str]:
-        system_cmp = self.files / "system.cmp"
+        if not self.profile.has_file("system_archive"):
+            return {}
+        system_cmp = self.profile.path(self.files, "system_archive")
         try:
             return fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
         except Exception:  # noqa: BLE001
@@ -183,6 +187,8 @@ class ProjectIndex:
     def _read_deployments(self) -> list[Deployment]:
         out = []
         zmap = self.files / "zmap"
+        if not self.profile.supports(CHAPTERS):
+            return out  # Radiant Dawn keeps one dispos_<difficulty>.bin per map: not read yet
         for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
             folder = path.parent.name
             try:
@@ -212,7 +218,7 @@ class ProjectIndex:
     def _build_messages(self) -> None:
         self.messages_by_chapter = {}
         for chapter_id in chapters.list_chapter_ids(self.project):
-            path = self.files / "Mess" / f"c{chapter_id.zfill(2)}.m"
+            path = self.profile.mess_path(self.files, chapter_id)
             try:
                 self.messages_by_chapter[chapter_id] = [(m.speaker, m.text) for m in message.read_messages_path(path)]
             except Exception:  # noqa: BLE001
@@ -241,7 +247,7 @@ class ProjectIndex:
         self.by_chapter = {c.id: c for c in self.chapters}
 
     def _build_characters(self) -> None:
-        data = (self.files / "FE8Data.bin").read_bytes()
+        data = self.profile.path(self.files, "game_data").read_bytes()
         fe8 = fe8data.read_fe8data(data)
         classes = {c.jid: c for c in fe8.classes if c.jid}
         self.class_names = {jid: self.text(c.mjid) for jid, c in classes.items()}
@@ -312,7 +318,7 @@ class ProjectIndex:
 
     def _read_faces(self) -> dict:
         try:
-            packed = lz10.decompress((self.files / "system.cmp").read_bytes())
+            packed = lz10.decompress(self.profile.path(self.files, "system_archive").read_bytes())
             for entry in pak.read_pak_entries(packed):
                 if entry.name.replace("\\", "/").casefold() == "face/facedata.bin":
                     return read_face_table(pak.read_pak_file_content(packed, entry))
@@ -322,7 +328,7 @@ class ProjectIndex:
 
     def _read_battle_models(self) -> dict[str, str]:
         try:
-            tables = dict(zdbx.read_zdbx_files((self.files / "zdbx.cmp").read_bytes()))
+            tables = dict(zdbx.read_zdbx_files(self.profile.path(self.files, "battle_data").read_bytes()))
             return zdbx.job_list_models(tables[zdbx.JOB_LIST].decode("shift_jis"))
         except Exception:  # noqa: BLE001
             return {}
@@ -330,7 +336,7 @@ class ProjectIndex:
     def _read_map_folders(self) -> dict[str, str]:
         """Base AID -> ymu folder name."""
         try:
-            records = anim_registry.read_anim_registry_path(self.files / "FE8Anim.bin")
+            records = anim_registry.read_anim_registry_path(self.profile.path(self.files, "anim_data"))
         except Exception:  # noqa: BLE001
             return {}
         return {r.base_aid: r.class_folder.rstrip("/") for r in records}
@@ -411,7 +417,7 @@ class ProjectIndex:
         refs: dict[str, list[ScriptRef]] = {}
         self._script_functions = {}
         for chapter_id in chapters.list_chapter_ids(self.project):
-            path = self.files / "Scripts" / f"C{chapter_id.zfill(2)}.cmb"
+            path = self.profile.script_path(self.files, chapter_id)
             if not path.exists():
                 continue
             try:

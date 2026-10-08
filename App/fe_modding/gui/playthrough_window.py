@@ -30,6 +30,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats.cmb.decompiler import Decompiler, function_to_source
+from ..game_profile import PATH_OF_RADIANCE_PROFILE
 from ..playthrough import actions, combat, engine, fog, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
@@ -239,7 +240,7 @@ class PlaythroughWindow(_Window):
         if fe8 is None:
             from ..formats import fe8data
 
-            fe8 = fe8data.read_fe8data((self._files / "FE8Data.bin").read_bytes())
+            fe8 = fe8data.read_fe8data(PATH_OF_RADIANCE_PROFILE.path(self._files, "game_data").read_bytes())
         index = b._index_provider()
         names = {pid: info.name for pid, info in getattr(index, "by_pid", {}).items() if info.name}
         script_editor = b._script
