@@ -69,6 +69,10 @@ class SimUnit:
     dead: bool = False
     hidden: bool = False  # off the map (not deployed yet, or removed by a script)
     boss: bool = False
+    status: str = ""  # sleep, silence, berserk (a status staff's effect), "" = none
+    status_turns: int = 0  # phases of its side the status still lasts
+    needs_heal: bool = False  # AI flag +0x254 bit 0: set under the heal record's retreat_below, kept until resume_at
+    steals: int = 0  # AI steal attempts (+0x258)
 
     @property
     def tile(self) -> tuple:

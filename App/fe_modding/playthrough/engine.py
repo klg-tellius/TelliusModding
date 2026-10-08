@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import ai_vm, combat, event_vm, setup, triggers
+from . import ai_actions, ai_vm, combat, event_vm, setup, triggers
 from .actions import AfterAction, Combat
 from .state import (ENEMY, PHASE_ORDER, PLAYER, AiPhase, AiTurn, GameState, MessageShow, PhaseEnd, PhaseStart,
                     Preparations, ScriptRun, Task, TriggerCheck)
@@ -96,6 +96,11 @@ def _phase_start(world: World, state: GameState, task: PhaseStart) -> Step:
         return Step("phase", f"No {_phase_name(phase)} units: phase skipped", task_done=True)
     for u in units:
         u.done = False
+        if u.status:
+            u.status_turns -= 1
+            if u.status_turns <= 0:
+                state.emit("action", f"{world.name(u.pid)} is no longer {u.status}", uid=u.uid)
+                u.status, u.status_turns = "", 0
         t = world.terrain_at(u.x, u.y)
         if t is not None and t.heal and u.hp < u.stats[0]:
             gain = min(u.stats[0] - u.hp, max(1, u.stats[0] * t.heal // 100))
@@ -103,6 +108,7 @@ def _phase_start(world: World, state: GameState, task: PhaseStart) -> Step:
             state.emit("action", f"{world.name(u.pid)} recovers {gain} HP on {world.terrain_name(u.x, u.y)}",
                        uid=u.uid)
     state.emit("phase", f"Turn {state.turn}: {_phase_name(phase)} phase", turn=state.turn, phase=phase)
+    ai_actions.refresh_needs_heal(world, state)  # FUN_80100b08: every unit's AI flags
     tasks = [TriggerCheck(3, {"phase": phase}), TriggerCheck(6, {"phase": phase}), GoalCheck()]
     if phase != PLAYER:
         tasks.append(AiPhase(phase))
@@ -258,6 +264,8 @@ def _combat(world: World, state: GameState, task: Combat) -> Step:
 
 def _after_action(world: World, state: GameState, task: AfterAction) -> Step:
     unit = state.units.get(task.uid)
+    # FUN_800ff2ec: the AI flags of the unit that acted and of its target
+    ai_actions.refresh_needs_heal(world, state, [unit, state.units.get(task.target) if task.target else None])
     tasks = []
     if unit is not None and unit.on_map:
         tasks.append(TriggerCheck(4, {"tile": unit.tile, "faction": unit.faction, "me": unit.uid,
