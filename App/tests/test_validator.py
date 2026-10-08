@@ -108,6 +108,19 @@ class ProjectChecks(unittest.TestCase):
         self.assertEqual([i.message for i in warnings], ["The script names PID_GHOST, which does not exist."])
         self.assertEqual(warnings[0].route, ("chapter", "01", "script"))
 
+    def test_script_globals_against_startup(self):
+        from fe_modding.formats.cmb import compile_source, write_cmb
+        self.write("FE8Data.bin", build())
+        self.write("Scripts/startup.cmb", write_cmb(compile_source(
+            "global s @ 2\n@export\ndef Startup():\n    s = 1\n").script))
+        self.write("Scripts/C01.cmb", write_cmb(compile_source(
+            "global a @ 2\nglobal b @ 30\n@export\ndef Startup():\n    a = 1\n    b = 2\n").script))
+        issues = [i for i in validator.validate_project(self.project).issues if i.where == "Scripts/C01.cmb"]
+        self.assertEqual([(i.severity, i.message.split(";")[0]) for i in issues], [
+            (validator.ERROR, "The script reserves 31 global slots and startup.cmb 3"),
+            (validator.WARNING, "Global slot(s) 2 are also used by startup.cmb"),
+        ])
+
     def test_unreachable_story_chapter_needs_the_flow(self):
         class Flow:
             available = True
