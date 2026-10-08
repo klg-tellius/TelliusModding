@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from . import ast as A
-from .catalog import TRIGGERS, TRIGGERS_BY_DECORATOR
+from .catalog import triggers, triggers_by_decorator
 from .decompiler import is_identifier, quote
 from .parser import parse
 
@@ -62,8 +62,9 @@ def _const(e):
     return None
 
 
-def function_spans(source: str) -> list[FunctionSpan]:
-    """Raises ParseError when the source doesn't parse."""
+def function_spans(source: str, dialect="fe9") -> list[FunctionSpan]:
+    """Raises ParseError when the source doesn't parse. ``dialect``: the
+    script's game (its trigger kinds), a Dialect or its name."""
     module = parse(source)
     lines = source.splitlines()
     spans = []
@@ -82,8 +83,8 @@ def function_spans(source: str) -> list[FunctionSpan]:
                 values = [_const(a) for a in d.args]
                 span.trigger_type = values[0] if values else 0
                 span.raw_params = values[1:]
-            elif d.name in TRIGGERS_BY_DECORATOR:
-                kind = TRIGGERS_BY_DECORATOR[d.name]
+            elif d.name in triggers_by_decorator(dialect):
+                kind = triggers_by_decorator(dialect)[d.name]
                 span.trigger_type = kind.type
                 for i, spec in enumerate(kind.params):
                     if i < len(d.args):
@@ -108,11 +109,11 @@ def value_source(value) -> str:
 
 
 def decorator_source(export_id: Optional[str], def_name: str, trigger_type: int, values: dict,
-                     raw_params: Optional[list] = None) -> list[str]:
+                     raw_params: Optional[list] = None, dialect="fe9") -> list[str]:
     lines = []
     if export_id:
         lines.append("@export" if export_id == def_name else f"@export({quote(export_id)})")
-    kind = TRIGGERS.get(trigger_type)
+    kind = triggers(dialect).get(trigger_type)
     if raw_params is not None or kind is None:
         params = raw_params or []
         if trigger_type or params:
@@ -182,12 +183,13 @@ def unique_name(source: str, base: str) -> str:
     return f"{base}_{n}"
 
 
-def new_function_source(source: str, name: str = "new_event", trigger_type: int = 6) -> tuple[str, str]:
+def new_function_source(source: str, name: str = "new_event", trigger_type: int = 6,
+                        dialect="fe9") -> tuple[str, str]:
     """Append a function; returns (new source, its name)."""
     name = unique_name(source, name)
-    kind = TRIGGERS[trigger_type]
+    kind = triggers(dialect)[trigger_type]
     defaults = {spec.name: (None if spec.is_label else ("player" if spec.enum else 1)) for spec in kind.params}
-    block = decorator_source(None, name, trigger_type, defaults) + [f"def {name}():", "    pass"]
+    block = decorator_source(None, name, trigger_type, defaults, dialect=dialect) + [f"def {name}():", "    pass"]
     text = source.rstrip("\n") + "\n\n\n" + "\n".join(block) + "\n"
     return text, name
 

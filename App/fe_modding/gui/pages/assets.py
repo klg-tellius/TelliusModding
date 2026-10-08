@@ -159,7 +159,7 @@ class AssetPage(Page):
                 panel = cls(self, self.project, self.shell.changelog)
             self._panels[key] = panel
         selection = route[2] if len(route) > 2 else None
-        if key == "conversations" and selection and not panel.open_file(selection):
+        if key in ("conversations", "scripts") and selection and not panel.open_file(selection):
             return False
         if isinstance(panel, LIST_PANELS) and not selection:
             panel.show_list()
@@ -183,7 +183,7 @@ class AssetPage(Page):
         label = TOOLS_BY_KEY[route[1]][1]
         if route[1] in TOOL_ASSETS:
             return [("Tools", ("tools",)), (label, None)]
-        if route[1] == "conversations" and len(route) > 2 and route[2]:
+        if route[1] in ("conversations", "scripts") and len(route) > 2 and route[2]:
             return [("Assets", ("assets",)), (label, ("asset", route[1])), (route[2], None)]
         return [("Assets", ("assets",)), (label, None)]
 

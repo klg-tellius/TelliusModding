@@ -122,13 +122,21 @@ _POOL_PREFIXES = {
 _IDENT = re.compile(r"[A-Za-z_]\w*$")
 _STRING_PARTIAL = re.compile(r"[^\s\"(),]*$")
 _CHAPTER_SCRIPT = re.compile(r"^C(\d+)\.cmb$", re.IGNORECASE)
+_NAME_FIELDS = {"character": ("pid", "mpid"), "item": ("iid", "miid"), "class": ("jid", "mjid"),
+                "skill": ("sid", "msid")}
 MAX_ITEMS = 60
 _SILENT_SFX_ID = 0x158
 
 
-def chapter_of_script(path: Optional[Path]) -> Optional[str]:
-    """``C06.cmb`` -> ``"06"``; None for shared scripts."""
-    match = _CHAPTER_SCRIPT.match(path.name) if path is not None else None
+def chapter_of_script(path: Optional[Path], project: Optional[ModProject] = None) -> Optional[str]:
+    """``C06.cmb`` -> ``"06"`` (``C0407a.cmb`` -> ``"0407a"`` with a Radiant Dawn ``project``);
+    None for shared scripts."""
+    if path is None:
+        return None
+    if project is not None and profile_of(project).chapter_id_width != 2:
+        match = re.match(rf"^C({profile_of(project).chapter_id_pattern})\.cmb$", path.name, re.IGNORECASE)
+        return match.group(1).lower() if match else None
+    match = _CHAPTER_SCRIPT.match(path.name)
     return match.group(1).zfill(2) if match else None
 
 
@@ -310,6 +318,31 @@ class ScriptSuggestions:
                 self._cache["texts"] = {}
         return self._cache["texts"]
 
+    def _fe10_tables(self):
+        """(FE10Data, names) for a game whose database is FE10Data.cms (Radiant Dawn), else None."""
+        if "fe10" not in self._cache:
+            self._cache["fe10"] = None
+            if profile_of(self._project).script_dialect == "fe10":
+                from .formats import fe10data
+                try:
+                    data = fe10data.read_fe10data(self._project.read_logical("game_data"))
+                    self._cache["fe10"] = (data, fe10data.message_names(self.files / "Mess"))
+                except Exception:  # noqa: BLE001
+                    pass
+        return self._cache["fe10"]
+
+    def _fe10_named(self, kind: str) -> list[Suggestion]:
+        data, names = self._fe10_tables()
+        id_key, name_key = _NAME_FIELDS[kind]
+        out, seen = [], set()
+        for record in data.table(kind):
+            value = record.values.get(id_key)
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            out.append(Suggestion(value, " ".join(names.get(record.values.get(name_key) or "", "").split())))
+        return out
+
     def _named(self, entries, id_attr: str, name_attr: str) -> list[Suggestion]:
         texts = self._texts()
         out, seen = [], set()
@@ -323,18 +356,26 @@ class ScriptSuggestions:
         return out
 
     def _characters(self) -> list[Suggestion]:
+        if self._fe10_tables():
+            return self._fe10_named("character")
         fe8 = self._fe8()
         return self._named(fe8.characters, "pid", "mpid") if fe8 else []
 
     def _items(self) -> list[Suggestion]:
+        if self._fe10_tables():
+            return self._fe10_named("item")
         fe8 = self._fe8()
         return self._named(fe8.items, "iid", "miid") if fe8 else []
 
     def _classes(self) -> list[Suggestion]:
+        if self._fe10_tables():
+            return self._fe10_named("class")
         fe8 = self._fe8()
         return self._named(fe8.classes, "jid", "mjid") if fe8 else []
 
     def _skills(self) -> list[Suggestion]:
+        if self._fe10_tables():
+            return self._fe10_named("skill")
         fe8 = self._fe8()
         return self._named(fe8.skills, "sid", "msid") if fe8 else []
 
@@ -417,7 +458,9 @@ class ScriptSuggestions:
         return out
 
     def _chapters(self) -> list[Suggestion]:
-        return [Suggestion(str(int(cid)), self._chapter_title(cid)) for cid in chapters.list_chapter_ids(self._project)]
+        numeric = profile_of(self._project).chapter_id_width == 2  # Path of Radiance scripts pass chapter numbers
+        return [Suggestion(str(int(cid)) if numeric and cid.isdigit() else cid, self._chapter_title(cid))
+                for cid in chapters.list_chapter_ids(self._project)]
 
     def _groups(self, chapter_id: Optional[str]) -> list[Suggestion]:
         """Deployment groups (``dispos.cmp`` section names) of the chapter's
@@ -458,17 +501,28 @@ class ScriptSuggestions:
         if chapter_id is None:
             return []
         from .formats import message
-        from .formats.fe9_message_scene import to_display
-        path = profile_of(self._project).mess_path(self.files, chapter_id)
+        profile = profile_of(self._project)
+        path = profile.mess_path(self.files, chapter_id)
+        if profile.message_dialect == "fe10":
+            from .formats import fe10_message, fe10data
+            english = path.with_name("e_" + path.name)  # same keys, English text
+            path = english if english.exists() else path
+            key_of, text_of = fe10data.message_key, fe10_message.plain_text
+        else:
+            from .formats.fe9_message_scene import to_display
+            key_of, text_of = to_display, lambda text: re.sub(r"[\x00-\x1f]|<[^>]*>", " ", text)
         if not path.exists():
             return []
         out = []
         for msg in message.read_messages_path(path):
             try:
-                key = to_display(msg.speaker)
+                key = key_of(msg.speaker)
             except UnicodeError:
                 key = msg.speaker
-            preview = " ".join(re.sub(r"[\x00-\x1f]|<[^>]*>", " ", msg.text).split())[:50]
+            try:
+                preview = " ".join(text_of(msg.text).split())[:50]
+            except Exception:  # noqa: BLE001 - a preview is a convenience
+                preview = ""
             out.append(Suggestion(key, preview))
         return out
 

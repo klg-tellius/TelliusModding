@@ -12,6 +12,17 @@ compiling it back reproduces the original bytes:
   with an initializer compile)
 * ``f(...)`` as a statement -> args, call, ``pop`` (every call returns a value)
 * every function ends with an implicit ``push8 0; return`` (unless ``@naked``)
+
+Radiant Dawn's compiler (:data:`~.model.FE10` dialect) differs in a few
+idioms, reproduced the same way:
+
+* ``x = e`` -> ``pushaddr x; e; assign`` (``x += e`` adds ``deref``/``add``)
+* ``return 0`` / ``return 1`` / bare ``return`` -> ``ret0`` / ``ret1`` / ``ret0``
+* the implicit epilogue is ``ret0`` for callable functions (left out when the
+  body already ends with ``return``) and ``push8 0; return`` for triggered ones
+* ``x++`` -> ``pushvar x; pushaddr x; inc``; ``++x`` -> ``pushaddr x; inc; pushvar x``
+* ``switch v:`` -> ``v``, then per case ``dup; value; eq; branchnz Lbody`` for
+  each value and ``branch Lnext``; the bodies; ``Lend: pop``
 """
 
 from __future__ import annotations
@@ -20,9 +31,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from . import ast as A
-from .catalog import TRIGGERS, TRIGGERS_BY_DECORATOR, lookup_extern
+from .catalog import lookup_extern, triggers_by_decorator
 from .model import (
     EXTERN_CALL,
+    FE9,
     LOCAL_CALL,
     OPCODE_BY_NAME,
     OPERAND_WIDTHS,
@@ -33,6 +45,7 @@ from .model import (
     Label,
     RawStr,
     ScriptFile,
+    Dialect,
     var_op,
 )
 from .parser import ParseError, parse
@@ -104,14 +117,15 @@ class _Pool:
 
 
 class _Loop:
-    def __init__(self, top: Label, end: Label):
-        self.top, self.end = top, end  # `continue` / `break` targets
+    def __init__(self, top: Optional[Label], end: Label):
+        self.top, self.end = top, end  # `continue` / `break` targets (a switch has no `continue`)
 
 
 class _FunctionCompiler:
     def __init__(self, module: "_ModuleCompiler", fd: A.FuncDef):
         self.m = module
         self.fd = fd
+        self.fe10 = module.dialect.extended_ops
         self.code: list = []
         self.slots: dict[str, int] = {}
         self.sizes: dict[str, int] = {}
@@ -192,6 +206,19 @@ class _FunctionCompiler:
             self.address(e.target, line)
             self.expr(e.value, line)
             self.emit(_I("store"))
+        elif isinstance(e, A.IncDec):
+            if not self.fe10:
+                self.error(line, f"'{e.op}' needs Radiant Dawn's inc/dec instructions; write 'x {e.op[0]}= 1'")
+                return
+            op = "inc" if e.op == "++" else "dec"
+            if e.prefix:
+                self.address(e.target, line)
+                self.emit(_I(op))
+                self.expr(e.target, line)
+            else:
+                self.expr(e.target, line)
+                self.address(e.target, line)
+                self.emit(_I(op))
         else:  # pragma: no cover - parser never builds anything else
             self.error(line, f"Unsupported expression {e!r}")
 
@@ -255,7 +282,10 @@ class _FunctionCompiler:
             self.expr(s.value, line)
             if s.op:
                 self.emit(_I(BINARY_OPS[s.op]))
-            self.emit(_I("store"), _I("pop"))
+            if self.fe10:
+                self.emit(_I("assign"))
+            else:
+                self.emit(_I("store"), _I("pop"))
         elif isinstance(s, A.VarDecl):
             for name, size in s.names:
                 if name in self.slots:
@@ -265,7 +295,7 @@ class _FunctionCompiler:
             self.declare(s.name, 1, line)
             self.address(A.Name(s.name), line)
             self.expr(s.value, line)
-            self.emit(_I("store"))
+            self.emit(_I("assign" if self.fe10 else "store"))
         elif isinstance(s, A.Printf):
             for a in s.args:
                 self.expr(a, line)
@@ -275,7 +305,11 @@ class _FunctionCompiler:
         elif isinstance(s, A.Pass):
             pass
         elif isinstance(s, A.Return):
-            self.expr(s.value if s.value is not None else A.Num(0), line)
+            value = s.value if s.value is not None else A.Num(0)
+            if self.fe10 and isinstance(value, A.Num) and not value.raw and value.value in (0, 1):
+                self.emit(_I("ret1" if value.value else "ret0"))
+                return
+            self.expr(value, line)
             self.emit(_I("return"))
         elif isinstance(s, A.If):
             else_label, end_label = Label(), Label()
@@ -308,12 +342,21 @@ class _FunctionCompiler:
             self.emit(loop.top)
             self.expr(s.cond, line)
             self.emit(_I("branchnz", top), loop.end)
-        elif isinstance(s, (A.Break, A.Continue)):
+        elif isinstance(s, A.Switch):
+            self.switch(s)
+        elif isinstance(s, A.Break):
             if not self.loops:
-                self.error(line, f"'{'break' if isinstance(s, A.Break) else 'continue'}' outside a loop")
+                self.error(line, "'break' outside a loop or switch")
                 return
-            loop = self.loops[-1]
-            self.emit(_I("branch", loop.end if isinstance(s, A.Break) else loop.top))
+            self.emit(_I("branch", self.loops[-1].end))
+        elif isinstance(s, A.Continue):
+            loop = next((lp for lp in reversed(self.loops) if lp.top is not None), None)
+            if loop is None:
+                self.error(line, "'continue' outside a loop")
+                return
+            # leaving a switch skips its closing pop: drop each switch value first
+            switches = len(self.loops) - 1 - self.loops.index(loop)
+            self.emit(*[_I("pop") for _ in range(switches)], _I("branch", loop.top))
         elif isinstance(s, A.Goto):
             target = self.label(s.label)
             if s.when is None:
@@ -331,6 +374,32 @@ class _FunctionCompiler:
         else:  # pragma: no cover
             self.error(line, f"Unsupported statement {s!r}")
 
+    def switch(self, s: A.Switch) -> None:
+        if not self.fe10:
+            self.error(s.line, "switch needs Radiant Dawn's dup instruction; use if/elif")
+            return
+        end = Label()
+        self.expr(s.value, s.line)
+        self.loops.append(_Loop(None, end))
+        cases = [c for c in s.cases if c.values]
+        default = next((c for c in s.cases if not c.values), None)
+        for i, case in enumerate(cases):
+            body = Label()
+            last = i == len(cases) - 1
+            nxt = end if last and default is None else Label()
+            for value in case.values:
+                self.emit(_I("dup"))
+                self.expr(value, case.line)
+                self.emit(_I("eq"), _I("branchnz", body))
+            self.emit(_I("branch", nxt), body)
+            self.block(case.body)
+            if nxt is not end:
+                self.emit(nxt)
+        if default is not None:
+            self.block(default.body)
+        self.loops.pop()
+        self.emit(end, _I("pop"))
+
     def asm(self, s: A.Asm) -> None:
         for opname, operands, label_name, line in s.lines:
             if label_name is not None:
@@ -340,6 +409,9 @@ class _FunctionCompiler:
                 self.error(line, f"Unknown opcode {opname!r}")
                 continue
             op = OPCODE_BY_NAME[opname]
+            if op >= 0x42 and not self.fe10:
+                self.error(line, f"{opname} is a Radiant Dawn instruction")
+                continue
             widths = OPERAND_WIDTHS[op]
             if len(operands) != len(widths):
                 self.error(line, f"{opname} takes {len(widths)} operand(s)")
@@ -364,10 +436,14 @@ class _FunctionCompiler:
                     ops.append(0)
             self.emit(Instr(op, ops))
 
-    def run(self, naked: bool) -> list:
+    def run(self, naked: bool, triggered: bool = False) -> list:
         self.block(self.fd.body)
-        if not naked:
+        if naked:
+            pass
+        elif not self.fe10 or triggered:
             self.emit(_I("push8", 0), _I("return"))
+        elif not (self.fd.body and isinstance(self.fd.body[-1], A.Return)):
+            self.emit(_I("ret0"))
         defined = {id(x) for x in self.code if isinstance(x, Label)}
         for name, label in self.labels.items():
             if id(label) not in defined:
@@ -377,9 +453,10 @@ class _FunctionCompiler:
 
 class _ModuleCompiler:
     def __init__(self, module: A.Module, base: Optional[ScriptFile], known_script_functions: dict,
-                 global_flags: Optional[list] = None):
+                 global_flags: Optional[list] = None, dialect: Optional[Dialect] = None):
         self.module = module
         self.base = base
+        self.dialect = dialect or (base.dialect if base is not None else FE9)
         self.global_flags = global_flags
         self.flag_uses: list[tuple[str, str, int]] = []  # (native, flag name, line)
         self.diagnostics: list[Diagnostic] = []
@@ -393,12 +470,19 @@ class _ModuleCompiler:
         self.diagnostics.append(Diagnostic(severity, line, message))
 
     def check_extern(self, name: str, argc: int, line: int) -> None:
-        sig = lookup_extern(name)
+        sig = lookup_extern(name, self.dialect)
         exported_here = {self.export_name(fd) for fd in self.module.functions}
         if sig is not None and sig.source == "unregistered":
             self.diag("warning", line, f"{name}() is registered nowhere in the game - it always returns 0")
         elif sig is not None:
-            if sig.argc != argc:
+            if sig.argc != argc and sig.source == "native" and self.dialect.extended_ops:
+                # Radiant Dawn's own scripts still pass Path of Radiance's arguments to a few natives
+                # (StaffRoll, WarRecord, VOICEAllStop); the native pops its own count and the VM
+                # drops the rest when the function returns.
+                effect = ("the extra values are ignored" if argc > sig.argc
+                          else "the native takes the missing ones from whatever lies below on the stack")
+                self.diag("warning", line, f"{name}() takes {sig.argc} argument(s), got {argc}: {effect}")
+            elif sig.argc != argc:
                 self.diag("error", line, f"{name}() takes {sig.argc} argument(s), got {argc}")
         elif name in self.known_script_functions:
             want = self.known_script_functions[name]
@@ -425,8 +509,8 @@ class _ModuleCompiler:
                     self.diag("error", d.line, "@trigger(type, params...) needs a type")
                     continue
                 fn_type, params = values[0], values[1:]
-            elif d.name in TRIGGERS_BY_DECORATOR:
-                kind = TRIGGERS_BY_DECORATOR[d.name]
+            elif d.name in triggers_by_decorator(self.dialect):
+                kind = triggers_by_decorator(self.dialect)[d.name]
                 fn_type = kind.type
                 params = []
                 given = dict(d.kwargs)
@@ -479,21 +563,22 @@ class _ModuleCompiler:
         a name nobody registers silently do nothing (see formats/event_flags.py)."""
         from .. import event_flags
 
+        table = event_flags.flag_table(self.dialect)
         lines = {fd.name: fd.line for fd in self.module.functions}
         registered = {flag for native, flag, _ in self.flag_uses if native in ("regist", "global")}
         if "RegistGlobalFlags" in lines:
-            globals_ = event_flags.global_flags(self.module)
-            vanilla = event_flags.global_flags_vanilla()
+            globals_ = event_flags.global_flags(self.module, table)
+            vanilla = event_flags.global_flags_vanilla(table)
             for slot, old in enumerate(vanilla):
                 new = globals_[slot] if slot < len(globals_) else None
-                if new != old and old != event_flags.RESERVED_GLOBAL:
+                if new != old and old != table.reserved_global:
                     self.diag("warning", lines["RegistGlobalFlags"],
                               f"global flag slot {slot} was {old!r} and is now {new!r}: saves made with the "
                               "original startup.cmb will load that bit under the new name; add new flags "
                               "at the end or rename a reserved slot instead")
                     break
         else:
-            globals_ = self.global_flags or event_flags.global_flags_vanilla()
+            globals_ = self.global_flags or event_flags.global_flags_vanilla(table)
             for native, flag, line in self.flag_uses:
                 if native == "global":
                     self.diag("warning", line, f'global("{flag}") outside startup.cmb\'s RegistGlobalFlags: '
@@ -512,7 +597,7 @@ class _ModuleCompiler:
                     self.diag("warning", lines["Startup"], f'regist("{flag}") runs twice: the second '
                               "copy uses up a slot nothing can reach")
                 seen.add(flag)
-            problem = event_flags.capacity_problem(len(globals_), len(locals_))
+            problem = event_flags.capacity_problem(len(globals_), len(locals_), table.slot_count)
             if problem:
                 self.diag("warning", lines["Startup"], problem)
 
@@ -532,14 +617,14 @@ class _ModuleCompiler:
 
         functions = []
         for i, fd in enumerate(self.module.functions):
-            known = {"export", "naked", "trigger"} | set(TRIGGERS_BY_DECORATOR)
+            known = {"export", "naked", "trigger"} | set(triggers_by_decorator(self.dialect))
             for d in fd.decorators:
                 if d.name not in known:
                     self.diag("error", d.line, f"Unknown decorator @{d.name}")
             fc = _FunctionCompiler(self, fd)
             naked = any(d.name == "naked" for d in fd.decorators)
-            code = fc.run(naked)
             fn_type, params = self.trigger(fd)
+            code = fc.run(naked, fn_type != 0)
             fn = Function(
                 id_string=self.export_name(fd),
                 type=fn_type,
@@ -573,24 +658,25 @@ class _ModuleCompiler:
                 header = header[:0x22] + needed.to_bytes(2, "little") + header[0x24:]
             tail, tail_entries = self.base.raw_pool_tail, self.base.raw_pool_tail_entries
         else:
-            header = default_header("script.cmb", needed)
+            header = default_header("script.cmb", needed, self.dialect)
             tail, tail_entries = b"\x00", -1
         return ScriptFile(
             header=header, pool=self.pool.entries, functions=functions,
-            raw_pool_tail=tail, raw_pool_tail_entries=tail_entries,
+            raw_pool_tail=tail, raw_pool_tail_entries=tail_entries, dialect=self.dialect,
         )
 
 
-def default_header(file_name: str, global_count: int = 0) -> bytes:
+def default_header(file_name: str, global_count: int = 0, dialect: Dialect = FE9) -> bytes:
     name = file_name.encode("ascii", "replace")[:19]
     head = (b"cmb\x00" + name + b"\x00").ljust(0x18, b"\x00")
-    return head + (0x20041125).to_bytes(4, "little") + b"\x00" * 6 + global_count.to_bytes(2, "little")
+    return head + dialect.build_date.to_bytes(4, "little") + b"\x00" * 6 + global_count.to_bytes(2, "little")
 
 
 def compile_module(module: A.Module, base: Optional[ScriptFile] = None,
                    known_script_functions: Optional[dict] = None,
-                   global_flags: Optional[list] = None) -> CompileResult:
-    mc = _ModuleCompiler(module, base, known_script_functions or {}, global_flags)
+                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None) -> CompileResult:
+    """``dialect``: the bytecode to emit (default: ``base``'s, else Path of Radiance's)."""
+    mc = _ModuleCompiler(module, base, known_script_functions or {}, global_flags, dialect)
     script = mc.run()
     if any(d.severity == "error" for d in mc.diagnostics):
         raise CompileError(mc.diagnostics)
@@ -599,11 +685,11 @@ def compile_module(module: A.Module, base: Optional[ScriptFile] = None,
 
 def compile_source(source: str, base: Optional[ScriptFile] = None,
                    known_script_functions: Optional[dict] = None,
-                   global_flags: Optional[list] = None) -> CompileResult:
+                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None) -> CompileResult:
     """``global_flags``: the project's global flag names in slot order (see
     ``event_flags.global_flags``); vanilla's when omitted."""
     try:
         module = parse(source)
     except ParseError as e:
         raise CompileError([Diagnostic("error", e.line, e.message)]) from None
-    return compile_module(module, base, known_script_functions, global_flags)
+    return compile_module(module, base, known_script_functions, global_flags, dialect)

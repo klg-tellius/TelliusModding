@@ -21,7 +21,7 @@ from typing import Optional
 
 from . import ast as A
 from .binary import _encode_code, _pool_layout
-from .catalog import TRIGGERS
+from .catalog import triggers
 from .compiler import (
     BINARY_OPS,
     RESERVED_CALLS,
@@ -31,9 +31,15 @@ from .compiler import (
     _ModuleCompiler,
 )
 from .model import (
+    ASSIGN,
     BRANCH_OPS,
+    DEC,
+    DUP,
     EXTERN_CALL,
+    INC,
     LOCAL_CALL,
+    RET0,
+    RET1,
     OPCODES,
     PUSH_OPS,
     PUSHSTR_OPS,
@@ -197,6 +203,21 @@ class _Builder:
                 raise _Fail("localCall to a missing function")
             args = self.pop_n(stack, self.functions[idx].num_args)
             stack.append(A.Call(self.names.defs[idx], args))
+        elif op in (INC, DEC):  # FE10: x++ (old value below the address) or ++x (value read back after)
+            addr = self.pop(stack)
+            if not isinstance(addr, A.AddrOf):
+                raise _Fail("inc/dec of a non-address")
+            sym = "++" if op == INC else "--"
+            if stack and stack[-1] == addr.target:
+                stack[-1] = A.IncDec(addr.target, sym)
+                return i + 1
+            j, tmp = i + 1, []
+            while j < len(self.code) and isinstance(self.code[j], Instr) and j - i < 64:
+                j = self.step(j, tmp, None)
+                if len(tmp) == 1 and tmp[0] == addr.target:
+                    stack.append(A.IncDec(addr.target, sym, prefix=True))
+                    return j
+            raise _Fail("inc/dec without its value")
         elif op in (0x3C, 0x3E):  # branchkeepz (or) / branchkeepnz (and)
             left = self.pop(stack)
             target = self.index[id(ins.operands[0])]
@@ -257,11 +278,30 @@ class _Builder:
                     out.append(A.Assign(e.target, e.value, e.op))
                 elif isinstance(e, A.Walrus):
                     out.append(A.Assign(e.target, e.value))
-                elif isinstance(e, A.Call):
+                elif isinstance(e, (A.Call, A.IncDec)):
                     out.append(A.ExprStmt(self.clean(e)))
                 else:
                     raise _Fail("non-call expression statement")
                 return i + 1
+            if op == ASSIGN:  # FE10 assignment statement: [addr, value] -> []
+                self.flush(stack, 2, out)
+                value, addr = stack.pop(), stack.pop()
+                if not isinstance(addr, A.AddrOf):
+                    raise _Fail("assign to a non-address")
+                if isinstance(value, A.BinOp) and isinstance(value.left, _Deref) and value.left.addr is addr:
+                    out.append(A.Assign(addr.target, self.clean(value.right), value.op))
+                else:
+                    out.append(A.Assign(addr.target, self.clean(value)))
+                return i + 1
+            if op in (RET0, RET1):
+                self.flush(stack, 0, out)
+                out.append(A.Return(A.Num(op - RET0)))
+                return i + 1
+            if op == DUP:
+                if not self.structured:
+                    raise _Fail("switch outside the structured form")
+                self.flush(stack, 1, out)
+                return self.structured_switch(i, end, loop, out, self.clean(stack.pop()))
             if op == 0x41:  # printf
                 self.flush(stack, ins.operands[0], out)
                 out.append(A.Printf(self.pop_n(stack, ins.operands[0])))
@@ -299,6 +339,63 @@ class _Builder:
             if not (isinstance(e, A.Walrus) and isinstance(e.target, A.Name) and not _GLOBAL_NAME.match(e.target.id)):
                 raise _Fail("value left on the stack")
             out.append(A.VarInit(e.target.id, self.clean(e.value)))
+
+    def structured_switch(self, i: int, end: int, loop, out: list, value) -> int:
+        """FE10 ``switch``: per case ``dup; v; eq; branchnz Lbody`` for each
+        value, ``branch Lnext; Lbody: body``; then the default body and
+        ``Lend: pop``."""
+        code = self.code
+        groups = []  # (values, body start, index of the label after the body)
+        pos = i
+        while True:
+            values, body_label = [], None
+            while pos < end and isinstance(code[pos], Instr) and code[pos].op == DUP:
+                j, tmp = pos + 1, []
+                while not (isinstance(code[j], Instr) and code[j].op == 0x2F and len(tmp) == 1
+                           and isinstance(code[j + 1], Instr) and code[j + 1].op == 0x3B):
+                    if j >= end or isinstance(code[j], Label):
+                        raise _Fail("switch case value")
+                    j = self.step(j, tmp, None)
+                target = code[j + 1].operands[0]
+                if body_label is not None and target is not body_label:
+                    raise _Fail("switch case values going to different bodies")
+                body_label = target
+                values.append(self.clean(tmp[0]))
+                pos = j + 2
+            if not values or not (pos + 1 < end and isinstance(code[pos], Instr) and code[pos].op == 0x3A
+                                  and code[pos + 1] is body_label):
+                raise _Fail("not a switch")
+            nxt = self.index[id(code[pos].operands[0])]
+            if not pos + 2 <= nxt < end:
+                raise _Fail("switch case going backwards")
+            groups.append((values, pos + 2, nxt))
+            if isinstance(code[nxt + 1], Instr) and code[nxt + 1].op == DUP:
+                pos = nxt + 1
+                continue
+            break
+        last = groups[-1][2]
+        k = last + 1
+        while k < end and isinstance(code[k], Label):
+            k += 1
+        if k < end and isinstance(code[k], Instr) and code[k].op == 0x20:
+            ends = [k - 1]  # no default: the last case's "next" is the end
+        else:
+            ends = [p for p in range(last + 1, end - 1)
+                    if isinstance(code[p], Label) and isinstance(code[p + 1], Instr) and code[p + 1].op == 0x20]
+        outer_top = loop[0] if loop else Label()
+        for e in ends:
+            ctx = (outer_top, code[e])
+            try:
+                cases = [A.Case(values, self.block(start, stop, ctx)) for values, start, stop in groups]
+                if e > last:
+                    default = self.block(last + 1, e, ctx)
+                    if default:
+                        cases.append(A.Case([], default))
+            except _Fail:
+                continue
+            out.append(A.Switch(value, cases))
+            return e + 2
+        raise _Fail("switch without an end")
 
     def structured_branch(self, i: int, end: int, loop, out: list, cond) -> int:
         ins = self.code[i]
@@ -401,6 +498,8 @@ def _children(e) -> list:
         return list(e.args)
     if isinstance(e, A.Walrus):
         return [e.target, e.value]
+    if isinstance(e, A.IncDec):
+        return [e.target]
     return []
 
 
@@ -433,8 +532,8 @@ def _asm_body(code: list) -> list:
 # -- whole-function decompilation ---------------------------------------------
 
 
-def _trigger_decorator(fn: Function, pool_text: dict) -> Optional[A.Decorator]:
-    kind = TRIGGERS.get(fn.type)
+def _trigger_decorator(fn: Function, pool_text: dict, dialect="fe9") -> Optional[A.Decorator]:
+    kind = triggers(dialect).get(fn.type)
     if fn.type == 0 and not fn.params:
         return None
     if kind is None or fn.type == 0 or len(fn.params) != len(kind.params):
@@ -493,7 +592,7 @@ class Decompiler:
                 decorators.append(A.Decorator("export", [], {}))
             else:
                 decorators.append(A.Decorator("export", [A.Str(fn.id_string)], {}))
-        trig = _trigger_decorator(fn, self.pool_text)
+        trig = _trigger_decorator(fn, self.pool_text, self.script.dialect)
         if trig is not None:
             decorators.append(trig)
         params = [f"arg{k}" for k in range(fn.num_args)]
@@ -501,10 +600,17 @@ class Decompiler:
         header = [A.VarDecl(locals_)] if locals_ else []
 
         code = fn.code
-        has_epilogue = (len(code) >= 2 and isinstance(code[-1], Instr) and code[-1].op == 0x39
-                        and isinstance(code[-2], Instr) and code[-2].op == 0x19 and code[-2].operands == [0])
         attempts = []
-        if has_epilogue:
+        if self.script.dialect.extended_ops and fn.type == 0:
+            # FE10 callable: implicit `ret0`, left out when the body ends with `return`
+            if code and isinstance(code[-1], Instr) and code[-1].op == RET0:
+                attempts += [("structured", code[:-1], True, False)]
+            attempts += [("structured", code, True, False)]
+            if code and isinstance(code[-1], Instr) and code[-1].op == RET0:
+                attempts += [("goto", code[:-1], False, False)]
+            attempts += [("goto", code, False, False)]
+        elif (len(code) >= 2 and isinstance(code[-1], Instr) and code[-1].op == 0x39
+              and isinstance(code[-2], Instr) and code[-2].op == 0x19 and code[-2].operands == [0]):
             attempts += [("structured", code[:-2], True, False), ("goto", code[:-2], False, False)]
         attempts.append(("goto", code, False, True))
         for form, body_code, structured, naked in attempts:
@@ -532,13 +638,14 @@ class Decompiler:
         mc = _ModuleCompiler(skeleton, self.script, self.known)
         try:
             fc = _FunctionCompiler(mc, fd)
-            code = fc.run(any(d.name == "naked" for d in fd.decorators))
+            code = fc.run(any(d.name == "naked" for d in fd.decorators), fn.type != 0)
         except Exception:
             return False
         if any(d.severity == "error" for d in mc.diagnostics) or fc.next_slot != fn.num_vars:
             return False
         try:
-            return _encode_code(code, self.offsets) == _encode_code(fn.code, self.offsets)
+            d = self.script.dialect
+            return _encode_code(code, self.offsets, d) == _encode_code(fn.code, self.offsets, d)
         except Exception:
             return False
 
@@ -610,9 +717,13 @@ def expr_to_source(e) -> str:
             if _prec(e.operand) < 3:
                 inner = f"({inner})"
             return f"not {inner}"
-        if _prec(e.operand) < _UNARY_PREC or (isinstance(e.operand, A.Num) and e.operand.raw):
+        if (_prec(e.operand) < _UNARY_PREC or (isinstance(e.operand, A.Num) and e.operand.raw)
+                or inner.startswith(("-", "+"))):
             inner = f"({inner})"
         return f"{e.op}{inner}"
+    if isinstance(e, A.IncDec):
+        target = expr_to_source(e.target)
+        return f"{e.op}{target}" if e.prefix else f"{target}{e.op}"
     if isinstance(e, A.Walrus):
         return f"({expr_to_source(e.target)} := {expr_to_source(e.value)})"
     if isinstance(e, A.Call):
@@ -670,6 +781,12 @@ def stmts_to_source(stmts: list, indent: int) -> list[str]:
             lines.append(pad + "do:")
             lines.extend(stmts_to_source(s.body, indent + 1) or [pad + "    pass"])
             lines.append(f"{pad}while {expr_to_source(s.cond)}")
+        elif isinstance(s, A.Switch):
+            lines.append(f"{pad}switch {expr_to_source(s.value)}:")
+            for case in s.cases:
+                head = f"case {', '.join(expr_to_source(v) for v in case.values)}" if case.values else "default"
+                lines.append(f"{pad}    {head}:")
+                lines.extend(stmts_to_source(case.body, indent + 2) or [pad + "        pass"])
         elif isinstance(s, A.Break):
             lines.append(pad + "break")
         elif isinstance(s, A.Continue):
@@ -730,7 +847,7 @@ def decompile(script: ScriptFile, file_name: str = "", known_script_functions: O
     module = d.module()
     comments = {}
     for i, fn in enumerate(script.functions):
-        kind = TRIGGERS.get(fn.type)
+        kind = triggers(script.dialect).get(fn.type)
         text = f"function {i}"
         if kind is not None and fn.type != 0:
             text += f" - {kind.title}"

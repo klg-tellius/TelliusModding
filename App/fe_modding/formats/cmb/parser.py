@@ -3,7 +3,9 @@
 The language is Python-shaped (indentation blocks, ``#`` comments, ``def``,
 ``if``/``elif``/``else``, ``while``, ``and``/``or``/``not``) with a few
 additions a stack VM needs: ``var`` declarations, ``global name @ slot``,
-labels/``goto`` and an ``asm:`` escape hatch. See ``docs/app/script-language.md``.
+labels/``goto`` and an ``asm:`` escape hatch, plus ``switch``/``case`` and
+``++``/``--`` for Radiant Dawn's compiler idioms. See
+``docs/app/script-language.md``.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ _TOKEN_RE = re.compile(
   | (?P<num>0[xX][0-9a-fA-F]+|\d+)
   | (?P<name>[A-Za-z_][A-Za-z0-9_]*)
   | (?P<str>"(?:[^"\\\n]|\\.)*")
-  | (?P<op>:=|<<=|>>=|\*\*|<<|>>|<=|>=|==|!=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[-+*/%&|^~<>=()\[\],:@.;])
+  | (?P<op>:=|<<=|>>=|\*\*|\+\+|--|<<|>>|<=|>=|==|!=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|[-+*/%&|^~<>=()\[\],:@.;])
     """,
     re.VERBOSE,
 )
@@ -124,6 +126,7 @@ AUG_OPS = {"+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="}
 KEYWORDS = {
     "def", "if", "elif", "else", "while", "do", "break", "continue", "return", "yield", "pass",
     "var", "global", "goto", "unless", "asm", "and", "or", "not", "True", "False", "None",
+    "switch", "case", "default",
 }
 
 
@@ -249,6 +252,8 @@ class Parser:
                 return [A.DoWhile(body, cond, line=t.line)]
             if t.value == "asm":
                 return [self.parse_asm()]
+            if t.value == "switch":
+                return [self.parse_switch()]
             if self.peek().kind == "OP" and self.peek().value == ":" and t.value not in KEYWORDS \
                     and self.peek(2).kind == "NEWLINE":
                 self.take()
@@ -270,6 +275,35 @@ class Parser:
             self.expect("OP", ":")
             orelse = self.parse_suite()
         return A.If(cond, body, orelse, line=line)
+
+    def parse_switch(self) -> A.Switch:
+        line = self.take().line
+        value = self.parse_expr()
+        self.expect("OP", ":")
+        self.expect("NEWLINE")
+        self.expect("INDENT")
+        cases = []
+        while not self.at("DEDENT"):
+            t = self.tok
+            if cases and not cases[-1].values:
+                raise ParseError("'default:' must be the last branch of a switch", t.line)
+            if self.at_kw("case"):
+                self.take()
+                values = [self.parse_expr()]
+                while self.at_op(","):
+                    self.take()
+                    values.append(self.parse_expr())
+            elif self.at_kw("default"):
+                self.take()
+                values = []
+            else:
+                raise ParseError("Expected 'case' or 'default' inside a switch", t.line)
+            self.expect("OP", ":")
+            cases.append(A.Case(values, self.parse_suite(), t.line))
+        self.take()
+        if not cases:
+            raise ParseError("A switch needs at least one case", line)
+        return A.Switch(value, cases, line=line)
 
     def parse_simple_stmt(self) -> A.Stmt:
         t = self.tok
@@ -305,8 +339,8 @@ class Parser:
                 value = self.parse_expr()
                 stmt = A.Assign(expr, value, None if op == "=" else op[:-1], line=line)
             else:
-                if not isinstance(expr, A.Call):
-                    raise ParseError("An expression statement must be a function call", line)
+                if not isinstance(expr, (A.Call, A.IncDec)):
+                    raise ParseError("An expression statement must be a function call or ++/--", line)
                 stmt = A.ExprStmt(expr, line=line)
         self.expect("NEWLINE")
         return stmt
@@ -417,6 +451,12 @@ class Parser:
         return left
 
     def parse_unary(self):
+        if self.tok.kind == "OP" and self.tok.value in ("++", "--"):
+            t = self.take()
+            target = self.parse_postfix()
+            if not isinstance(target, (A.Name, A.Index)):
+                raise ParseError(f"'{t.value}' needs a variable or array element", t.line)
+            return A.IncDec(target, t.value, prefix=True)
         if self.tok.kind == "OP" and self.tok.value in ("-", "~"):
             op = self.take().value
             return A.UnOp(op, self.parse_unary())
@@ -463,8 +503,12 @@ class Parser:
                 self.take()
                 index = self.parse_expr()
                 self.expect("OP", "]")
-                return A.Index(A.Name(t.value), index)
-            return A.Name(t.value)
+                target = A.Index(A.Name(t.value), index)
+            else:
+                target = A.Name(t.value)
+            if self.tok.kind == "OP" and self.tok.value in ("++", "--"):
+                return A.IncDec(target, self.take().value)
+            return target
         raise ParseError(f"Unexpected {t.value if t.value is not None else t.kind!r}", t.line)
 
     def _make_call(self, t: Token, args: list):

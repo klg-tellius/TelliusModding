@@ -89,6 +89,9 @@ class GameProfile:
     #: Message text language: "fe9" ($ commands, formats/fe9_message_scene.py) or
     #: "fe10" (the byte-code of formats/fe10_message.py).
     message_dialect: str = "fe9"
+    #: Event-script bytecode and catalogues (``formats/cmb``): "fe9" or "fe10" (a
+    #: :class:`~fe_modding.formats.cmb.model.Dialect` name).
+    script_dialect: str = "fe9"
     #: Buckets of the engine's name hash (``message.engine_name_hash``): message IDs and container
     #: symbols that share a bucket and check value shadow each other.
     name_hash_buckets: int = 509
@@ -219,8 +222,9 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_file="shopitem_{diff}.bin",
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
-    features=frozenset({DATA_TABLES, DIALOGUE, FONTS, PATCHES, DISC}),
+    features=frozenset({DATA_TABLES, DIALOGUE, SCRIPTS, FONTS, PATCHES, DISC}),
     message_dialect="fe10",
+    script_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
 )

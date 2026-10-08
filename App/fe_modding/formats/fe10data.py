@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, Sequence
 
 from . import fe8data
@@ -588,6 +589,32 @@ def set_item_bonuses(data: bytes, index: int, bonuses: Optional[Sequence[int]]) 
     out = bytearray(data)
     out[count_offset] = 0 if bonuses is None else 1
     return bytes(out)
+
+
+def message_key(speaker: str) -> str:
+    """A message key as FE10Data names it: :mod:`message` decodes key bytes one to one (cp437), and
+    the Japanese keys (``MT_平地``, ``MG_...``) are Shift-JIS."""
+    from . import message
+
+    try:
+        return speaker.encode(message.ENCODING).decode("shift_jis")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return speaker
+
+
+def message_names(mess_dir: Path) -> dict[str, str]:
+    """Message key -> first line of its text from ``common.m``, English (``e_common.m``) when the
+    disc has it: the names of the ``MPID_``/``MIID_``/... keys records point at."""
+    from . import message
+
+    for name in ("e_common.m", "common.m"):
+        path = Path(mess_dir) / name
+        if path.is_file():
+            try:
+                return {message_key(m.speaker): m.text.split("\n", 1)[0] for m in message.read_messages_path(path)}
+            except Exception:  # noqa: BLE001 - names are a convenience
+                return {}
+    return {}
 
 
 def labels_with_prefix(data: bytes, prefix: str) -> list[str]:

@@ -5,6 +5,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 root = Path(SPECPATH).parent
 sys.path.insert(0, str(root / 'App'))
 datas = [(str(root / 'App/fe_modding/formats/cmb/externs_fe9.json'), 'fe_modding/formats/cmb'),
+         (str(root / 'App/fe_modding/formats/cmb/externs_fe10.json'), 'fe_modding/formats/cmb'),
          (str(root / 'App/licenses'), 'licenses')]
 binaries = []
 hiddenimports = collect_submodules('fe_modding')

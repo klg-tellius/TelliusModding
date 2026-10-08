@@ -319,7 +319,8 @@ const TITLES = {
   "terrain-texture-rendering":"Terrain Texture Blending", "weather":"Weather",
   "developer-debug-tools":"Developer & Debug Tools", "event-flags":"Event Flags",
   "radiant-dawn":"Radiant Dawn", "rd-message-format":"Message Format (Radiant Dawn)",
-  "rd-portraits":"Portraits (Radiant Dawn)", "rd-conversation-data":"FE10Conversation.cms"
+  "rd-portraits":"Portraits (Radiant Dawn)", "rd-conversation-data":"FE10Conversation.cms",
+  "rd-event-scripts":"Event Scripts (Radiant Dawn)", "rd-script-functions":"Script Functions (Radiant Dawn)"
 };
 function wl(id, label){ return `<a class="wl" href="#/${id}">${label || TITLES[id] || id}</a>`; }
 
@@ -398,7 +399,7 @@ unexplored: {
   </table>
 
   <h2 id="rd">Radiant Dawn</h2>
-  <p>Radiant Dawn, the Wii sequel, runs on the same engine but changes many layouts. Its text, portraits, fonts and conversation lists are described on ${wl("radiant-dawn")}; the rest of the archive still describes Path of Radiance only. For Radiant Dawn, open items include its European single-byte text tables, the composition of its dialogue window art, and every system not yet listed on that page.</p>
+  <p>Radiant Dawn, the Wii sequel, runs on the same engine but changes many layouts. Its text, portraits, fonts, conversation lists and event scripts are described on ${wl("radiant-dawn")}; the rest of the archive still describes Path of Radiance only. For Radiant Dawn, open items include its European single-byte text tables, the composition of its dialogue window art, and every system not yet listed on that page.</p>
   `
 },
 
@@ -787,7 +788,7 @@ fe8data: {
     <tr><td class="num">3A&ndash;3E</td><td>Branches</td><td>Jump; jump if non-zero; jump if zero; and two "keep" forms that leave 1 / 0 on the stack when they jump — the building blocks of <code>||</code> and <code>&amp;&amp;</code></td></tr>
     <tr><td class="num">3F</td><td>yield</td><td>Pause until the engine resumes the script</td></tr>
     <tr><td class="num">40, 41</td><td>Debug</td><td>A 4-byte no-op and <code>printf</code>, whose native does nothing</td></tr>
-    <tr><td class="num">42&ndash;47</td><td>—</td><td>Only used by Radiant Dawn</td></tr>
+    <tr><td class="num">42&ndash;47</td><td>—</td><td>Only used by Radiant Dawn: inc, dec, dup, ret0, ret1, assign (see ${wl("rd-event-scripts")})</td></tr>
   </tbody></table></div>
   <p>A branch's target is its own offset + 1 + the operand. Every call leaves exactly one value on the stack; a call made as a statement is followed by <code>pop</code>. ${badge("confirmed","confirmed")}</p>
 
@@ -3558,6 +3559,7 @@ biorhythm: {
     <li>The ${wl("labeled-section","labeled-section container")} (header, data, pointer list, named symbols) under every data file, and ${wl("lz10")} compression: on Radiant Dawn almost every data file is an LZ10 <code>.cms</code> (<code>FE10Data.cms</code>, <code>FE10Conversation.cms</code>, portraits, fonts, cards).</li>
     <li>The message <em>file</em> layout of ${wl("message-format")}: a header, the texts, a sorted table of (text, ID) pairs, the IDs. Only the text inside each message changed (see ${wl("rd-message-format")}).</li>
     <li>The ${wl("font-format","font format")}. All Radiant Dawn fonts are LZ10-wrapped copies of the same GCF layout.</li>
+    <li>The ${wl("event-script","event-script")} container and virtual machine, with six more instructions (see ${wl("rd-event-scripts")}).</li>
     <li>The engine's global name table (message IDs and data symbols are looked up by name), with 2,027 buckets instead of 509 and the <em>last</em> matching entry winning instead of the first. ${badge("confirmed","engine")}</li>
   </ul>
   <h2>Languages</h2>
@@ -3571,6 +3573,8 @@ biorhythm: {
     <li>${wl("rd-message-format")}: the byte-code that replaced the <code>$</code> commands, layouts and speech balloons.</li>
     <li>${wl("rd-portraits")}: the face table and how a portrait is assembled.</li>
     <li>${wl("rd-conversation-data")}: base Info conversations, the Conversation Room and support chat lines.</li>
+    <li>${wl("rd-event-scripts")}: the chapter scripts, their new instructions and triggers, and the flag table.</li>
+    <li>${wl("rd-script-functions")}: every native function a script can call.</li>
   </ul>
   `
 },
@@ -3678,6 +3682,758 @@ biorhythm: {
   <p>A count, then 44-byte records: the two characters' name keys, three conversation IDs (each followed by an empty word) and their three flags. The texts are in <code>Mess/e_yell_fe8.m</code>. ${badge("confirmed","engine + files")}</p>
   <h2>Support chat lines (<code>CONVERSATION_MINI_YELL_DATA</code>)</h2>
   <p>A count of characters; for each, its ID, a partner count, the message file holding its lines (<code>Mess/yell_mini_1.m</code>, to which the game adds the language prefix) and, per partner, the partner's ID, the line it says and the line it answers. Every one of the 71 characters has an entry for all 71 partners. ${badge("confirmed","engine + files")}</p>
+  `
+},
+
+"rd-event-scripts": {
+  ns:"format", title:"Event Scripts (Radiant Dawn)", dek:"The chapter scripts: the same container and virtual machine as Path of Radiance, six new instructions, new triggers and a larger flag table",
+  infobox:{ type:"Bytecode", status:"confirmed", fields:[
+    ["Files","<code>Scripts/C0101.cmb</code>&hellip; 50 files"],["Container",`Same as ${wl("event-script","Path of Radiance")}`],
+    ["Interpreter","US <code>0x801D0EC0</code>"],["Natives",`656, see ${wl("rd-script-functions")}`],["Flags","128 slots"]
+  ]},
+  categories:["Structure","Radiant Dawn"],
+  body:`
+  <p>Every chapter of Radiant Dawn has a script, <code>Scripts/C&lt;part&gt;&lt;chapter&gt;.cmb</code> (<code>C0101</code> is Part 1's Prologue, <code>C0407a</code>&ndash;<code>C0407e</code> the five maps of the last chapter, <code>CFINAL</code> the endgame), plus the shared <code>startup.cmb</code>, <code>ending.cmb</code>, the test map <code>C0000</code> and four tutorial scripts <code>T01</code>&ndash;<code>T04</code> that the game loads on demand. The file layout and the virtual machine are the ones of ${wl("event-script")}; this page lists what is different. ${badge("confirmed","engine + every script")}</p>
+  <h2>What is the same</h2>
+  <ul>
+    <li>The 0x2C-byte header, string pool, function table and 20-byte function records; named functions are registered by name when their script loads, and any loaded script can call them.</li>
+    <li>The stack machine: instructions <code>0x00</code>&ndash;<code>0x41</code> read the same operands and do the same thing, with one exception below. Operands are big-endian and signed; a branch's target is its own position + 1 + the operand.</li>
+    <li>Calls to natives and to script functions of other files go through the engine's global name table; a name nobody registered returns 0.</li>
+  </ul>
+  <p>The word at header offset <code>0x18</code> is the script compiler's build date, which the game never reads: <code>0x20041125</code> in every Path of Radiance script, <code>0x20061024</code> in every Radiant Dawn one.</p>
+  <h2>The instructions that changed</h2>
+  <table class="tight"><thead><tr><th>Opcode</th><th>Radiant Dawn</th></tr></thead><tbody>
+    <tr><td><code>37</code> localCall</td><td>The function index takes one byte, or two when the first byte's high bit is set: index = (first &amp; 0x7F) &times; 256 + second. <code>startup.cmb</code> has 589 functions, so its calls need the long form. (Path of Radiance: one byte.)</td></tr>
+    <tr><td><code>41</code> printf</td><td>Drops its arguments; nothing is printed.</td></tr>
+    <tr><td><code>42</code> inc, <code>43</code> dec</td><td>Pop an address, add or subtract 1 at it, push nothing</td></tr>
+    <tr><td><code>44</code> dup</td><td>Push the top value again</td></tr>
+    <tr><td><code>45</code> ret0, <code>46</code> ret1</td><td>Return 0 / return 1</td></tr>
+    <tr><td><code>47</code> assign</td><td>Pop a value and an address, store the value, push nothing</td></tr>
+  </tbody></table>
+  <p>Path of Radiance's interpreter has no case for <code>42</code>&ndash;<code>47</code>. ${badge("confirmed","engine")}</p>
+  <h2>How Radiant Dawn's compiler writes common statements</h2>
+  <table class="tight"><thead><tr><th>Statement</th><th>Bytecode</th></tr></thead><tbody>
+    <tr><td><code>x = e;</code></td><td><code>pushaddr x</code>, e, <code>assign</code> (Path of Radiance: <code>store</code>, <code>pop</code>)</td></tr>
+    <tr><td><code>x += e;</code></td><td><code>pushaddr x</code>, <code>deref</code>, e, <code>add</code>, <code>assign</code></td></tr>
+    <tr><td><code>return 0;</code> / <code>return 1;</code></td><td><code>ret0</code> / <code>ret1</code>; any other value: e, <code>return</code></td></tr>
+    <tr><td>end of a function</td><td><code>ret0</code>, left out after a final <code>return</code>; functions run by a trigger keep Path of Radiance's <code>push 0</code>, <code>return</code></td></tr>
+    <tr><td><code>x++;</code></td><td><code>pushvar x</code>, <code>pushaddr x</code>, <code>inc</code>, <code>pop</code></td></tr>
+    <tr><td><code>++x</code></td><td><code>pushaddr x</code>, <code>inc</code>, <code>pushvar x</code></td></tr>
+    <tr><td><code>switch (v) { case a: case b: &hellip; }</code></td><td>v; for each case, <code>dup</code>, its value, <code>eq</code>, <code>branchnz</code> to the case's code for each of its values, then <code>branch</code> to the next case's tests; the code of each case; the default's code; <code>pop</code> at the end. <code>break</code> jumps to that <code>pop</code>.</td></tr>
+  </tbody></table>
+  <h2>Example</h2>
+  <p><code>startup.cmb</code>'s <code>UnitIsStay(unit)</code> returns 1 for units of forces 0 and 5. Its bytecode reads: <code>pushvar 0</code>, <code>externCall UnitGetForce</code>, <code>dup</code>, <code>push 0</code>, <code>eq</code>, <code>branchnz</code> &rarr;A, <code>dup</code>, <code>push 5</code>, <code>eq</code>, <code>branchnz</code> &rarr;A, <code>branch</code> &rarr;B; A: <code>ret1</code>; B: <code>branch</code> &rarr;C; C: <code>pop</code>, <code>ret0</code>: a switch with one case for 0 and 5 that returns 1, an empty default, and <code>return 0</code> after it.</p>
+  <h2>Triggers</h2>
+  <p>A function's type (record byte <code>0x0C</code>) says when the game runs it, and its parameters (16-bit values, strings given as pool offsets) narrow that down. Types 0&ndash;12 and 15 mean what they mean in ${wl("event-script","Path of Radiance")}. A <em>condition</em> below is a string that names either a registered flag, in which case the event is skipped once the flag is set, or a function of the loaded scripts that the game calls and that must return non-zero. ${badge("confirmed","engine")}</p>
+  <table class="tight"><thead><tr><th>Type</th><th>Runs when</th><th>Parameters</th></tr></thead><tbody>
+    <tr><td>3, 6</td><td>Before / after a phase starts</td><td>first turn, last turn (0 = every turn), phase (0 player, 1 enemy, 2 other; any if negative)</td></tr>
+    <tr><td>4</td><td>A unit moves into a zone</td><td>x1, y1, x2, y2 (a corner of 0 or less counts from the right or bottom edge), army (any if negative), one-time flag</td></tr>
+    <tr><td>5</td><td>A unit acts on a tile</td><td>x, y, action (below), one-time flag</td></tr>
+    <tr><td>8</td><td>Two units talk</td><td>character 1, character 2, either-way flag, condition</td></tr>
+    <tr><td>9</td><td>A fight starts</td><td>character 1, character 2 (empty = anyone), either-way flag, condition</td></tr>
+    <tr><td>13</td><td>A support conversation</td><td>character 1, character 2, level. No Radiant Dawn script uses it; without a match, the game runs the support by name as a type-16 function</td></tr>
+    <tr><td>14</td><td>A base conversation</td><td>event name, flag. The menu looks up <code>CONV_INFO_DATA_&lt;chapter&gt;_&lt;event name&gt;</code> in ${wl("rd-conversation-data")} (Path of Radiance had three parameters: flag, character, stars)</td></tr>
+    <tr><td>16</td><td>Called by name</td><td>event name</td></tr>
+    <tr><td>17</td><td>The Rescue command</td><td>rescuer, rescued unit (empty = anyone), either-way flag, one-time flag</td></tr>
+    <tr><td>18</td><td>The Give or Take command</td><td>carrier, other unit, carried unit (each empty = anyone), either-way flag, one-time flag</td></tr>
+    <tr><td>19</td><td>A moving unit enters a tile; its move stops there</td><td>character, x, y (65535 = any), condition (the function gets x and y)</td></tr>
+    <tr><td>20</td><td>A character's epilogue entry, in the ending</td><td>character (empty = anyone), condition</td></tr>
+  </tbody></table>
+  <p>The tile actions of type 5: 9 visit, 11 door, 12 chest, 13 seize, 14 escape, 38 destroy (a wall or a house), 42 arrive, 55 light a torch, 58 open, 59 put a torch out. Type 5 events also drive what the map menu offers on a tile, and the game reads a chest's item from its event's call to <code>MindGetItem</code>. Action 45 (three tiles of Part 1 Chapter 7) is not identified. ${badge("confirmed","engine + scripts")}</p>
+  <h2>Flags</h2>
+  <p>The flag table works as in ${wl("event-flags")} with 128 slots instead of 96. Eight engine flags come first: <code>gf_canceled</code>, <code>gf_gameover</code>, <code>gf_complete</code> and <code>gf_reserved2</code>&ndash;<code>6</code>. <code>startup.cmb</code>'s <code>RegistGlobalFlags</code> adds 19 campaign flags: who died (Pelleas), Ike's restored memory in 4-7, the seven triangle-attack members, three battle conversations, the Black Knight's appearances in 1-11 and 3-8, the brothers' conversation in 3-3, Soren's conversation in 4-7, Yune's protection, and one reserved slot never used. A chapter registers its own flags from the top slot down. ${badge("confirmed","engine + scripts")}</p>
+  <h2>Native functions</h2>
+  <p>656 functions are built into the executable, registered by nine parts of the game (map scenes, units and the battle map, battle-map scenes, chapter results, event arrows, scripted 3D scenes, the ending, a conversation signal and a general group). 291 are new compared with Path of Radiance, 24 take a different number of arguments, and 43 are gone, several of them now written in script in <code>startup.cmb</code> (<code>WaitM</code>, <code>WaitF</code>, <code>InstantDispos</code>), which exports 511 functions in all. Vanilla scripts still pass an argument to <code>StaffRoll</code>, <code>WarRecord</code> and <code>VOICEAllStop</code>, which take none; the extra value is simply left on the stack until the function returns. Each one is described on ${wl("rd-script-functions")}. ${badge("confirmed","engine")}</p>
+  <p style="color:var(--ink-muted);font-size:13px">Open: where a Radiant Dawn save keeps the flag bits, and whether the chapter-start reset clears the chapter flags from slot 127 down as Path of Radiance's does from 95. ${badge("open","open")}</p>
+  `
+},
+
+"rd-script-functions": {
+  ns:"system", title:"Script Functions (Radiant Dawn)", dek:"Every native function a Radiant Dawn event script can call",
+  infobox:{ type:"Reference", status:"confirmed", fields:[
+    ["Natives","656, from 9 registration functions"],["Helpers","511 in startup.cmb"],
+    ["Related",`${wl("rd-event-scripts")}, ${wl("script-functions")}`]
+  ]},
+  categories:["Structure","Radiant Dawn"],
+  body:`
+  <p>Every native function Radiant Dawn's event scripts can call, grouped by the part of the game that registers it, with what it does in the US game. There are 656 natives; <code>startup.cmb</code> adds 511 helper functions written in script. ${badge("confirmed","engine")}</p>
+  <div class="callout"><p class="callout-t">Conventions</p><p><strong>Units</strong> are numeric handles (the unit's slot + 1); 0 means no unit. <strong>Forces</strong> 0-10. <strong>Difficulty</strong>: 0 Normal, 1 Hard, 2 Maniac, 3 Easy. <strong>Skipping</strong>: while the player skips an event, calls that animate apply their end state at once and sound calls are ignored. A call that suspends the script resumes it when its process ends. Descriptions of functions that Path of Radiance also has follow ${wl("script-functions")} where the two games behave the same.</p></div>
+  <h2>General (279)</h2>
+  <p>Camera focus, flags, conversations, message arguments, images (rectangles), the world map, portraits outside conversations, fades, music, sound, voices, special terrain, deployment, script threads and version switches.</p>
+  <p><code>_gi(unit, item_id)</code> — Gives an item to a unit and shows the result window (the step behind UnitGetItemShowing).</p>
+  <p><code>_gs(unit, function)</code> — Starts a process that runs the named script function for the unit (the "go script" helper); 0 if the name is unknown.</p>
+  <p><code>_intr()</code> — Runs the chapter-checkpoint save sequence and suspends the calling script until it finishes.</p>
+  <p><code>_pldone()</code> — Tests whether files queued for loading (RectPreLoad, PreLoad) are ready.</p>
+  <p><code>AddKizna(pid1, pid2, amount)</code> — Adds amount (clamped to -128..127) to the bond between two characters; 0 if either PID is unknown.</p>
+  <p><code>AddTT(x, y, type, subtype, value_1, value_2)</code> — Adds a raw entry to the map's special-terrain list.</p>
+  <p><code>AllPop()</code> — Restores the game state saved by AllPush and frees the buffer.</p>
+  <p><code>AllPush()</code> — Saves the whole game state into the temporary buffer (party data, camera, every unit, convoy, forge records and map state), then resets units, chapter flags, map state, convoy and forge records.</p>
+  <p><code>AllUnitEscape()</code> — Removes every unit of forces 0–3 from the map: carried units are dropped first, player units go to the reserve marked as escaped, all other units are deleted.</p>
+  <p><code>ArenaDump()</code> — Debug stub: does nothing in Radiant Dawn.</p>
+  <p><code>BeginFinale()</code> — Enables finale mode and its input mask for A/B/X/Y/Z/L/R/Start.</p>
+  <p><code>BGMCont(channel, duration_ms)</code> — Resumes a channel paused by BGMMute and fades it back to its remembered volume.</p>
+  <p><code>BGMFadeIn(channel, bgm_id, duration_ms)</code> — Starts a track on a music channel, fading it in from silence to full volume. If any channel is already playing this same track, nothing changes.</p>
+  <p><code>BGMFadeOut(channel, duration_ms)</code> — Fades a playing channel to silence and stops it.</p>
+  <p><code>BGMMute(channel, duration_ms)</code> — Fades a playing channel to silence and pauses it, remembering its volume and position so BGMCont can bring it back.</p>
+  <p><code>BGMPlay(channel, bgm_id)</code> — Starts a track on a music channel at full volume. If any channel is already playing this same track, nothing changes. The channel's previous track is stopped.</p>
+  <p><code>BGMPlayAlways(channel, bgm_id)</code> — Plays a track on a channel even if it is already playing; channel 0 also marks the map music as started.</p>
+  <p><code>BGMPlayVol(channel, bgm_id, volume)</code> — Starts a track on a music channel at the given volume.</p>
+  <p><code>BGMQuietOff(channel)</code> — Ends the music 'quiet' state started by BGMQuietOn, restoring the level over about a quarter of a second.</p>
+  <p><code>BGMQuietOn(channel)</code> — Starts lowering the music for a dialogue box or a reward window (the game's music 'quiet' state), over about a quarter of a second.</p>
+  <p><code>BGMResume(duration_ms)</code> — Restores the music after an event: fades the volume back and resumes the paused channels (one argument in Radiant Dawn).</p>
+  <p><code>BGMSetVol(channel, volume, duration_ms)</code> — Changes a channel's volume gradually.</p>
+  <p><code>BGMSilentOff(duration_ms)</code> — Fades the music volume group back to full.</p>
+  <p><code>BGMSilentOn(duration_ms)</code> — Fades the music volume group to silence.</p>
+  <p><code>BGMStop(channel)</code> — Stops a playing channel almost immediately (a one-millisecond fade).</p>
+  <p><code>ChapterMoviePlay(chapter)</code> — Plays the movie of a chapter and pauses the script until it ends.</p>
+  <p><code>Check()</code> — Tests whether a base-conversation event is being evaluated for availability rather than being played.</p>
+  <p><code>CheckAttackable(unit)</code> — Tests whether this unit can reach a position from which its equipped weapon can attack an eligible enemy.</p>
+  <p><code>clr(flag_name)</code> — Clears a flag.</p>
+  <p><code>ClrTT(x, y, type)</code> — Removes the map trap/tile effect of that type at (x, y) (with a 60-frame fade).</p>
+  <p><code>Comeback()</code> — Consumes the current event skip/cancel state and performs its cleanup.</p>
+  <p><code>CompleteSubChapter(route)</code> — Ends a branching chapter; route 1, 2 or 3 picks continuation state 5, 6 or 7 (others 0) and sets matching route bits in the game state.</p>
+  <p><code>CreateVMCThread(function)</code> — Runs a script function by name in a new script thread (own 256-byte stack); returns the thread handle.</p>
+  <p><code>CreateVMCThread1(function, a)</code> — CreateVMCThread passing one argument.</p>
+  <p><code>CreateVMCThread2(function, a, b)</code> — CreateVMCThread passing two arguments.</p>
+  <p><code>CreateVMCThread3(function, a, b, c)</code> — CreateVMCThread passing three arguments.</p>
+  <p><code>CreateVMCThread4(function, a, b, c, d)</code> — CreateVMCThread passing four arguments.</p>
+  <p><code>DDExtraFlagAmlitaOn()</code> — Turns on Library extra entry 0x7F (Almedha).</p>
+  <p><code>DDFlagCheck(flag)</code> — Whether a Library (dictionary.bin) entry flag DF_... is on.</p>
+  <p><code>DDFlagOff(flag)</code> — Turns a Library entry flag off.</p>
+  <p><code>DDFlagOn(flag)</code> — Turns a Library entry flag on (unlocks the entry).</p>
+  <p><code>DebugDisplayCtrl(arg0, arg1)</code> — Debug stub; returns 1.</p>
+  <p><code>DefaultDieTalk()</code> — Looks up and starts the defeated unit’s default death message when that message exists. For player or inactive units it also selects death music.</p>
+  <p><code>DefaultEscapeTalk()</code> — Looks up and starts the current acting unit’s default escape message when available.</p>
+  <p><code>Dialog(message_id)</code> — Opens a message dialog and suspends this script until the dialog process releases it.</p>
+  <p><code>Dialog2Items(choice_1, choice_2)</code> — Opens a choice dialog with 2 entries and suspends the calling script.</p>
+  <p><code>Dialog3Items(choice_1, choice_2, choice_3)</code> — Opens a choice dialog with 3 entries and suspends the calling script.</p>
+  <p><code>Dialog3ItemsWithSt(choice_1, choice_2, choice_3, state_1, state_2, state_3)</code> — Three-choice dialog where each choice has a state 0-3 (enabled, greyed...); suspends the script; read DialogResult after.</p>
+  <p><code>Dialog4Items(choice_1, choice_2, choice_3, choice_4)</code> — Opens a choice dialog with 4 entries and suspends the calling script.</p>
+  <p><code>DialogDirect(message_id)</code> — Opens a message dialog and suspends this script until the dialog process releases it.</p>
+  <p><code>DialogGetRes()</code> — Reads the last dialog result.</p>
+  <p><code>DialogResult()</code> — Reads the last dialog result.</p>
+  <p><code>DialogSetDefault(selection)</code> — Sets the default selection byte used by dialogs.</p>
+  <p><code>DialogTutorial(message_id)</code> — Opens a tutorial dialog and suspends this script until the dialog process releases it.</p>
+  <p><code>DisableSkip()</code> — Stops the player from skipping the current event until EnableSkip is called.</p>
+  <p><code>DispFreeWholeForce(force)</code> — Releases display resources for every actor in a force list.</p>
+  <p><code>DispLoadWholeForce(force)</code> — Loads display resources for every actor in a force list.</p>
+  <p><code>DispPreLoadWholeForce(force)</code> — Queues battle-animation assets for every actor in a force list.</p>
+  <p><code>DivideForce()</code> — Opens the army-splitting screen (part 3 and 4 army assignment) and suspends the script.</p>
+  <p><code>DumpUnit()</code> — Debug stub, does nothing.</p>
+  <p><code>Easy()</code> — 1 on the difficulty whose setting byte is 3 (Easy), else 0.</p>
+  <p><code>EnableSkip()</code> — Lets the player skip the current event again.</p>
+  <p><code>EndFinale()</code> — Disables finale mode and its input mask for A/B/X/Y/Z/L/R/Start.</p>
+  <p><code>ENVNoisyOff(duration_ms)</code> — Fades the ambient group back to normal.</p>
+  <p><code>ENVNoisyOn(duration_ms)</code> — Fades the ambient group louder.</p>
+  <p><code>ENVPlay(sfx, volume)</code> — Starts an ambient loop; returns its channel, -1 when skipping or invalid.</p>
+  <p><code>ENVPlay3D(sfx, x, y, height, volume)</code> — Starts a positioned ambient loop at map tile (x, y); returns its channel or -1.</p>
+  <p><code>ENVQuietOff(duration_ms)</code> — Fades the ambient group back to full.</p>
+  <p><code>ENVQuietOn(duration_ms)</code> — Fades the ambient sound group to a low volume (one argument in Radiant Dawn).</p>
+  <p><code>ENVSetVol(channel, volume, duration_ms)</code> — Fades an ambient channel to volume (0-100).</p>
+  <p><code>ENVSilentOff(duration_ms)</code> — Fades the ambient group back to full after ENVSilentOn.</p>
+  <p><code>ENVSilentOn(frames)</code> — Silences the ambient (environment) sound.</p>
+  <p><code>ENVStop(channel, duration_ms)</code> — Fades out and stops an ambient channel.</p>
+  <p><code>FaceCreate(name, fid, x, y, fade_ms, flags)</code> — Shows a portrait outside a conversation (world map scenes); x is converted to 16:9 or world-map coordinates.</p>
+  <p><code>FaceDelete(name, fade_ms)</code> — Fades a FaceCreate portrait out and deletes it.</p>
+  <p><code>FaceDeleteImm(name)</code> — Deletes a FaceCreate portrait at once.</p>
+  <p><code>FaceDeleteImmAll()</code> — Deletes every FaceCreate portrait at once.</p>
+  <p><code>FaceMove(name, x, y, duration_ms, curve)</code> — Moves a FaceCreate portrait; curve 0 linear, 1 and 2 eased.</p>
+  <p><code>FacePreLoad(fid)</code> — Preloads a portrait for FaceCreate; ignored while skipping.</p>
+  <p><code>FaceSetBright(name, brightness, duration_ms)</code> — Fades a portrait's brightness.</p>
+  <p><code>Fade(mode, duration_ms)</code> — Starts a screen transition.</p>
+  <p><code>FadeIsBlackHolding()</code> — 1 while the screen is held black.</p>
+  <p><code>FadeIsWhiteHolding()</code> — 1 while the screen is held white.</p>
+  <p><code>FE8UnitCheckExistsByPID(pid)</code> — From the imported Path of Radiance clear data, the byte recorded for that character (0 when no data was imported or the character is not in it).</p>
+  <p><code>Flash(red, green, blue, appear_ms, disappear_ms)</code> — Starts a colored screen flash.</p>
+  <p><code>FlashWait()</code> — Suspends the script while the screen flash is transitioning.</p>
+  <p><code>Focus(x, y)</code> — Moves the map camera smoothly so it looks at the centre of a tile.</p>
+  <p><code>FocusHardWait()</code> — Like FocusWait, but waits until the camera is within 0.1 tile of its target point and 1 unit of its target angles and distance.</p>
+  <p><code>FocusWait()</code> — Waits until the map camera has nearly reached its target.</p>
+  <p><code>FRAME2MSEC(frames)</code> — Converts a 60 Hz frame count to milliseconds.</p>
+  <p><code>get(flag_name)</code> — Reads a flag.</p>
+  <p><code>GetButton(pad)</code> — Controller buttons held (pad driver call +0x34).</p>
+  <p><code>GetConfig(index)</code> — Option index 0 (two bits), 0 for other indexes.</p>
+  <p><code>GetFadeType()</code> — The current screen fade state (0 none, 2 and 5 are the black-out states REventStart tests).</p>
+  <p><code>GetFrame()</code> — The frame counter.</p>
+  <p><code>GetNumDiedBrothers()</code> — Number of allied units that died on this map.</p>
+  <p><code>GetNumDiedEnemies()</code> — Number of enemy units that died on this map.</p>
+  <p><code>GetNumDiedPlayers()</code> — Number of player units that died on this map.</p>
+  <p><code>GetNumDiedThirds()</code> — Number of other-army (third party) units that died on this map.</p>
+  <p><code>GetPress(pad)</code> — Controller buttons pressed this frame (call +0x48).</p>
+  <p><code>GetRank()</code> — The difficulty byte: 0 Normal, 1 Hard, 2 Maniac, 3 Easy (Radiant Dawn's numbering).</p>
+  <p><code>GetRelease(pad)</code> — Controller buttons released this frame (call +0x4C).</p>
+  <p><code>GetRepeat(pad)</code> — Controller buttons with auto-repeat (call +0x3C).</p>
+  <p><code>GetTime()</code> — The frame counter converted to milliseconds.</p>
+  <p><code>GetTT(x, y, type)</code> — The value of the tile effect of that type at (x, y), 0 if none.</p>
+  <p><code>GetTTCount(type)</code> — Number of tile effects of a type on the map.</p>
+  <p><code>global(flag)</code> — Registers a campaign flag in the lowest free slot of the 128-slot flag table and clears its bit.</p>
+  <p><code>GMapBGMPlay()</code> — Plays the world-map music of the current chapter (FUN_800684A0) on channel 0.</p>
+  <p><code>GMapBGMStop()</code> — Fades out the world-map music (1.5 s).</p>
+  <p><code>GMapBuild(gid)</code> — Opens a world map scene.</p>
+  <p><code>GMapCurveDarkOnOff(name, on)</code> — Darkens or restores a curve.</p>
+  <p><code>GMapCurveDispOnOff(name, on)</code> — Shows or hides a curve.</p>
+  <p><code>GMapCurveDraw(name)</code> — Draws a curve progressively; GMapCurveDrawWait waits for the end.</p>
+  <p><code>GMapCurveDrawInstant(name)</code> — Draws a curve at once.</p>
+  <p><code>GMapCurveDrawWait()</code> — Suspends the script until the current world map's curves finish drawing.</p>
+  <p><code>GMapCurveEntry(name)</code> — Registers a curve (an army's route line) on the current world map.</p>
+  <p><code>GMapCurveReset(name)</code> — Erases a drawn curve.</p>
+  <p><code>GMapFin(duration)</code> — Fades the world map in.</p>
+  <p><code>GMapFlagMarkOff(name)</code> — Hides a flag marker (one argument in Radiant Dawn).</p>
+  <p><code>GMapFlagMarkOffAll()</code> — Hides every flag marker (no argument in Radiant Dawn).</p>
+  <p><code>GMapFlagMarkOn(map_id, index, x, y, style)</code> — Creates or resets a flag marker on a world-map image.</p>
+  <p><code>GMapFout(duration)</code> — Fades the world map out.</p>
+  <p><code>GMapHazeOff(name)</code> — Hides a haze overlay.</p>
+  <p><code>GMapHazeOn(name)</code> — Shows a haze overlay on the world map.</p>
+  <p><code>GMapKill(gid)</code> — Closes the world map scene.</p>
+  <p><code>GMapMove(x, y, zoom_x, zoom_y, duration, curve)</code> — Scrolls the current world map so (x, y) is centred at the given zoom; instant while the event is skipped.</p>
+  <p><code>GMapMoveOffset(dx, dy, zoom_x, zoom_y, duration, curve)</code> — Scrolls the current world map by an offset.</p>
+  <p><code>GMapPointOff(name)</code> — Hides a point marker (one argument in Radiant Dawn).</p>
+  <p><code>GMapPointOffAll()</code> — Hides every point marker (no argument in Radiant Dawn).</p>
+  <p><code>GMapPointOn(name, x, y, size, color)</code> — Shows a named point marker on the world map (Path of Radiance took 6 arguments); ignored while skipping.</p>
+  <p><code>GMapPos(x, y)</code> — Sets the current world map's scroll position.</p>
+  <p><code>GMapRegionOff(name)</code> — Hides a region overlay (one argument in Radiant Dawn).</p>
+  <p><code>GMapRegionOffAll()</code> — Hides every region overlay (no argument in Radiant Dawn).</p>
+  <p><code>GMapRegionOn(map_id, index)</code> — Turns on the selected region overlay on a world-map image.</p>
+  <p><code>GMapSetCurrentGID(gid)</code> — Selects the world map (GID_...) the GMap* natives act on.</p>
+  <p><code>Hard()</code> — 1 on Hard (difficulty 1).</p>
+  <p><code>InitializeTT()</code> — Clears the map's tile-effect table (0x803CB770).</p>
+  <p><code>InstantFocus(x, y)</code> — Points the map camera at the centre of a tile at once.</p>
+  <p><code>intplGetValue(curve, start, end, progress, total)</code> — Computes one interpolated value without starting an animation.</p>
+  <p><code>IsConversationRoom()</code> — 1 while the conversation room (E_ConversationRoom) is running.</p>
+  <p><code>IsE3Version()</code> — Tests the E3/demo-build condition in this US executable.</p>
+  <p><code>IsExtraTutoIn()</code> — Always 0 in the retail game.</p>
+  <p><code>IsFaceEnable(name)</code> — Whether that FaceCreate portrait exists.</p>
+  <p><code>isFading()</code> — Tests whether a screen fade started by Fade is still running.</p>
+  <p><code>IsFinalVersion()</code> — Always 1 in the retail game.</p>
+  <p><code>isFlash()</code> — Tests whether the screen flash is in either transition phase.</p>
+  <p><code>IsGMapFlagMarkEnable(name)</code> — Whether a flag marker is shown.</p>
+  <p><code>IsGMapPointEnable(name)</code> — Whether a point marker is shown.</p>
+  <p><code>IsGMapRegionEnable(name)</code> — Whether a region overlay is shown.</p>
+  <p><code>IsInheritFE8Data()</code> — 1 when this game imported Path of Radiance clear data (game-state bit 0x1), else 0.</p>
+  <p><code>IsJPVersion()</code> — 0 on this (US) disc.</p>
+  <p><code>IsNOAVersion()</code> — 1 on this (US, Nintendo of America) disc.</p>
+  <p><code>IsNOEVersion()</code> — 0 on this (US) disc.</p>
+  <p><code>IsPrivateViewVersion()</code> — Always 0 in the retail game (a preview-build switch).</p>
+  <p><code>IsSFXPlay(sfx)</code> — Whether the sound effect is playing (0 while skipping).</p>
+  <p><code>IsShowVersion()</code> — Always 0 in the retail game (trade-show build switch).</p>
+  <p><code>IsVOICEPlay(voice)</code> — Whether the voice clip is playing (0 while skipping).</p>
+  <p><code>isWipe()</code> — Tests whether a wipe-in or wipe-out transition is active.</p>
+  <p><code>Join(pid, value)</code> — Adds the character to the party; the second argument (new in Radiant Dawn) is passed to the join routine FUN_8010C8EC.</p>
+  <p><code>JyokyoMapCapture()</code> — Captures the status-map display and suspends the script while capture completes.</p>
+  <p><code>JyokyoMapDelete()</code> — Deletes the status-map display.</p>
+  <p><code>JyokyoMapEnemyOn()</code> — Enables enemy markers on the status map.</p>
+  <p><code>JyokyoMapHide()</code> — Hides the status-map display.</p>
+  <p><code>JyokyoMapPlayerOn()</code> — Enables player markers on the status map.</p>
+  <p><code>JyokyoMapShow()</code> — Starts the status-map display.</p>
+  <p><code>KillVMCThread(thread)</code> — Stops a thread made by CreateVMCThread*; 0 for another handle.</p>
+  <p><code>Maniac()</code> — 1 on Maniac (difficulty 2).</p>
+  <p><code>MapEnvPause(name)</code> — Pauses a map environment animation (water, flags...).</p>
+  <p><code>MapEnvResume(name)</code> — Resumes a paused map environment animation.</p>
+  <p><code>MapUpdate()</code> — Recalculates the map's occupancy, movement ranges and danger areas after units or terrain changed.</p>
+  <p><code>MessSetIntArg(index, value)</code> — Sets numbered argument index of the next message to an integer.</p>
+  <p><code>MessSetPersonNameArg(index, unit)</code> — Sets numbered argument index of the next message to the unit's name.</p>
+  <p><code>MessSetStringArg(index, text)</code> — Sets numbered argument index of the next message to a string.</p>
+  <p><code>MindGetMoney(amount)</code> — Adds gold to the party and starts a reward notification associated with the current acting unit.</p>
+  <p><code>MoviePlay(path)</code> — Plays a movie file and pauses the script until it ends.</p>
+  <p><code>MSEC2FRAME(duration_ms)</code> — Converts milliseconds to 60 Hz frames.</p>
+  <p><code>MStoF(ms)</code> — Milliseconds to 60 Hz frames.</p>
+  <p><code>NetuzoBattle(attacker, defender, event_battle)</code> — Resolves and starts a scripted combat exchange between two actors, then suspends the script for the battle process.</p>
+  <p><code>NetuzoBG(name)</code> — Picks the scripted battle's background.</p>
+  <p><code>NetuzoDisableBGM()</code> — Keeps the scripted battle from changing the music.</p>
+  <p><code>NetuzoDisableFlatter()</code> — Turns off a flag (0x803C8E42) of the scripted battle.</p>
+  <p><code>NetuzoInit()</code> — Clears all 32 scripted-strike override slots and resets the scripted-battle counters.</p>
+  <p><code>NetuzoSet(slot, outcome, effect)</code> — Overrides one scripted strike of the next NetuzoBattle.</p>
+  <p><code>NetuzoSetD(slot, outcome, effect, damage)</code> — Like NetuzoSet for one scripted strike of a NetuzoBattle, with a forced damage value (12345 = none).</p>
+  <p><code>NetuzoSkill(on)</code> — Lets skills activate in the scripted battle.</p>
+  <p><code>NetuzoWeapon(slot, iid)</code> — Sets the weapon of a side in the scripted battle; 0 if the item is unknown.</p>
+  <p><code>NetuzoWeather(weather)</code> — Sets the scripted battle's weather.</p>
+  <p><code>Normal()</code> — 1 on Normal (difficulty 0) only; Radiant Dawn has a separate Easy().</p>
+  <p><code>PadResetMask(buttons)</code> — Removes buttons from the input mask.</p>
+  <p><code>PadSetMask(buttons)</code> — Adds buttons to the input mask used by event/tutorial control.</p>
+  <p><code>ProcExists(process_name)</code> — Tests whether an engine process with a given name is running.</p>
+  <p><code>ProcKill(process_name)</code> — Stops every engine process with a given name.</p>
+  <p><code>RectAdjustBoundary(rect_id, alignment)</code> — Aligns a rectangle’s source image inside the 608 × 448 layout area.</p>
+  <p><code>RectBuild(rect_id)</code> — Creates an image (rectangle) from its RID definition, attached to the current event. RID_GMAP_... names create a world-map view.</p>
+  <p><code>RectFadeIn(rect_id, frames)</code> — Fades in a rectangle.</p>
+  <p><code>RectFadeOut(rect_id, frames)</code> — Fades out a rectangle.</p>
+  <p><code>RectFadeOutDelete(rect_id, frames)</code> — Fades out and then deletes a rectangle.</p>
+  <p><code>RectGet(rect_id, property)</code> — Reads a rectangle property and truncates it to an integer.</p>
+  <p><code>RectGetDepth(rect)</code> — A rectangle's drawing depth, -1 if it does not exist.</p>
+  <p><code>RectKill(rect_id)</code> — Removes an image created by RectBuild or RectLeave.</p>
+  <p><code>RectKillAll()</code> — Deletes every rectangle (UI picture) the event created.</p>
+  <p><code>RectLeave(rect_id)</code> — Creates a rectangle/world-map image without attaching it to the current event as its parent.</p>
+  <p><code>RectMove(rect_id, focus_x, focus_y, scale_percent, frames, curve)</code> — Animates a rectangle/world-map image so a source point is centered at (304, 240) at the requested scale.</p>
+  <p><code>RectMoveOffset(rect_id, x, y, frames, curve)</code> — Animates a rectangle/world-map image to an explicit offset and restores its scale to 100%.</p>
+  <p><code>RectPreLoad(rect_id)</code> — Starts loading the image files of a RID definition, so a later RectBuild shows it without delay.</p>
+  <p><code>RectSet(rect_id, property, value)</code> — Sets a rectangle property immediately.</p>
+  <p><code>RectSetCurve(rect_id, property, curve, start, end, frames)</code> — Animates one rectangle property between two values.</p>
+  <p><code>RectSetDepth(rect, depth)</code> — Sets a rectangle's drawing depth; 0 if the rectangle does not exist.</p>
+  <p><code>RectSetPos(rect_id, x, y)</code> — Sets a rectangle or world-map image’s position immediately.</p>
+  <p><code>regist(flag)</code> — Registers a chapter flag in the highest free slot of the 128-slot flag table, leaving its bit as it is.</p>
+  <p><code>RemoveBackdrop()</code> — Removes the backdrop process.</p>
+  <p><code>RepairAllWeaponsWholeForce(force)</code> — Restores every weapon of a force's units to its full uses.</p>
+  <p><code>report(text)</code> — Writes text to the game’s debug-report output.</p>
+  <p><code>ResumeEvent()</code> — Continues the event frozen by SuspendEvent.</p>
+  <p><code>SallyAddByGroup(group)</code> — Adds the tiles of a group to the preparation screen's deployment tiles.</p>
+  <p><code>SallyAddByGroupRank(group)</code> — Adds deployment slots from a group, for the current difficulty.</p>
+  <p><code>SallyAddByPos(x, y)</code> — Appends a deployment-selection position.</p>
+  <p><code>SallyGetSurplus()</code> — Reads the deployment surplus recorded when the deployment-selection flow finishes.</p>
+  <p><code>SallySetByGroup(group)</code> — Replaces the preparation screen's deployment tiles with the tiles of a group.</p>
+  <p><code>SallySetByGroupRank(group)</code> — Sets the deployment slots from a deployment group, picking the group's entry for the current difficulty.</p>
+  <p><code>SallySetByPos(x, y)</code> — Clears the deployment-selection position list, then adds this position.</p>
+  <p><code>SaveMenu()</code> — Opens the save menu and suspends the script.</p>
+  <p><code>SelectAuxiliary(group)</code> — Starts the auxiliary-unit selection flow for a deployment group and suspends the calling script.</p>
+  <p><code>SelectAuxiliaryRank(group)</code> — Opens the auxiliary-unit selection for a group's entry on the current difficulty and suspends the script.</p>
+  <p><code>SelectSally()</code> — Opens the unit-selection (deployment) screen and suspends the script until it closes.</p>
+  <p><code>SelectSallyEx(mode)</code> — Opens the unit-selection screen in a mode and suspends the script.</p>
+  <p><code>set(flag_name)</code> — Sets a flag.</p>
+  <p><code>SetAvailableGrandOpening()</code> — Sets bit 0x20 of the system save state (unlocks the full opening movie).</p>
+  <p><code>SetBomber(x, y, value)</code> — Adds a bomber tile effect (type 0x0F).</p>
+  <p><code>SetClimb(x, y)</code> — Adds a climbable tile effect (type 0x0B: ladders/ropes).</p>
+  <p><code>SetConfig(index, value)</code> — Sets option index 0 (two bits of the play settings); other indexes do nothing.</p>
+  <p><code>SetFragile(x, y, hp)</code> — Adds a breakable terrain entry with the requested HP.</p>
+  <p><code>SetLava(x, y, a, b, c)</code> — Adds a lava tile effect (type 0x0E) with three parameters.</p>
+  <p><code>SetPit(x, y)</code> — Adds a pit terrain entry at the given tile.</p>
+  <p><code>SetPreSallyFlag(on)</code> — Sets or clears game-state bit 0x40 (the pre-deployment flag); 0 when no game state is loaded.</p>
+  <p><code>SetRock(x, y, direction, path_index)</code> — Adds a rolling-rock terrain entry connected to a registered motion path.</p>
+  <p><code>SetShooter(x, y, facing, iid)</code> — Places a ballista on a tile.</p>
+  <p><code>SetWhiteBackdrop()</code> — Starts the solid-white backdrop process.</p>
+  <p><code>SFXPlay(sfx_id)</code> — Plays a sound effect once at full volume.</p>
+  <p><code>SFXPlay3D(sfx, x, y, height)</code> — Plays a positioned sound effect at map tile (x, y) (height below -999 = the ground height there).</p>
+  <p><code>SFXStop(sfx)</code> — Stops a sound effect.</p>
+  <p><code>SuspendEvent()</code> — Freezes the running event so another script (a tutorial) can run, saving the event's state.</p>
+  <p><code>TalkEvent(message_id)</code> — Opens the conversation window with a message and pauses the script until the conversation ends or reaches a $H hold point.</p>
+  <p><code>TalkEventDirect(message_id)</code> — Starts the supplied event message, or passes it to the existing conversation process.</p>
+  <p><code>TalkExist()</code> — Tests whether a conversation is still running.</p>
+  <p><code>TalkLeave(message_id)</code> — Plays a message in a talk process that removes its speakers when done.</p>
+  <p><code>TalkResume()</code> — Continues a conversation stopped at a $H hold point and pauses the script again until it ends or reaches the next hold.</p>
+  <p><code>td(message_id)</code> — Opens a tutorial dialog with a message and pauses the script until it closes.</p>
+  <p><code>tde()</code> — Sets the 'event suspended' state flag again after a tutorial dialog cleared it (the last step of TutorialDialog).</p>
+  <p><code>TerInfoFadeIn()</code> — Fades the terrain-info window in.</p>
+  <p><code>TerInfoFadeOut()</code> — Fades the terrain-info window out.</p>
+  <p><code>TerInfoHide()</code> — Hides the terrain-info window.</p>
+  <p><code>TerInfoShow()</code> — Shows the terrain-info window.</p>
+  <p><code>TimeiShow(x, y, a, message_id, b, c, d)</code> — Shows a time/place caption (seven arguments in Radiant Dawn: Path of Radiance took six).</p>
+  <p><code>TimeiShowHold(caption_id, x, y, message_id, appear_ms)</code> — Shows a location-name caption that stays visible until explicitly released.</p>
+  <p><code>TimeiShowHoldOff(caption_id, disappear_ms)</code> — Starts disappearance of the held caption with this ID.</p>
+  <p><code>TimeiShowHoldOffAll(disappear_ms)</code> — Starts disappearance of every held caption.</p>
+  <p><code>TstConversationFlag(name)</code> — Whether a conversation flag of the system save is set (conversation room unlocks).</p>
+  <p><code>TutorialResume()</code> — Returns to the tutorial menu after a tutorial ends (the last step of ComebackFunc).</p>
+  <p><code>TutShowKari(x, y, message_id, fade_ms, hold_ms)</code> — Shows a temporary tutorial caption with matching appearance and disappearance durations.</p>
+  <p><code>UnitDispReload()</code> — Unloads and reloads the map models of every unit in forces 0–3, then refreshes their positions.</p>
+  <p><code>UnitEscape(unit)</code> — Removes the unit from the map as escaped (one argument in Radiant Dawn) and refreshes the map.</p>
+  <p><code>UnitFocus(unit)</code> — Moves the map camera smoothly towards a unit's tile.</p>
+  <p><code>UnitResetStatus(unit)</code> — Clears the unit's temporary status bits and status effects and recomputes its stats and HP display.</p>
+  <p><code>UnitResetStatusWholeForce(force)</code> — UnitResetStatus on every unit of a force.</p>
+  <p><code>UnitsInitialize()</code> — Removes every unit: all forces are emptied and all unit slots freed.</p>
+  <p><code>UnitsPop()</code> — Restores the units saved by UnitsPush, refreshes the map and reloads the unit models. Frees the buffer.</p>
+  <p><code>UnitsPopWithoutMap()</code> — Same as UnitsPop, without the map refresh.</p>
+  <p><code>UnitsPush()</code> — Saves every unit (and the forge records) into a temporary buffer, then empties the forces.</p>
+  <p><code>UnitsPush_Uninitialize()</code> — Saves every unit (and the forge records) into the temporary buffer, leaving the units in place.</p>
+  <p><code>VOICEAllStop()</code> — Stops every voice clip (registered with no argument; vanilla passes a fade time that the handler reads anyway).</p>
+  <p><code>VOICEPlay(voice)</code> — Plays a voice clip; returns its channel or -1.</p>
+  <p><code>VOICEStop(voice)</code> — Stops a voice clip.</p>
+  <p><code>WaitPressAnyKey()</code> — Suspends the calling script until the input-wait process completes after a key press.</p>
+  <p><code>Warning(text)</code> — Debug message, ignored in the retail game; returns 1.</p>
+  <p><code>WipeEnd()</code> — Resets the screen-wipe state to idle.</p>
+  <p><code>WipeIn(duration_ms)</code> — Starts a screen wipe in.</p>
+  <p><code>WipeOut(duration_ms)</code> — Starts a screen wipe out.</p>
+  <p><code>WipeWait()</code> — Suspends the script while a wipe-in or wipe-out transition is active.</p>
+  <h2>Map scenes (168)</h2>
+  <p>Moving, turning and animating units on the map, deployment groups, doors, roofs, torches and other map objects, light, weather, effects, cameras and full-screen post effects.</p>
+  <p><code>_dispos(group, mode)</code> — Deploys a deployment group with the animated deployment process.</p>
+  <p><code>_idispos(group, mode)</code> — Deploys a deployment group at once (no animation).</p>
+  <p><code>BuildDestruction(x, y)</code> — Destroys the village or house at a tile: the camera moves to it, the ruin animation plays and the script waits for it.</p>
+  <p><code>BuildInstAnim(x, y, mode)</code> — Plays or sets the two-state animation of an animated map prop at a tile.</p>
+  <p><code>BuildInstExtinction(x, y, duration_ms)</code> — Puts out the torch at (x, y).</p>
+  <p><code>BuildInstGetX(index, kind)</code> — X of a map object (the first argument back if not found).</p>
+  <p><code>BuildInstGetY(index, kind)</code> — Y of a map object (the second argument back if not found).</p>
+  <p><code>BuildInstHide(x, y)</code> — Hides a hideable map prop at a tile.</p>
+  <p><code>BuildInstReject(x, y, on)</code> — Blocks or unblocks the map object at (x, y) (objects with flag 0x80000: barricades, walls).</p>
+  <p><code>BuildInstRejectByName(name, on)</code> — Blocks or unblocks every map object of that name; returns how many.</p>
+  <p><code>BuildInstShow(x, y)</code> — Shows a hideable map prop at a tile.</p>
+  <p><code>BuildInstTorch(x, y, a, duration_ms)</code> — Lights the torch at (x, y), redrawing the fog; suspends the script during the animation.</p>
+  <p><code>ClearEventCamera()</code> — Releases the event camera.</p>
+  <p><code>CopyMapCamera()</code> — Saves the map camera's angles and distance so PastMapCamera can return to them.</p>
+  <p><code>CreateEventCamera()</code> — Creates an empty event-camera path. Fill it with SetEventCameraAt and SetEventCameraRot keyframes, then play it with StartEventCamera.</p>
+  <p><code>DeleteEventCamera()</code> — Removes the event camera and gives control back to the normal map camera.</p>
+  <p><code>DisposAuxiliary(group)</code> — Deploys the units the player picked for the second team (SelectAuxiliary) onto the group's tiles and moves them from the reserve to the player force.</p>
+  <p><code>DisposFree(file)</code> — Frees a loaded deployment file.</p>
+  <p><code>DisposGetCount()</code> — Number of units in the last deployment.</p>
+  <p><code>DisposGetGroupCenter(group, out_x, out_y)</code> — Computes the center of a named deployment group and writes its coordinates into two variables.</p>
+  <p><code>DisposGetRankGroup(group)</code> — The deployment group's entry name for the current difficulty.</p>
+  <p><code>DisposGetUnit(index)</code> — Unit handle of the index-th unit of the last deployment.</p>
+  <p><code>DisposLoad(file)</code> — Loads a deployment file (dispos_&lt;difficulty&gt;.bin).</p>
+  <p><code>DoorClose(x, y)</code> — Closes the door at a tile with its animation and waits for it.</p>
+  <p><code>DoorOpen(x, y)</code> — Opens the door at a tile with its animation and waits for it. The door stops blocking movement.</p>
+  <p><code>EffectCamera(effect, distance)</code> — Attaches an effect in front of the camera.</p>
+  <p><code>EffectCycle(effect, on)</code> — Turns an effect's cycling flag (0x2000) on or off.</p>
+  <p><code>EffectDelete(effect)</code> — Deletes an effect (-1: every event effect).</p>
+  <p><code>EffectDepth(effect, depth)</code> — Sets an effect's drawing depth.</p>
+  <p><code>EffectFadeOut(effect, duration_ms)</code> — Fades an effect out.</p>
+  <p><code>EffectLoop(effect, on)</code> — Makes an effect loop or play once.</p>
+  <p><code>EffectPlay(eid)</code> — Plays an effect (EID_...) and suspends the script one frame; returns its handle (one argument in Radiant Dawn); 0 while skipping.</p>
+  <p><code>EffectPlay2D(eid)</code> — Plays a screen-space effect; returns its handle.</p>
+  <p><code>EffectPos(effect, x, y)</code> — Moves an effect to map tile (x, y) at ground height.</p>
+  <p><code>EffectPreLoad(eid)</code> — Preloads an effect; ignored while skipping.</p>
+  <p><code>EffectPriority(effect, priority)</code> — Sets an effect's drawing priority (-1 = default 0x98).</p>
+  <p><code>EffectRotate(effect, x, y, z)</code> — Rotates an effect (degrees).</p>
+  <p><code>EffectScale(effect, percent)</code> — Scales an effect.</p>
+  <p><code>EffectSpeed(effect, speed)</code> — Sets an effect's playback speed.</p>
+  <p><code>EffectUnit(effect, unit, a, bone)</code> — Attaches an effect to a unit, at a bone or node of its model when bone names one.</p>
+  <p><code>EffectXYZ(effect, x, y, z)</code> — Moves an effect to a 3D position (z above the ground).</p>
+  <p><code>EventQuake(strength, period_ms, cycles)</code> — Starts a repeating camera shake.</p>
+  <p><code>EventQuakeStop()</code> — Requests the active camera shake to stop.</p>
+  <p><code>FileCameraPlay(name, x, y, z)</code> — Plays a camera animation file from map position (x, y) and height z.</p>
+  <p><code>GetFragileHP(x, y)</code> — Current HP of the breakable object at (x, y) (tile effect type 4), 0 if none.</p>
+  <p><code>GetFragileMaxHP(x, y)</code> — Maximum HP of the breakable object at (x, y).</p>
+  <p><code>GetFukiPosX()</code> — Reads the X coordinate of the active tutorial speech-bubble display.</p>
+  <p><code>GetFukiPosY()</code> — Reads the Y coordinate of the active tutorial speech-bubble display.</p>
+  <p><code>GetMapHeight(x, y)</code> — Samples the alternate terrain-surface height at the supplied map coordinates.</p>
+  <p><code>GetMapHeightBase(x, y)</code> — Samples the base terrain height at the supplied map coordinates.</p>
+  <p><code>GetWeather()</code> — The current weather byte.</p>
+  <p><code>HideMapCursor()</code> — Removes every map cursor shown by ShowMapCursor.</p>
+  <p><code>HidePoint(x, y)</code> — Removes the marker at (x, y).</p>
+  <p><code>HidePrim2D(hidden)</code> — Starts or ends the scene process that hides 2D primitives.</p>
+  <p><code>InstantDoorClose(x, y)</code> — Closes the door at a tile without animation and restores its hit points.</p>
+  <p><code>InstantDoorOpen(x, y)</code> — Opens the door at a tile without animation.</p>
+  <p><code>InstantPastMapCamera()</code> — Restores the angles and distance saved by CopyMapCamera at once.</p>
+  <p><code>InstantRoofClose(x, y)</code> — Puts back the roof at a tile without animation.</p>
+  <p><code>InstantRoofOpen(x, y)</code> — Lifts the roof at a tile without animation.</p>
+  <p><code>InstantSetMapCamera(yaw, pitch, distance)</code> — Sets the map camera's angles and distance at once.</p>
+  <p><code>InstantUnitTransform(unit, transformed)</code> — Changes a unit to the requested transformed/untransformed state immediately and refreshes its display.</p>
+  <p><code>IsDispos()</code> — 1 when the deployment list is empty (no deployment pending).</p>
+  <p><code>IsEffect(effect)</code> — 1 while the effect (or any event effect, for -1) exists; 0 while skipping.</p>
+  <p><code>IsEventCamera()</code> — 1 while the event camera is active.</p>
+  <p><code>IsFileCamera()</code> — 1 while a FileCameraPlay animation runs (skipping stops it).</p>
+  <p><code>IsUnitMove(unit)</code> — 1 while the unit (or any unit, for -1) is moving.</p>
+  <p><code>MapFree()</code> — Frees the current map and suspends the script until it is released.</p>
+  <p><code>MapHide(duration_ms)</code> — Fades the map out (hides it), suspending the script during the fade; instant when 0 or skipping.</p>
+  <p><code>MapLoad(map_name)</code> — Loads a map by name and makes it the current map.</p>
+  <p><code>MapReload()</code> — Reloads the current chapter's map, reapplies its recorded map state (opened doors, visited villages, ...) and points the camera at the saved cursor tile.</p>
+  <p><code>MapShow(duration_ms)</code> — Fades the map back in.</p>
+  <p><code>PastMapCamera()</code> — Turns the camera smoothly back to the angles and distance saved by CopyMapCamera.</p>
+  <p><code>PostEffectColor(effect, r, g, b)</code> — Sets a post effect's colour.</p>
+  <p><code>PostEffectStart(name, a, value, duration_ms)</code> — Starts a full-screen post effect (blur, colour filter...); returns its handle.</p>
+  <p><code>PostEffectStop(effect, duration_ms)</code> — Fades a post effect out (-1: every one).</p>
+  <p><code>RoofClose(x, y)</code> — Puts back the roof at a tile with its animation and waits for it.</p>
+  <p><code>RoofOpen(x, y)</code> — Lifts the roof at a tile with its animation, revealing the building's inside, and waits for it.</p>
+  <p><code>SetAmbient(light, r, g, b)</code> — Sets the colour of ambient light index light and suspends the script one frame (an index argument is new in Radiant Dawn).</p>
+  <p><code>SetCameraDisp(arg0)</code> — Debug stub; returns 0.</p>
+  <p><code>SetCamHold(on)</code> — Holds the map camera in place (flag 0x08 of 0x804CB838).</p>
+  <p><code>SetCamSuspend(enabled)</code> — Sets the camera-suspension flag for map scenes.</p>
+  <p><code>SetCircle(enabled)</code> — Enables or disables the scene’s unit-circle display setting.</p>
+  <p><code>SetDiffuse(light, r, g, b)</code> — Sets the colour of diffuse light index light and suspends the script one frame.</p>
+  <p><code>SetEventBattle(enabled)</code> — Selects the special event presentation branch when the next battle animation is initialized.</p>
+  <p><code>SetEventCameraAt(time_ms, x, y, height)</code> — Adds a keyframe for the point the event camera looks at.</p>
+  <p><code>SetEventCameraCurve(mode, curve)</code> — Sets the event camera easing curve.</p>
+  <p><code>SetEventCameraEye(mode, x, y, z)</code> — Points the event camera eye at a position (scaled by the event camera unit).</p>
+  <p><code>SetEventCameraPrec(precision)</code> — Sets the divisor applied to later SetEventCameraAt coordinates, allowing positions finer than a tile.</p>
+  <p><code>SetEventCameraRot(time_ms, yaw, pitch, distance)</code> — Adds a keyframe for the event camera's angles and distance.</p>
+  <p><code>SetEventCameraUnit(mode, unit)</code> — Makes the event camera follow a unit (-1: none).</p>
+  <p><code>SetFog(fog_type, start_distance, end_distance, red, green, blue)</code> — Sets the map’s rendering fog and refreshes its render state.</p>
+  <p><code>SetGrid(percent)</code> — Sets the map-grid display intensity or restores the value saved when scene settings were created.</p>
+  <p><code>SetLisner(x, y, z)</code> — Moves the sound listener (-1 keeps a coordinate).</p>
+  <p><code>SetMapCamera(yaw, pitch, distance)</code> — Turns the map camera smoothly to new angles and distance; the point it looks at does not change.</p>
+  <p><code>SetMapCameraWeight(weight)</code> — Sets the map camera's smoothing weight.</p>
+  <p><code>SetMapLamp(on)</code> — Turns every lamp object of the map (flag 0x10000000) on or off and relights the map.</p>
+  <p><code>SetOnBtFocus(enabled)</code> — Enables or disables automatic battle-focus behavior.</p>
+  <p><code>SetOutLink(enabled)</code> — Enables or disables the outer-link portion of the map-link grid and rebuilds that grid.</p>
+  <p><code>SetPullCursor(enabled)</code> — Enables or disables automatic cursor pulling.</p>
+  <p><code>SetRoofEnable(x, y, enabled)</code> — Changes the enabled state of the roof section found at the supplied map position and refreshes the map.</p>
+  <p><code>SetSight(radius)</code> — Sets the fog-of-war vision and redraws the fog (one argument in Radiant Dawn).</p>
+  <p><code>SetTerrData(x, y, terrain)</code> — Overrides tile (x, y)'s terrain (tile effect 0x11) and refreshes the map; an empty name removes it.</p>
+  <p><code>SetTerrName(x, y, name)</code> — Overrides the terrain name shown for tile (x, y) (tile effect 0x10); an empty name removes it.</p>
+  <p><code>SetTimeScale(percent)</code> — Slows down or speeds up the game clock (100 = normal).</p>
+  <p><code>SetUnitAlways(on)</code> — Turns the "units always shown" event flag on or off (0x804CB740).</p>
+  <p><code>SetUnitGauge(on)</code> — Shows or hides the map's unit HP gauges during events.</p>
+  <p><code>SetUnitIcon(on)</code> — Shows or hides the map's unit icons during events.</p>
+  <p><code>SetUnitMask(on)</code> — Turns the event unit mask flag on or off (0x804CB73F).</p>
+  <p><code>SetWeather(weather)</code> — Changes the map weather byte and refreshes weather, lighting and visibility rendering.</p>
+  <p><code>SetWeatherAlpha(a, b, duration_ms)</code> — Fades the weather effect's opacity.</p>
+  <p><code>ShowHealWindow(unit, amount)</code> — Shows the unit's HP window healing by amount and suspends the script until it closes.</p>
+  <p><code>ShowMapCursor(x, y)</code> — Shows the blinking map cursor on a tile.</p>
+  <p><code>ShowPoint(x, y, r, g, b)</code> — Shows a coloured marker on map tile (x, y); ignored while skipping.</p>
+  <p><code>StartEventCamera(easing)</code> — Plays the event-camera path. Keyframes are joined with a smooth curve; if the path has no keyframe at time 0, the camera's current state is added as the first one.</p>
+  <p><code>TBoxOpen(x, y)</code> — Plays the opening of the chest at a tile and waits for it, and marks the chest as opened.</p>
+  <p><code>UnitAngleRotate(unit, angle, frames)</code> — Turns the unit to an angle in degrees.</p>
+  <p><code>UnitAnim(unit, animation)</code> — Loads and plays a unit animation with the default blend length of 16, replacing an existing scripted animation for that unit.</p>
+  <p><code>UnitAnimEx(unit, animation, speed, blend_frames, flags)</code> — Plays a map animation on the unit (animation 0 = its idle; ids from 100); speed in percent (-1 = 100).</p>
+  <p><code>UnitAnimPreLoad(unit, animation)</code> — Preloads one of the unit's map animations.</p>
+  <p><code>UnitChildSend(unit, target)</code> — Unit gives the unit it carries to target (Give).</p>
+  <p><code>UnitDead(unit)</code> — Plays the death fade-out of a unit's map model (with its sound) and waits for it.</p>
+  <p><code>UnitDropOff(unit, direction)</code> — Unit drops the unit it carries on the side given by direction (1 left, 2 right, 4 down, 8 up; negative: the nearest free tile).</p>
+  <p><code>UnitFadeIn()</code> — Makes later scripted movement fade units in (they appear as they move).</p>
+  <p><code>UnitFadeOff()</code> — Ends UnitFadeIn/UnitFadeOut: later movement shows units normally.</p>
+  <p><code>UnitFadeOut()</code> — Makes later scripted movement fade units out (they disappear as they move).</p>
+  <p><code>UnitFocusOff()</code> — Stops the camera from following units during later scripted movement.</p>
+  <p><code>UnitFocusOn()</code> — Makes the camera follow units during later scripted movement (the default).</p>
+  <p><code>UnitGetDir(unit)</code> — The unit's facing direction.</p>
+  <p><code>UnitGetFumble(unit)</code> — Like UnitGetStrike for the animation's miss frame.</p>
+  <p><code>UnitGetStrike(unit)</code> — 1 when the unit's current animation has reached its hit frame (or the unit is not moving); 1 while skipping.</p>
+  <p><code>UnitHide(unit)</code> — Hides the unit's map model.</p>
+  <p><code>UnitLooksChange(unit, on)</code> — Gives or removes the SID_LOOKSCHANGE skill (alternate look) and reloads the unit's model.</p>
+  <p><code>UnitMoveDelete(unit)</code> — Stops the unit's scripted movement (-1: every unit's).</p>
+  <p><code>UnitMoveDir(unit, path)</code> — Walks a unit along a list of steps, ignoring terrain and other units.</p>
+  <p><code>UnitMovePos(unit, x, y)</code> — Walks a unit to a tile along a real path. If the tile is taken, the nearest free tile the unit can reach is used.</p>
+  <p><code>UnitMoveRoute(unit, route)</code> — Walks the unit along a route written as a string of coordinates; teleports it to the end while skipping.</p>
+  <p><code>UnitPosRotate(unit, x, y, frames)</code> — Turns the unit to face map position (x, y) (frames &lt; 0: speed from the angle).</p>
+  <p><code>UnitPush(unit, direction, tiles)</code> — Slides the unit tiles squares; direction 1 left, 2 right, 4 down, 8 up.</p>
+  <p><code>UnitReplace(unit_a, unit_b)</code> — Swaps the positions and facings of two units.</p>
+  <p><code>UnitRescue(unit, target)</code> — Unit picks target up (rescue), animated unless skipping; both must be free (not carrying nor carried).</p>
+  <p><code>UnitRotate(unit, direction, duration_ms)</code> — Turns a unit to face a direction.</p>
+  <p><code>UnitRotateAnim(on)</code> — Units play a turning animation when scripted rotations turn them.</p>
+  <p><code>UnitRunAway(unit)</code> — Plays the unit fleeing off the map; while skipping it is removed at once.</p>
+  <p><code>UnitSetAID(unit, aid)</code> — Replaces the unit's map model by an animation ID (AID_...; "" restores its own); 0 if the AID is unknown.</p>
+  <p><code>UnitSetAnim(unit, animation)</code> — Overrides the unit's map animation by name ("" restores it).</p>
+  <p><code>UnitSetColor(unit, r, g, b, a)</code> — Tints the unit's map model.</p>
+  <p><code>UnitSetFixed(unit, enabled)</code> — Sets or clears the unit’s fixed-state flag.</p>
+  <p><code>UnitSetHand(unit, on)</code> — Turns the unit model's hand flag (0x800) on or off.</p>
+  <p><code>UnitSetOffset(unit, x, y, z)</code> — Offsets the unit's map model (in hundredths of a tile).</p>
+  <p><code>UnitSetPos(unit, x, y)</code> — Places a unit on a tile at once. If the tile is taken, the nearest free tile is used.</p>
+  <p><code>UnitSetScale(unit, scale)</code> — Sets the unit model's scale byte (+0xC6).</p>
+  <p><code>UnitSetScaleAll(scale)</code> — Default model scale for event units.</p>
+  <p><code>UnitShow(unit)</code> — Shows the unit's map model again.</p>
+  <p><code>UnitTackle(acting_unit, target_unit, distance)</code> — Moves the target away from the acting unit and starts shove/smite motion.</p>
+  <p><code>UnitTransform(unit, transformed)</code> — Changes a unit to the requested transformed/untransformed state with its transformation animation.</p>
+  <p><code>UnitWaitAnim(animation)</code> — Animation units play after next scripted moves ("" = default).</p>
+  <p><code>UnitWalkAnim(animation)</code> — Walking animation for next scripted moves ("" = default).</p>
+  <p><code>UnitWalkDir(direction)</code> — Sets the direction bits used by subsequent scene walking.</p>
+  <p><code>UnitWalkGround(on)</code> — Next scripted moves follow the ground height (walk flag 0x1000).</p>
+  <p><code>UnitWalkHold(on)</code> — Next scripted moves keep units in place facing the move (walk flag 0x100).</p>
+  <p><code>UnitWalkManual(on)</code> — Next scripted moves turn automatically (0) or keep the set facing (1) (walk flag 0x80, inverted).</p>
+  <p><code>UnitWalkPush(on)</code> — Next scripted moves push other units out of the way (walk flag 0x200).</p>
+  <p><code>UnitWalkReverse(on)</code> — Next scripted moves walk backwards (walk flag 0x800).</p>
+  <p><code>UnitWalkSpeed(speed)</code> — Walking speed for next scripted moves.</p>
+  <p><code>UnitWalkTime(frames)</code> — Duration of next scripted moves.</p>
+  <p><code>UnitWarpOut(unit)</code> — Plays the Warp effect on a unit and waits for it.</p>
+  <p><code>VisitIn(unit, x, y)</code> — Does nothing (kept for the visit-event scripts).</p>
+  <p><code>VisitOut(unit, x, y)</code> — Closes the village at a tile after a visit: plays its closing animation, waits for it and marks the village as visited.</p>
+  <h2>Units and the battle map (126)</h2>
+  <p>Reading and changing units, their items, skills, teams and AI flags, the per-army convoys, and battle-map values such as the turn, the score and the objective lines.</p>
+  <p><code>AddToCurrentWarehouseWhatever(iid)</code> — Adds a new item to the current army's convoy; 0 when there is none or the item cannot be stored.</p>
+  <p><code>AddToWarehouseWhatever(convoy, iid)</code> — Adds a new item to convoy 1-5.</p>
+  <p><code>BMAddForgeLevel(weapon_type)</code> — Raises the forge experience of weapon type 0-5 by 50 (capped at 4950).</p>
+  <p><code>BMGetChapter()</code> — Returns the current chapter number.</p>
+  <p><code>BMGetMoney()</code> — Returns the party's gold.</p>
+  <p><code>BMGetPhase()</code> — Returns whose phase it is.</p>
+  <p><code>BMGetScore()</code> — The battle-map score.</p>
+  <p><code>BMGetTanto(index)</code> — Byte index of the battle-map table at 0x803CAB4C ("tanto": in charge); meaning of the entries not checked.</p>
+  <p><code>BMGetTurn()</code> — Returns the turn number.</p>
+  <p><code>BMGetValue(field_index)</code> — Reads a signed 16-bit field from battle-map state.</p>
+  <p><code>BMSetChapter(chapter)</code> — Sets the battle map's chapter number byte.</p>
+  <p><code>BMSetLoseTerm(line, message_id)</code> — Sets defeat-condition line number line of the map's objective panel (vanilla counts lines with a variable: BMSetLoseTerm(n++, ...)).</p>
+  <p><code>BMSetMoney(value)</code> — Sets the party's gold.</p>
+  <p><code>BMSetPhase(force)</code> — Overwrites the current-phase value.</p>
+  <p><code>BMSetScore(value)</code> — Sets the battle-map score.</p>
+  <p><code>BMSetTanto(player_control, enemy_control, force_2_control, force_3_control)</code> — Sets who controls each of the four active map forces.</p>
+  <p><code>BMSetTurn(turn)</code> — Overwrites the turn counter.</p>
+  <p><code>BMSetValue(field_index, value)</code> — Writes a 16-bit field in battle-map state.</p>
+  <p><code>BMSetWinTerm(line, message_id)</code> — Sets victory-condition line number line (0, 1, ...) of the map's objective panel.</p>
+  <p><code>CpClrNoMoveFlag(unit)</code> — Clears the two no-move control bits from a unit’s AI state.</p>
+  <p><code>DelItemsFromCurrentWarehouse(iid)</code> — Deletes every copy of the item from the current army's convoy; 1 if any was deleted.</p>
+  <p><code>DelItemsFromForce(force, iid)</code> — Deletes every copy of the item from the units of a force; 1 if any was deleted.</p>
+  <p><code>EventGetX()</code> — Returns the X coordinate of the tile that started the current location event (visit, area, chest, door).</p>
+  <p><code>EventGetY()</code> — Returns the Y coordinate of the tile that started the current location event.</p>
+  <p><code>ForceGetCount(force)</code> — Number of units in force 0-10.</p>
+  <p><code>ForceGetFirst(force)</code> — First unit of force 0-10 (Radiant Dawn has eleven force lists), to walk it with UnitGetNext; 0 if empty or out of range.</p>
+  <p><code>ForceUnitGetByPID(force, pid)</code> — The unit with this PID in the given force's list, 0 if none.</p>
+  <p><code>GameGetRound()</code> — Byte +0x34 of the game state (FUN_8024BCA0); by its name the playthrough round, not checked in game.</p>
+  <p><code>GCST()</code> — Returns the event system's state flags.</p>
+  <p><code>GetBattleType()</code> — Returns the flag word of the current or most recent battle.</p>
+  <p><code>GetLanguage()</code> — The language byte of the system save (+0x1BC8; the index of the Mess/ file prefix table, -1 = the disc's default).</p>
+  <p><code>GetRnd(exclusive_max)</code> — Draws a random integer using the game random-number generator.</p>
+  <p><code>InstantUnitClassChange(unit)</code> — Promotes the unit at once if it has the SID_EVENT_CC skill and its class has a promotion; returns 1 if it did.</p>
+  <p><code>ItemGetIndex(iid)</code> — Resolves an item ID to its numeric item index.</p>
+  <p><code>MapGetSight(x, y)</code> — Reads the visibility-grid byte at a tile.</p>
+  <p><code>MapGetTerrain(x, y)</code> — Reads the terrain ID stored at a map tile.</p>
+  <p><code>MindGetMe()</code> — Returns the unit performing the current action (the unit that visited, talked, opened a chest, etc.).</p>
+  <p><code>MindGetMind()</code> — Reads the current map-action ID.</p>
+  <p><code>MindGetTarget()</code> — Returns the target of the current action (the unit talked to or fought).</p>
+  <p><code>MindSetMind(unit)</code> — Makes the unit the current acting unit ("Me" of the event context).</p>
+  <p><code>PersonGetYellLevel(pid1, pid2)</code> — Returns the support rank between two characters.</p>
+  <p><code>PersonSetYellLevel(pid1, pid2, stage)</code> — Sets two support partners' support points to the threshold of a rank.</p>
+  <p><code>PIDisAlive(pid)</code> — Looks up a character’s current actor and checks that its dead flag is clear.</p>
+  <p><code>strcmp(a, b)</code> — The C library strcmp of two strings (0 when equal).</p>
+  <p><code>SysGetEventFlag()</code> — Always 1 (debug stub).</p>
+  <p><code>SysGetRound()</code> — Reads the playthrough ordinal from the clear-data record.</p>
+  <p><code>UnitAddItem(unit, item_id)</code> — Puts an item in a unit's inventory, silently: depending on the item type it goes to the first free weapon slot (0–3) or the first free item slot (4–7).</p>
+  <p><code>UnitAddSkill(unit, skill_id)</code> — Gives a unit a skill.</p>
+  <p><code>UnitAddSkillWhatever(unit, sid)</code> — Adds the skill, then removes the unit's lowest-priority removable skills until the skills fit the capacity.</p>
+  <p><code>UnitBreakup(unit)</code> — Separates a carrying pair: the carried unit is put back on the map on the carrier's tile. Either unit of the pair can be given.</p>
+  <p><code>UnitCanParty(unit)</code> — 1 if the unit can join the party (deployable), else 0.</p>
+  <p><code>UnitCanUseIt(unit, slot)</code> — Checks whether the unit can use the item in the specified inventory slot.</p>
+  <p><code>UnitClassChange(unit)</code> — Plays the promotion scene and promotes the unit, suspending the script; only for a unit with the SID_EVENT_CC skill whose class can promote (instant while skipping).</p>
+  <p><code>UnitClrCpFlag(unit, mask)</code> — Clears mask from a non-player unit's AI flags; returns the new flags.</p>
+  <p><code>UnitClrSkill(unit, skill_id)</code> — Removes a skill from a unit.</p>
+  <p><code>UnitClrStatus(unit, mask)</code> — Clears state flags on a unit.</p>
+  <p><code>UnitDelAllItems(unit)</code> — Deletes the unit's seven items and refreshes its equipment.</p>
+  <p><code>UnitDelItem(unit, slot)</code> — Removes the item in an inventory slot and closes the gap.</p>
+  <p><code>UnitDontMoveSally(unit)</code> — Locks the starting tile of a unit of force 0, 5 or 7-10 in the preparations (status bit 0x20000); returns 1.</p>
+  <p><code>UnitForcedSally(unit)</code> — Makes a unit of force 0, 5 or 7-10 mandatory in the preparations (status bit 0x10000); returns 1.</p>
+  <p><code>UnitGet(unit, field)</code> — Reads a selected property of a runtime unit.</p>
+  <p><code>UnitGetBelongCount(group)</code> — Number of active, deployed units of the player-side forces whose belong group is group.</p>
+  <p><code>UnitGetByPID(pid)</code> — Finds the current runtime actor for a character ID.</p>
+  <p><code>UnitGetByPos(x, y)</code> — Finds an eligible visible actor occupying a map tile.</p>
+  <p><code>UnitGetChild(unit)</code> — The unit this one carries (the rescue partner while this unit is the carrier), else 0.</p>
+  <p><code>UnitGetDie()</code> — The unit that just died (the death context), 0 outside a death event.</p>
+  <p><code>UnitGetDispX(unit)</code> — The unit's displayed X position (model position, truncated), 0 for no unit.</p>
+  <p><code>UnitGetDispY(unit)</code> — The unit's displayed Y position (model position, truncated), 0 for no unit.</p>
+  <p><code>UnitGetEquipAccI(unit)</code> — Gets the active accessory slot in the combined inventory numbering.</p>
+  <p><code>UnitGetEquipWepI(unit)</code> — Gets the active equipped-weapon slot index.</p>
+  <p><code>UnitGetForce(unit)</code> — Returns a unit's force.</p>
+  <p><code>UnitGetHero()</code> — The army's hero unit (first lookup of force 0, else the fallback list), 0 if none.</p>
+  <p><code>UnitGetHP(unit)</code> — Returns a unit's current HP.</p>
+  <p><code>UnitGetItemCount(unit)</code> — Counts the items a unit carries, weapons included.</p>
+  <p><code>UnitGetMaxHP(unit)</code> — Returns a unit's maximum HP, including the bonus of the equipped weapon and item, capped by the class.</p>
+  <p><code>UnitGetMoveCost(unit, terrain_index)</code> — Reads this unit’s movement cost for a terrain-table entry.</p>
+  <p><code>UnitGetNext(unit)</code> — Returns the next unit in the same force.</p>
+  <p><code>UnitGetParent(unit)</code> — The unit carrying this one (the rescue partner while this unit is carried), else 0.</p>
+  <p><code>UnitGetRace(unit)</code> — Reports the unit’s beorc/laguz transformation category.</p>
+  <p><code>UnitGetStatus(unit)</code> — Returns a unit's state flags.</p>
+  <p><code>UnitGetTeam(unit)</code> — The unit's team byte (+0x117), used to group units for the AI.</p>
+  <p><code>UnitGetTeamCommander(team)</code> — The deployed, living unit that commands the team (status bits 0x4000000 set, 0x8 clear); -1 if none.</p>
+  <p><code>UnitGetTeamCount(team)</code> — Number of deployed, living units in the team (-1 for team 0 or less).</p>
+  <p><code>UnitGetWeaponCount(unit)</code> — Counts the weapons a unit carries (its four weapon slots).</p>
+  <p><code>UnitGetX(unit)</code> — Returns a unit's tile X.</p>
+  <p><code>UnitGetY(unit)</code> — Returns a unit's tile Y.</p>
+  <p><code>UnitItemClrAllSubItems(unit)</code> — Clears the "sub item" flag (0x08) of the unit's seven items.</p>
+  <p><code>UnitItemGetValuation(unit, slot)</code> — Returns a value score for an inventory item, used to pick which item to send away.</p>
+  <p><code>UnitItemSendtoCurrentWarehouse(unit, slot)</code> — Sends the item in that slot to the current army's convoy; 0 when there is no current convoy or the item cannot be stored.</p>
+  <p><code>UnitItemSendtoCurrentWarehouseAll(unit)</code> — Sends every item of the unit that may go to a convoy to the current army's convoy (others are deleted); refreshes the equipment.</p>
+  <p><code>UnitItemSendtoWarehouse(convoy, unit, slot)</code> — Like UnitItemSendtoCurrentWarehouse with convoy 1-5.</p>
+  <p><code>UnitItemSendtoWarehouseAll(convoy, unit)</code> — Like UnitItemSendtoCurrentWarehouseAll with convoy 1-5 (the per-army convoys); new first argument in Radiant Dawn.</p>
+  <p><code>UnitItemSetBless(unit, slot)</code> — Marks the item in slot 0-6 as blessed (flag 0x10) when the item can be blessed; 1 if it did.</p>
+  <p><code>UnitItemSetDrop(unit, slot)</code> — Marks one inventory item as dropped when the unit is defeated.</p>
+  <p><code>UnitItemSetEndurance(unit, slot, uses)</code> — Sets the remaining uses of the item in slot 0-6.</p>
+  <p><code>UnitItemSetSealSteal(unit, slot)</code> — Makes the item in that slot unstealable (item flag 0x04).</p>
+  <p><code>UnitNeverSally(unit)</code> — Marks a unit of force 0, 5 or 7-10 as never deployable (status bit 0x200000); returns 1.</p>
+  <p><code>UnitPairup(carrier, carried)</code> — Links two actors using the game’s carrying/pairing operation, first moving the second actor to the tile right of the first.</p>
+  <p><code>UnitQueryEquip(unit, slot)</code> — Tests the equipped bit of an inventory slot.</p>
+  <p><code>UnitQueryJID(unit, jid)</code> — Tests whether a unit has a given class.</p>
+  <p><code>UnitQueryPID(unit, pid)</code> — Tests whether a unit is a given character.</p>
+  <p><code>UnitReorderSkill(unit)</code> — Re-sorts the unit's skill list.</p>
+  <p><code>UnitReplaceItem(unit, slot, iid)</code> — Replaces the selected inventory slot using an item ID.</p>
+  <p><code>UnitSearchItem(unit, item_id)</code> — Finds an item in a unit's inventory.</p>
+  <p><code>UnitSet(unit, field, value)</code> — Writes one of the supported mutable unit fields.</p>
+  <p><code>UnitSetAccAway(unit)</code> — Unequips the unit's equipped item (band or ring).</p>
+  <p><code>UnitSetBelong(unit, group)</code> — Moves the unit into belong group group (+0xFD); 0 if the group does not exist.</p>
+  <p><code>UnitSetCpAttackSeq(unit, sequence)</code> — Changes the attack AI script of a unit.</p>
+  <p><code>UnitSetCpFlag(unit, mask)</code> — ORs mask into a non-player unit's AI flags (+0x3B4); returns the new flags.</p>
+  <p><code>UnitSetCpForceNoMoveFlag(unit, on)</code> — Sets or clears the AI "never move" flag (0x2000000 in the AI flags +0x3B4) of a non-player unit.</p>
+  <p><code>UnitSetCpHealSeq(unit, record)</code> — Changes the healing AI record of a unit.</p>
+  <p><code>UnitSetCpMoveSeq(unit, sequence)</code> — Changes the movement AI script of a unit.</p>
+  <p><code>UnitSetCpMTypeID(unit, table)</code> — Changes the MTYPE AI table of a unit (how it values targets).</p>
+  <p><code>UnitSetCpTwiceMoveSeq(unit, sequence)</code> — Sets the AI's second-move sequence of a non-player unit; 0 for player units.</p>
+  <p><code>UnitSetEquip(unit, slot)</code> — Equips an inventory item.</p>
+  <p><code>UnitSetEXP(unit, exp)</code> — Sets a unit's experience.</p>
+  <p><code>UnitSetHP(unit, hp)</code> — Sets a unit's current HP.</p>
+  <p><code>UnitSetLeader(unit, on)</code> — Sets or clears the unit's leader status bit (0x100).</p>
+  <p><code>UnitSetOrigin(unit, value)</code> — Sets the unit's origin byte (+0x380).</p>
+  <p><code>UnitSetStatus(unit, mask)</code> — Sets state flags on a unit.</p>
+  <p><code>UnitSetTeam(unit, team)</code> — Sets the unit's team.</p>
+  <p><code>UnitSetWeaponAway(unit)</code> — Unequips the unit's weapon and returns its slot; -1 for a laguz (SID_ANIMALIZE) or a unit without one.</p>
+  <p><code>UnitTransferToForce(unit, force)</code> — Moves a unit to another force, for example to recruit it (force 0) or turn it into an ally (2).</p>
+  <p><code>UnitTstCpFlag(unit, mask)</code> — A non-player unit's AI flags ANDed with mask.</p>
+  <p><code>UnitTstSkill(unit, skill_id)</code> — Tests whether a unit holds a skill.</p>
+  <p><code>UnitTstStatus(unit, mask)</code> — The unit's status word (+0x10C) ANDed with mask; 0 for no unit.</p>
+  <h2>Battle-map scenes and tutorials (52)</h2>
+  <p>Tutorial overlays and scripts, cursor holding and the tutorial settings.</p>
+  <p><code>_bmsini()</code> — Resets the chapter for a tutorial: chapter number 0 (so the convoy is available), turn 1, the player controls force 0 and the computer forces 1–3, 1,000 gold, chapter flags and gf_complete/gf_gameover cleared, no units, empty convoy, no forge records, map state cleared.</p>
+  <p><code>_pa(command)</code> — Plays a scripted controller input (the 'pad actor' that moves the cursor and presses buttons in tutorials). Each character is one step: a one-frame press, then a pause until the next step.</p>
+  <p><code>_seqini()</code> — Clears the map for a tutorial: removes conversations, images, scripted input, the preparations, AI phase and phase banner, the notice frame and the unit models.</p>
+  <p><code>_tr()</code> — Continues a held tutorial conversation (the step behind TutTalkResume).</p>
+  <p><code>_tt(message_id)</code> — Starts a tutorial conversation with a message (the step behind TutTalkEvent).</p>
+  <p><code>ArcFree(resource_path)</code> — Releases one reference to a relocatable game resource.</p>
+  <p><code>ArcLoad(resource_path)</code> — Loads a relocatable game resource.</p>
+  <p><code>BeginMapHoldCursor()</code> — Starts the map cursor-hold process.</p>
+  <p><code>CmbMessLoad(script, message_file)</code> — Loads a .cmb script and its message file Mess/&lt;language prefix&gt;&lt;message_file&gt;.m (tutorial scripts).</p>
+  <p><code>CmbMessUnload(message_file)</code> — Frees the script and message file loaded by CmbMessLoad.</p>
+  <p><code>CmFreeScript()</code> — Unloads the most recently loaded script file and removes its named functions.</p>
+  <p><code>CmLoadScript(script_path)</code> — Loads a CMB script module and makes its exported functions available.</p>
+  <p><code>CmSleepScript(module_name)</code> — Suspends a module’s event enumeration and temporarily removes its exported functions.</p>
+  <p><code>CmWakeupScripts()</code> — Wakes every script file put to sleep by CmSleepScript and makes its named functions callable again.</p>
+  <p><code>Config_TutGet_sfx_vol()</code> — Reads the stored tutorial sound-effect volume byte.</p>
+  <p><code>Config_Tutorial()</code> — Resets the tutorial configuration block to defaults, including internal difficulty ID 1.</p>
+  <p><code>Config_TutSet_ctrlInfo(on)</code> — Option 1 turns the controls-help setting on (play settings bits 0x000C0000), any other value off.</p>
+  <p><code>Config_TutSet_otheridoshowing(enabled)</code> — Sets the tutorial setting for other-unit movement display.</p>
+  <p><code>Config_TutSet_sfx_vol(volume)</code> — Stores the tutorial sound-effect volume and applies the settings.</p>
+  <p><code>Config_TutSet_terInfo(enabled)</code> — Sets the tutorial setting for terrain information.</p>
+  <p><code>Config_TutSet_unitInfo(enabled)</code> — Sets the tutorial setting for unit information.</p>
+  <p><code>Config_TutSet_XinfoPage(page)</code> — Sets the tutorial information-page selection.</p>
+  <p><code>CreateNoticeFrame(x, y, width, height)</code> — Creates or updates an animated rectangular highlight around a screen area.</p>
+  <p><code>CreateNoticeLFrame(x, y, width_1, width_2, height_1, height_2, orientation)</code> — Creates or updates an animated six-edge L-shaped screen highlight.</p>
+  <p><code>DeleteNoticeFrame()</code> — Removes the active E_NoticeFrame highlight frame.</p>
+  <p><code>EndMapHoldCursor()</code> — Ends the map cursor-hold process.</p>
+  <p><code>GameBind()</code> — Freezes the map's normal game flow (phases, cursor, menus) while the script works.</p>
+  <p><code>GameUnbind()</code> — Lets the map's game flow continue after GameBind.</p>
+  <p><code>GetTutorial()</code> — Reads whether tutorial help is enabled in configuration.</p>
+  <p><code>QueryLesson(lesson_name)</code> — Tests whether the active lesson has the given name.</p>
+  <p><code>SetTutorial(on)</code> — 1 enables tutorials, anything else disables them (play settings bit 0x20000).</p>
+  <p><code>taikitk()</code> — Starts a waiting token that lasts until a unit's next Wait command (E_TaikiToken).</p>
+  <p><code>turnatk()</code> — Starts a waiting token that lasts until the next end of turn (E_TurnAToken).</p>
+  <p><code>turntk()</code> — Starts a waiting token that lasts until the next turn change (E_TurnToken).</p>
+  <p><code>Tut3SArrowABAnim(rect_id, period_ms, amplitude)</code> — Continuously oscillates a tutorial arrow rectangle along its positive diagonal axis.</p>
+  <p><code>Tut3SArrowBCAnim(rect_id, period_ms, amplitude)</code> — Continuously oscillates a tutorial arrow rectangle along its horizontal axis.</p>
+  <p><code>Tut3SArrowCAAnim(rect_id, period_ms, amplitude)</code> — Continuously oscillates a tutorial arrow rectangle along its negative diagonal axis.</p>
+  <p><code>Tut3SArrowDAnim(rect_id, period_ms, amplitude)</code> — Continuously oscillates a tutorial arrow rectangle along its downward vertical axis.</p>
+  <p><code>Tut3SArrowUAnim(rect_id, period_ms, amplitude)</code> — Continuously oscillates a tutorial arrow rectangle along its upward vertical axis.</p>
+  <p><code>TutMapFree()</code> — Frees the tutorial map overlay and suspends the script until it is released.</p>
+  <p><code>TutMapLoad(name)</code> — Loads a tutorial map overlay and suspends the script until it is loaded.</p>
+  <p><code>TutorialBaseCreate()</code> — Starts the base-tutorial overlay.</p>
+  <p><code>TutorialBaseDelete()</code> — Closes the base-tutorial overlay.</p>
+  <p><code>TutorialCall(entry_name)</code> — Starts a named function of a loaded tutorial script and stops the AI phase.</p>
+  <p><code>TutorialForget(tutorial_id)</code> — Clears a tutorial’s learned mark.</p>
+  <p><code>TutorialInitialize()</code> — Starts tutorial initialization and suspends the calling script until it completes.</p>
+  <p><code>TutorialLearn(tutorial_id)</code> — Marks a tutorial as learned.</p>
+  <p><code>TutorialLock(tutorial_id)</code> — Locks a tutorial.</p>
+  <p><code>TutorialSallyCreate()</code> — Opens the preparations screen inside a tutorial.</p>
+  <p><code>TutorialSallyDelete()</code> — Closes the preparations screen opened by TutorialSallyCreate.</p>
+  <p><code>TutorialUnlock(tutorial_id)</code> — Unlocks a tutorial.</p>
+  <p><code>TutShow(text_resource)</code> — Starts a tutorial text display.</p>
+  <h2>Chapter results (11)</h2>
+  <p>Bonus experience lines and the defeat and escape checks of a chapter.</p>
+  <p><code>AchieveSet(label, amount)</code> — Records one line of the chapter's bonus-experience results. Radiant Dawn halves the amount on difficulty 2 (Maniac) and adds half on difficulty 3 (Easy); a line of 0 or less is skipped.</p>
+  <p><code>EnemyDeadCheck()</code> — Tests whether the enemy force is empty.</p>
+  <p><code>EnemyMonkCheck()</code> — Counts enemy-force actors with class JID_PRIEST, JID_BISHOP, or JID_BISHOP_F.</p>
+  <p><code>EnemySelfDefenceCheck()</code> — Counts enemy-force actors with PID PID_12_SELFDEFENCE.</p>
+  <p><code>EnemyTigerCheck()</code> — Counts enemy-force actors with class JID_TIGER.</p>
+  <p><code>EnemyUnitCheckByPID(pid)</code> — Counts actors with the specified PID in the enemy force.</p>
+  <p><code>GetDiedPlayerCount()</code> — Counts actors in force 6 whose death-record flag is set.</p>
+  <p><code>PlayerDeadCheck()</code> — Tests whether the inactive force list is empty.</p>
+  <p><code>PlayerEscapeCheck()</code> — Tests whether every existing actor in player force 0 or reserve force 5 has the escaped flag.</p>
+  <p><code>PlayerEscapeCount()</code> — Counts escaped actors in player force 0 and reserve force 5.</p>
+  <p><code>ShooterBulletCheck()</code> — Counts the ballista shots spent on the map.</p>
+  <h2>Event arrows (7)</h2>
+  <p>Arrows drawn on the map during events.</p>
+  <p><code>EventArrowAppend(arrow_id, time_ms, x, y, height)</code> — Adds a timed waypoint to a map-event arrow’s path.</p>
+  <p><code>EventArrowColor(arrow_id, red, green, blue, alpha)</code> — Sets the arrow’s RGBA color.</p>
+  <p><code>EventArrowDelete()</code> — Deletes the map-event arrow process and all of its arrows.</p>
+  <p><code>EventArrowFadeOut(arrow_id)</code> — Requests fade-out of the selected map-event arrow.</p>
+  <p><code>EventArrowFocus(arrow_id, enabled)</code> — Changes the arrow’s focus-following flag.</p>
+  <p><code>EventArrowStart(arrow_id, duration_ms)</code> — Starts an arrow path transition from its current progress using the supplied time.</p>
+  <p><code>EventArrowWait()</code> — Suspends the script while map-event arrows are animating.</p>
+  <h2>Scripted 3D scenes (7)</h2>
+  <p>In-engine movie scenes built from model and animation files, and the text speed.</p>
+  <p><code>ScriptMovieEnd()</code> — Ends the scripted movie scene and restores the map and sound.</p>
+  <p><code>ScriptMoviePlay(name)</code> — Plays the scene's animation for name.</p>
+  <p><code>ScriptMoviePreLoad(name)</code> — Preloads a scene animation file.</p>
+  <p><code>ScriptMovieReference(name)</code> — Loads the scene's model, skeleton, animation and texture files for name and attaches them to the scene camera.</p>
+  <p><code>ScriptMovieStart()</code> — Starts a scripted 3D movie scene (map environment hidden, other sound muted) and suspends the script; ignored while skipping.</p>
+  <p><code>ScriptMovieWait()</code> — 1 while the scripted movie is still playing (use in a wait loop).</p>
+  <p><code>SetTalkTick(ticks)</code> — Sets the conversation text speed byte (+0x23 of the play settings).</p>
+  <h2>Ending (5)</h2>
+  <p>The epilogue, staff roll, war record and unit ranking screens.</p>
+  <p><code>Epilogue()</code> — Runs the epilogue (EpilogueProc, which fires the type-20 events per character) and suspends the script until it ends.</p>
+  <p><code>FinEffect()</code> — Starts the closing effect process and suspends the script.</p>
+  <p><code>StaffRoll()</code> — Runs the staff roll and suspends the script (no argument in Radiant Dawn; vanilla still passes a duration).</p>
+  <p><code>UnitRanking()</code> — Shows the unit ranking screen and suspends the script.</p>
+  <p><code>WarRecord()</code> — Shows the war record screen and suspends the script (no argument in Radiant Dawn; vanilla still passes one).</p>
+  <h2>Conversation signals (1)</h2>
+  <p>A flag a conversation raises for the script.</p>
+  <p><code>TFXTstSignal()</code> — 1 once when a conversation sends its TFX signal (message flag 0x800), then clears it.</p>
+  <h2>Called but not registered</h2>
+  <p>Vanilla scripts call <code>IndividualWarRecord</code>, <code>ScriptDbgMenu</code>, <code>ScriptDbgMenuResult</code>, which no part of the game registers: such a call does nothing and gives 0.</p>
   `
 },
 

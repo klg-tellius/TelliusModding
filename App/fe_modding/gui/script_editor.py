@@ -24,7 +24,8 @@ from .. import script_sources
 from ..exceptions import ProjectError
 from ..script_suggestions import KIND_TITLES, ScriptSuggestions, chapter_of_script, resolve_kind
 from ..formats.cmb import CompileError, compile_source
-from ..formats.cmb.catalog import SPECIAL_ENTRY_POINTS, TRIGGERS, load_externs
+from ..formats.cmb.catalog import SPECIAL_ENTRY_POINTS, load_externs, triggers
+from ..game_profile import profile_of
 from ..formats.cmb.model import Label
 from ..formats.cmb.parser import ParseError
 from ..formats.cmb import source_tools as st
@@ -70,7 +71,8 @@ class ScriptEditor(EditorPanel):
         self._dirty = False
         self._reparse_job = None
         self._suggestions = ScriptSuggestions(project)
-        self._externs = load_externs()
+        self._dialect = profile_of(project).script_dialect  # the game's script language variant
+        self._externs = load_externs(self._dialect)
         self._listeners: list = []
 
         self._build_widgets()
@@ -108,7 +110,7 @@ class ScriptEditor(EditorPanel):
         ttk.Button(fn_row, text="Duplicate", command=self._duplicate_function).pack(side="left", padx=(4, 0))
         ttk.Button(fn_row, text="Delete", command=self._delete_function).pack(side="left", padx=(4, 0))
 
-        self._form = TriggerForm(right_frame, self._apply_form, self._name_values)
+        self._form = TriggerForm(right_frame, self._apply_form, self._name_values, self._dialect)
         self._form.pack(fill="x")
         right = ttk.PanedWindow(right_frame, orient="vertical")
         right.pack(fill="both", expand=True, pady=(4, 0))
@@ -242,6 +244,8 @@ class ScriptEditor(EditorPanel):
         for shared in script_sources.shared_scripts(self._project):
             what = "shared helpers and campaign flags" if shared.stem.lower() == "startup" else "shared script"
             choices.append((f"{shared.name} - {what}", shared))
+        if self._current_path is not None and all(p != self._current_path for _label, p in choices):
+            choices.insert(0, (self._current_path.name, self._current_path))  # a chapter script opened directly
         self._file_choices = choices
         self._file_box.configure(values=[label for label, _p in choices])
         self._file_var.set(next((label for label, p in choices if p == self._current_path), ""))
@@ -294,7 +298,7 @@ class ScriptEditor(EditorPanel):
             self.after_cancel(self._reparse_job)
         self._reparse_job = None
         try:
-            spans = st.function_spans(self._editor.get())
+            spans = st.function_spans(self._editor.get(), self._dialect)
         except ParseError as e:
             self._show_problems([_Problem("error", e.line, e.message)])
             return
@@ -432,7 +436,7 @@ class ScriptEditor(EditorPanel):
         videos, music, groups...), else function names."""
         return self._suggestions.completions(
             before, after, force=force, externs=self._externs, identifiers=self._identifiers,
-            chapter_id=chapter_of_script(self._current_path),
+            chapter_id=chapter_of_script(self._current_path, self._project),
             pool=self._base.pool if self._base is not None else (), source=self._editor.get(),
         )
 
@@ -470,7 +474,8 @@ class ScriptEditor(EditorPanel):
         pool = self._base.pool if self._base is not None else []
         if kind in KIND_TITLES:
             return [s.text for s in self._suggestions.values(
-                kind, chapter_id=chapter_of_script(self._current_path), pool=pool, source=self._editor.get())]
+                kind, chapter_id=chapter_of_script(self._current_path, self._project), pool=pool,
+                source=self._editor.get())]
         prefixes = {"mpid": "MPID_"}
         if kind in prefixes:
             return sorted({s for s in pool if s.upper().startswith(prefixes[kind])})
@@ -499,13 +504,13 @@ class ScriptEditor(EditorPanel):
         if name != span.name and name in self._local_defs():
             messagebox.showerror("Name taken", f"There is already a function named {name!r}.", parent=self)
             return
-        decorators = st.decorator_source(export_id, name, trigger_type, values, raw_params)
+        decorators = st.decorator_source(export_id, name, trigger_type, values, raw_params, self._dialect)
         self._set_source(st.replace_decorators(self._editor.get(), span, decorators, name, description), select=name)
 
     def _new_function(self) -> None:
         if self._base is None:
             return
-        source, name = st.new_function_source(self._editor.get())
+        source, name = st.new_function_source(self._editor.get(), dialect=self._dialect)
         self._set_source(source, select=name)
 
     def _duplicate_function(self) -> None:
@@ -586,16 +591,15 @@ class _Problem:
         self.severity, self.line, self.message = severity, line, message
 
 
-TRIGGER_CHOICES = [f"{t.type} - {t.title}" for t in TRIGGERS.values()]
-
-
 class TriggerForm(ttk.LabelFrame):
     """Name/export/trigger fields for the selected function."""
 
-    def __init__(self, parent: tk.Misc, on_apply, name_values):
+    def __init__(self, parent: tk.Misc, on_apply, name_values, dialect="fe9"):
         super().__init__(parent, text="Function", padding=8)
         self._on_apply = on_apply
         self._name_values = name_values
+        self._triggers = triggers(dialect)
+        self._choices = [f"{t.type} - {t.title}" for t in self._triggers.values()]
         self._span: Optional[st.FunctionSpan] = None
 
         row = ttk.Frame(self)
@@ -611,7 +615,7 @@ class TriggerForm(ttk.LabelFrame):
         self._export_entry.pack(side="left", padx=(4, 12))
         ttk.Label(row, text="Trigger").pack(side="left")
         self._type = tk.StringVar()
-        self._type_box = ttk.Combobox(row, textvariable=self._type, values=TRIGGER_CHOICES, state="readonly", width=36)
+        self._type_box = ttk.Combobox(row, textvariable=self._type, values=self._choices, state="readonly", width=36)
         self._type_box.pack(side="left", padx=(4, 0))
         self._type_box.bind("<<ComboboxSelected>>", lambda e: self._build_params({}))
 
@@ -644,7 +648,7 @@ class TriggerForm(ttk.LabelFrame):
         self._export.set(span.export_id is not None)
         self._export_id.set(span.export_id or "")
         self._sync_export()
-        self._type.set(next((c for c in TRIGGER_CHOICES if c.startswith(f"{span.trigger_type} -")),
+        self._type.set(next((c for c in self._choices if c.startswith(f"{span.trigger_type} -")),
                             f"{span.trigger_type} - (unknown)"))
         self._build_params(span.trigger_values, span.raw_params)
         self._apply_button.config(state="normal")
@@ -661,7 +665,7 @@ class TriggerForm(ttk.LabelFrame):
             child.destroy()
         self._vars = {}
         self._raw_var = None
-        kind = TRIGGERS.get(self._selected_type())
+        kind = self._triggers.get(self._selected_type())
         if raw is not None or kind is None:
             ttk.Label(self._params, text="Raw params (comma-separated numbers)").grid(row=0, column=0, sticky="w")
             self._raw_var = tk.StringVar(value=", ".join(str(v) for v in (raw or [])))

@@ -39,6 +39,15 @@ Each save block is protected by a standard CRC-32 over ``block[0x70:size]``
 stored at ``block+0x50`` (blocks with ``save_kind`` 1 are exempt, and a CRC of
 ``0x12345678`` is accepted as-is) - :func:`refresh_crc` recomputes it after an
 edit.
+
+**Radiant Dawn** (:data:`FE10_FLAGS`) works the same way with a 128-slot
+table (``0x803CAB38``: names ``+0x144``, hashes ``+0x344``, bits
+``0x803CB07C``; ``global``/``regist``/``get``/``set``/``clr`` are the same
+code with 0x80 bounds). ``init_event_script_system`` (``0x8009CF6C``)
+registers ``gf_canceled``, ``gf_gameover``, ``gf_complete`` and
+``gf_reserved2``..``6``; startup.cmb's ``RegistGlobalFlags`` adds 19 more.
+The save side (Wii NAND) is not decoded yet, so the ``.gci`` helpers below are
+Path of Radiance only.
 """
 
 from __future__ import annotations
@@ -94,6 +103,59 @@ ENGINE_FLAG_GLOSSES = {
 }
 FLAG_GLOSSES = {**ENGINE_FLAG_GLOSSES,
                 **{name: gloss for name, gloss in VANILLA_GLOBAL_FLAGS if name != RESERVED_GLOBAL}}
+
+ENGINE_FLAGS_FE10 = (
+    "gf_canceled", "gf_gameover", "gf_complete", "gf_reserved2",
+    "gf_reserved3", "gf_reserved4", "gf_reserved5", "gf_reserved6",
+)
+# Vanilla Radiant Dawn startup.cmb RegistGlobalFlags, in order (slots 8..26).
+VANILLA_GLOBAL_FLAGS_FE10 = (
+    ("DBG_最初からやってる", "Debug: playthrough started from the beginning"),
+    ("G_ペレアス死亡", "Pelleas died"),
+    ("G_0407bアイク記憶復活", "4-7b: Ike's memory restored"),
+    ("G_TRIANGLE_OSCAR", "Triangle attack: Oscar"),
+    ("G_TRIANGLE_BOLE", "Triangle attack: Boyd"),
+    ("G_TRIANGLE_LOFA", "Triangle attack: Rolf"),
+    ("G_TRIANGLE_ERINCIA", "Triangle attack: Elincia"),
+    ("G_TRIANGLE_TANIS", "Triangle attack: Tanith"),
+    ("G_TRIANGLE_MARCIA", "Triangle attack: Marcia"),
+    ("G_TRIANGLE_SIGRUN", "Triangle attack: Sigrun"),
+    ("G_MS_0308_BT_Sen", "3-8 battle conversation"),
+    ("G_MS_0314_BT_Sen", "3-14 battle conversation"),
+    ("G_MS_0315_BT_Tau_Sen", "3-15 battle conversation"),
+    ("G_0407e_セネリオ会話", "4-7e: Soren conversation"),
+    ("G_0303_３兄弟会話", "3-3: the three brothers' conversation"),
+    ("G_0111_漆黒出撃", "1-11: the Black Knight sorties"),
+    ("G_0308_漆黒引き分け", "3-8: draw with the Black Knight"),
+    ("G_reserve_for_talk0", "Reserved (talk)"),
+    ("G_0407_ユンヌの加護", "4-7: Yune's protection"),
+)
+FLAG_GLOSSES_FE10 = {"gf_canceled": ENGINE_FLAG_GLOSSES["gf_canceled"],
+                     "gf_gameover": ENGINE_FLAG_GLOSSES["gf_gameover"],
+                     "gf_complete": ENGINE_FLAG_GLOSSES["gf_complete"],
+                     **{f"gf_reserved{i}": "Reserved by the engine" for i in range(2, 7)},
+                     **dict(VANILLA_GLOBAL_FLAGS_FE10)}
+
+
+@dataclass(frozen=True)
+class FlagTable:
+    """One game's flag table: size, the engine's own flags, vanilla globals."""
+
+    slot_count: int
+    engine_flags: tuple
+    vanilla_globals: tuple  # ((name, gloss), ...) in RegistGlobalFlags order
+    glosses: dict
+    reserved_global: Optional[str] = None
+
+
+FE9_FLAGS = FlagTable(SLOT_COUNT, ENGINE_FLAGS, VANILLA_GLOBAL_FLAGS, FLAG_GLOSSES, RESERVED_GLOBAL)
+FE10_FLAGS = FlagTable(128, ENGINE_FLAGS_FE10, VANILLA_GLOBAL_FLAGS_FE10, FLAG_GLOSSES_FE10, "G_reserve_for_talk0")
+
+
+def flag_table(dialect="fe9") -> FlagTable:
+    """The flag table of a script dialect (a :class:`~.cmb.model.Dialect` or its name)."""
+    name = dialect if isinstance(dialect, str) else getattr(dialect, "name", "fe9")
+    return FE10_FLAGS if name == "fe10" else FE9_FLAGS
 
 
 def flag_hash(name: str) -> int:
@@ -272,13 +334,13 @@ def exported_functions(module: A.Module) -> dict[str, int]:
     return out
 
 
-def global_flags(startup: A.Module) -> list[str]:
+def global_flags(startup: A.Module, table: FlagTable = FE9_FLAGS) -> list[str]:
     """Global flag names in slot order (0..), engine flags first."""
-    return list(ENGINE_FLAGS) + registrations(startup, "RegistGlobalFlags", "global")
+    return list(table.engine_flags) + registrations(startup, "RegistGlobalFlags", "global")
 
 
-def global_flags_vanilla() -> list[str]:
-    return list(ENGINE_FLAGS) + [name for name, _ in VANILLA_GLOBAL_FLAGS]
+def global_flags_vanilla(table: FlagTable = FE9_FLAGS) -> list[str]:
+    return list(table.engine_flags) + [name for name, _ in table.vanilla_globals]
 
 
 def global_flags_from_cmb(startup_cmb: Path) -> list[str]:
@@ -286,8 +348,9 @@ def global_flags_from_cmb(startup_cmb: Path) -> list[str]:
     from .cmb import decompile, read_cmb_path
     from .cmb.parser import parse
 
-    source, _stats = decompile(read_cmb_path(startup_cmb), startup_cmb.name)
-    return global_flags(parse(source))
+    script = read_cmb_path(startup_cmb)
+    source, _stats = decompile(script, startup_cmb.name)
+    return global_flags(parse(source), flag_table(script.dialect))
 
 
 def local_flags(chapter: A.Module) -> list[str]:
@@ -295,13 +358,13 @@ def local_flags(chapter: A.Module) -> list[str]:
     return registrations(chapter, "Startup", "regist")
 
 
-def slot_names(globals_: list[str], locals_: list[str]) -> list[Optional[str]]:
+def slot_names(globals_: list[str], locals_: list[str], slot_count: int = SLOT_COUNT) -> list[Optional[str]]:
     """Slot -> name, as the table looks after a chapter's ``Startup``. Locals
     that don't fit are dropped, as the engine does."""
-    slots: list[Optional[str]] = [None] * SLOT_COUNT
-    for i, name in enumerate(globals_[:SLOT_COUNT]):
+    slots: list[Optional[str]] = [None] * slot_count
+    for i, name in enumerate(globals_[:slot_count]):
         slots[i] = name
-    top = SLOT_COUNT - 1
+    top = slot_count - 1
     for name in locals_:
         while top >= 0 and slots[top] is not None:
             top -= 1
@@ -311,21 +374,21 @@ def slot_names(globals_: list[str], locals_: list[str]) -> list[Optional[str]]:
     return slots
 
 
-def capacity_problem(global_count: int, local_count: int) -> Optional[str]:
+def capacity_problem(global_count: int, local_count: int, slot_count: int = SLOT_COUNT) -> Optional[str]:
     """Why a chapter's registrations don't fit the table, or ``None``.
 
-    The reset walks down from slot 95 until it finds an empty slot, so at
-    least one slot must stay free or the next chapter start also wipes every
-    global flag's name.
+    The reset walks down from the top slot until it finds an empty slot, so
+    at least one slot must stay free or the next chapter start also wipes
+    every global flag's name.
     """
-    free = SLOT_COUNT - global_count - local_count
+    free = slot_count - global_count - local_count
     if free >= 1:
         return None
     if free == 0:
-        return (f"{global_count} global + {local_count} local flags fill all {SLOT_COUNT} slots: "
+        return (f"{global_count} global + {local_count} local flags fill all {slot_count} slots: "
                 "the chapter-start reset would also unregister every global flag")
     return (f"{global_count} global + {local_count} local flags need {-free} more slot(s) than the "
-            f"table's {SLOT_COUNT}: the last regist() calls are silently ignored")
+            f"table's {slot_count}: the last regist() calls are silently ignored")
 
 
 # -- save files ---------------------------------------------------------------

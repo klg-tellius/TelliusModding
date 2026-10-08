@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import DATA_TABLES, GAME_DATA
+from ...game_profile import DATA_TABLES, GAME_DATA, SCRIPTS
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
@@ -227,13 +227,15 @@ FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills"
 
 class Fe10GameDataPage(Page):
     """Game Data for a game whose database has only its record tables decoded (Radiant Dawn): a hub
-    of the four tables and one :class:`Fe10DataEditor` showing the picked one."""
+    of the tables and one :class:`Fe10DataEditor` showing the picked one, plus the script flags
+    (``("data", "flags"[, tab])``) once the game's scripts are decoded."""
 
     kind = "data"
 
     def __init__(self, shell):
         super().__init__(shell)
         self._editor = Fe10DataEditor(self, self.project, shell.changelog)
+        self._flags: FlagsPanel | None = None
         self._hub = self._build_hub()
 
     def _build_hub(self) -> ScrollFrame:
@@ -252,9 +254,27 @@ class Fe10GameDataPage(Page):
                 grid.add(key, Card(grid, title=FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
                                    on_click=lambda k=key: self.shell.navigate((self.kind, k))))
             grid.done()
+        if self.project.profile.supports(SCRIPTS):
+            section_header(scroll.body, "Scripts").pack(anchor="w", pady=(12, 8))
+            grid = CardGrid(scroll.body, card_width=280)
+            grid.pack(fill="x")
+            grid.add("flags", Card(grid, title=TABS["flags"], icon="⚐", width=280,
+                                   subtitle="The 128 named script flags: campaign and chapter",
+                                   on_click=lambda: self.shell.navigate((self.kind, "flags"))))
+            grid.done()
         return scroll
 
     def show(self, route) -> bool:
+        if len(route) > 1 and route[1] == "flags" and self.project.profile.supports(SCRIPTS):
+            if self._flags is None:
+                self._flags = FlagsPanel(self, self.shell)
+            self._hub.pack_forget()
+            self._editor.pack_forget()
+            self._flags.pack(fill="both", expand=True)
+            self._flags.show_sub(tuple(route[2:]))
+            return True
+        if self._flags is not None:
+            self._flags.pack_forget()
         if len(route) < 2 or route[1] not in FE10_TAB_KEYS:
             self._editor.pack_forget()
             self._hub.pack(fill="both", expand=True)
@@ -272,15 +292,24 @@ class Fe10GameDataPage(Page):
     def flush(self) -> None:
         self.focus_set()  # a field applies when it loses focus
 
+    def index_changed(self) -> None:
+        if self._flags is not None:
+            self._flags.index_changed()
+
+    def _title(self, route):
+        if len(route) > 1 and route[1] == "flags":
+            return TABS["flags"]
+        return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
+
     def crumbs(self, route):
-        if len(route) < 2 or route[1] not in FE10_TAB_TITLES:
+        title = self._title(route)
+        if title is None:
             return [("Game Data", None)]
-        return [("Game Data", ("data",)), (FE10_TAB_TITLES[route[1]], None)]
+        return [("Game Data", ("data",)), (title, None)]
 
     def history_label(self, route):
-        if len(route) < 2 or route[1] not in FE10_TAB_TITLES:
-            return None
-        return f"Game Data › {FE10_TAB_TITLES[route[1]]}"
+        title = self._title(route)
+        return f"Game Data › {title}" if title else None
 
 
 def game_data_page(shell) -> Page:
