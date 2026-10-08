@@ -21,6 +21,7 @@ from tkinter import messagebox, ttk
 from typing import Optional
 
 from .. import script_sources
+from ..exceptions import ProjectError
 from ..script_suggestions import KIND_TITLES, ScriptSuggestions, chapter_of_script, resolve_kind
 from ..formats.cmb import CompileError, compile_source
 from ..formats.cmb.catalog import SPECIAL_ENTRY_POINTS, TRIGGERS, load_externs
@@ -256,6 +257,12 @@ class ScriptEditor(EditorPanel):
     def _load(self, path: Path, *, ignore_sidecar: bool = False) -> None:
         try:
             loaded = script_sources.load(self._project, path, ignore_sidecar=ignore_sidecar)
+        except ProjectError as exc:  # the game has no script codec yet: say so in the status line
+            self._script = None
+            self._current_path = None
+            self._save_button.config(state="disabled")
+            self._status.config(text=str(exc))
+            return
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read script", str(exc), parent=self)
             return

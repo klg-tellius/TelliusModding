@@ -68,6 +68,46 @@ class UnavailableStateTests(unittest.TestCase):
             (mess / f"{name}.m").write_bytes(b"")
         self.assertEqual(chapters.list_chapter_ids(self.project), ["0000", "0101", "0102", "0407a", "final"])
 
+    def test_scripts_report_instead_of_decompiling_the_wrong_opcodes(self):
+        from fe_modding import script_sources
+        from fe_modding.exceptions import ProjectError
+
+        scripts = self.project.files_dir / "Scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "C0101.cmb").write_bytes(bytes(64))
+        self.assertIsNone(script_sources.chapter_script(self.project, "0101"))
+        with self.assertRaises(ProjectError) as caught:
+            script_sources.load(self.project, scripts / "C0101.cmb")
+        self.assertIn("not available for Radiant Dawn yet", str(caught.exception))
+        with self.assertRaises(ProjectError):
+            script_sources.peek(self.project, scripts / "C0101.cmb")
+
+    def test_asset_lists_group_files_by_radiant_dawn_chapter(self):
+        from fe_modding.gui.pages import text_assets
+
+        files = self.project.files_dir
+        (files / "Mess").mkdir(parents=True)
+        (files / "Scripts").mkdir()
+        for name in ("c0102", "c0101", "c0407a", "common", "e_c0101"):
+            (files / "Mess" / f"{name}.m").write_bytes(b"")
+        for name in ("C0407a", "C0101", "startup", "CFINAL"):
+            (files / "Scripts" / f"{name}.cmb").write_bytes(b"")
+        self.assertEqual([(p.name, c) for p, c in text_assets.message_files(self.project)],
+                         [("c0101.m", "0101"), ("c0102.m", "0102"), ("c0407a.m", "0407a"),
+                          ("common.m", None), ("e_c0101.m", None)])
+        self.assertEqual([(p.name, c) for p, c in text_assets.script_files(self.project)],
+                         [("C0101.cmb", "0101"), ("C0407a.cmb", "0407a"), ("startup.cmb", None),
+                          ("CFINAL.cmb", None)])
+
+    def test_asset_tools_without_a_decoder_are_listed_for_gating(self):
+        from fe_modding.gui.pages.assets import ASSET_FEATURES, TOOLS_BY_KEY
+        from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
+
+        self.assertTrue(set(ASSET_FEATURES) <= set(TOOLS_BY_KEY))
+        for key, feature in ASSET_FEATURES.items():
+            self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), key)
+            self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature), key)
+
 
 if __name__ == "__main__":
     unittest.main()

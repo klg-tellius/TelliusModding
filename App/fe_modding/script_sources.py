@@ -17,9 +17,18 @@ from .formats import event_flags
 from .formats.cmb import CompileError, compile_source, decompile, read_cmb, write_cmb
 from .formats.cmb.model import ScriptFile
 from .formats.cmb.parser import ParseError, parse
+from .exceptions import ProjectError
+from .game_profile import SCRIPTS, files_dir_of, profile_of
 from .project import ModProject
 
 SOURCES_DIR = "script_sources"
+
+
+def _require_scripts(project: ModProject) -> None:
+    """Raise ProjectError when the project's game has no event-script codec yet."""
+    profile = profile_of(project)
+    if not profile.supports(SCRIPTS):
+        raise ProjectError(profile.unavailable(SCRIPTS))
 
 
 def scripts_dir(project: ModProject) -> Path:
@@ -54,6 +63,7 @@ class LoadedScript:
 def load(project: ModProject, cmb_path: Path, *, ignore_sidecar: bool = False) -> LoadedScript:
     """Read ``cmb_path`` as source. A kept source that no longer matches the
     file is moved aside to ``.fe9s.bak``."""
+    _require_scripts(project)
     data = cmb_path.read_bytes()
     base = read_cmb(data)
     sidecar = sidecar_path(project, cmb_path)
@@ -77,6 +87,7 @@ def load(project: ModProject, cmb_path: Path, *, ignore_sidecar: bool = False) -
 def peek(project: ModProject, cmb_path: Path) -> str:
     """The script's source for reading only: the kept source when it still
     matches the file, else a fresh decompile. Changes nothing on disk."""
+    _require_scripts(project)
     data = cmb_path.read_bytes()
     base = read_cmb(data)
     sidecar = sidecar_path(project, cmb_path)
@@ -91,8 +102,11 @@ def peek(project: ModProject, cmb_path: Path) -> str:
 
 
 def chapter_script(project: ModProject, chapter_id: str) -> Optional[Path]:
-    """``Scripts/CNN.cmb`` of a chapter (map ``bmapNN``), if it exists."""
-    path = scripts_dir(project) / f"C{int(chapter_id):02d}.cmb"
+    """``Scripts/CNN.cmb`` of a chapter (map ``bmapNN``), if it exists and the game's scripts can be read."""
+    profile = profile_of(project)
+    if not profile.supports(SCRIPTS):
+        return None
+    path = profile.script_path(files_dir_of(project), chapter_id)
     return path if path.exists() else None
 
 
