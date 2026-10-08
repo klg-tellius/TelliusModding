@@ -215,11 +215,14 @@ FE10_TILES = {
     "triangle": ("△", "Weapon triangle damage and hit"),
     "groups": ("⚐", "Army groups and their names"),
     "difficulty": ("≡", "Constants per difficulty (rows not named yet)"),
+    "growth": ("↗", "FE10Growth.cms: absolute stats at every level, per character"),
+    "battle_scenery": ("⛰", "Battle background per map and terrain type"),
+    "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
 }
-FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills")),
-                 ("Chapters and maps", ("chapters", "terrain")),
+FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills", "growth")),
+                 ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
                  ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
-                 ("Rules", ("triangle", "groups", "difficulty")))
+                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm")))
 
 
 class Fe10GameDataPage(Page):

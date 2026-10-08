@@ -54,7 +54,7 @@ SKILL_RECORD_SIZE = 0x2C
 class FieldDef:
     key: str
     label: str
-    kind: str        # "label", "u8", "s8", "u16", "u32"
+    kind: str        # "label", "u8", "s8", "u16", "u32", "f32"
     group: str = ""  # form section
     offset: int = -1  # record-relative offset (fixed-size tables; -1: fields follow each other)
 
@@ -257,6 +257,9 @@ def _read_fields(data: bytes, record: Record, defs: Sequence[FieldDef], at: int)
         elif d.kind == "u32":
             record.values[d.key] = _u32(data, at)
             at += 4
+        elif d.kind == "f32":
+            record.values[d.key] = round(struct.unpack_from(">f", data, at)[0], 6)
+            at += 4
         elif d.kind == "u16":
             record.values[d.key] = struct.unpack_from(">H", data, at)[0]
             at += 2
@@ -282,6 +285,8 @@ def _walk(data: bytes, kind: str) -> list[Record]:
         return _read_fixed(data, kind)
     if kind == "support":
         return _read_supports(data)
+    if kind == "battle_scenery":
+        return _read_battle_scenery(data)
     start = table_start(data, kind)
     count = _u32(data, start)
     at = start + 4
@@ -477,6 +482,10 @@ def patch_field(data: bytes, kind: str, index: int, key: str, value) -> bytes:
         out = bytearray(data)
         fe8data._pack_pointer(out, offset, ptr)
         return bytes(out)
+    if definition.kind == "f32":
+        out = bytearray(data)
+        struct.pack_into(">f", out, offset, float(value))
+        return bytes(out)
     value = int(value)
     fmt, low, high = {"u8": (">B", 0, 255), "s8": (">b", -128, 127), "u16": (">H", 0, 0xFFFF),
                       "u32": (">I", 0, 0xFFFFFFFF)}[definition.kind]
@@ -599,6 +608,7 @@ class FixedTable:
     size: int
     fields: tuple
     counted: bool = True
+    fixed_count: int = 0  # a table with neither count word nor names: this many records
 
 
 def _f(key: str, label: str, kind: str, offset: int, group: str = "") -> FieldDef:
@@ -665,15 +675,18 @@ FIXED_TABLES = {
         _f("against", "Against", "label", 4, "Weapon triangle"),
         _f("damage", "Damage", "s8", 8, "Weapon triangle"), _f("hit", "Hit", "s8", 9, "Weapon triangle"))),
     "difficulty": FixedTable("GameData", 0x08, tuple(
-        _f(f"value_{i}", f"Difficulty {i + 1}", "u16", 2 * i, "Constants") for i in range(4)), counted=False),
+        _f(f"value_{i}", f"Difficulty {i + 1}", "u16", 2 * i, "Constants") for i in range(4)), counted=False,
+        fixed_count=10),  # ten rows of four u16 (one per difficulty) before the terrain blocks
+    "biorhythm": FixedTable("BioData", 0x10, tuple(
+        _f(f"value_{i}", f"Value {i + 1}", "f32", 4 * i, "Biorhythm row") for i in range(4)), counted=False,
+        fixed_count=10),  # ten rows of four floats
 }
-#: GameData holds ten rows of four u16 values (one per difficulty) before the terrain blocks.
-DIFFICULTY_ROWS = 10
 
 ID_FIELD = {"character": "pid", "class": "jid", "item": "iid", "skill": "sid", "chapter": "cid",
             "terrain": "name", "group": "name", "bond": "pid", "affinity": "affinity",
-            "affinity_pair": "affinity", "triangle": "weapon", "support": "pid"}
-ALL_KINDS = KINDS + tuple(FIXED_TABLES) + ("support",)
+            "affinity_pair": "affinity", "triangle": "weapon", "support": "pid", "battle_scenery": "map",
+            "growth": "pid"}
+ALL_KINDS = KINDS + tuple(FIXED_TABLES) + ("support", "battle_scenery")
 FIELD_NOTES.update({
     "flags": "Bit flags of the terrain type (byte 7 of Path of Radiance's block marks object tiles).",
     "bonus": "Bonus between bonded units (5 or 10 in the retail data).",
@@ -684,8 +697,8 @@ FIELD_NOTES.update({
 def _read_fixed(data: bytes, kind: str) -> list[Record]:
     table = FIXED_TABLES[kind]
     start = fe8data.section_start(data, table.symbol)
-    if kind == "difficulty":
-        count, at = DIFFICULTY_ROWS, start
+    if table.fixed_count:
+        count, at = table.fixed_count, start
     elif table.counted:
         count, at = _u32(data, start), start + 4
     else:  # no count word: the records run while their name field (+4) is a listed pointer
@@ -770,4 +783,101 @@ def set_support(data: bytes, index: int, partner: int, flag: int, speed: int) ->
     out = bytearray(data)
     at = rec.offsets["partners"] + SUPPORT_ENTRY_SIZE * partner + 4
     out[at], out[at + 1] = flag, speed
+    return bytes(out)
+
+
+# -- battle scenery per map and terrain (BattleTerrIndex / BattleTerrName) --------------------------
+
+def battle_scenery_names(data: bytes) -> list[Optional[str]]:
+    """BattleTerrName: the battle backgrounds (``bg0101街``...), indexed by BattleTerrIndex."""
+    start = fe8data.section_start(data, "BattleTerrName")
+    end = fe8data.section_start(data, "RelianceData")
+    return [resolve(data, _u32(data, at)) for at in range(start, end, 4)]
+
+
+def _read_battle_scenery(data: bytes) -> list[Record]:
+    """BattleTerrIndex: u16 terrain-type count (199) and u16 map count (44), then per map its folder
+    label and one u16 per terrain type, the BattleTerrName index fought on (0xFFFF: none), padded
+    to a word."""
+    start = fe8data.section_start(data, "BattleTerrIndex")
+    types, maps = struct.unpack_from(">HH", data, start)
+    size = 4 + (2 * types + 3) // 4 * 4
+    records = []
+    for i in range(maps):
+        at = start + 4 + size * i
+        r = Record("battle_scenery", i, at, at + size)
+        r.offsets["map"] = at
+        r.values["map"] = resolve(data, _u32(data, at))
+        r.offsets["scenery"] = at + 4
+        r.lists["scenery"] = list(struct.unpack_from(f">{types}H", data, at + 4))
+        records.append(r)
+    return records
+
+
+def set_battle_scenery(data: bytes, index: int, terrain: int, scenery: int) -> bytes:
+    """Map ``index`` fights on terrain type ``terrain`` in front of BattleTerrName entry ``scenery``
+    (0xFFFF: none)."""
+    rec = _read_battle_scenery(data)[index]
+    if not 0 <= terrain < len(rec.lists["scenery"]):
+        raise IndexError(f"No terrain type {terrain}.")
+    names = battle_scenery_names(data)
+    if scenery != 0xFFFF and not 0 <= scenery < len(names):
+        raise ValueError(f"The scenery is 0-{len(names) - 1} or 65535 (none).")
+    out = bytearray(data)
+    struct.pack_into(">H", out, rec.offsets["scenery"] + 2 * terrain, scenery)
+    return bytes(out)
+
+
+# -- adding and removing records -------------------------------------------------------------------
+
+#: Tables whose records can be added and removed: the ones with a count word the engine loops on.
+#: Skills are left fixed (each has its own symbol, and Path of Radiance binds them to literal
+#: numbers); terrain and the row tables have no count word.
+ADDABLE_KINDS = ("character", "class", "item", "chapter", "group", "bond", "affinity_pair", "triangle")
+#: A save stores these records by number: removing one renumbers the ones after it.
+SAVED_BY_NUMBER = ("character", "class", "item")
+
+
+def _count_offset(data: bytes, kind: str) -> int:
+    if kind in KINDS:
+        return table_start(data, kind)
+    return fe8data.section_start(data, FIXED_TABLES[kind].symbol)
+
+
+def add_record(data: bytes, kind: str, copy_of: int, new_id: Optional[str] = None) -> tuple[bytes, int]:
+    """Append a copy of record ``copy_of`` to the end of its table (its label fields stay listed and
+    still name the same strings), give it ``new_id``, and return the file and the new index."""
+    if kind not in ADDABLE_KINDS:
+        raise ValueError(f"{kind} records cannot be added.")
+    records = _walk(data, kind)
+    source = records[copy_of]
+    listed = fe8data.listed_pointer_fields(data)
+    block = bytes(data[source.start:source.end])
+    fields = [f - source.start for f in sorted(listed) if source.start <= f < source.end]
+    data = insert_bytes(data, records[-1].end, block, [f for f in fields])
+    out = bytearray(data)
+    at = _count_offset(data, kind)
+    struct.pack_into(">I", out, at, _u32(out, at) + 1)
+    data, index = bytes(out), len(records)
+    if new_id:
+        data = patch_field(data, kind, index, ID_FIELD[kind], new_id)
+    return data, index
+
+
+def remove_record(data: bytes, kind: str, index: int) -> bytes:
+    """Remove record ``index`` (the records after it move up one number)."""
+    if kind not in ADDABLE_KINDS:
+        raise ValueError(f"{kind} records cannot be removed.")
+    records = _walk(data, kind)
+    if len(records) <= 1:
+        raise ValueError("The last record of a table cannot be removed.")
+    rec = records[index]
+    out = bytearray(data)
+    for f in sorted(fe8data.listed_pointer_fields(data)):
+        if rec.start <= f < rec.end:
+            fe8data._pack_pointer(out, f, 0)
+    data = delete_bytes(bytes(out), rec.start, rec.end - rec.start)
+    out = bytearray(data)
+    at = _count_offset(data, kind)
+    struct.pack_into(">I", out, at, _u32(out, at) - 1)
     return bytes(out)

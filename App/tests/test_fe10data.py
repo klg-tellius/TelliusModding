@@ -192,5 +192,71 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(fe10data.record(own, "terrain", users[-1]).values["cost_0"], 1)
         self.assertEqual(fe10data.terrain_block_users(own, 1), [1])
 
+    def test_battle_scenery_and_biorhythm(self):
+        scenery = {r.id: r for r in self.db.table("battle_scenery")}
+        self.assertEqual(len(scenery), 44)
+        self.assertEqual(self.db.table("battle_scenery")[-1].end, fe8data.section_start(self.data, "BattleTerrName"))
+        names = fe10data.battle_scenery_names(self.data)
+        terrain = [t.values["name"] for t in self.db.table("terrain")]
+        bmap0107 = {terrain[i]: names[v] for i, v in enumerate(scenery["bmap0107"].lists["scenery"]) if v != 0xFFFF}
+        self.assertEqual(bmap0107["川"], "bg0107川")
+        out = fe10data.set_battle_scenery(self.data, 1, 5, 0)
+        self.assertEqual(fe10data.record(out, "battle_scenery", 1).lists["scenery"][5], 0)
+        rows = self.db.table("biorhythm")
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(rows[1].values["value_0"], 1.5)
+        out = fe10data.patch_field(self.data, "biorhythm", 1, "value_0", 1.25)
+        self.assertEqual(fe10data.record(out, "biorhythm", 1).values["value_0"], 1.25)
+
+    def test_retail_database_has_no_errors(self):
+        from fe_modding import validator_fe10
+
+        growth = lz10.decompress((FILES / "FE10Growth.cms").read_bytes())
+        issues = validator_fe10.validate_fe10data(self.data, growth)
+        self.assertEqual([i for i in issues if i.severity == "error"], [])
+        broken = fe10data.patch_field(self.data, "character", 0, "jid", "JID_NOPE")
+        self.assertTrue(any("JID_NOPE" in i.message for i in validator_fe10.validate_fe10data(broken)))
+
+
+    def test_add_and_remove_records(self):
+        data_end = fe10data._data_end(self.data)
+        for kind in fe10data.ADDABLE_KINDS:
+            with self.subTest(kind=kind):
+                new_id = {"character": "PID_NEWGUY", "class": "JID_NEWCLASS", "item": "IID_NEWITEM"}.get(kind)
+                grown, index = fe10data.add_record(self.data, kind, 0, new_id)
+                db = fe10data.read_fe10data(grown)
+                self.assertEqual(index, len(self.db.table(kind)))
+                self.assertEqual(len(db.table(kind)), index + 1)
+                copy, source = db.table(kind)[index], self.db.table(kind)[0]
+                id_key = fe10data.ID_FIELD[kind]
+                self.assertEqual({k: v for k, v in copy.values.items() if k != id_key},
+                                 {k: v for k, v in source.values.items() if k != id_key})
+                if new_id:
+                    self.assertEqual(copy.id, new_id)
+                self._ends_match(grown, db)
+                restored = fe10data.remove_record(grown, kind, index)
+                if new_id is None:
+                    self.assertEqual(restored, self.data)
+                else:  # the new ID stays in the string pool; everything before it is the original
+                    self.assertEqual(restored[HEADER_SIZE:data_end], self.data[HEADER_SIZE:data_end])
+
+@unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to the files/ folder of an extracted Radiant Dawn disc")
+class RetailFe10GrowthTests(unittest.TestCase):
+    def test_records_lines_and_edit(self):
+        from fe_modding.formats import fe10growth
+
+        data = lz10.decompress((FILES / "FE10Growth.cms").read_bytes())
+        records = fe10growth.read_growth(data)
+        self.assertEqual(len(records), 375)
+        ike = records[0]
+        self.assertEqual((ike.pid, ike.first, ike.last), ("PID_IKE", 31, 60))
+        self.assertEqual(ike.lines[0], [44, 24, 2, 28, 23, 14, 21, 7])
+        self.assertEqual(fe10growth.GrowthRecord.describe_level(31), "tier 2, level 11")
+        self.assertEqual(len(fe10growth.sharing(data, 353)), 3)  # the tutorial's PID_TUT_SO_B records
+        out = fe10growth.set_line(data, 0, 60, [70, 36, 9, 40, 34, 22, 32, 14])
+        self.assertEqual(fe10growth.read_growth(out)[0].lines[-1][0], 70)
+        with self.assertRaises(ValueError):
+            fe10growth.set_line(data, 0, 30, [0] * 8)
+
 if __name__ == "__main__":
     unittest.main()

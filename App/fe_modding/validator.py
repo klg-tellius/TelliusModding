@@ -24,7 +24,7 @@ from typing import Iterable, Optional
 
 from . import chapters
 from .formats import dispo, fe8data, lz10, pak, shop, supports
-from .game_profile import GAME_DATA, profile_of
+from .game_profile import DATA_TABLES, GAME_DATA, profile_of
 from .project import ModProject
 
 ERROR, WARNING = "error", "warning"
@@ -305,6 +305,9 @@ def validate_project(project: ModProject, flow=None) -> Report:
     """Check an extracted project. ``flow`` is a ``game_code.chapter_flow.ChapterFlow`` (optional);
     with it, chapters above the retail ones that no chapter leads to are reported."""
     profile = profile_of(project)
+    if not profile.supports(GAME_DATA) and profile.supports(DATA_TABLES):
+        from .validator_fe10 import validate_fe10_project
+        return validate_fe10_project(project)
     if not profile.supports(GAME_DATA):
         return Report([Issue(WARNING, "Project", profile.file_label("game_data"), profile.unavailable(GAME_DATA))])
     fe8_path = project.extracted_dir / "files" / profile.logical("game_data").path
