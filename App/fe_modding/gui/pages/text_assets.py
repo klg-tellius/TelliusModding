@@ -14,7 +14,8 @@ from pathlib import Path
 from tkinter import ttk
 
 from ... import chapters, script_sources
-from ...game_profile import profile_of
+from ...formats import fe10_message
+from ...game_profile import CHAPTERS, profile_of
 from ..dialogue_editor import DialogueEditor
 from ..editor_panel import EditorPanel
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
@@ -154,9 +155,17 @@ class ConversationsPanel(_FileList):
     def files(self):
         return message_files(self._project)
 
+    def _opens_here(self, chapter_id) -> bool:
+        """A file without a chapter page opens in this panel: one that is no chapter's, or any file
+        while the game has no chapter pages yet (Radiant Dawn until its chapters are decoded)."""
+        return chapter_id is None or not profile_of(self._project).supports(CHAPTERS)
+
     def _card(self, grid, path, chapter_id):
-        if chapter_id is None:
-            return Card(grid, title=path.name, subtitle="Not one chapter's: opens here", width=260,
+        if self._opens_here(chapter_id):
+            subtitle = "Not one chapter's: opens here" if chapter_id is None else f"Chapter {chapter_id}"
+            if profile_of(self._project).message_dialect == "fe10":
+                subtitle += f"  ·  {fe10_message.language_of(path.name)}"
+            return Card(grid, title=path.name, subtitle=subtitle, width=260,
                         on_click=lambda: self._shell.navigate(("asset", "conversations", path.name)))
         index = self._shell.index
         count = len(index.messages_by_chapter.get(chapter_id, [])) if index is not None else 0
@@ -173,7 +182,7 @@ class ConversationsPanel(_FileList):
         """Show the message file ``name`` (one that is no chapter's) in the
         hosted editor. False if there is no such file, or the editor kept
         another file's unsaved edits."""
-        path = next((p for p, cid in self.files() if p.name == name and cid is None), None)
+        path = next((p for p, cid in self.files() if p.name == name and self._opens_here(cid)), None)
         if path is None:
             return False
         if self._editor is None:

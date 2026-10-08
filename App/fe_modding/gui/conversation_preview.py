@@ -1,11 +1,11 @@
-"""FE9 preview, with the earlier FE10 implementation kept separate."""
+"""Conversation preview: Path of Radiance (FE9), or the Radiant Dawn one (fe10_conversation_preview)."""
 from __future__ import annotations
 
 import time
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from ..game_profile import DIALOGUE, profile_of
+from ..game_profile import profile_of
 from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
@@ -14,9 +14,9 @@ from .scene_editor import layout_labels
 
 
 def ConversationPreview(parent, project):
-    if not profile_of(project).supports(DIALOGUE):
-        from .legacy_conversation_preview import ConversationPreview as LegacyPreview
-        return LegacyPreview(parent, project)
+    if profile_of(project).message_dialect == "fe10":
+        from .fe10_conversation_preview import Fe10ConversationPreview
+        return Fe10ConversationPreview(parent, project)
     return FE9ConversationPreview(parent, project)
 
 

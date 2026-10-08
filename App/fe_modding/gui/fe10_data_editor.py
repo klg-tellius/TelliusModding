@@ -172,6 +172,25 @@ class Fe10DataEditor(EditorPanel):
     def _confirm_discard(self) -> bool:
         return messagebox.askyesno("Unsaved changes", "Discard the unsaved game data changes?", parent=self)
 
+    def _title_card(self) -> None:
+        """Draw the selected chapter's title card from its title (Radiant Dawn's window/title cards)."""
+        from .. import chapters
+
+        index = self._selected.get(self._tab)
+        if self._db is None or index is None:
+            messagebox.showinfo("Title card", "Select a chapter first.", parent=self)
+            return
+        cid = self._table("chapter")[index].values.get("cid") or ""
+        chapter_id = cid[1:] if cid[1:].isdigit() else cid[1:].lower()
+        title = self._names.get(self._table("chapter")[index].values.get("title") or "", "") or \
+            chapters.chapter_titles(self._project).get(chapter_id, "")
+        dialog = _TitleCardDialog(self, self._project, chapter_id, title)
+        self.wait_window(dialog)
+        written = getattr(dialog, "written", None)
+        if written is not None:
+            self._changelog.append(written.name, f"Drew the title card of chapter {chapter_id}")
+            self._status.configure(text=f"Wrote {written.name}.")
+
     # -- layout -------------------------------------------------------------------------------
     def _build(self) -> None:
         top = ttk.Frame(self, padding=(8, 8, 8, 0))
@@ -182,6 +201,7 @@ class Fe10DataEditor(EditorPanel):
         self._save_button.pack(side="right")
         self._remove_button = ttk.Button(top, text="Remove", command=self._remove_record)
         self._add_button = ttk.Button(top, text="New (copy of selected)...", command=self._add_record)
+        self._card_button = ttk.Button(top, text="Title card...", command=self._title_card)
         search = ttk.Frame(self, padding=(8, 6, 8, 0))
         search.pack(fill="x")
         ttk.Label(search, text="Search").pack(side="left")
@@ -245,8 +265,10 @@ class Fe10DataEditor(EditorPanel):
 
     def _refresh_list(self) -> None:
         file_key = "growth_data" if self.kind == "growth" else "game_data"
-        for button in (self._remove_button, self._add_button):
+        for button in (self._remove_button, self._add_button, self._card_button):
             button.pack_forget()
+        if self.kind == "chapter":
+            self._card_button.pack(side="right", padx=(0, 6))
         if self.kind in fe10data.ADDABLE_KINDS:
             self._remove_button.pack(side="right", padx=(0, 6))
             self._add_button.pack(side="right", padx=(0, 6))
@@ -697,3 +719,78 @@ class Fe10DataEditor(EditorPanel):
         self._replace(data, f"Removed {self.kind} {label}")
         self._selected[self._tab] = None
         self._refresh_list()
+
+
+class _TitleCardDialog(tk.Toplevel):
+    """Draw a chapter's title card (``window/title/e_ch<id>.cms``) from its title, preview it next to
+    the current one, and write it."""
+
+    def __init__(self, parent, project: ModProject, chapter_id: str, title: str):
+        super().__init__(parent)
+        from .. import chapter_images
+        from PIL import ImageTk
+
+        self._ci, self._tk_image = chapter_images, ImageTk
+        self.title(f"Title card of chapter {chapter_id}")
+        self.transient(parent.winfo_toplevel())
+        self._project, self._chapter, self._font = project, chapter_id, None
+        self._files = project.extracted_dir / "files"
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Title (from the chapter's title key):").pack(anchor="w")
+        self._title = tk.StringVar(value=title)
+        entry = ttk.Entry(body, textvariable=self._title, width=60)
+        entry.pack(fill="x")
+        self._title.trace_add("write", lambda *_: self._draw())
+        self._images = ttk.Frame(body)
+        self._images.pack(pady=8)
+        self._current = tk.Label(self._images, background="#28283c")
+        self._current.grid(row=0, column=0, padx=4)
+        self._new = tk.Label(self._images, background="#28283c")
+        self._new.grid(row=0, column=1, padx=4)
+        ttk.Label(self._images, text="Current").grid(row=1, column=0)
+        ttk.Label(self._images, text="New").grid(row=1, column=1)
+        self._font_label = ttk.Label(body, style="Muted.TLabel", text="Font: the game's dialogue font "
+                                     "(the retail serif is pre-drawn art; pick a serif TrueType font to match it)")
+        self._font_label.pack(anchor="w")
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Use a TrueType/OpenType font...", command=self._pick_font).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Write", style="Accent.TButton", command=self._write).pack(side="right", padx=4)
+        self._result = None
+        path = self._files / chapter_images.FE10_CARD_FOLDER / chapter_images.fe10_card_name(chapter_id)
+        if path.is_file():
+            self._photo_current = ImageTk.PhotoImage(chapter_images.preview(path.read_bytes()))
+            self._current.configure(image=self._photo_current)
+        self._draw()
+        self.grab_set()
+
+    def _draw(self) -> None:
+        try:
+            self._result = self._ci.fe10_title_card(self._files, self._chapter, self._title.get(), truetype=self._font)
+        except (OSError, ValueError) as exc:
+            self._result = None
+            self._new.configure(image="", text=str(exc), foreground="white")
+            return
+        if self._result is None:
+            self._new.configure(image="", text="No card template or font on the disc", foreground="white")
+            return
+        self._photo_new = self._tk_image.PhotoImage(self._ci.preview(self._result[1]))
+        self._new.configure(image=self._photo_new, text="")
+
+    def _pick_font(self) -> None:
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(parent=self, title="Font", filetypes=[("Fonts", "*.ttf *.otf *.ttc")])
+        if path:
+            self._font = path
+            self._font_label.configure(text=f"Font: {path}")
+            self._draw()
+
+    def _write(self) -> None:
+        if self._result is None:
+            return
+        path, data = self._result
+        self._project.write_keeping_original(path, data)
+        self.written = path
+        self.destroy()

@@ -317,7 +317,9 @@ const TITLES = {
   "skill-chant":"Chant", "skill-canto":"Canto",
   "level-up-growth":"Level-Up Growth", "armies-allegiance":"Armies & Allegiance", "laguz-transformation":"Laguz Transformation",
   "terrain-texture-rendering":"Terrain Texture Blending", "weather":"Weather",
-  "developer-debug-tools":"Developer & Debug Tools", "event-flags":"Event Flags"
+  "developer-debug-tools":"Developer & Debug Tools", "event-flags":"Event Flags",
+  "radiant-dawn":"Radiant Dawn", "rd-message-format":"Message Format (Radiant Dawn)",
+  "rd-portraits":"Portraits (Radiant Dawn)", "rd-conversation-data":"FE10Conversation.cms"
 };
 function wl(id, label){ return `<a class="wl" href="#/${id}">${label || TITLES[id] || id}</a>`; }
 
@@ -357,7 +359,7 @@ main: {
 
   <div class="callout warn">
     <p class="callout-t">Scope</p>
-    <p>Offsets and record sizes in this archive target the <strong>US release of Path of Radiance</strong>. ${wl("unexplored","Radiant Dawn")} shares the engine, but its layouts and mechanics require separate documentation.</p>
+    <p>Offsets and record sizes in this archive target the <strong>US release of Path of Radiance</strong>. Radiant Dawn shares the engine, but its layouts and mechanics require separate documentation: what is known so far is collected on ${wl("radiant-dawn")}.</p>
   </div>
   `
 },
@@ -396,7 +398,7 @@ unexplored: {
   </table>
 
   <h2 id="rd">Radiant Dawn</h2>
-  <p>The largest gap of all: nothing in this archive has been checked against Radiant Dawn, the Wii sequel sharing this same engine. Its disc structure looks similar at a glance, but table offsets, record sizes, and whole mechanics could differ in ways nothing here would catch.</p>
+  <p>Radiant Dawn, the Wii sequel, runs on the same engine but changes many layouts. Its text, portraits, fonts and conversation lists are described on ${wl("radiant-dawn")}; the rest of the archive still describes Path of Radiance only. For Radiant Dawn, open items include its European single-byte text tables, the composition of its dialogue window art, and every system not yet listed on that page.</p>
   `
 },
 
@@ -3538,6 +3540,144 @@ biorhythm: {
     <p class="callout-t">Open</p>
     <p>Whether chapter title cards, map names and battle damage numbers are font text or pre-drawn images is not yet established. The shadow and outline behind dialogue text are described in ${wl("message-format")}. ${badge("open","open")}</p>
   </div>
+  `
+},
+
+/* ------------------------------------------------------------------ RADIANT DAWN */
+
+"radiant-dawn": {
+  ns:"meta", title:"Radiant Dawn", dek:"What carries over from Path of Radiance to its Wii sequel, and what changes",
+  infobox:{ type:"Portal", status:"strong", fields:[
+    ["Disc","Wii, <code>RFEE01</code> (US)"],["Engine","Path of Radiance's, extended"],["Executable","<code>sys/main.dol</code>, US addresses below"]
+  ]},
+  categories:["Portal","Radiant Dawn"],
+  body:`
+  <p><em>Fire&nbsp;Emblem: Radiant Dawn</em> (Wii, 2007) is built on the Path of Radiance engine. Most containers are the same, but nearly every record layout on top of them changed. This page lists what is established for the US disc; articles about Path of Radiance do not apply to it unless a page here says so.</p>
+  <h2>What is the same</h2>
+  <ul>
+    <li>The ${wl("labeled-section","labeled-section container")} (header, data, pointer list, named symbols) under every data file, and ${wl("lz10")} compression: on Radiant Dawn almost every data file is an LZ10 <code>.cms</code> (<code>FE10Data.cms</code>, <code>FE10Conversation.cms</code>, portraits, fonts, cards).</li>
+    <li>The message <em>file</em> layout of ${wl("message-format")}: a header, the texts, a sorted table of (text, ID) pairs, the IDs. Only the text inside each message changed (see ${wl("rd-message-format")}).</li>
+    <li>The ${wl("font-format","font format")}. All Radiant Dawn fonts are LZ10-wrapped copies of the same GCF layout.</li>
+    <li>The engine's global name table (message IDs and data symbols are looked up by name), with 2,027 buckets instead of 509 and the <em>last</em> matching entry winning instead of the first. ${badge("confirmed","engine")}</li>
+  </ul>
+  <h2>Languages</h2>
+  <p>Every disc carries the Japanese text in plain files (<code>Mess/c0101.m</code>). The game picks a variant by prefix at run time: <code>e_</code> English, <code>d_</code> German, <code>f_</code> French, <code>s_</code> Spanish, <code>i_</code> Italian. The US disc holds the Japanese and English files, the European disc all six. English and Japanese text is Shift-JIS; the other European languages use their own single-byte tables (ß is <code>0xBF</code> in German text), not yet mapped. ${badge("confirmed","engine + files")}</p>
+  <h2>Fonts</h2>
+  <p>A table in the executable pairs each font number with a 4:3 and a 16:9 file: 0 system, 1 fe_font (the Tellius alphabet), 2 talk (dialogue), 3 bigkana, 4 alpha, each with a <code>_w</code> twin for widescreen consoles, and 5 ruby (furigana), one file for both. <code>Fonts/debug.cms</code> is on the disc but in no table. The widescreen fonts have the same glyphs drawn narrower, because the console stretches the 640-pixel-wide picture to 16:9. ${badge("confirmed","engine + files")}</p>
+  <h2>Chapter titles and title cards</h2>
+  <p>A chapter's title is the message named by its <code>ChapterData</code> record (<code>MCT0102</code>, "I:1-Maiden of Miracles": part, chapter, name). The card shown when a chapter starts is a picture, <code>window/title/e_ch0102.cms</code> (<code>ch0102.cms</code> for Japanese): one 480&times;160 RGB5A3 image with two centred lines, "Ch 1" (or "Prologue", "Endgame") and the chapter's name, in green-grey serif lettering with a dark drop shadow. The lettering is pre-drawn art; no font on the disc contains it. ${badge("confirmed","files")}</p>
+  <h2>Articles</h2>
+  <ul>
+    <li>${wl("rd-message-format")}: the byte-code that replaced the <code>$</code> commands, layouts and speech balloons.</li>
+    <li>${wl("rd-portraits")}: the face table and how a portrait is assembled.</li>
+    <li>${wl("rd-conversation-data")}: base Info conversations, the Conversation Room and support chat lines.</li>
+  </ul>
+  `
+},
+
+"rd-message-format": {
+  ns:"format", title:"Message Format (Radiant Dawn)", dek:"The byte-code that replaced Path of Radiance's $ commands",
+  infobox:{ type:"Text &middot; relocatable resource", status:"confirmed", fields:[
+    ["Files","<code>Mess/[e_]c0101.m</code>, <code>common.m</code>&hellip;"],["Container",`Same as ${wl("message-format","Path of Radiance")}`],
+    ["Commands","Control bytes 0x01&ndash;0x12"],["Interpreter","US <code>0x80149434</code>"]
+  ]},
+  categories:["Text","Radiant Dawn"],
+  body:`
+  <p>Radiant Dawn keeps Path of Radiance's message files and its scene language (layouts, a cast of portraits, boxes, waits, pauses) but writes the commands differently. Instead of printable <code>$</code> codes, every command starts with a control byte below <code>0x20</code>, and that byte says how long the command is. Ordinary text and the <code>#</code> and <code>@</code> markup (fonts, colours, values, button icons) are unchanged. ${badge("confirmed","engine + every message")}</p>
+  <h2>The command bytes</h2>
+  <table class="tight"><thead><tr><th>Bytes</th><th>Command</th></tr></thead><tbody>
+    <tr><td><code>00</code></td><td>End of the message</td></tr>
+    <tr><td><code>01</code> X</td><td>One-letter command</td></tr>
+    <tr><td><code>02</code> XY</td><td>Two-letter command</td></tr>
+    <tr><td><code>03</code> XYZ</td><td>Three-letter command (only <code>DFC</code>)</td></tr>
+    <tr><td><code>04</code> X&hellip;<code>|</code></td><td>A letter and an argument up to a <code>|</code></td></tr>
+    <tr><td><code>05</code> XY<code>|</code>&hellip;<code>||</code></td><td>A two-letter list: fields each ending with <code>|</code>, closed by an empty field</td></tr>
+    <tr><td><code>07</code> a p</td><td>Actor <em>a</em> speaks at position <em>p</em>: the box and nameplate switch to it, and the box is cleared when the speaker changes</td></tr>
+    <tr><td><code>08</code> p f, <code>0E</code> p f</td><td>Bring the current actor in at position <em>p</em>, facing <em>f</em> (<code>D</code> the seat's default, <code>L</code>, <code>R</code>). <code>08</code> ends the current text tick, <code>0E</code> carries on</td></tr>
+    <tr><td><code>09</code>, <code>0F</code></td><td>Remove the current actor's portrait and box (<code>09</code> ends the tick)</td></tr>
+    <tr><td><code>0A</code></td><td>New line</td></tr>
+    <tr><td><code>0B</code> xx</td><td>Two bytes the game skips</td></tr>
+    <tr><td><code>0C</code> a p</td><td>Make actor <em>a</em> at position <em>p</em> current, without changing the speaker</td></tr>
+    <tr><td><code>0D</code> p f</td><td>The current actor takes over the portrait already standing at position <em>p</em></td></tr>
+    <tr><td><code>10</code></td><td>Scroll the box to a new page</td></tr>
+    <tr><td><code>11</code></td><td>Wait for A (or for the automatic delay set by <code>04 s</code>)</td></tr>
+    <tr><td><code>12</code></td><td>End the current text tick without waiting</td></tr>
+  </tbody></table>
+  <p>Actor and position digits are hexadecimal (<code>0</code>&ndash;<code>9</code>, <code>A</code>&ndash;<code>F</code>). An argument is read Shift-JIS aware, so the second byte of a two-byte character is never taken for the closing <code>|</code>. Any other byte below <code>0x20</code>, and a letter the game does not know, is skipped and the text continues. ${badge("confirmed","engine")}</p>
+  <h2>Letters</h2>
+  <table class="tight"><thead><tr><th>Command</th><th>Effect</th></tr></thead><tbody>
+    <tr><td><code>01 H</code></td><td>Suspend the message until the event script resumes it (Path of Radiance <code>$H</code>)</td></tr>
+    <tr><td><code>01 @</code>, <code>01 *</code></td><td>Release the event script waiting on the message (<code>$UB</code> / <code>$Ub</code>)</td></tr>
+    <tr><td><code>01 a</code>, <code>01 s</code></td><td>Second / first mouth set of the current actor (<code>$FA</code> / <code>$FS</code>)</td></tr>
+    <tr><td><code>01 P</code>, <code>01 G</code></td><td>Clear the box; dissolve its text in a random pattern ${badge("plausible","plausible")}</td></tr>
+    <tr><td><code>02 w</code>n</td><td>Pause 2<sup>n</sup> ticks</td></tr>
+    <tr><td><code>02 mc</code>, <code>md</code>, <code>mo</code></td><td>Mouth still, moving again, held open (vanilla wraps "..." in <code>mc</code>&hellip;<code>md</code>)</td></tr>
+    <tr><td><code>02 ec</code>, <code>eh</code>, <code>eo</code></td><td>Eyes closed, half-open, normal</td></tr>
+    <tr><td><code>02 sd</code>, <code>se</code>, <code>03 DFC</code></td><td>Disable / enable skipping the conversation with B</td></tr>
+    <tr><td><code>02 nc</code></td><td>Toggle the nameplate</td></tr>
+    <tr><td><code>02 O</code>n</td><td>Typing sound n (0 silent)</td></tr>
+    <tr><td><code>02 F</code>n, <code>04 FT</code>ms<code>|</code></td><td>Screen transition n over a duration in milliseconds; scenes end with <code>F1</code> and open with <code>F2</code> ${badge("plausible","plausible")}</td></tr>
+    <tr><td><code>02 f+</code>, <code>f-</code></td><td>Fade the layout's window frame in / out</td></tr>
+    <tr><td><code>04 R</code>, <code>04 B</code>, <code>04 b</code></td><td>Layout; background with the transition; background swapped at once</td></tr>
+    <tr><td><code>04 V</code>n name<code>|</code>, <code>02 VW</code>, <code>02 v</code>n</td><td>Play a voice line on channel n; wait for it to end; stop channel n</td></tr>
+    <tr><td><code>04 S</code>name<code>|</code></td><td>Play a sound effect</td></tr>
+    <tr><td><code>04 W</code>ms<code>|</code>, <code>04 s</code>ms<code>|</code></td><td>Pause for milliseconds; make later waits continue by themselves after that long (voiced scenes)</td></tr>
+    <tr><td><code>05 FL</code></td><td>The cast: up to 16 portrait names, numbered from 0 for the actor digits above. Ike, Micaiah, Sothe, Luchino, Meg and the player's avatar are replaced by their current look</td></tr>
+  </tbody></table>
+  <h2>Example</h2>
+  <p>A one-line battle quote of the first chapter is, byte by byte: <code>05 FL|PUGO||</code> (the cast is Pugo), <code>04 R上下会話|</code> (two-box layout), <code>07 0 4</code> (actor 0 speaks at position 4), <code>08 4 D</code> (bring him in at position 4), the text, then <code>11</code> (wait for A). A scene with a backdrop instead names large portraits (<code>L_EDDIE</code>) and the 背景会話 layout, places each actor with <code>0C</code> and <code>0E</code>/<code>08</code>, and sets the background with <code>04 B</code>.</p>
+  <h2>Layouts and speech balloons</h2>
+  <p>Layouts are resources of <code>window/RectDesc_en.bin</code> (the shop greeting's in <code>RectBase_en.bin</code>), the same container as ${wl("rect-format")} with a 48-byte text-box layer: window and page-cursor resources, text colour, text and cursor positions, width, line height, line count, typing speed and the position it belongs to. In the two-box family (上下会話, 背景上下会話, the tutorial layouts) each position has its own box, a speech balloon the game places when the actor comes in: the widest line plus 224 pixels (128 less when the actor has no portrait), rounded up to 48-pixel tiles and kept between 336 and 576. Each of the eight positions has a fixed corner (position 0 top left, 1 bottom right&hellip;), and the portrait stands at the seat point of the layout, inside the balloon. The background family (背景会話 and its variants) has one shared box and nine portrait seats. ${badge("confirmed","engine")}</p>
+  <table class="tight"><thead><tr><th>Layout</th><th>Messages (US English)</th></tr></thead><tbody>
+    <tr><td>上下会話, two boxes</td><td class="num">4,913</td></tr>
+    <tr><td>背景会話, scene over a background</td><td class="num">691</td></tr>
+    <tr><td>TUT会話, tutorial</td><td class="num">390</td></tr>
+    <tr><td>背景上下会話, two boxes over a background</td><td class="num">125</td></tr>
+    <tr><td>紹介会話, introductions; GMAP会話, world map; TUT小会話; 背景なし会話; 字幕会話, voiced subtitles; ダイアログ会話; BASE_SHOP_MESS; 背景のみ会話; のみ会話</td><td class="num">69 to 10</td></tr>
+  </tbody></table>
+  <p style="color:var(--ink-muted);font-size:13px">Open: the meaning of the flag letters <code>I</code>, <code>J</code>, <code>S</code>, <code>c</code>, <code>g</code>, <code>BO</code>, <code>KH</code>, <code>PL</code>/<code>PH</code>, <code>WO</code>/<code>WX</code>, the numbers of the <code>rc</code> and <code>FX</code> lists, and how the window art is cut into tiles. ${badge("open","open")}</p>
+  `
+},
+
+"rd-portraits": {
+  ns:"format", title:"Portraits (Radiant Dawn)", dek:"The face table and the fifteen images of a portrait",
+  infobox:{ type:"Record table + textures", status:"confirmed", fields:[
+    ["Table","<code>Face/facedata.bin</code>, 316 records"],["Record","48 bytes"],["Images","<code>Face/&lt;NAME&gt;.cms</code>, LZ10 TPL"],["16:9","<code>Face/wide/</code>"]
+  ]},
+  categories:["Graphics","Radiant Dawn"],
+  body:`
+  <p>Every portrait has one record in <code>Face/facedata.bin</code> and one image file. Unlike Path of Radiance (${wl("face-data")}), one record serves both portrait sizes: the small one shown in speech balloons and the large one of background scenes. ${badge("confirmed","files")}</p>
+  <h2>Record</h2>
+  <table class="tight"><thead><tr><th>Offset</th><th>Field</th></tr></thead><tbody>
+    <tr><td>0x00</td><td>Small portrait ID (<code>FID_IKE</code>)</td></tr>
+    <tr><td>0x04</td><td>Large portrait ID (<code>FID_L_IKE</code>)</td></tr>
+    <tr><td>0x08</td><td>Name key (<code>MPID_IKE</code>)</td></tr>
+    <tr><td>0x0C</td><td>Image file name (<code>IKE.cms</code>)</td></tr>
+    <tr><td>0x10&ndash;0x1B</td><td>Top-left corner of eye A, eye B and the mouth on the large picture (&minus;1 for faces without moving parts)</td></tr>
+    <tr><td>0x1C</td><td>Where the small picture is cut from the large one</td></tr>
+    <tr><td>0x20&ndash;0x2F</td><td>Eight more values, not identified ${badge("open","open")}</td></tr>
+  </tbody></table>
+  <h2>The images</h2>
+  <p>The file decompresses to a TPL of 15 images: 0 the small portrait (192&times;128), 1 the large portrait (336&times;336), 2&ndash;7 six mouth frames, 8&ndash;10 and 11&ndash;13 three frames of each eye, 14 a 64&times;64 face for menus. The two pictures have transparent holes where the eyes and mouth go; the frames are drawn behind them at the record's points. The small picture is exactly the large one cropped at the record's cut point: for Ike, 192&times;128 pixels from (83, 78). ${badge("confirmed","files")}</p>
+  <h2>Facing</h2>
+  <p>The art faces left. A layout seat marked as mirrored flips it, and a show command can force left or right. The 16:9 files in <code>Face/wide/</code> hold the same portraits drawn narrower, for the stretched widescreen picture.</p>
+  `
+},
+
+"rd-conversation-data": {
+  ns:"format", title:"FE10Conversation.cms", dek:"Base Info conversations, the Conversation Room and support chat lines",
+  infobox:{ type:"Data container &middot; LZ10", status:"confirmed", fields:[
+    ["Tables","3, then the string pool"],["Info conversations","101 &times; 48 bytes"],["Room supports","68 &times; 44 bytes"],["Support chat","71 characters &times; 71 partners"]
+  ]},
+  categories:["Text","Radiant Dawn"],
+  body:`
+  <p><code>FE10Conversation.cms</code> lists conversations that are not tied to one chapter script: the Info conversations of the base, the Path of Radiance supports replayed in the Extras menu, and the short support chats between units. The game loads it at boot. ${badge("confirmed","engine")}</p>
+  <h2>Info conversations (<code>CONV_INFO_DATA</code>)</h2>
+  <p>A count, then 48-byte records: the chapter (<code>C0105</code>), the title key (<code>MID_0105_街の中で</code>, "In Town" in <code>common.m</code>), the message played from the chapter's message file, the flag that marks it seen, up to seven characters shown in the menu, and a number from 1 to 3 not yet identified. Each record also carries its own symbol, <code>CONV_INFO_DATA_C0105_街の中で</code>. The base menu builds that name from the chapter and the name of each base event the chapter script registered, and lists the record it finds; a record whose symbol no script names never appears in a base. The Extras Conversation Room lists every record and shows the ones whose flag is set. ${badge("confirmed","engine")}</p>
+  <h2>Room supports (<code>CONVERSATION_FE8_YELL_DATA</code>)</h2>
+  <p>A count, then 44-byte records: the two characters' name keys, three conversation IDs (each followed by an empty word) and their three flags. The texts are in <code>Mess/e_yell_fe8.m</code>. ${badge("confirmed","engine + files")}</p>
+  <h2>Support chat lines (<code>CONVERSATION_MINI_YELL_DATA</code>)</h2>
+  <p>A count of characters; for each, its ID, a partner count, the message file holding its lines (<code>Mess/yell_mini_1.m</code>, to which the game adds the language prefix) and, per partner, the partner's ID, the line it says and the line it answers. Every one of the 71 characters has an entry for all 71 partners. ${badge("confirmed","engine + files")}</p>
   `
 },
 

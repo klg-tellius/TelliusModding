@@ -35,6 +35,15 @@ MISSING_GLYPH_CODE = 0x8199  # font_missing_glyph_key in main.dol
 #: also bundled in ``system.cmp``, which the build refreshes from the loose files.
 FONT_FILES = (("system", "Fonts/system.cms"), ("fe_font", "Fonts/fe_font.gcf"),
               ("talk", "Fonts/talk.gcf"), ("bigkana", "Fonts/bigkana.gcf"), ("alpha", "Fonts/alpha.gcf"))
+#: Radiant Dawn: the same GCF fonts, every one LZ10-wrapped, each with a ``_w`` twin drawn in 16:9
+#: mode. The game's table (US 0x80382a20) holds a (4:3, 16:9) path pair per index: 0 system,
+#: 1 fe_font, 2 talk, 3 bigkana, 4 alpha, 5 ruby (ruby has one file for both). ``debug.cms`` is on the
+#: disc but no table points at it.
+FONT_FILES_FE10 = (("system", "Fonts/system.cms"), ("system_w", "Fonts/system_w.cms"),
+                   ("fe_font", "Fonts/fe_font.cms"), ("fe_font_w", "Fonts/fe_font_w.cms"),
+                   ("talk", "Fonts/talk.cms"), ("talk_w", "Fonts/talk_w.cms"),
+                   ("bigkana", "Fonts/bigkana.cms"), ("bigkana_w", "Fonts/bigkana_w.cms"),
+                   ("alpha", "Fonts/alpha.cms"), ("alpha_w", "Fonts/alpha_w.cms"), ("ruby", "Fonts/ruby.cms"))
 
 
 @dataclass(frozen=True)

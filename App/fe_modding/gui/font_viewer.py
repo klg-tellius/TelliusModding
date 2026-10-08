@@ -1,12 +1,15 @@
-"""Fonts: view the five game fonts and replace one from a TrueType/OpenType file.
+"""Fonts: view the game fonts and replace one from a TrueType/OpenType file.
 
 Path of Radiance draws all text from five bitmap fonts (``fe9_font.FONT_FILES``): system for
 menus, talk for dialogue, fe_font for the Tellius alphabet, bigkana for the title and file
-menus, alpha for the staff roll. An import renders the chosen file into the game font's line
+menus, alpha for the staff roll. Radiant Dawn has the same five plus ruby (furigana), each with
+a ``_w`` twin for 16:9 (``fe9_font.FONT_FILES_FE10``). The list comes from the project's
+``GameProfile.font_files``. An import renders the chosen file into the game font's line
 metrics; glyphs the file lacks keep their game bitmaps.
 
-The system font is saved as the LZ10 ``Fonts/system.cms``; the others as loose ``.gcf`` files,
-which the build copies into ``system.cmp`` (``ModProject.sync_system_archive``).
+A ``.cms`` font is saved LZ10-compressed (Path of Radiance's system font and every Radiant Dawn
+font); Path of Radiance's other fonts are loose ``.gcf`` files, which the build copies into
+``system.cmp`` (``ModProject.sync_system_archive``).
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ USES = {
     "talk": "Dialogue textboxes and the backlog",
     "bigkana": "Title-menu and file-menu labels (#F03)",
     "alpha": "Staff-roll names (#F04)",
+    "ruby": "Furigana above Japanese text (#F05)",
 }
 SAMPLES = {
     "system": "Ike  Lv 20  HP 42/42  Steel Sword",
@@ -39,8 +43,18 @@ SAMPLES = {
     "talk": "Mist, stay back! I'll handle this.",
     "bigkana": "New Game  Continue",
     "alpha": "STAFF  Director",
+    "ruby": "abcdefg",
 }
 SCALE = 2
+
+
+def _base(name: str) -> str:
+    """``talk_w`` -> ``talk``: a Radiant Dawn 16:9 twin shares its 4:3 font's use and sample."""
+    return name.removesuffix("_w")
+
+
+def _use(name: str) -> str:
+    return USES.get(_base(name), "") + (" (16:9 screens)" if name.endswith("_w") else "")
 BACKDROP = (32, 40, 72, 255)
 
 
@@ -62,7 +76,7 @@ class FontViewer(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._files = project.extracted_dir / "files"
-        self._fonts = [(name, self._files / rel) for name, rel in fe9_font.FONT_FILES
+        self._fonts = [(name, self._files / rel) for name, rel in profile_of(project).font_files
                        if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]
         self._pending: dict[str, bytes] = {}  # font name -> unsaved GCF bytes
         self._loaded: dict[str, GameFont] = {}
@@ -101,7 +115,7 @@ class FontViewer(EditorPanel):
         paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=2)
-        self._list = ttk.Treeview(left, columns=("state", "use"), show="tree headings", height=6,
+        self._list = ttk.Treeview(left, columns=("state", "use"), show="tree headings", height=min(12, max(6, len(self._fonts))),
                                   selectmode="browse")
         self._list.heading("#0", text="Font")
         self._list.heading("state", text="State")
@@ -110,12 +124,14 @@ class FontViewer(EditorPanel):
         self._list.column("state", width=70, stretch=False)
         self._list.column("use", width=260)
         for name, _path in self._fonts:
-            self._list.insert("", "end", iid=name, text=name, values=(self._state(name), USES[name]))
+            self._list.insert("", "end", iid=name, text=name, values=(self._state(name), _use(name)))
         self._list.pack(fill="x")
         self._list.bind("<<TreeviewSelect>>", lambda _e: self._select())
-        ttk.Label(left, text="Message text switches font with #F00-#F04 (the Font menu of a Line step).\n"
-                  "Fonts 1-4 are also bundled in system.cmp; the build refreshes those copies.",
-                  style="Muted.TLabel", justify="left").pack(anchor="w", pady=(6, 10))
+        note = ("Message text switches font with #F00-#F05; the _w files are the 16:9 versions the game "
+                "draws on a widescreen console." if profile_of(self._project).message_dialect == "fe10" else
+                "Message text switches font with #F00-#F04 (the Font menu of a Line step).\n"
+                "Fonts 1-4 are also bundled in system.cmp; the build refreshes those copies.")
+        ttk.Label(left, text=note, style="Muted.TLabel", justify="left", wraplength=380).pack(anchor="w", pady=(6, 10))
         self._info = ttk.Label(left, text="", justify="left")
         self._info.pack(anchor="w")
 
@@ -182,7 +198,7 @@ class FontViewer(EditorPanel):
             return
         self._sheet_box.configure(to=font.sheet_count - 1)
         self._sheet.set(0)
-        self._sample.set(SAMPLES[self._name])
+        self._sample.set(SAMPLES[_base(self._name)])
         self._refresh()
 
     def _refresh(self) -> None:
@@ -378,7 +394,7 @@ class ImportDialog(tk.Toplevel):
 
         preview = ttk.LabelFrame(body, text="Preview (game font above, import below)", padding=8)
         preview.pack(fill="both", expand=True, pady=(10, 0))
-        self._sample = tk.StringVar(value=SAMPLES[name])
+        self._sample = tk.StringVar(value=SAMPLES[_base(name)])
         ttk.Entry(preview, textvariable=self._sample).pack(fill="x")
         self._sample.trace_add("write", lambda *_: self._schedule())
         self._before = ttk.Label(preview)
