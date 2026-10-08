@@ -78,6 +78,7 @@ from PIL import Image, ImageTk
 
 from ..formats import fe8data, icons, zdbx
 from ..formats.fe9_message_scene import to_display
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
 from ..project import ModProject
 from . import record_actions, theme
 from .changelog import ChangeLog
@@ -207,7 +208,7 @@ class StatsEditor(EditorPanel):
             self._refresh_pickers()
             self._show_general()
         else:
-            ttk.Label(self._notebook.master, text="FE8Data.bin not found.\nExtract the project first.",
+            ttk.Label(self._notebook.master, text=self._session.unavailable_reason,
                       style="Muted.TLabel").pack(pady=8)
         self._on_session_changed(None)  # the character page may have edited the session already
 
@@ -254,9 +255,9 @@ class StatsEditor(EditorPanel):
         if not key:
             return ""
         if self._texts is None:
-            system_cmp = self._project.extracted_dir / "files" / "system.cmp"
+            system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
             try:
-                self._texts = fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
+                self._texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None and system_cmp.exists() else {}
             except Exception:  # noqa: BLE001 - names are a convenience
                 self._texts = {}
         text = self._texts.get(key, "").strip()
@@ -269,10 +270,10 @@ class StatsEditor(EditorPanel):
 
     def _descriptions(self) -> dict:
         if self._skill_descriptions is None:
-            system_cmp = self._project.extracted_dir / "files" / "system.cmp"
+            system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
             try:
                 self._skill_descriptions = (
-                    fe8data.read_skill_descriptions(system_cmp) if system_cmp.exists() else {})
+                    fe8data.read_skill_descriptions(system_cmp) if system_cmp is not None and system_cmp.exists() else {})
             except Exception:  # noqa: BLE001 - descriptions are a convenience
                 self._skill_descriptions = {}
         return self._skill_descriptions
@@ -351,7 +352,7 @@ class StatsEditor(EditorPanel):
 
     def _weapon_tables(self) -> dict:
         """``xwp/<NAME>.dbx`` of zdbx.cmp, re-read when the file changes."""
-        path = self._files_dir / "zdbx.cmp"
+        path = PATH_OF_RADIANCE_PROFILE.path(self._files_dir, "battle_data")  # battle tables: Path of Radiance only for now
         try:
             stamp = path.stat().st_mtime_ns
         except OSError:

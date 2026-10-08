@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk
 from typing import Optional
 
 from ..formats import dispo, fe8data
+from ..game_profile import PATH_OF_RADIANCE_PROFILE
 
 
 class FlagChecks(ttk.Frame):
@@ -65,7 +66,7 @@ def parse_leading_int(text: str) -> int:
 def read_group_keys(files_dir: Path) -> list[Optional[str]]:
     """The project's ``GroupData`` keys, or an empty list when unreadable."""
     try:
-        return fe8data.read_group_keys((files_dir / "FE8Data.bin").read_bytes())
+        return fe8data.read_group_keys(PATH_OF_RADIANCE_PROFILE.path(files_dir, "game_data").read_bytes())
     except Exception:  # noqa: BLE001 - a broken FE8Data.bin just leaves numbers
         return []
 

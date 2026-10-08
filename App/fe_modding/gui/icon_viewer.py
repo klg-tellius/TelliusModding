@@ -38,6 +38,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats import fe8data, icons, lz10, tpl
+from ..game_profile import GAME_DATA, profile_of
 from ..games import Game
 from ..project import ModProject
 from . import theme
@@ -119,8 +120,9 @@ class IconViewer(EditorPanel):
     def _load_names(self) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
         """Item and skill icon numbers -> the IIDs/SIDs using them (Path of
         Radiance only: the tables this app reads are FE8Data.bin's)."""
-        path = self._files / "FE8Data.bin"
-        if self._project.game != Game.PATH_OF_RADIANCE or not path.is_file():
+        profile = profile_of(self._project)
+        path = profile.path(self._files, "game_data")
+        if not profile.supports(GAME_DATA) or not path.is_file():
             return {}, {}
         try:
             data = fe8data.read_fe8data_path(path)

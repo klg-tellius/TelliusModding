@@ -37,6 +37,7 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
+from ..game_profile import profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -63,9 +64,11 @@ class _Names:
         if not key:
             return ""
         if self._texts is None:
-            path = self._project.extracted_dir / "files" / "system.cmp"
+            profile = profile_of(self._project)
+            path = profile.path(self._project.extracted_dir / "files", "system_archive") \
+                if profile.has_file("system_archive") else None
             try:
-                self._texts = fe8data.read_message_texts(path) if path.exists() else {}
+                self._texts = fe8data.read_message_texts(path) if path is not None and path.exists() else {}
             except Exception:  # noqa: BLE001 - names are a convenience
                 self._texts = {}
         text = self._texts.get(key, "").strip()
@@ -577,7 +580,7 @@ class BattleSimulator(EditorPanel):
     def _on_session_changed(self, _source) -> None:
         self._fill_sceneries()
         if self._session.fe8 is None:
-            self._set_log("FE8Data.bin was not found in this project.")
+            self._set_log(self._session.unavailable_reason)
             return
         try:
             game = fe8data.read_game_data(self._session.data)

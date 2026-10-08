@@ -20,7 +20,7 @@ from PIL import Image, ImageTk
 
 from ..formats import fe9_font, lz10
 from ..formats.fe9_font import GameFont, ImportOptions
-from ..games import Game
+from ..game_profile import FONTS, profile_of
 from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
@@ -63,7 +63,7 @@ class FontViewer(EditorPanel):
         self._changelog = changelog
         self._files = project.extracted_dir / "files"
         self._fonts = [(name, self._files / rel) for name, rel in fe9_font.FONT_FILES
-                       if project.game == Game.PATH_OF_RADIANCE and (self._files / rel).is_file()]
+                       if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]
         self._pending: dict[str, bytes] = {}  # font name -> unsaved GCF bytes
         self._loaded: dict[str, GameFont] = {}
         self._name: Optional[str] = None
@@ -73,7 +73,8 @@ class FontViewer(EditorPanel):
         if self._fonts:
             self._list.selection_set(self._fonts[0][0])
         else:
-            self._status.config(text="No fonts found. Fonts are supported for Path of Radiance projects.")
+            self._status.config(text=profile_of(project).unavailable(FONTS) if not profile_of(project).supports(FONTS)
+                                else "No fonts found. Extract the project first.")
 
     # -- data -------------------------------------------------------------------
     def _path(self, name: str) -> Path:

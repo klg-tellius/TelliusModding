@@ -41,9 +41,11 @@ from pathlib import Path
 from typing import Optional
 
 from .formats import dispo, lz10, pak
+from .game_profile import GAME_DATA, files_dir_of, logical_path_of, profile_of
 from .project import ModProject
 
-_CHAPTER_FILE_RE = re.compile(r"^c(\d+)\.m$", re.IGNORECASE)
+def _chapter_file_re(project: ModProject):
+    return re.compile(rf"^c({profile_of(project).chapter_id_pattern})\.m$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -58,29 +60,43 @@ class ChapterPaths:
 def list_chapter_ids(project: ModProject) -> list[str]:
     """Every chapter number that has a ``Mess/cNN.m`` dialogue file, sorted
     numerically. This is the list the Chapters page shows."""
-    mess_dir = project.extracted_dir / "files" / "Mess"
+    mess_dir = files_dir_of(project) / "Mess"
     if not mess_dir.is_dir():
         return []
 
+    pattern = _chapter_file_re(project)
     ids = []
     for path in mess_dir.glob("c*.m"):
-        match = _CHAPTER_FILE_RE.match(path.name)
+        match = pattern.match(path.name)
         if match:
             ids.append(match.group(1))
-    return sorted(set(ids), key=int)
+    return sorted(set(ids), key=profile_of(project).chapter_sort_key)
+
+
+def _first_deployment_difficulty(project: ModProject, folder: str) -> str:
+    """The difficulty letter of the first deployment file the map folder has (only Radiant Dawn
+    keeps one file per difficulty); empty on Path of Radiance, where ``dispos.cmp`` holds them all."""
+    profile = profile_of(project)
+    if "{diff}" not in profile.deployment:
+        return ""
+    for diff in profile.deployment_difficulties:
+        if profile.deployment_path(files_dir_of(project), folder, diff).exists():
+            return diff
+    return profile.deployment_difficulties[0]
 
 
 def chapter_paths(project: ModProject, chapter_id: str) -> ChapterPaths:
     """Resolve one chapter number to its dialogue/script/deployment/map
     paths - any of the four may be None if that file doesn't exist for this
     chapter (e.g. a tutorial-only or trial-map chapter)."""
-    extracted = project.extracted_dir / "files"
-    padded = chapter_id.zfill(2)
+    profile = profile_of(project)
+    extracted = files_dir_of(project)
+    folder = profile.map_folder(chapter_id)
 
-    dialogue = extracted / "Mess" / f"c{padded}.m"
-    script = extracted / "Scripts" / f"C{padded}.cmb"
-    deployment = extracted / "zmap" / f"bmap{padded}" / "dispos.cmp"
-    map_bin = extracted / "zmap" / f"bmap{padded}" / "map.cmp"
+    dialogue = profile.mess_path(extracted, chapter_id)
+    script = profile.script_path(extracted, chapter_id)
+    deployment = profile.deployment_path(extracted, folder, _first_deployment_difficulty(project, folder))
+    map_bin = extracted / "zmap" / folder / "map.cmp"
 
     return ChapterPaths(
         chapter_id=chapter_id,
@@ -110,8 +126,9 @@ def chapter_phases(project: ModProject, chapter_id: str) -> list[str]:
 
 def phase_paths(project: ModProject, folder: str) -> tuple[Optional[Path], Optional[Path]]:
     """``(dispos.cmp, map.cmp)`` of one map folder, None where missing."""
-    base = project.extracted_dir / "files" / "zmap" / folder
-    deployment, map_cmp = base / "dispos.cmp", base / "map.cmp"
+    base = files_dir_of(project) / "zmap" / folder
+    deployment = profile_of(project).deployment_path(files_dir_of(project), folder, _first_deployment_difficulty(project, folder))
+    map_cmp = base / "map.cmp"
     return (deployment if deployment.exists() else None, map_cmp if map_cmp.exists() else None)
 
 
@@ -134,8 +151,8 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
         if loose is not None:
             texts = {key: m.text for key, m in _common_messages(loose).items()}
         else:
-            system_cmp = project.extracted_dir / "files" / "system.cmp"
-            texts = fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
+            system_cmp = logical_path_of(project, "system_archive") if profile_of(project).has_file("system_archive") else None
+            texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None and system_cmp.exists() else {}
     except Exception:  # noqa: BLE001 - titles are presentation only
         return {}
     titles = {}
@@ -147,7 +164,7 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
 
 
 def _common_messages_path(project: ModProject) -> Optional[Path]:
-    path = project.extracted_dir / "files" / "Mess" / "common.m"
+    path = logical_path_of(project, "common_mess")
     return path if path.is_file() else None
 
 
@@ -422,7 +439,9 @@ def ensure_name_images(project: ModProject) -> list[Path]:
     from .formats import fe8data
 
     files = project.extracted_dir / "files"
-    fe8 = files / "FE8Data.bin"
+    if not profile_of(project).supports(GAME_DATA):
+        return []
+    fe8 = logical_path_of(project, "game_data")
     if not fe8.is_file():
         return []
     try:

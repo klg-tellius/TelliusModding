@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
+from ...game_profile import AUDIO, BATTLE_TABLES, CHAPTERS, EFFECTS, VIDEO, profile_of
 from ..background_viewer import BackgroundViewer
 from ..battle_camera_viewer import BattleCameraViewer
 from ..battle_params_viewer import BattleParamsViewer
@@ -65,6 +66,16 @@ ASSET_TOOLS = [
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
+#: Tools that need a decoder the game's profile must list (``GameProfile.features``); the rest open
+#: for every game. Without it the page says the tool is not available for the game yet.
+ASSET_FEATURES = {
+    "map_objects": CHAPTERS,
+    "effects": EFFECTS,
+    "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_TABLES,
+    "battle_sim": BATTLE_TABLES, "battle_params": BATTLE_TABLES,
+    "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO,
+    "videos": VIDEO,
+}
 #: Tools that list files for other pages to open (they take the shell).
 LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
@@ -108,6 +119,7 @@ class AssetPage(Page):
         super().__init__(shell)
         self._panels: dict[str, EditorPanel] = {}
         self._key = None
+        self._notice = ttk.Label(self, style="Muted.TLabel", padding=28)
 
     def panels(self):
         return list(self._panels.values())
@@ -116,6 +128,16 @@ class AssetPage(Page):
         key = route[1] if len(route) > 1 else None
         if key not in TOOLS_BY_KEY:
             return False
+        feature = ASSET_FEATURES.get(key)
+        if feature is not None and not profile_of(self.project).supports(feature):
+            for other in self._panels.values():
+                other.pack_forget()
+            self._notice.configure(text=f"{TOOLS_BY_KEY[key][1]} is not available for "
+                                   f"{profile_of(self.project).display_name} yet.")
+            self._notice.pack(anchor="nw")
+            self._key = None
+            return True
+        self._notice.pack_forget()
         panel = self._panels.get(key)
         if panel is None:
             cls = TOOLS_BY_KEY[key][4]

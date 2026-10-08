@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from . import chapters
+from .game_profile import profile_of
 from .project import ModProject
 
 
@@ -295,7 +296,7 @@ class ScriptSuggestions:
         if "fe8" not in self._cache:
             from .formats import fe8data
             try:
-                self._cache["fe8"] = fe8data.read_fe8data_path(self.files / "FE8Data.bin")
+                self._cache["fe8"] = fe8data.read_fe8data_path(profile_of(self._project).path(self.files, "game_data"))
             except Exception:  # noqa: BLE001
                 self._cache["fe8"] = None
         return self._cache["fe8"]
@@ -304,7 +305,7 @@ class ScriptSuggestions:
         if "texts" not in self._cache:
             from .formats import fe8data
             try:
-                self._cache["texts"] = fe8data.read_message_texts(self.files / "system.cmp")
+                self._cache["texts"] = fe8data.read_message_texts(profile_of(self._project).path(self.files, "system_archive"))
             except Exception:  # noqa: BLE001
                 self._cache["texts"] = {}
         return self._cache["texts"]
@@ -430,7 +431,7 @@ class ScriptSuggestions:
         units: dict[str, int] = {}
         where: dict[str, list[str]] = {}
         for folder in folders:
-            path = self.files / "zmap" / folder / "dispos.cmp"
+            path = profile_of(self._project).deployment_path(self.files, folder)
             if not path.exists():
                 continue
             try:
@@ -458,7 +459,7 @@ class ScriptSuggestions:
             return []
         from .formats import message
         from .formats.fe9_message_scene import to_display
-        path = self.files / "Mess" / f"c{chapter_id.zfill(2)}.m"
+        path = profile_of(self._project).mess_path(self.files, chapter_id)
         if not path.exists():
             return []
         out = []

@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from ..formats import fe8data
+from ..game_profile import GAME_DATA
 from ..project import ModProject
 from .changelog import ChangeLog
 
@@ -23,7 +24,9 @@ class Fe8DataSession:
     def __init__(self, project: ModProject, changelog: ChangeLog):
         self.project = project
         self.changelog = changelog
-        self.path = project.extracted_dir / "files" / "FE8Data.bin"
+        self.path = project.logical_path("game_data")
+        #: the game's own file name for messages ("FE8Data.bin" / "FE10Data.cms")
+        self.file_label = project.profile.file_label("game_data")
         self.data: bytes = b""
         self.fe8: Optional[fe8data.Fe8Data] = None
         self.labels_by_prefix: dict = {}
@@ -37,9 +40,18 @@ class Fe8DataSession:
     def available(self) -> bool:
         return self.fe8 is not None
 
+    @property
+    def unavailable_reason(self) -> str:
+        """Why :attr:`available` is false, for the pages that show it."""
+        if not self.project.profile.supports(GAME_DATA):
+            return self.project.profile.unavailable(GAME_DATA)
+        return f"{self.file_label} not found. Extract the project first."
+
     def load(self) -> None:
+        if not self.project.profile.supports(GAME_DATA):
+            return  # no record layouts for this game yet: the file would parse as the wrong game's
         if self.path.exists():
-            self.data = self.path.read_bytes()
+            self.data = self.project.read_logical("game_data")
             self.reparse()
             self.dirty = False
 
@@ -64,9 +76,9 @@ class Fe8DataSession:
 
     def save(self) -> None:
         """Write the file (keeping the extracted one in ``originals/``). Raises OSError."""
-        self.project.write_keeping_original(self.path, self.data)
+        self.project.write_logical("game_data", self.data)
         self.dirty = False
-        self.changelog.append("FE8Data.bin", "Saved character/class/item/skill/terrain data")
+        self.changelog.append(self.file_label, "Saved character/class/item/skill/terrain data")
         self._notify(None)
         for callback in list(self.on_saved):
             callback()

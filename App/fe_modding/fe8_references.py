@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .formats import fe8data, lz10
+from .game_profile import profile_of
 from .project import ModProject
 
 
@@ -156,12 +157,15 @@ def _game_files(project: ModProject) -> Iterable[tuple[str, Path, bool]]:
     """(display path, file, compressed) of every file that names records."""
     root = project.extracted_dir
     files = root / "files"
+    profile = profile_of(project)
+    shops = profile.shop_folder(files)
     yield from ((f"Scripts/{p.name}", p, False) for p in sorted((files / "Scripts").glob("*.cmb")))
     yield from ((f"zmap/{p.parent.name}/dispos.cmp", p, True) for p in sorted((files / "zmap").glob("*/dispos.cmp")))
-    yield from ((f"shop/{p.name}", p, False) for p in sorted((files / "shop").glob("*.bin")))
-    for name, compressed in (("zdbx.cmp", True), ("FE8Anim.bin", False)):
-        if (files / name).is_file():
-            yield name, files / name, compressed
+    yield from ((f"{shops.name}/{p.name}", p, False) for p in sorted(shops.glob("*.bin")))
+    for logical in ("battle_data", "anim_data"):
+        if profile.has_file(logical) and profile.path(files, logical).is_file():
+            path = profile.path(files, logical)
+            yield path.name, path, profile.logical(logical).compressed
     if (root / "sys" / "main.dol").is_file():
         yield "sys/main.dol", root / "sys" / "main.dol", False
 

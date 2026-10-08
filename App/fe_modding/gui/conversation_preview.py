@@ -5,7 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from ..games import Game
+from ..game_profile import DIALOGUE, profile_of
 from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
@@ -14,7 +14,7 @@ from .scene_editor import layout_labels
 
 
 def ConversationPreview(parent, project):
-    if project.game == Game.RADIANT_DAWN:
+    if not profile_of(project).supports(DIALOGUE):
         from .legacy_conversation_preview import ConversationPreview as LegacyPreview
         return LegacyPreview(parent, project)
     return FE9ConversationPreview(parent, project)

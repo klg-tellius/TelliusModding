@@ -30,7 +30,7 @@ from typing import Callable, Optional
 from PIL import ImageTk
 
 from ..formats import fe8data, icons, shop
-from ..games import Game
+from ..game_profile import SHOPS, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -51,7 +51,7 @@ class ShopEditor(EditorPanel):
         self._changelog = changelog
         self._index_provider = index_provider
         self._session_provider = session_provider
-        self._folder = project.extracted_dir / "files" / "shop"
+        self._folder = profile_of(project).shop_folder(project.extracted_dir / "files")
         self._docs: dict[str, shop.ShopDocument] = {}
         self._edited: set[str] = set()
         self._loaded = False
@@ -175,7 +175,7 @@ class ShopEditor(EditorPanel):
     def _load(self) -> None:
         self._loaded = True
         self._docs = {}
-        if self._project.game != Game.PATH_OF_RADIANCE:
+        if not profile_of(self._project).supports(SHOPS):
             return
         for difficulty in shop.DIFFICULTY_FILES:
             path = self._path(difficulty)
@@ -254,8 +254,8 @@ class ShopEditor(EditorPanel):
     def _render(self) -> None:
         sections = self._sections()
         self._add_button.pack_forget()
-        if self._project.game != Game.PATH_OF_RADIANCE:
-            message = "Shop editing supports Path of Radiance only: Radiant Dawn's shop files use another layout."
+        if not profile_of(self._project).supports(SHOPS):
+            message = profile_of(self._project).unavailable(SHOPS)
         elif not self._docs:
             message = "No shop files found (shop/shopitem_n.bin). Extract the project first."
         elif self._doc() is None:

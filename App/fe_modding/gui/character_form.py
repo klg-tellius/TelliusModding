@@ -61,7 +61,7 @@ class CharacterForm(ttk.Frame):
         self._vars = {}
         fe8 = self._session.fe8
         if fe8 is None or index is None or index >= len(fe8.characters):
-            ttk.Label(self._body, text="FE8Data.bin not found. Extract the project first.",
+            ttk.Label(self._body, text=self._session.unavailable_reason,
                       style="Muted.TLabel").pack(anchor="w")
             return
         c = fe8.characters[index]

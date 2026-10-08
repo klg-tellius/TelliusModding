@@ -24,6 +24,7 @@ from typing import Iterable, Optional
 
 from . import chapters
 from .formats import dispo, fe8data, lz10, pak, shop, supports
+from .game_profile import GAME_DATA, profile_of
 from .project import ModProject
 
 ERROR, WARNING = "error", "warning"
@@ -286,7 +287,7 @@ def _check_scripts(project: ModProject, known: set, issues: list) -> None:
 
 
 def _check_shops(project: ModProject, iids: set, issues: list) -> None:
-    folder = project.extracted_dir / "files" / "shop"
+    folder = profile_of(project).shop_folder(project.extracted_dir / "files")
     for path in sorted(folder.glob("*.bin")) if folder.is_dir() else []:
         try:
             doc = shop.parse_shop(path.read_bytes())
@@ -303,9 +304,13 @@ def _check_shops(project: ModProject, iids: set, issues: list) -> None:
 def validate_project(project: ModProject, flow=None) -> Report:
     """Check an extracted project. ``flow`` is a ``game_code.chapter_flow.ChapterFlow`` (optional);
     with it, chapters above the retail ones that no chapter leads to are reported."""
-    fe8_path = project.extracted_dir / "files" / "FE8Data.bin"
+    profile = profile_of(project)
+    if not profile.supports(GAME_DATA):
+        return Report([Issue(WARNING, "Project", profile.file_label("game_data"), profile.unavailable(GAME_DATA))])
+    fe8_path = project.extracted_dir / "files" / profile.logical("game_data").path
     if not fe8_path.is_file():
-        return Report([Issue(ERROR, "Project", "FE8Data.bin", "The project has no extracted FE8Data.bin; extract the disc first.")])
+        label = profile.file_label("game_data")
+        return Report([Issue(ERROR, "Project", label, f"The project has no extracted {label}; extract the disc first.")])
     data = fe8_path.read_bytes()
     issues = validate_fe8data(data)
     try:

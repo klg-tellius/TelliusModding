@@ -23,7 +23,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from ..formats import message
 from ..formats.fe9_message_scene import TEMPLATES, decompile, line_plain_text, to_display, to_raw
-from ..games import Game
+from ..game_profile import DIALOGUE, profile_of
 from ..formats.fe9_conversation_context import resolve_context, context_after_message
 from ..formats.event_script import ScriptError, read_script_path
 from ..project import ModProject
@@ -47,7 +47,7 @@ class DialogueEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._fe9 = project.game == Game.PATH_OF_RADIANCE
+        self._fe9 = profile_of(project).supports(DIALOGUE)  # step editing; Radiant Dawn text is raw-only for now
         self._current_path: Path | None = None
         self._messages: list[message.Message] = []
         self._dirty = False

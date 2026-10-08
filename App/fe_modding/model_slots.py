@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, zdbx
+from .game_profile import logical_path_of
 from .project import ModProject
 
 AID_BASE_RE = re.compile(r"^AID_[A-Z0-9_]+$")
@@ -30,6 +31,10 @@ FOLDER_RE = re.compile(r"^[a-z0-9_]+$")
 
 def _files(project: ModProject) -> Path:
     return project.extracted_dir / "files"
+
+
+def _logical(project: ModProject, name: str) -> Path:
+    return logical_path_of(project, name)
 
 
 def _vanilla_bytes(project: ModProject, path: Path) -> bytes:
@@ -41,11 +46,11 @@ def _vanilla_bytes(project: ModProject, path: Path) -> bytes:
 # -- battle models --------------------------------------------------------------
 
 def _read_zdbx(project: ModProject) -> dict[str, bytes]:
-    return dict(zdbx.read_zdbx_files((_files(project) / "zdbx.cmp").read_bytes()))
+    return dict(zdbx.read_zdbx_files(_logical(project, "battle_data").read_bytes()))
 
 
 def _write_zdbx(project: ModProject, files: dict[str, bytes]) -> None:
-    project.write_keeping_original(_files(project) / "zdbx.cmp", zdbx.build_zdbx_archive(list(files.items())))
+    project.write_keeping_original(_logical(project, "battle_data"), zdbx.build_zdbx_archive(list(files.items())))
 
 
 def battle_model_codes(project: ModProject) -> list[str]:
@@ -131,7 +136,7 @@ def remove_job_line(project: ModProject, key: str) -> None:
 
 
 def vanilla_battle_codes(project: ModProject) -> set[str]:
-    tables = zdbx.read_zdbx_files(_vanilla_bytes(project, _files(project) / "zdbx.cmp"))
+    tables = zdbx.read_zdbx_files(_vanilla_bytes(project, _logical(project, "battle_data")))
     return {name[3:-4] for name, _data in tables if name.startswith("zu/") and not name.endswith("_prm.dbx")}
 
 
@@ -148,7 +153,7 @@ def remove_battle_model(project: ModProject, code: str) -> int:
         raise ProjectError(f"No battle model {code!r}.")
     tables.pop(f"zu/{code}.dbx")
     tables.pop(f"zu/{code}_prm.dbx", None)
-    vanilla = dict(zdbx.read_zdbx_files(_vanilla_bytes(project, _files(project) / "zdbx.cmp")))[zdbx.JOB_LIST]
+    vanilla = dict(zdbx.read_zdbx_files(_vanilla_bytes(project, _logical(project, "battle_data"))))[zdbx.JOB_LIST]
     text, removed = zdbx.release_job_lines(
         tables[zdbx.JOB_LIST].decode("shift_jis"), code, vanilla.decode("shift_jis")
     )
@@ -168,7 +173,7 @@ def battle_textures(project: ModProject, code: str) -> dict[str, str]:
 # -- map models -------------------------------------------------------------------
 
 def _anim_path(project: ModProject) -> Path:
-    return _files(project) / "FE8Anim.bin"
+    return _logical(project, "anim_data")
 
 
 def map_model_records(project: ModProject) -> list[anim_registry.AnimRecord]:
@@ -245,7 +250,7 @@ def remove_map_model(project: ModProject, base_aid: str) -> list[str]:
             shutil.rmtree(path)
             changes.append(f"Deleted ymu/{folder}")
 
-    path = _files(project) / "FE8Data.bin"
+    path = _logical(project, "game_data")
     data = path.read_bytes()
     vanilla = fe8data.read_fe8data(_vanilla_bytes(project, path))
     current = fe8data.read_fe8data(data)
@@ -267,7 +272,7 @@ def assign_map_model(project: ModProject, pid: str, aid: str | None, *, promoted
     """Point a character's unpromoted (or promoted) animation ID at ``aid``."""
     if aid is not None and not any(r.base_aid == aid for r in map_model_records(project)):
         raise ProjectError(f"No map model {aid!r}.")
-    path = _files(project) / "FE8Data.bin"
+    path = _logical(project, "game_data")
     data = path.read_bytes()
     characters = fe8data.read_fe8data(data).characters
     index = next((c.index for c in characters if c.pid == pid), None)

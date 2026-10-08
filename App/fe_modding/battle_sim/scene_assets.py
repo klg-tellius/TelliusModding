@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from .. import rig_contract
+from ..game_profile import PATH_OF_RADIANCE_PROFILE
 from ..formats import battle_params, battle_weapons, icons, zdbx
 from .staging import BattleParams, UnitParams
 from .units import Combatant
@@ -99,7 +100,7 @@ class BattleAssets:
 
     @classmethod
     def from_files(cls, files_dir: Path) -> "BattleAssets":
-        path = Path(files_dir) / "zdbx.cmp"
+        path = PATH_OF_RADIANCE_PROFILE.path(files_dir, "battle_data")  # Path of Radiance only for now
         return cls(files_dir, path.read_bytes() if path.is_file() else b"")
 
     # -- models ---------------------------------------------------------------------------------
