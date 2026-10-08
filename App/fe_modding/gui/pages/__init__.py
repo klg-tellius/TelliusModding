@@ -7,7 +7,7 @@ from .chapters import ChapterPage, ChaptersHub
 from .check import CheckPage
 from .code import CodePage
 from .characters import CharacterPage, CharactersHub
-from .data import GameDataPage
+from .data import game_data_page
 from .disc import DiscPage
 from .home import HomePage
 from .saves import SaveEditorPage
@@ -15,7 +15,7 @@ from .tools import ToolsHub
 
 PAGE_FACTORIES = {
     page.kind: page
-    for page in (HomePage, ChaptersHub, ChapterPage, CharactersHub, CharacterPage, GameDataPage,
+    for page in (HomePage, ChaptersHub, ChapterPage, CharactersHub, CharacterPage, game_data_page,
                  SaveEditorPage, ToolsHub,
                  AssetsHub, AssetPage, CodePage, CheckPage, DiscPage)
 }

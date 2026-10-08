@@ -18,9 +18,11 @@ from __future__ import annotations
 
 from tkinter import ttk
 
+from ...game_profile import DATA_TABLES, GAME_DATA
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
+from ..fe10_data_editor import TAB_KEYS as FE10_TAB_KEYS, TAB_TITLES as FE10_TAB_TITLES, Fe10DataEditor
 from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
@@ -197,3 +199,81 @@ class GameDataPage(Page):
         if len(route) < 2 or route[1] not in TABS:
             return None
         return f"Game Data › {TABS[route[1]]}"
+
+
+FE10_TILES = {
+    "characters": ("☺", "Levels, classes, skills, stats over the class, growths, laguz gauges"),
+    "classes": ("♞", "Caps, bases, growths, promotion gains, skills, movement, capacity"),
+    "items": ("⚔", "Weapons, staves and items: combat, price, attributes, stat bonuses"),
+    "skills": ("✦", "Capacity, icon, effects and who can or cannot have each skill"),
+}
+
+
+class Fe10GameDataPage(Page):
+    """Game Data for a game whose database has only its record tables decoded (Radiant Dawn): a hub
+    of the four tables and one :class:`Fe10DataEditor` showing the picked one."""
+
+    kind = "data"
+
+    def __init__(self, shell):
+        super().__init__(shell)
+        self._editor = Fe10DataEditor(self, self.project, shell.changelog)
+        self._hub = self._build_hub()
+
+    def _build_hub(self) -> ScrollFrame:
+        scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
+        ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
+        data_file = self.project.profile.file_label("game_data")
+        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}. Terrain, "
+                  "chapters, supports and the general tables are not decoded for "
+                  f"{self.project.profile.display_name} yet.", style="Muted.TLabel",
+                  wraplength=720, justify="left").pack(anchor="w", pady=(2, 16))
+        section_header(scroll.body, data_file).pack(anchor="w", pady=(12, 8))
+        grid = CardGrid(scroll.body, card_width=280)
+        grid.pack(fill="x")
+        for key in FE10_TAB_KEYS:
+            icon, description = FE10_TILES[key]
+            grid.add(key, Card(grid, title=FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
+                               on_click=lambda k=key: self.shell.navigate((self.kind, k))))
+        grid.done()
+        return scroll
+
+    def show(self, route) -> bool:
+        if len(route) < 2 or route[1] not in FE10_TAB_KEYS:
+            self._editor.pack_forget()
+            self._hub.pack(fill="both", expand=True)
+            return True
+        self._hub.pack_forget()
+        self._editor.pack(fill="both", expand=True)
+        self._editor.select_tab(route[1])
+        if len(route) > 2 and route[2]:
+            self._editor.select_record(str(route[2]))
+        return True
+
+    def panels(self):
+        return [self._editor]
+
+    def flush(self) -> None:
+        self.focus_set()  # a field applies when it loses focus
+
+    def crumbs(self, route):
+        if len(route) < 2 or route[1] not in FE10_TAB_TITLES:
+            return [("Game Data", None)]
+        return [("Game Data", ("data",)), (FE10_TAB_TITLES[route[1]], None)]
+
+    def history_label(self, route):
+        if len(route) < 2 or route[1] not in FE10_TAB_TITLES:
+            return None
+        return f"Game Data › {FE10_TAB_TITLES[route[1]]}"
+
+
+def game_data_page(shell) -> Page:
+    """The Game Data page for the project's game: the full one where the whole database is decoded,
+    the tables-only one where just the record tables are (Radiant Dawn)."""
+    profile = shell.project.profile
+    if not profile.supports(GAME_DATA) and profile.supports(DATA_TABLES):
+        return Fe10GameDataPage(shell)
+    return GameDataPage(shell)
+
+
+game_data_page.kind = "data"

@@ -49,6 +49,12 @@ class UnavailableStateTests(unittest.TestCase):
         self.assertIn("not available for Radiant Dawn yet", session.unavailable_reason)
         self.assertEqual(session.file_label, "FE10Data.cms")
 
+    def test_radiant_dawn_gets_the_tables_only_game_data(self):
+        from fe_modding.game_profile import DATA_TABLES, GAME_DATA
+
+        self.assertTrue(self.project.profile.supports(DATA_TABLES))
+        self.assertFalse(self.project.profile.supports(GAME_DATA))
+
     def test_model_slots_refuse_the_other_games_battle_and_anim_files(self):
         from fe_modding import model_slots
         from fe_modding.exceptions import ProjectError
