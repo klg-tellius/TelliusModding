@@ -60,6 +60,18 @@ class Fe10FilesTest(unittest.TestCase):
         self.assertIn("ChapterData", symbols)
         self.assertGreater(len(symbols), 100)
 
+    def test_coverage_walker_places_every_byte_of_the_containers(self):
+        from fe_modding.formats.coverage import UNCLASSIFIED, Report, Walker
+
+        report = Report()
+        walker = Walker(report)
+        for rel in DATA_FILES:
+            walker.child(rel, (FILES / rel).read_bytes())
+        totals = report.formats["fe10 container"]
+        self.assertEqual(totals.files, len(DATA_FILES))
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+
     def test_every_mess_file_parses(self):
         paths = sorted((FILES / "Mess").glob("*.m"))
         self.assertGreater(len(paths), 200)
