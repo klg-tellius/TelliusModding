@@ -169,6 +169,19 @@ class TunableTests(unittest.TestCase):
             self.session.set_tunable(t, new)
             self.assertEqual(self.session.tunable_status(t).value, new)
 
+    def test_lis_addi_constant(self):
+        dol = build_dol(word(0x3CA00099) + word(0x3805967F))          # lis r5,0x99; addi r0,r5,-0x6981
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.gold", "Test", "Gold", "", 9999999, 0, 9999999,
+                    {US: (Field(TEXT_ADDR, "lis_addi", bytes.fromhex("3ca03805")),)})
+        self.assertEqual(session.tunable_status(t).state, State.ORIGINAL)
+        for value, hi, lo in ((50000, 0x0001, 0x3805C350 & 0xFFFF), (32767, 0x0000, 0x7FFF), (0, 0, 0)):
+            session.set_tunable(t, value)
+            self.assertEqual(session.tunable_status(t).value, value)
+            self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00000 | hi, 0x38050000 | lo))
+        session.reset(t)
+        self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00099, 0x3805967F))
+
     def test_range_is_enforced(self):
         t = self.tunable("u8", DATA_ADDR + 2, 9, 0, 100)
         with self.assertRaises(DolError):

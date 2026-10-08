@@ -81,7 +81,7 @@ def in_cave(address: int, length: int = 1) -> bool:
     return CAVE_ADDRESS <= address and address + length <= CAVE_ADDRESS + CAVE_SIZE
 
 
-KINDS = {"imm16s": 2, "imm16u": 2, "u8": 1, "u16": 2, "u32": 4, "f32": 4}
+KINDS = {"imm16s": 2, "imm16u": 2, "u8": 1, "u16": 2, "u32": 4, "f32": 4, "lis_addi": 4}
 
 
 @dataclass(frozen=True)
@@ -90,6 +90,8 @@ class Field:
 
     ``imm16s``/``imm16u`` are the low halfword of an instruction (signed / unsigned); the
     instruction's other half, ``expect`` (the two high bytes), is checked before every access.
+    ``lis_addi`` is a 32-bit constant built by ``lis rD,hi`` + ``addi rD,rD,lo`` at ``address``
+    and ``address + 4``; ``expect`` is the high halves of both instructions.
     The other kinds are big-endian data words."""
     address: int
     kind: str
@@ -102,6 +104,8 @@ class Field:
 
     @property
     def span(self) -> int:
+        if self.kind == "lis_addi":
+            return 8
         return 4 if self.kind.startswith("imm16") else self.width
 
 
@@ -239,6 +243,8 @@ class Session:
         seen = self._try_read(address, f.span)
         if seen is None:
             return False
+        if f.kind == "lis_addi":
+            return not f.expect or seen[0:2] + seen[4:6] == f.expect
         return not f.expect or seen[:len(f.expect)] == f.expect
 
     # patches
@@ -288,6 +294,8 @@ class Session:
             return struct.unpack(">H", raw)[0]
         if f.kind == "u32":
             return struct.unpack(">I", raw)[0]
+        if f.kind == "lis_addi":
+            return (struct.unpack(">H", raw[2:4])[0] << 16) + struct.unpack(">h", raw[6:8])[0]
         return struct.unpack(">f", raw)[0]
 
     def _pack(self, f: Field, address: int, value: float) -> bytes:
@@ -296,6 +304,12 @@ class Session:
             return self.dol.read(address, 2) + struct.pack(fmt, int(value))
         if f.kind == "f32":
             return struct.pack(">f", value)
+        if f.kind == "lis_addi":
+            low = int(value) & 0xFFFF
+            low -= 0x10000 if low & 0x8000 else 0
+            high = ((int(value) - low) >> 16) & 0xFFFF
+            raw = self.dol.read(address, 8)
+            return raw[0:2] + struct.pack(">H", high) + raw[4:6] + struct.pack(">h", low)
         return int(value).to_bytes(f.width, "big")
 
     def tunable_status(self, tunable: Tunable) -> Status:

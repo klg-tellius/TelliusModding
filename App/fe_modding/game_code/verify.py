@@ -38,7 +38,7 @@ def verify(dol: Dol) -> list[str]:
         if isinstance(entry, Patch):
             session.set_patch(entry, True)
         else:
-            session.set_tunable(entry, entry.maximum)
+            session.set_tunable(entry, entry.maximum if entry.maximum != entry.default else entry.minimum)
         return True
 
     def revert_all() -> None:
