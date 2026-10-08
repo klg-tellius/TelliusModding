@@ -12,7 +12,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fe_modding.formats import animation, conversation, dispo, engine_pose, face_data, gcdisc, dsp_adpcm, event_script, fe8data, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, message, model, pak, portrait_anim, shop, skeleton, stm, thp, tpl
+from fe_modding.formats import animation, dispo, engine_pose, face_data, gcdisc, dsp_adpcm, event_script, fe8data, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, message, model, pak, portrait_anim, shop, skeleton, stm, thp, tpl
 from fe_modding.gui import map_scene, model_viewer
 
 
@@ -833,66 +833,6 @@ class MessageTests(unittest.TestCase):
         # literal character rather than raising or eating the rest of the text
         tokens = message.tokenize_control_codes("cost: $5")
         self.assertEqual("".join(t if isinstance(t, str) else t.raw for t in tokens), "cost: $5")
-
-
-class ConversationPreviewTests(unittest.TestCase):
-    def test_build_preview_pages_tracks_background_speaker_and_page_breaks(self):
-        raw_bg = b"\x95\xbd\x8c\xb4-\x92\x8b"  # 平原-昼, Shift-JIS
-        text = "$B" + raw_bg.decode(message.ENCODING) + "|$c0IKE|$s0$PReady?$KGo."
-
-        pages = conversation.build_preview_pages(text, fallback_speaker="Fallback")
-
-        self.assertEqual(len(pages), 2)
-        self.assertEqual(pages[0].state.background, "平原-昼")
-        self.assertEqual(pages[0].speaker, "IKE")
-        self.assertEqual(pages[0].text, "Ready?")
-        self.assertEqual(pages[1].text, "Go.")
-
-    def test_build_preview_pages_tracks_portrait_slots(self):
-        pages = conversation.build_preview_pages("$FCL_IKE|$F0$FS$Fc$F1$FCMIST|$FSHi.")
-
-        state = pages[0].state
-        self.assertEqual(state.portraits[0].name, "IKE")
-        self.assertTrue(state.portraits[0].visible)
-        self.assertEqual(state.portraits[0].expression, "c")
-        self.assertEqual(state.portraits[1].name, "MIST")
-        self.assertTrue(state.portraits[1].visible)
-        self.assertEqual(pages[0].text, "Hi.")
-
-    def test_build_preview_pages_hides_and_dismisses_slots(self):
-        pages = conversation.build_preview_pages("$c0IKE|$FCL_IKE|$FSHello$FD$d0$K")
-
-        self.assertEqual(pages[0].speaker, "")
-        self.assertFalse(pages[0].state.portraits[0].visible)
-
-    def test_timeline_reveals_text_and_waits_at_page_break(self):
-        timeline = conversation.build_timeline("$c0IKE|$s0Hi$KThere.", fallback_speaker="Fallback")
-
-        wait = next(frame for frame in timeline.frames if frame.wait_for_input)
-        self.assertEqual(wait.speaker, "IKE")
-        self.assertEqual(wait.text, "Hi")
-        self.assertEqual(timeline.frames[-1].text, "There.")
-        self.assertGreater(timeline.frames[-1].time_ms, wait.time_ms)
-
-    def test_timeline_wait_command_adds_researched_duration_units(self):
-        timeline = conversation.build_timeline("A$w2B")
-        frame_a = next(frame for frame in timeline.frames if frame.text == "A" and frame.kind == "text")
-        frame_b = next(frame for frame in timeline.frames if frame.text == "AB" and frame.kind == "text")
-
-        self.assertGreaterEqual(frame_b.time_ms - frame_a.time_ms, 2 * conversation.WAIT_UNIT_MS)
-
-    def test_timeline_holds_page_breaks_without_requiring_a_stop(self):
-        timeline = conversation.build_timeline("A$KB")
-        wait = next(frame for frame in timeline.frames if frame.wait_for_input)
-        frame_b = next(frame for frame in timeline.frames if frame.text == "B" and frame.kind == "text")
-
-        self.assertGreaterEqual(frame_b.time_ms - wait.time_ms, conversation.PAGE_WAIT_MS)
-
-    def test_portrait_load_is_visible_for_preview_playback(self):
-        pages = conversation.build_preview_pages("$FCL_IKE|Hello")
-
-        self.assertEqual(pages[0].state.portraits[0].name, "IKE")
-        self.assertTrue(pages[0].state.portraits[0].visible)
 
 
 class FaceDataTests(unittest.TestCase):

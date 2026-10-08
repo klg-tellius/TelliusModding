@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Optional
 
+from .formats.fe9_font import FONT_FILES, FONT_FILES_FE10
 from .games import Game
 
 
@@ -85,6 +86,11 @@ class GameProfile:
     shop_difficulties: tuple[str, ...]
     deployment_difficulties: tuple[str, ...]
     features: frozenset[str] = field(default_factory=frozenset)
+    #: Message text language: "fe9" ($ commands, formats/fe9_message_scene.py) or
+    #: "fe10" (the byte-code of formats/fe10_message.py).
+    message_dialect: str = "fe9"
+    #: (font name, path under files/) of every game font, in the game's font order.
+    font_files: tuple[tuple[str, str], ...] = ()
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -190,6 +196,7 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h", "m"),
     features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, ANIM, MODELS, FONTS,
                         ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PATCHES, DISC}),
+    font_files=FONT_FILES,
 )
 
 # Radiant Dawn: only what is decoded. Each phase of the parity plan switches features on.
@@ -209,7 +216,9 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_file="shopitem_{diff}.bin",
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
-    features=frozenset({DATA_TABLES, PATCHES, DISC}),
+    features=frozenset({DATA_TABLES, DIALOGUE, FONTS, PATCHES, DISC}),
+    message_dialect="fe10",
+    font_files=FONT_FILES_FE10,
 )
 
 PROFILES: dict[Game, GameProfile] = {

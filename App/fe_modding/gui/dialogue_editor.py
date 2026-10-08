@@ -21,7 +21,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 
-from ..formats import message
+from ..formats import fe10_message, message
 from ..formats.fe9_message_scene import TEMPLATES, decompile, line_plain_text, to_display, to_raw
 from ..game_profile import DIALOGUE, profile_of
 from ..formats.fe9_conversation_context import resolve_context, context_after_message
@@ -31,6 +31,7 @@ from .changelog import ChangeLog
 from .conversation_preview import ConversationPreview
 from . import theme
 from .editor_panel import EditorPanel
+from .fe10_step_editor import Fe10StepEditor
 from .scene_editor import SceneEditor
 
 SCRIPT_SOURCES_DIR = "script_sources"  # ScriptEditor's .fe9s sidecar folder
@@ -47,9 +48,13 @@ class DialogueEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._fe9 = profile_of(project).supports(DIALOGUE)  # step editing; Radiant Dawn text is raw-only for now
+        profile = profile_of(project)
+        self._fe10 = profile.message_dialect == "fe10"   # Radiant Dawn byte-code, shown in <...> notation
+        self._fe9 = not self._fe10 and profile.supports(DIALOGUE)
+        self._steps_editor: Fe10StepEditor | None = None
         self._current_path: Path | None = None
         self._messages: list[message.Message] = []
+        self._text_order: list[str] | None = None  # the file's text-blob order, kept on save
         self._dirty = False
         self._scene_reload_id = None
         self._current_index: int | None = None
@@ -132,6 +137,23 @@ class DialogueEditor(EditorPanel):
             raw_tab = ttk.Frame(self._notebook, padding=4)
             self._notebook.add(raw_tab, text="Raw text")
             text_parent = raw_tab
+        elif self._fe10:
+            self._scene = None
+            left_split = ttk.PanedWindow(left, orient="vertical")
+            left_split.pack(fill="both", expand=True)
+            steps_frame = ttk.Frame(left_split)
+            left_split.add(steps_frame, weight=1)
+            ttk.Label(steps_frame, text="Steps").pack(anchor="w")
+            self._notebook = ttk.Notebook(left_split)
+            left_split.add(self._notebook, weight=1)
+            self._steps_editor = Fe10StepEditor(steps_frame, self._notebook)
+            self._steps_editor.pack(fill="both", expand=True, pady=(4, 4))
+            self._steps_editor.on_change = self._on_scene_changed
+            self._steps_editor.on_step_selected = lambda offset: self._preview.seek_before(offset)
+            self._notebook.add(self._steps_editor.form_page, text="Step")
+            raw_tab = ttk.Frame(self._notebook, padding=4)
+            self._notebook.add(raw_tab, text="Notation")
+            text_parent = raw_tab
         else:
             self._scene = None
             ttk.Label(left, text="Text:").pack(anchor="w")
@@ -142,13 +164,14 @@ class DialogueEditor(EditorPanel):
         self._text_widget.bind("<<Modified>>", self._on_text_modified)
         self._text_widget.tag_configure("playback_position", background=theme.color("highlight"),
                                         foreground=theme.color("fg"))
-        ttk.Label(
-            text_parent,
-            text="Raw message source: dialogue text interleaved with $ commands\n"
-            "(portraits, boxes, waits...)." + (" The step list edits the same bytes." if self._fe9 else ""),
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", pady=(4, 0))
+        about = ("The message as text with <...> codes: <speaker:04> makes actor 0 speak at position 4, <wait> "
+                 "waits for A, <w2> pauses. The step list edits the same bytes." if self._fe10 else
+                 "Raw message source: dialogue text interleaved with $ commands\n"
+                 "(portraits, boxes, waits...)." + (" The step list edits the same bytes." if self._fe9 else ""))
+        self._notation_error = ttk.Label(text_parent, text="", style="Danger.TLabel")
+        self._notation_error.pack(anchor="w")
+        ttk.Label(text_parent, text=about, style="Muted.TLabel", justify="left", wraplength=420).pack(
+            anchor="w", pady=(4, 0))
 
         preview_frame = ttk.Frame(right)
         preview_frame.pack(fill="both", expand=True)
@@ -186,6 +209,8 @@ class DialogueEditor(EditorPanel):
         self._text_widget.config(state=state)
         if self._scene is not None and not enabled:
             self._scene.load("", keep_selection=False)
+        if self._steps_editor is not None and not enabled:
+            self._steps_editor.load("", keep_selection=False)
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:
@@ -212,6 +237,7 @@ class DialogueEditor(EditorPanel):
         self._current_path = self._chapter_paths[selection[0]]
         try:
             self._messages = message.read_messages_path(self._current_path)
+            self._text_order = message.read_text_order_path(self._current_path)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
             messagebox.showerror("Could not read chapter", str(exc), parent=self)
             return
@@ -221,9 +247,21 @@ class DialogueEditor(EditorPanel):
         self._save_button.config(state="normal")
         for button in self._manage_buttons:
             button.config(state="normal")
-        self._status_label.config(text=f"{len(self._messages)} messages")
+        status = f"{len(self._messages)} messages"
+        if self._fe10:
+            name = self._current_path.name
+            status += f" · {fe10_message.language_of(name)}"
+            if not fe10_message.decoded_language(name):
+                status += " (accented letters are not decoded yet and show as other characters)"
+        self._status_label.config(text=status)
+
+    def _shown(self, text: str) -> str:
+        """What the text widget shows for a message's text."""
+        return fe10_message.to_display(text) if self._fe10 else text
 
     def _list_preview(self, text: str) -> str:
+        if self._fe10:
+            return fe10_message.plain_text(text)[:60]
         if self._fe9:
             try:
                 text = "".join(line_plain_text(s.fields["text"]) + " "
@@ -320,9 +358,12 @@ class DialogueEditor(EditorPanel):
         self._editing_enabled(True)
         self._suspend_edit_tracking = True
         self._text_widget.delete("1.0", "end")
-        self._text_widget.insert("1.0", msg.text)
+        self._text_widget.insert("1.0", self._shown(msg.text))
+        self._notation_error.config(text="")
         if self._scene is not None:
             self._scene.load(msg.text, keep_selection=False)
+        if self._steps_editor is not None:
+            self._steps_editor.load(msg.text, keep_selection=False)
         context = None
         sources = ()
         if self._fe9:
@@ -361,8 +402,16 @@ class DialogueEditor(EditorPanel):
     def _on_field_edited(self) -> None:
         if self._suspend_edit_tracking:
             return
-        self._set_current_text(self._text_widget.get("1.0", "end-1c"))
-        if self._scene is not None:
+        content = self._text_widget.get("1.0", "end-1c")
+        if self._fe10:
+            try:
+                content = fe10_message.to_raw(content)
+            except (ValueError, UnicodeError) as error:
+                self._notation_error.config(text=f"Not applied: {error}")
+                return
+            self._notation_error.config(text="")
+        self._set_current_text(content)
+        if self._scene is not None or self._steps_editor is not None:
             if self._scene_reload_id is not None:
                 self.after_cancel(self._scene_reload_id)
             self._scene_reload_id = self.after(300, self._reload_scene_from_raw)
@@ -372,6 +421,8 @@ class DialogueEditor(EditorPanel):
         index = self._selected_index()
         if index is not None and self._scene is not None:
             self._scene.load(self._messages[index].text)
+        if index is not None and self._steps_editor is not None:
+            self._steps_editor.load(self._messages[index].text)
 
     def _on_scene_changed(self, text: str) -> None:
         index = self._selected_index()
@@ -379,9 +430,10 @@ class DialogueEditor(EditorPanel):
             return
         self._suspend_edit_tracking = True
         self._text_widget.delete("1.0", "end")
-        self._text_widget.insert("1.0", text)
+        self._text_widget.insert("1.0", self._shown(text))
         self._text_widget.edit_modified(False)
         self._suspend_edit_tracking = False
+        self._notation_error.config(text="")
         self._set_current_text(text)
 
     def _set_current_text(self, new_text: str) -> None:
@@ -448,19 +500,23 @@ class DialogueEditor(EditorPanel):
     def _add_message(self) -> None:
         if self._current_path is None:
             return
-        template = ""
-        if self._fe9:
-            dialog = _TemplateDialog(self, self._id_prefix() + "NEW")
+        templates = fe10_message.TEMPLATES if self._fe10 else TEMPLATES
+        text = ""
+        if self._fe9 or self._fe10:
+            dialog = _TemplateDialog(self, self._id_prefix() + "NEW", templates)
             if dialog.result is None:
                 return
             name, template = dialog.result
             initial = name
+            text = templates.get(template, "")
+            if self._fe10:
+                text = fe10_message.to_raw(text)
         else:
             initial = self._id_prefix() + "NEW"
-        msg_id = self._ask_id("New message", initial) if not self._fe9 else self._validated(initial)
+        msg_id = self._validated(initial) if self._fe9 or self._fe10 else self._ask_id("New message", initial)
         if msg_id is None:
             return
-        self._insert_sorted(message.Message(speaker=msg_id, text=TEMPLATES.get(template, "")))
+        self._insert_sorted(message.Message(speaker=msg_id, text=text))
         self._changelog.append(self._current_path.name, f"Added message {self._id_label(msg_id)}")
 
     def _validated(self, value: str) -> str | None:
@@ -545,7 +601,7 @@ class DialogueEditor(EditorPanel):
         # Order doesn't matter to the game (hash lookup); keep vanilla's sorted layout.
         ordered = sorted(self._messages, key=_sort_key)
         try:
-            message.write_messages_path(self._current_path, ordered)
+            message.write_messages_path(self._current_path, ordered, self._text_order)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not save chapter", str(exc), parent=self)
             return
@@ -618,9 +674,9 @@ class DialogueEditor(EditorPanel):
 
 
 class _TemplateDialog(tk.Toplevel):
-    """New FE9 message: ID and starting template."""
+    """New message: ID and starting template."""
 
-    def __init__(self, parent, initial_id: str):
+    def __init__(self, parent, initial_id: str, templates: dict):
         super().__init__(parent)
         self.title("New message")
         self.transient(parent.winfo_toplevel())
@@ -632,8 +688,8 @@ class _TemplateDialog(tk.Toplevel):
         entry = ttk.Entry(body, textvariable=self._id, width=32)
         entry.grid(row=0, column=1, sticky="ew", pady=2)
         ttk.Label(body, text="Start from:").grid(row=1, column=0, sticky="w")
-        self._template = tk.StringVar(value=next(iter(TEMPLATES)))
-        ttk.Combobox(body, textvariable=self._template, values=list(TEMPLATES), state="readonly",
+        self._template = tk.StringVar(value=next(iter(templates)))
+        ttk.Combobox(body, textvariable=self._template, values=list(templates), state="readonly",
                      width=30).grid(row=1, column=1, sticky="ew", pady=2)
         buttons = ttk.Frame(body)
         buttons.grid(row=2, column=0, columnspan=2, sticky="e", pady=(8, 0))

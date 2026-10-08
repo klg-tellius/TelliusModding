@@ -621,6 +621,8 @@ def summary(step: Step, cast: list[str] | None = None) -> str:
         return f"position {f['a']}, facing {dict(D='default', L='left', R='right').get(f['b'], f['b'])}"
     if step.kind.endswith("|"):
         return ", ".join(f["items"]) or "(empty)"
+    if step.kind == "R:":
+        return layout_label(f["value"])
     if "value" in f:
         return (f"{f['n']}: " if "n" in f else "") + f["value"]
     if "n" in f:
@@ -686,3 +688,29 @@ def layout_from_label(label: str) -> str:
         if name in LAYOUT_NAMES:
             return name
     return label
+
+
+#: Starting points for a new message (notation). Vanilla messages end with <wait>; a script
+#: plays them with TalkEvent("MS_...").
+TEMPLATES: dict[str, str] = {
+    "Two-box talk": "<FL|IKE|MICAIAH><R:上下会話><speaker:00><show:0D>First line.<wait>\n"
+                    "<speaker:11><show:1D>Reply.<wait>",
+    "Background scene": "<FL|IKE|MICAIAH><BO><R:背景会話><seat:01><show_now:1D><seat:13><show:3D>"
+                        "<B:デイン-路地-昼><speaker:01>First line.<wait>\n<speaker:13>Reply.<wait>",
+    "Empty": "",
+}
+
+#: File-name prefixes of the language variants (``mess/%s%s`` with the table at US 0x804cce58).
+LANGUAGES = {"": "Japanese", "e_": "English", "d_": "German", "f_": "French", "s_": "Spanish", "i_": "Italian"}
+
+
+def language_of(file_name: str) -> str:
+    """The language of a Mess file from its prefix (``e_c0101.m`` -> ``English``)."""
+    prefix = file_name[:2].lower()
+    return LANGUAGES.get(prefix, LANGUAGES[""]) if prefix.endswith("_") else LANGUAGES[""]
+
+
+def decoded_language(file_name: str) -> bool:
+    """False for the European language files, whose single-byte text tables are not decoded yet:
+    their accented letters show as half-width katakana (the bytes are still kept exactly)."""
+    return language_of(file_name) in ("Japanese", "English")
