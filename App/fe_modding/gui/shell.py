@@ -291,7 +291,7 @@ class Shell(ttk.Frame):
                 if panel.dirty and not getattr(panel, "shares_fe8_session", False):
                     names.append(panel.display_name or type(panel).__name__)
         if self._session is not None and self._session.dirty:
-            names.append("FE8Data.bin")
+            names.append(self.project.profile.file_label("game_data"))
         return names
 
     def confirm_unsaved(self, consequence: str, proceed: str) -> bool:
@@ -333,8 +333,9 @@ class Shell(ttk.Frame):
             try:
                 session.save()
             except OSError as exc:
-                messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
-                failed.append("FE8Data.bin")
+                label = self.project.profile.file_label("game_data")
+                messagebox.showerror(f"Could not save {label}", str(exc), parent=self)
+                failed.append(label)
         return failed
 
     def _poll_unsaved(self) -> None:
@@ -519,6 +520,9 @@ class Shell(ttk.Frame):
         except ProjectError as exc:
             messagebox.showerror("Could not set source", str(exc), parent=self)
             return
+        warning = project.source_mismatch_warning()
+        if warning:
+            messagebox.showwarning("Wrong game?", warning, parent=self)
         self._refresh_home()
 
     def extract(self) -> None:
@@ -535,6 +539,9 @@ class Shell(ttk.Frame):
 
     def _on_extracted(self) -> None:
         self.set_status(f"Extracted into {self.project.extracted_dir}")
+        warning = self.project.disc_mismatch_warning()
+        if warning:
+            messagebox.showwarning("Wrong game?", warning, parent=self)
         self.index = None
         self.refresh_extracted_state()
         self._refresh_home()

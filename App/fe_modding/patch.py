@@ -36,7 +36,7 @@ from typing import Optional
 
 from . import tools
 from .exceptions import ModdingError
-from .games import Game, get_game_info
+from .games import Game, get_game_info, profile as game_profile
 from .project import ModProject, build_image
 
 PATCH_EXTENSION = ".tpatch"
@@ -191,11 +191,10 @@ def create_project_patch(project: ModProject, dest: Path | str) -> PatchSummary:
         raise PatchError("The project's source disc image is missing - choose it again first.")
     if not project.has_extracted_files:
         raise PatchError("Nothing extracted yet - extract the source disc image first.")
-    if project.game == Game.PATH_OF_RADIANCE:
-        project.sync_system_archive()  # as a build would: system.cmp carries copies of loose files
+    project.sync_system_archive()  # as a build would: system.cmp carries copies of loose files (none on Radiant Dawn)
     with tempfile.TemporaryDirectory(prefix=".patch_base_", dir=project.directory) as temp:
         base = Path(temp) / "disc"
-        tools.extract_disc(project.source_path, base, overwrite=True)
+        tools.extract_disc(project.source_path, base, overwrite=True, wii=project.profile.wii)
         return create_patch(base, project.extracted_dir, dest, game=project.game,
                             name=project.name, description=project.description, author=project.author,
                             version=project.version, credits=project.credits)
@@ -270,7 +269,7 @@ def apply_patch_to_disc(patch_path: Path | str, base_disc: Path | str, dest: Pat
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".patch_apply_", dir=dest.parent) as temp:
         tree = Path(temp) / "disc"
-        tools.extract_disc(base_disc, tree, overwrite=True)
+        tools.extract_disc(base_disc, tree, overwrite=True, wii=game_profile(info.game).wii)
         apply_patch(patch_path, tree)
         return build_image(info.game, tree, dest, overwrite=True)
 
