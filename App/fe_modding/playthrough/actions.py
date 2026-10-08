@@ -34,6 +34,7 @@ LOCATION_ACTIONS = {9: "visit", 11: "door", 12: "chest", 13: "seize", 14: "escap
 ACTION_IDS = {name: ident for ident, name in LOCATION_ACTIONS.items()}
 #: Visit and destroy: a village they were done at is spent (``GameState.visited``)
 VILLAGE_ACTIONS = (9, 37)
+NOT_HEALING = frozenset({"IID_WARP", "IID_RESCUE", "IID_MSHIELD", "IID_TORCH", "IID_HAMMERNE", "IID_UNLOCK"})
 
 
 @dataclass(frozen=True)
@@ -45,7 +46,8 @@ class Act:
     dest: tuple
     action: str = "wait"
     target: Optional[int] = None  # the other unit (attack, staff, shove, talk)
-    item: Optional[int] = None  # inventory index of the weapon or staff
+    item: Optional[int] = None  # inventory index of the weapon, staff or item
+    to: Optional[tuple] = None  # Warp: where the target is sent
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class AfterAction(Task):
     uid: int
     canto: int = 0  # movement left for Canto, 0 = none
     entered: list = field(default_factory=list)  # tiles walked through (zone checks)
+    target: Optional[int] = None  # the other unit of the action (its heal flag is refreshed too)
 
     @property
     def title(self) -> str:
@@ -137,11 +140,24 @@ def choices(world: World, state: GameState, unit: SimUnit, dest: tuple) -> list:
             if hostile(unit.faction, other.faction) and low <= d <= high:
                 out.append(Choice("attack", other.uid, index,
                                   f"Attack {world.name(other.pid)} with {world.item_name(item.iid)}"))
+    from .ai_actions import STATUS_STAVES
+
     for index, item in combat.staff_items(world, unit):
         low, high = combat.item_range(unit, item)
         for other in others:
             d = movement.distance(dest, other.tile)
-            if not hostile(unit.faction, other.faction) and other.hp < other.stats[0] and low <= d <= high:
+            if not low <= d <= high:
+                continue
+            foe = hostile(unit.faction, other.faction)
+            if item.iid in STATUS_STAVES:
+                ok = foe
+            elif item.iid == "IID_REST":
+                ok = not foe and bool(other.status)
+            elif item.iid in NOT_HEALING:
+                ok = False  # Warp, Rescue, Ward, Torch, Hammerne, Unlock: not in the simulator's menu
+            else:
+                ok = not foe and other.hp < other.stats[0]
+            if ok:
                 out.append(Choice("staff", other.uid, index,
                                   f"{world.item_name(item.iid)} on {world.name(other.pid)}"))
     for other in others:
@@ -189,14 +205,14 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
     spent = reach[dest][0]
     action = command.action
     target = state.units.get(command.target) if command.target is not None else None
-    if action in ("attack", "staff", "shove", "talk") and (target is None or not target.on_map):
+    if action in ("attack", "shove", "talk", "steal", "take_item") and (target is None or not target.on_map):
         raise CommandError(f"{action}: no target.")
     start, emitted = unit.tile, len(state.out)
     if dest != unit.tile:
         state.emit("action", f"{world.name(unit.pid)} moves to {dest}", uid=unit.uid, path=walked)
     unit.x, unit.y = dest
     try:
-        tasks = _act(world, state, unit, dest, action, target, command.item)
+        tasks = _act(world, state, unit, dest, action, target, command.item, command.to)
     except CommandError:
         # nothing happened: an AI unit that can't act waits where it stood
         unit.x, unit.y = start
@@ -205,12 +221,13 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
     acted = action != "wait"
     left = unit.move - spent
     canto = left if acted and not by_ai and left > 0 and has_canto(world, unit) else 0
-    tasks.append(AfterAction(unit.uid, canto, walked))
+    tasks.append(AfterAction(unit.uid, canto, walked, target.uid if target is not None else None))
     unit.done = True
     state.push_front(*tasks)
 
 
-def _act(world: World, state: GameState, unit: SimUnit, dest: tuple, action: str, target, item) -> list:
+def _act(world: World, state: GameState, unit: SimUnit, dest: tuple, action: str, target, item,
+         to: Optional[tuple] = None) -> list:
     """Do ``action`` with ``unit`` standing on ``dest``; returns the tasks that
     follow it. Raises :class:`CommandError` before changing anything."""
     tasks: list[Task] = []
@@ -222,7 +239,19 @@ def _act(world: World, state: GameState, unit: SimUnit, dest: tuple, action: str
         tasks.append(TriggerCheck(9, {"pid1": unit.pid, "pid2": target.pid, "me": unit.uid, "target": target.uid}))
         tasks.append(Combat(unit.uid, target.uid, item, movement.distance(dest, target.tile)))
     elif action == "staff":
-        heal_with_staff(world, state, unit, target, item)
+        use_staff(world, state, unit, target, item, to)
+    elif action == "steal":
+        steal(world, state, unit, target, item)
+    elif action == "item":
+        use_item(world, state, unit, item)
+    elif action == "take_item":
+        if item is None or item >= len(target.items):
+            raise CommandError("Nothing to take.")
+        entry = target.items.pop(item)
+        unit.items.append(entry)
+        state.emit("action", f"{world.name(unit.pid)} takes {world.item_name(entry[0])} from "
+                             f"{world.name(target.pid)}", uid=unit.uid)
+        use_item(world, state, unit, len(unit.items) - 1)
     elif action == "shove":
         to = shove_destination(world, state, dest, target)
         if to is None or not can_shove(world, state, unit, dest, target):
@@ -255,6 +284,97 @@ def staff_heal(world: World, unit: SimUnit, item) -> int:
     if iid in ("IID_RECOVER", "IID_RESERVE"):
         return 999
     return unit.stats[2] + (20 if iid == "IID_RELIVE" else 10)
+
+
+def use_staff(world: World, state: GameState, unit: SimUnit, target: Optional[SimUnit], index: Optional[int],
+              to: Optional[tuple] = None) -> None:
+    """Healing staves heal (Fortify: every unit of the caster's side in its range); Restore clears a
+    status; Silence, Sleep and Berserk hit with ``ai_actions.magic_hit`` and last
+    ``ai_actions.STATUS_TURNS`` phases; Rescue brings the target next to the caster; Warp sends it to
+    ``to``; Ward's Res bonus is not simulated."""
+    from . import ai_actions
+
+    staves = dict(combat.staff_items(world, unit))
+    if index not in staves:
+        if not staves:
+            raise CommandError(f"{world.name(unit.pid)} has no staff.")
+        index = next(iter(staves))
+    item = staves[index]
+    iid = item.iid or ""
+    name = world.item_name(iid)
+    if iid == "IID_RESERVE" or target is None:
+        high = ai_actions.max_range(unit, item)
+        healed = [u for u in state.living() if not hostile(unit.faction, u.faction)
+                  and 1 <= movement.distance(u.tile, unit.tile) <= high and u.hp < u.stats[0]]
+        for u in healed:
+            amount = min(staff_heal(world, unit, item), u.stats[0] - u.hp)
+            u.hp += amount
+            state.emit("action", f"{name}: {world.name(u.pid)} recovers {amount} HP", uid=u.uid)
+        if not healed:
+            state.emit("action", f"{world.name(unit.pid)} uses {name}: nobody to heal", uid=unit.uid)
+    else:
+        if target is None or not target.on_map:
+            raise CommandError("staff: no target.")
+        low, high = max(1, item.min_range), ai_actions.max_range(unit, item)
+        d = movement.distance(unit.tile, target.tile)
+        if not low <= d <= high:
+            raise CommandError("The staff can't reach that unit.")
+        if iid in ai_actions.STATUS_STAVES:
+            hit = ai_actions.magic_hit(unit, target, d)
+            ok, roll = state.rng.roll_percent(hit)
+            if ok:
+                target.status, target.status_turns = ai_actions.STATUS_STAVES[iid], ai_actions.STATUS_TURNS
+            state.emit("action", f"{world.name(unit.pid)} uses {name} on {world.name(target.pid)}: hit {hit}, "
+                                 f"roll {roll}: " + (target.status if ok else "missed"), uid=target.uid)
+        elif iid == "IID_REST":
+            state.emit("action", f"{world.name(unit.pid)} restores {world.name(target.pid)}"
+                                 + (f" (no longer {target.status})" if target.status else ""), uid=target.uid)
+            target.status, target.status_turns = "", 0
+        elif iid in ("IID_WARP", "IID_RESCUE"):
+            dest = to
+            if iid == "IID_RESCUE":
+                dest = next((n for n in sorted(movement.tiles_in_range(world, unit.tile, 1, 1))
+                             if state.unit_at(*n) is None
+                             and world.move_cost(*n, target.movement_type) < IMPASSABLE), None)
+            if dest is None or state.unit_at(*dest) is not None:
+                raise CommandError(f"{name}: no free tile to send {world.name(target.pid)} to.")
+            start = target.tile
+            target.x, target.y = dest
+            state.emit("action", f"{world.name(unit.pid)} uses {name}: {world.name(target.pid)} to {dest}",
+                       uid=target.uid, path=[start, dest])
+        elif iid == "IID_MSHIELD":
+            state.emit("action", f"{world.name(unit.pid)} uses {name} on {world.name(target.pid)} "
+                                 "(the Res bonus is not simulated)", uid=target.uid)
+        else:
+            heal_with_staff(world, state, unit, target, index)
+            return
+    combat._use(world, state, unit, index, 1)
+    if unit.faction == PLAYER:
+        combat.gain_exp(world, state, unit, 11)
+
+
+def steal(world: World, state: GameState, unit: SimUnit, target: SimUnit, index: Optional[int]) -> None:
+    if movement.distance(unit.tile, target.tile) != 1 or index is None or index >= len(target.items):
+        raise CommandError("Nothing to steal there.")
+    entry = target.items.pop(index)
+    unit.items.append(list(entry))
+    state.emit("action", f"{world.name(unit.pid)} steals {world.item_name(entry[0])} from "
+                         f"{world.name(target.pid)}", uid=target.uid)
+
+
+def use_item(world: World, state: GameState, unit: SimUnit, index: Optional[int]) -> None:
+    """Vulnerary +10 HP, Elixir full HP; other items are logged (their effects aren't simulated)."""
+    if index is None or index >= len(unit.items):
+        raise CommandError("No such item.")
+    iid = unit.items[index][0]
+    if iid in ("IID_VULNERARY", "IID_ELIXIR"):
+        amount = min(10 if iid == "IID_VULNERARY" else unit.stats[0], unit.stats[0] - unit.hp)
+        unit.hp += amount
+        state.emit("action", f"{world.name(unit.pid)} uses {world.item_name(iid)}: +{amount} HP", uid=unit.uid)
+    else:
+        state.emit("action", f"{world.name(unit.pid)} uses {world.item_name(iid)} (effect not simulated)",
+                   uid=unit.uid)
+    combat._use(world, state, unit, index, 1)
 
 
 def heal_with_staff(world: World, state: GameState, unit: SimUnit, target: SimUnit, index: Optional[int]) -> None:

@@ -36,12 +36,16 @@ def weapon_items(world: World, unit: SimUnit) -> list:
             continue
         if item.weapon_type == "rod" and not item.might:
             continue  # a staff
+        if unit.status == "silence" and item.weapon_type in MAGIC_TYPES:
+            continue
         out.append((i, item))
     return out
 
 
 def staff_items(world: World, unit: SimUnit) -> list:
     out = []
+    if unit.status == "silence":
+        return out
     for i, (iid, uses, _drop) in enumerate(unit.items):
         item = world.items.get(iid)
         if item is not None and uses > 0 and item.weapon_type == "rod" and not item.might and world.can_wield(unit, item):
@@ -50,7 +54,8 @@ def staff_items(world: World, unit: SimUnit) -> list:
 
 
 def item_range(unit: SimUnit, item) -> tuple:
-    high = max(1, unit.stats[2] // 2) if item.max_range == 255 else item.max_range
+    """(min, max): a max range of 255 is Mag / 2 clamped to 5..15 (``resolve_stat_or_default_from_magic``)."""
+    high = min(15, max(5, unit.stats[2] // 2)) if item.max_range == 255 else item.max_range
     return (max(1, item.min_range), max(1, high))
 
 
