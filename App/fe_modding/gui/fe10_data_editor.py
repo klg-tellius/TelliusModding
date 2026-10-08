@@ -382,7 +382,12 @@ class Fe10DataEditor(EditorPanel):
             return
         definition = next(d for d in fe10data.field_defs(self.kind) if d.key == key)
         try:
-            value = (text or None) if definition.kind == "label" else int(text, 0)
+            if definition.kind == "label":
+                value = text or None
+            elif definition.kind == "f32":
+                value = float(text)
+            else:
+                value = int(text, 0)
             data = fe10data.patch_field(self._data, self.kind, r.index, key, value)
         except ValueError as exc:
             messagebox.showerror("Invalid value", str(exc), parent=self)
