@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, zdbx
-from .game_profile import logical_path_of
+from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_path_of, profile_of
 from .project import ModProject
 
 AID_BASE_RE = re.compile(r"^AID_[A-Z0-9_]+$")
@@ -33,7 +33,16 @@ def _files(project: ModProject) -> Path:
     return project.extracted_dir / "files"
 
 
+# The codecs below are Path of Radiance's (zdbx, FE8Anim, FE8Data): another game's file of the same
+# role is a different format, so it is refused until its profile lists the feature.
+_LOGICAL_FEATURES = {"battle_data": BATTLE_TABLES, "anim_data": ANIM, "game_data": GAME_DATA}
+
+
 def _logical(project: ModProject, name: str) -> Path:
+    profile = profile_of(project)
+    feature = _LOGICAL_FEATURES.get(name)
+    if feature is not None and not profile.supports(feature):
+        raise ProjectError(profile.unavailable(feature))
     return logical_path_of(project, name)
 
 

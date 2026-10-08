@@ -49,6 +49,15 @@ class UnavailableStateTests(unittest.TestCase):
         self.assertIn("not available for Radiant Dawn yet", session.unavailable_reason)
         self.assertEqual(session.file_label, "FE10Data.cms")
 
+    def test_model_slots_refuse_the_other_games_battle_and_anim_files(self):
+        from fe_modding import model_slots
+        from fe_modding.exceptions import ProjectError
+
+        for name in ("battle_data", "anim_data", "game_data"):
+            with self.assertRaises(ProjectError) as caught:
+                model_slots._logical(self.project, name)
+            self.assertIn("not available for Radiant Dawn yet", str(caught.exception))
+
     def test_play_in_dolphin_refuses_cleanly(self):
         from fe_modding import emulator
 

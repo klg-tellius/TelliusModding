@@ -119,5 +119,15 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(logical_path_of(stand_in, "game_data"), Path("e") / "files" / "FE8Data.bin")
 
 
+class ChapterKeyTests(unittest.TestCase):
+    def test_ids_match_across_padding_and_case(self):
+        from fe_modding.gui.pages.text_assets import _chapter_key
+
+        self.assertEqual(_chapter_key("01"), _chapter_key("1"))
+        self.assertEqual(_chapter_key("00"), "0")
+        self.assertEqual(_chapter_key("0407A"), _chapter_key("0407a"))
+        self.assertEqual(_chapter_key("final"), "final")
+
+
 if __name__ == "__main__":
     unittest.main()

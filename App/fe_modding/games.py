@@ -107,6 +107,11 @@ def read_image_disc_id(image: Path | str) -> str:
         return ""
     try:
         with image.open("rb") as f:
+            if image.suffix.lower() == ".wbfs":
+                # the disc header follows the first HD sector, whose size is 1 << byte 8 ("WBFS" magic first)
+                head = f.read(9)
+                if len(head) == 9 and head[:4] == b"WBFS" and 9 <= head[8] <= 16:
+                    offset = 1 << head[8]
             f.seek(offset)
             raw = f.read(6)
     except OSError:

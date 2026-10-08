@@ -28,7 +28,7 @@ def _chapter_file_re(project, extension: str) -> re.Pattern:
 
 def _chapter_key(chapter_id: str) -> str:
     """Compare ids across file kinds: ``01`` and ``1`` are one chapter, ``0407A`` and ``0407a`` too."""
-    return chapter_id.lstrip("0") or "0" if chapter_id.isdigit() else chapter_id.lower()
+    return (chapter_id.lstrip("0") or "0") if chapter_id.isdigit() else chapter_id.lower()
 
 
 def message_files(project) -> list[tuple[Path, str | None]]:
