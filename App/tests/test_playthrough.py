@@ -170,6 +170,28 @@ class ActionTests(unittest.TestCase):
         actions.apply(self.world, self.state, actions.Act(healer.uid, (1, 0), "staff", choice.target, choice.item))
         self.assertEqual(self.state.units[hurt.uid].hp, 5 + 5 + 10)
 
+    def test_move_through_an_ally(self):
+        # a corridor: the ally's tile is on the path but is not a destination
+        world = _world(width=4, height=1)
+        state = GameState()
+        a = _unit(state, "PID_A", 0, 0)
+        _unit(state, "PID_B", 1, 0)
+        actions.apply(world, state, actions.Act(a.uid, (2, 0)))
+        self.assertEqual(state.units[a.uid].tile, (2, 0))
+
+    def test_link_sections_list_exceptions(self):
+        # retail maps list only the tiles with closed directions; the others are open
+        from fe_modding.formats import map_file
+        from fe_modding.playthrough import loader
+
+        data = map_file.MapData(capacity=map_file.MapCapacity(3, 1, 0, 0, 2000.0),
+                                link=[[-1], [map_file.LINK_PASS_WEST], [-1]], link_at=None, link_abs=None)
+        world = _world(width=3, height=1)
+        world.link = loader.link_grid(data)
+        state = GameState()
+        a = _unit(state, "PID_A", 0, 0)
+        self.assertEqual(set(movement.destinations(world, state, a)), {(0, 0), (1, 0)})  # (1,0) opens west only
+
     def test_unreachable_destination_rejected(self):
         a = _unit(self.state, "PID_A", 0, 0)
         with self.assertRaises(actions.CommandError):
@@ -194,6 +216,26 @@ class ActionTests(unittest.TestCase):
         with self.assertRaises(actions.CommandError):
             sim.command(actions.Act(a.uid, (7, 7)))
         self.assertEqual(len(sim.history), entries)
+
+    def test_battle_exp_follows_calculate_battle_exp(self):
+        def unit(level, *skills):
+            return SimUnit(uid=0, pid="PID_X", jid="JID_X", faction=PLAYER, x=0, y=0, level=level, skills=list(skills))
+
+        exp = combat.battle_exp
+        # Normal constants: level 20, mode 20, promotion 0, boss 30, thief 20
+        self.assertEqual(exp(unit(5), unit(5), True, False), 10)  # (20 + 5 - 5 + 1) / 2
+        self.assertEqual(exp(unit(5), unit(5), True, True), 30)  # + 20 + 5 - 5
+        # a promoted unit counts 20 levels higher: Titania (Paladin 4) killing a level-3 soldier
+        self.assertEqual(exp(unit(4, "SID_HIGHER"), unit(3), True, True), 1)
+        self.assertEqual(exp(unit(5), unit(5, "SID_BOSS"), True, True), 60)
+        self.assertEqual(exp(unit(5), unit(5, "SID_STEAL"), True, True), 50)
+        self.assertEqual(exp(unit(5), unit(5), False, True), 1)  # no damage dealt
+        self.assertEqual(exp(unit(5, "SID_ELITE"), unit(5), True, False), 20)
+        self.assertEqual(exp(unit(5), unit(5, "SID_FINAL"), True, True), 0)
+        self.assertEqual(exp(unit(1), unit(20, "SID_HIGHER", "SID_BOSS"), True, True), 100)  # capped
+        hard = {"battle_exp_mode_bonus": 15, "battle_exp_level_constant": 20, "promotion_exp_bonus_base": 0,
+                "boss_exp_bonus": 25, "thief_exp_bonus": 20}
+        self.assertEqual(exp(unit(5), unit(5), True, True, hard), 25)
 
     def test_fallen_unit_gains_no_exp(self):
         a = _unit(self.state, "PID_A", 1, 0)
@@ -332,6 +374,120 @@ class AiTests(unittest.TestCase):
         self.assertEqual(sim.state.phase, PLAYER)
         self.assertEqual(sim.state.turn, 2)
         self.assertNotEqual(sim.state.units[e2.uid].tile, (7, 7))  # moved towards the player
+
+    def test_attack_choice_comes_with_its_ranking(self):
+        cp = _cp({"SEQ_ATK": "attack(chance=100)\nend()\n"})
+        world = _world(cp=cp)
+        state = GameState()
+        strong = _unit(state, "PID_A", 2, 0)
+        weak = _unit(state, "PID_C", 0, 2)
+        weak.hp = 3  # the attack removes all of its HP: the better target
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_ATK")
+        from fe_modding.playthrough.state import AiTurn
+
+        state.pending = [AiTurn(e.uid)]
+        sim = Simulation(world, state)
+        sim.run()
+        decision = next(o.data["decision"] for en in sim.history for o in en.outputs
+                        if o.kind == "ai" and o.data.get("decision"))
+        ranking = decision["ranking"]
+        self.assertGreater(len(ranking), 1)
+        self.assertEqual([c["score"] for c in ranking], sorted((c["score"] for c in ranking), reverse=True))
+        self.assertIn("C", ranking[0]["row"])  # PID_C, the one it can finish
+        self.assertEqual(set(ranking[0]["terms"]), set(ai_vm.SCORE_TERMS))
+        self.assertIn("kill bonus +50", ranking[0]["row"])
+        self.assertLess(sim.state.units[weak.uid].hp, 3)
+        self.assertEqual(sim.state.units[strong.uid].hp, sim.state.units[strong.uid].stats[0])
+
+    def test_enemy_threat_map_is_the_hostiles_expected_damage(self):
+        from fe_modding.playthrough import combat as cb
+
+        # a corridor: the deciding enemy at 0 (Mov 9), two swordsmen (Mov 5) at 9 and 11
+        world = _world(width=12, height=1)
+        state = GameState()
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, move=9)
+        q1 = _unit(state, "PID_A", 9, 0)
+        q2 = _unit(state, "PID_C", 11, 0)
+        threat = ai_vm.enemy_threat_map(world, state, e)
+
+        def value(p):
+            f = cb.forecast(world, p, e, world.items["IID_SWORD"], 1).attacker
+            return ai_vm.expected_hit_damage(f)
+
+        v1, v2 = value(q1), value(q2)
+        self.assertGreater(v1, 0)
+        # q1 stands on a free tile it reaches (4-8, 10; not its own 9 nor q2's 11): strikes 3-9 and 11.
+        # q2 stands on 6-8, 10: strikes 5-9 and 11. The enemy reaches 0-8 (q1 blocks the corridor).
+        expected = {(3, 0): v1, (4, 0): v1, **{(x, 0): v1 + v2 for x in range(5, 9)}}
+        self.assertEqual(threat, expected)
+        # the attack score reads the map >> 4
+        self.assertEqual((threat[(5, 0)] >> 4) & 0xFFF, (v1 + v2) // 16)
+
+    def test_object_tiles_are_left_out_of_the_threat_map(self):
+        world = _world(width=8, height=1)
+        world.terrain_types = [fe8data.TerrainType(0, PLAIN, "MT_" + PLAIN, 0, avoid=0, defense=0, heal=0,
+                                                   move_costs=tuple([1] * 15)),
+                               fe8data.TerrainType(1, FOREST, "MT_" + FOREST, 0, avoid=0, defense=0, heal=0,
+                                                   move_costs=tuple([1] * 15), flag7=1)]
+        world.terrain_by_name = {t.name: t for t in world.terrain_types}
+        world.terrain[3][0] = FOREST
+        state = GameState()
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, move=6)
+        _unit(state, "PID_A", 6, 0)
+        threat = ai_vm.enemy_threat_map(world, state, e)
+        # the swordsman stands on 1, 2, 4, 5 or 7 (3 is an object tile, 6 its own): strikes 0-6;
+        # the enemy reaches 0-5 but not 3, where nobody can stand
+        self.assertEqual(set(threat), {(0, 0), (1, 0), (2, 0), (4, 0), (5, 0)})
+
+    def test_damage_term_and_its_bonuses(self):
+        from types import SimpleNamespace as S
+
+        hit = S(damage=10, hit=100, doubles=False)
+        miss = S(damage=10, hit=0, doubles=False)
+        # weight 64 = x2: 10 expected -> 20; the target has 25 HP: no kill bonus, 20 HP: +50
+        self.assertEqual(ai_vm._damage_term(hit, None, 30, 25, 64), (20, False))
+        self.assertEqual(ai_vm._damage_term(hit, None, 30, 20, 64), (70, True))
+        # double attack, 50% hit: 2 x 10 x (1 - 0.25)^1.75
+        self.assertEqual(ai_vm._expected(S(damage=10, hit=50, doubles=True), 1.75), int(20 * 0.75 ** 1.75))
+        # no damage: minus the expected counter, capped at 15; +50 first when it reaches the attacker's HP
+        self.assertEqual(ai_vm._damage_term(miss, S(damage=8, hit=100, doubles=False), 30, 25, 64), (-8, False))
+        self.assertEqual(ai_vm._damage_term(miss, S(damage=8, hit=100, doubles=False), 5, 25, 64), (-15, False))
+
+    def test_provoke_draws_the_attack_and_shade_avoids_it(self):
+        cp = _cp({"SEQ_ATK": "attack(chance=100)\nend()\n"})
+        for skill, expected in (("SID_PROVOKE", "PID_A"), ("SID_SHADE", "PID_C")):
+            world = _world(cp=cp)
+            state = GameState()
+            a = _unit(state, "PID_A", 2, 0)
+            _unit(state, "PID_C", 0, 2)
+            a.skills.append(skill)
+            e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_ATK")
+            from fe_modding.playthrough.state import AiTurn
+
+            state.pending = [AiTurn(e.uid)]
+            sim = Simulation(world, state)
+            sim.run()
+            decision = next(o.data["decision"] for en in sim.history for o in en.outputs
+                            if o.kind == "ai" and o.data.get("decision"))
+            self.assertIn(expected.removeprefix("PID_"), decision["ranking"][0]["row"], skill)
+            self.assertEqual(decision["ranking"][0]["terms"]["skill_bonus"][0],
+                             50 if skill == "SID_PROVOKE" and expected == "PID_A" else 0)
+
+    def test_negative_mov_change_slows_the_move(self):
+        # retail SEQ_NEARESTUNITMOVE_BLACKNIGHT: move_stat(add=-3), move, move_stat(add=3)
+        cp = _cp({"SEQ_ATK": "end()\n", "SEQ_SLOW": "r0 = move_stat(add=-3)\nmove_nearest()\n"
+                                                    "r0 = move_stat(add=3)\nend()\n"})
+        world = _world(width=12, height=1, cp=cp)
+        state = GameState()
+        _unit(state, "PID_A", 11, 0)
+        e = _unit(state, "PID_B", 0, 0, faction=ENEMY, seq_attack="SEQ_ATK", seq_move="SEQ_SLOW")
+        from fe_modding.playthrough.state import AiTurn
+
+        state.pending = [AiTurn(e.uid)]
+        sim = Simulation(world, state)
+        sim.run()
+        self.assertEqual(sim.state.units[e.uid].tile, (2, 0))  # Mov 5 - 3
+        self.assertEqual(sim.state.units[e.uid].move, 5)
 
     def test_label_fallthrough_into_next_section(self):
         cp = _cp({"SEQ_A": "goto L5\n", "SEQ_B": "L5:\nend()\n"})

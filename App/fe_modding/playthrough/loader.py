@@ -12,8 +12,9 @@ from .world import World
 
 
 def link_grid(map_data) -> Optional[list]:
-    """The composed link grid, or None when the map has no link sections (everything open)."""
-    if map_data is None or not any(g is not None for g in (map_data.link, map_data.link_at, map_data.link_abs)):
+    """The composed link grid: tiles open in every direction unless the link sections say otherwise or
+    the height rule closes an edge. None (everything open) without a map capacity."""
+    if map_data is None or map_data.capacity is None:
         return None
     try:
         return map_file.compose_link_status_grid(map_data)
@@ -95,4 +96,12 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
         scripts=scripts, script_names=script_names, cp=cp, messages=load_messages(files, chapter_stem),
         groups=setup.groups(documents), difficulty=difficulty, names=dict(names or {}),
     )
+    fe8_path = files / "FE8Data.bin"
+    if fe8_path.exists():
+        try:
+            from ..formats import fe8data
+
+            world.game_data = fe8data.read_game_data(fe8_path.read_bytes())  # the EXP constants
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"GameData could not be read ({exc}): EXP uses the retail Normal values")
     return world

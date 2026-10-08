@@ -80,13 +80,24 @@ class ChaptersHub(Page):
         self._query.trace_add("write", lambda *_: (self._filter(), self._scroll.scroll_top()))
         self._scroll = ScrollFrame(self, padding=(28, 4, 28, 28))
         self._scroll.pack(fill="both", expand=True)
-        self._grid = CardGrid(self._scroll.body, card_width=260)
-        self._grid.pack(fill="x")
-        self._note = ttk.Label(self._scroll.body, style="Muted.TLabel", wraplength=900, justify="left",
-                               text="Chapter IDs are the disc's file numbers and the game's chapter numbers "
-                                    "(the Prologue is 01). An added chapter starts as a copy of another one and is "
-                                    "played after the chapter you pick; each chapter's Overview sets what comes next.")
-        self._note.pack(anchor="w", pady=(12, 0))
+        body = self._scroll.body
+        self._actions = CardGrid(body, card_width=260)
+        self._actions.pack(fill="x")
+        self._story_header = section_header(body, "Story", "in the order a new game plays them")
+        self._story_header.pack(anchor="w", pady=(20, 8), fill="x")
+        self._story = CardGrid(body, card_width=260)
+        self._story.pack(fill="x")
+        self._other_header = section_header(body, "Other chapters",
+                                            "not played in the story: trial maps, tutorials, unused records "
+                                            "and added chapters no chapter leads to")
+        self._other_header.pack(anchor="w", pady=(20, 8), fill="x")
+        self._other = CardGrid(body, card_width=260)
+        self._other.pack(fill="x")
+        self._note = ttk.Label(body, style="Muted.TLabel", wraplength=900, justify="left",
+                               text="Disc numbers are the game's chapter numbers (the Prologue is 01). An added "
+                                    "chapter starts as a copy of another one; each chapter's Overview sets what "
+                                    "comes next.")
+        self._note.pack(anchor="w", pady=(16, 0))
         self._built_for = None
         self._keys: dict = {}
 
@@ -105,47 +116,63 @@ class ChaptersHub(Page):
     def _build(self) -> None:
         index = self.shell.index
         self._built_for = index
-        self._grid.clear()
+        for grid in (self._actions, self._story, self._other):
+            grid.clear()
         if index is None:
-            self._grid.add(None, ttk.Label(self._grid, text="Indexing…", style="Muted.TLabel"))
-            self._grid.done()
+            self._story.add(None, ttk.Label(self._story, text="Indexing…", style="Muted.TLabel"))
+            for grid in (self._actions, self._story, self._other):
+                grid.done()
             return
         self._keys = {}
-        for c in index.chapters:
-            chips = []
-            if c.message_count:
-                chips.append(f"{c.message_count} messages")
-            if c.units_by_difficulty:
-                chips.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
-            if len(c.phases) > 1:
-                chips.append((f"+{len(c.phases) - 1} phase{'s' if len(c.phases) > 2 else ''}", "accent_bg"))
-            if not c.has_map:
-                chips.append(("no map", "chip_named"))
-            key = (c.id, c.title)
-            self._keys[key] = True
-            self._grid.add(key, Card(self._grid, title=c.title, subtitle=f"Disc {c.id}  ·  " + ", ".join(c.phases or ("no map folder",)),
-                                     chips=tuple(chips), width=260,
-                                     on_click=lambda cid=c.id: self.shell.navigate(("chapter", cid))))
-        self._grid.add(("+", "add chapter"), Card(self._grid, title="Add chapter…",
-                                                   subtitle="A new playable chapter, from a template",
-                                                   icon="+", width=260, on_click=self._add_chapter))
-        self._grid.add(("+", "new campaign"), Card(self._grid, title="New campaign…",
-                                                    subtitle="Several chapters and characters at once",
-                                                    icon="+", width=260, on_click=self._new_campaign))
-        self._grid.add(("+", "story order"), Card(self._grid, title="Story order…",
-                                                   subtitle="Reorder the chapters you added",
-                                                   icon="↕", width=260, on_click=self._story_order))
-        self._grid.done()
-        self._filter()
+        for key, title, subtitle, icon, command in (
+                (("+", "add chapter"), "Add chapter…", "A new playable chapter, from a template", "+",
+                 self._add_chapter),
+                (("+", "new campaign"), "New campaign…", "Several chapters and characters at once", "+",
+                 self._new_campaign),
+                (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order)):
+            self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=260,
+                                        on_click=command))
+        self._actions.done()
+
         flow, _why = open_flow(self.project)
-        overrides = flow.overrides() if flow is not None else {}
-        if overrides:
-            order = " → ".join(f"{c:02d}" for c in flow.order()) + " → Ending"
-            self._note.configure(text=f"Story order: {order}\n\n" + self._note.cget("text").split("\n\n")[-1])
+        by_id = {c.id: c for c in index.chapters}
+        if flow is not None:
+            order = [f"{n:02d}" for n in flow.order()]
+        else:  # no story flow to read: the retail story
+            order = [c for c in by_id if 1 <= int(c) <= chapter_flow.LAST_RETAIL_STORY]
+        position = {cid: n for n, cid in enumerate((c for c in order if c in by_id), 1)}
+        story = sorted((c for c in index.chapters if c.id in position), key=lambda c: position[c.id])
+        other = [c for c in index.chapters if c.id not in position]
+        for grid, rows in ((self._story, story), (self._other, other)):
+            for c in rows:
+                chips = []
+                if c.id in position:
+                    chips.append((f"#{position[c.id]}", "accent_bg"))
+                if c.message_count:
+                    chips.append(f"{c.message_count} messages")
+                if c.units_by_difficulty:
+                    chips.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
+                if len(c.phases) > 1:
+                    chips.append((f"+{len(c.phases) - 1} phase{'s' if len(c.phases) > 2 else ''}", "accent_bg"))
+                if not c.has_map:
+                    chips.append(("no map", "chip_named"))
+                key = (c.id, c.title)
+                self._keys[key] = True
+                grid.add(key, Card(grid, title=c.title,
+                                   subtitle=f"Disc {c.id}  ·  " + ", ".join(c.phases or ("no map folder",)),
+                                   chips=tuple(chips), width=260,
+                                   on_click=lambda cid=c.id: self.shell.navigate(("chapter", cid))))
+            grid.done()
+        if other:
+            self._other_header.pack(anchor="w", pady=(20, 8), fill="x", before=self._other)
+        else:
+            self._other_header.pack_forget()
+        self._filter()
 
     def _filter(self) -> None:
         words = self._query.get().casefold().split()
-        self._grid.filter(lambda key: key is None or all(w in f"{key[0]} {key[1]}".casefold() for w in words))
+        for grid in (self._actions, self._story, self._other):
+            grid.filter(lambda key: key is None or all(w in f"{key[0]} {key[1]}".casefold() for w in words))
 
     def _add_chapter(self) -> None:
         ids = chapters.list_chapter_ids(self.project)
@@ -214,7 +241,9 @@ class ChaptersHub(Page):
             return
         order = flow.order()
         after_choices = {_flow_label(c, titles): c for c in order}
-        characters = [c.pid for c in fe8data.read_fe8data(session.data).characters if c.pid]
+        names = {pid: info.name for pid, info in getattr(self.shell.index, "by_pid", {}).items() if info.name}
+        characters = {(f"{names[c.pid]}  ({c.pid})" if c.pid in names else c.pid): c.pid
+                      for c in fe8data.read_fe8data(session.data).characters if c.pid}
         dialog = NewCampaignDialog(self, templates, after_choices, characters, order[-1] if order else None)
         self.wait_window(dialog)
         if dialog.result is None:

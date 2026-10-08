@@ -72,6 +72,8 @@ class _PlayCanvas(_BuildCanvas):
 class PlaythroughWindow(_Window):
     def __init__(self, builder) -> None:
         super().__init__(builder, "Play chapter", "1500x920")
+        self.transient("")  # a transient window has no maximize button on Windows
+        self.minsize(900, 560)
         self._builder = builder
         self._project = builder._project
         self._files = self._project.extracted_dir / "files"
@@ -80,6 +82,7 @@ class PlaythroughWindow(_Window):
         self._selected: Optional[int] = None
         self._reach: dict = {}
         self._watch: Optional[int] = None  # a unit whose threat range is shown
+        self._menu_target: Optional[int] = None  # the target of the action-menu entry under the mouse
         self._running: Optional[tuple] = None  # (until, start mark) while running
         self._after = None
         self._waiting_animation = False
@@ -95,6 +98,10 @@ class PlaythroughWindow(_Window):
         self._follow = tk.BooleanVar(value=True)
         self._show_zones = tk.BooleanVar(value=True)
         self._fog = tk.BooleanVar(value=False)
+        self._skip_opening = tk.BooleanVar(value=True)
+        self._reveal_after = None  # the running text-reveal animation of the message tab
+        self._reveal_key = None
+        self._reveal_ms = 0
         self._deploy_only: Optional[list] = None  # PIDs chosen in "Preparations...", kept across restarts
         self._build()
         self.bind("<space>", lambda e: self.step())
@@ -113,16 +120,20 @@ class PlaythroughWindow(_Window):
                      width=8).pack(side="left")
         ttk.Label(top, text="Seed").pack(side="left", padx=(10, 2))
         ttk.Entry(top, textvariable=self._seed, width=8).pack(side="left")
-        ttk.Checkbutton(top, text="Battle animations", variable=self._animate).pack(side="left", padx=(14, 0))
-        ttk.Checkbutton(top, text="Auto-advance messages", variable=self._auto_messages).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(top, text="Follow the running code", variable=self._follow).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(top, text="Script zones", variable=self._show_zones,
-                        command=self._refresh_map).pack(side="left", padx=(8, 0))
-
-        ttk.Checkbutton(top, text="Fog (approximate)", variable=self._fog,
-                        command=self._toggle_fog).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(top, text="Skip the opening", variable=self._skip_opening).pack(side="left", padx=(14, 0))
         ttk.Button(top, text="Preparations...", command=self.preparations).pack(side="left", padx=(14, 0))
         ttk.Button(top, text="Choices...", command=self.set_choices).pack(side="left", padx=(4, 0))
+
+        options = ttk.Frame(self, padding=(8, 0, 8, 4))  # a second row, so a narrow window shows every control
+        options.pack(fill="x")
+        ttk.Checkbutton(options, text="Battle animations", variable=self._animate).pack(side="left")
+        ttk.Checkbutton(options, text="Auto-advance messages", variable=self._auto_messages).pack(side="left",
+                                                                                                padx=(8, 0))
+        ttk.Checkbutton(options, text="Follow the running code", variable=self._follow).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(options, text="Script zones", variable=self._show_zones,
+                        command=self._refresh_map).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(options, text="Fog (approximate)", variable=self._fog,
+                        command=self._toggle_fog).pack(side="left", padx=(8, 0))
 
         transport = ttk.Frame(self, padding=(8, 0, 8, 4))
         transport.pack(fill="x")
@@ -135,8 +146,8 @@ class PlaythroughWindow(_Window):
                                    ("▶▶ Run", self.run, "run until your turn"),
                                    ("⏸", self.pause, "pause"),
                                    ("⏭", self.to_end, "to the latest entry")):
-            ttk.Button(transport, text=text, command=command, width=7 if len(text) > 2 else 3).pack(side="left",
-                                                                                                    padx=1)
+            ttk.Button(transport, text=text, command=command, **({"width": 3} if len(text) <= 2 else {})).pack(
+                side="left", padx=1)
         ttk.Button(transport, text="End phase", command=self.end_phase).pack(side="left", padx=(12, 0))
         ttk.Button(transport, text="Force next battle...", command=self.force_battle).pack(side="left", padx=(4, 0))
         self._position = tk.DoubleVar(value=0)
@@ -144,6 +155,9 @@ class PlaythroughWindow(_Window):
         self._scale.pack(side="left", fill="x", expand=True, padx=(12, 4))
         self._position_label = ttk.Label(transport, text="", width=34)
         self._position_label.pack(side="left")
+
+        self._now = ttk.Label(self, text="", anchor="w", padding=(10, 2), font=("Segoe UI", 10, "bold"))
+        self._now.pack(fill="x")
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
@@ -177,10 +191,12 @@ class PlaythroughWindow(_Window):
         self._ai_text = self._text_tab("AI")
         message = ttk.Frame(self._tabs, padding=6)
         self._tabs.add(message, text="Message")
+        # the text below has a fixed height, so the picture keeps its size from page to page
+        self._message_text = tk.Text(message, height=6, wrap="word", font=("Segoe UI", 9), relief="flat",
+                                     state="disabled")
+        self._message_text.pack(side="bottom", fill="x", pady=(6, 0))
         self._message_canvas = tk.Canvas(message, background="#000000", highlightthickness=0, height=300)
-        self._message_canvas.pack(fill="both", expand=True)
-        self._message_label = ttk.Label(message, text="", wraplength=480, justify="left")
-        self._message_label.pack(fill="x", pady=(6, 0))
+        self._message_canvas.pack(side="top", fill="both", expand=True)
         self._log_text = self._text_tab("Log")
         self._flags_text = self._text_tab("Flags")
         for widget in (self._script_text, self._ai_text, self._log_text):
@@ -266,8 +282,22 @@ class PlaythroughWindow(_Window):
         if problems:
             self.sim.history[0].steps.append(engine.Step("task", "Setup", outputs=list(state.out)))
             state.out = []
+        if self._skip_opening.get():
+            self.config(cursor="watch")
+            self.update_idletasks()
+            try:
+                self.sim.run(INPUT)  # messages and events play without stopping; they stay in the history
+            finally:
+                self.config(cursor="")
+            self.refresh()
+            return
         self.refresh()
         self.run()
+
+    def backdrop_ready(self, image) -> None:
+        """The Build tab finished rendering the map picture."""
+        self.canvas.backdrop = image
+        self.canvas.redraw()
 
     def _map_changed(self) -> None:
         self._hover.configure(text="The map changed in the Build tab: press Restart to play the new version.")
@@ -297,6 +327,7 @@ class PlaythroughWindow(_Window):
         self._start(INPUT)
 
     def _start(self, until: str) -> None:
+        self.sim.fine = until == LINE  # one history entry per script instruction only when stepping lines
         self._running = (until, self.sim.mark())
         self._tick()
 
@@ -330,7 +361,7 @@ class PlaythroughWindow(_Window):
                 return
             if message:
                 self.refresh()
-                self._after = self.after(MESSAGE_DELAY_MS, self._tick)
+                self._after = self.after(max(MESSAGE_DELAY_MS, self._reveal_ms + 900), self._tick)
                 return
             if time.monotonic() - began > RUN_BUDGET_S:
                 self.refresh(light=True)
@@ -536,15 +567,35 @@ class PlaythroughWindow(_Window):
         world, state = self.sim.world, self.sim.state
         unit = state.units[self._selected]
         menu = tk.Menu(self, tearoff=0)
+        targets = []  # per menu entry: the unit it acts on, to mark it on the map
         for choice in actions.choices(world, state, unit, dest):
             label = choice.label
+            target = state.units.get(choice.target) if choice.target is not None else None
+            if target is not None:  # two units can share a name: say which one
+                label += f"  [{target.x}, {target.y}  HP {target.hp}/{target.stats[0]}]"
             if choice.action == "attack":
-                label += "   " + self._forecast_text(unit, dest, state.units[choice.target], choice.item)
+                label += "   " + self._forecast_text(unit, dest, target, choice.item)
             menu.add_command(label=label, command=lambda c=choice: self._command(
                 actions.Act(unit.uid, dest, c.action, c.target, c.item)))
+            targets.append(choice.target)
         menu.add_separator()
         menu.add_command(label="Cancel", command=self._deselect)
-        menu.tk_popup(event.x_root, event.y_root)
+
+        def hovered(_event) -> None:
+            index = menu.index("active")
+            target = targets[index] if isinstance(index, int) and index < len(targets) else None
+            if target != self._menu_target:
+                self._menu_target = target
+                self._refresh_map()
+
+        menu.bind("<<MenuSelect>>", hovered)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+            if self._menu_target is not None:
+                self._menu_target = None
+                self._refresh_map()
 
     def _forecast_text(self, unit, dest: tuple, target, item_index: int) -> str:
         world = self.sim.world
@@ -564,6 +615,7 @@ class PlaythroughWindow(_Window):
     def refresh(self, light: bool = False) -> None:
         if self.sim is None or not self.winfo_exists():
             return
+        self.sim.flush()  # script steps run since the last entry become one, so the panels see them
         self._refresh_map()
         sim = self.sim
         n = len(sim.history)
@@ -587,6 +639,7 @@ class PlaythroughWindow(_Window):
         if not sim.at_end:
             status += "  -  (history: a command from here starts a new branch)"
         self._status.configure(text=status)
+        self._now.configure(text=self._now_text())
         if light:
             return
         self._refresh_script()
@@ -604,6 +657,31 @@ class PlaythroughWindow(_Window):
             if tab is not None:
                 self._tabs.select(tab)
 
+    def _now_text(self) -> str:
+        """What the game is doing, in one line: turn and phase, then the task at the front."""
+        sim = self.sim
+        world, state = sim.world, sim.state
+        text = f"Turn {state.turn}  ·  {FACTION_NAMES.get(state.phase, state.phase)} phase  ·  "
+        if state.over:
+            return text + f"chapter {state.over}"
+        if state.canto is not None and not state.pending:
+            return text + "Canto: choose where the unit stops"
+        if sim.needs_input:
+            return text + "Your turn: click one of your units, then a tile"
+        front = state.pending[0] if state.pending else None
+        if isinstance(front, ScriptRun):
+            if front.frames:
+                frame = front.frames[-1]
+                function = triggers.function_names(world, frame.script)[frame.function]
+                return text + f"Event script running: {front.name}  ({function})"
+            return text + f"Event script: {front.name}"
+        if isinstance(front, AiTurn):
+            unit = state.units.get(front.uid)
+            return text + f"Enemy AI: {world.name(unit.pid) if unit else front.uid} ({front.stage})"
+        if isinstance(front, MessageShow):
+            return text + "Message"
+        return text + (front.title if front is not None else "")
+
     def _refresh_map(self) -> None:
         if self.sim is None:
             return
@@ -613,13 +691,14 @@ class PlaythroughWindow(_Window):
             canvas.backdrop = self._builder._backdrop
         canvas.units = []
         visible = fog.visible_tiles(world, state) if state.fog else None
+        acting = next((t.uid for t in state.pending if isinstance(t, AiTurn)), None)  # marked like a selection
         for u in state.living():
             if visible is not None and not fog.can_see(world, state, u, visible):
                 continue
             canvas.units.append({
                 "key": u.uid, "x": u.x, "y": u.y, "pos2": (u.x, u.y),
                 "color": FACTION_COLORS.get(u.faction, "#8a8a8a"), "text": world.name(u.pid)[:3],
-                "selected": u.uid in (self._selected, self._watch), "highlight": False,
+                "selected": u.uid in (self._selected, self._watch, self._menu_target, acting), "highlight": False,
                 "done": u.done and u.faction == state.phase, "hp": u.hp / max(1, u.stats[0]), "boss": u.boss,
             })
         zones = []
@@ -716,7 +795,11 @@ class PlaythroughWindow(_Window):
         state, world = self.sim.state, self.sim.world
         turn = next((t for t in state.pending if isinstance(t, AiTurn)), None)
         if turn is None:
-            self._write(self._ai_text, [("No AI unit is acting.", "muted")])
+            lines = [("No AI unit is acting.", "muted")]
+            last = self._last_decision()
+            if last is not None:
+                lines += ["", (f"Last decision: {last[0]}", "head")] + self._ranking_lines(last[1])
+            self._write(self._ai_text, lines)
             return
         unit = state.units.get(turn.uid)
         lines = [(f"{world.name(unit.pid) if unit else turn.uid}: {turn.stage}", "head"),
@@ -724,6 +807,7 @@ class PlaythroughWindow(_Window):
                  f"{'none' if turn.threat_limit == 0xFFFF else turn.threat_limit}   entries run {turn.steps}"]
         if turn.candidate:
             lines.append(f"candidate: {turn.candidate.get('text')}")
+            lines += self._ranking_lines(turn.candidate)
         current = None
         prog = None
         if turn.stage in ("attack", "move"):
@@ -731,13 +815,64 @@ class PlaythroughWindow(_Window):
             lines += ["", (f"{turn.script}" + (" (built-in fallback)" if turn.fallback else ""), "head")]
             if prog is not None:
                 for i, line in enumerate(prog.lines):
-                    if i >= prog.body and i > turn.pc + 8:
+                    # the lines after the script's own (other scripts it falls through into) only once
+                    # the run gets there, and then a few around the current one
+                    if i >= prog.body and (turn.pc < prog.body or i > turn.pc + 8):
                         break
                     if i == turn.pc:
                         current = len(lines)
                     owner = "" if prog.owners[i] == prog.name else f"   [{prog.owners[i]}]"
                     lines.append((f"  {i:3d}  {line}{owner}", "muted" if i >= prog.body else None))
         self._write(self._ai_text, lines, current)
+
+    #: Short headers of the attack-score terms (``ai_vm._best_attack``), in its order.
+    TERM_HEADERS = (("damage_dealt", "dmg"), ("hp_ratio", "hurt"), ("adjacent_foes", "near"), ("class_bonus", "class"),
+                    ("turn_number", "turn"), ("skill_bonus", "skill"), ("damage_taken", "taken"),
+                    ("terrain", "threat"), ("hp_after_ratio", "own"))
+
+    def _last_decision(self) -> Optional[tuple]:
+        """(who acted and how, its decision) of the latest AI action up to the current entry, this phase."""
+        sim = self.sim
+        for i in range(sim.cursor, max(-1, sim.cursor - 400), -1):
+            for out in reversed(sim.history[i].outputs):
+                if out.kind == "phase":
+                    return None
+                decision = out.data.get("decision") if out.kind == "ai" else None
+                if decision and decision.get("ranking"):
+                    unit = sim.state.units.get(out.data.get("uid"))
+                    who = sim.world.name(unit.pid) if unit is not None else "?"
+                    return f"{who} {decision['text']}", decision
+        return None
+
+    def _ranking_lines(self, candidate: dict) -> list:
+        """How the attack was chosen: every scored (target, tile, weapon), best first, with the points
+        each term adds (the unit's MTYPE weights, in 32nds, are in the header row)."""
+        ranking = candidate.get("ranking")
+        if not ranking:
+            return []
+        total = candidate.get("ranking_total", len(ranking))
+        weights = ranking[0].get("weights", {})  # the unit's MTYPE: the same in every row
+        lines = ["", (f"How the target was chosen ({total} possible attacks, best first)", "head"),
+                 ("Each column is the points the term adds; score = their sum. Highest wins.", "muted")]
+        lines.append(("            " + "".join(f"{short:>7s}" for _key, short in self.TERM_HEADERS), "muted"))
+        lines.append(("    weight  " + "".join(f"{weights.get(key, 0):>7d}" for key, _short in self.TERM_HEADERS),
+                      "muted"))
+        for i, c in enumerate(ranking, 1):
+            cells = "".join(f"{c['terms'][key][1]:>+7d}" if c["terms"][key][1] else f"{'.':>7s}"
+                            for key, _short in self.TERM_HEADERS)
+            lines.append((f"{i:3d}. {c['score']:>+5d} {cells}", None if i > 1 else "current"))
+            lines.append((f"        {c['row']}", "muted"))
+        if total > len(ranking):
+            lines.append((f"        ... {total - len(ranking)} more, lower", "muted"))
+        lines += [("dmg: expected damage x weight/32 (damage x hit^1.75, doubled on a double attack), +50 when it "
+                   "reaches the target's HP (kill bonus); when it is under 1, minus the expected counter (at most 15).",
+                   "muted"),
+                  ("taken: the same for the counter (hit^2.125), subtracted: +50 near a death becomes -50.", "muted"),
+                  ("hurt / own: how wounded the target / the attacker already is (0-10). near: units of its side "
+                   "around the attack tile. skill: Provoke +50, Shade -50.", "muted"),
+                  ("threat: the summed expected damage (damage x hit%) of the hostile units that could strike the "
+                   "attack tile next turn, / 16.", "muted")]
+        return lines
 
     def _refresh_message(self) -> None:
         sim = self.sim
@@ -749,22 +884,67 @@ class PlaythroughWindow(_Window):
             found = next((o for o in reversed(entry.outputs) if o.kind == "message"), None)
             if found is not None:
                 break
-        self._message_canvas.delete("all")
         if found is None:
-            self._message_label.configure(text="")
+            self._stop_reveal()
+            self._reveal_key, self._reveal_ms = None, 0
+            self._message_canvas.delete("all")
+            self._set_message_text("")
             return
         data = found.data
-        self._message_label.configure(text=f"{data['msg_id']}  page {data['page']}/{data['pages']}\n{found.text}")
-        image = self._render_message(data["raw"], data["page"])
-        if image is not None:
-            w = max(1, self._message_canvas.winfo_width())
-            h = max(1, self._message_canvas.winfo_height())
-            scale = min(w / image.width, h / image.height)
-            size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
-            self._message_photo = ImageTk.PhotoImage(image.resize(size, Image.Resampling.LANCZOS))
-            self._message_canvas.create_image(w // 2, h // 2, image=self._message_photo)
+        key = (data["msg_id"], data["page"], id(found))
+        if key == self._reveal_key:
+            return  # this page is already shown (or being revealed)
+        self._stop_reveal()
+        self._reveal_key = key
+        self._set_message_text(f"{data['msg_id']}  page {data['page']}/{data['pages']}\n{found.text}")
+        page = self._message_page(data["raw"], data["page"])
+        if page is None:
+            self._message_canvas.delete("all")
+            self._reveal_ms = 0
+            return
+        timeline, event, start_ms = page
+        self._reveal_ms = max(0, event.time_ms - start_ms)
+        started = time.monotonic()
 
-    def _render_message(self, raw: str, page: int):
+        def frame() -> None:
+            self._reveal_after = None
+            if not self.winfo_exists():
+                return
+            now = start_ms + int((time.monotonic() - started) * 1000)
+            if now >= event.time_ms:
+                self._draw_message(event, event.time_ms + 5000)
+                return
+            self._draw_message(timeline.events[timeline.index_at(now)], now)
+            self._reveal_after = self.after(33, frame)
+
+        frame()
+
+    def _stop_reveal(self) -> None:
+        if self._reveal_after is not None:
+            self.after_cancel(self._reveal_after)
+            self._reveal_after = None
+
+    def _set_message_text(self, text: str) -> None:
+        self._message_text.configure(state="normal")
+        self._message_text.delete("1.0", "end")
+        self._message_text.insert("1.0", text)
+        self._message_text.configure(state="disabled")
+
+    def _draw_message(self, event, time_ms: int) -> None:
+        try:
+            image = self._conversation[1].render(event, time_ms=time_ms).image
+        except Exception:  # noqa: BLE001 - the text below still shows the page
+            return
+        self._message_canvas.delete("all")
+        w = max(1, self._message_canvas.winfo_width())
+        h = max(1, self._message_canvas.winfo_height())
+        scale = min(w / image.width, h / image.height)
+        size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+        self._message_photo = ImageTk.PhotoImage(image.resize(size, Image.Resampling.BILINEAR))
+        self._message_canvas.create_image(w // 2, h // 2, image=self._message_photo)
+
+    def _message_page(self, raw: str, page: int):
+        """(timeline, the page's last event, the time the page starts) or None."""
         if self._conversation is None:
             try:
                 from ..formats.fe9_conversation_assets import ConversationAssets
@@ -779,13 +959,14 @@ class PlaythroughWindow(_Window):
         from ..formats.fe9_conversation import build_timeline
 
         try:
-            renderer = self._conversation[1]
-            timeline = build_timeline(raw, measure=renderer.measure)
-            waits = [e for e in timeline.events if e.wait] or [timeline.events[-1]]
-            event = waits[min(page, len(waits)) - 1] if page <= len(waits) else timeline.events[-1]
-            return renderer.render(event, time_ms=event.time_ms + 5000).image
+            timeline = build_timeline(raw, measure=self._conversation[1].measure)
         except Exception:  # noqa: BLE001
             return None
+        waits = [e for e in timeline.events if e.wait] or [timeline.events[-1]]
+        index = min(page, len(waits)) - 1
+        event = waits[index]
+        start = waits[index - 1].time_ms if index > 0 else 0
+        return timeline, event, start
 
     def _refresh_log(self) -> None:
         sim = self.sim

@@ -9,18 +9,27 @@ What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
   next run starts) or SET_SCRIPTS replaces it; after 256 entries the built-in
   fallback runs (``attack(chance=100)``, ``move_nearest()``);
 - a non-zero ``b`` word sets the threat limit before the entry runs; moves
-  then only stop on tiles whose threat (here: how many hostile units could
-  strike the tile next turn) is at most the limit;
+  then only stop on tiles whose ``ai_threat_map`` value is at most the limit
+  (:func:`enemy_threat_map`: the summed expected damage of the hostile units
+  that could strike the tile, 0-255, built for each deciding unit);
 - jumps go to the first LABEL entry with that number, reading on past the
   end of the script into the sections that follow it (``fallthrough``);
 - action entries roll their chance (``rn <= chance``), register a candidate
   and set the found flag; a later action replaces the candidate.
 
-What is the simulator's own choice: the target and tile of an attack are
-picked by a score built from the unit's MTYPE weights (damage dealt, share
-of the target's HP, counter damage taken, terrain) over the battle forecast,
-not the engine's exact formula; movement towards a goal takes the reachable
-tile with the shortest remaining path. Steal, ballistas, rocks, skills other
+The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_a``
+(0x800F5B14), each term ``(int)(value x MTYPE weight / 32)``: the expected damage
+(damage x hit^1.75, 2 x damage x (1-(1-hit)^2)^1.75 on a double attack; +50 when
+the weighted value reaches the target's HP, the kill bonus; under 1, minus the
+expected counter instead, at most 15), how wounded the target already is (0-10),
+the weighted units of the unit's side around the tile (table 0x80272F44), the
+foe's class bonuses, the turn number, the foe's Provoke (+50) or Shade (-50);
+minus the expected counter (hit^2.125, the same +50 near the attacker's death),
+the tile's threat (``ai_threat_map`` >> 4) and how wounded the attacker is. The
+best wins (ties: the shorter walk). Not reproduced: the Warp staff routine (which
+rebuilds the map mid-phase; the simulator has no Warp) and the order of equal
+scores. Movement towards a goal takes the reachable tile with the
+shortest remaining path. Steal, ballistas, rocks, skills other
 than Shove and item use are logged as not simulated.
 """
 
@@ -42,6 +51,12 @@ ATTACK, MOVE = 0, 1
 FALLBACK = {ATTACK: [cp_data.Entry(101, a=100), cp_data.Entry(1001)],
             MOVE: [cp_data.Entry(206), cp_data.Entry(1001)]}
 DEFAULT_SCRIPTS = {ATTACK: "SEQ_NOATTACK", MOVE: "SEQ_NOMOVE"}
+#: Class category tokens -> the bit of the class flag halfword the MTYPE class_flag_N bonuses read
+#: (``ai_score_attack_tile_mtype_*``, class +0x3A).
+CLASS_FLAG_BITS = {"mage": 0, "fly": 1, "knight": 2, "armor": 3, "alize": 4, "human": 5, "beast": 6, "dragon": 7,
+                   "bird": 8, "hero": 10}
+#: Attack candidates kept with the chosen one, for the window.
+RANKING_SIZE = 12
 
 
 # -- programs ---------------------------------------------------------------------------------------
@@ -151,22 +166,156 @@ def targets(world: World, state: GameState, unit: SimUnit, table=None, exclude: 
     return out
 
 
-def threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
-    """Tile -> number of units hostile to ``unit`` that could strike it next turn."""
-    out: dict = {}
+#: The MTYPE weights the attack score reads (cp_data.MTYPE_FIELDS), in its order.
+SCORE_TERMS = ("damage_dealt", "hp_ratio", "adjacent_foes", "class_bonus", "turn_number", "skill_bonus",
+               "damage_taken", "terrain", "hp_after_ratio")
+WEIGHT_SCALE = 0.03125  # 0x8036A06C: every weight is in 32nds
+ATTACK_CURVE, COUNTER_CURVE = 1.75, 2.125  # 0x8036A098 / 0x8036A088: pow() exponents on the hit chance
+NEAR_KILL_BONUS = 50  # added when a damage term reaches the HP it is compared with
+NO_DAMAGE_CAP = 15  # 0x80366E68 / 0x80366E6C
+#: 0x80272F44: (dx, dy, weight) around the attack tile counted by the adjacent-units term.
+NEAR_TABLE = ((0, -3, 1), (-3, 1, 0), (0, -2, 2), (1, -2, 1), (-2, -1, 1), (-1, -1, 2), (0, -1, 3), (1, -1, 2),
+              (2, -1, 1), (-3, 0, 1), (-2, 0, 2), (-1, 0, 3), (1, 0, 3), (2, 0, 2), (3, 0, 1), (-2, 1, 1),
+              (-1, 1, 2), (0, 1, 3), (1, 1, 2), (2, 1, 1), (-1, 2, 1), (0, 2, 2), (1, 2, 1), (0, 3, 1))
+
+
+def _weighted(value: float, weight: int) -> int:
+    """``(int)(0.03125 * value * weight)``, as every term is weighted."""
+    return int(WEIGHT_SCALE * value * weight)
+
+
+def _hurt(unit: SimUnit) -> int:
+    """``(int)(10 * (max HP - HP) / max HP)``: how wounded a unit already is, 0-10."""
+    top = max(1, unit.stats[0])
+    return int(10 * (top - unit.hp) / top)
+
+
+def _expected(side, curve: float) -> int:
+    """Expected damage of one side of a forecast: damage x hit^curve, or on a double attack (attack speed
+    4 or more above) 2 x damage x (1 - (1 - hit)^2)^curve; truncated."""
+    if side is None:
+        return 0
+    p = min(1.0, max(0.0, side.hit / 100))
+    if side.doubles:
+        return int(2.0 * side.damage * (1 - (1 - p) ** 2) ** curve)
+    return int(side.damage * p ** curve)
+
+
+def _damage_term(side, other, side_hp: int, other_hp: int, weight: int, counter: bool = False) -> tuple:
+    """``compute_range_gated_curve_stat`` (``counter`` False: the attack, MTYPE +5) and
+    ``ai_score_damage_taken_term`` (True: the counter, +0xB). ``side`` deals the damage to the unit with
+    ``other_hp`` HP; ``other`` is the opposite side (None when it can't strike back). Returns (points,
+    near kill): the expected damage, weighted; when that is under 1 the term is instead minus the
+    other side's expected damage (at most 15, +50 first when it reaches ``side_hp``); +50 when the
+    result reaches ``other_hp``."""
+    curve, other_curve = (COUNTER_CURVE, ATTACK_CURVE) if counter else (ATTACK_CURVE, COUNTER_CURVE)
+    value = _weighted(_expected(side, curve), weight)
+    if value < 1:
+        back = _expected(other, other_curve)
+        if side_hp <= back:
+            back += NEAR_KILL_BONUS
+        value = -min(back, NO_DAMAGE_CAP)
+    near = other_hp <= value
+    if near:
+        value += NEAR_KILL_BONUS
+    return value, near
+
+
+def skill_term(foe: SimUnit) -> int:
+    """``compute_skill_based_stat_modifier_0x3d_0x3e`` on the target: +50 with Provoke (skill 0x3D),
+    -50 with Shade (0x3E, which wins when both are held), else 0."""
+    if "SID_SHADE" in foe.skills:
+        return -50
+    if "SID_PROVOKE" in foe.skills:
+        return 50
+    return 0
+
+
+#: Terrain types an ally (green) phase leaves out of the threat map (``build_enemy_threat_map``).
+ALLY_PHASE_SKIPPED_TERRAIN = frozenset({0x26, 0x27, 0x28, 0x2A})
+THREAT_CAP = 255  # 0x80366E70 / 0x80366E72, and the per-tile sum
+
+
+def threat_weapons(world: World, unit: SimUnit) -> list:
+    """The weapons ``FUN_800fd774`` / ``build_ai_weapon_threat_map`` count for a unit: among its first
+    four items, the best close weapon (max range under 2: the highest might, the first on a tie) and
+    the best ranged one (the longest max range, then the highest might). [(index, item)]."""
+    close = ranged = None
+    for index, item in combat.weapon_items(world, unit):
+        if index >= 4:
+            continue
+        high = combat.item_range(unit, item)[1]
+        if high < 2:
+            if close is None or item.might > close[1].might:
+                close = (index, item)
+        else:
+            best = combat.item_range(unit, ranged[1])[1] if ranged is not None else -1
+            if ranged is None or high > best or (high == best and item.might > ranged[1].might):
+                ranged = (index, item)
+    return [w for w in (close, ranged) if w is not None]
+
+
+def expected_hit_damage(side) -> int:
+    """``FUN_800fd774``'s expected damage, linear in the hit chance: damage x hit, or on a double attack
+    2 x damage x (1 - (1 - hit)^2); truncated."""
+    p = min(1.0, max(0.0, side.hit * 0.01))
+    damage = max(0, side.damage)
+    if side.doubles:
+        return int(2.0 * damage * (1.0 - (1.0 - p) * (1.0 - p)))
+    return int(damage * p)
+
+
+def enemy_threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
+    """``ai_threat_map`` as ``E_CP_Decide`` builds it for the deciding ``unit`` (``FUN_800fd774`` then
+    ``build_enemy_threat_map``), tile -> 0..255: on every tile the unit can move to, the sum over the
+    hostile units of the expected damage of their close or ranged weapon (the larger where both reach)
+    on the unit as it stands, for each weapon that passes the reach gate (distance <= both Movs + the
+    weapon's max range) and on the tiles it could strike from a free tile it can move to."""
+    def standable(tile) -> bool:
+        """Byte 7 of the terrain's stats (``init_full_map_passability_grid`` copies it to the grid at
+        +0xE18E: object tiles) is 0, and in an ally phase not an objective-like terrain
+        (``check_terrain_type_during_enemy_phase``)."""
+        t = world.terrain_at(*tile)
+        if t is None:
+            return True
+        if getattr(t, "flag7", 0):
+            return False
+        return not (state.phase == 2 and t.index in ALLY_PHASE_SKIPPED_TERRAIN)
+
+    reach = {t for t in movement.destinations(world, state, unit) if standable(t)}
+    occupied = {u.tile for u in state.units.values() if u.on_map}
+    total: dict = {}
+    original = unit.tile
     for other in state.living():
-        if not hostile(unit.faction, other.faction):
+        if not other.on_map or not hostile(unit.faction, other.faction):
             continue
-        ranges = combat.attack_ranges(world, other)
-        if not ranges:
-            continue
-        for tile in movement.threat_tiles(world, state, other, ranges):
-            out[tile] = out.get(tile, 0) + 1
-    return out
+        best: dict = {}
+        stands = None
+        for _index, item in threat_weapons(world, other):
+            low, high = combat.item_range(other, item)
+            if movement.distance(original, other.tile) > unit.move + other.move + high:
+                continue  # check_reachability_with_movement
+            forecast = combat.forecast(world, other, unit, item, max(1, low))
+            value = min(THREAT_CAP, expected_hit_damage(forecast.attacker))
+            if value == 0:
+                continue
+            if stands is None:  # ai_build_weapon_threat_range_map: free tiles it can move to
+                stands = [t for t in movement.destinations(world, state, other)
+                          if t not in occupied and standable(t)]
+            for stand in stands:
+                for tile in movement.tiles_in_range(world, stand, low, high):
+                    if tile in reach and best.get(tile, 0) < value:
+                        best[tile] = value
+        for tile, value in best.items():
+            total[tile] = min(THREAT_CAP, total.get(tile, 0) + value)
+    return total
+
 
 
 def _mtype(world: World, unit: SimUnit) -> dict:
-    defaults = {"damage_dealt": 4, "hp_ratio": 1, "damage_taken": 2, "terrain": 1, "turn_number": 0}
+    defaults = {"damage_dealt": 64, "hp_ratio": 16, "adjacent_foes": 32, "class_bonus": 32, "turn_number": 32,
+                "skill_bonus": 32, "damage_taken": 32, "terrain": 32, "hp_after_ratio": 16,
+                "class_flag_0": 5, "class_flag_10": 10}  # retail MTYPE_NORMAL
     if world.cp is None or not isinstance(unit.mtype, str):
         return defaults
     section = world.cp.section(unit.mtype)
@@ -387,14 +536,22 @@ class AiStep:
         return movement.destinations(self.world, self.state, self.unit)
 
     def _best_attack(self, foes: list, in_place: bool) -> Optional[dict]:
+        """Score every (weapon, foe, tile) the unit could attack with, as the engine's
+        ``ai_score_attack_tile_mtype_*`` do: sum(MTYPE weight x term) / 16, best first. The best
+        carries ``ranking``, the top candidates with their terms, for the window's AI tab."""
         world, unit = self.world, self.unit
         weights = _mtype(world, unit)
-        best, best_score = None, None
         tiles = self._tiles(in_place)
         original = unit.tile
+        flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
+        threat = enemy_threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
+        w = {key: weights.get(key, 0) for key in SCORE_TERMS}
+        own_hurt = _hurt(unit)
+        candidates = []
         for index, item in combat.weapon_items(world, unit):
             low, high = combat.item_range(unit, item)
             for foe in foes:
+                class_sum = sum(flag_bonus[c] for c in set(foe.categories) if c in flag_bonus)
                 for tile in tiles:
                     d = movement.distance(tile, foe.tile)
                     if not low <= d <= high:
@@ -405,22 +562,49 @@ class AiStep:
                     finally:
                         unit.x, unit.y = original
                     a, b = f.attacker, f.defender
-                    strikes = a.strikes * (2 if a.doubles else 1)
-                    dealt = min(foe.hp, a.damage * strikes) * a.hit / 100
-                    taken = (b.damage * b.strikes * (2 if b.doubles else 1) * b.hit / 100) if b.can_attack else 0
-                    t = world.terrain_at(*tile)
-                    terrain = (t.avoid + t.defense) if t is not None else 0
-                    score = (weights.get("damage_dealt", 0) * dealt
-                             + weights.get("hp_ratio", 0) * dealt * 100 / max(1, foe.hp)
-                             - weights.get("damage_taken", 0) * taken
-                             + weights.get("terrain", 0) * terrain
-                             + (1000 if dealt >= foe.hp and a.hit >= 50 else 0)
-                             - 0.01 * tiles[tile][0])
-                    if best_score is None or score > best_score:
-                        best_score = score
-                        best = {"action": "attack", "dest": tile, "target": foe.uid, "item": index,
-                                "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})"}
+                    dealt, kill = _damage_term(a, b if b.can_attack else None, unit.hp, foe.hp, w["damage_dealt"])
+                    taken, death = _damage_term(b if b.can_attack else None, a, foe.hp, unit.hp,
+                                                w["damage_taken"], counter=True)
+                    terms = {  # term -> (the value before weighting, its points in the score)
+                        "damage_dealt": (dealt, dealt),  # already weighted, +50 kill bonus included
+                        "hp_ratio": (_hurt(foe), _weighted(_hurt(foe), w["hp_ratio"])),
+                        "adjacent_foes": (n := self._allies_near(tile), _weighted(n, w["adjacent_foes"])),
+                        "class_bonus": (class_sum, _weighted(class_sum, w["class_bonus"])),
+                        "turn_number": (self.state.turn, _weighted(self.state.turn, w["turn_number"])),
+                        "skill_bonus": (s := skill_term(foe), _weighted(s, w["skill_bonus"])),
+                        "damage_taken": (taken, -taken),  # already weighted, +50 death risk included
+                        # ai_threat_map read as (value >> 4) & 0xFFF
+                        "terrain": (t := (threat.get(tile, 0) >> 4) & 0xFFF, -_weighted(t, w["terrain"])),
+                        "hp_after_ratio": (own_hurt, -_weighted(own_hurt, w["hp_after_ratio"])),
+                    }
+                    score = sum(points for _value, points in terms.values())
+                    candidates.append({
+                        "action": "attack", "dest": tile, "target": foe.uid, "item": index,
+                        "score": score, "path": tiles[tile][0], "terms": terms, "weights": w,
+                        "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})",
+                        "row": f"{world.name(foe.pid)} at {foe.tile}, from {tile}, {world.item_name(item.iid)}: "
+                               f"hit {a.hit} dmg {a.damage}{' x2' if a.doubles else ''}"
+                               + (", kill bonus +50" if kill else "") + (", death risk -50" if death else ""),
+                    })
+        if not candidates:
+            return None
+        candidates.sort(key=lambda c: (-c["score"], c["path"]))  # ties: the shorter walk
+        best = dict(candidates[0])
+        best["ranking"] = [{k: c[k] for k in ("score", "terms", "row", "weights")} for c in candidates[:RANKING_SIZE]]
+        best["ranking_total"] = len(candidates)
         return best
+
+    def _allies_near(self, tile: tuple) -> int:
+        """The adjacent-units term (MTYPE +7): the 0x80272F44 weights of the tiles around ``tile`` that hold
+        a unit not hostile to this one (``compare_faction_byte_fields`` != 1; the unit itself counts on
+        its own tile)."""
+        occupied = {u.tile: u for u in self.state.units.values() if u.on_map}
+        total = 0
+        for dx, dy, weight in NEAR_TABLE:
+            other = occupied.get((tile[0] + dx, tile[1] + dy))
+            if other is not None and not ((other.faction == 1) != (self.unit.faction == 1)):
+                total += weight
+        return total
 
     def _attack(self, e, foes, in_place=False):
         if not self._roll(e.a):
@@ -429,7 +613,8 @@ class AiStep:
         if best is None:
             return "no target in reach"
         self._register(best)
-        return best["text"]
+        return best["text"] + "".join(f"\n    {i}. {c['score']:7.1f}  {c['row']}"
+                                      for i, c in enumerate(best["ranking"][:5], 1))
 
     def _op_100(self, e, prog):
         pid = e.e
@@ -529,7 +714,7 @@ class AiStep:
             return None
         reach = movement.destinations(world, state, unit)
         dist = _goal_distances(world, state, unit, goals)
-        threat = threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
+        threat = enemy_threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
         here = dist.get(unit.tile, 1 << 30)
         candidates = [t for t in reach if t in dist]
         if threat:
@@ -610,7 +795,7 @@ class AiStep:
 
     def _op_205(self, e, prog):
         reach = movement.destinations(self.world, self.state, self.unit)
-        threat = threat_map(self.world, self.state, self.unit)
+        threat = enemy_threat_map(self.world, self.state, self.unit)
         best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
         if best != self.unit.tile and not _hold(self.unit):
             self._register({"action": "wait", "dest": best, "text": f"move to the safest tile {best}"})
@@ -724,7 +909,9 @@ class AiStep:
         return "item use not simulated"
 
     def _op_600(self, e, prog):
-        self.unit.move += int(e.d or 0)
+        change = int(e.d or 0)
+        change = change - (1 << 32) if change & 0x80000000 else change  # signed: Black Knight scripts use -3
+        self.unit.move = max(0, self.unit.move + change)
         self.turn.registers[int(e.a) & 3] = self.unit.move
         return f"Mov = {self.unit.move}"
 
@@ -742,7 +929,7 @@ class AiStep:
         if percent >= record.retreat_below or record.retreat_below <= 0:
             return False
         reach = movement.destinations(self.world, self.state, unit)
-        threat = threat_map(self.world, self.state, unit)
+        threat = enemy_threat_map(self.world, self.state, unit)
         best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
         self._register({"action": "wait", "dest": best, "text": f"retreat to {best} (HP {percent}%)"})
         self.emit(f"HP {percent}% < {record.retreat_below}%: retreats to {best}")
@@ -759,7 +946,8 @@ class AiStep:
             self.state.emit("action", f"{self.world.name(unit.pid)} escapes", uid=unit.uid)
             return
         command = Act(unit.uid, cand["dest"], action, cand.get("target"), cand.get("item"))
-        self.emit(f"acts: {cand['text']}")
+        self.emit(f"acts: {cand['text']}", decision={k: cand[k] for k in ("text", "ranking", "ranking_total")
+                                                      if k in cand})
         try:
             apply_command(self.world, self.state, command, by_ai=True)
         except ValueError as exc:

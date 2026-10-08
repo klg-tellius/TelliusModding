@@ -123,7 +123,7 @@ def fight(world: World, state: GameState, attacker: SimUnit, defender: SimUnit, 
     if player.faction == 0 and player.hp > 0:  # a fallen unit gains nothing
         other = defender if player is attacker else attacker
         dealt = any(s.side == (0 if player is attacker else 1) and s.damage for s in log.strikes)
-        exp = battle_exp(player, other, dealt, other.hp <= 0)
+        exp = battle_exp(player, other, dealt, other.hp <= 0, world.exp_constants())
     state.emit("battle", f"{world.name(attacker.pid)} attacks {world.name(defender.pid)} ({how})\n" + log.text(),
                attacker=attacker.uid, defender=defender.uid, distance=distance, log=log, exp=exp)
     if exp:
@@ -144,14 +144,46 @@ def _use(world: World, state: GameState, unit: SimUnit, index: int, used: int) -
         del unit.items[index]
 
 
-def battle_exp(winner: SimUnit, other: SimUnit, dealt: bool, killed: bool) -> int:
+#: GameData's retail Normal values, for a world without them.
+DEFAULT_EXP_CONSTANTS = {"battle_exp_mode_bonus": 20, "battle_exp_level_constant": 20, "promotion_exp_bonus_base": 0,
+                         "boss_exp_bonus": 30, "thief_exp_bonus": 20}
+
+
+def _has(unit: SimUnit, sid: str) -> bool:
+    return sid in unit.skills
+
+
+def _half(value: int) -> int:
+    return int(value / 2)  # C division: towards zero
+
+
+def battle_exp(winner: SimUnit, other: SimUnit, dealt: bool, killed: bool,
+               constants: Optional[dict] = None) -> int:
+    """``calculate_battle_exp``: the EXP ``winner`` gets for a fight with ``other``. A promoted unit
+    (``SID_HIGHER``) counts 20 levels higher (plus GameData's promotion base for the kill term); the
+    kill term adds the boss (``SID_BOSS``) and thief (``SID_STEAL``) bonuses. ``constants`` are the
+    difficulty's GameData values (:data:`DEFAULT_EXP_CONSTANTS` when None)."""
+    c = constants or DEFAULT_EXP_CONSTANTS
+    if _has(other, "SID_FINAL"):
+        return 0
     if not dealt:
         return 1
-    base = max(1, (21 + other.level - winner.level + 1) // 2)
-    extra = 0
+
+    def level(unit: SimUnit, table: bool) -> int:
+        if not _has(unit, "SID_HIGHER"):
+            return unit.level
+        return unit.level + 20 + (c["promotion_exp_bonus_base"] if table else 0)
+
+    exp = max(1, _half(c["battle_exp_level_constant"] + level(other, False) - level(winner, False) + 1))
     if killed:
-        extra = max(0, other.level - winner.level + 20 + (40 if other.boss else 0))
-    return min(100, base + extra)
+        exp += max(0, c["battle_exp_mode_bonus"] + level(other, True) - level(winner, True)
+                   + (c["boss_exp_bonus"] if _has(other, "SID_BOSS") else 0)
+                   + (c["thief_exp_bonus"] if _has(other, "SID_STEAL") else 0))
+    if _has(winner, "SID_ELITE"):
+        exp *= 2
+    if _has(winner, "SID_FRAC90"):
+        exp = max(1, exp * 7 // 10)
+    return min(100, exp)
 
 
 def gain_exp(world: World, state: GameState, unit: SimUnit, exp: int) -> None:

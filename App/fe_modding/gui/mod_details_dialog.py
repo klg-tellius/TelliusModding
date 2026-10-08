@@ -22,7 +22,7 @@ class ModDetailsDialog(tk.Toplevel):
         ttk.Label(body, text="Mod details", style="Subtitle.TLabel").pack(anchor="w")
         ttk.Label(body, text="Shown to players when they apply your patch.", style="Muted.TLabel").pack(
             anchor="w", pady=(2, 12))
-        self._name = self._field(body, "Name", project.name)
+        self._name_var = self._field(body, "Name", project.name)
         self._author = self._field(body, "Author", project.author)
         self._version = self._field(body, "Version", project.version)
         ttk.Label(body, text="Description", style="Strong.TLabel").pack(anchor="w")
@@ -51,7 +51,7 @@ class ModDetailsDialog(tk.Toplevel):
 
     def _save(self) -> None:
         project = self._project
-        project.name = self._name.get().strip() or project.name
+        project.name = self._name_var.get().strip() or project.name
         project.author = self._author.get().strip()
         project.version = self._version.get().strip()
         project.description = self._description.get("1.0", "end").strip()

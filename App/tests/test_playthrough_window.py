@@ -102,7 +102,7 @@ class PlaythroughWindowTests(unittest.TestCase):
         w._command(actions.Act(rider.uid, (4, 4), "visit"))  # stops on the message page
         self.root.update()
         self.assertTrue(w.sim.state.get_flag("visited"))
-        self.assertIn("Hi.", w._message_label.cget("text"))
+        self.assertIn("Hi.", w._message_text.get("1.0", "end"))
         w.run()  # past the message
         self._settle()
         w.end_phase()

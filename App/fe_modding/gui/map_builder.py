@@ -92,7 +92,7 @@ TOOL_HELP = {
     "terrain": "Click or drag over tiles to paint the chosen type.\nRight-click a tile to pick its type.",
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
-    "unit": "Click a tile to add a unit there, in the chosen section.",
+    "unit": "Click a tile to add a unit there; the dialog asks for its section (each says what it is for).",
     "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
             "Delete removes the selected zone.",
@@ -369,14 +369,33 @@ class _BuildCanvas(tk.Canvas):
 
 
 class _NewUnitDialog(tk.Toplevel):
-    def __init__(self, parent, characters, classes, tile, section: str) -> None:
+    def __init__(self, parent, characters, classes, tile, section: str, sections: Optional[list] = None) -> None:
+        """``sections`` (the Build tab's section choices): show a section picker, starting on ``section``;
+        ``result`` then ends with the chosen one."""
         super().__init__(parent)
         self.title("New unit")
         self.transient(parent)
         self.result = None
+        self._sections = sections
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text=f"On tile {tile}, section {section}", style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        if sections:
+            ttk.Label(body, text=f"On tile {tile}", style="Muted.TLabel").grid(
+                row=0, column=0, columnspan=2, sticky="w")
+            self._section = tk.StringVar(value=next((c for c in sections if c.split("  (", 1)[0] == section),
+                                                    sections[0]))
+            ttk.Label(body, text="Section").grid(row=5, column=0, sticky="w", pady=3)
+            ttk.Combobox(body, textvariable=self._section, values=sections, state="readonly", width=60).grid(
+                row=5, column=1, sticky="w", pady=3, padx=(8, 0))
+            if not any(c.endswith(", battle start)") for c in sections):
+                ttk.Label(body, style="Muted.TLabel", wraplength=460, justify="left", text=(
+                    "This deployment file has no battle-start section. The enemies of the battle are usually "
+                    "in the Normal, Hard and Maniac files: choose one in Deployment file at the top first. "
+                    "Units of an 'event scene only' section appear only during that scene.")).grid(
+                    row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        else:
+            ttk.Label(body, text=f"On tile {tile}, section {section}", style="Muted.TLabel").grid(
+                row=0, column=0, columnspan=2, sticky="w")
         self._character = _LabelPicker(body, width=34)
         self._character.set_choices(characters)
         self._class = _LabelPicker(body, width=34)
@@ -387,7 +406,7 @@ class _NewUnitDialog(tk.Toplevel):
             ttk.Label(body, text=label).grid(row=row, column=0, sticky="w", pady=3)
             widget.grid(row=row, column=1, sticky="w", pady=3, padx=(8, 0))
         buttons = ttk.Frame(body)
-        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        buttons.grid(row=8, column=0, columnspan=2, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Add", command=self._ok).pack(side="left")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
         self._character.focus_set()
@@ -403,7 +422,7 @@ class _NewUnitDialog(tk.Toplevel):
         if not isinstance(pid, str):
             messagebox.showerror("New unit", "Choose a character.", parent=self)
             return
-        self.result = (pid, jid, level)
+        self.result = (pid, jid, level) + ((self._section.get(),) if self._sections else ())
         self.destroy()
 
 
@@ -437,6 +456,8 @@ class MapBuilder(EditorPanel):
         self._undo: list = []
         self._redo: list = []
         self._backdrop: Image.Image | None = None
+        self._script_strings_key = None  # (script path, mtime) the cache below was read from
+        self._script_strings_cache: Optional[set] = None
         self._render_generation = 0
         self._render_after = None
         self._render_wanted = False
@@ -462,6 +483,7 @@ class MapBuilder(EditorPanel):
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
         ttk.Button(top, text="Save Chapter", command=self._save).pack(side="left")
+        ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play).pack(side="left", padx=(6, 0))
         self._undo_button = ttk.Button(top, text="Undo", command=self._do_undo, state="disabled")
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
@@ -514,7 +536,6 @@ class MapBuilder(EditorPanel):
         ttk.Button(view, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
         ttk.Button(view, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
         ttk.Button(view, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
-        ttk.Button(view, text="Play...", command=self.open_play).pack(side="left", padx=(4, 0))
         xbar.pack(side="bottom", fill="x")
         ybar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -691,10 +712,48 @@ class MapBuilder(EditorPanel):
         self._filter_combo.configure(values=["All sections"] + names)
         if self._filter_var.get() not in names:
             self._filter_var.set("All sections")
-        labelled = [f"{name}  ({self._section_army(doc.section(name))})" for name in names]
+        deployed = self._script_strings()
+        labelled = [f"{name}  ({self._section_army(doc.section(name))}{self._section_role(name, deployed)})"
+                    for name in names]
         self._section_combo.configure(values=labelled)
         if self._section_var.get() not in labelled:
             self._section_var.set(labelled[0] if labelled else "")
+
+    def _script_strings(self) -> Optional[set]:
+        """The strings of the chapter's saved script (the section names it deploys), or None."""
+        path = self._script.chapter_path if self._script is not None else None
+        if path is None or not path.is_file():
+            return None
+        if self._script_strings_key != (path, path.stat().st_mtime_ns):
+            self._script_strings_key = (path, path.stat().st_mtime_ns)
+            self._script_strings_cache = {m.decode("latin-1") for m in re.findall(rb"[\w.]{3,}", path.read_bytes())}
+        return self._script_strings_cache
+
+    @staticmethod
+    def _section_role(name: str, deployed: Optional[set]) -> str:
+        """What a section is for, from its name (the retail naming) and whether the script names it."""
+        base = re.sub(r"_[cnhm]$", "", name)
+        if deployed is not None and name not in deployed and base not in deployed:
+            return ", not deployed by the script"
+        lowered = base.lower()
+        if "mikata" in lowered:
+            return ", player army"
+        if "boss" in lowered:
+            return ", boss"
+        if "event" in lowered or re.search(r"_ev\d", lowered):
+            return ", event scene only, not in the battle"
+        if "zoen" in lowered or re.search(r"_z\d", lowered):
+            return ", reinforcements"
+        if "first" in lowered:
+            return ", battle start"
+        return ""
+
+    def _battle_section(self) -> Optional[str]:
+        """The section new enemies of the battle usually go to: the first 'battle start' one."""
+        for label in self._section_combo.cget("values"):
+            if label.endswith(", battle start)"):
+                return label
+        return None
 
     def _filter_changed(self) -> None:
         """Show the picked section's units (or every section's); placed units go to it."""
@@ -980,6 +1039,9 @@ class MapBuilder(EditorPanel):
         self._rendered_props = signature
         self._hover.configure(text="")
         self._refresh_canvas()
+        play = self._windows.get("play")
+        if play is not None and play.winfo_exists():
+            play.backdrop_ready(payload)  # the Play window may have drawn before the picture was ready
 
     # -- undo ------------------------------------------------------------------------------
     def _state(self) -> tuple:
@@ -1366,18 +1428,28 @@ class MapBuilder(EditorPanel):
         self._tool_changed()
         self._refresh_prop_list(select=name)
 
-    def _place_unit(self, tile) -> None:
+    def _prefer_battle_section(self) -> None:
+        """Start the Place unit tool on the battle-start section, the usual place for a new enemy."""
+        battle = self._battle_section()
+        if battle is not None and "battle start" not in self._section_var.get():
+            self._section_var.set(battle)
+
+    def _place_unit(self, tile, choose_section: bool = True) -> None:
         section = self._target_section()
         current = self._variant()
         if not section or current is None:
             messagebox.showinfo("Place unit", "This chapter has no deployment section.", parent=self)
             return
         characters, classes, _items, _skills = self._choices()
-        dialog = _NewUnitDialog(self, characters, classes, tile, section)
+        sections = list(self._section_combo.cget("values")) if choose_section else None
+        dialog = _NewUnitDialog(self, characters, classes, tile, section, sections)
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        pid, jid, level = dialog.result
+        pid, jid, level = dialog.result[:3]
+        if choose_section:
+            self._section_var.set(dialog.result[3])
+            section = self._target_section()
         docs_now = {v: self._deploy.document(v) for v in self._deploy.variants()}
         template_section = docs_now[current].section(section)
         template = list(template_section.units[0]) if template_section.units else dispo.new_unit_values()
@@ -1857,6 +1929,8 @@ class MapBuilder(EditorPanel):
 
     def _tool_changed(self) -> None:
         tool = self._tool.get()
+        if tool == "unit":
+            self._prefer_battle_section()
         if tool == "zone":
             self._refresh_zone_tool()
             if not self._layer_vars["zones"].get():
@@ -1897,6 +1971,8 @@ class MapBuilder(EditorPanel):
             classes = [(f"{class_names.get(c.jid) or c.jid} ({c.jid})", c.jid) for c in fe8.classes if c.jid]
             items = [(f"{item_names.get(i.iid) or i.iid} ({i.iid})", i.iid) for i in fe8.items if i.iid]
             skills = [(s.sid, s.sid) for s in fe8.skills if s.sid]
+            for choices in (characters, classes, items):  # pickers list them by name
+                choices.sort(key=lambda choice: choice[0].casefold())
         self._choices_cache = (characters, classes, items, skills)
         return self._choices_cache
 
@@ -2082,6 +2158,20 @@ class MapBuilder(EditorPanel):
         ttk.Label(body, text=info.label if info else str(pid), font=("Segoe UI", 11, "bold")).pack(anchor="w")
         ttk.Label(body, text=f"{section_name} [{index}] in {self._variant_name(variant)}", style="Muted.TLabel").pack(anchor="w")
 
+        # the buttons first, so they are in view without scrolling down the long form
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="w", pady=(8, 0))
+        ttk.Button(buttons, text="Apply", style="Accent.TButton",
+                   command=lambda: self._apply_unit(section_name, index)).pack(side="left")
+        ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
+        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
+            side="left", padx=(6, 0))
+        if isinstance(pid, str) and self._on_navigate_to_character is not None:
+            ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
+        ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
+                             "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
+                  justify="left").pack(anchor="w", pady=(4, 0))
+
         form = ttk.Frame(body)
         form.pack(anchor="w", fill="x", pady=(8, 0))
         row = 0
@@ -2222,18 +2312,6 @@ class MapBuilder(EditorPanel):
                 ttk.Spinbox(table, from_=-128 if field != "level" else 1, to=127 if field != "level" else 40,
                             textvariable=var, width=4 if field == "level" else 3).grid(row=r, column=c, padx=1)
             self._variant_rows[v] = {"present": present, "found": found, "values": values}
-
-        buttons = ttk.Frame(body)
-        buttons.pack(anchor="w", pady=(12, 0))
-        ttk.Button(buttons, text="Apply", command=lambda: self._apply_unit(section_name, index)).pack(side="left")
-        ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
-        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
-            side="left", padx=(6, 0))
-        if isinstance(pid, str) and self._on_navigate_to_character is not None:
-            ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
-                             "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
-                  justify="left").pack(anchor="w", pady=(8, 0))
 
     def _is_laguz(self):
         """``is_laguz(jid, pid)`` for the loaded FE8Data (cached with the choices)."""

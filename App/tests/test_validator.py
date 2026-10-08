@@ -1,6 +1,7 @@
 """The project check: dangling references and missing chapter files, on the small synthetic
 FE8Data.bin of test_fe8data_tables and on tiny extracted trees."""
 
+import os
 import sys
 import tempfile
 import unittest
@@ -38,6 +39,18 @@ class Fe8DataChecks(unittest.TestCase):
         messages = _messages(validator.validate_fe8data(data))
         self.assertIn("PID_MIST has class JID_CLERIC, which does not exist.", messages)
         self.assertIn("JID_RANGER promotes to JID_CLERIC, which does not exist.", messages)
+
+    def test_missing_link_of_a_promoted_class_is_only_a_warning(self):
+        # retail JID_ASSASSIN/F and JID_BISHOP/F link back to female base classes that do not exist
+        data = fe8data.add_label(build(), "JID_GONE")
+        data = fe8data.patch_class_field(data, 1, "promotes_to", "JID_GONE")
+        data = fe8data.patch_class_field(data, 1, "cap0", 60)  # above 40: JID_CLERIC is now promoted
+        data = fe8data.patch_class_field(data, 0, "promotes_to", "JID_GONE")
+        issues = [i for i in validator.validate_fe8data(data) if i.area == "Classes"]
+        self.assertEqual([(i.severity, i.message) for i in issues], [
+            (validator.ERROR, "JID_RANGER promotes to JID_GONE, which does not exist."),
+            (validator.WARNING, "JID_CLERIC is linked back to JID_GONE, which does not exist."),
+        ])
 
     def test_duplicate_ids(self):
         data, _ = fe8data.add_record(build(), "character", "PID_IKF", copy_from=0)
@@ -105,6 +118,54 @@ class ProjectChecks(unittest.TestCase):
         warnings = [i for i in validator.validate_project(self.project, Flow()).warnings if i.area == "Chapter 33"]
         self.assertTrue(any("story flow" in i.message for i in warnings))
         self.assertFalse(any("story flow" in i.message for i in validator.validate_project(self.project).warnings))
+
+    def test_retail_flow_stops_at_the_ending(self):
+        class RetailFlow:  # no table entries: every chapter leads to the next id
+            available = True
+            def next_of(self, chapter):
+                return chapter + 1
+        data, _ = fe8data.add_record(build(), "chapter", None, copy_from=1)  # id 33, after the ending
+        self.write("FE8Data.bin", data)
+        warnings = [i for i in validator.validate_project(self.project, RetailFlow()).warnings if i.area == "Chapter 33"]
+        self.assertTrue(any("story flow" in i.message for i in warnings))
+
+    def test_other_retail_records_are_checked_only_when_the_flow_reaches_them(self):
+        data, _ = fe8data.add_record(build(), "chapter", None, copy_from=1)
+        index = fe8data.read_chapter_data(data)[-1].index
+        data = fe8data.patch_chapter_field(data, index, "chapter_id", 51)
+        data = fe8data.patch_chapter_field(data, index, "script", "C51")  # not on the disc, as in retail
+        self.write("FE8Data.bin", data)
+        self.assertEqual([i for i in validator.validate_project(self.project).issues if i.area == "Chapter 51"], [])
+
+        class Flow:
+            available = True
+            def next_of(self, chapter):
+                return {0: 51, 51: 32}.get(chapter, chapter + 1)
+        errors = [i for i in validator.validate_project(self.project, Flow()).errors if i.area == "Chapter 51"]
+        self.assertTrue(any(i.where == "Scripts/C51.cmb" for i in errors))
+
+
+@unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "needs FE9_EXTRACTED_FILES (an extracted retail disc)")
+class RetailChecks(unittest.TestCase):
+    def test_untouched_retail_extraction_has_no_errors(self):
+        files = Path(os.environ["FE9_EXTRACTED_FILES"])
+
+        class Retail(ModProject):
+            @property
+            def extracted_dir(self):
+                return files.parent
+
+        project = Retail(name="retail", game=Game.PATH_OF_RADIANCE, directory=files.parent.parent)
+        flow = None
+        if (files.parent / "sys" / "main.dol").is_file():
+            from fe_modding.game_code import chapter_flow
+            from fe_modding.game_code.editor import CodeEditor
+
+            def read_only(path, data):
+                raise AssertionError("the check must not write")
+            flow = chapter_flow.ChapterFlow(CodeEditor(files.parent, read_only))
+        report = validator.validate_project(project, flow)
+        self.assertEqual([str(i) for i in report.errors], [])
 
 
 if __name__ == "__main__":
