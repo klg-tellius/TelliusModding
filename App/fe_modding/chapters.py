@@ -146,6 +146,8 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
     can't be read (Radiant Dawn keeps it elsewhere)."""
     from .formats import fe8data
 
+    if profile_of(project).message_dialect == "fe10":
+        return _fe10_chapter_titles(project)
     try:
         loose = _common_messages_path(project)
         if loose is not None:
@@ -160,6 +162,30 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
         match = re.fullmatch(r"MCT(\d+)", key)
         if match and text.strip():
             titles[match.group(1).zfill(2)] = text.strip()
+    return titles
+
+
+def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
+    """Radiant Dawn: chapter id (``0102``, ``0407a``, ``final``) -> the title of its ``ChapterData``
+    record (``MCT0102`` in ``Mess/e_common.m``, else the Japanese ``common.m``), e.g.
+    ``"I:1-Maiden of Miracles"``."""
+    from .formats import fe10_message, fe10data, message
+
+    try:
+        records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
+        mess = project.extracted_dir / "files" / "Mess"
+        path = next((p for p in (mess / "e_common.m", mess / "common.m") if p.is_file()), None)
+        texts = {}
+        if path is not None:
+            for msg in message.read_messages_path(path):
+                texts[msg.speaker.encode("cp437").decode("cp932", errors="replace")] = fe10_message.plain_text(msg.text)
+    except Exception:  # noqa: BLE001 - titles are presentation only
+        return {}
+    titles = {}
+    for record in records:
+        cid, key = record.values.get("cid") or "", record.values.get("title")
+        if cid[:1] in "Cc" and key and texts.get(key):
+            titles[cid[1:].lower() if not cid[1:].isdigit() else cid[1:]] = texts[key]
     return titles
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fe_modding.formats import fe10_conversation, fe10_message, fe10_rect
+from fe_modding.formats import fe10_conversation, fe10_message, fe10_rect, lz10
 
 
 def _files() -> Path | None:
@@ -93,8 +93,44 @@ class ProfileFontsTest(unittest.TestCase):
         self.assertEqual(RADIANT_DAWN_PROFILE.message_dialect, "fe10")
 
 
+class TitleCardTest(unittest.TestCase):
+    def test_title_split_like_the_retail_cards(self):
+        from fe_modding.chapter_images import split_fe10_title
+
+        self.assertEqual(split_fe10_title("I:1-Maiden of Miracles"), ("Ch 1", "Maiden of Miracles"))
+        self.assertEqual(split_fe10_title("II:Prologue-On Drifting Clouds"), ("Prologue", "On Drifting Clouds"))
+        self.assertEqual(split_fe10_title("IV:Endgame-Rebirth (5)"), ("Endgame", "Rebirth"))
+        self.assertEqual(split_fe10_title("I: Endgame-Daein, Arise!"), ("Endgame", "Daein, Arise!"))
+        self.assertEqual(split_fe10_title("Epilogue"), ("", "Epilogue"))
+
+    def test_name_hash_buckets_per_game(self):
+        from fe_modding.formats.message import engine_name_hash
+        from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
+
+        self.assertEqual(RADIANT_DAWN_PROFILE.name_hash_buckets, 2027)
+        self.assertEqual(PATH_OF_RADIANCE_PROFILE.name_hash_buckets, 509)
+        self.assertEqual(engine_name_hash("AB", 2027), ((65 * 37 + 66) % 2027, 65 * 31 + 66))
+
+
 @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to the files/ folder of an extracted Radiant Dawn disc")
 class CorpusTest(unittest.TestCase):
+    def test_title_cards_and_chapter_titles(self):
+        from types import SimpleNamespace
+
+        from fe_modding import chapter_images, chapters
+        from fe_modding.game_profile import RADIANT_DAWN_PROFILE
+        from fe_modding.games import Game
+
+        project = SimpleNamespace(extracted_dir=FILES.parent, game=Game.RADIANT_DAWN, profile=RADIANT_DAWN_PROFILE,
+                                  read_logical=lambda name: lz10.decompress((FILES / "FE10Data.cms").read_bytes()))
+        titles = chapters.chapter_titles(project)
+        self.assertEqual(titles["0102"], "I:1-Maiden of Miracles")
+        self.assertIn("0407a", titles)
+        path, data = chapter_images.fe10_title_card(FILES, "0102", titles["0102"])
+        self.assertEqual(path.name, "e_ch0102.cms")
+        image = chapter_images.preview(data)
+        self.assertEqual(image.size, (480, 160))
+
     def test_layouts_have_textboxes_and_seats(self):
         layouts = fe10_rect.read_rect_path(FILES / "window" / "RectDesc_en.bin")
         two_box = layouts["RID_上下会話"]

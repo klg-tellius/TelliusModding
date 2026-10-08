@@ -465,11 +465,12 @@ class DialogueEditor(EditorPanel):
                 others += [(m.speaker, common.name) for m in message.read_messages_path(common)]
             except (OSError, ValueError):
                 pass
-        key = message.engine_name_hash(raw)
+        buckets = profile_of(self._project).name_hash_buckets
+        key = message.engine_name_hash(raw, buckets)
         for other, where in others:
             if other == raw:
                 return None, f"{value} already exists in {where}."
-            if message.engine_name_hash(other) == key:
+            if message.engine_name_hash(other, buckets) == key:
                 # The engine matches IDs by hash only (see message.engine_name_hash).
                 return None, (f"{value} has the same engine hash as {self._id_label(other)} ({where}); "
                               "the game could show the wrong message. Choose another ID.")

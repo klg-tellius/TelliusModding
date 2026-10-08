@@ -138,3 +138,73 @@ def preview(data: bytes) -> Image.Image:
     """The first image of a chapter-name file."""
     raw = lz10.decompress(data) if data[:1] == b"\x10" else data
     return tpl.read_tpl_images(io.BytesIO(raw))[0]
+
+
+# -- Radiant Dawn ------------------------------------------------------------------------------
+#: Radiant Dawn's title cards: ``window/title/<prefix>ch<id>.cms`` (``ch0102.cms`` Japanese,
+#: ``e_ch0102.cms`` English), one 480x160 RGB5A3 image each: two centred lines of green-grey serif
+#: text with a dark drop shadow (retail ink: lines 29-58 and 101-130, colour about 112,168,132).
+#: The retail lettering is a serif no game font carries (bigkana has no Latin letters), so new cards
+#: use the dialogue font, or a TrueType/OpenType file the user picks.
+FE10_CARD_FOLDER = "window/title"
+FE10_FONT_FILE = "Fonts/talk.cms"
+FE10_CARD_INK = (112, 168, 132, 255)
+FE10_CARD_LINES = ((29, 30), (101, 30))  # (top, ink height) of each line
+
+
+def fe10_card_name(chapter_id: str, prefix: str = "e_") -> str:
+    return f"{prefix}ch{chapter_id}.cms"
+
+
+def split_fe10_title(title: str) -> tuple[str, str]:
+    """``"I:1-Maiden of Miracles"`` -> (``"Ch 1"``, ``"Maiden of Miracles"``); ``"II:Prologue-On
+    Drifting Clouds"`` -> (``"Prologue"``, ...); a trailing ``(5)`` part number is dropped, like the
+    retail cards. A title without the ``part:chapter-name`` shape is the second line alone."""
+    match = re.fullmatch(r"\s*[IVX]+\s*:\s*([^-]+?)\s*-\s*(.+?)\s*(?:\(\d+\))?\s*", title)
+    if not match:
+        return "", title.strip()
+    head, name = match.groups()
+    return (f"Ch {head}" if head.isdigit() else head), name
+
+
+def _truetype_mask(path, text: str) -> Image.Image:
+    from PIL import ImageDraw, ImageFont
+    face = ImageFont.truetype(str(path), 64)
+    left, top, right, bottom = face.getbbox(text)
+    canvas = Image.new("L", (right - left + 8, bottom - top + 8))
+    ImageDraw.Draw(canvas).text((4 - left, 4 - top), text, font=face, fill=255)
+    box = canvas.getbbox()
+    return canvas.crop(box) if box else Image.new("L", (1, 1))
+
+
+def render_fe10_card(font, title: str, size=(480, 160)) -> Image.Image:
+    """The card for ``title``; ``font`` is a game font or the path of a TrueType/OpenType file."""
+    head, name = split_fe10_title(title)
+    image = Image.new("RGBA", size)
+    lines = [(head, FE10_CARD_LINES[0]), (name, FE10_CARD_LINES[1])] if head else [(name, (65, 30))]
+    for text, (top, height) in lines:
+        mask = _text_mask(font, text) if isinstance(font, fe9_font.GameFont) else _truetype_mask(font, text)
+        width = min(round(mask.width * height / max(1, mask.height)), size[0] - 16)
+        mask = mask.resize((max(1, width), height), Image.LANCZOS)
+        left = (size[0] - width) // 2
+        shadow = Image.new("RGBA", mask.size, (0, 0, 0, 255))
+        shadow.putalpha(mask.point(lambda a: a * 3 // 4))
+        image.alpha_composite(shadow, (left + 2, top + 2))
+        ink = Image.new("RGBA", mask.size, FE10_CARD_INK)
+        ink.putalpha(mask)
+        image.alpha_composite(ink, (left, top))
+    return image
+
+
+def fe10_title_card(files: Path, chapter_id: str, title: str, prefix: str = "e_",
+                    template_id: str = "0101", truetype=None) -> Optional[tuple[Path, bytes]]:
+    """(path, file bytes) of chapter ``chapter_id``'s title card drawn from ``title`` on a copy of
+    its own card (else ``template_id``'s), or None without a template or the font. ``truetype``
+    (a font file path) replaces the game's dialogue font."""
+    folder = files / FE10_CARD_FOLDER
+    font_path = files / FE10_FONT_FILE
+    template = _template(folder, [fe10_card_name(chapter_id, prefix), fe10_card_name(template_id, prefix)])
+    if template is None or (truetype is None and not font_path.is_file()):
+        return None
+    font = truetype if truetype is not None else fe9_font.GameFont(lz10.decompress(font_path.read_bytes()))
+    return folder / fe10_card_name(chapter_id, prefix), _replace(template, render_fe10_card(font, title))

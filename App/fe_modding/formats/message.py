@@ -308,7 +308,13 @@ def write_messages(messages: list[Message], text_order: Optional[list[str]] = No
     return bytes(out)
 
 
-def engine_name_hash(name: str) -> tuple[int, int]:
+#: Buckets of the engine's global name hash: 509 on Path of Radiance, 2027 (0x7eb) on Radiant Dawn
+#: (US ``FUN_80076f54``, which also keeps the last match of a chain instead of the first).
+NAME_HASH_BUCKETS = 509
+FE10_NAME_HASH_BUCKETS = 2027
+
+
+def engine_name_hash(name: str, buckets: int = NAME_HASH_BUCKETS) -> tuple[int, int]:
     """FE9 lookup key of a message ID: ``(bucket, check)``.
 
     A ``.m`` file is a relocatable resource whose export table is its
@@ -326,7 +332,7 @@ def engine_name_hash(name: str) -> tuple[int, int]:
         value = byte - 256 if byte > 127 else byte
         bucket = (bucket * 37 + value) & 0xFFFFFFFF
         check = (check * 31 + value) & 0xFFFFFFFF
-    return bucket % 509, check
+    return bucket % buckets, check
 
 
 def write_messages_path(path: Path | str, messages: list[Message], text_order: Optional[list[str]] = None) -> None:

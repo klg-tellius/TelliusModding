@@ -89,6 +89,9 @@ class GameProfile:
     #: Message text language: "fe9" ($ commands, formats/fe9_message_scene.py) or
     #: "fe10" (the byte-code of formats/fe10_message.py).
     message_dialect: str = "fe9"
+    #: Buckets of the engine's name hash (``message.engine_name_hash``): message IDs and container
+    #: symbols that share a bucket and check value shadow each other.
+    name_hash_buckets: int = 509
     #: (font name, path under files/) of every game font, in the game's font order.
     font_files: tuple[tuple[str, str], ...] = ()
 
@@ -218,6 +221,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, DIALOGUE, FONTS, PATCHES, DISC}),
     message_dialect="fe10",
+    name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
 )
 
