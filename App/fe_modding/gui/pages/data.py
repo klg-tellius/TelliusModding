@@ -1,7 +1,10 @@
 """Game Data: classes, items, skills, terrain types, chapters, the general
-tables and supports (``FE8Data.bin``).
+tables and supports (``FE8Data.bin``), the script flags and the AI scripts.
 
-Characters live in the same file but have their own pages; both edit one
+The hub (route ``("data",)``) shows a tile per section, like Assets; a tile
+opens that section full-page (``("data", key[, record])``). The sections are
+the pages of one notebook whose tab strip is hidden, so the hub is the only way
+between them. Characters live in the same file but have their own pages; both edit one
 shared session (``fe8_session.py``). Each tab lists its records as tiles
 (the item and skill tiles show their icon; classes have no icon, and are filtered
 as unpromoted, promoted or laguz like items by weapon type); a tile opens
@@ -13,15 +16,32 @@ page), edits the affinity bonus table and the support conversations
 
 from __future__ import annotations
 
+from tkinter import ttk
+
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
 from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
+from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
         "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)"}
+#: key -> (icon, description) of the hub tiles.
+TILES = {
+    "classes": ("♞", "Stats, weapon ranks, innate skills, movement and build"),
+    "items": ("⚔", "Weapons, staves and items: combat, price, effects, bonuses"),
+    "skills": ("✦", "Parameters, icon and who can have each skill"),
+    "terrain": ("▦", "Movement cost per movement type, bonuses, healing"),
+    "chapters": ("⚑", "Chapter records: files, objectives, scenes, enemy levels"),
+    "general": ("≡", "Difficulty constants, army groups, battle skies"),
+    "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
+    "flags": ("⚐", "The 96 named script flags: campaign, chapter and save file"),
+    "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
+}
+SECTIONS = (("FE8Data.bin", ("classes", "items", "skills", "terrain", "chapters", "general", "supports")),
+            ("Scripts and AI", ("flags", "ai")))
 
 
 class GameDataPage(Page):
@@ -29,8 +49,12 @@ class GameDataPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
+        self._hub = None
         self._editor = StatsEditor(self, self.project, shell.changelog, shell.session, navigate=shell.navigate)
-        self._editor.pack(fill="both", expand=True)
+        style = ttk.Style(self)
+        style.layout("Tabless.TNotebook.Tab", [])  # the hub picks the section, not a tab strip
+        style.configure("Tabless.TNotebook", borderwidth=0)
+        self._editor._notebook.configure(style="Tabless.TNotebook")
         self._editor._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._tab = "classes"
         self._supports = None
@@ -53,6 +77,38 @@ class GameDataPage(Page):
         self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
                                session_provider=lambda: shell.session if shell.session.available else None)
         self._editor._notebook.add(self._ai, text=TABS["ai"])
+
+    def _build_hub(self) -> ScrollFrame:
+        scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
+        ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(scroll.body, text="The game's tables, shared by every chapter: FE8Data.bin, the script flags "
+                  "and the AI scripts.", style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
+        available = self._tab_widgets()
+        for title, keys in SECTIONS:
+            keys = [key for key in keys if key in available]
+            if not keys:
+                continue
+            section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
+            grid = CardGrid(scroll.body, card_width=280)
+            grid.pack(fill="x")
+            for key in keys:
+                icon, description = TILES[key]
+                grid.add(key, Card(grid, title=TABS[key], subtitle=description, icon=icon, width=280,
+                                   on_click=lambda k=key: self.shell.navigate((self.kind, k))))
+            grid.done()
+        return scroll
+
+    def _show_hub(self, hub: bool) -> None:
+        if hub:
+            self.flush()
+            if self._hub is None:
+                self._hub = self._build_hub()
+            self._editor.pack_forget()
+            self._hub.pack(fill="both", expand=True)
+        else:
+            if self._hub is not None:
+                self._hub.pack_forget()
+            self._editor.pack(fill="both", expand=True)
 
     def _character_name(self, pid: str) -> str:
         index = self.shell.index
@@ -91,7 +147,7 @@ class GameDataPage(Page):
         self.flush()
         current = self._editor._notebook.select()
         self._tab = next((key for key, widget in self._tab_widgets().items() if str(widget) == current), self._tab)
-        if self.shell.route and self.shell.route[0] == self.kind and self.shell.route[1:2] != (self._tab,):
+        if self.shell.route and self.shell.route[0] == self.kind and len(self.shell.route) > 1                 and self.shell.route[1:2] != (self._tab,):
             self.shell.replace_route((self.kind, self._tab))
 
     def _tab_widgets(self) -> dict:
@@ -104,8 +160,11 @@ class GameDataPage(Page):
         return widgets
 
     def show(self, route) -> bool:
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
-        self._tab = tab
+        if len(route) < 2 or route[1] not in self._tab_widgets():
+            self._show_hub(True)
+            return True
+        self._show_hub(False)
+        tab = self._tab = route[1]
         if tab in ("supports", "flags", "ai"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
@@ -126,9 +185,11 @@ class GameDataPage(Page):
         return True
 
     def crumbs(self, route):
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
-        return [("Game Data", ("data",)), (TABS[tab], None)]
+        if len(route) < 2 or route[1] not in TABS:
+            return [("Game Data", None)]
+        return [("Game Data", ("data",)), (TABS[route[1]], None)]
 
     def history_label(self, route):
-        tab = route[1] if len(route) > 1 and route[1] in TABS else self._tab
-        return f"Game Data › {TABS[tab]}"
+        if len(route) < 2 or route[1] not in TABS:
+            return None
+        return f"Game Data › {TABS[route[1]]}"

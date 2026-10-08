@@ -73,6 +73,9 @@ class CharacterInfo:
     category: str
     main_pid: str  # the first record with the same name key (itself when it is the main one)
     variants: tuple[str, ...] = ()  # the other records sharing the name key (main record only)
+    # a playable unit in an unpromoted human class: the only units with a promotion ahead of them
+    # (promoted_jid is the class's two-way link, so on a promoted class it points back down)
+    promotes: bool = False
 
     @property
     def label(self) -> str:
@@ -297,6 +300,8 @@ class ProjectIndex:
                 map_model=_ymu(map_folders.get(c.aid_unpromoted or (classes[c.jid].aid if c.jid in classes else None))),
                 promoted_map_model=_ymu(map_folders.get(c.aid_promoted or (classes[pro].aid if pro in classes else None))),
                 category=category, main_pid=main,
+                promotes=(category == PLAYABLE and pro is not None
+                          and fe8data.class_category(classes[c.jid], fe8.classes) == "Unpromoted"),
             ))
         variants: dict[str, list[str]] = {}
         for r in records:

@@ -6,7 +6,10 @@ overview of who is in it, what is said and which script events it has.
 Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
-which one the Build and Battle scenes tabs show.
+which one the Build, Settings and Battle scenes tabs show.
+
+The **Settings** tab (``chapter_settings.py``) edits the phase map's lighting,
+fog, grid colour and grid border, and the chapter's Game Data › Chapters record.
 
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
@@ -29,6 +32,7 @@ from ...game_code import chapter_flow, chapter_jump
 from ...formats.cmb.catalog import TRIGGERS
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
+from ..chapter_settings import ChapterSettingsPanel
 from ..deployment_editor import DeploymentEditor
 from ..dialogue_editor import DialogueEditor
 from ..map_builder import MapBuilder
@@ -38,10 +42,10 @@ from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 
-TABS = ["overview", "build", "dialogue", "script", "shops", "battle"]
+TABS = ["overview", "build", "settings", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
 TAB_ALIASES = {"map": "build", "deployment": "build"}
-TAB_LABELS = {"overview": "Overview", "build": "Build", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
+TAB_LABELS = {"overview": "Overview", "build": "Build", "settings": "Settings", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
               "battle": "Battle scenes"}
 
 
@@ -330,7 +334,10 @@ class ChapterPage(Page):
         # FE8Data.bin edit), so it isn't one of panels() either.
         self._battle = BattleScenePanel(self._notebook, project, log, session_provider=lambda: shell.session,
                                         map_editor=self._map)
-        for key, panel in (("build", self._build), ("dialogue", self._dialogue),
+        # The phase map's settings (through the Build tab) and the chapter's FE8Data.bin record.
+        self._settings = ChapterSettingsPanel(self._notebook, self._build,
+                                              session_provider=lambda: shell.session, navigate=shell.navigate)
+        for key, panel in (("build", self._build), ("settings", self._settings), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops), ("battle", self._battle)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
@@ -342,6 +349,7 @@ class ChapterPage(Page):
 
     def flush(self) -> None:
         self._battle.flush()
+        self._settings.flush()
 
     def refresh_chapter_lists(self) -> None:
         for panel in self.panels():
@@ -443,6 +451,13 @@ class ChapterPage(Page):
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
 
+    def play_in_dolphin(self) -> bool:
+        """Open the Play in Dolphin dialog for the open chapter (False: none is open)."""
+        if self._chapter is None:
+            return False
+        self._play_in_dolphin()
+        return True
+
     def _play_in_dolphin(self) -> None:
         if self._chapter is None:
             return
@@ -469,6 +484,7 @@ class ChapterPage(Page):
 
     def _on_tab_changed(self) -> None:
         self._battle.flush()
+        self._settings.flush()
         self._tab = TABS[self._notebook.index("current")]
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):
@@ -812,18 +828,36 @@ class AddChapterDialog(tk.Toplevel):
 
 class PlayChapterDialog(tk.Toplevel):
     """Pick the difficulty a chapter is started on in Dolphin. ``result`` is a
-    ``current_difficulty_id`` value (``chapter_jump.DIFFICULTIES``)."""
+    ``current_difficulty_id`` value (``chapter_jump.DIFFICULTIES``). Given
+    ``choices`` (chapter ID -> title) instead of one title, it also picks the
+    chapter: ``chapter`` holds the chosen ID."""
 
     SETTING = "play_chapter_difficulty"
+    CHAPTER_SETTING = "play_chapter_last"
 
-    def __init__(self, parent: tk.Misc, chapter_title: str):
+    def __init__(self, parent: tk.Misc, chapter_title: str | None = None, *,
+                 choices: dict[str, str] | None = None):
         super().__init__(parent)
         self.title("Play in Dolphin")
         self.resizable(False, False)
         self.result: int | None = None
+        self.chapter: str | None = None
+        self._choices = {f"{title}  ({cid})": cid for cid, title in (choices or {}).items()}
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text=chapter_title, style="Heading.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        if self._choices:
+            pick = ttk.Frame(frame)
+            pick.grid(row=0, column=0, columnspan=2, sticky="w")
+            ttk.Label(pick, text="Chapter:").pack(side="left")
+            last = load_setting(self.CHAPTER_SETTING)
+            labels = list(self._choices)
+            self._chapter_var = tk.StringVar(
+                value=next((k for k, v in self._choices.items() if v == last), labels[0]))
+            ttk.Combobox(pick, textvariable=self._chapter_var, values=labels, state="readonly",
+                         width=40).pack(side="left", padx=(8, 0))
+        else:
+            ttk.Label(frame, text=chapter_title or "", style="Heading.TLabel").grid(
+                row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(
             frame,
             text="Starts Dolphin on the project's extracted files (no build) and goes straight to this\n"
@@ -850,5 +884,8 @@ class PlayChapterDialog(tk.Toplevel):
     def _on_play(self) -> None:
         name = self._var.get()
         save_setting(self.SETTING, name)
+        if self._choices:
+            self.chapter = self._choices[self._chapter_var.get()]
+            save_setting(self.CHAPTER_SETTING, self.chapter)
         self.result = chapter_jump.DIFFICULTIES[name]
         self.destroy()

@@ -123,6 +123,44 @@ class StubTests(unittest.TestCase):
             self.assertEqual(cpu.run(FLOW_HOOK, {set_chapter}), set_chapter, version)
 
 
+class NameTableTests(unittest.TestCase):
+    """The file menu's chapter-name table copied into the cave."""
+
+    def test_copy_starts_with_each_builds_retail_table(self):
+        import struct
+        from fe_modding.game_code.dol import Dol
+        pool, table = chapter_flow._name_data()
+
+        def cave_string(address):
+            end = pool.index(b"\x00", address - chapter_flow.NAME_STRINGS)
+            return pool[address - chapter_flow.NAME_STRINGS:end].decode()
+
+        copy = [struct.unpack_from(">III", table, 12 * i) for i in range(chapter_flow.NAME_ENTRIES)]
+        self.assertEqual(copy[40][0], 33)
+        self.assertNotIn(51, [c for c, _n, _h in copy])
+        found = 0
+        for version, sites in chapter_flow._NAME_SITES.items():
+            path = RETAIL_DIR / f"{version}.dol"
+            if not path.is_file():
+                continue
+            found += 1
+            dol = Dol(path.read_bytes())
+            lis, addi = sites[0][1], sites[1][1]
+            low = addi & 0xFFFF
+            retail = ((lis & 0xFFFF) << 16) + (low - 0x10000 if low & 0x8000 else low)
+            for i in range(40):
+                chapter, name, handle = dol.words(retail + 12 * i, 3)
+                self.assertEqual(copy[i][0], chapter, (version, i))
+                self.assertEqual(cave_string(copy[i][1]), dol.read(name, 32).split(b"\x00")[0].decode())
+            # every site now builds the copy's address, and the counts cover 100 entries
+            words = {a: chapter_flow._name_site_word(w) for a, w in sites}
+            for (a, w), (b, v) in zip(sites, sites[1:]):
+                if w >> 26 == 15 and v >> 26 == 14:
+                    self.assertEqual((words[a] & 0xFFFF) << 16 | words[b] & 0xFFFF, chapter_flow.NAME_TABLE)
+        if not found:
+            self.skipTest("no retail DOLs")
+
+
 class FlowEditorTests(unittest.TestCase):
     """ChapterFlow on a scratch copy of the retail US executable."""
 
@@ -200,6 +238,11 @@ class AddStoryChapterTests(unittest.TestCase):
         for folder in ("bmap09", "bmap09_2", "bmap09_3", "bmap09_4", "bmap09_5", "bmap08"):
             shutil.copytree(source / "zmap" / folder, files / "zmap" / folder)
         shutil.copytree(source / "shop", files / "shop")
+        (files / "Fonts").mkdir()
+        shutil.copy(source / "Fonts" / "bigkana.gcf", files / "Fonts" / "bigkana.gcf")
+        for folder in ("window/chapter", "window/chapter2"):
+            (files / folder).mkdir(parents=True)
+            shutil.copy(source / folder / "chap9.cms", files / folder / "chap9.cms")
         shutil.copy(source / "FE8Data.bin", files / "FE8Data.bin")
         sys_dir = self.project.extracted_dir / "sys"
         sys_dir.mkdir()
@@ -243,6 +286,11 @@ class AddStoryChapterTests(unittest.TestCase):
             doc = shop.parse_shop((self.files / "shop" / name).read_bytes())
             self.assertIsNotNone(doc.shop("W", 33), name)
         self.assertEqual(chapters.chapter_titles(self.project)["33"], "Ch.8x: A New Road")
+        from fe_modding import chapter_images
+        strip = chapter_images.preview((self.files / "window/chapter2/chap33.cms").read_bytes())
+        card = chapter_images.preview((self.files / "window/chapter/chap33.cms").read_bytes())
+        self.assertEqual((strip.size, card.size), ((312, 32), (480, 160)))
+        self.assertIsNotNone(strip.getchannel("A").getbbox())        # something was drawn
 
         reopened = chapter_flow.ChapterFlow(CodeEditor(self.project.extracted_dir))
         self.assertEqual(reopened.order()[:12], [1, 2, 3, 4, 5, 6, 7, 8, 9, 33, 10, 11])

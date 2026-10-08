@@ -293,6 +293,7 @@ class NewChapterPlan:
     shops: dict                             # shop file path -> new bytes
     common: Optional[tuple]                 # (Mess/common.m path, new bytes) with the title
     warnings: list
+    images: dict = None                     # chapter-name picture path -> bytes (chapter_images)
 
 
 def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int,
@@ -304,7 +305,9 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
       ``bmapNN`` / ``CNN`` / ``MCTNN`` names (objectives, music, backgrounds stay the template's);
     - a ``BattleTerrData`` row for the new map, copied from the template map's;
     - the three shop sections in each difficulty's shop file, copied from the template's;
-    - the ``MCTNN`` title in ``Mess/common.m``."""
+    - the ``MCTNN`` title in ``Mess/common.m``;
+    - the chapter's name pictures (``window/chapter2/chapNN.cms`` in the file menu's save slots,
+      ``window/chapter/chapNN.cms`` at the chapter start), drawn from the title."""
     from .formats import fe8data, message, shop
 
     if new_id not in NEW_CHAPTER_IDS:
@@ -370,7 +373,14 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
         else:
             messages[existing] = message.Message(key, title)
         common = (common_path, message.write_messages(messages))
-    return NewChapterPlan(data, index, shops, common, warnings)
+
+    from . import chapter_images
+
+    images = chapter_images.chapter_name_images(project.extracted_dir / "files", new_id, title, source_number)
+    if len(images) < 2:
+        warnings.append("The chapter-name pictures could not be drawn (no template picture or no "
+                        "Fonts/bigkana.gcf): the file menu shows an empty box for this chapter.")
+    return NewChapterPlan(data, index, shops, common, warnings, images)
 
 
 def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int, title: str = "",
@@ -394,10 +404,44 @@ def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: i
             raise ValueError(f"Chapter {after} cannot be followed by another chapter.")
         changes = {after: new_id, new_id: flow.next_of(after)}
     duplicate_chapter(project, source_id, f"{new_id:02d}")
-    for path, data in plan.shops.items():
+    for path, data in {**plan.shops, **(plan.images or {})}.items():
         project.write_keeping_original(path, data)
     if plan.common is not None:
         project.write_keeping_original(*plan.common)
     if changes is not None:
         flow.set_many(changes)
     return plan
+
+
+def ensure_name_images(project: ModProject) -> list[Path]:
+    """Draw the missing name pictures of every added chapter (an id from 33 up with a
+    ``ChapterData`` record), from its ``MCTnn`` title on chapter 1's pictures. The story-flow
+    patch lists chapters 33-89 in the file menu's picture table, so a save slot of an added
+    chapter asks for its picture. Returns the files written."""
+    from . import chapter_images
+    from .formats import fe8data
+
+    files = project.extracted_dir / "files"
+    fe8 = files / "FE8Data.bin"
+    if not fe8.is_file():
+        return []
+    try:
+        records = fe8data.read_chapter_data(fe8.read_bytes())
+    except Exception:  # noqa: BLE001 - an unreadable table is reported by its own editor
+        return []
+    titles = chapter_titles(project)
+    written = []
+    for record in records:
+        chapter = record.chapter_id
+        if chapter not in NEW_CHAPTER_IDS:
+            continue
+        wanted = (files / chapter_images.STRIP_FOLDER / chapter_images.strip_name(chapter),
+                  files / chapter_images.CARD_FOLDER / chapter_images.card_name(chapter))
+        if all(path.is_file() for path in wanted):
+            continue
+        title = chapter_display_title(f"{chapter:02d}", titles)
+        for path, data in chapter_images.chapter_name_images(files, chapter, title, 1).items():
+            if not path.is_file():
+                project.write_keeping_original(path, data)
+                written.append(path)
+    return written
