@@ -552,7 +552,8 @@ class Fe10DataEditor(EditorPanel):
     def _growth_editor(self, body, r: fe10data.Record) -> None:
         shared = fe10growth.sharing(self._growth_data, r.index)
         note = (f"Absolute stats at each internal level (tier 1: 1-20, tier 2: 21-40, tier 3: 41-60), "
-                f"levels {r.values['first']}-{r.values['last']}.")
+                f"levels {r.values['first']}-{r.values['last']}. A unit's starting stats come from its "
+                "Characters record, not from here; what the game uses these lines for is not known yet.")
         if len(shared) > 1:
             note += f" Shared with records {', '.join(str(i) for i in shared if i != r.index)}."
         ttk.Label(body, text=note, style="Muted.TLabel", wraplength=560, justify="left").pack(anchor="w", pady=(0, 6))

@@ -155,6 +155,8 @@ FIELD_NOTES = {
     "biorhythm": "0-9 picks a biorhythm curve; 255 has none.",
     "unknown_t3": "A bit mask (0, 3, 7, 15 or 31), set on royals and a few others.",
     "authority": "0-5 authority stars.",
+    "bonus_hp": "Starting stat = class base + this, capped at the class cap (checked in game: Micaiah "
+                "with +19 HP over the Light Mage's 16 starts at its cap, 30).",
     "gauge_turn": "Laguz gauge change per turn and per battle, untransformed and transformed.",
     "skill_capacity": "Retail values are 15 (first tier), 30 (second) and 60 (third), more for laguz.",
     "capacity": "Capacity cost of the skill (probable: occult skills read 30, most others 10-20).",
