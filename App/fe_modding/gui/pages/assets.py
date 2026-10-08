@@ -37,11 +37,14 @@ from ..shell import TOOL_ASSETS, Page
 from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 from .text_assets import ConversationsPanel, ScriptsPanel
+from ..fe10_conversation_lists import Fe10ConversationLists
 
 #: (key, label, icon, description, class), in hub order.
 ASSET_TOOLS = [
     ("conversations", "Conversations", "✉", "Every message file (Mess/), chapters' and shared", ConversationsPanel),
     ("scripts", "Scripts", "⌘", "Every event script (Scripts/), chapters' and startup.cmb", ScriptsPanel),
+    ("conversation_lists", "Conversation Lists", "☰",
+     "Base conversations, Conversation Room supports, support chat lines (FE10Conversation.cms)", Fe10ConversationLists),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
     ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse and export", MapObjectsPanel),
@@ -76,6 +79,9 @@ ASSET_FEATURES = {
     "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO,
     "videos": VIDEO,
 }
+#: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
+#: and "not available" for a game without it.
+ASSET_FILES = {"conversation_lists": "conversation_data"}
 #: Tools that list files for other pages to open (they take the shell).
 LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
@@ -90,7 +96,7 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Assets", style="Title.TLabel").pack(anchor="w")
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
-        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "fonts")),
+        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "fonts")),
                             ("Characters and models", ("portraits", "models", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "effects")),
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
@@ -100,6 +106,8 @@ class AssetsHub(Page):
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")
             for key in keys:
+                if key in ASSET_FILES and not profile_of(shell.project).has_file(ASSET_FILES[key]):
+                    continue
                 _k, label, icon, description, _cls = TOOLS_BY_KEY[key]
                 grid.add(key, Card(grid, title=label, subtitle=description, icon=icon, width=280,
                                    on_click=lambda k=key: shell.navigate(("asset", k))))
@@ -129,11 +137,13 @@ class AssetPage(Page):
         if key not in TOOLS_BY_KEY:
             return False
         feature = ASSET_FEATURES.get(key)
-        if feature is not None and not profile_of(self.project).supports(feature):
+        missing_file = key in ASSET_FILES and not profile_of(self.project).has_file(ASSET_FILES[key])
+        if missing_file or (feature is not None and not profile_of(self.project).supports(feature)):
             for other in self._panels.values():
                 other.pack_forget()
-            self._notice.configure(text=f"{TOOLS_BY_KEY[key][1]} is not available for "
-                                   f"{profile_of(self.project).display_name} yet.")
+            game = profile_of(self.project).display_name
+            self._notice.configure(text=f"{game} has no file for {TOOLS_BY_KEY[key][1]}." if missing_file else
+                                   f"{TOOLS_BY_KEY[key][1]} is not available for {game} yet.")
             self._notice.pack(anchor="nw")
             self._key = None
             return True
