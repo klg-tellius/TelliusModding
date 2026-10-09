@@ -82,14 +82,16 @@ LAYOUT_NAMES: dict[str, str] = {
 
 
 def layout_label(name: str) -> str:
-    """'English name (ID)' for a known layout, otherwise the ID itself."""
-    english = LAYOUT_NAMES.get(name)
-    return f"{english} ({name})" if english else name
+    """Show a known layout in English; preserve unknown game IDs."""
+    return LAYOUT_NAMES.get(name, name)
 
 
 def layout_from_label(label: str) -> str:
-    """Inverse of ``layout_label``; anything else is taken as a raw ID."""
+    """Accept an English name, an old 'English (ID)' label, or a raw game ID."""
     label = label.strip()
+    for name, english in LAYOUT_NAMES.items():
+        if label.casefold() == english.casefold():
+            return name
     if label.endswith(")") and " (" in label:
         name = label[label.rindex(" (") + 2:-1]
         if name in LAYOUT_NAMES:
@@ -562,10 +564,10 @@ def _template(*parts: str) -> str:
 
 TEMPLATES: dict[str, str] = {
     "Empty message": "",
-    "Two-box talk (上下会話)": _template(
+    "Two-box talk": _template(
         "$R上下会話|$c0IKE|$s0First line.$K\n", "$c1MIST|$s1Reply.$K"),
-    "Background scene (背景会話)": _template(
+    "Background scene": _template(
         "$R背景会話|$B村-崖|$<$F1$FCL_IKE|$F4$FCL_MIST|",
         "$F1$PFirst line.$K\n", "$F4$PReply.$K"),
-    "World map narration (GMAP会話)": _template("$RGMAP会話|$O3$GNarration text.$K"),
+    "World map narration": _template("$RGMAP会話|$O3$GNarration text.$K"),
 }

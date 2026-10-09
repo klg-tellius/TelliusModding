@@ -282,6 +282,28 @@ class BackgroundViewer(EditorPanel):
             label = self._names_by_file.get(path.name)
             self._file_list.insert("end", f"{path.name}   ({label})" if label else path.name)
 
+    def select_resource(self, resource_name: str) -> bool:
+        """Open the first image file used by an RID_* background resource."""
+        resource = self._rect_doc.find(resource_name) if self._rect_doc is not None else None
+        if resource is None:
+            return False
+        self._apply_filter("")
+        for layer in resource.layers:
+            filename = layer.file.rsplit("/", 1)[-1]
+            for index, path in enumerate(self._filtered_files):
+                if path.name == filename:
+                    self._file_list.selection_clear(0, "end")
+                    self._file_list.selection_set(index)
+                    self._file_list.activate(index)
+                    self._file_list.see(index)
+                    self._on_file_selected()
+                    if self._current_path != path:
+                        return False
+                    self._resource_choice.set(resource_name)
+                    self._show_resource()
+                    return True
+        return False
+
     def _on_file_selected(self) -> None:
         selection = self._file_list.curselection()
         if not selection:

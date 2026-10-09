@@ -1980,9 +1980,9 @@ class ChapterRecord:
     script: Optional[str]  # 0x08, "C01" - Scripts/<name>.cmb
     message: Optional[str]  # 0x0C, "C01" - mess/<name>.m; None = no chapter message file
     bgm: Optional[str]  # 0x10, map music
-    objectives: list  # 0x14-0x20, four text slots: goal, (unused), loss ("ML_共通"), second goal line
-    hard_objectives: list  # 0x24-0x2C, Hard overrides of slots 0, 1 and 3 (None = keep Normal)
-    maniac_objectives: list  # 0x30-0x38, Maniac overrides of slots 0, 1 and 3
+    objectives: list  # 0x14-0x20: goal, goal second line, defeat, defeat second line
+    hard_objectives: list  # 0x24-0x2C: Hard overrides of slots 0, 1 and 3 (None = keep Normal)
+    maniac_objectives: list  # 0x30-0x38: Maniac overrides of slots 0, 1 and 3
     chapter_id: int  # 0x3C, the id find_chapter_record_by_id matches (>= 90: trial maps)
     enemy_bonus_levels: tuple  # 0x3D-0x40, levels added to auto-levelled enemies, by current_difficulty_id (0-3); 0x41-0x43 pad
     base_background: Optional[str]  # 0x44, preparation/base screen background (RID_)

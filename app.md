@@ -39,6 +39,27 @@ Radiant Dawn text (the `dialogue` and `fonts` features, `GameProfile.message_dia
 
 Radiant Dawn event scripts (the `scripts` feature, `GameProfile.script_dialect == "fe10"`): the `.cmb` layout is Path of Radiance's, and `formats/cmb` handles both bytecodes through a `Dialect` (`model.FE9` / `model.FE10`, read from the compiler build stamp at header +0x18). Radiant Dawn's `localCall` index is one or two bytes, and its compiler emits six more instructions (`inc`, `dec`, `dup`, `ret0`, `ret1`, `assign`); the compiler reproduces its idioms (assignments without `pop`, `return 0/1` as `ret0/ret1`, `ret0` epilogues for callable functions, `switch`/`case` chains, `x++`), so every vanilla script decompiles and compiles back byte for byte. The language gains `switch` and `++`/`--`, which compile only for Radiant Dawn. `catalog.load_externs(dialect)` and `catalog.triggers(dialect)` give each game's natives (`externs_fe10.json`: 656 natives, each described, plus startup.cmb's helpers) and trigger kinds (Radiant Dawn adds rescue, give/take, move-through and epilogue triggers and changes the base-conversation one), and `event_flags.flag_table(dialect)` the flag table (128 slots). While Radiant Dawn has no chapter pages, Assets › Scripts opens every script in the script editor, and Game Data › Flags shows its campaign and chapter flags (no save tab: Radiant Dawn saves are not decoded yet).
 
+## Path of Radiance chapter objectives
+
+The **Chapter data** tab edits the chapter's `FE8Data.bin` record. Its Normal objective slots are:
+
+| Slot | Label | Text key prefix |
+| --- | --- | --- |
+| 0 | Goal | `MW_` |
+| 1 | Goal second line | `MW_` |
+| 2 | Defeat condition | `ML_` |
+| 3 | Defeat second line | `ML_` |
+
+Hard and Maniac each store three overrides: fields 0, 1 and 2 replace Normal slots 0, 1 and 3. Normal slot 2 is the shared defeat condition. An empty override keeps the Normal text. The music and background fields open their selected cue or resource in Assets › Music or Assets › Backgrounds. Save chapter data with **Save FE8Data.bin**.
+
+## Chapter dialogue, scenery and forge controls
+
+In Path of Radiance's Dialogue tab, the layout picker shows English names. The editor converts the chosen name back to the game's layout ID when saving; a raw ID can still be entered for an unknown layout. The compact layout and background dropdowns on the two toolbar rows update their matching actions in the message; a missing action is added at the start. **Search…** opens a visual background picker. The step form and preview's initial context offer the same background choices. The Actions menu is one searchable list.
+
+On **Battle scenes**, the first `BattleTerrData` row is a shared fallback. In retail data that row is named `Map6`; this is its stored map name, not a separate mode. A map with no row uses it for every terrain type, and an empty cell in a custom map row inherits that terrain type's entry from the first row. Editing the shared row affects every map that relies on it.
+
+On **Shops**, the forge grid has five weapon-family rows and nine fixed base columns. Each cell selects the item offered for that family and base on the selected chapter and difficulty; **(none)** removes that option. Changing a cell does not change the item's stats or price. **Save Shops** writes the selected difficulty's shop file.
+
 ## Detailed references
 
 This file is the required high-level app overview. Agents should read the following files only when the task involves that part of the application:
