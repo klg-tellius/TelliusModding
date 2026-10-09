@@ -277,7 +277,9 @@ class LocalResourceTests(unittest.TestCase):
         widget.insert('1.0','$c0MIST|Hello$K')
         widget.mark_set('insert','1.3'); widget.edit_modified(False)
         try:
-            DialogueEditor._highlight_playback_position(SimpleNamespace(_text_widget=widget),10,'text')
+            from fe_modding.formats.dialogue_notation import parse
+            state = SimpleNamespace(_text_widget=widget, _document=parse('$c0MIST|Hello$K'), _scene=None)
+            DialogueEditor._highlight_playback_position(state,10,'text')
             self.assertEqual(tuple(map(str,widget.tag_ranges('playback_position'))),('1.10','1.11'))
             self.assertEqual(widget.index('insert'),'1.3')
             self.assertFalse(widget.edit_modified())

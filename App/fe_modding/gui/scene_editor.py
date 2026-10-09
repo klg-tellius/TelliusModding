@@ -776,3 +776,87 @@ class SceneEditor(ttk.Frame):
                         [ms.new_step(k, seat=seat, **{f: v})]))
                 menu.add_cascade(label=ms.STEP_KINDS[kind].label, menu=sub)
         menu.tk_popup(event.x_root, event.y_root)
+
+
+class DialogueStage(SceneEditor):
+    """Seat panel driven by a text cursor/playback offset, without a step UI."""
+
+    def __init__(self, parent, get_assets, insert_raw):
+        ttk.Frame.__init__(self, parent)
+        self.stage = self
+        self._get_assets = get_assets
+        self._insert_raw = insert_raw
+        self._context = InitialContext()
+        self._thumbs = _Thumbnails()
+        self._timeline_cache = None
+        self._stage_after = None
+        self._source = ''
+        self._offset = 0
+        self.enabled = False
+        ttk.Label(self, text='Seats at the cursor / playback position').pack(anchor='w')
+        self._stage_info = ttk.Label(self, style='Muted.TLabel', wraplength=530)
+        self._stage_info.pack(anchor='w')
+        self._tiles = ttk.Frame(self)
+        self._tiles.pack(fill='x', pady=(2, 0))
+        ttk.Label(self, text='Click a portrait to speak from that seat; click an empty seat to load one.',
+                  style='Muted.TLabel', wraplength=530).pack(anchor='w')
+
+    def text(self):
+        return self._source
+
+    def load(self, text, *, keep_selection=True):
+        self._source = text
+        self._timeline_cache = None
+        self._offset = min(self._offset, len(text)) if keep_selection else 0
+        self._schedule_stage()
+
+    def set_context(self, context):
+        self._context = context
+        self._timeline_cache = None
+        self._schedule_stage()
+
+    def highlight_offset(self, offset):
+        self._offset = offset
+        self._schedule_stage()
+
+    def _scene_at_selection(self):
+        try:
+            timeline = self._timeline()
+            return max((e for e in timeline.events if e.source_offset < self._offset),
+                       key=lambda e: e.index, default=timeline.events[0]).state
+        except (ValueError, UnicodeError):
+            return None
+
+    def insert_steps(self, steps):
+        if self.enabled:
+            self._insert_raw(ms.compile_steps(steps))
+
+    def _seat_clicked(self, seat, box_style):
+        if not self.enabled:
+            return
+        scene = self._scene_at_selection()
+        if scene is not None and scene.portraits[seat].fid:
+            self.insert_steps([ms.new_step('select_box', box=seat) if box_style and seat < 4
+                               else ms.new_step('select_seat', seat=seat)])
+        else:
+            super()._seat_clicked(seat, box_style)
+
+    def _seat_menu(self, event, seat, portrait, box_style):
+        if not self.enabled:
+            return
+        menu = tk.Menu(self, tearoff=False)
+        def replace():
+            fid = self._pick_portrait(portrait.fid)
+            if fid:
+                self.insert_steps([self._load_step(seat, fid, box_style)])
+        menu.add_command(label='Select speaker', command=lambda: self._seat_clicked(seat, box_style))
+        menu.add_command(label='Replace portrait…', command=replace)
+        menu.add_command(label='Remove portrait', command=lambda: self.insert_steps([
+            ms.new_step('dismiss_box', box=seat) if box_style and seat < 4
+            else ms.new_step('remove_portrait', seat=seat)]))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def cleanup(self):
+        if self._stage_after is not None:
+            self.after_cancel(self._stage_after)
+            self._stage_after = None

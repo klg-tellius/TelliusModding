@@ -11,17 +11,17 @@ byte order; the editor keeps that convention (research/CHAPTER_DATA_NOTES.md §5
 added, renamed and deleted freely; a new message plays only once a script
 calls its ID.
 
-The message is picked in the Message ID box. For Path of Radiance its steps
-are listed on the left; the right side edits the selected step (with the
-stage, ``scene_editor.py``) or the raw text. Both edit the same bytes."""
+The message is picked in the Message ID box and edited as readable text with
+framed actions. The right-hand seat panel and playback share byte/source maps
+with the editor; the on-disc message dialect remains unchanged."""
 
 from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from ..formats import fe10_message, message
+from ..formats import dialogue_notation as notation, fe10_message, message
 from ..formats.fe9_message_scene import TEMPLATES, decompile, line_plain_text, to_display, to_raw
 from ..game_profile import DIALOGUE, profile_of
 from ..formats.fe9_conversation_context import resolve_context, context_after_message
@@ -31,8 +31,7 @@ from .changelog import ChangeLog
 from .conversation_preview import ConversationPreview
 from . import theme
 from .editor_panel import EditorPanel
-from .fe10_step_editor import Fe10StepEditor
-from .scene_editor import SceneEditor
+from .scene_editor import DialogueStage
 
 SCRIPT_SOURCES_DIR = "script_sources"  # ScriptEditor's .fe9s sidecar folder
 
@@ -51,11 +50,12 @@ class DialogueEditor(EditorPanel):
         profile = profile_of(project)
         self._fe10 = profile.message_dialect == "fe10"   # Radiant Dawn byte-code, shown in <...> notation
         self._fe9 = not self._fe10 and profile.supports(DIALOGUE)
-        self._steps_editor: Fe10StepEditor | None = None
         self._current_path: Path | None = None
         self._messages: list[message.Message] = []
         self._text_order: list[str] | None = None  # the file's text-blob order, kept on save
         self._dirty = False
+        self._drafts = {}
+        self._document = None
         self._scene_reload_id = None
         self._current_index: int | None = None
 
@@ -106,72 +106,50 @@ class DialogueEditor(EditorPanel):
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
 
-        # left: the message's steps over the selected step's form (FE9), or its raw text (FE10);
-        # right: the stage (FE9) over the live preview
         left = ttk.Frame(paned, padding=8)
-        paned.add(left, weight=2)
-        right = ttk.Frame(paned, padding=(8, 8, 8, 8))
-        paned.add(right, weight=3)
-
-        if self._fe9:
-            left_split = ttk.PanedWindow(left, orient="vertical")
-            left_split.pack(fill="both", expand=True)
-            steps_frame = ttk.Frame(left_split)
-            left_split.add(steps_frame, weight=1)
-            ttk.Label(steps_frame, text="Steps").pack(anchor="w")
-            self._notebook = ttk.Notebook(left_split)
-            left_split.add(self._notebook, weight=1)
-            self._scene = SceneEditor(steps_frame, right, self._notebook, lambda: self._preview.assets)
-            self._scene.pack(fill="both", expand=True, pady=(4, 4))
-            self._scene.on_change = self._on_scene_changed
-            self._scene.on_step_selected = lambda offset: self._preview.seek_before(offset)
-            self._scene.stage.pack(fill="x", pady=(0, 8))
-            self._notebook.add(self._scene.form_page, text="Step")
-
-            # The steps take the top half of the column, the form the bottom half.
-            def place_sash(event):
-                if event.height > 100:
-                    left_split.sashpos(0, event.height // 2)
-                    left_split.unbind("<Configure>", binding)
-            binding = left_split.bind("<Configure>", place_sash, add="+")
-            raw_tab = ttk.Frame(self._notebook, padding=4)
-            self._notebook.add(raw_tab, text="Raw text")
-            text_parent = raw_tab
-        elif self._fe10:
-            self._scene = None
-            left_split = ttk.PanedWindow(left, orient="vertical")
-            left_split.pack(fill="both", expand=True)
-            steps_frame = ttk.Frame(left_split)
-            left_split.add(steps_frame, weight=1)
-            ttk.Label(steps_frame, text="Steps").pack(anchor="w")
-            self._notebook = ttk.Notebook(left_split)
-            left_split.add(self._notebook, weight=1)
-            self._steps_editor = Fe10StepEditor(steps_frame, self._notebook)
-            self._steps_editor.pack(fill="both", expand=True, pady=(4, 4))
-            self._steps_editor.on_change = self._on_scene_changed
-            self._steps_editor.on_step_selected = lambda offset: self._preview.seek_before(offset)
-            self._notebook.add(self._steps_editor.form_page, text="Step")
-            raw_tab = ttk.Frame(self._notebook, padding=4)
-            self._notebook.add(raw_tab, text="Notation")
-            text_parent = raw_tab
-        else:
-            self._scene = None
-            ttk.Label(left, text="Text:").pack(anchor="w")
-            text_parent = left
-
-        self._text_widget = tk.Text(text_parent, wrap="word", height=11)
-        self._text_widget.pack(fill="both", expand=True)
+        paned.add(left, weight=3)
+        right = ttk.Frame(paned, padding=8)
+        paned.add(right, weight=2)
+        self._scene = (DialogueStage(right, lambda: self._preview.assets, self._insert_raw)
+                       if self._fe9 else None)
+        if self._scene is not None:
+            self._scene.pack(fill="x", pady=(0, 8))
+        self._editor_buttons = []
+        self._build_toolbar(left)
+        editor = ttk.Frame(left)
+        editor.pack(fill="both", expand=True)
+        self._text_widget = tk.Text(editor, wrap="word", height=18, undo=True,
+                                    autoseparators=True, maxundo=-1, exportselection=False, padx=8, pady=8)
+        scroll = ttk.Scrollbar(editor, command=self._text_widget.yview)
+        self._line_numbers = tk.Canvas(editor, width=44, highlightthickness=0,
+                                        background=theme.color("surface_alt"))
+        self._line_numbers.pack(side="left", fill="y")
+        def scrolled(first, last):
+            scroll.set(first, last)
+            self._draw_line_numbers()
+        self._text_widget.configure(yscrollcommand=scrolled)
+        self._text_widget.bind("<Configure>", lambda e: self._draw_line_numbers())
+        scroll.pack(side="right", fill="y")
+        self._text_widget.pack(side="left", fill="both", expand=True)
         self._text_widget.bind("<<Modified>>", self._on_text_modified)
+        self._text_widget.bind("<ButtonRelease-1>", self._cursor_changed)
+        self._text_widget.bind("<KeyRelease>", self._cursor_changed)
+        self._text_widget.bind("<Control-f>", lambda e: self._find_replace())
+        self._text_widget.bind("<Control-h>", lambda e: self._find_replace())
+        self._text_widget.bind("<Control-s>", lambda e: (self._save(), "break")[1])
+        self._text_widget.bind("<Double-Button-1>", self._edit_action)
+        self._text_widget.tag_configure("action", spacing1=2, spacing3=2)
+        self._text_widget.tag_configure("notation_error", underline=True,
+                                        foreground=theme.color("danger"))
         self._text_widget.tag_configure("playback_position", background=theme.color("highlight"),
                                         foreground=theme.color("fg"))
-        about = ("The message as text with <...> codes: <speaker:04> makes actor 0 speak at position 4, <wait> "
-                 "waits for A, <w2> pauses. The step list edits the same bytes." if self._fe10 else
-                 "Raw message source: dialogue text interleaved with $ commands\n"
-                 "(portraits, boxes, waits...)." + (" The step list edits the same bytes." if self._fe9 else ""))
-        self._notation_error = ttk.Label(text_parent, text="", style="Danger.TLabel")
+        self._text_widget.tag_configure("find", background=theme.color("highlight"))
+        self._notation_error = ttk.Label(left, text="", style="Danger.TLabel", wraplength=600)
         self._notation_error.pack(anchor="w")
-        ttk.Label(text_parent, text=about, style="Muted.TLabel", justify="left", wraplength=420).pack(
-            anchor="w", pady=(4, 0))
+        ttk.Label(left, text="Write dialogue directly. Framed <actions> can be typed, inserted with buttons, "
+                  "or double-clicked to edit. Pause power n waits 2^n frames.\n"
+                  "Import/export uses UTF-8 text for this message. Literal < and >: <Bytes:3C> / <Bytes:3E>.",
+                  style="Muted.TLabel", wraplength=600, justify="left").pack(anchor="w", pady=(4, 0))
 
         preview_frame = ttk.Frame(right)
         preview_frame.pack(fill="both", expand=True)
@@ -183,34 +161,317 @@ class DialogueEditor(EditorPanel):
             self._preview.on_context_changed = self._scene.set_context
         self._preview.pack(fill="both", expand=True, pady=(4, 0))
 
+        theme.on_change(self, self._refresh_editor_colors)
         self._editing_enabled(False)
 
-    def _highlight_playback_position(self, offset: int, kind: str) -> None:
-        # The editor preserves one cp437 character per source byte. Do not move
-        # the insertion cursor or selection, and never modify message contents.
-        scene = getattr(self, "_scene", None)
-        if scene is not None:
-            scene.highlight_offset(offset)
-        self._text_widget.tag_remove("playback_position", "1.0", "end")
-        text = self._text_widget.get("1.0", "end-1c")
-        if not text:
+    def _refresh_editor_colors(self):
+        self._line_numbers.configure(background=theme.color("surface_alt"))
+        for tag in self._text_widget.tag_names():
+            if tag.startswith("action_frame_"):
+                self._text_widget.tag_configure(tag, background=theme.color("surface_alt"))
+        self._text_widget.tag_configure("playback_position", background=theme.color("highlight"), foreground=theme.color("fg"))
+        self._text_widget.tag_configure("find", background=theme.color("highlight"))
+        self._text_widget.tag_configure("notation_error", foreground=theme.color("danger"))
+        self._draw_line_numbers()
+
+    def _draw_line_numbers(self):
+        canvas, widget = self._line_numbers, self._text_widget
+        canvas.delete("all")
+        index = widget.index("@0,0")
+        last_line = None
+        while True:
+            info = widget.dlineinfo(index)
+            if info is None:
+                break
+            line = index.split(".")[0]
+            if line != last_line:
+                canvas.create_text(38, info[1], text=line, anchor="ne",
+                                   fill=theme.color("muted"), font=widget.cget("font"))
+                last_line = line
+            next_index = widget.index(f"{index}+1 display lines")
+            if widget.compare(next_index, "<=", index):
+                break
+            index = next_index
+
+    def _build_toolbar(self, parent):
+        row = ttk.Frame(parent)
+        row.pack(fill='x', pady=(0, 4))
+        for label, callback in (
+            ('Undo', lambda: self._edit_event('<<Undo>>')),
+            ('Redo', lambda: self._edit_event('<<Redo>>')),
+            ('Find / Replace', self._find_replace),
+            ('Import…', self._import_text), ('Export…', self._export_text),
+        ):
+            button = ttk.Button(row, text=label, command=callback)
+            button.pack(side='left', padx=(0, 3))
+            self._editor_buttons.append(button)
+        row = ttk.Frame(parent)
+        row.pack(fill='x', pady=(0, 5))
+        common = [('Speaker', 'Speaker' if self._fe10 else 'Select speaker'), ('Portrait', 'Show portrait' if self._fe10 else 'Portrait'),
+                  ('Wait', 'Wait'), ('Pause', 'Pause power'), ('Clear', 'New page' if self._fe10 else 'Clear box')]
+        for label, action in common:
+            button = ttk.Button(row, text=label, command=lambda a=action: self._add_action(a))
+            button.pack(side='left', padx=(0, 3))
+            self._editor_buttons.append(button)
+        button = ttk.Button(row, text='Actions…', command=self._action_palette)
+        button.pack(side='left')
+        self._editor_buttons.append(button)
+
+    def _edit_event(self, event):
+        try:
+            self._text_widget.event_generate(event)
+        except tk.TclError:
+            pass
+        self._text_widget.focus_set()
+
+    def _flush_edit(self):
+        if hasattr(self, '_text_widget') and self._text_widget.edit_modified():
+            self._text_widget.edit_modified(False)
+            self._on_field_edited()
+
+    def _parse_editor(self):
+        text = self._text_widget.get('1.0', 'end-1c')
+        for tag in ('action', 'notation_error', 'playback_position'):
+            self._text_widget.tag_remove(tag, '1.0', 'end')
+        for tag in self._text_widget.tag_names():
+            if tag.startswith('action_frame_'):
+                self._text_widget.tag_delete(tag)
+        for i, match in enumerate(notation.TAG.finditer(text)):
+            start, end = f'1.0+{match.start()}c', f'1.0+{match.end()}c'
+            self._text_widget.tag_add('action', start, end)
+            frame = f'action_frame_{i}'
+            self._text_widget.tag_configure(frame, relief='solid', borderwidth=1, background=theme.color('surface_alt'))
+            self._text_widget.tag_add(frame, start, end)
+        self._text_widget.tag_raise('sel')
+        try:
+            self._document = notation.parse(text, self._fe10)
+        except notation.NotationError as error:
+            self._document = None
+            self._notation_error.config(text=str(error) + ' — preview uses the last valid text.')
+            self._text_widget.tag_add('notation_error', f'1.0+{error.start}c', f'1.0+{error.end}c')
+            if self._scene is not None:
+                self._scene.enabled = False
+            return False
+        self._notation_error.config(text='')
+        if self._scene is not None:
+            self._scene.enabled = self._selected_index() is not None
+        return True
+
+    def _cursor_changed(self, event=None):
+        if self._document is not None and self._scene is not None:
+            position = len(self._text_widget.get('1.0', 'insert'))
+            self._scene.highlight_offset(self._document.byte_at(position))
+
+    def _replace_selection(self, text, *, whole=False):
+        if self._selected_index() is None:
             return
-        offset = min(offset, len(text)-1)
-        end = offset+1
-        if text[offset:offset+1] == "$":
-            end = min(len(text), offset+2)
-        start_index, end_index = f"1.0+{offset}c", f"1.0+{end}c"
-        self._text_widget.tag_add("playback_position", start_index, end_index)
-        if self._text_widget.focus_get() is not self._text_widget:
-            self._text_widget.see(start_index)
+        widget = self._text_widget
+        widget.edit_separator()
+        if whole:
+            start, end = '1.0', 'end-1c'
+        elif widget.tag_ranges('sel'):
+            start, end = 'sel.first', 'sel.last'
+        else:
+            start = end = 'insert'
+        widget.replace(start, end, text)
+        widget.edit_separator()
+        self._flush_edit()
+        widget.focus_set()
+        self._cursor_changed()
+
+    def _insert_raw(self, raw):
+        self._replace_selection(notation.display(raw, self._fe10).text)
+
+    def _add_action(self, name):
+        if self._selected_index() is None:
+            return
+        if name == 'Select speaker':
+            scene = self._scene._scene_at_selection()
+            name = 'Box' if scene is None or self._scene._box_style(scene.layout) else 'Seat'
+        # Asset pickers remain searchable lists with portrait/background previews.
+        if self._scene is not None and name in ('Portrait', 'Background'):
+            value = self._scene._pick_portrait() if name == 'Portrait' else self._scene._pick_background()
+            if value:
+                self._replace_selection(f'<{name}:{notation._escape(value)}>')
+            return
+        defaults = {'Layout': '上下会話', 'Background': '', 'Show speaker': '0IKE',
+                    'Portrait': 'IKE', 'Control': '', 'Seat': '04' if self._fe10 else '0',
+                    'Box': '0', 'Dismiss box': '0', 'Small box': '0', 'Typing sound': '1',
+                    'Pause power': '4', 'Transition ms': '1000', 'Markup': '#C22',
+                    'Speaker': '04', 'Show portrait': '4D', 'Show portrait now': '4D',
+                    'Attach portrait': '4D', 'Cast': 'IKE|SOREN'}
+        if self._fe10 and name not in defaults:
+            key = next((key for key, label in notation.FE10_NAMES.items() if label == name), None)
+            if key is not None:
+                fields = fe10_message.new_step(key).fields
+                if key == 'V#:':
+                    defaults[name] = fields['n'] + ':' + fields['value']
+                elif key.endswith('#'):
+                    defaults[name] = fields['n']
+                elif key.endswith(':'):
+                    defaults[name] = fields['value']
+                elif key.endswith('|'):
+                    defaults[name] = '|'.join(fields['items'])
+                elif 'a' in fields:
+                    defaults[name] = fields['a'] + fields['b']
+        tag = f'<{name}>'
+        if name in defaults:
+            prompt = ('Power n (0–9); delay is 2^n frames:' if name == 'Pause power' else
+                      'Box number (0–3) followed by portrait ID, e.g. 0IKE:' if name == 'Show speaker' else
+                      'Actor hex digit followed by position, e.g. 04:' if self._fe10 and name in ('Speaker', 'Seat') else
+                      f'{name}:')
+            value = simpledialog.askstring(name, prompt, initialvalue=defaults[name], parent=self)
+            if value is None:
+                return
+            tag = f'<{name}:{notation._escape(value)}>'
+        try:
+            notation.parse(tag, self._fe10)
+        except ValueError as error:
+            messagebox.showerror('Invalid action', str(error), parent=self)
+            return
+        self._replace_selection(tag)
+
+    def _action_palette(self):
+        if self._selected_index() is None:
+            return
+        window = tk.Toplevel(self)
+        window.title('Insert action')
+        window.transient(self.winfo_toplevel())
+        body = ttk.Frame(window, padding=10)
+        body.pack(fill='both', expand=True)
+        ttk.Label(body, text='Choose an action to insert at the text cursor.').grid(row=0, column=0, columnspan=3, sticky='w')
+        names = list((notation.FE10_NAMES if self._fe10 else notation.FE9_NAMES).values())
+        names += ['Pause power'] if self._fe10 else ['Markup']
+        tabs = ttk.Notebook(body)
+        tabs.grid(row=1, column=0, columnspan=3, sticky='nsew')
+        pages = []
+        def choose(name):
+            window.destroy()
+            self._add_action(name)
+        for i, name in enumerate(dict.fromkeys(names)):
+            if i % 24 == 0:
+                page = ttk.Frame(tabs, padding=4)
+                tabs.add(page, text=f'Actions {len(pages) + 1}')
+                pages.append(page)
+            ttk.Button(pages[-1], text=name, command=lambda n=name: choose(n)).grid(row=(i%24)//3, column=i%3, sticky='ew', padx=3, pady=3)
+        window.bind('<Escape>', lambda e: window.destroy())
+        window.grab_set()
+
+    def _edit_action(self, event):
+        position = len(self._text_widget.get('1.0', self._text_widget.index(f'@{event.x},{event.y}')))
+        text = self._text_widget.get('1.0', 'end-1c')
+        match = next((m for m in notation.TAG.finditer(text) if m.start() <= position < m.end()), None)
+        if match is None:
+            return
+        value = simpledialog.askstring('Edit action', 'Action inside < >:', initialvalue=match.group(1), parent=self)
+        if value is not None:
+            self._text_widget.tag_remove('sel', '1.0', 'end')
+            self._text_widget.tag_add('sel', f'1.0+{match.start()}c', f'1.0+{match.end()}c')
+            self._replace_selection('<' + value + '>')
+        return 'break'
+
+    def _import_text(self):
+        if self._selected_index() is None:
+            return
+        path = filedialog.askopenfilename(parent=self, title='Import dialogue text', filetypes=[('Text files', '*.txt'), ('All files', '*.*')])
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding='utf-8-sig')
+        except (OSError, UnicodeError) as error:
+            messagebox.showerror('Could not import text', str(error), parent=self)
+            return
+        replace = messagebox.askyesnocancel('Import dialogue text',
+                    'Replace this entire message?\nYes: replace message.\nNo: insert at cursor or replace selected text.\nThis can be undone.', parent=self)
+        if replace is not None:
+            self._replace_selection(text, whole=replace)
+
+    def _export_text(self):
+        index = self._selected_index()
+        if index is None:
+            return
+        path = filedialog.asksaveasfilename(parent=self, title='Export dialogue text', defaultextension='.txt',
+                    initialfile='dialogue.txt', filetypes=[('Text files', '*.txt')])
+        if not path:
+            return
+        try:
+            Path(path).write_text(self._text_widget.get('1.0', 'end-1c'), encoding='utf-8')
+        except (OSError, UnicodeError) as error:
+            messagebox.showerror('Could not export text', str(error), parent=self)
+
+    def _find_replace(self):
+        if self._selected_index() is None:
+            return 'break'
+        window = tk.Toplevel(self)
+        window.title('Find / Replace')
+        window.transient(self.winfo_toplevel())
+        body = ttk.Frame(window, padding=10)
+        body.pack(fill='both', expand=True)
+        find, replacement = tk.StringVar(), tk.StringVar()
+        for row, (label, var) in enumerate((('Find', find), ('Replace with', replacement))):
+            ttk.Label(body, text=label).grid(row=row, column=0, sticky='w')
+            entry = ttk.Entry(body, textvariable=var, width=40)
+            entry.grid(row=row, column=1, columnspan=3, sticky='ew')
+            if row == 0:
+                entry.focus_set()
+        status = ttk.Label(body)
+        status.grid(row=3, column=0, columnspan=4, sticky='w')
+        def next_match():
+            self._text_widget.tag_remove('find', '1.0', 'end')
+            needle = find.get()
+            if not needle:
+                return
+            index = self._text_widget.search(needle, 'insert', stopindex='end', exact=True)
+            if not index:
+                index = self._text_widget.search(needle, '1.0', stopindex='end', exact=True)
+            if index:
+                end = f'{index}+{len(needle)}c'
+                self._text_widget.tag_add('find', index, end)
+                self._text_widget.mark_set('insert', end)
+                self._text_widget.see(index)
+            status.config(text='' if index else 'No matches')
+        def replace_all():
+            needle = find.get()
+            if needle:
+                text = self._text_widget.get('1.0', 'end-1c')
+                count = text.count(needle)
+                if count:
+                    self._replace_selection(text.replace(needle, replacement.get()), whole=True)
+                status.config(text=f'{count} replacement(s)')
+        ttk.Button(body, text='Find next', command=next_match).grid(row=2, column=1, pady=6)
+        ttk.Button(body, text='Replace all', command=replace_all).grid(row=2, column=2, pady=6)
+        def close():
+            self._text_widget.tag_remove('find', '1.0', 'end')
+            window.destroy()
+        ttk.Button(body, text='Close', command=close).grid(row=2, column=3)
+        window.protocol('WM_DELETE_WINDOW', close)
+        window.bind('<Escape>', lambda e: close())
+        return 'break'
+
+    def _highlight_playback_position(self, offset: int, kind: str) -> None:
+        self._text_widget.tag_remove("playback_position", "1.0", "end")
+        if self._document is None:
+            return
+        span = self._document.at_byte(offset)
+        if span is None:
+            return
+        if self._scene is not None:
+            self._scene.highlight_offset(span.byte_end)
+        start, end = f"1.0+{span.start}c", f"1.0+{span.end}c"
+        self._text_widget.tag_add("playback_position", start, end)
+        self._text_widget.tag_raise("playback_position")
+        self._text_widget.tag_raise("sel")
+        self._text_widget.see(start)
 
     def _editing_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         self._text_widget.config(state=state)
+        for button in self._editor_buttons:
+            button.config(state=state)
+        if self._scene is not None:
+            self._scene.enabled = enabled
         if self._scene is not None and not enabled:
             self._scene.load("", keep_selection=False)
-        if self._steps_editor is not None and not enabled:
-            self._steps_editor.load("", keep_selection=False)
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:
@@ -224,6 +485,7 @@ class DialogueEditor(EditorPanel):
         )
 
     def _on_chapter_selected(self) -> None:
+        self._flush_edit()
         selection = self._chapter_list.curselection()
         if not selection:
             return
@@ -242,6 +504,7 @@ class DialogueEditor(EditorPanel):
             messagebox.showerror("Could not read chapter", str(exc), parent=self)
             return
 
+        self._drafts.clear()
         self._refresh_message_list()
         self._dirty = False
         self._save_button.config(state="normal")
@@ -257,7 +520,7 @@ class DialogueEditor(EditorPanel):
 
     def _shown(self, text: str) -> str:
         """What the text widget shows for a message's text."""
-        return fe10_message.to_display(text) if self._fe10 else text
+        return notation.display(text, self._fe10).text
 
     def _list_preview(self, text: str) -> str:
         if self._fe10:
@@ -323,6 +586,7 @@ class DialogueEditor(EditorPanel):
     def _select_index(self, index: int | None) -> None:
         if index is not None and not 0 <= index < len(self._messages):
             index = None
+        self._flush_edit()
         self._current_index = index
         self._show_current_id()
         if index is None:
@@ -338,6 +602,7 @@ class DialogueEditor(EditorPanel):
         self._text_widget.edit_modified(False)
         self._text_widget.config(state="disabled")
         self._suspend_edit_tracking = False
+        self._document = None
         self._preview.update_message("", "")
 
     def _refresh_message_list(self, select: int | None = None) -> None:
@@ -358,12 +623,11 @@ class DialogueEditor(EditorPanel):
         self._editing_enabled(True)
         self._suspend_edit_tracking = True
         self._text_widget.delete("1.0", "end")
-        self._text_widget.insert("1.0", self._shown(msg.text))
-        self._notation_error.config(text="")
+        self._text_widget.insert("1.0", self._drafts.get(msg.speaker, self._shown(msg.text)))
+        self._text_widget.edit_reset()
+        self._parse_editor()
         if self._scene is not None:
             self._scene.load(msg.text, keep_selection=False)
-        if self._steps_editor is not None:
-            self._steps_editor.load(msg.text, keep_selection=False)
         context = None
         sources = ()
         if self._fe9:
@@ -402,39 +666,27 @@ class DialogueEditor(EditorPanel):
     def _on_field_edited(self) -> None:
         if self._suspend_edit_tracking:
             return
-        content = self._text_widget.get("1.0", "end-1c")
-        if self._fe10:
-            try:
-                content = fe10_message.to_raw(content)
-            except (ValueError, UnicodeError) as error:
-                self._notation_error.config(text=f"Not applied: {error}")
-                return
-            self._notation_error.config(text="")
-        self._set_current_text(content)
-        if self._scene is not None or self._steps_editor is not None:
+        index = self._selected_index()
+        if index is None:
+            return
+        self._mark_dirty()
+        self._draw_line_numbers()
+        if not self._parse_editor():
+            self._drafts[self._messages[index].speaker] = self._text_widget.get("1.0", "end-1c")
+            return
+        self._drafts.pop(self._messages[index].speaker, None)
+        self._set_current_text(self._document.raw)
+        if self._scene is not None:
             if self._scene_reload_id is not None:
                 self.after_cancel(self._scene_reload_id)
-            self._scene_reload_id = self.after(300, self._reload_scene_from_raw)
+            self._scene_reload_id = self.after(150, self._reload_scene_from_raw)
 
     def _reload_scene_from_raw(self) -> None:
         self._scene_reload_id = None
         index = self._selected_index()
         if index is not None and self._scene is not None:
             self._scene.load(self._messages[index].text)
-        if index is not None and self._steps_editor is not None:
-            self._steps_editor.load(self._messages[index].text)
-
-    def _on_scene_changed(self, text: str) -> None:
-        index = self._selected_index()
-        if index is None:
-            return
-        self._suspend_edit_tracking = True
-        self._text_widget.delete("1.0", "end")
-        self._text_widget.insert("1.0", self._shown(text))
-        self._text_widget.edit_modified(False)
-        self._suspend_edit_tracking = False
-        self._notation_error.config(text="")
-        self._set_current_text(text)
+            self._cursor_changed()
 
     def _set_current_text(self, new_text: str) -> None:
         index = self._selected_index()
@@ -489,6 +741,7 @@ class DialogueEditor(EditorPanel):
             initial = value
 
     def _insert_sorted(self, msg: message.Message) -> None:
+        self._flush_edit()
         self._messages.append(msg)
         self._messages.sort(key=_sort_key)
         self._refresh_message_list(select=self._messages.index(msg))
@@ -499,6 +752,7 @@ class DialogueEditor(EditorPanel):
         return ids[0].rsplit("_", 2)[0] + "_" if ids and ids[0].startswith("MS_") else ""
 
     def _add_message(self) -> None:
+        self._flush_edit()
         if self._current_path is None:
             return
         templates = fe10_message.TEMPLATES if self._fe10 else TEMPLATES
@@ -528,6 +782,7 @@ class DialogueEditor(EditorPanel):
         return self._ask_id("New message", value)
 
     def _duplicate_message(self) -> None:
+        self._flush_edit()
         index = self._selected_index()
         if index is None:
             return
@@ -535,6 +790,8 @@ class DialogueEditor(EditorPanel):
         msg_id = self._ask_id("Duplicate message", self._id_label(source.speaker) + "_COPY")
         if msg_id is None:
             return
+        if source.speaker in self._drafts:
+            self._drafts[msg_id] = self._drafts[source.speaker]
         self._insert_sorted(message.Message(speaker=msg_id, text=source.text))
         self._changelog.append(self._current_path.name,
                                f"Duplicated {self._id_label(source.speaker)} as {self._id_label(msg_id)}")
@@ -569,6 +826,7 @@ class DialogueEditor(EditorPanel):
             icon="warning", parent=self)
 
     def _rename_message(self) -> None:
+        self._flush_edit()
         index = self._selected_index()
         if index is None:
             return
@@ -576,12 +834,15 @@ class DialogueEditor(EditorPanel):
         msg_id = self._ask_id("Rename message", self._id_label(old.speaker), ignore=old.speaker)
         if msg_id is None or not self._confirm_references(old.speaker, "Renaming"):
             return
+        if old.speaker in self._drafts:
+            self._drafts[msg_id] = self._drafts.pop(old.speaker)
         del self._messages[index]
         self._insert_sorted(message.Message(speaker=msg_id, text=old.text))
         self._changelog.append(self._current_path.name,
                                f"Renamed {self._id_label(old.speaker)} to {self._id_label(msg_id)}")
 
     def _delete_message(self) -> None:
+        self._flush_edit()
         index = self._selected_index()
         if index is None:
             return
@@ -590,6 +851,7 @@ class DialogueEditor(EditorPanel):
             return
         if not messagebox.askyesno("Delete message", f"Delete {self._id_label(old.speaker)}?", parent=self):
             return
+        self._drafts.pop(old.speaker, None)
         del self._messages[index]
         self._refresh_message_list(select=min(index, len(self._messages) - 1) if self._messages else None)
         self._mark_dirty()
@@ -598,6 +860,11 @@ class DialogueEditor(EditorPanel):
     # -- save -------------------------------------------------------------
     def _save(self) -> None:
         if self._current_path is None:
+            return
+        self._flush_edit()
+        if self._drafts:
+            messagebox.showerror("Cannot save chapter", "Fix invalid actions before saving: " +
+                                 ", ".join(self._id_label(key) for key in self._drafts), parent=self)
             return
         # Order doesn't matter to the game (hash lookup); keep vanilla's sorted layout.
         ordered = sorted(self._messages, key=_sort_key)
@@ -621,6 +888,11 @@ class DialogueEditor(EditorPanel):
         )
 
     def cleanup(self) -> None:
+        if self._scene_reload_id is not None:
+            self.after_cancel(self._scene_reload_id)
+            self._scene_reload_id = None
+        if self._scene is not None:
+            self._scene.cleanup()
         self._preview.cleanup()
 
     # -- workspace navigation -------------------------------------------------

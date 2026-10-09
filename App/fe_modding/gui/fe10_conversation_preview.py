@@ -10,7 +10,7 @@ from tkinter import ttk
 
 from PIL import Image, ImageTk
 
-from ..formats import fe10_conversation
+from ..formats import fe10_conversation, fe10_message
 from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, render
 
 
@@ -22,6 +22,7 @@ class Fe10ConversationPreview(ttk.Frame):
         self._wide = tk.BooleanVar(value=False)
         self._prefix = "e_"
         self._frames: list[fe10_conversation.Frame] = []
+        self._source_positions = []
         self._index = 0
         self._photo = None
         self._render_id = None
@@ -58,6 +59,11 @@ class Fe10ConversationPreview(ttk.Frame):
         if message_id is not None:
             name = Path(message_id[0]).name.lower()
             self._prefix = name[:2] if name[1:2] == "_" else ""
+        self._source_positions = []
+        display_end = 0
+        for token in fe10_message.tokenize(text.encode("cp437")):
+            display_end += len(fe10_message.token_display(token))
+            self._source_positions.append((display_end, token.offset))
         try:
             self._frames = fe10_conversation.build_frames(text)
         except ValueError:
@@ -88,7 +94,10 @@ class Fe10ConversationPreview(ttk.Frame):
         self._index = max(0, min(index, len(self._frames) - 1))
         self._schedule()
         if notify and self.on_position is not None:
-            self.on_position(max(0, self._frames[self._index].offset - 1), "frame")
+            # Frames use legacy notation offsets; the shared editor callback uses bytes.
+            frame_end = self._frames[self._index].offset
+            offset = next((byte for end, byte in self._source_positions if end >= frame_end), 0)
+            self.on_position(offset, "frame")
 
     def _schedule(self) -> None:
         if self._render_id is None:
