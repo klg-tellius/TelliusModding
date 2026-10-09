@@ -406,27 +406,23 @@ class BattleScenePanel(ttk.Frame):
         state.pack(fill="x", pady=(6, 10))
         default_name = default.map_name or "row 0"
         if own == 0:
-            text = (f"{self._map} is the default row ({default_name}): every map without a row of its own, and "
-                    "every empty cell of another row, uses these.")
+            text = "Default battle scenery"
         elif own is not None:
-            text = (f"{self._map} has its own row (row {own}). An empty cell uses the default row's scene "
-                    f"({default_name}), shown after it.")
-            ttk.Button(state, text=f"Remove {self._map}'s row", command=self._remove_row).pack(side="right")
+            text = f"Custom battle scenery - empty cells use {default_name}"
         elif self._edit_default:
-            text = (f"{self._map} has no row of its own: its battles use the default row ({default_name}), "
-                    "edited below. Changes apply to every map without a row of its own.")
+            text = "Editing default battle scenery"
             ttk.Button(state, text="Stop editing the default row",
                        command=lambda: self._set_edit_default(False)).pack(side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
         else:
-            text = (f"{self._map} has no row of its own: its battles use the default row ({default_name}), "
-                    "shown below. Give it a row to choose its own scenes.")
+            text = f"Uses default battle scenery - {default_name}"
             ttk.Button(state, text="Edit the default row", command=lambda: self._set_edit_default(True)).pack(
                 side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
-        ttk.Label(state, text=text, style="Muted.TLabel", wraplength=640, justify="left").pack(side="left")
+        state_style = "Strong.TLabel" if own == 0 or self._edit_default else "Muted.TLabel"
+        ttk.Label(state, text=text, style=state_style, wraplength=640, justify="left").pack(side="left")
 
         labels, keys = self._terrain_names(session)
         counts = self._tile_counts()
@@ -547,17 +543,6 @@ class BattleScenePanel(ttk.Frame):
         self._write(rows, f"Added a battle-scene row for {self._map}")
         self._render()
 
-    def _remove_row(self) -> None:
-        rows = self._rows()
-        index = find_row(rows, self._map) if self._map else None
-        if not index:
-            return
-        if not messagebox.askyesno("Remove row?", f"Remove the battle-scene row of {self._map}? Its battles then "
-                                   "use the default row.", parent=self):
-            return
-        del rows[index]
-        self._write(rows, f"Removed the battle-scene row of {self._map}")
-        self._render()
 
     def flush(self) -> None:
         """Apply a cell still being typed in (a button click doesn't take its focus)."""
