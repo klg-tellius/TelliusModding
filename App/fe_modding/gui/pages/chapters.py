@@ -325,8 +325,7 @@ class ChapterPage(Page):
         left.pack(side="left", fill="x", expand=True)
         self._title = ttk.Label(left, text="", style="Title.TLabel")
         self._title.pack(anchor="w")
-        self._subtitle = ttk.Label(left, text="", style="Muted.TLabel")
-        self._subtitle.pack(anchor="w")
+
         right = ttk.Frame(header, style="Page.TFrame")
         right.pack(side="right")
         self._phase_var = tk.StringVar()
@@ -473,11 +472,7 @@ class ChapterPage(Page):
     def _update_header(self) -> None:
         cid = self._chapter
         self._title.configure(text=self._title_of(cid))
-        paths = chapters.chapter_paths(self.project, cid)
-        files = [p.name for p in (paths.dialogue, paths.script) if p is not None]
-        phases = chapters.chapter_phases(self.project, cid)
-        self._subtitle.configure(text="  ·  ".join([f"Disc {cid}"] + files + [", ".join(phases)] if phases else
-                                                   [f"Disc {cid}"] + files))
+
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")

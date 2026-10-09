@@ -31,7 +31,7 @@ section..." / "Remove section" add an empty section or remove the picked one
 (``dispo.add_section()`` / ``remove_section()``). "All fields..." edits any raw field of a unit. The
 "Disposition..." window (``dispo_window.py``) lists the file's sections, each with its header, the script
 functions that deploy it and its units in an editable table. The unit
-panel edits the selected unit and its section's header; with "Same edit on every difficulty" the
+panel edits the selected unit and its section's header; with "all difficulty files" the
 shared fields (character, class, items, AI, position...) follow in each
 variant that has the unit (``dispo.find_counterpart_unit()``), while level
 and stat bonuses are set per variant in the difficulty table, whose
@@ -488,14 +488,14 @@ class MapBuilder(EditorPanel):
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
         self._redo_button.pack(side="left", padx=(4, 0))
-        ttk.Label(top, text="Deployment file").pack(side="left", padx=(14, 4))
+
         self._variant_var = tk.StringVar()
-        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=26)
+        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=12)
         self._variant_combo.pack(side="left")
         self._variant_combo.bind("<<ComboboxSelected>>", lambda e: self._variant_changed())
-        ttk.Label(top, text="Section").pack(side="left", padx=(10, 4))
+
         self._filter_var = tk.StringVar(value="All sections")
-        self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=24)
+        self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=18)
         self._filter_combo.pack(side="left")
         self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._filter_changed())
         ttk.Button(top, text="Add section...", command=self._add_section).pack(side="left", padx=(6, 0))
@@ -505,13 +505,13 @@ class MapBuilder(EditorPanel):
         self._filter_var.trace_add("write", lambda *_: self._remove_section_button.configure(
             state="disabled" if self._filter_var.get() == "All sections" else "normal"))
 
-        self._build_toolbar()
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
 
         middle = ttk.Frame(paned)
         paned.add(middle, weight=4)
+        self._build_toolbar(middle)
         self._canvas = _BuildCanvas(middle, self)
         ybar = ttk.Scrollbar(middle, orient="vertical", command=self._canvas.yview)
         xbar = ttk.Scrollbar(middle, orient="horizontal", command=self._canvas.xview)
@@ -552,30 +552,23 @@ class MapBuilder(EditorPanel):
         self._inspector.pack(fill="both", expand=True)
         self._canvas.redraw()
 
-    def _build_toolbar(self) -> None:
-        toolbar = ttk.Frame(self, padding=(8, 0, 8, 6))
-        toolbar.pack(fill="x")
-        row = ttk.Frame(toolbar)
-        row.pack(fill="x")
+    def _build_toolbar(self, parent) -> None:
+        toolbar = ttk.Frame(parent, padding=(4, 4, 4, 4))
+        toolbar.pack(side="left", fill="y")
         self._tool = tk.StringVar(value="select")
         self._tool_buttons = {}
-        for key, text in (("select", "Select / move"), ("terrain", "Paint terrain"), ("prop", "Place prop"),
-                          ("heights", "Tile heights"), ("unit", "Place unit"), ("zone", "Script zones")):
-            button = ttk.Button(row, text=text, command=lambda tool=key: self._choose_tool(tool))
-            button.pack(side="left", padx=(0, 4))
+        for key, text, icon in (("select", "Select / move", "⌖"), ("terrain", "Paint terrain", "▦"),
+                                ("prop", "Place prop", "◆"), ("heights", "Tile heights", "⌗"),
+                                ("unit", "Place unit", "♙"), ("zone", "Script zones", "⌘")):
+            button = ttk.Button(toolbar, text=icon, width=3, command=lambda tool=key: self._choose_tool(tool))
+            button.pack(fill="x", pady=(0, 3))
             self._tool_buttons[key] = button
-        windows = ttk.Frame(toolbar)
-        windows.pack(fill="x", pady=(4, 0))
-        ttk.Button(windows, text="Objects...", command=self.open_objects).pack(side="left")
-        ttk.Button(windows, text="Disposition...", command=self.open_disposition).pack(side="left", padx=(4, 0))
-        ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(side="left", padx=(4, 12))
-        self._auto_heights = tk.BooleanVar(value=True)
-        ttk.Checkbutton(windows, text="Heights follow props", variable=self._auto_heights).pack(side="left")
-        self._all_variants = tk.BooleanVar(value=True)
-        ttk.Checkbutton(windows, text="Same edit on every difficulty", variable=self._all_variants).pack(side="left", padx=(8, 0))
+        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(5, 6))
+        ttk.Button(toolbar, text="▤", width=3, command=self.open_objects).pack(fill="x", pady=(0, 3))
+        ttk.Button(toolbar, text="☷", width=3, command=self.open_disposition).pack(fill="x")
         self._tool_help = ttk.Label(toolbar, text=TOOL_HELP["select"], style="Muted.TLabel", justify="left")
-        self._tool_help.pack(fill="x", pady=(4, 0))
-        toolbar.bind("<Configure>", lambda e: self._tool_help.configure(wraplength=max(1, e.width - 16)))
+        self._tool_help.pack(fill="x", pady=(10, 0))
+        toolbar.bind("<Configure>", lambda e: self._tool_help.configure(wraplength=max(1, e.width - 8)))
 
     def _choose_tool(self, tool: str) -> None:
         self._tool.set(tool)
@@ -696,7 +689,7 @@ class MapBuilder(EditorPanel):
         letter = variant.removeprefix("dispos_").removesuffix(".bin")
         # _c sections are deployed by name on every difficulty; the n/h/m trio goes to the
         # scripts' DisposSetMode-style helpers, which pick one by difficulty (script tutorial, lesson 15).
-        return f"{variant} ({'every difficulty' if letter == 'c' else difficulty_name(letter)})"
+        return "Common" if letter == "c" else difficulty_name(letter)
 
     def _variant(self) -> str | None:
         name = self._variant_var.get()
@@ -784,7 +777,7 @@ class MapBuilder(EditorPanel):
         targets = [(current, name)]
         base = dispo.section_base(name)
         letter = current.removeprefix("dispos_")[:1]
-        if not self._all_variants.get() or base == name or letter not in "nhm":
+        if base == name or letter not in "nhm":
             return targets
         for variant in docs:
             other = variant.removeprefix("dispos_")[:1]
@@ -1244,12 +1237,11 @@ class MapBuilder(EditorPanel):
         def edit(files):
             before = self._covered(map_file.read_map_bytes(files["map.bin"]), index)
             out["index"] = op(files)
-            if self._auto_heights.get():
-                data = map_file.read_map_bytes(files["map.bin"])
-                tiles = sorted(before | self._covered(data, out["index"]))
-                if tiles:
-                    files["map.bin"] = map_heights.set_tile_corners(
-                        files["map.bin"], map_heights.deduce_corners(files, data, tiles))
+            data = map_file.read_map_bytes(files["map.bin"])
+            tiles = sorted(before | self._covered(data, out["index"]))
+            if tiles:
+                files["map.bin"] = map_heights.set_tile_corners(
+                    files["map.bin"], map_heights.deduce_corners(files, data, tiles))
 
         return out.get("index") if self._edit_map(edit, log_text) else False
 
@@ -1334,7 +1326,7 @@ class MapBuilder(EditorPanel):
 
     def _move_unit(self, key, tile) -> None:
         section, index = key
-        all_variants = self._all_variants.get()
+        all_variants = True
 
         def edit(docs):
             for variant, sec, i in self._unit_targets(docs, section, index, all_variants):
@@ -1354,7 +1346,7 @@ class MapBuilder(EditorPanel):
         if self._selection[0] != "unit":
             return
         _kind, section, index = self._selection
-        all_variants = self._all_variants.get()
+        all_variants = True
 
         def edit(docs):
             for variant, sec, i in self._unit_targets(docs, section, index, all_variants):
@@ -2182,9 +2174,8 @@ class MapBuilder(EditorPanel):
             side="left", padx=(6, 0))
         if isinstance(pid, str) and self._on_navigate_to_character is not None:
             ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text="Apply writes the form to this unit, and with \"Same edit on every difficulty\" to the "
-                             "same unit in the other difficulties.", style="Muted.TLabel", wraplength=320,
-                  justify="left").pack(anchor="w", pady=(4, 0))
+        ttk.Label(body, text="Apply writes the form to this unit; per-difficulty values stay in their own rows.",
+                  style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w", pady=(4, 0))
 
         form = ttk.Frame(body)
         form.pack(anchor="w", fill="x", pady=(8, 0))
@@ -2367,7 +2358,7 @@ class MapBuilder(EditorPanel):
             messagebox.showerror("Unit", str(exc), parent=self)
             return
         current = self._variant()
-        all_variants = self._all_variants.get()
+        all_variants = True
         presence = {v: (row["present"].get(), row["found"]) for v, row in self._variant_rows.items()}
         base_unit = list(self._deploy.document(current).section(section_name).units[index])
         if (shared[F["faction"]] == dispo_rules.PLAYER_FACTION and base_unit[F["faction"]] != dispo_rules.PLAYER_FACTION
@@ -2472,7 +2463,7 @@ class MapBuilder(EditorPanel):
     def apply_section_header(self, variant: str, section_name: str, header: dispo.SectionHeader) -> bool:
         """Write ``header`` to a section of ``variant`` and, with "Same edit
         on every difficulty", to the same section in the other files."""
-        all_variants = self._all_variants.get()
+        all_variants = True
 
         def edit(docs):
             for v, doc in docs.items():
@@ -2508,10 +2499,6 @@ class MapBuilder(EditorPanel):
     def group_keys(self) -> list:
         return self._deploy.group_keys()
 
-    @property
-    def all_variants_var(self) -> tk.BooleanVar:
-        """The "Same edit on every difficulty" checkbox's variable."""
-        return self._all_variants
 
     def selected_unit(self) -> tuple[str, str, int] | None:
         """(variant, section, index) of the unit selected on the canvas."""
@@ -2571,7 +2558,7 @@ class MapBuilder(EditorPanel):
         """Set fields (index -> value) of one unit of ``variant``. With "Same
         edit on every difficulty" the shared ones follow in the same unit of
         the other files; level and stat bonuses stay per file."""
-        all_variants = self._all_variants.get()
+        all_variants = True
 
         def edit(docs):
             for v, sec, i in self._unit_targets(docs, section_name, index, all_variants, variant):
@@ -2584,7 +2571,7 @@ class MapBuilder(EditorPanel):
         return self._edit_units(edit, f"{section_name}[{index}]: {text}")
 
     def delete_unit(self, variant: str, section_name: str, index: int) -> bool:
-        all_variants = self._all_variants.get()
+        all_variants = True
 
         def edit(docs):
             for v, sec, i in self._unit_targets(docs, section_name, index, all_variants, variant):
@@ -2651,7 +2638,7 @@ class _AddSectionDialog(tk.Toplevel):
         self._name_var = tk.StringVar()
         entry = ttk.Entry(frame, textvariable=self._name_var, width=36)
         entry.pack(anchor="w", fill="x")
-        ttk.Label(frame, text="Scripts deploy a section by this name. With \"Same edit on every difficulty\", "
+        ttk.Label(frame, text="Scripts deploy a section by this name. With \"all difficulty files\", "
                               "a name ending in the file's difficulty letter (_n, _h, _m) adds the section "
                               "to the other difficulties too, with their letter.",
                   style="Muted.TLabel", wraplength=340, justify="left").pack(anchor="w", pady=(2, 8))
