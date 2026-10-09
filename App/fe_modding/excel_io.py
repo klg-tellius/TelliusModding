@@ -6,8 +6,16 @@ from xml.etree import ElementTree as ET
 from .formats import dispo, fe8data
 MAIN='http://schemas.openxmlformats.org/spreadsheetml/2006/main'; REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships'; PKG='http://schemas.openxmlformats.org/package/2006/relationships'; CT='http://schemas.openxmlformats.org/package/2006/content-types'
 ET.register_namespace('',MAIN); ET.register_namespace('r',REL)
-CHARACTER_FIELDS=('pid','mpid','fid','jid','sid0','sid1','sid2','aid_unpromoted','aid_promoted','level','build','weight','weapon_ranks','roster_order','biorhythm_pattern','start_transform_gauge','biorhythm_phase',*(f'stat_bonus{i}' for i in range(8)),*(f'growth{i}' for i in range(8)),*(f'fixed_growth_start{i}' for i in range(8)))
-ITEM_FIELDS=('iid','miid','help_key','weapon_type','attack_type','rank',*(f'property{i}' for i in range(6)),*(f'category{i}' for i in range(2)),'effect','weapon_effect','cost','uses','might','hit','weight','crit','min_range','max_range','icon','weapon_exp',*(f'stat_bonus{i}' for i in range(10)),*(f'growth_bonus{i}' for i in range(8)),'trail_color')
+_STAT_NAMES = tuple(name.lower() for name in fe8data.STAT_NAMES)
+_ITEM_STAT_NAMES = tuple(name.lower() for name in fe8data.ITEM_STAT_BONUS_NAMES)
+
+
+def _named_fields(prefix, names):
+ return tuple(f'{prefix}_{name}' for name in names)
+
+
+CHARACTER_FIELDS=('pid','mpid','fid','jid','sid0','sid1','sid2','aid_unpromoted','aid_promoted','level','build','weight','weapon_ranks','roster_order','biorhythm_pattern','start_transform_gauge','biorhythm_phase',*_named_fields('stat_bonus',_STAT_NAMES),*_named_fields('growth',_STAT_NAMES),*_named_fields('fixed_growth_start',_STAT_NAMES))
+ITEM_FIELDS=('iid','miid','help_key','weapon_type','attack_type','rank',*(f'property{i}' for i in range(6)),*(f'category{i}' for i in range(2)),'effect','weapon_effect','cost','uses','might','hit','weight','crit','min_range','max_range','icon','weapon_exp',*_named_fields('stat_bonus',_ITEM_STAT_NAMES),*_named_fields('growth_bonus',_STAT_NAMES),'trail_color')
 DISPO_FIELDS=[dispo.FIELD_NAMES.get(i,f'field{i}') for i in range(len(dispo.FIELD_LAYOUT))]
 def _ref(r,c):
  o=''
@@ -17,15 +25,40 @@ def _flat(x,fields):
  out=[]
  for f in fields:
   if f.startswith('sid'): v=x.sids[int(f[3:])]
-  elif f.startswith('stat_bonus'): v=x.stat_bonus[int(f[10:])]
-  elif f.startswith('fixed_growth_start'): v=x.fixed_growth_start[int(f[18:])]
-  elif f.startswith('growth_bonus'): v=x.growth_bonus[int(f[12:])]
-  elif f.startswith('growth'): v=x.growth[int(f[6:])]
+  elif f.startswith('stat_bonus_'): v=x.stat_bonus[(_ITEM_STAT_NAMES if len(x.stat_bonus) == len(_ITEM_STAT_NAMES) else _STAT_NAMES).index(f[11:])]
+  elif f.startswith('fixed_growth_start_'): v=x.fixed_growth_start[_STAT_NAMES.index(f[19:])]
+  elif f.startswith('growth_bonus_'): v=x.growth_bonus[_STAT_NAMES.index(f[13:])]
+  elif f.startswith('growth_'): v=x.growth[_STAT_NAMES.index(f[7:])]
   elif f.startswith('property'): v=x.properties[int(f[8:])]
   elif f.startswith('category'): v=x.categories[int(f[8:])]
   else: v=getattr(x,f)
   out.append(v)
  return out
+
+
+def _column(cols, field):
+ """Find a current named header, while accepting the old indexed header."""
+ if field in cols:
+  return cols[field]
+ for prefix, names in (('stat_bonus_', _ITEM_STAT_NAMES), ('stat_bonus_', _STAT_NAMES),
+                       ('growth_bonus_', _STAT_NAMES), ('growth_', _STAT_NAMES),
+                       ('fixed_growth_start_', _STAT_NAMES)):
+  if field.startswith(prefix) and field[len(prefix):] in names:
+   legacy = prefix[:-1] + str(names.index(field[len(prefix):]))
+   if legacy in cols:
+    return cols[legacy]
+ return None
+
+
+def _storage_field(field):
+ for prefix, names in (('stat_bonus_', _ITEM_STAT_NAMES), ('stat_bonus_', _STAT_NAMES),
+                       ('growth_bonus_', _STAT_NAMES), ('growth_', _STAT_NAMES),
+                       ('fixed_growth_start_', _STAT_NAMES)):
+  if field.startswith(prefix) and field[len(prefix):] in names:
+   return prefix[:-1] + str(names.index(field[len(prefix):]))
+ return field
+
+
 def _cell(ref,v):
  c=ET.Element(f'{{{MAIN}}}c',{'r':ref})
  if v in (None,''): return c
@@ -71,8 +104,13 @@ def read_workbook(path):
     rows.append(vals)
    result[sheet.attrib['name']]=rows
   return result
-def export_fe8(path,data,docs=None):
- f=fe8data.read_fe8data(data) if data else None; sheets={'Characters':[['index',*CHARACTER_FIELDS]]+[[r.index,*_flat(r,CHARACTER_FIELDS)] for r in f.characters] if f else [],'Items':[['index',*ITEM_FIELDS]]+[[r.index,*_flat(r,ITEM_FIELDS)] for r in f.items] if f else []}
+def export_fe8(path,data,docs=None,only=None):
+ f=fe8data.read_fe8data(data) if data else None; sheets={}
+ if f:
+  if only in (None,'Characters'):
+   sheets['Characters']=[['index',*CHARACTER_FIELDS]]+[[r.index,*_flat(r,CHARACTER_FIELDS)] for r in f.characters]
+  if only in (None,'Items'):
+   sheets['Items']=[['index',*ITEM_FIELDS]]+[[r.index,*_flat(r,ITEM_FIELDS)] for r in f.items]
  if docs:
   headers=['section','unit_index','linked_label',*DISPO_FIELDS]
   for name,doc in docs.items():
@@ -87,26 +125,29 @@ def _num(v,field):
  if v in (None,''): return None
  try: return int(v)
  except (TypeError,ValueError): raise ValueError(f'{field} must be a whole number') from None
-def import_fe8(path,data,docs=None):
+def import_fe8(path,data,docs=None,only=None):
  sheets=read_workbook(path); parsed=fe8data.read_fe8data(data) if data else None; errors=[]; out=data
  for name,records,fields,patcher in ((('Characters',parsed.characters,CHARACTER_FIELDS,fe8data.patch_character_field),('Items',parsed.items,ITEM_FIELDS,fe8data.patch_item_field)) if parsed else ()):
+  if only is not None and name != only:
+   continue
   rows=sheets.get(name)
   if not rows: continue
-  cols={str(v).strip():i for i,v in enumerate(rows[0]) if v is not None}
+  cols={str(v).strip().casefold():i for i,v in enumerate(rows[0]) if v is not None}
   if 'index' not in cols: errors.append(f'{name}: missing index column'); continue
   for rn,row in enumerate(rows[1:],2):
    if not any(v not in (None,'') for v in row): continue
    try:
     index=_num(row[cols['index']] if cols['index']<len(row) else None,'index'); record=next(r for r in records if r.index==index)
     for field in fields:
-     if field not in cols or cols[field]>=len(row) or row[cols[field]] in (None,''): continue
-     v=row[cols[field]]
+     col=_column(cols,field)
+     if col is None or col>=len(row) or row[col] in (None,''): continue
+     v=row[col]
      if field.startswith(('level','build','weight','roster_order','biorhythm_pattern','start_transform','stat_bonus','growth','fixed_growth','cost','uses','might','hit','crit','min_range','max_range','icon','weapon_exp','trail_color')): v=_num(v,field)
      elif field in ('pid','iid'): v=str(v).strip()
      elif field.startswith(('property','category')): v=str(v).strip()
      else: v=str(v).strip()
      if patcher is fe8data.patch_item_field and field.startswith(('property','category')): continue
-     out=patcher(out,index,field,v)
+     out=patcher(out,index,_storage_field(field),v)
     if patcher is fe8data.patch_item_field:
      for aggregate,prefix,count in (('properties','property',6),('categories','category',2)):
       if any(f'{prefix}{i}' in cols for i in range(count)):
@@ -115,7 +156,7 @@ def import_fe8(path,data,docs=None):
    except (StopIteration,ValueError,TypeError,IndexError,KeyError) as e: errors.append(f'{name} row {rn}: {e or "unknown index"}')
  if docs:
   for name,doc in docs.items():
-   rows=sheets.get('Dispo '+name.removeprefix('dispos_').removesuffix('.bin')); cols={str(v).strip():i for i,v in enumerate(rows[0])} if rows else {}
+   rows=sheets.get('Dispo '+name.removeprefix('dispos_').removesuffix('.bin')); cols={str(v).strip().casefold():i for i,v in enumerate(rows[0])} if rows else {}
    for rn,row in enumerate(rows[1:],2) if rows else []:
     try:
      s=doc.section(str(row[cols['section']])); i=row[cols['unit_index']] if cols['unit_index']<len(row) else ''

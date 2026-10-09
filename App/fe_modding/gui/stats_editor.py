@@ -1321,6 +1321,9 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text="Printed to the debug console when the game loads the file; no effect in game.",
                   style="Muted.TLabel").grid(row=row, column=0, columnspan=columns, sticky="w")
 
+    def _excel_only(self) -> str | None:
+        return 'Items' if self._notebook.index(self._notebook.select()) == TAB_KEYS.index('items') else None
+
     # -- save/revert ---------------------------------------------------------
     def _save(self) -> None:
         self.flush()
@@ -1336,7 +1339,7 @@ class StatsEditor(EditorPanel):
         if not path:
             return
         try:
-            excel_io.export_fe8(path, self._data)
+            excel_io.export_fe8(path, self._data, only=self._excel_only())
             self._status_label.config(text=f"Exported {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
@@ -1346,7 +1349,7 @@ class StatsEditor(EditorPanel):
         if not path:
             return
         try:
-            data, _docs, errors = excel_io.import_fe8(path, self._data)
+            data, _docs, errors = excel_io.import_fe8(path, self._data, only=self._excel_only())
             if errors:
                 messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
                 return
