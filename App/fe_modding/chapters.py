@@ -162,6 +162,15 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
         match = re.fullmatch(r"MCT(\d+)", key)
         if match and text.strip():
             titles[match.group(1).zfill(2)] = text.strip()
+    # A chapter can point at a newly created key that is not named MCTnn.
+    # Prefer the key selected in its ChapterData record when available.
+    try:
+        for record in fe8data.read_chapter_data(project.read_logical("game_data")):
+            title = texts.get(record.title_key or "", "").strip()
+            if title:
+                titles[f"{record.chapter_id:02d}"] = title
+    except Exception:  # noqa: BLE001 - titles are presentation only
+        pass
     return titles
 
 

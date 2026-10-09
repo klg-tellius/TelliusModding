@@ -5,8 +5,6 @@
 - :class:`MapSettingsWindow` - :class:`MapSettingsForm` (capacity scale,
   lighting, fog, grid colour, the grid border and the rest of ``mapextra``,
   the water surface: import, flow; each chapter's Settings tab shows it too),
-  and the chapter's Game Data › Chapters record (``stats_editor.ChapterRecordPanel``,
-  FE8Data.bin: title, objectives, music, backgrounds, enemy levels...).
 - :class:`Map3DWindow` - the whole chapter in 3D (``map_scene.build_map_scene``),
   rebuilt on a worker thread after each edit.
 
@@ -26,7 +24,6 @@ from .. import map_props
 from ..formats import map_file
 from . import map_scene
 from .model_viewer import _ModelPreview
-from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame
 
 ANGLES = {"0°": 0, "90°": 192, "180°": 128, "270°": 64}
@@ -552,32 +549,13 @@ class MapSettingsForm(ttk.Frame):
 
 
 class MapSettingsWindow(_Window):
-    """:class:`MapSettingsForm` and the chapter's record in Game Data ›
-    Chapters, in a window (each chapter's Settings tab shows the same)."""
+    """Map-wide settings for the open phase."""
 
     def __init__(self, builder) -> None:
         super().__init__(builder, "Map settings", "1000x800")
         scroll = ScrollFrame(self, padding=12)
         scroll.pack(fill="both", expand=True)
         MapSettingsForm(scroll.body, builder).pack(fill="x", anchor="w")
-        self._chapter = None
-        session = builder.fe8_session
-        if session is not None and session.available:
-            ttk.Label(scroll.body, text="Chapter (Game Data › Chapters)", font=("Segoe UI", 10, "bold")).pack(
-                anchor="w", pady=(18, 4))
-            self._chapter = ChapterRecordPanel(scroll.body, builder.project, builder.changelog, session,
-                                               navigate=builder.navigate)
-            self._chapter.pack(fill="x", anchor="w")
-            self._chapter.show_map(self.map.map_name or None)
-
-    def _map_changed(self) -> None:
-        if self._chapter is not None:
-            self._chapter.show_map(self.map.map_name or None)
-
-    def close(self) -> None:
-        if self._chapter is not None:
-            self._chapter.cleanup()
-        super().close()
 
 
 # -- 3D view ----------------------------------------------------------------------------------
