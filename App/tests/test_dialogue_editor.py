@@ -120,7 +120,7 @@ class EditorTests(unittest.TestCase):
         self.editor._select_index(0)
         self.root.update()
 
-    def test_editor_has_frames_seats_and_playback_mapping(self):
+    def test_editor_has_action_tags_seats_and_playback_mapping(self):
         editor = self.editor
         self.assertIsNotNone(editor._scene)
         self.assertTrue(editor._text_widget.tag_ranges('action'))
@@ -173,8 +173,7 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(tuple(map(str, editor._text_widget.tag_ranges('sel'))), ('1.0', '1.2'))
         self.assertFalse(editor._text_widget.edit_modified())
         self.assertEqual(editor._text_widget.get('1.0', 'end-1c'), before)
-        frames = [tag for tag in editor._text_widget.tag_names() if tag.startswith('action_frame_')]
-        self.assertEqual(len(frames), 3)
+        self.assertFalse([tag for tag in editor._text_widget.tag_names() if tag.startswith('action_frame_')])
 
     def test_fe10_preview_reports_byte_offsets(self):
         from fe_modding.gui.fe10_conversation_preview import Fe10ConversationPreview
