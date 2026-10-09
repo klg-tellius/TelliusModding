@@ -58,7 +58,7 @@ in ``zdbx.cmp`` names, and ``xwp/forge/<name>_b`` for the forged version.
 Links go through the ``navigate`` callback the page passes in (a workspace
 route).
 
-The class, skill and chapter forms also edit the whole record as hex, except
+The skill and chapter forms also edit the whole record as hex, except
 its pointer words (``fe8data.patch_record_bytes`` refuses those: the loader
 relocates them, so they are edited through their own fields). A field naming
 another record (a class's promotion, a character's class, a skill) takes only
@@ -824,19 +824,25 @@ class StatsEditor(EditorPanel):
         self._heading(parent, "Stats", row)
         row += 1
         stats = fe8data.STAT_NAMES
-        self._byte_row(parent, form, row, "Caps", stats, lambda i: cls().stat_caps[i],
+        stats_frame = ttk.Frame(parent)
+        stats_frame.grid(row=row, column=0, columnspan=10, sticky="w")
+        stats_frame.columnconfigure(0, minsize=132)
+        for column in range(1, len(stats) + 1):
+            stats_frame.columnconfigure(column, minsize=76)
+        self._byte_row(stats_frame, form, 0, "Caps", stats, lambda i: cls().stat_caps[i],
                        lambda d, i, v: patch(d, index, f"cap{i}", v))
-        self._byte_row(parent, form, row + 2, "Base stats", stats, lambda i: cls().base_stats[i],
+        self._byte_row(stats_frame, form, 2, "Base stats", stats, lambda i: cls().base_stats[i],
                        lambda d, i, v: patch(d, index, f"base_stat{i}", v))
-        self._byte_row(parent, form, row + 4, "Growth %", stats, lambda i: cls().growths[i],
+        self._byte_row(stats_frame, form, 4, "Growth %", stats, lambda i: cls().growths[i],
                        lambda d, i, v: patch(d, index, f"growth{i}", v))
-        self._byte_row(parent, form, row + 6, "Growth modifiers", stats, lambda i: cls().growth_modifiers[i],
+        self._byte_row(stats_frame, form, 6, "Growth modifiers", stats, lambda i: cls().growth_modifiers[i],
                        lambda d, i, v: patch(d, index, f"growth_modifier{i}", v), low=-128, high=127)
-        row += 8
+        row += 1
         ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "Base stats are added to each character's personal bonus (Luck unused). Movement and the HP cap "
-            "are confirmed against every promotion pair; the other caps by thematic fit. Growth modifiers "
-            "are signed and added to the growth rates of the class's units.")).grid(
+            "Base stats add to a character's personal stats (Luck base is unused). "
+            "Growth % is the class rate used for automatic leveling; it is not added to a character's personal rate. "
+            "Growth modifiers add signed percentage points to the personal growth of characters in this class "
+            "during level ups. For example, 45% personal growth plus a +5 class modifier becomes 50%.")).grid(
             row=row, column=0, columnspan=10, sticky="w", pady=(4, 0))
         row += 1
         row = self._token_checks(parent, form, row, 10, "Categories", "categories", fe8data.CLASS_CATEGORY_SLOTS,
@@ -845,7 +851,6 @@ class StatsEditor(EditorPanel):
             "What the class is: weapons effective against a category hit it harder, and some skills and items "
             "check it.")).grid(row=row, column=0, columnspan=10, sticky="w")
         row += 1
-        self._hex_box(parent, form, "class", index, row, 9)
 
     # -- items ------------------------------------------------------------------------
     def _show_item(self, index: int) -> None:
