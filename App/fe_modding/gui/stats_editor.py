@@ -71,12 +71,13 @@ from __future__ import annotations
 import struct
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
 from ..formats import fe8data, icons, zdbx
+from .. import excel_io
 from ..formats.fe9_message_scene import to_display
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
 from ..project import ModProject
@@ -403,6 +404,8 @@ class StatsEditor(EditorPanel):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
+        ttk.Button(top, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
         ttk.Label(top, text="Fields apply when you leave them; the build copies the saved file into system.cmp.",
@@ -1328,6 +1331,31 @@ class StatsEditor(EditorPanel):
             return
         self._status_label.config(text=f"Saved {self._path.name}", style="Muted.TLabel")
 
+    def _export_excel(self) -> None:
+        path = filedialog.asksaveasfilename(parent=self, title="Export FE8 data", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe8(path, self._data)
+            self._status_label.config(text=f"Exported {Path(path).name}")
+        except Exception as exc:
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Import FE8 data", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            data, _docs, errors = excel_io.import_fe8(path, self._data)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            self._data = data
+            self._session.changed(self)
+            self._refresh_pickers()
+            self._status_label.config(text=f"Imported {Path(path).name}; save FE8Data.bin")
+        except Exception as exc:
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
     def _revert(self) -> None:
         if not messagebox.askyesno(
                 "Discard unsaved edits?",
@@ -1409,6 +1437,7 @@ class ChapterRecordPanel(StatsEditor):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
         if self._navigate is not None:

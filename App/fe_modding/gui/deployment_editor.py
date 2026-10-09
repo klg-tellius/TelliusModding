@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from ..formats import dispo, lz10, pak
+from .. import excel_io
 from ..project import ModProject
 from . import dispo_widgets
 from .changelog import ChangeLog
@@ -116,6 +117,8 @@ class DeploymentEditor(EditorPanel):
         button_row.pack(fill="x", pady=(8, 0))
         self._save_button = ttk.Button(button_row, text="Save Chapter", command=self._save, state="disabled")
         self._save_button.pack(side="left")
+        ttk.Button(button_row, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(8, 0))
+        ttk.Button(button_row, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._add_unit_button = ttk.Button(
             button_row, text="Add Unit (duplicate selected)", command=self._add_unit, state="disabled"
         )
@@ -402,6 +405,54 @@ class DeploymentEditor(EditorPanel):
                    f"Deleted {pid} from {section_name}", [variant])
 
     # -- save -------------------------------------------------------------
+    def _export_excel(self) -> None:
+        if not self._docs:
+            messagebox.showinfo("Export Excel", "Load a chapter first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Export deployment", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe8(path, b"", self._docs)
+        except Exception as exc:
+            # A deployment-only workbook does not need FE8Data; export the sheets directly.
+            try:
+                sheets = {}
+                headers = ["section", "unit_index", "linked_label", *excel_io.DISPO_FIELDS]
+                for name, doc in self._docs.items():
+                    rows = [headers]
+                    for section in doc.sections:
+                        if section.is_link:
+                            rows.append([section.name, "", section.header, *([""] * len(excel_io.DISPO_FIELDS))])
+                        else:
+                            rows.extend([[section.name, i, "", *unit] for i, unit in enumerate(section.units)])
+                    sheets["Dispo " + name.removeprefix("dispos_").removesuffix(".bin")] = rows
+                excel_io.write_workbook(path, sheets)
+            except Exception as inner:
+                messagebox.showerror("Could not export Excel", str(inner), parent=self)
+                return
+        self._status_label.config(text=f"Exported {Path(path).name}")
+
+    def _import_excel(self) -> None:
+        if not self._docs:
+            messagebox.showinfo("Import Excel", "Load a chapter first.", parent=self)
+            return
+        path = filedialog.askopenfilename(parent=self, title="Import deployment", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            _data, docs, errors = excel_io.import_fe8(path, b"", self._docs)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            self._docs = docs or self._docs
+            self._edited.update(self._docs)
+            self._dirty = True
+            self._refresh_unit_tree()
+            self._update_status()
+            self._notify()
+        except Exception as exc:
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
     def _save(self) -> bool:
         if self._current_path is None:
             return False
