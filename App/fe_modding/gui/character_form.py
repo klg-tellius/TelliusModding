@@ -85,14 +85,19 @@ class CharacterForm(ttk.Frame):
         skills.master.pack(side="left", fill="both", expand=True, padx=(0, 12))
         for i in range(3):
             self._pointer(skills, i, f"Slot {i}", f"sid{i}", c.sids[i], "SID")
-        ttk.Label(skills, text="Weapon ranks", style="Surface.TLabel").grid(row=3, column=0, sticky="w", pady=2,
+        ttk.Label(skills, text="Class innate skills", style="SurfaceMuted.TLabel").grid(
+            row=3, column=0, sticky="w", pady=2, padx=(0, 8))
+        innate_skills = ", ".join(sid for sid in cls.skills if sid) if cls else ""
+        ttk.Label(skills, text=innate_skills or "None", style="SurfaceMuted.TLabel",
+                  wraplength=290, justify="left").grid(row=3, column=1, sticky="w")
+        ttk.Label(skills, text="Weapon ranks", style="Surface.TLabel").grid(row=4, column=0, sticky="w", pady=2,
                                                                             padx=(0, 8))
         var = tk.StringVar(value=c.weapon_ranks or "")
-        ttk.Entry(skills, textvariable=var, width=12).grid(row=3, column=1, sticky="w")
+        ttk.Entry(skills, textvariable=var, width=12).grid(row=4, column=1, sticky="w")
         self._vars["weapon_ranks"] = var
         ttk.Label(skills, text=" ".join(w[:2] for w in fe8data.WEAPON_TYPE_NAMES) + "\n- unusable, * no fixed rank, "
                   "else E-S; empty: the class's", style="SurfaceCaption.TLabel", justify="left").grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=(2, 0))
+            row=5, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         models = self._group(top, "Map animation IDs")
         models.master.pack(side="left", fill="both", expand=True)
