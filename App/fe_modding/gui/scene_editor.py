@@ -102,7 +102,7 @@ def layout_names(assets) -> list[str]:
 
 
 def layout_labels(assets) -> list[str]:
-    """Combobox entries: 'English name (ID)', vanilla's most common layouts first."""
+    """Combobox entries: English names, vanilla's most common layouts first."""
     names = layout_names(assets)
     order = list(ms.LAYOUT_NAMES)
     names.sort(key=lambda n: (order.index(n) if n in order else len(order), n))
@@ -482,10 +482,18 @@ class SceneEditor(ttk.Frame):
             if spec.type == "layout":
                 entry = ttk.Combobox(row, textvariable=var, values=layout_labels(assets) if assets else (), width=24)
                 entry.bind("<<ComboboxSelected>>", lambda e: commit())
+            elif spec.type == "background":
+                entry = ttk.Combobox(row, textvariable=var,
+                                     values=background_names(assets) if assets else (), width=24)
+                entry.bind("<<ComboboxSelected>>", lambda e: commit())
+                ttk.Button(row, text="Search…",
+                           command=lambda: self._set_picked(var, self._pick_background(var.get()))
+                           ).pack(side="right")
             else:
                 entry = ttk.Entry(row, textvariable=var, width=24)
-                picker = self._pick_portrait if spec.type == "fid" else self._pick_background
-                ttk.Button(row, text="Pick…", command=lambda: self._set_picked(var, picker(var.get()))).pack(side="right")
+                ttk.Button(row, text="Pick…",
+                           command=lambda: self._set_picked(var, self._pick_portrait(var.get()))
+                           ).pack(side="right")
             entry.pack(side="left", fill="x", expand=True)
             if spec.type == "fid":
                 name = ttk.Label(row, style="Muted.TLabel", width=12)

@@ -148,8 +148,10 @@ class ShopEditor(EditorPanel):
 
         ttk.Label(forge, text="Forge", style="Heading.TLabel").pack(anchor="w")
         ttk.Label(forge, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "Which weapon the forge offers for each row and base. A row is a weapon family, a column the "
-            "base the player picks; (none) leaves that base out of the row. Base columns are fixed.")
+            "Each row is a weapon family (Swords, Lances, etc.); each fixed column is a base choice "
+            "(Iron, Slim, Steel, etc.). At their intersection, choose the item the player can forge. "
+            "(none) removes that choice. This table is separate for each chapter and difficulty. "
+            "Changing a cell changes the offered item, not its stats or price; click Save Shops to write it.")
                   ).pack(anchor="w")
         grid = ttk.Frame(forge)
         grid.pack(anchor="w", pady=(4, 0))

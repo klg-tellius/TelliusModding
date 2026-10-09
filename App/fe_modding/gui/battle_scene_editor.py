@@ -77,7 +77,7 @@ def scene_users(rows: list[fe8data.BattleTerrainRow]) -> dict[str, list[str]]:
     """Scene name (case-folded) -> the rows naming it (their map names, row 0 marked as the default)."""
     users: dict[str, list[str]] = {}
     for i, row in enumerate(rows):
-        label = f"{row.map_name or '?'} (default)" if i == 0 else row.map_name or "?"
+        label = f"Shared default (row 0: {row.map_name or 'unnamed'})" if i == 0 else row.map_name or "?"
         for scene in {s.casefold() for s in row.scenes if s}:
             users.setdefault(scene, []).append(label)
     return users
@@ -417,20 +417,24 @@ class BattleScenePanel(ttk.Frame):
                        "Maps without a row use the shared first row.").pack(fill="x")
         state = ttk.Frame(body, style="Page.TFrame")
         state.pack(fill="x", pady=(6, 10))
-        default_name = default.map_name or "row 0"
+        default_name = default.map_name or "unnamed"
+        fallback = f"shared first row (row 0, named {default_name})"
         if own == 0:
-            text = f"This is the shared first row ({default_name}). Empty cells use its first terrain scene."
+            text = (f"This map is the {fallback}. Empty cells use its first terrain scene. "
+                    "Editing it also changes maps without their own row.")
         elif own is not None:
             text = "This map has its own scenery row. Empty cells use this row's first terrain scene."
         elif self._edit_default:
-            text = f"Editing the shared first row ({default_name}). Empty cells use its first terrain scene."
-            ttk.Button(state, text="Stop editing the default row",
+            text = (f"Editing the {fallback}. Empty cells use its first terrain scene. "
+                    "Changes also affect maps without their own row.")
+            ttk.Button(state, text="Stop editing shared default",
                        command=lambda: self._set_edit_default(False)).pack(side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
         else:
-            text = f"This map has no scenery row. It uses the shared first row ({default_name})."
-            ttk.Button(state, text="Edit the default row", command=lambda: self._set_edit_default(True)).pack(
+            text = (f"This map has no scenery row. Every terrain type uses the {fallback}; "
+                    "empty cells use that row's first terrain scene.")
+            ttk.Button(state, text="Edit shared default", command=lambda: self._set_edit_default(True)).pack(
                 side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))

@@ -81,7 +81,7 @@ class BattleSceneTests(unittest.TestCase):
         self.assertEqual(bse.find_row(ROWS, "Map6"), 0)
         self.assertIsNone(bse.find_row(ROWS, "bmap03"))
         users = bse.scene_users(ROWS)
-        self.assertEqual(users["map01_woods"], ["Map6 (default)", "bmap02"])
+        self.assertEqual(users["map01_woods"], ["Shared default (row 0: Map6)", "bmap02"])
         self.assertEqual(users["castle_in"], ["bmap01"])
 
 
