@@ -16,6 +16,8 @@ def _named_fields(prefix, names):
 
 CHARACTER_FIELDS=('pid','mpid','fid','jid','sid0','sid1','sid2','aid_unpromoted','aid_promoted','level','build','weight','weapon_ranks','roster_order','biorhythm_pattern','start_transform_gauge','biorhythm_phase',*_named_fields('stat_bonus',_STAT_NAMES),*_named_fields('growth',_STAT_NAMES),*_named_fields('fixed_growth_start',_STAT_NAMES))
 ITEM_FIELDS=('iid','miid','help_key','weapon_type','attack_type','rank',*(f'property{i}' for i in range(6)),*(f'category{i}' for i in range(2)),'effect','weapon_effect','cost','uses','might','hit','weight','crit','min_range','max_range','icon','weapon_exp',*_named_fields('stat_bonus',_ITEM_STAT_NAMES),*_named_fields('growth_bonus',_STAT_NAMES),'trail_color')
+TERRAIN_FIELDS=('name','name_key','avoid','defense','resistance','alt_avoid','alt_defense','alt_resistance','heal','object_tile',*(f'move_cost_{i}' for i in range(len(fe8data.MOVEMENT_TYPE_NAMES))))
+FE8_SHEETS=('Characters','Items','Terrain')
 DISPO_FIELDS=[dispo.FIELD_NAMES.get(i,f'field{i}') for i in range(len(dispo.FIELD_LAYOUT))]
 def _ref(r,c):
  o=''
@@ -105,12 +107,16 @@ def read_workbook(path):
    result[sheet.attrib['name']]=rows
   return result
 def export_fe8(path,data,docs=None,only=None):
- f=fe8data.read_fe8data(data) if data else None; sheets={}
+ if only is not None and only not in FE8_SHEETS:
+  raise ValueError(f'Unsupported Excel sheet: {only}')
+ f=fe8data.read_fe8data(data) if data and only!='Terrain' else None; sheets={}
  if f:
   if only in (None,'Characters'):
    sheets['Characters']=[['index',*CHARACTER_FIELDS]]+[[r.index,*_flat(r,CHARACTER_FIELDS)] for r in f.characters]
   if only in (None,'Items'):
    sheets['Items']=[['index',*ITEM_FIELDS]]+[[r.index,*_flat(r,ITEM_FIELDS)] for r in f.items]
+ if data and only in (None,'Terrain'):
+  sheets['Terrain']=[['index',*TERRAIN_FIELDS]]+[[t.index,t.name,t.name_key,t.avoid,t.defense,t.resistance,*t.alt_bonus,t.heal,t.flag7,*t.move_costs] for t in fe8data.read_terrain_types(data)]
  if docs:
   headers=['section','unit_index','linked_label',*DISPO_FIELDS]
   for name,doc in docs.items():
@@ -126,7 +132,13 @@ def _num(v,field):
  try: return int(v)
  except (TypeError,ValueError): raise ValueError(f'{field} must be a whole number') from None
 def import_fe8(path,data,docs=None,only=None):
- sheets=read_workbook(path); parsed=fe8data.read_fe8data(data) if data else None; errors=[]; out=data
+ if only is not None and only not in FE8_SHEETS:
+  raise ValueError(f'Unsupported Excel sheet: {only}')
+ sheets=read_workbook(path); parsed=fe8data.read_fe8data(data) if data and only!='Terrain' else None; errors=[]; out=data
+ if only is not None and only not in sheets:
+  return data,docs,[f'Expected a {only} worksheet; this workbook does not contain one.']
+ if only is not None and not sheets[only]:
+  return data,docs,[f'{only}: missing header row']
  for name,records,fields,patcher in ((('Characters',parsed.characters,CHARACTER_FIELDS,fe8data.patch_character_field),('Items',parsed.items,ITEM_FIELDS,fe8data.patch_item_field)) if parsed else ()):
   if only is not None and name != only:
    continue
@@ -134,6 +146,8 @@ def import_fe8(path,data,docs=None,only=None):
   if not rows: continue
   cols={str(v).strip().casefold():i for i,v in enumerate(rows[0]) if v is not None}
   if 'index' not in cols: errors.append(f'{name}: missing index column'); continue
+  if not any(_column(cols,field) is not None for field in fields):
+   errors.append(f'{name}: no editable columns found'); continue
   for rn,row in enumerate(rows[1:],2):
    if not any(v not in (None,'') for v in row): continue
    try:
@@ -168,4 +182,54 @@ def import_fe8(path,data,docs=None,only=None):
       for fi,field in enumerate(DISPO_FIELDS):
        if field in cols and cols[field]<len(row) and row[cols[field]] not in ('',None): u[fi]=str(row[cols[field]]) if fi in dispo.POINTER_FIELDS else _num(row[cols[field]],field)
     except (ValueError,TypeError,IndexError,KeyError) as e: errors.append(f'{name} row {rn}: {e}')
- return out,docs,errors
+ if data and only in (None,'Terrain') and 'Terrain' in sheets:
+  out,terrain_errors=_import_terrain(sheets['Terrain'],out)
+  errors.extend(terrain_errors)
+ return (data if errors else out),docs,errors
+
+
+def _import_terrain(rows,data):
+ if not rows:
+  return data,['Terrain: missing header row']
+ cols={str(v).strip().casefold():i for i,v in enumerate(rows[0]) if v is not None}
+ if 'index' not in cols:
+  return data,['Terrain: missing index column']
+ if not any(field in cols for field in TERRAIN_FIELDS):
+  return data,['Terrain: no editable columns found']
+ original=fe8data.read_terrain_types(data)
+ updates={}; errors=[]
+ signed={'avoid','defense','resistance','alt_avoid','alt_defense','alt_resistance'}
+ unsigned={'heal','object_tile',*(f'move_cost_{i}' for i in range(len(fe8data.MOVEMENT_TYPE_NAMES)))}
+ for rn,row in enumerate(rows[1:],2):
+  if not any(v not in (None,'') for v in row): continue
+  try:
+   index=_num(row[cols['index']] if cols['index']<len(row) else None,'index')
+   if index is None or not 0<=index<len(original): raise ValueError('unknown terrain index')
+   if index in updates: raise ValueError(f'duplicate terrain index {index}')
+   values={}
+   for field in TERRAIN_FIELDS:
+    col=cols.get(field)
+    if col is None or col>=len(row) or row[col] in (None,''): continue
+    value=row[col]
+    if field in signed or field in unsigned:
+     value=_num(value,field)
+     low,high=(-128,127) if field in signed else (0,255)
+     if not low<=value<=high: raise ValueError(f'{field} must be between {low} and {high}')
+    else: value=str(value).strip()
+    values[field]=value
+   updates[index]=values
+  except (ValueError,TypeError) as e: errors.append(f'Terrain row {rn}: {e}')
+ if errors: return data,errors
+ out=data
+ for index,values in updates.items():
+  t=fe8data.read_terrain_types(out)[index]
+  try:
+   if 'name' in values or 'name_key' in values:
+    out=fe8data.patch_terrain_names(out,index,name=values.get('name'),name_key=values.get('name_key'))
+   block=bytearray(fe8data.terrain_stats_block(t))
+   for position,field in enumerate(TERRAIN_FIELDS[2:]):
+    if field in values: block[position]=values[field]&0xff
+   if bytes(block)!=fe8data.terrain_stats_block(t):
+    out=fe8data.patch_terrain_stats(out,index,bytes(block),own_block=len(fe8data.terrain_block_users(out,index))>1)
+  except (ValueError,TypeError,IndexError) as e: errors.append(f'Terrain index {index}: {e}')
+ return (data if errors else out),errors
