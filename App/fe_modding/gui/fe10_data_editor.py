@@ -18,10 +18,11 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Optional
 
 from ..exceptions import ProjectError
-from ..formats import fe10data, fe10growth
+from ..formats import fe10data, fe10growth, fe10_message
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from . import message_reference
 from .widgets import ScrollFrame
 
 TAB_KEYS = ("characters", "classes", "items", "skills", "growth", "chapters", "terrain", "battle_scenery",
@@ -74,6 +75,7 @@ class Fe10DataEditor(EditorPanel):
         self._growth: list[fe10data.Record] = []
         self._growth_dirty = False
         self._names = read_names(project)
+        self._message_texts = message_reference.message_texts(project)
         self._tab = "characters"
         self._selected: dict[str, Optional[int]] = {key: None for key in TAB_KEYS}
         self._vars: dict[str, tk.StringVar] = {}
@@ -313,6 +315,25 @@ class Fe10DataEditor(EditorPanel):
         self._choice_cache[cache_key] = values
         return values
 
+    def _message_prefix(self, key: str, current: str) -> str | None:
+        if key in ("help", "help_2"):
+            return HELP_PREFIX.get(self.kind)
+        if key in ("mpid", "mnpid", "mjid", "miid", "msid", "title"):
+            return LABEL_PREFIXES[key]
+        if key.startswith("win"):
+            return "MW_"
+        if key.startswith("lose"):
+            return "ML_"
+        if key == "name_key":
+            return current.rsplit("_", 1)[0] + "_" if "_" in current else (
+                "MT_" if self.kind == "terrain" else "MG_")
+        return None
+
+    def _message_values(self, prefix: str) -> tuple[list[str], dict[str, str]]:
+        keys = sorted(key for key in self._message_texts if key.startswith(prefix))
+        labels = {f"{key} — {message_reference.preview(self._message_texts[key], True)}": key for key in keys}
+        return [*labels, message_reference.CREATE_MESSAGE], labels
+
     def _show_record(self, index: Optional[int]) -> None:
         body = self._form.body
         for child in body.winfo_children():
@@ -349,16 +370,62 @@ class Fe10DataEditor(EditorPanel):
             row = len(frame.grid_slaves(column=0))
             ttk.Label(frame, text=d.label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 10))
             var = self._vars[d.key] = tk.StringVar(value=self._text(r.values.get(d.key)))
-            if d.kind == "label":
+            prefix = self._message_prefix(d.key, self._text(r.values.get(d.key))) if d.kind == "label" else None
+            if prefix:
+                values, labels = self._message_values(prefix)
+                widget = ttk.Combobox(frame, textvariable=var, values=values, width=42)
+
+                def chosen(_e, key=d.key, field_var=var, field_prefix=prefix, choices=labels, box=widget):
+                    selected = field_var.get()
+                    if selected == message_reference.CREATE_MESSAGE:
+                        old_id = self._text(self._table(self.kind)[r.index].values.get(key))
+                        field_var.set(old_id)
+                        initial = message_reference.suggested_id(
+                            field_prefix, f"{r.id}_{key}", set(self._message_texts))
+                        dialog = message_reference.NewMessageDialog(self, initial)
+                        if dialog.result is None:
+                            return
+                        name, new_text = dialog.result
+                        if not name.startswith(field_prefix):
+                            messagebox.showerror("Create message", f"ID must start with {field_prefix}.", parent=self)
+                            return
+                        try:
+                            fe10data.patch_field(self._data, self.kind, r.index, key, name)
+                            message_reference.create_message(self._project, name, new_text)
+                        except (OSError, ValueError) as exc:
+                            messagebox.showerror("Create message", str(exc), parent=self)
+                            return
+                        self._message_texts = message_reference.message_texts(self._project)
+                        self._names = read_names(self._project)
+                        self._changelog.append(message_reference.common_path(self._project).name,
+                                               f"Created message {name}")
+                        box.configure(values=self._message_values(field_prefix)[0])
+                        field_var.set(name)
+                    else:
+                        field_var.set(choices.get(selected, selected))
+                    self._apply_field(key, r.index)
+                    self._refresh_list()
+
+                widget.bind("<<ComboboxSelected>>", chosen)
+            elif d.kind == "label":
                 widget = ttk.Combobox(frame, textvariable=var, values=self._choices(d.key), width=34)
                 widget.bind("<<ComboboxSelected>>", lambda _e, k=d.key: self._apply_field(k, r.index))
             else:
                 widget = ttk.Entry(frame, textvariable=var, width=10)
             widget.grid(row=row, column=1, sticky="w", pady=2)
+            if prefix:
+                shown = tk.StringVar()
+                def show_text(*_args, source=var, target=shown):
+                    target.set(fe10_message.plain_text(self._message_texts.get(source.get(), ""))
+                               or ("(message not found)" if source.get() else ""))
+                var.trace_add("write", show_text)
+                show_text()
+                ttk.Label(frame, textvariable=shown, style="Muted.TLabel", wraplength=440,
+                          justify="left").grid(row=row, column=2, sticky="w", padx=(10, 0))
             widget.bind("<FocusOut>", lambda _e, k=d.key: self._apply_field(k, r.index))
             widget.bind("<Return>", lambda _e, k=d.key: self._apply_field(k, r.index))
             note = fe10data.FIELD_NOTES.get(d.key)
-            if note:
+            if note and not prefix:
                 ttk.Label(frame, text=note, style="Muted.TLabel", wraplength=320, justify="left").grid(
                     row=row, column=2, sticky="w", padx=(10, 0))
         for key, title in fe10data.LISTS.get(self.kind, {}).items():

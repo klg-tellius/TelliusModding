@@ -85,6 +85,7 @@ from . import record_actions, theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
+from . import message_reference
 from .widgets import ScrollFrame, TileBrowser
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
@@ -258,7 +259,10 @@ class StatsEditor(EditorPanel):
         if self._texts is None:
             system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
             try:
-                self._texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None and system_cmp.exists() else {}
+                loose = message_reference.common_path(self._project)
+                self._texts = (message_reference.message_texts(self._project) if loose.is_file()
+                               else fe8data.read_message_texts(system_cmp)
+                               if system_cmp is not None and system_cmp.exists() else {})
             except Exception:  # noqa: BLE001 - names are a convenience
                 self._texts = {}
         text = self._texts.get(key, "").strip()
@@ -587,10 +591,71 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text=text, style="Subtitle.TLabel").grid(
             row=row, column=0, columnspan=columns, sticky="w", pady=(14, 4))
 
-    def _pointer_combo(self, parent, prefix: str, width: int = 30) -> tuple[ttk.Combobox, tk.StringVar]:
+    def _pointer_combo(self, parent, prefix: str, width: int = 30,
+                       name_hint: str = "NEW") -> tuple[ttk.Combobox, tk.StringVar]:
         var = tk.StringVar()
         options = sorted(self._labels_by_prefix.get(prefix, {}).keys())
-        return ttk.Combobox(parent, textvariable=var, values=[""] + options, width=width), var
+        if prefix not in {"MJID", "MIID", "MSID", "MH_J", "MH_I", "MH_SKILL", "MT_"}:
+            return ttk.Combobox(parent, textvariable=var, values=[""] + options, width=width), var
+        self._texts = None  # another editor may have changed common.m
+        texts = self._message_texts()
+        labels = {f"{key} — {message_reference.preview(value)}": key
+                  for key, value in sorted(texts.items()) if key.startswith(prefix)}
+        box = ttk.Combobox(parent, textvariable=var, values=["", *labels, message_reference.CREATE_MESSAGE],
+                           width=max(width, 42))
+        last = [""]
+        id_prefix = prefix if prefix.endswith("_") else prefix + "_"
+        def remember(*_args):
+            value = var.get()
+            if value != message_reference.CREATE_MESSAGE:
+                last[0] = labels.get(value, value)
+        var.trace_add("write", remember)
+        def selected(_event):
+            value = var.get()
+            if value == message_reference.CREATE_MESSAGE:
+                var.set(last[0])
+                initial = message_reference.suggested_id(id_prefix, name_hint, set(texts))
+                dialog = message_reference.NewMessageDialog(self, initial)
+                if dialog.result is None:
+                    return "break"
+                name, new_text = dialog.result
+                if not name.startswith(id_prefix):
+                    messagebox.showerror("Create message", f"ID must start with {id_prefix}.", parent=self)
+                    return "break"
+                try:
+                    message_reference.create_message(self._project, name, new_text)
+                except (OSError, ValueError) as exc:
+                    messagebox.showerror("Create message", str(exc), parent=self)
+                    return "break"
+                self._texts = None
+                texts[name] = new_text
+                labels[f"{name} — {message_reference.preview(new_text)}"] = name
+                box.configure(values=["", *labels, message_reference.CREATE_MESSAGE])
+                self._changelog.append(message_reference.common_path(self._project).name,
+                                       f"Created message {name}")
+                var.set(name)
+                self.flush()
+                return "break"
+            var.set(labels.get(value, value))
+        box.bind("<<ComboboxSelected>>", selected)
+        return box, var
+
+    def _message_texts(self) -> dict[str, str]:
+        if self._texts is None:
+            self._text(" ")
+        return self._texts or {}
+
+    def _message_preview(self, parent, var: tk.StringVar, row: int, column: int,
+                         columns: int = 4) -> None:
+        shown = tk.StringVar()
+        def update(*_args):
+            key = var.get()
+            shown.set(self._text(key) or ("(message not found)" if key else ""))
+        var.trace_add("write", update)
+        update()
+        ttk.Label(parent, textvariable=shown, style="Muted.TLabel", wraplength=420,
+                  justify="left").grid(row=row, column=column, columnspan=columns,
+                                       sticky="w", padx=(8, 0))
 
     def _hex_box(self, parent, form: _Form, kind: str, index: int, row: int, columns: int) -> None:
         size = fe8data.RECORD_TABLES[kind][1]
@@ -648,14 +713,16 @@ class StatsEditor(EditorPanel):
         def pointer_row(label: str, field: str, prefix: str, note: str = "", link=None) -> None:
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2)
-            box, var = self._pointer_combo(parent, prefix)
+            box, var = self._pointer_combo(parent, prefix, name_hint=f"{c.jid}_{field}")
             box.grid(row=row, column=1, columnspan=4, sticky="w")
             form.add(box, label, var, lambda: getattr(cls(), field) or "",
                      lambda data, v: patch(data, index, field, _label_or_none(v)))
             if link is not None:
                 ttk.Button(parent, text="Open ›", command=lambda: link(var.get().strip())).grid(
                     row=row, column=5, sticky="w", padx=(6, 0))
-            if note:
+            if prefix in {"MJID", "MH_J"}:
+                self._message_preview(parent, var, row, 6)
+            elif note:
                 ttk.Label(parent, text=note, style="Muted.TLabel").grid(row=row, column=6, columnspan=4, sticky="w",
                                                                         padx=(8, 0))
             row += 1
@@ -817,10 +884,12 @@ class StatsEditor(EditorPanel):
             return var
 
         def pointer(label: str, field: str, prefix: str, field_note: str = "") -> None:
-            box, var = self._pointer_combo(parent, prefix)
+            box, var = self._pointer_combo(parent, prefix, name_hint=f"{it.iid}_{field}")
             form.add(box, label, var, lambda: getattr(item(), field) or "",
                      lambda data, v: patch(data, index, field, _label_or_none(v)))
-            labelled(label, box, field_note)
+            labelled(label, box, "" if prefix in {"MIID", "MH_I"} else field_note)
+            if prefix in {"MIID", "MH_I"}:
+                self._message_preview(parent, var, row - 1, 5, columns - 5)
 
         def choice(label: str, field: str, options: list, field_note: str = "") -> None:
             shown = {token: text for token, text in options}
@@ -970,7 +1039,7 @@ class StatsEditor(EditorPanel):
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1)
             if prefix:
-                widget, var = self._pointer_combo(parent, prefix)
+                widget, var = self._pointer_combo(parent, prefix, name_hint=f"{s.sid}_{field}")
             else:
                 var = tk.StringVar()
                 widget = ttk.Entry(parent, textvariable=var, width=32)
@@ -978,7 +1047,9 @@ class StatsEditor(EditorPanel):
             form.add(widget, label, var, lambda: getattr(skill(), field) or "",
                      lambda data, v: fe8data.patch_skill_field(data, index, field, v.strip() if field == "sid"
                                                                else _label_or_none(v)))
-            if note:
+            if prefix == "MSID":
+                self._message_preview(parent, var, row, 5, 1)
+            elif note:
                 ttk.Label(parent, text=note, style="Muted.TLabel").grid(row=row, column=5, sticky="w", padx=(8, 0))
             row += 1
 
@@ -1095,11 +1166,11 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text="map tiles name their terrain by this string: rename it in the maps too",
                   style="Muted.TLabel").grid(row=4, column=4, columnspan=4, sticky="w", padx=(8, 0), pady=(10, 1))
         ttk.Label(parent, text="Display name key").grid(row=5, column=0, sticky="w", pady=1)
-        key_var = tk.StringVar()
-        key_entry = ttk.Entry(parent, textvariable=key_var, width=24)
-        key_entry.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
-        form.add(key_entry, "Terrain name key", key_var, lambda: current().name_key,
+        key_box, key_var = self._pointer_combo(parent, "MT_", name_hint=t.name)
+        key_box.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
+        form.add(key_box, "Terrain name key", key_var, lambda: current().name_key,
                  lambda data, v: fe8data.patch_terrain_names(data, index, name_key=v))
+        self._message_preview(parent, key_var, 5, 4)
 
         def byte_apply(position: int, low: int, high: int):
             def apply(data: bytes, value: str) -> bytes:

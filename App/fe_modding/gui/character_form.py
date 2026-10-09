@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
 from ..formats import fe8data
-from . import record_actions
+from . import record_actions, message_reference
 from .fe8_session import Fe8DataSession
 
 POINTER_FIELDS = ["pid", "mpid", "fid", "jid", "sid0", "sid1", "sid2", "aid_unpromoted", "aid_promoted",
@@ -34,7 +34,7 @@ class CharacterForm(ttk.Frame):
         self._session = session
         self._on_open_class = on_open_class
         self._on_open_character = on_open_character  # a PID, or None for the character list
-        self._project = project
+        self._project = project or session.project
         self._index: Optional[int] = None
         self._vars: dict[str, tk.StringVar] = {}
         session.subscribe(self._on_session_changed)
@@ -149,7 +149,51 @@ class CharacterForm(ttk.Frame):
         ttk.Label(parent, text=label, style="Surface.TLabel").grid(row=row, column=0, sticky="w", pady=2, padx=(0, 8))
         var = tk.StringVar(value=value or "")
         options = sorted(self._session.labels_by_prefix.get(prefix, {}).keys())
-        ttk.Combobox(parent, textvariable=var, values=[""] + options, width=26).grid(row=row, column=1, sticky="w")
+        if field == "mpid":
+            texts = message_reference.message_texts(self._project)
+            labels = {f"{key} — {message_reference.preview(text)}": key
+                      for key, text in sorted(texts.items()) if key.startswith("MPID")}
+            box = ttk.Combobox(parent, textvariable=var,
+                               values=["", *labels, message_reference.CREATE_MESSAGE], width=42)
+            shown = tk.StringVar()
+            def update(*_args):
+                key = labels.get(var.get(), var.get())
+                shown.set(texts.get(key, "") or ("(message not found)" if key else ""))
+            var.trace_add("write", update)
+            update()
+            ttk.Label(parent, textvariable=shown, style="SurfaceCaption.TLabel", wraplength=300,
+                      justify="left").grid(row=row, column=2, sticky="w", padx=(6, 0))
+            def chosen(_event):
+                selected = var.get()
+                if selected != message_reference.CREATE_MESSAGE:
+                    var.set(labels.get(selected, selected))
+                    return
+                var.set(self._session.fe8.characters[self._index].mpid or "")
+                initial = message_reference.suggested_id(
+                    "MPID_", self._session.fe8.characters[self._index].pid or "NEW", set(texts))
+                dialog = message_reference.NewMessageDialog(self, initial)
+                if dialog.result is None:
+                    return
+                name, text = dialog.result
+                if not name.startswith("MPID_"):
+                    messagebox.showerror("Create message", "ID must start with MPID_.", parent=self)
+                    return
+                try:
+                    data = fe8data.patch_character_field(self._session.data, self._index, "mpid", name)
+                    message_reference.create_message(self._project, name, text)
+                except (OSError, ValueError) as exc:
+                    messagebox.showerror("Create message", str(exc), parent=self)
+                    return
+                self._session.data = data
+                self._session.changed(self)
+                texts[name] = text
+                labels[f"{name} — {message_reference.preview(text)}"] = name
+                box.configure(values=["", *labels, message_reference.CREATE_MESSAGE])
+                var.set(name)
+            box.bind("<<ComboboxSelected>>", chosen)
+        else:
+            box = ttk.Combobox(parent, textvariable=var, values=[""] + options, width=26)
+        box.grid(row=row, column=1, sticky="w")
         self._vars[field] = var
 
     def _entry(self, parent, row: int, column: int, field: str, value, width: int) -> None:
