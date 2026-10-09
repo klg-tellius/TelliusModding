@@ -1948,14 +1948,14 @@ def read_battle_skies(data: bytes) -> list[Optional[str]]:
 @dataclass
 class BattleTerrainRow:
     map_name: Optional[str]  # the map this row applies to ("bmap01"); row 0 is the default
-    scenes: list  # one battle-scene map name per terrain type (77), None = use row 0's
+    scenes: list  # one battle-scene name per terrain type (77); None uses this row's first entry
 
 
 def read_battle_terrain(data: bytes) -> list[BattleTerrainRow]:
     """``BattleTerrData``: u16 column count (the 77 terrain types), u16 row
     count, then per row a map name and one battle-scene name per terrain
     type. ``get_battle_terrain_scene_name`` finds the row by the current map's
-    name and falls back to row 0's entry for a null one."""
+    name (or row 0 if absent); a null terrain entry uses that row's first entry."""
     start = _section_start(data, "BattleTerrData")
     if start is None:
         return []
@@ -2079,8 +2079,8 @@ def write_battle_skies(data: bytes, names: list[Optional[str]]) -> bytes:
 
 
 def write_battle_terrain(data: bytes, rows: list[BattleTerrainRow]) -> bytes:
-    """Rebuild ``BattleTerrData``. Row 0 is the default the others fall back
-    to; the rest are found by map name, so any row can be added or removed."""
+    """Rebuild ``BattleTerrData``. Row 0 is used for maps without a row;
+    the rest are found by map name, so any row can be added or removed."""
     start = section_start(data, "BattleTerrData")
     columns, old_rows = struct.unpack_from(">HH", data, start)
     old_end = start + 4 + old_rows * (columns + 1) * 4
