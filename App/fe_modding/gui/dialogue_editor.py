@@ -33,6 +33,7 @@ from .conversation_preview import ConversationPreview
 from . import theme
 from .editor_panel import EditorPanel
 from .scene_editor import DialogueStage, background_names, layout_labels
+from .layout_examples import LayoutExamples
 
 SCRIPT_SOURCES_DIR = "script_sources"  # ScriptEditor's .fe9s sidecar folder
 
@@ -183,6 +184,8 @@ class DialogueEditor(EditorPanel):
                 row, textvariable=self._scene_layout_choice, width=18,
                 postcommand=self._refresh_scene_choices)
             self._scene_layout_box.pack(side="left")
+            ttk.Button(row, text="Examples…", command=self._show_layout_examples).pack(
+                side="left", padx=(4, 0))
             for event in ("<<ComboboxSelected>>", "<Return>", "<FocusOut>"):
                 self._scene_layout_box.bind(event, lambda _e: self._set_scene_action("Layout"), add="+")
         row = ttk.Frame(parent)
@@ -215,6 +218,14 @@ class DialogueEditor(EditorPanel):
             return
         self._scene_layout_box.configure(values=layout_labels(assets))
         self._scene_background_box.configure(values=background_names(assets))
+
+    def _show_layout_examples(self):
+        assets = self._preview.assets
+        if assets is None:
+            messagebox.showinfo("Layout examples", "Conversation assets are not available yet.", parent=self)
+            return
+        LayoutExamples(self, assets, self._scene_layout_choice.get(),
+                       self._scene_background_choice.get())
 
     def _search_scene_background(self):
         if self._scene is None:
