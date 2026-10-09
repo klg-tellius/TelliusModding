@@ -404,8 +404,8 @@ class StatsEditor(EditorPanel):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
-        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
-        ttk.Button(top, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
+        self._excel_export_button = ttk.Button(top, text="Export Excel…", command=self._export_excel)
+        self._excel_import_button = ttk.Button(top, text="Import Excel…", command=self._import_excel)
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
         ttk.Label(top, text="Fields apply when you leave them; the build copies the saved file into system.cmp.",
@@ -413,7 +413,7 @@ class StatsEditor(EditorPanel):
 
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=8)
-        self._notebook.bind("<<NotebookTabChanged>>", lambda e: self.flush(), add="+")
+        self._notebook.bind("<<NotebookTabChanged>>", lambda e: (self.flush(), self._sync_excel_buttons()), add="+")
         for key, title, noun in (("classes", "Classes", "classes"), ("items", "Items", "items"),
                                  ("skills", "Skills", "skills"), ("terrain", "Terrain", "terrain types"),
                                  ("chapters", "Chapters", "chapters"), ("general", "General", "")):
@@ -1322,7 +1322,20 @@ class StatsEditor(EditorPanel):
                   style="Muted.TLabel").grid(row=row, column=0, columnspan=columns, sticky="w")
 
     def _excel_only(self) -> str | None:
-        return 'Items' if self._notebook.index(self._notebook.select()) == TAB_KEYS.index('items') else None
+        tab = self._notebook.select()
+        if not tab:
+            return None
+        index = self._notebook.index(tab)
+        return {TAB_KEYS.index("items"): "Items", TAB_KEYS.index("terrain"): "Terrain"}.get(index)
+
+    def _sync_excel_buttons(self) -> None:
+        if self._excel_only() is None:
+            self._excel_export_button.pack_forget()
+            self._excel_import_button.pack_forget()
+        else:
+            if not self._excel_export_button.winfo_manager():
+                self._excel_export_button.pack(side="left", padx=(12, 0))
+                self._excel_import_button.pack(side="left", padx=(6, 0))
 
     # -- save/revert ---------------------------------------------------------
     def _save(self) -> None:
@@ -1335,21 +1348,29 @@ class StatsEditor(EditorPanel):
         self._status_label.config(text=f"Saved {self._path.name}", style="Muted.TLabel")
 
     def _export_excel(self) -> None:
-        path = filedialog.asksaveasfilename(parent=self, title="Export FE8 data", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        only = self._excel_only()
+        if only is None:
+            return
+        self.flush()
+        path = filedialog.asksaveasfilename(parent=self, title=f"Export {only.lower()}", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            excel_io.export_fe8(path, self._data, only=self._excel_only())
+            excel_io.export_fe8(path, self._data, only=only)
             self._status_label.config(text=f"Exported {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
 
     def _import_excel(self) -> None:
-        path = filedialog.askopenfilename(parent=self, title="Import FE8 data", filetypes=(("Excel workbook", "*.xlsx"),))
+        only = self._excel_only()
+        if only is None:
+            return
+        self.flush()
+        path = filedialog.askopenfilename(parent=self, title=f"Import {only.lower()}", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            data, _docs, errors = excel_io.import_fe8(path, self._data, only=self._excel_only())
+            data, _docs, errors = excel_io.import_fe8(path, self._data, only=only)
             if errors:
                 messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
                 return
@@ -1440,7 +1461,7 @@ class ChapterRecordPanel(StatsEditor):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
-        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
+
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
         if self._navigate is not None:
