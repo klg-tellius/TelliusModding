@@ -595,7 +595,7 @@ class StatsEditor(EditorPanel):
                        name_hint: str = "NEW") -> tuple[ttk.Combobox, tk.StringVar]:
         var = tk.StringVar()
         options = sorted(self._labels_by_prefix.get(prefix, {}).keys())
-        if prefix not in {"MJID", "MIID", "MSID", "MH_J", "MH_I", "MH_SKILL"}:
+        if prefix not in {"MJID", "MIID", "MSID", "MH_J", "MH_I", "MH_SKILL", "MT_"}:
             return ttk.Combobox(parent, textvariable=var, values=[""] + options, width=width), var
         self._texts = None  # another editor may have changed common.m
         texts = self._message_texts()
@@ -604,6 +604,7 @@ class StatsEditor(EditorPanel):
         box = ttk.Combobox(parent, textvariable=var, values=["", *labels, message_reference.CREATE_MESSAGE],
                            width=max(width, 42))
         last = [""]
+        id_prefix = prefix if prefix.endswith("_") else prefix + "_"
         def remember(*_args):
             value = var.get()
             if value != message_reference.CREATE_MESSAGE:
@@ -613,13 +614,13 @@ class StatsEditor(EditorPanel):
             value = var.get()
             if value == message_reference.CREATE_MESSAGE:
                 var.set(last[0])
-                initial = message_reference.suggested_id(prefix + "_", name_hint, set(texts))
+                initial = message_reference.suggested_id(id_prefix, name_hint, set(texts))
                 dialog = message_reference.NewMessageDialog(self, initial)
                 if dialog.result is None:
                     return "break"
                 name, new_text = dialog.result
-                if not name.startswith(prefix + "_"):
-                    messagebox.showerror("Create message", f"ID must start with {prefix}_.", parent=self)
+                if not name.startswith(id_prefix):
+                    messagebox.showerror("Create message", f"ID must start with {id_prefix}.", parent=self)
                     return "break"
                 try:
                     message_reference.create_message(self._project, name, new_text)
@@ -1165,11 +1166,11 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text="map tiles name their terrain by this string: rename it in the maps too",
                   style="Muted.TLabel").grid(row=4, column=4, columnspan=4, sticky="w", padx=(8, 0), pady=(10, 1))
         ttk.Label(parent, text="Display name key").grid(row=5, column=0, sticky="w", pady=1)
-        key_var = tk.StringVar()
-        key_entry = ttk.Entry(parent, textvariable=key_var, width=24)
-        key_entry.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
-        form.add(key_entry, "Terrain name key", key_var, lambda: current().name_key,
+        key_box, key_var = self._pointer_combo(parent, "MT_", name_hint=t.name)
+        key_box.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
+        form.add(key_box, "Terrain name key", key_var, lambda: current().name_key,
                  lambda data, v: fe8data.patch_terrain_names(data, index, name_key=v))
+        self._message_preview(parent, key_var, 5, 4)
 
         def byte_apply(position: int, low: int, high: int):
             def apply(data: bytes, value: str) -> bytes:
