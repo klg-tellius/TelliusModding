@@ -204,6 +204,8 @@ class SceneEditor(ttk.Frame):
         self._playing = None
         self._form_step = None
         self._stage_after = None
+        self._tile_widgets = {}
+        self._stage_structure = None
         self.on_change = None           # (text) -> None
         self.on_step_selected = None    # (end_offset) -> None, preview shows the scene before it
 
@@ -688,10 +690,10 @@ class SceneEditor(ttk.Frame):
         if self._stage_after is not None:
             self.after_cancel(self._stage_after)
             self._stage_after = None
-        for child in self._tiles.winfo_children():
-            child.destroy()
         scene = self._scene_at_selection()
         if scene is None:
+            self._clear_tiles()
+            self._stage_structure = None
             self._stage_info.configure(text="Scene could not be evaluated")
             return
         assets = self._get_assets()
@@ -702,12 +704,48 @@ class SceneEditor(ttk.Frame):
         box_style = self._box_style(scene.layout)
         self._stage_info.configure(text=f"Layout {ms.layout_label(scene.layout) if scene.layout else '—'}   ·   Background {scene.background or '—'}"
                                         f"   ·   {'box style ($c/$s/$d)' if box_style else 'seat style ($F)'}")
+        structure = (scene.layout, count, box_style)
+        if structure != self._stage_structure:
+            self._clear_tiles()
+            self._stage_structure = structure
         if count == 0:
-            ttk.Label(self._tiles, text="This layout has no portrait seats.").pack(side="left")
+            if not self._tile_widgets:
+                label = ttk.Label(self._tiles, text="This layout has no portrait seats.")
+                label.pack(side="left")
+                self._tile_widgets[-1] = label
             return
         for seat in range(count):
-            self._tile(seat, scene, assets, box_style)
+            self._update_tile(seat, scene, assets, box_style)
 
+    def _clear_tiles(self) -> None:
+        for child in self._tiles.winfo_children():
+            child.destroy()
+        self._tile_widgets.clear()
+
+    def _update_tile(self, seat, scene, assets, box_style) -> None:
+        portrait = scene.portraits[seat]
+        speaking = scene.speaker_seat == seat
+        widgets = self._tile_widgets.get(seat)
+        if widgets is None:
+            self._tile(seat, scene, assets, box_style)
+            return
+        frame, picture, caption = widgets
+        background = theme.color("highlight" if speaking else "surface")
+        frame.configure(background=background, relief="solid" if speaking else "groove")
+        picture.configure(background=background)
+        caption.configure(
+            background=background,
+            text=f"{'Box' if box_style else 'Seat'} {seat}\n"
+                 f"{(display_name(assets, portrait.fid) or _short(portrait.fid)) if portrait.fid else 'empty'}",
+        )
+        image = None
+        if portrait.fid and assets is not None:
+            try:
+                image = self._thumbs.portrait(assets, portrait.fid)
+            except (ValueError, OSError, IndexError, KeyError):
+                pass
+        picture.configure(image=image or "", text="" if image else ("?" if portrait.fid else "+"))
+        picture.image = image
     def _paint_tree_tags(self) -> None:
         self._tree.tag_configure("start", foreground=theme.color("muted"), background=theme.color("surface_alt"))
         self._tree.tag_configure("undecoded", foreground=theme.color("warn"))
@@ -738,6 +776,7 @@ class SceneEditor(ttk.Frame):
         for widget in (frame, picture, caption):
             widget.bind("<Button-1>", lambda e, s=seat: self._seat_clicked(s, box_style))
             widget.bind("<Button-3>", lambda e, s=seat, p=portrait: self._seat_menu(e, s, p, box_style))
+        self._tile_widgets[seat] = (frame, picture, caption)
 
     def _load_step(self, seat, fid, box_style):
         if box_style and seat < 4:
@@ -790,6 +829,8 @@ class DialogueStage(SceneEditor):
         self._thumbs = _Thumbnails()
         self._timeline_cache = None
         self._stage_after = None
+        self._tile_widgets = {}
+        self._stage_structure = None
         self._source = ''
         self._offset = 0
         self.enabled = False

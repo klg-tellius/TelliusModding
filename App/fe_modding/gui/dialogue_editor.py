@@ -12,7 +12,7 @@ added, renamed and deleted freely; a new message plays only once a script
 calls its ID.
 
 The message is picked in the Message ID box and edited as readable text with
-framed actions. The right-hand seat panel and playback share byte/source maps
+highlighted actions. The right-hand seat panel and playback share byte/source maps
 with the editor; the on-disc message dialect remains unchanged."""
 
 from __future__ import annotations
@@ -121,14 +121,9 @@ class DialogueEditor(EditorPanel):
         self._text_widget = tk.Text(editor, wrap="word", height=18, undo=True,
                                     autoseparators=True, maxundo=-1, exportselection=False, padx=8, pady=8)
         scroll = ttk.Scrollbar(editor, command=self._text_widget.yview)
-        self._line_numbers = tk.Canvas(editor, width=44, highlightthickness=0,
-                                        background=theme.color("surface_alt"))
-        self._line_numbers.pack(side="left", fill="y")
         def scrolled(first, last):
             scroll.set(first, last)
-            self._draw_line_numbers()
         self._text_widget.configure(yscrollcommand=scrolled)
-        self._text_widget.bind("<Configure>", lambda e: self._draw_line_numbers())
         scroll.pack(side="right", fill="y")
         self._text_widget.pack(side="left", fill="both", expand=True)
         self._text_widget.bind("<<Modified>>", self._on_text_modified)
@@ -146,7 +141,7 @@ class DialogueEditor(EditorPanel):
         self._text_widget.tag_configure("find", background=theme.color("highlight"))
         self._notation_error = ttk.Label(left, text="", style="Danger.TLabel", wraplength=600)
         self._notation_error.pack(anchor="w")
-        ttk.Label(left, text="Write dialogue directly. Framed <actions> can be typed, inserted with buttons, "
+        ttk.Label(left, text="Write dialogue directly. Highlighted <actions> can be typed, inserted with buttons, "
                   "or double-clicked to edit. Pause power n waits 2^n frames.\n"
                   "Import/export uses UTF-8 text for this message. Literal < and >: <Bytes:3C> / <Bytes:3E>.",
                   style="Muted.TLabel", wraplength=600, justify="left").pack(anchor="w", pady=(4, 0))
@@ -165,34 +160,9 @@ class DialogueEditor(EditorPanel):
         self._editing_enabled(False)
 
     def _refresh_editor_colors(self):
-        self._line_numbers.configure(background=theme.color("surface_alt"))
-        for tag in self._text_widget.tag_names():
-            if tag.startswith("action_frame_"):
-                self._text_widget.tag_configure(tag, background=theme.color("surface_alt"))
         self._text_widget.tag_configure("playback_position", background=theme.color("highlight"), foreground=theme.color("fg"))
         self._text_widget.tag_configure("find", background=theme.color("highlight"))
         self._text_widget.tag_configure("notation_error", foreground=theme.color("danger"))
-        self._draw_line_numbers()
-
-    def _draw_line_numbers(self):
-        canvas, widget = self._line_numbers, self._text_widget
-        canvas.delete("all")
-        index = widget.index("@0,0")
-        last_line = None
-        while True:
-            info = widget.dlineinfo(index)
-            if info is None:
-                break
-            line = index.split(".")[0]
-            if line != last_line:
-                canvas.create_text(38, info[1], text=line, anchor="ne",
-                                   fill=theme.color("muted"), font=widget.cget("font"))
-                last_line = line
-            next_index = widget.index(f"{index}+1 display lines")
-            if widget.compare(next_index, "<=", index):
-                break
-            index = next_index
-
     def _build_toolbar(self, parent):
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=(0, 4))
@@ -236,12 +206,9 @@ class DialogueEditor(EditorPanel):
         for tag in self._text_widget.tag_names():
             if tag.startswith('action_frame_'):
                 self._text_widget.tag_delete(tag)
-        for i, match in enumerate(notation.TAG.finditer(text)):
+        for match in notation.TAG.finditer(text):
             start, end = f'1.0+{match.start()}c', f'1.0+{match.end()}c'
             self._text_widget.tag_add('action', start, end)
-            frame = f'action_frame_{i}'
-            self._text_widget.tag_configure(frame, relief='solid', borderwidth=1, background=theme.color('surface_alt'))
-            self._text_widget.tag_add(frame, start, end)
         self._text_widget.tag_raise('sel')
         try:
             self._document = notation.parse(text, self._fe10)
@@ -670,7 +637,6 @@ class DialogueEditor(EditorPanel):
         if index is None:
             return
         self._mark_dirty()
-        self._draw_line_numbers()
         if not self._parse_editor():
             self._drafts[self._messages[index].speaker] = self._text_widget.get("1.0", "end-1c")
             return
