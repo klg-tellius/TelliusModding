@@ -591,11 +591,13 @@ class Map3DWindow(_Window):
 
     def __init__(self, builder) -> None:
         super().__init__(builder, "3D view", "1100x760")
+        self.resizable(True, True)
+        self.minsize(700, 500)
         bar = ttk.Frame(self, padding=(8, 8, 8, 4))
         bar.pack(fill="x")
         ttk.Button(bar, text="Re-render", command=lambda: self._request(0)).pack(side="left")
-        self._auto = tk.BooleanVar(value=True)
-        ttk.Checkbutton(bar, text="Update after each edit", variable=self._auto).pack(side="left", padx=(10, 0))
+        ttk.Button(bar, text="Top Down", command=lambda: self._preview._top_down_view()).pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Reset View", command=lambda: self._preview._reset_view()).pack(side="left", padx=(4, 0))
         self._status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._status.pack(side="left", padx=(12, 0))
         self._preview = _ModelPreview(self, mesh_only=True)
@@ -605,10 +607,7 @@ class Map3DWindow(_Window):
         self._request(0)
 
     def _map_changed(self) -> None:
-        if self._auto.get():
-            self._request(self.DELAY_MS)
-        else:
-            self._status.configure(text="The map changed: Re-render to update.")
+        self._request(self.DELAY_MS)
 
     def _request(self, delay: int) -> None:
         if self._after is not None:

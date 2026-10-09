@@ -490,15 +490,15 @@ class MapBuilder(EditorPanel):
         self._redo_button.pack(side="left", padx=(4, 0))
 
         self._variant_var = tk.StringVar()
-        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=12)
-        self._variant_combo.pack(side="left")
+        self._variant_combo = ttk.Combobox(top, textvariable=self._variant_var, state="readonly", width=9)
+        self._variant_combo.pack(side="left", padx=(8, 0))
         self._variant_combo.bind("<<ComboboxSelected>>", lambda e: self._variant_changed())
 
         self._filter_var = tk.StringVar(value="All sections")
         self._filter_combo = ttk.Combobox(top, textvariable=self._filter_var, state="readonly", width=18)
         self._filter_combo.pack(side="left")
         self._filter_combo.bind("<<ComboboxSelected>>", lambda e: self._filter_changed())
-        ttk.Button(top, text="Add section...", command=self._add_section).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Add section", command=self._add_section).pack(side="left", padx=(6, 0))
         self._remove_section_button = ttk.Button(top, text="Remove section", command=self._remove_section,
                                                  state="disabled")
         self._remove_section_button.pack(side="left", padx=(4, 0))
@@ -530,10 +530,10 @@ class MapBuilder(EditorPanel):
             var = tk.BooleanVar(value=key not in ("terrain", "heights"))
             self._layer_vars[key] = var
             ttk.Checkbutton(view, text=text, variable=var, command=self._layers_changed).pack(side="left", padx=(0, 6))
-        ttk.Button(view, text="−", width=3, command=lambda: self._canvas.zoom(1 / 1.25)).pack(side="left", padx=(8, 0))
-        ttk.Button(view, text="+", width=3, command=lambda: self._canvas.zoom(1.25)).pack(side="left", padx=(2, 0))
-        ttk.Button(view, text="Re-render", command=lambda: self._request_render(0)).pack(side="left", padx=(8, 0))
-        ttk.Button(view, text="3D view...", command=self.open_3d).pack(side="left", padx=(4, 0))
+
+
+
+
         xbar.pack(side="bottom", fill="x")
         ybar.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -553,22 +553,68 @@ class MapBuilder(EditorPanel):
         self._canvas.redraw()
 
     def _build_toolbar(self, parent) -> None:
-        toolbar = ttk.Frame(parent, padding=(4, 4, 4, 4))
+        style = ttk.Style(self)
+        style.configure("BuildToolbar.TButton", padding=(1, 1), width=3,
+                        font=("Segoe UI Symbol", 10))
+        style.configure("BuildToolbarActive.TButton", padding=(1, 1), width=3,
+                        relief="sunken", font=("Segoe UI Symbol", 10))
+        style.configure("BuildToolbarAction.TButton", padding=(1, 1), width=3,
+                        font=("Segoe UI Symbol", 10))
+        toolbar = ttk.Frame(parent, padding=(3, 3, 3, 3), width=34)
         toolbar.pack(side="left", fill="y")
+        toolbar.pack_propagate(False)
         self._tool = tk.StringVar(value="select")
         self._tool_buttons = {}
-        for key, text, icon in (("select", "Select / move", "⌖"), ("terrain", "Paint terrain", "▦"),
-                                ("prop", "Place prop", "◆"), ("heights", "Tile heights", "⌗"),
-                                ("unit", "Place unit", "♙"), ("zone", "Script zones", "⌘")):
-            button = ttk.Button(toolbar, text=icon, width=3, command=lambda tool=key: self._choose_tool(tool))
-            button.pack(fill="x", pady=(0, 3))
+        tools = (("select", "Select / move", "↖"), ("terrain", "Paint terrain", "▧"),
+                 ("prop", "Place prop", "⌂"), ("heights", "Tile heights", "⌗"),
+                 ("unit", "Place unit", "♙"), ("zone", "Script function / zone", "fx"))
+        for key, label, icon in tools:
+            button = ttk.Button(toolbar, text=icon,
+                                style="BuildToolbarActive.TButton" if key == "select"
+                                else "BuildToolbar.TButton",
+                                command=lambda tool=key: self._choose_tool(tool))
+            button.pack(fill="x", pady=(0, 2))
             self._tool_buttons[key] = button
-        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(5, 6))
-        ttk.Button(toolbar, text="▤", width=3, command=self.open_objects).pack(fill="x", pady=(0, 3))
-        ttk.Button(toolbar, text="☷", width=3, command=self.open_disposition).pack(fill="x")
-        self._tool_help = ttk.Label(toolbar, text=TOOL_HELP["select"], style="Muted.TLabel", justify="left")
-        self._tool_help.pack(fill="x", pady=(10, 0))
-        toolbar.bind("<Configure>", lambda e: self._tool_help.configure(wraplength=max(1, e.width - 8)))
+            self._bind_toolbar_tooltip(button, label)
+        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(4, 5))
+        for label, icon, command in (("Objects list", "▤", self.open_objects),
+                                     ("Units list", "☷", self.open_disposition)):
+            button = ttk.Button(toolbar, text=icon, style="BuildToolbarAction.TButton",
+                                command=command)
+            button.pack(fill="x", pady=(0, 2))
+            self._bind_toolbar_tooltip(button, label)
+        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(4, 5))
+        for label, icon, command in (("Zoom in", "+", lambda: self._canvas.zoom(1.25)),
+                                     ("Zoom out", "−", lambda: self._canvas.zoom(1 / 1.25)),
+                                     ("Open 3D view", "3D", self.open_3d)):
+            button = ttk.Button(toolbar, text=icon, style="BuildToolbarAction.TButton",
+                                command=command)
+            button.pack(fill="x", pady=(0, 2))
+            self._bind_toolbar_tooltip(button, label)
+
+    def _bind_toolbar_tooltip(self, widget, text: str) -> None:
+        widget.bind("<Enter>", lambda _event: self._show_toolbar_tooltip(widget, text), add="+")
+        widget.bind("<Leave>", lambda _event: self._hide_toolbar_tooltip(), add="+")
+
+    def _show_toolbar_tooltip(self, widget, text: str) -> None:
+        self._hide_toolbar_tooltip()
+        tip = tk.Toplevel(self)
+        tip.overrideredirect(True)
+        tip.attributes("-topmost", True)
+        tk.Label(tip, text=text, background="#303030", foreground="#ffffff",
+                 padx=6, pady=3, font=("Segoe UI", 9)).pack()
+        tip.update_idletasks()
+        tip.geometry(f"+{widget.winfo_rootx() + widget.winfo_width() + 6}+{widget.winfo_rooty()}")
+        self._toolbar_tooltip = tip
+
+    def _hide_toolbar_tooltip(self) -> None:
+        tip = getattr(self, "_toolbar_tooltip", None)
+        if tip is not None:
+            try:
+                tip.destroy()
+            except tk.TclError:
+                pass
+            self._toolbar_tooltip = None
 
     def _choose_tool(self, tool: str) -> None:
         self._tool.set(tool)
@@ -1934,7 +1980,7 @@ class MapBuilder(EditorPanel):
     def _tool_changed(self) -> None:
         tool = self._tool.get()
         for key, button in self._tool_buttons.items():
-            button.configure(style="Accent.TButton" if key == tool else "TButton")
+            button.configure(style="BuildToolbarActive.TButton" if key == tool else "BuildToolbar.TButton")
         if tool == "unit":
             self._prefer_battle_section()
         if tool == "zone":
@@ -1942,7 +1988,6 @@ class MapBuilder(EditorPanel):
             if not self._layer_vars["zones"].get():
                 self._layer_vars["zones"].set(True)
                 self._refresh_canvas()
-        self._tool_help.configure(text=TOOL_HELP[tool])
         for key, frame in self._tool_frames.items():
             if key == tool:
                 frame.pack(anchor="w", fill="x", pady=(0, 10))
@@ -2281,13 +2326,13 @@ class MapBuilder(EditorPanel):
                 picker_widget.bind(sequence, refresh_rules, add="+")
         refresh_rules()
 
-        ttk.Label(body, text="Section", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 2))
+        ttk.Label(body, text="Section", font=("Segoe UI", 10)).pack(anchor="w", pady=(12, 2))
         header_form = dispo_widgets.SectionHeaderFrame(body, dispo.section_header(section), self._deploy.group_keys())
         header_form.pack(anchor="w")
         ttk.Button(body, text="Apply to section", command=lambda: self._apply_section(section_name, header_form)).pack(
             anchor="w", pady=(4, 0))
 
-        ttk.Label(body, text="Difficulties", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 2))
+        ttk.Label(body, text="Difficulties", font=("Segoe UI", 10)).pack(anchor="w", pady=(12, 2))
         ttk.Label(body, text="Tick where the unit exists; level and stat bonuses are per difficulty.",
                   style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w")
         table = ttk.Frame(body)

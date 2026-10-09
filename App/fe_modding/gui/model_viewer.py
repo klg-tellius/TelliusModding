@@ -3876,20 +3876,20 @@ class _ModelPreview(ttk.Frame):
             paned.add(center, weight=3)
         canvas_header = ttk.Frame(center)
         canvas_header.pack(fill="x")
-        ttk.Label(canvas_header, text="Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan", style="Muted.TLabel").pack(side="left")
-        ttk.Button(canvas_header, text="Reset View", command=self._reset_view).pack(side="right")
-        ttk.Button(canvas_header, text="Top Down", command=self._top_down_view).pack(side="right", padx=(0, 8))
+        if not self._mesh_only:
+            ttk.Button(canvas_header, text="Reset View", command=self._reset_view).pack(side="right")
+            ttk.Button(canvas_header, text="Top Down", command=self._top_down_view).pack(side="right", padx=(0, 8))
         self._show_mesh_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header, text="Show mesh", variable=self._show_mesh_var, command=self._on_show_mesh_toggled
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="left", padx=(0, 8))
         self._show_skeleton_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header,
             text="Show skeleton",
             variable=self._show_skeleton_var,
             command=lambda: self._canvas.set_show_skeleton(self._show_skeleton_var.get()),
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="left", padx=(0, 8))
         # Only meaningful once a caller hands over a chapter's placement
         # grid via set_grid() (map_editor.py's "3D Terrain"/"Map View" tabs)
         # - stays disabled (not just unchecked) for an ordinary single-model
@@ -3905,7 +3905,7 @@ class _ModelPreview(ttk.Frame):
             command=self._on_show_grid_toggled,
             state="disabled",
         )
-        self._show_grid_check.pack(side="right", padx=(0, 8))
+        self._show_grid_check.pack(side="left", padx=(0, 8))
         # The *other* grid - MapCapacity.x_size/y_size, the in-game tactical
         # grid - strong evidence, not confirmed the way the placement grid
         # above is (see map_scene.compute_gameplay_grid_overlay()'s own
@@ -3921,13 +3921,17 @@ class _ModelPreview(ttk.Frame):
             command=self._on_show_gameplay_grid_toggled,
             state="disabled",
         )
-        self._show_gameplay_grid_check.pack(side="right", padx=(0, 8))
+        self._show_gameplay_grid_check.pack(side="left", padx=(0, 8))
         self._canvas = _ModelCanvas(center)
         if self._mesh_only:
             self._canvas.top_down_view()
         self._canvas.pack(fill="both", expand=True, pady=(4, 4))
-        self._mesh_info_label = ttk.Label(center, text="", style="Muted.TLabel")
-        self._mesh_info_label.pack(anchor="w")
+        info_row = ttk.Frame(center)
+        info_row.pack(fill="x")
+        self._mesh_info_label = ttk.Label(info_row, text="", style="Muted.TLabel")
+        self._mesh_info_label.pack(side="left")
+        ttk.Label(info_row, text="Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan",
+                  style="Muted.TLabel").pack(side="right")
 
         if self._mesh_only:
             # no Skeleton/Animations notebook - these widgets are created
