@@ -443,7 +443,7 @@ class MapBuilder(EditorPanel):
         self._index_provider = index_provider
         self._session_provider = session_provider
         self._on_navigate_to_character = on_navigate_to_character
-        self.navigate = navigate  # workspace routes, e.g. ("data", "chapters", "3")
+        self.navigate = navigate  # workspace routes, e.g. ("chapter", "03", "map_settings")
         self._script = script_editor
         self._on_open_function = on_open_function
         self._zones_key = None  # (source, zones, parse problem or None), cached per source text

@@ -6,10 +6,10 @@ overview of who is in it, what is said and which script events it has.
 Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
-which one the Build, Settings and Battle scenes tabs show.
+which one the Build, Map settings, Chapter data and Battle scenes tabs show.
 
-The **Settings** tab (``chapter_settings.py``) edits the phase map's lighting,
-fog, grid colour and grid border, and the chapter's Game Data › Chapters record.
+The **Map settings** tab edits the phase map's lighting, fog, grid colour and
+grid border. The **Chapter data** tab edits the chapter's data record.
 
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
@@ -34,7 +34,7 @@ from ...formats.cmb.catalog import TRIGGERS
 from ...game_profile import CHAPTERS, profile_of
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
-from ..chapter_settings import ChapterSettingsPanel
+from ..chapter_settings import ChapterDataPanel, MapSettingsPanel
 from ..deployment_editor import DeploymentEditor
 from ..dialogue_editor import DialogueEditor
 from ..map_builder import MapBuilder
@@ -44,10 +44,11 @@ from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 
-TABS = ["overview", "build", "settings", "dialogue", "script", "shops", "battle"]
+TABS = ["overview", "build", "map_settings", "chapter_data", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
-TAB_ALIASES = {"map": "build", "deployment": "build"}
-TAB_LABELS = {"overview": "Overview", "build": "Build", "settings": "Settings", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
+TAB_ALIASES = {"map": "build", "deployment": "build", "settings": "map_settings"}
+TAB_LABELS = {"overview": "Overview", "build": "Build", "map_settings": "Map settings",
+              "chapter_data": "Chapter data", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
               "battle": "Battle scenes"}
 
 
@@ -364,10 +365,12 @@ class ChapterPage(Page):
         # FE8Data.bin edit), so it isn't one of panels() either.
         self._battle = BattleScenePanel(self._notebook, project, log, session_provider=lambda: shell.session,
                                         map_editor=self._map)
-        # The phase map's settings (through the Build tab) and the chapter's FE8Data.bin record.
-        self._settings = ChapterSettingsPanel(self._notebook, self._build,
-                                              session_provider=lambda: shell.session, navigate=shell.navigate)
-        for key, panel in (("build", self._build), ("settings", self._settings), ("dialogue", self._dialogue),
+        # Map settings use Build's data; chapter data edits the shared FE8Data.bin session.
+        self._map_settings = MapSettingsPanel(self._notebook, self._build)
+        self._chapter_data = ChapterDataPanel(self._notebook, self._build,
+                                              session_provider=lambda: shell.session)
+        for key, panel in (("build", self._build), ("map_settings", self._map_settings),
+                           ("chapter_data", self._chapter_data), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops), ("battle", self._battle)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
@@ -379,7 +382,12 @@ class ChapterPage(Page):
 
     def flush(self) -> None:
         self._battle.flush()
-        self._settings.flush()
+        self._chapter_data.flush()
+
+    def cleanup(self) -> None:
+        self._map_settings.cleanup()
+        self._chapter_data.cleanup()
+        super().cleanup()
 
     def refresh_chapter_lists(self) -> None:
         for panel in self.panels():
@@ -453,6 +461,7 @@ class ChapterPage(Page):
             self._phase_combo.pack_forget()
         self._phase = None
         self._set_phase(phases[0] if phases else None)
+        self._chapter_data.show_chapter(chapter_id, self._phase)
         self._update_header()
         self._render_overview()
         return True
@@ -466,6 +475,8 @@ class ChapterPage(Page):
         self._deployment.select_chapter(deployment)
         self._map.select_chapter(map_cmp)
         self._battle.select_map(folder)
+        if self._chapter is not None:
+            self._chapter_data.show_chapter(self._chapter, folder)
         if self._chapter is not None:
             self._render_overview()
 
@@ -510,7 +521,7 @@ class ChapterPage(Page):
 
     def _on_tab_changed(self) -> None:
         self._battle.flush()
-        self._settings.flush()
+        self._chapter_data.flush()
         self._tab = TABS[self._notebook.index("current")]
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):
