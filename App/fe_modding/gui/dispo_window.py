@@ -80,7 +80,7 @@ class DispositionWindow(_Window):
         self._variant_box = ttk.Combobox(bar, textvariable=self._variant_var, state="readonly", width=32)
         self._variant_box.pack(side="left", padx=(6, 12))
         self._variant_box.bind("<<ComboboxSelected>>", lambda e: self._variant_picked())
-        ttk.Checkbutton(bar, text="Same edit on every difficulty", variable=builder.all_variants_var).pack(side="left")
+
         ttk.Button(bar, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(10, 0))
         ttk.Button(bar, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._file_note = ttk.Label(bar, text="", style="Muted.TLabel")
