@@ -39,6 +39,43 @@ class BattleSceneTests(unittest.TestCase):
         names = bse.scene_names(bse.scene_models(self.project), ROWS)
         self.assertEqual(names, ["castle_in", "map01_plain", "map01_woods"])
 
+    def test_effective_scene_uses_selected_rows_first_terrain_cell(self):
+        rows = [
+            BattleTerrainRow("Map6", ["map02_cliff01", None, "map6_bridge"]),
+            BattleTerrainRow("bmap01", ["map01_woods", None, "map01_castle"]),
+            BattleTerrainRow("empty", [None, None, None]),
+        ]
+        self.assertEqual(bse.effective_scene(rows, "bmap01", 2), "map01_castle")
+        self.assertEqual(bse.effective_scene(rows, "bmap01", 1), "map01_woods")
+        self.assertEqual(bse.effective_scene(rows, "unknown", 2), "map6_bridge")
+        self.assertEqual(bse.effective_scene(rows, "unknown", 1), "map02_cliff01")
+        self.assertIsNone(bse.effective_scene(rows, "empty", 1))
+        self.assertIsNone(bse.effective_scene([BattleTerrainRow("Map6", [None, None])], "unknown", 1))
+        self.assertIsNone(bse.effective_scene([], "bmap01", 1))
+
+    def test_empty_cell_note_names_the_selected_rows_fallback(self):
+        rows = [
+            BattleTerrainRow("Map6", ["map02_cliff01", None]),
+            BattleTerrainRow("bmap01", ["map01_woods", None]),
+        ]
+
+        class Label:
+            def configure(self, **options):
+                self.options = options
+
+        note = Label()
+        panel = SimpleNamespace(
+            _cells={1: (None, note)},
+            _map="bmap01",
+            _scene_models=lambda: {"map01_woods": Path("woods.cmp"),
+                                   "map02_cliff01": Path("cliff.cmp")},
+        )
+        bse.BattleScenePanel._update_note(panel, 1, rows, 1)
+        self.assertEqual(note.options["text"], "first terrain scene: map01_woods")
+        panel._map = "unknown"
+        bse.BattleScenePanel._update_note(panel, 1, rows, None)
+        self.assertEqual(note.options["text"], "first terrain scene: map02_cliff01")
+
     def test_rows_and_users(self):
         self.assertEqual(bse.find_row(ROWS, "bmap02"), 2)
         self.assertEqual(bse.find_row(ROWS, "Map6"), 0)

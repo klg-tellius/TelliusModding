@@ -5,9 +5,9 @@ chapter page's **Battle scenes** tab.
 A row names, for each of the 77 terrain types, the battle scenery drawn
 behind a fight on a tile of that type (``zbg/<name>/``). The game finds the
 row by the current map's name (the ``zmap`` folder, so each phase of a
-chapter has its own) and takes row 0's entry for an empty cell; a map
-without a row uses row 0 entirely. :class:`BattleScenePanel` shows the
-phase's row (or the default one it falls back to), can give the map its own
+chapter has its own) and takes that row's first terrain entry for an empty
+cell; a map without a row uses row 0 (including its first-entry fallback).
+:class:`BattleScenePanel` shows the phase's row (or the default one it falls back to), can give the map its own
 row or drop it, and edits the default row on request. By default it lists
 only the terrain types found on the map, with their tile counts.
 
@@ -91,10 +91,22 @@ def find_row(rows: list[fe8data.BattleTerrainRow], map_name: str) -> Optional[in
     return None
 
 
+def effective_scene(rows: list[fe8data.BattleTerrainRow], map_name: str,
+                    terrain_index: int) -> Optional[str]:
+    """Scene used by the game: map row (or row 0), then that row's first cell."""
+    if not rows:
+        return None
+    index = find_row(rows, map_name)
+    row = rows[index if index is not None else 0]
+    if not 0 <= terrain_index < len(row.scenes):
+        return None
+    return row.scenes[terrain_index] or (row.scenes[0] if row.scenes else None)
+
+
 class BattleSceneBrowser(tk.Toplevel):
     """Every battle scene in a list; selecting one renders it. ``result`` is
     the chosen name after **Use this scene**, ``""`` after the
-    ``clear_label`` button (the cell falls back to the default row), None
+    ``clear_label`` button (the cell falls back to its row's first scene), None
     when closed without a choice. With ``choose=False`` it only shows them."""
 
     def __init__(self, parent: tk.Misc, project: ModProject, names: list[str], current: Optional[str] = None,
@@ -401,22 +413,23 @@ class BattleScenePanel(ttk.Frame):
         default = rows[0]
 
         section_header(body, f"Battle scenes of {self._map}",
-                       "the scenery drawn behind a fight, per terrain type of the tile").pack(fill="x")
+                       "Each terrain uses its scene; an empty cell uses the first scene in that map's row. "
+                       "Maps without a row use the shared first row.").pack(fill="x")
         state = ttk.Frame(body, style="Page.TFrame")
         state.pack(fill="x", pady=(6, 10))
         default_name = default.map_name or "row 0"
         if own == 0:
-            text = "Default battle scenery"
+            text = f"This is the shared first row ({default_name}). Empty cells use its first terrain scene."
         elif own is not None:
-            text = f"Custom battle scenery - empty cells use {default_name}"
+            text = "This map has its own scenery row. Empty cells use this row's first terrain scene."
         elif self._edit_default:
-            text = "Editing default battle scenery"
+            text = f"Editing the shared first row ({default_name}). Empty cells use its first terrain scene."
             ttk.Button(state, text="Stop editing the default row",
                        command=lambda: self._set_edit_default(False)).pack(side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
         else:
-            text = f"Uses default battle scenery - {default_name}"
+            text = f"This map has no scenery row. It uses the shared first row ({default_name})."
             ttk.Button(state, text="Edit the default row", command=lambda: self._set_edit_default(True)).pack(
                 side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
@@ -467,14 +480,16 @@ class BattleScenePanel(ttk.Frame):
                 box.bind("<FocusOut>", lambda e, k=k: self._apply(k))
 
     def _update_note(self, k: int, rows: list[fe8data.BattleTerrainRow], editing: Optional[int]) -> None:
-        var, note = self._cells[k]
-        value = rows[editing].scenes[k] if editing is not None else rows[0].scenes[k]
-        missing = value and find_scene(self._scene_models(), value) is None
-        if editing not in (None, 0) and not value:
-            fallback = rows[0].scenes[k]
-            text = f"default: {fallback}" if fallback else "default: none"
-        elif missing:
-            text = "no zbg folder of that name"
+        _var, note = self._cells[k]
+        row = rows[editing if editing is not None else 0]
+        value = row.scenes[k]
+        chosen = effective_scene(rows, self._map, k)
+        missing = chosen and find_scene(self._scene_models(), chosen) is None
+        if missing:
+            source = "first terrain scene: " if not value else ""
+            text = f"{source}{chosen} (no zbg folder of that name)"
+        elif not value:
+            text = f"first terrain scene: {chosen or 'none'}"
         else:
             text = ""
         note.configure(text=text, style="Danger.TLabel" if missing else "Muted.TLabel")
@@ -508,7 +523,7 @@ class BattleScenePanel(ttk.Frame):
             return
         rows[editing].scenes[k] = value
         who = rows[editing].map_name or f"row {editing}"
-        self._write(rows, f"Battle scene of {who}, terrain type {k}: {value or '(default)'}")
+        self._write(rows, f"Battle scene of {who}, terrain type {k}: {value or '(first terrain scene)'}")
         var.set(value or "")
         self._update_note(k, rows, editing)
         self._update_status()
@@ -516,14 +531,16 @@ class BattleScenePanel(ttk.Frame):
     def _browse(self, k: int) -> None:
         rows = self._rows()
         editing = self._editing_row(rows)
-        row = rows[editing if editing is not None else 0]
-        current = row.scenes[k] or (rows[0].scenes[k] if editing not in (None, 0) else None)
+        current = effective_scene(rows, self._map, k)
+        first = rows[editing].scenes[0] if editing is not None else None
+        clear_label = (f"Use first terrain scene ({first})" if first else "Clear cell (no scene)") if (
+            editing is not None and k != 0) else None
         labels, _keys = self._terrain_names(self._session())
         terrain = labels[k] if k < len(labels) else str(k)
         dialog = BattleSceneBrowser(
             self, self._project, scene_names(self._scene_models(), rows), current, scene_users(rows),
             title=f"Battle scene of {self._map}: {terrain}" if editing is not None else "Battle scenes",
-            clear_label="Use the default row's" if editing not in (None, 0) else None, choose=editing is not None)
+            clear_label=clear_label, choose=editing is not None)
         if editing is None:
             return  # browsing only: this map has no row to write to
         self.wait_window(dialog)
