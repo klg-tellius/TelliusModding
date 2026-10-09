@@ -24,10 +24,11 @@ other files, level stays per file."""
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 from ..formats import dispo
+from .. import excel_io
 from . import dispo_widgets
 from .map_builder import F, _LabelPicker
 from .map_windows import _Window
@@ -80,6 +81,8 @@ class DispositionWindow(_Window):
         self._variant_box.pack(side="left", padx=(6, 12))
         self._variant_box.bind("<<ComboboxSelected>>", lambda e: self._variant_picked())
         ttk.Checkbutton(bar, text="Same edit on every difficulty", variable=builder.all_variants_var).pack(side="left")
+        ttk.Button(bar, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(10, 0))
+        ttk.Button(bar, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._file_note = ttk.Label(bar, text="", style="Muted.TLabel")
         self._file_note.pack(side="right")
 
@@ -142,6 +145,38 @@ class DispositionWindow(_Window):
         self.units_changed()
         self.show_unit(builder.selected_unit())
 
+    def _export_excel(self) -> None:
+        docs = {variant: self.builder.document(variant) for variant in self.builder.variants()}
+        docs = {variant: doc for variant, doc in docs.items() if doc is not None}
+        if not docs:
+            messagebox.showinfo("Export Excel", "No deployment data is loaded.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Export disposition", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe8(path, b"", docs)
+        except Exception as exc:
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        docs = {variant: self.builder.document(variant) for variant in self.builder.variants()}
+        docs = {variant: doc for variant, doc in docs.items() if doc is not None}
+        if not docs:
+            messagebox.showinfo("Import Excel", "No deployment data is loaded.", parent=self)
+            return
+        path = filedialog.askopenfilename(parent=self, title="Import disposition", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            _data, imported, errors = excel_io.import_fe8(path, b"", docs)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            self.builder._deploy.apply(lambda _docs: None, "Imported deployment", variants=list(imported or docs))
+            self.units_changed()
+        except Exception as exc:
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
     # -- data ----------------------------------------------------------------------------
     def _variant(self) -> Optional[str]:
         return self.builder.current_variant()

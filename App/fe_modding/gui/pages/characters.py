@@ -12,10 +12,11 @@ included.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from ...game_profile import GAME_DATA
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
+from ... import excel_io
 from .. import record_actions
 from ..character_form import CharacterForm
 from ..shell import Page, plain_text
@@ -37,6 +38,8 @@ class CharactersHub(Page):
         top.pack(fill="x")
         ttk.Label(top, text="Characters", style="Title.TLabel").pack(side="left")
         ttk.Button(top, text="New character…", command=self._new_character).pack(side="left", padx=(16, 0))
+        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._query = tk.StringVar()
         ttk.Entry(top, textvariable=self._query, width=30).pack(side="right")
         ttk.Label(top, text="Search name or PID", style="Muted.TLabel").pack(side="right", padx=(0, 8))
@@ -62,6 +65,36 @@ class CharactersHub(Page):
     def crumbs(self, route):
         return [("Characters", None)]
 
+    def _export_excel(self) -> None:
+        session = self.shell.session
+        if not session.available:
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Export characters and items", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe8(path, session.data)
+        except Exception as exc:
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        session = self.shell.session
+        if not session.available:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Import characters and items", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            data, _docs, errors = excel_io.import_fe8(path, session.data)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            session.data = data
+            session.changed(self)
+            self._built_for = None
+            self._build()
+        except Exception as exc:
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
     def _new_character(self) -> None:
         session = self.shell.session
         if session.fe8 is None:
