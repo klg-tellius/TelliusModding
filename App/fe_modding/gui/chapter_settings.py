@@ -54,7 +54,7 @@ class ChapterDataPanel(ttk.Frame):
         session = session_provider()
         if session.available:
             self._chapter_record = ChapterRecordPanel(
-                scroll.body, builder.project, builder.changelog, session)
+                scroll.body, builder.project, builder.changelog, session, navigate=builder.navigate)
             self._chapter_record.pack(fill="x", anchor="w")
         else:
             ttk.Label(scroll.body, text=session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")

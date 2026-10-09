@@ -1186,7 +1186,7 @@ class StatsEditor(EditorPanel):
         row = 0
 
         def text_row(label: str, field: str, read: Callable[[], Optional[str]], note: str = "",
-                     prefix: Optional[str] = None) -> None:
+                     prefix: Optional[str] = None, asset: Optional[str] = None) -> None:
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1, padx=(0, 10))
             if prefix:
@@ -1198,6 +1198,12 @@ class StatsEditor(EditorPanel):
             form.add(widget, label, var, lambda: read() or "", lambda data, v: patch(data, index, field, v))
             if prefix:
                 self._message_preview(parent, var, row, 4, columns - 4)
+            elif asset and self._navigate is not None:
+                link = ttk.Button(parent, text=f"Open in {asset.title()} ›",
+                                  command=lambda a=asset, v=var: self._navigate(("asset", a, v.get().strip())))
+                link.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+                var.trace_add("write", lambda *_: link.configure(state="normal" if var.get().strip() else "disabled"))
+                link.configure(state="normal" if var.get().strip() else "disabled")
             elif note:
                 ttk.Label(parent, text=note, style="Muted.TLabel", wraplength=420, justify="left").grid(
                     row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
@@ -1218,25 +1224,26 @@ class StatsEditor(EditorPanel):
         text_row("Map", "map_name", lambda: chapter().map_name, "zmap/<name>/; its battle scenes: the chapter page")
         text_row("Script", "script", lambda: chapter().script, "Scripts/<name>.cmb")
         text_row("Message file", "message", lambda: chapter().message, "Mess/<name>.m; empty: none")
-        text_row("Map music", "bgm", lambda: chapter().bgm)
+        text_row("Map music", "bgm", lambda: chapter().bgm, asset="music")
 
         self._heading(parent, "Objectives (text keys)", row, columns)
         row += 1
-        slots = ("Goal", "Unused slot", "Defeat condition", "Goal, second line")
+        slots = ("Goal", "Goal second line", "Defeat condition", "Defeat second line")
         for k, label in enumerate(slots):
             text_row(label, f"objective{k}", lambda k=k: chapter().objectives[k],
-                     prefix="ML_" if k == 2 else "MW_")
+                     prefix="ML_" if k >= 2 else "MW_")
         for mode, field in (("Hard", "hard_objective"), ("Maniac", "maniac_objective")):
             for k, slot in enumerate((0, 1, 3)):
                 text_row(f"{mode}: {slots[slot].lower()}", f"{field}{k}",
                          lambda k=k, a=f"{field}s": getattr(chapter(), a)[k],
-                         prefix="MW_")
+                         prefix="ML_" if slot == 3 else "MW_")
 
         self._heading(parent, "Scenes", row, columns)
         row += 1
-        text_row("Base background", "base_background", lambda: chapter().base_background, "RID_ of the base screen")
+        text_row("Base background", "base_background", lambda: chapter().base_background,
+                 asset="backgrounds")
         text_row("Conversation background", "talk_background", lambda: chapter().talk_background,
-                 "default background of the chapter's conversations")
+                 asset="backgrounds")
         text_row("Class-change scene map", "scene_map", lambda: chapter().scene_map)
         text_row("Class-change scene sky", "scene_sky", lambda: chapter().scene_sky, "a Battle scenes sky name")
 

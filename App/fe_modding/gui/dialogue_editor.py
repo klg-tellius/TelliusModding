@@ -17,12 +17,13 @@ with the editor; the on-disc message dialect remains unchanged."""
 
 from __future__ import annotations
 
+import html
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..formats import dialogue_notation as notation, fe10_message, message
-from ..formats.fe9_message_scene import TEMPLATES, decompile, line_plain_text, to_display, to_raw
+from ..formats.fe9_message_scene import TEMPLATES, decompile, layout_from_label, layout_label, line_plain_text, to_display, to_raw
 from ..game_profile import DIALOGUE, profile_of
 from ..formats.fe9_conversation_context import resolve_context, context_after_message
 from ..formats.event_script import ScriptError, read_script_path
@@ -31,7 +32,7 @@ from .changelog import ChangeLog
 from .conversation_preview import ConversationPreview
 from . import theme
 from .editor_panel import EditorPanel
-from .scene_editor import DialogueStage
+from .scene_editor import DialogueStage, background_names, layout_labels
 
 SCRIPT_SOURCES_DIR = "script_sources"  # ScriptEditor's .fe9s sidecar folder
 
@@ -175,6 +176,15 @@ class DialogueEditor(EditorPanel):
             button = ttk.Button(row, text=label, command=callback)
             button.pack(side='left', padx=(0, 3))
             self._editor_buttons.append(button)
+        if self._fe9:
+            ttk.Label(row, text="Layout").pack(side="left", padx=(8, 2))
+            self._scene_layout_choice = tk.StringVar()
+            self._scene_layout_box = ttk.Combobox(
+                row, textvariable=self._scene_layout_choice, width=18,
+                postcommand=self._refresh_scene_choices)
+            self._scene_layout_box.pack(side="left")
+            for event in ("<<ComboboxSelected>>", "<Return>", "<FocusOut>"):
+                self._scene_layout_box.bind(event, lambda _e: self._set_scene_action("Layout"), add="+")
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=(0, 5))
         common = [('Speaker', 'Speaker' if self._fe10 else 'Select speaker'), ('Portrait', 'Show portrait' if self._fe10 else 'Portrait'),
@@ -186,6 +196,85 @@ class DialogueEditor(EditorPanel):
         button = ttk.Button(row, text='Actions…', command=self._action_palette)
         button.pack(side='left')
         self._editor_buttons.append(button)
+        if self._fe9:
+            ttk.Label(row, text="Background").pack(side="left", padx=(8, 2))
+            self._scene_background_choice = tk.StringVar()
+            self._scene_background_box = ttk.Combobox(
+                row, textvariable=self._scene_background_choice, width=14,
+                postcommand=self._refresh_scene_choices)
+            self._scene_background_box.pack(side="left", padx=(0, 4))
+            for event in ("<<ComboboxSelected>>", "<Return>", "<FocusOut>"):
+                self._scene_background_box.bind(event, lambda _e: self._set_scene_action("Background"), add="+")
+            search = ttk.Button(row, text="Search…", width=8, command=self._search_scene_background)
+            search.pack(side="left")
+            self._editor_buttons.append(search)
+
+    def _refresh_scene_choices(self):
+        assets = self._preview.assets if hasattr(self, "_preview") else None
+        if assets is None:
+            return
+        self._scene_layout_box.configure(values=layout_labels(assets))
+        self._scene_background_box.configure(values=background_names(assets))
+
+    def _search_scene_background(self):
+        if self._scene is None:
+            return
+        chosen = self._scene._pick_background(self._scene_background_choice.get())
+        if chosen is not None:
+            self._scene_background_choice.set(chosen)
+            self._set_scene_action("Background")
+
+    @staticmethod
+    def _scene_value(text: str, name: str) -> str:
+        for match in notation.TAG.finditer(text):
+            label, separator, value = match.group(1).partition(":")
+            if separator and label.strip().casefold() == name.casefold():
+                return html.unescape(value)
+        return ""
+
+    def _sync_scene_choices(self) -> None:
+        if not self._fe9:
+            return
+        text = self._text_widget.get("1.0", "end-1c")
+        self._scene_layout_choice.set(layout_label(self._scene_value(text, "Layout")))
+        self._scene_background_choice.set(self._scene_value(text, "Background"))
+
+    def _set_scene_action(self, name: str) -> None:
+        if self._selected_index() is None:
+            return
+        value = (layout_from_label(self._scene_layout_choice.get()) if name == "Layout"
+                 else self._scene_background_choice.get().strip())
+        self._flush_edit()
+        if self._document is None:
+            messagebox.showerror("Invalid dialogue", "Fix the message text before changing its scene.",
+                                 parent=self)
+            return
+        widget = self._text_widget
+        text = widget.get("1.0", "end-1c")
+        if value == self._scene_value(text, name):
+            return
+        tag = f"<{name}:{notation._escape(value)}>" if value else ""
+        if tag:
+            try:
+                notation.parse(tag, False)
+            except ValueError as error:
+                messagebox.showerror("Invalid scene", str(error), parent=self)
+                self._sync_scene_choices()
+                return
+        existing = next((m for m in notation.TAG.finditer(text)
+                         if m.group(1).partition(":")[0].strip().casefold() == name.casefold()), None)
+        widget.edit_separator()
+        if existing is not None:
+            widget.replace(f"1.0+{existing.start()}c", f"1.0+{existing.end()}c", tag)
+        elif tag:
+            offset = 0
+            if name == "Background":
+                first = notation.TAG.match(text)
+                if first is not None and first.group(1).partition(":")[0].strip().casefold() == "layout":
+                    offset = first.end()
+            widget.insert(f"1.0+{offset}c", tag)
+        widget.edit_separator()
+        self._flush_edit()
 
     def _edit_event(self, event):
         try:
@@ -306,22 +395,46 @@ class DialogueEditor(EditorPanel):
         window.transient(self.winfo_toplevel())
         body = ttk.Frame(window, padding=10)
         body.pack(fill='both', expand=True)
-        ttk.Label(body, text='Choose an action to insert at the text cursor.').grid(row=0, column=0, columnspan=3, sticky='w')
-        names = list((notation.FE10_NAMES if self._fe10 else notation.FE9_NAMES).values())
-        names += ['Pause power'] if self._fe10 else ['Markup']
-        tabs = ttk.Notebook(body)
-        tabs.grid(row=1, column=0, columnspan=3, sticky='nsew')
-        pages = []
+        window.geometry("760x620")
+        ttk.Label(body, text="Choose an action to insert at the text cursor.").pack(anchor="w")
+        names = list(dict.fromkeys(
+            list((notation.FE10_NAMES if self._fe10 else notation.FE9_NAMES).values())
+            + (["Pause power"] if self._fe10 else ["Markup"])))
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query)
+        search.pack(fill="x", pady=(6, 8))
+        list_frame = ttk.Frame(body)
+        list_frame.pack(fill="both", expand=True)
+        canvas = tk.Canvas(list_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        actions = ttk.Frame(canvas)
+        frame_id = canvas.create_window((0, 0), window=actions, anchor="nw")
+        actions.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(frame_id, width=e.width))
+
         def choose(name):
             window.destroy()
             self._add_action(name)
-        for i, name in enumerate(dict.fromkeys(names)):
-            if i % 24 == 0:
-                page = ttk.Frame(tabs, padding=4)
-                tabs.add(page, text=f'Actions {len(pages) + 1}')
-                pages.append(page)
-            ttk.Button(pages[-1], text=name, command=lambda n=name: choose(n)).grid(row=(i%24)//3, column=i%3, sticky='ew', padx=3, pady=3)
-        window.bind('<Escape>', lambda e: window.destroy())
+
+        def fill(*_args):
+            for child in actions.winfo_children():
+                child.destroy()
+            words = query.get().casefold().split()
+            visible = [name for name in names if all(word in name.casefold() for word in words)]
+            for i, name in enumerate(visible):
+                ttk.Button(actions, text=name, command=lambda n=name: choose(n)).grid(
+                    row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
+            for column in range(3):
+                actions.columnconfigure(column, weight=1)
+
+        query.trace_add("write", fill)
+        fill()
+        search.focus_set()
+        window.bind("<MouseWheel>", lambda e: canvas.yview_scroll(-int(e.delta / 120), "units"))
+        window.bind("<Escape>", lambda e: window.destroy())
         window.grab_set()
 
     def _edit_action(self, event):
@@ -435,6 +548,9 @@ class DialogueEditor(EditorPanel):
         self._text_widget.config(state=state)
         for button in self._editor_buttons:
             button.config(state=state)
+        if self._fe9:
+            self._scene_layout_box.configure(state=state)
+            self._scene_background_box.configure(state=state)
         if self._scene is not None:
             self._scene.enabled = enabled
         if self._scene is not None and not enabled:
@@ -570,6 +686,7 @@ class DialogueEditor(EditorPanel):
         self._text_widget.config(state="disabled")
         self._suspend_edit_tracking = False
         self._document = None
+        self._sync_scene_choices()
         self._preview.update_message("", "")
 
     def _refresh_message_list(self, select: int | None = None) -> None:
@@ -593,6 +710,7 @@ class DialogueEditor(EditorPanel):
         self._text_widget.insert("1.0", self._drafts.get(msg.speaker, self._shown(msg.text)))
         self._text_widget.edit_reset()
         self._parse_editor()
+        self._sync_scene_choices()
         if self._scene is not None:
             self._scene.load(msg.text, keep_selection=False)
         context = None
@@ -641,6 +759,7 @@ class DialogueEditor(EditorPanel):
             self._drafts[self._messages[index].speaker] = self._text_widget.get("1.0", "end-1c")
             return
         self._drafts.pop(self._messages[index].speaker, None)
+        self._sync_scene_choices()
         self._set_current_text(self._document.raw)
         if self._scene is not None:
             if self._scene_reload_id is not None:

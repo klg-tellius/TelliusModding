@@ -46,7 +46,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .. import tools
 from ..exceptions import ModdingError
-from ..formats import stm
+from ..formats import gcfesnd, stm
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -161,6 +161,25 @@ class MusicEditor(EditorPanel):
         self._file_list.delete(0, "end")
         for path in self._filtered_files:
             self._file_list.insert("end", path.stem)
+
+    def select_cue(self, cue_name: str) -> bool:
+        """Open the Sound/*.stm file named by a BGM cue in gcfesnd.bin."""
+        catalog = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        try:
+            cue = gcfesnd.find_cue(gcfesnd.read_bgm_cues_path(catalog), cue_name)
+        except (OSError, gcfesnd.GcfesndError, ValueError):
+            return False
+        stem = cue.path.rsplit("/", 1)[-1].lower()
+        self._apply_filter("")
+        for index, path in enumerate(self._filtered_files):
+            if path.stem.lower() == stem:
+                self._file_list.selection_clear(0, "end")
+                self._file_list.selection_set(index)
+                self._file_list.activate(index)
+                self._file_list.see(index)
+                self._on_file_selected()
+                return True
+        return False
 
     def _on_file_selected(self) -> None:
         selection = self._file_list.curselection()

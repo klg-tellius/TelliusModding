@@ -175,6 +175,10 @@ class AssetPage(Page):
                 panel.select_set(route[2])
             elif key == "icons":
                 panel.select_icon(route[2])
+            elif key == "music":
+                panel.select_cue(route[2])
+            elif key == "backgrounds":
+                panel.select_resource(route[2])
             elif key == "battle_sim":
                 panel.select_character(route[2])
         return True
