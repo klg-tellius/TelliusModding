@@ -69,11 +69,11 @@ class CharactersHub(Page):
         session = self.shell.session
         if not session.available:
             return
-        path = filedialog.asksaveasfilename(parent=self, title="Export characters and items", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        path = filedialog.asksaveasfilename(parent=self, title="Export characters", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            excel_io.export_fe8(path, session.data)
+            excel_io.export_fe8(path, session.data, only="Characters")
         except Exception as exc:
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
 
@@ -81,11 +81,11 @@ class CharactersHub(Page):
         session = self.shell.session
         if not session.available:
             return
-        path = filedialog.askopenfilename(parent=self, title="Import characters and items", filetypes=(("Excel workbook", "*.xlsx"),))
+        path = filedialog.askopenfilename(parent=self, title="Import characters", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            data, _docs, errors = excel_io.import_fe8(path, session.data)
+            data, _docs, errors = excel_io.import_fe8(path, session.data, only="Characters")
             if errors:
                 messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
                 return
