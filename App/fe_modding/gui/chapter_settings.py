@@ -13,9 +13,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
-from ..game_profile import profile_of
 from .map_windows import MapSettingsForm
-from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame
 
 
@@ -27,7 +25,7 @@ class ChapterSettingsPanel(ttk.Frame):
         self._map = builder.map_editor
         self._session_provider = session_provider
         self._navigate = navigate
-        self._record: Optional[ChapterRecordPanel] = None
+
 
         scroll = ScrollFrame(self, padding=(16, 12))
         scroll.pack(fill="both", expand=True)
@@ -43,13 +41,6 @@ class ChapterSettingsPanel(ttk.Frame):
             "Build tab's Undo/Redo; Save Chapter writes them.")).pack(anchor="w", pady=(2, 8))
         MapSettingsForm(body, builder).pack(fill="x", anchor="w")
 
-        ttk.Separator(body).pack(fill="x", pady=(20, 10))
-        ttk.Label(body, text="Chapter (Game Data › Chapters)", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-        self._record_host = ttk.Frame(body)
-        self._record_host.pack(fill="x", anchor="w", pady=(4, 0))
-        self._no_record = ttk.Label(self._record_host, style="Muted.TLabel",
-                                    text=f"{profile_of(builder.project).file_label('game_data')} is not available in this project.")
-        self._no_record.pack(anchor="w")
 
         self._map.add_listener(self._on_map_changed)
         self._on_map_changed()
@@ -58,17 +49,7 @@ class ChapterSettingsPanel(ttk.Frame):
         if not self.winfo_exists():
             return
         self._map_label.configure(text=self._map.map_name or "")
-        if self._record is None:
-            session = self._session_provider()
-            if session is None or not getattr(session, "available", False):
-                return
-            self._no_record.destroy()
-            self._record = ChapterRecordPanel(self._record_host, self._builder.project, self._builder.changelog,
-                                              session, navigate=self._navigate)
-            self._record.pack(fill="x", anchor="w")
-        self._record.show_map(self._map.map_name or None)
+
 
     def flush(self) -> None:
-        """Apply the chapter record field being edited (fields apply when left)."""
-        if self._record is not None:
-            self._record.flush()
+        """Keep the Settings tab API compatible with the chapter page."""
