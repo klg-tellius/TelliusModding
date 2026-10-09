@@ -505,12 +505,10 @@ class MapBuilder(EditorPanel):
         self._filter_var.trace_add("write", lambda *_: self._remove_section_button.configure(
             state="disabled" if self._filter_var.get() == "All sections" else "normal"))
 
+        self._build_toolbar()
+
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
-
-        tools = ttk.Frame(paned, padding=8, width=230)
-        paned.add(tools, weight=0)
-        self._build_tools(tools)
 
         middle = ttk.Frame(paned)
         paned.add(middle, weight=4)
@@ -545,18 +543,45 @@ class MapBuilder(EditorPanel):
             self._canvas.bind(sequence, handler)
 
         inspector = ScrollFrame(paned, padding=(10, 8))
-        paned.add(inspector, weight=0)
-        self._inspector = inspector.body
+        inspector._canvas.configure(width=520)
+        paned.add(inspector, weight=2)
+        tools = ttk.Frame(inspector.body)
+        tools.pack(fill="x")
+        self._build_tools(tools)
+        self._inspector = ttk.Frame(inspector.body)
+        self._inspector.pack(fill="both", expand=True)
         self._canvas.redraw()
 
-    def _build_tools(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text="Tool", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    def _build_toolbar(self) -> None:
+        toolbar = ttk.Frame(self, padding=(8, 0, 8, 6))
+        toolbar.pack(fill="x")
+        row = ttk.Frame(toolbar)
+        row.pack(fill="x")
         self._tool = tk.StringVar(value="select")
+        self._tool_buttons = {}
         for key, text in (("select", "Select / move"), ("terrain", "Paint terrain"), ("prop", "Place prop"),
                           ("heights", "Tile heights"), ("unit", "Place unit"), ("zone", "Script zones")):
-            ttk.Radiobutton(parent, text=text, value=key, variable=self._tool, command=self._tool_changed).pack(anchor="w", pady=1)
-        self._tool_help = ttk.Label(parent, text=TOOL_HELP["select"], style="Muted.TLabel", wraplength=210, justify="left")
-        self._tool_help.pack(anchor="w", pady=(6, 8))
+            button = ttk.Button(row, text=text, command=lambda tool=key: self._choose_tool(tool))
+            button.pack(side="left", padx=(0, 4))
+            self._tool_buttons[key] = button
+        windows = ttk.Frame(toolbar)
+        windows.pack(fill="x", pady=(4, 0))
+        ttk.Button(windows, text="Objects...", command=self.open_objects).pack(side="left")
+        ttk.Button(windows, text="Disposition...", command=self.open_disposition).pack(side="left", padx=(4, 0))
+        ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(side="left", padx=(4, 12))
+        self._auto_heights = tk.BooleanVar(value=True)
+        ttk.Checkbutton(windows, text="Heights follow props", variable=self._auto_heights).pack(side="left")
+        self._all_variants = tk.BooleanVar(value=True)
+        ttk.Checkbutton(windows, text="Same edit on every difficulty", variable=self._all_variants).pack(side="left", padx=(8, 0))
+        self._tool_help = ttk.Label(toolbar, text=TOOL_HELP["select"], style="Muted.TLabel", justify="left")
+        self._tool_help.pack(fill="x", pady=(4, 0))
+        toolbar.bind("<Configure>", lambda e: self._tool_help.configure(wraplength=max(1, e.width - 16)))
+
+    def _choose_tool(self, tool: str) -> None:
+        self._tool.set(tool)
+        self._tool_changed()
+
+    def _build_tools(self, parent: ttk.Frame) -> None:
         self._tool_frames = {}
 
         frame = ttk.Frame(parent)
@@ -623,19 +648,6 @@ class MapBuilder(EditorPanel):
         self._tool_frames["zone"] = frame
         self._zone_kind_changed()
 
-        windows = ttk.Frame(parent)
-        windows.pack(side="bottom", fill="x", pady=(8, 0))
-        ttk.Separator(windows).pack(fill="x", pady=(0, 6))
-        ttk.Label(windows, text="Map", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        row = ttk.Frame(windows)
-        row.pack(fill="x", pady=(2, 0))
-        ttk.Button(row, text="Objects...", command=self.open_objects).pack(side="left")
-        ttk.Button(row, text="Disposition...", command=self.open_disposition).pack(side="left", padx=(4, 0))
-        ttk.Button(windows, text="Map settings & chapter...", command=self.open_settings).pack(anchor="w", pady=(4, 0))
-        self._all_variants = tk.BooleanVar(value=True)
-        ttk.Checkbutton(parent, text="Same edit on every difficulty", variable=self._all_variants).pack(side="bottom", anchor="w")
-        self._auto_heights = tk.BooleanVar(value=True)
-        ttk.Checkbutton(parent, text="Heights follow props", variable=self._auto_heights).pack(side="bottom", anchor="w")
         self._tool_changed()
 
     # -- data refresh ------------------------------------------------------------------
@@ -1929,6 +1941,8 @@ class MapBuilder(EditorPanel):
 
     def _tool_changed(self) -> None:
         tool = self._tool.get()
+        for key, button in self._tool_buttons.items():
+            button.configure(style="Accent.TButton" if key == tool else "TButton")
         if tool == "unit":
             self._prefer_battle_section()
         if tool == "zone":
@@ -1939,7 +1953,7 @@ class MapBuilder(EditorPanel):
         self._tool_help.configure(text=TOOL_HELP[tool])
         for key, frame in self._tool_frames.items():
             if key == tool:
-                frame.pack(anchor="w", fill="both", expand=True)
+                frame.pack(anchor="w", fill="x", pady=(0, 10))
             else:
                 frame.pack_forget()
 
