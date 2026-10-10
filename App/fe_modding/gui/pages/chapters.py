@@ -26,7 +26,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from ... import chapters, script_sources
+from ... import chapter_phase_ops, chapters, script_sources
 from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
 from ...game_code import chapter_flow, chapter_jump
@@ -326,6 +326,8 @@ class ChapterPage(Page):
         left.pack(side="left", fill="x", expand=True)
         self._title = ttk.Label(left, text="", style="Title.TLabel")
         self._title.pack(anchor="w")
+        self._phase_status = ttk.Label(left, text="", style="Muted.TLabel")
+        self._phase_status.pack(anchor="w")
 
         right = ttk.Frame(header, style="Page.TFrame")
         right.pack(side="right")
@@ -333,6 +335,8 @@ class ChapterPage(Page):
         self._phase_label = ttk.Label(right, text="Phase", style="Muted.TLabel")
         self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=12)
         self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(self._phase_var.get()))
+        self._add_phase_button = ttk.Button(right, text="+ Phase…", command=self._add_phase)
+        self._remove_phase_button = ttk.Button(right, text="Remove phase…", command=self._remove_phase)
         self._prev = ttk.Button(right, text="‹ Previous", command=lambda: self._step(-1))
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
@@ -351,6 +355,7 @@ class ChapterPage(Page):
                                             on_navigate_to_character=lambda pid: shell.navigate(("character", pid)))
         self._dialogue = DialogueEditor(self._notebook, project, log)
         self._script = ScriptEditor(self._notebook, project, log)
+        self._script.add_listener(self._update_phase_status)
         self._shops = ShopEditor(self._notebook, project, log, index_provider=lambda: shell.index,
                                  session_provider=lambda: shell.session)
         # The Build tab edits the Map, Deployment and Script editors' data; it has none of its own,
@@ -453,12 +458,21 @@ class ChapterPage(Page):
         self._script.select_chapter(paths.script)
         self._shops.select_chapter(chapter_id)
         self._phase_combo.configure(values=phases)
-        if len(phases) > 1:
+        if profile_of(self.project).message_dialect != "fe10" and phases:
+            self._phase_label.pack(side="left", padx=(0, 6))
+            self._phase_combo.pack(side="left", padx=(0, 6))
+            self._add_phase_button.pack(side="left", padx=(0, 4))
+            self._remove_phase_button.pack(side="left", padx=(0, 18))
+        elif len(phases) > 1:
             self._phase_label.pack(side="left", padx=(0, 6))
             self._phase_combo.pack(side="left", padx=(0, 18))
+            self._add_phase_button.pack_forget()
+            self._remove_phase_button.pack_forget()
         else:
             self._phase_label.pack_forget()
             self._phase_combo.pack_forget()
+            self._add_phase_button.pack_forget()
+            self._remove_phase_button.pack_forget()
         self._phase = None
         self._set_phase(phases[0] if phases else None)
         self._chapter_data.show_chapter(chapter_id, self._phase)
@@ -466,19 +480,177 @@ class ChapterPage(Page):
         self._render_overview()
         return True
 
-    def _set_phase(self, folder: str | None) -> None:
-        if folder == self._phase:
+    def _update_phase_status(self) -> None:
+        if (self._chapter is None or self._phase is None
+                or profile_of(self.project).message_dialect == "fe10"):
+            self._phase_status.configure(text="")
             return
+        try:
+            source = self._script.chapter_source()
+            if source is None:
+                path = script_sources.chapter_script(self.project, self._chapter)
+                source = script_sources.peek(self.project, path) if path is not None else ""
+            status = chapter_phase_ops.part_setup_issues(source, self._phase)
+        except Exception:  # noqa: BLE001 - an invalid script has its own editor diagnostics
+            self._phase_status.configure(text="Could not inspect chapter part setup")
+            return
+        if status is None:
+            self._phase_status.configure(text="")
+        else:
+            part, issues = status
+            detail = "script links found" if not issues else "needs " + " and ".join(issues)
+            self._phase_status.configure(text=f"Part {part}: {detail}")
+
+    def _set_phase(self, folder: str | None) -> bool:
+        if folder == self._phase:
+            return True
+        previous = self._phase
+        if previous is not None:
+            dirty = [panel for panel in (self._map, self._deployment) if panel.dirty]
+            if dirty:
+                names = ", ".join(panel.display_name for panel in dirty)
+                if not messagebox.askyesno(
+                        "Discard phase changes?",
+                        f"{names} has unsaved changes. Discard them and switch phases?",
+                        icon="warning", parent=self):
+                    self._phase_var.set(previous)
+                    return False
+                for panel in dirty:
+                    panel._dirty = False
+        self._battle.flush()
+        self._chapter_data.flush()
+        deployment, map_cmp = chapters.phase_paths(self.project, folder) if folder else (None, None)
+        old_deployment = self._deployment._current_path
+        old_map = self._map._current_path
+        if deployment is not None:
+            self._deployment.select_chapter(deployment)
+        if map_cmp is not None:
+            self._map.select_chapter(map_cmp)
+        if ((deployment is not None and self._deployment._current_path != deployment)
+                or (map_cmp is not None and self._map._current_path != map_cmp)):
+            if old_deployment is not None and old_deployment.exists():
+                self._deployment.select_chapter(old_deployment)
+            if old_map is not None and old_map.exists():
+                self._map.select_chapter(old_map)
+            self._phase_var.set(previous or "")
+            return False
         self._phase = folder
         self._phase_var.set(folder or "")
-        deployment, map_cmp = chapters.phase_paths(self.project, folder) if folder else (None, None)
-        self._deployment.select_chapter(deployment)
-        self._map.select_chapter(map_cmp)
+        self._update_phase_status()
+        self._remove_phase_button.configure(
+            state="normal" if folder and folder != f"bmap{int(self._chapter):02d}" else "disabled")
         self._battle.select_map(folder)
         if self._chapter is not None:
             self._chapter_data.show_chapter(self._chapter, folder)
-        if self._chapter is not None:
             self._render_overview()
+        return True
+
+    def _add_phase(self) -> None:
+        if self._chapter is None or self._phase is None:
+            return
+        dialog = AddPhaseDialog(self, self._phase)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        playable = dialog.result == "part"
+        if any(panel.dirty for panel in (self._map, self._deployment)):
+            if not messagebox.askyesno(
+                    "Save phase first?",
+                    "Save the current map and deployment edits before cloning this phase?",
+                    parent=self):
+                return
+            for panel in (self._map, self._deployment):
+                if panel.dirty and not panel.save():
+                    return
+        self._battle.flush()
+        self._chapter_data.flush()
+        source_folder = self._phase
+        source = new_source = None
+        part = None
+        try:
+            if playable:
+                if not self._script.show_chapter_script():
+                    raise ValueError("Open this chapter's script before adding a playable part.")
+                source = self._script.chapter_source()
+                if source is None:
+                    raise ValueError("This chapter has no script to hold a playable part.")
+                part = chapter_phase_ops.next_part(source)
+            session = self.shell.session
+            game_data = session.data if session.available else None
+            clone = chapter_phase_ops.plan_clone(
+                self.project, self._chapter, self._phase, game_data)
+            if playable:
+                new_source = chapter_phase_ops.add_part_opening(source, part, clone.folder)
+                self._script._compile(new_source)
+            chapter_phase_ops.create_phase(clone)
+            if game_data is not None and clone.fe8data != game_data:
+                session.data = clone.fe8data
+                session.changed(self)
+            if new_source is not None:
+                self._script.edit_chapter_source(new_source, select=f"Opening18_{part}")
+        except Exception as exc:  # noqa: BLE001 - report codec and filesystem errors in the UI
+            messagebox.showerror("Could not add phase", str(exc), parent=self)
+            return
+        self.refresh_chapter_lists()
+        phases = chapters.chapter_phases(self.project, self._chapter)
+        self._phase_combo.configure(values=phases)
+        self._set_phase(clone.folder)
+        self.shell.changelog.append(clone.folder, f"Cloned phase from {source_folder}")
+        self.shell.rebuild_index()
+        if playable:
+            self._select_tab("script")
+            messagebox.showinfo(
+                "Playable part needs setup",
+                f"Opening18_{part} now loads {clone.folder}. In the Script tab, add deployment "
+                f"calls for its copied sections and change the preceding battle's victory path "
+                f"to Complete18({part - 1}). Save the script when it compiles.",
+                parent=self)
+
+    def _remove_phase(self) -> None:
+        if self._chapter is None or self._phase is None:
+            return
+        folder = self._phase
+        self._battle.flush()
+        self._chapter_data.flush()
+        session = self.shell.session
+        game_data = session.data if session.available else None
+        try:
+            source = self._script.chapter_source()
+            path, updated = chapter_phase_ops.plan_remove(
+                self.project, self._chapter, folder, source, game_data)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not remove phase", str(exc), parent=self)
+            return
+        if not messagebox.askyesno(
+                "Remove phase?",
+                f"Delete zmap/{folder} and its map and deployment files?"
+                + ("\nIts Battle scenes row will also be removed." if updated != game_data else "")
+                + "\n\nThis cannot be undone from the chapter editor.",
+                icon="warning", parent=self):
+            return
+        dirty = [panel for panel in (self._map, self._deployment) if panel.dirty]
+        if dirty and not messagebox.askyesno(
+                "Discard phase changes?",
+                "Removing this phase discards its unsaved map and deployment edits. Continue?",
+                icon="warning", parent=self):
+            return
+        for panel in dirty:
+            panel._dirty = False
+        try:
+            chapter_phase_ops.remove_phase(self.project, path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Could not remove phase", str(exc), parent=self)
+            return
+        if game_data is not None and updated != game_data:
+            session.data = updated
+            session.changed(self)
+        self.refresh_chapter_lists()
+        phases = chapters.chapter_phases(self.project, self._chapter)
+        self._phase_combo.configure(values=phases)
+        self._phase = None
+        self._set_phase(phases[0] if phases else None)
+        self.shell.changelog.append(folder, "Removed phase")
+        self.shell.rebuild_index()
 
     def _update_header(self) -> None:
         cid = self._chapter
@@ -777,6 +949,38 @@ def _message_group(message_id: str) -> str:
     if parts[0] == "MS" and len(parts) > 2:
         return parts[2]
     return parts[0]
+
+
+class AddPhaseDialog(tk.Toplevel):
+    """Choose whether the cloned folder is only a map or the next battle part."""
+
+    def __init__(self, parent, source: str):
+        super().__init__(parent)
+        self.title("Add phase")
+        self.transient(parent.winfo_toplevel())
+        self.resizable(False, False)
+        self.result = None
+        choice = tk.StringVar(value="map")
+        body = ttk.Frame(self, padding=16)
+        body.pack(fill="both")
+        ttk.Label(body, text=f"Clone {source} into a new map phase.").pack(anchor="w", pady=(0, 10))
+        ttk.Radiobutton(body, text="Map phase only", variable=choice, value="map").pack(anchor="w")
+        ttk.Radiobutton(body, text="Next playable chapter part", variable=choice, value="part").pack(
+            anchor="w", pady=(4, 0))
+        ttk.Label(body, text="A playable part also adds an opening to the chapter script.\n"
+                            "Its deployment and victory event still need setup.").pack(
+            anchor="w", pady=(10, 0))
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="e", pady=(14, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Create", command=lambda: self._finish(choice.get())).pack(
+            side="right", padx=(0, 6))
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _finish(self, choice: str) -> None:
+        self.result = choice
+        self.destroy()
 
 
 class AddChapterDialog(tk.Toplevel):
