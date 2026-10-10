@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.game_code import versions
 from fe_modding.game_code import entries, ppc, verify
+from fe_modding.game_code import promotion
 from fe_modding.game_code.catalog import (CATALOG, CAVE_ADDRESS, CAVE_SIZE, Edit, Field, Patch, Session,
                                           State, Tunable, make_signature)
 from fe_modding.game_code.dol import Dol, DolError
@@ -268,6 +269,33 @@ class RetailCatalogTests(unittest.TestCase):
             found += 1
             with self.subTest(code):
                 self.assertEqual(verify.verify(Dol.open(path)), [])
+        if not found:
+            self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
+
+    def test_promotion_magic_choices_gain_separate_rank_handlers(self):
+        patch = CATALOG.entries["promotion.anima_weapon_choice"]
+        found = 0
+        for code in entries.ALL:
+            path = RETAIL_DIR / f"{code}.dol"
+            if not path.is_file():
+                continue
+            found += 1
+            with self.subTest(code):
+                dol = Dol.open(path)
+                before = dol.sha1()
+                session = Session(dol, versions.VERSIONS[code])
+                table, resume = promotion._SITES[code]
+                for index in range(3):
+                    self.assertEqual(dol.u32(table + (index + 4) * 4), resume)
+                session.set_patch(patch, True)
+                self.assertEqual(session.status(patch).state, State.APPLIED)
+                for index, rank_offset in enumerate(promotion.RANK_OFFSETS):
+                    stub = promotion.MAGIC_STUB + index * promotion.STUB_SIZE
+                    self.assertEqual(dol.u32(table + (index + 4) * 4), stub)
+                    self.assertEqual(dol.read(stub, promotion.STUB_SIZE),
+                                     promotion._stub(stub, rank_offset, resume))
+                session.set_patch(patch, False)
+                self.assertEqual(dol.sha1(), before)
         if not found:
             self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
 
