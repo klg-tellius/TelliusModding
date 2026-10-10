@@ -747,6 +747,24 @@ def labels_by_prefix(docs) -> dict[str, list[str]]:
     return {prefix: sorted(labels) for prefix, labels in grouped.items()}
 
 
+def rename_section_prefix(doc: DispoDocument, old: str, new: str) -> None:
+    """Rename a cloned map's deployment sections, rebuilding the name table.
+
+    Unlike rename_chapter_sections, the two folder names may have different
+    lengths (bmap18 -> bmap18_2).
+    """
+    changed = False
+    for section in doc.sections:
+        if section.name == old or section.name.startswith(old + "_"):
+            section.name = new + section.name[len(old):]
+            changed = True
+    if not changed:
+        return
+    names = [section.name for section in doc.sections]
+    if len(names) != len(set(names)):
+        raise ValueError("Cloning this phase would create duplicate deployment sections.")
+    _set_section_table(doc, [doc.sections[i] for i in doc.table_order])
+
 def rename_chapter_sections(data: bytes, old_number: str, new_number: str) -> bytes:
     """Return a copy of one dispo variant's bytes (e.g. a dispos_n.bin
     pulled out of the pak - same granularity insert_unit() works at) with
