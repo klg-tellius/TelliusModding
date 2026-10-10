@@ -23,13 +23,14 @@ from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
 from ..fe10_data_editor import TAB_KEYS as FE10_TAB_KEYS, TAB_TITLES as FE10_TAB_TITLES, Fe10DataEditor
+from ..rect_images import RectImagesPanel
 from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain",
-        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)"}
+        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect Images"}
 #: key -> (icon, description) of the hub tiles.
 TILES = {
     "classes": ("♞", "Stats, weapon ranks, innate skills, movement and build"),
@@ -40,9 +41,11 @@ TILES = {
     "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
     "flags": ("⚐", "The 96 named script flags: campaign, chapter and save file"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
+    "rect_images": ("▧", "Browse rect RIDs, their images and references"),
 }
 SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "general", "supports")),
-            ("Scripts and AI", ("flags", "ai")))
+            ("Scripts and AI", ("flags", "ai")),
+            ("Images", ("rect_images",)))
 
 
 class GameDataPage(Page):
@@ -79,6 +82,8 @@ class GameDataPage(Page):
         self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
                                session_provider=lambda: shell.session if shell.session.available else None)
         self._editor._notebook.add(self._ai, text=TABS["ai"])
+        self._rect_images = RectImagesPanel(self._editor._notebook, self.project, shell.changelog, shell)
+        self._editor._notebook.add(self._rect_images, text=TABS["rect_images"])
 
     def _build_hub(self) -> ScrollFrame:
         scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
@@ -163,6 +168,7 @@ class GameDataPage(Page):
             widgets["supports"] = self._supports
         widgets["flags"] = self._flags
         widgets["ai"] = self._ai
+        widgets["rect_images"] = self._rect_images
         return widgets
 
     def show(self, route) -> bool:
@@ -171,7 +177,7 @@ class GameDataPage(Page):
             return True
         self._show_hub(False)
         tab = self._tab = route[1]
-        if tab in ("supports", "flags", "ai"):
+        if tab in ("supports", "flags", "ai", "rect_images"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
                 self._editor._notebook.select(widget)
@@ -216,11 +222,13 @@ FE10_TILES = {
     "growth": ("↗", "FE10Growth.cms: absolute stats at every level, per character"),
     "battle_scenery": ("⛰", "Battle background per map and terrain type"),
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
+    "rect_images": ("▧", "Browse rect RIDs, their images and references"),
 }
 FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills", "growth")),
                  ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
                  ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
-                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm")))
+                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm")),
+                 ("Images", ("rect_images",)))
 
 
 class Fe10GameDataPage(Page):
@@ -234,6 +242,7 @@ class Fe10GameDataPage(Page):
         super().__init__(shell)
         self._editor = Fe10DataEditor(self, self.project, shell.changelog)
         self._flags: FlagsPanel | None = None
+        self._rect_images: RectImagesPanel | None = None
         self._hub = self._build_hub()
 
     def _build_hub(self) -> ScrollFrame:
@@ -249,7 +258,7 @@ class Fe10GameDataPage(Page):
             grid.pack(fill="x")
             for key in keys:
                 icon, description = FE10_TILES[key]
-                grid.add(key, Card(grid, title=FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
+                grid.add(key, Card(grid, title="Rect Images" if key == "rect_images" else FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
                                    on_click=lambda k=key: self.shell.navigate((self.kind, k))))
             grid.done()
         if self.project.profile.supports(SCRIPTS):
@@ -263,6 +272,17 @@ class Fe10GameDataPage(Page):
         return scroll
 
     def show(self, route) -> bool:
+        if len(route) > 1 and route[1] == "rect_images":
+            if self._rect_images is None:
+                self._rect_images = RectImagesPanel(self, self.project, self.shell.changelog, self.shell)
+            self._hub.pack_forget()
+            self._editor.pack_forget()
+            if self._flags is not None:
+                self._flags.pack_forget()
+            self._rect_images.pack(fill="both", expand=True)
+            return True
+        if self._rect_images is not None:
+            self._rect_images.pack_forget()
         if len(route) > 1 and route[1] == "flags" and self.project.profile.supports(SCRIPTS):
             if self._flags is None:
                 self._flags = FlagsPanel(self, self.shell)
@@ -295,8 +315,8 @@ class Fe10GameDataPage(Page):
             self._flags.index_changed()
 
     def _title(self, route):
-        if len(route) > 1 and route[1] == "flags":
-            return TABS["flags"]
+        if len(route) > 1 and route[1] in ("flags", "rect_images"):
+            return TABS[route[1]]
         return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
 
     def crumbs(self, route):
