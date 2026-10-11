@@ -69,7 +69,7 @@ from PIL import Image, ImageTk
 
 from .. import map_heights
 from ..formats import dispo, dispo_rules, map_file
-from ..formats.cmb import script_zones
+from ..formats.cmb import script_rocks, script_zones
 from ..formats.cmb.catalog import ACTIONS, SIDES
 from ..formats.cmb.parser import ParseError
 from . import dispo_widgets, gpu_renderer, map_scene
@@ -182,6 +182,7 @@ class _BuildCanvas(tk.Canvas):
         self.terrain: list | None = None
         self.playable = None
         self.props: list[dict] = []
+        self.rocks: list[dict] = []
         self.units: list[dict] = []
         self.highlighting = False  # a section's units are highlighted (the others are drawn dimmed)
         self.zones: list[dict] = []
@@ -290,6 +291,18 @@ class _BuildCanvas(tk.Canvas):
                 color = "#ffe14d" if prop["selected"] else prop["color"]
                 self.create_rectangle(*self.box(*prop["rect"]), outline=color, width=width,
                                       dash=() if prop["model"] else (3, 3))
+            for rock in self.rocks:
+                points = [(MARGIN + (x + .5) * self.cell, MARGIN + (y + .5) * self.cell)
+                          if 0 <= x < w and 0 <= y < h else None for x, y in rock["tiles"]]
+                color = "#ffe14d" if rock["selected"] else "#ff9e57"
+                for start, end in zip(points, points[1:]):
+                    if start is not None and end is not None:
+                        self.create_line(*start, *end, fill=color, width=3 if rock["selected"] else 2,
+                                         arrow="last")
+                for point in points[1:]:
+                    if point is not None:
+                        x, y = point
+                        self.create_oval(x - 2, y - 2, x + 2, y + 2, fill=color, outline="")
         if self.show["zones"]:
             for zone in self.zones:
                 self._draw_zone(zone)
@@ -446,7 +459,7 @@ class MapBuilder(EditorPanel):
         self.navigate = navigate  # workspace routes, e.g. ("chapter", "03", "map_settings")
         self._script = script_editor
         self._on_open_function = on_open_function
-        self._zones_key = None  # (source, zones, parse problem or None), cached per source text
+        self._zones_key = None  # ((source, map dimensions), zones, parse problem or None)
         self._zones_stale = False
         self._zone_function_choices = {NEW_FUNCTION: None}
         self.empty_text = "Open a chapter with a map."
@@ -957,6 +970,18 @@ class MapBuilder(EditorPanel):
             props.append({"index": i, "rect": rect, "color": _prop_color(inst.desc_index), "selected": i == selected_prop,
                           "model": f"{obj.filename}.gs" in self._map.pak_contents, "name": obj.filename})
         canvas.props = props
+        canvas.rocks = []
+        source = self._script.chapter_source() if self._script is not None else None
+        if source is not None:
+            try:
+                for route in script_rocks.routes(source):
+                    owner = next((p for p in props if "rock" in p["name"].lower() and
+                                  (data.build_inst[p["index"]].x, data.build_inst[p["index"]].y) == (route.x, route.y)),
+                                 None)
+                    if owner is not None:
+                        canvas.rocks.append({"tiles": route.tiles(), "selected": owner["index"] == selected_prop})
+            except ParseError:
+                pass
 
         units = []
         doc = self._doc()
@@ -1279,6 +1304,13 @@ class MapBuilder(EditorPanel):
         follow props", the tiles the instance covered and now covers get
         deduced corner heights. Returns the index, or False on failure."""
         out = {}
+        old_data = self._map.map_data
+        old_rock = None
+        if old_data is not None and index is not None and 0 <= index < len(old_data.build_inst):
+            old_inst = old_data.build_inst[index]
+            if 0 <= old_inst.desc_index < len(old_data.build_desc) and "rock" in old_data.build_desc[old_inst.desc_index].filename.lower():
+                old_rock = (old_inst.x, old_inst.y)
+        source = self._script.chapter_source() if self._script is not None else None
 
         def edit(files):
             before = self._covered(map_file.read_map_bytes(files["map.bin"]), index)
@@ -1289,7 +1321,26 @@ class MapBuilder(EditorPanel):
                 files["map.bin"] = map_heights.set_tile_corners(
                     files["map.bin"], map_heights.deduce_corners(files, data, tiles))
 
-        return out.get("index") if self._edit_map(edit, log_text) else False
+        if not self._edit_map(edit, log_text):
+            return False
+        if old_rock is not None and source is not None:
+            new_data = self._map.map_data
+            new_index = out.get("index")
+            new_rock = None
+            if new_data is not None and new_index is not None and 0 <= new_index < len(new_data.build_inst):
+                new_inst = new_data.build_inst[new_index]
+                if 0 <= new_inst.desc_index < len(new_data.build_desc) and "rock" in new_data.build_desc[new_inst.desc_index].filename.lower():
+                    new_rock = (new_inst.x, new_inst.y)
+            if new_rock != old_rock:
+                try:
+                    changed = (script_rocks.move_route(source, old_rock, new_rock) if new_rock is not None else
+                               script_rocks.remove_route(source, old_rock))
+                    if changed != source:
+                        self._script.edit_chapter_source(changed)
+                except (ParseError, ValueError) as exc:
+                    messagebox.showerror("Rolling rock", f"The prop changed, but its script route did not: {exc}",
+                                         parent=self)
+        return out.get("index")
 
     def edit_instance(self, index: int, desc: int | None = None, tile=None, angle: int | None = None,
                       height: float | None = None, rect=None) -> bool:
@@ -1610,13 +1661,13 @@ class MapBuilder(EditorPanel):
         """Run ``edit(source) -> source`` on the chapter script as one Undo step."""
         _zones, problem = self._zone_state()
         if problem is not None:
-            messagebox.showinfo("Script zones", problem, parent=self)
+            messagebox.showinfo("Chapter script", problem, parent=self)
             return False
         source = self._script.chapter_source()
         try:
             new = edit(source)
         except (ParseError, ValueError, KeyError) as exc:
-            messagebox.showerror("Script zones", str(exc).strip("'\""), parent=self)
+            messagebox.showerror("Chapter script", str(exc).strip("'\""), parent=self)
             return False
         if new == source:
             return True
@@ -2099,6 +2150,64 @@ class MapBuilder(EditorPanel):
         ttk.Label(body, text="A prop doesn't block movement by itself: paint its tiles' terrain type (for example "
                              "Obstacle) with Paint terrain.", style="Muted.TLabel", wraplength=300,
                   justify="left").pack(anchor="w", pady=(10, 0))
+        if "rock" in obj.filename.lower():
+            self._rock_inspector(body, inst.x, inst.y)
+
+    def _rock_inspector(self, body, x: int, y: int) -> None:
+        ttk.Separator(body).pack(fill="x", pady=(12, 8))
+        ttk.Label(body, text="Rolling rock", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        source = self._script.chapter_source() if self._script is not None else None
+        if source is None:
+            ttk.Label(body, text="Open this chapter's script to edit its rolling-rock route.",
+                      style="Muted.TLabel", wraplength=300).pack(anchor="w", pady=(4, 0))
+            if self._script is not None and self._script.has_chapter_script:
+                ttk.Button(body, text="Open chapter script", command=self._open_chapter_script).pack(anchor="w", pady=(5, 0))
+            return
+        try:
+            matches = [route for route in script_rocks.routes(source) if (route.x, route.y) == (x, y)]
+        except ParseError as exc:
+            ttk.Label(body, text=f"Script parse error on line {exc.line}: {exc.message}",
+                      style="Muted.TLabel", wraplength=300).pack(anchor="w")
+            return
+        if len(matches) > 1:
+            ttk.Label(body, text="Several SetRock calls use this tile. Edit them in the Script tab.",
+                      style="Muted.TLabel", wraplength=300).pack(anchor="w")
+            return
+        route = matches[0] if matches else None
+        directions = {"Left": 1, "Right": 2, "Down": 4, "Up": 8}
+        direction = tk.StringVar(value=next((name for name, value in directions.items()
+                                             if route is not None and route.direction == value), "Right"))
+        row = ttk.Frame(body)
+        row.pack(anchor="w", pady=(7, 0))
+        ttk.Label(row, text="Initial direction").pack(side="left")
+        ttk.Combobox(row, textvariable=direction, values=list(directions), state="readonly", width=7).pack(
+            side="left", padx=(6, 0))
+        ttk.Label(body, text="Path steps: 4 left, 6 right, 2 down, 8 up", style="Muted.TLabel",
+                  wraplength=300).pack(anchor="w", pady=(6, 0))
+        path = tk.StringVar(value=route.path or "" if route else "")
+        entry = ttk.Entry(body, textvariable=path, width=32)
+        entry.pack(anchor="w", pady=(3, 0))
+        if route is not None and not route.editable:
+            ttk.Label(body, text="This call needs editing in the Script tab.", style="Muted.TLabel").pack(anchor="w")
+            return
+
+        def apply() -> None:
+            if self._edit_script(lambda text: script_rocks.set_route(text, x, y, directions[direction.get()],
+                                                                     path.get().strip())):
+                self._refresh_inspector()
+
+        entry.bind("<Return>", lambda _event: apply())
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="w", pady=(6, 0))
+        ttk.Button(buttons, text="Apply route" if route else "Add route", command=apply).pack(side="left")
+        if route is not None:
+            def remove() -> None:
+                if self._edit_script(lambda text: script_rocks.remove_route(text, (x, y))):
+                    self._refresh_inspector()
+
+            ttk.Button(buttons, text="Remove route", command=remove).pack(side="left", padx=(6, 0))
+        if route is not None:
+            ttk.Label(body, text=f"Script: {route.function}, line {route.set_line}", style="Muted.TLabel").pack(anchor="w")
 
     LAYER_TEXT = {"combined": "Combined", "ground": "Ground", "roof": "Roof"}
     HEIGHTS_HELP = ("Elevations are the game's values: -400 is one unit higher (a tile is 5 units wide). "
