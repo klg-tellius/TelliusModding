@@ -236,7 +236,9 @@ def _edits(version: str) -> tuple[Edit, ...]:
         Edit(call_part, _word(ppc.bl(call_part, set_chapter)), _word(ppc.bl(call_part, FLOW_HOOK))),
         Edit(call_normal, _word(ppc.bl(call_normal, set_chapter)), _word(ppc.bl(call_normal, FLOW_HOOK))),
         *(Edit(a, _word(_CMPLWI_R0_31), _word(ppc.bl(a, SAVE_CHECK))) for a in checks),
-        Edit(FLOW_HOOK, bytes(len(hook)), hook),
+        # Hub routing may replace only the final tail branch.  Keep the flow patch
+        # recognisable while that independently managed extension is installed.
+        Edit(FLOW_HOOK, bytes(len(hook)), hook, wild=((len(hook) - 4, 4),)),
         Edit(SAVE_CHECK, bytes(len(check)), check),
         *(Edit(a, _word(w), _word(_name_site_word(w))) for a, w in _NAME_SITES[version]),
         Edit(NAME_STRINGS, bytes(len(pool)), pool),
@@ -303,6 +305,12 @@ class ChapterFlow:
         what makes it a story chapter for the save menu); retail chapters going to ``+ 1`` don't."""
         if not self.available:
             raise ValueError(f"Story flow: {self.unavailable_reason}")
+        from .hub_flow import HubFlow
+        hub = HubFlow(self.editor)
+        if hub.installed:
+            hub_chapter = hub.config()[0]
+            if hub_chapter in changes or any(next_chapter == hub_chapter for next_chapter in changes.values()):
+                raise ValueError("The hub chapter is managed by Hub setup; it cannot be placed in the story order.")
         for chapter, nxt in changes.items():
             if not can_have_successor(chapter):
                 raise ValueError(f"Chapter {chapter} cannot have a next chapter.")
@@ -328,6 +336,10 @@ class ChapterFlow:
         """Take ``chapter`` out of the flow: whatever led to it goes to its successor instead."""
         if not self.available:
             raise ValueError(f"Story flow: {self.unavailable_reason}")
+        from .hub_flow import HubFlow
+        hub = HubFlow(self.editor)
+        if hub.installed and chapter == hub.config()[0]:
+            raise ValueError("The hub chapter is managed by Hub setup.")
         overrides = self.overrides()
         if chapter <= LAST_RETAIL_STORY:
             raise ValueError(f"Chapter {chapter} is a retail chapter; change the chapter before it instead.")

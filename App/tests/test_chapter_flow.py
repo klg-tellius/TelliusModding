@@ -34,7 +34,7 @@ class MiniPPC:
 
     def run(self, pc: int, until: set[int]) -> int:
         """Run from ``pc`` until it reaches an address of ``until`` (returned) or a ``blr`` (-1)."""
-        for _ in range(100):
+        for _ in range(200):
             if pc in until:
                 return pc
             w = self.code[pc]
@@ -44,6 +44,11 @@ class MiniPPC:
             nxt = pc + 4
             if op == 34:                                    # lbz
                 self.r[rd] = self.memory.get((base + _s16(imm)) & 0xFFFFFFFF, 0)
+            elif op == 36:                                  # stw
+                value = self.r[rd]
+                address = (base + _s16(imm)) & 0xFFFFFFFF
+                for i in range(4):
+                    self.memory[address + i] = (value >> (24 - i * 8)) & 0xFF
             elif op == 15:                                  # lis
                 self.r[rd] = (imm << 16) & 0xFFFFFFFF
             elif op == 14:                                  # addi / li
@@ -54,6 +59,10 @@ class MiniPPC:
                 self._compare(self.r[ra], imm, False)
             elif op == 31 and (w >> 1) & 0x3FF == 87:       # lbzx
                 self.r[rd] = self.memory.get((base + self.r[rb]) & 0xFFFFFFFF, 0)
+            elif op == 31 and (w >> 1) & 0x3FF == 215:      # stbx
+                self.memory[(base + self.r[rb]) & 0xFFFFFFFF] = self.r[rd] & 0xFF
+            elif op == 31 and (w >> 1) & 0x3FF == 28:       # and
+                self.r[ra] = self.r[rd] & self.r[rb]
             elif op == 31 and (w >> 1) & 0x3FF == 32:       # cmplw
                 self._compare(self.r[ra], self.r[rb], False)
             elif op == 31 and (w >> 1) & 0x3FF == 444:      # or (mr)
