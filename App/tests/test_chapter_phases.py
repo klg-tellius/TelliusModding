@@ -103,6 +103,15 @@ class PhaseTests(unittest.TestCase):
         linked += '\ndef Victory():\n    Complete18(1)\n'
         self.assertEqual(chapter_phase_ops.part_setup_issues(linked, "bmap09_2"), (2, []))
         self.assertIsNone(chapter_phase_ops.part_setup_issues(linked, "bmap09_3"))
+
+    def test_playable_parts_are_distinct_from_extra_map_phases(self):
+        phases = ["bmap18", "bmap18_2", "bmap18_3", "bmap18_4"]
+        source = ('@export\ndef Opening18_2():\n    MapLoad("bmap18_2")\n\n'
+                  '@export\ndef Opening18_3():\n    MapLoad("bmap18_4")\n')
+        self.assertEqual(chapter_phase_ops.playable_part_folders(source, phases),
+                         {"bmap18": 1, "bmap18_2": 2, "bmap18_4": 3})
+        self.assertEqual(chapter_phase_ops.playable_part_folders("def Opening():\n    pass\n", phases), {})
+
     def test_cancelled_phase_switch_keeps_the_old_selection(self):
         from fe_modding.gui.pages.chapters import ChapterPage
         page = SimpleNamespace(

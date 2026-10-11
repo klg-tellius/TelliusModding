@@ -156,6 +156,27 @@ def add_part_opening(source: str, part: int, folder: str) -> str:
     return source.rstrip() + "\n\n\n" + block
 
 
+def playable_part_folders(source: str, phases: list[str] | tuple[str, ...]) -> dict[str, int]:
+    """Map folders loaded by numbered battle openings, including the first part.
+
+    Extra map folders without a numbered opening are map phases, not playable parts.
+    """
+    if not phases:
+        return {}
+    lines = source.splitlines()
+    parts = {}
+    for span in source_tools.function_spans(source):
+        match = re.fullmatch(r"Opening18_([234])", span.export_id or "")
+        if match is None:
+            continue
+        body = "\n".join(lines[span.def_line - 1:span.last_line])
+        for folder in phases[1:]:
+            if re.search(rf'\bMapLoad\s*\(\s*["\x27]{re.escape(folder)}["\x27]', body):
+                parts[folder] = int(match.group(1))
+                break
+    return {phases[0]: 1, **parts} if parts else {}
+
+
 def part_setup_issues(source: str, folder: str) -> tuple[int, list[str]] | None:
     """The part that loads this folder and its remaining guided setup steps."""
     lines = source.splitlines()
