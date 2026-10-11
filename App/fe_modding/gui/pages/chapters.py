@@ -68,6 +68,18 @@ def _flow_label(chapter: int, titles: dict) -> str:
     return f"{chapter:02d} · {chapters.chapter_display_title(f'{chapter:02d}', titles)}"
 
 
+def _part_folders(project, chapter_id: str, phases, source: str | None = None) -> dict[str, int]:
+    if len(phases) < 2:
+        return {}
+    try:
+        if source is None:
+            path = script_sources.chapter_script(project, chapter_id)
+            source = script_sources.peek(project, path) if path else ""
+        return chapter_phase_ops.playable_part_folders(source, phases)
+    except (OSError, ModdingError, ValueError):
+        return {}
+
+
 class ChaptersHub(Page):
     kind = "chapters"
 
@@ -156,7 +168,10 @@ class ChaptersHub(Page):
                 if c.units_by_difficulty:
                     chips.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
                 if len(c.phases) > 1:
-                    chips.append((f"+{len(c.phases) - 1} phase{'s' if len(c.phases) > 2 else ''}", "accent_bg"))
+                    parts = _part_folders(self.project, c.id, c.phases)
+                    label = (f"{len(parts)} parts" if len(parts) > 1 else
+                             f"{len(c.phases)} map phases")
+                    chips.append((label, "accent_bg"))
                 if not c.has_map:
                     chips.append(("no map", "chip_named"))
                 key = (c.id, c.title)
@@ -317,6 +332,10 @@ class ChapterPage(Page):
         super().__init__(shell)
         self._chapter: str | None = None
         self._phase: str | None = None
+        self._phase_folders: list[str] = []
+        self._phase_navigation: list[str] = []
+        self._phase_labels: dict[str, str] = {}
+        self._phase_by_label: dict[str, str] = {}
         self._difficulty = "n"
         self._ids: list[str] = []
 
@@ -333,8 +352,11 @@ class ChapterPage(Page):
         right.pack(side="right")
         self._phase_var = tk.StringVar()
         self._phase_label = ttk.Label(right, text="Phase", style="Muted.TLabel")
-        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=12)
-        self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(self._phase_var.get()))
+        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=24)
+        self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(
+            self._phase_by_label.get(self._phase_var.get(), self._phase_var.get())))
+        self._previous_phase = ttk.Button(right, text="‹ Part", command=lambda: self._step_phase(-1))
+        self._next_phase = ttk.Button(right, text="Part ›", command=lambda: self._step_phase(1))
         self._add_phase_button = ttk.Button(right, text="+ Phase…", command=self._add_phase)
         self._remove_phase_button = ttk.Button(right, text="Remove phase…", command=self._remove_phase)
         self._prev = ttk.Button(right, text="‹ Previous", command=lambda: self._step(-1))
@@ -457,20 +479,26 @@ class ChapterPage(Page):
         self._dialogue.select_chapter(paths.dialogue)
         self._script.select_chapter(paths.script)
         self._shops.select_chapter(chapter_id)
-        self._phase_combo.configure(values=phases)
+        self._configure_phases(phases)
         if profile_of(self.project).message_dialect != "fe10" and phases:
             self._phase_label.pack(side="left", padx=(0, 6))
             self._phase_combo.pack(side="left", padx=(0, 6))
+            self._previous_phase.pack(side="left", padx=(0, 3))
+            self._next_phase.pack(side="left", padx=(0, 10))
             self._add_phase_button.pack(side="left", padx=(0, 4))
             self._remove_phase_button.pack(side="left", padx=(0, 18))
         elif len(phases) > 1:
             self._phase_label.pack(side="left", padx=(0, 6))
             self._phase_combo.pack(side="left", padx=(0, 18))
+            self._previous_phase.pack(side="left", padx=(0, 3))
+            self._next_phase.pack(side="left", padx=(0, 10))
             self._add_phase_button.pack_forget()
             self._remove_phase_button.pack_forget()
         else:
             self._phase_label.pack_forget()
             self._phase_combo.pack_forget()
+            self._previous_phase.pack_forget()
+            self._next_phase.pack_forget()
             self._add_phase_button.pack_forget()
             self._remove_phase_button.pack_forget()
         self._phase = None
@@ -479,6 +507,35 @@ class ChapterPage(Page):
         self._update_header()
         self._render_overview()
         return True
+
+    def _configure_phases(self, phases) -> None:
+        self._phase_folders = list(phases)
+        source = self._script.chapter_source() if self._script.showing_chapter_script else None
+        parts = _part_folders(self.project, self._chapter, phases, source)
+        self._phase_navigation = ([folder for folder, _part in sorted(parts.items(), key=lambda item: item[1])]
+                                  if len(parts) > 1 else list(phases))
+        self._phase_labels = {}
+        for number, folder in enumerate(phases, 1):
+            label = f"Part {parts[folder]}" if folder in parts else f"Map phase {number}"
+            self._phase_labels[folder] = f"{label} · {folder}"
+        self._phase_by_label = {label: folder for folder, label in self._phase_labels.items()}
+        self._phase_combo.configure(values=list(self._phase_by_label))
+        self._phase_label.configure(text="Parts" if len(parts) > 1 else "Map phase")
+        self._previous_phase.configure(text="‹ Part" if len(parts) > 1 else "‹ Phase")
+        self._next_phase.configure(text="Part ›" if len(parts) > 1 else "Phase ›")
+        self._update_phase_steps()
+
+    def _update_phase_steps(self) -> None:
+        position = self._phase_navigation.index(self._phase) if self._phase in self._phase_navigation else -1
+        self._previous_phase.configure(state="normal" if position > 0 else "disabled")
+        self._next_phase.configure(state="normal" if 0 <= position < len(self._phase_navigation) - 1 else "disabled")
+
+    def _step_phase(self, step: int) -> None:
+        if self._phase not in self._phase_navigation:
+            return
+        position = self._phase_navigation.index(self._phase) + step
+        if 0 <= position < len(self._phase_navigation):
+            self._set_phase(self._phase_navigation[position])
 
     def _update_phase_status(self) -> None:
         if (self._chapter is None or self._phase is None
@@ -513,7 +570,7 @@ class ChapterPage(Page):
                         "Discard phase changes?",
                         f"{names} has unsaved changes. Discard them and switch phases?",
                         icon="warning", parent=self):
-                    self._phase_var.set(previous)
+                    self._phase_var.set(getattr(self, "_phase_labels", {}).get(previous, previous))
                     return False
                 for panel in dirty:
                     panel._dirty = False
@@ -532,10 +589,11 @@ class ChapterPage(Page):
                 self._deployment.select_chapter(old_deployment)
             if old_map is not None and old_map.exists():
                 self._map.select_chapter(old_map)
-            self._phase_var.set(previous or "")
+            self._phase_var.set(getattr(self, "_phase_labels", {}).get(previous, previous or ""))
             return False
         self._phase = folder
-        self._phase_var.set(folder or "")
+        self._phase_var.set(self._phase_labels.get(folder, folder or ""))
+        self._update_phase_steps()
         self._update_phase_status()
         self._remove_phase_button.configure(
             state="normal" if folder and folder != f"bmap{int(self._chapter):02d}" else "disabled")
@@ -593,7 +651,7 @@ class ChapterPage(Page):
             return
         self.refresh_chapter_lists()
         phases = chapters.chapter_phases(self.project, self._chapter)
-        self._phase_combo.configure(values=phases)
+        self._configure_phases(phases)
         self._set_phase(clone.folder)
         self.shell.changelog.append(clone.folder, f"Cloned phase from {source_folder}")
         self.shell.rebuild_index()
@@ -646,7 +704,7 @@ class ChapterPage(Page):
             session.changed(self)
         self.refresh_chapter_lists()
         phases = chapters.chapter_phases(self.project, self._chapter)
-        self._phase_combo.configure(values=phases)
+        self._configure_phases(phases)
         self._phase = None
         self._set_phase(phases[0] if phases else None)
         self.shell.changelog.append(folder, "Removed phase")
