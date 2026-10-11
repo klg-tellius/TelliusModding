@@ -127,6 +127,12 @@ class ScriptEditor(EditorPanel):
         )
         self._tabs.add(self._editor, text="Code")
         self._editor.text.bind("<ButtonRelease-1>", lambda e: self.after_idle(self._sync_selection_to_cursor), add="+")
+        self._editor.text.bind("<Control-f>", self._focus_search)
+        self._editor.text.bind("<F3>", self._find_next)
+        self._editor.text.bind("<Shift-F3>", self._find_previous)
+        self._editor.text.tag_configure("search_match", background=theme.color("highlight"))
+        theme.on_change(self, lambda: self._editor.text.tag_configure(
+            "search_match", background=theme.color("highlight")))
         bytecode_frame = ttk.Frame(self._tabs)
         self._bytecode = tk.Text(bytecode_frame, wrap="none", font=self._editor._font)
         scroll = ttk.Scrollbar(bytecode_frame, command=self._bytecode.yview)
@@ -136,6 +142,20 @@ class ScriptEditor(EditorPanel):
         self._tabs.add(bytecode_frame, text="Bytecode")
         self._tabs.bind("<<NotebookTabChanged>>", lambda e: self._refresh_bytecode())
 
+        search_row = ttk.Frame(right_frame)
+        search_row.pack(fill="x", pady=(4, 0))
+        ttk.Label(search_row, text="Search code").pack(side="left")
+        self._search_var = tk.StringVar()
+        self._search_entry = ttk.Entry(search_row, textvariable=self._search_var, width=32)
+        self._search_entry.pack(side="left", padx=(6, 4))
+        self._search_entry.bind("<Return>", self._find_next)
+        self._search_entry.bind("<Shift-Return>", self._find_previous)
+        self._search_var.trace_add("write", lambda *_: self._clear_search_match())
+        ttk.Button(search_row, text="Previous", command=self._find_previous).pack(side="left")
+        ttk.Button(search_row, text="Next", command=self._find_next).pack(side="left", padx=(4, 0))
+        self._search_status = ttk.Label(search_row, style="Muted.TLabel")
+        self._search_status.pack(side="left", padx=(8, 0))
+
         bottom = ttk.Frame(right)
         right.add(bottom, weight=1)
         self._hint = ttk.Label(bottom, text="", style="Ok.TLabel")
@@ -144,6 +164,48 @@ class ScriptEditor(EditorPanel):
         self._problems.pack(fill="both", expand=True)
         self._problems.bind("<<ListboxSelect>>", lambda e: self._goto_problem())
         self._problem_lines: list[int] = []
+
+    def _focus_search(self, _event=None):
+        self._tabs.select(self._editor)
+        self._search_entry.focus_set()
+        self._search_entry.select_range(0, "end")
+        return "break"
+
+    def _clear_search_match(self) -> None:
+        self._editor.text.tag_remove("search_match", "1.0", "end")
+        self._search_status.config(text="")
+
+    def _find_next(self, _event=None):
+        return self._find_code(backwards=False)
+
+    def _find_previous(self, _event=None):
+        return self._find_code(backwards=True)
+
+    def _find_code(self, *, backwards: bool):
+        needle = self._search_var.get()
+        if not needle:
+            self._focus_search()
+            return "break"
+        widget = self._editor.text
+        selected = widget.tag_ranges("search_match")
+        start = str(selected[0] if backwards else selected[1]) if selected else widget.index("insert")
+        options = {"exact": True, "nocase": True, "backwards": backwards}
+        found = widget.search(needle, start, stopindex="1.0" if backwards else "end", **options)
+        if not found:
+            found = widget.search(needle, "end" if backwards else "1.0",
+                                  stopindex="1.0" if backwards else "end", **options)
+        self._clear_search_match()
+        if found:
+            end = widget.index(f"{found}+{len(needle)}c")
+            widget.tag_add("search_match", found, end)
+            widget.mark_set("insert", found)
+            widget.see(found)
+            self._tabs.select(self._editor)
+            self._sync_selection_to_cursor()
+            self._search_status.config(text=f"Line {found.split('.')[0]}")
+        else:
+            self._search_status.config(text="No matches")
+        return "break"
 
     # -- loading ------------------------------------------------------------
     def refresh_chapter_list(self) -> None:
@@ -277,6 +339,7 @@ class ScriptEditor(EditorPanel):
         source, note = loaded.source, loaded.note
         self._fill_file_choices()
         self._editor.set(source)
+        self._clear_search_match()
         self._dirty = False
         self._selected = None
         self._save_button.config(state="normal")
@@ -487,6 +550,7 @@ class ScriptEditor(EditorPanel):
     def _set_source(self, source: str, select: Optional[str] = None) -> None:
         view = self._editor.text.yview()[0]
         self._editor.set(source)
+        self._clear_search_match()
         self._editor.text.yview_moveto(view)
         self._on_text_changed()
         if select:

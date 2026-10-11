@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
 from ..formats.fe9_conversation import Event, Portrait, Scene, Textbox
 from ..formats.fe9_conversation_render import ConversationRenderer
