@@ -2017,6 +2017,37 @@ def _synthetic_animation() -> animation.GaAnimation:
 
 
 class AnimationWriteTests(unittest.TestCase):
+    def test_duration_uses_header_end_after_last_bone_key(self):
+        anim = _synthetic_animation()
+        words = list(anim.header.words)
+        words[6] = 25
+        anim.header = animation.GaHeader(tuple(words))
+        rebuilt = animation.read_animation_bytes(animation.write_animation(anim))
+        self.assertEqual(max(c.end_frame for c in rebuilt.curves), 10)
+        self.assertEqual(rebuilt.length_in_frames, 25)
+
+    def test_footer_only_effect_keeps_header_duration(self):
+        anim = _synthetic_animation()
+        words = list(anim.header.words)
+        words[6] = 240
+        anim.header = animation.GaHeader(tuple(words))
+        anim.groups = []
+        anim.curves = []
+        self.assertEqual(animation.read_animation_bytes(animation.write_animation(anim)).length_in_frames, 240)
+
+    def test_preview_material_alpha_replaces_rest_alpha(self):
+        anim = _synthetic_animation()
+        track = struct.pack(">HHI", 1, 0, 0) + struct.pack(">H", 10)
+        track += struct.pack(">HHHhHh", 2, 0, 0, 0, 10, 255)
+        anim.footer.blocks[1] = track
+        anim.footer.order.append(1)
+        anim = animation.read_animation_bytes(animation.write_animation(anim))
+        tri = model_viewer._Triangle((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+                                     (255, 255, 255), alpha=0.7, material=0)
+        self.assertAlmostEqual(model_viewer._animate_material_alphas([tri], anim, 5)[0].alpha,
+                               127 / 255)
+        self.assertEqual(tri.alpha, 0.7)
+
     def test_round_trip_is_byte_identical(self):
         data = animation.write_animation(_synthetic_animation())
         self.assertEqual(animation.write_animation(animation.read_animation_bytes(data)), data)
