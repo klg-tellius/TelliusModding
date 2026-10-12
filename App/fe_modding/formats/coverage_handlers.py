@@ -14,7 +14,7 @@ import struct
 
 from . import lz10, pak
 from .common import HEADER_SIZE, SECTION_TABLE_SENTINEL
-from .coverage import (DECODED, PADDING, PLAUSIBLE, UNCLASSIFIED, UNDECODED, UNREAD, FileCoverage, Walker,
+from .coverage import (DECODED, PADDING, PLAUSIBLE, RESERVED, UNCLASSIFIED, UNDECODED, UNREAD, FileCoverage, Walker,
                        _base, _ext, _u16, _u32, handles)
 
 
@@ -837,31 +837,33 @@ def gci_save(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(off + 0x54, 4, "header +0x54")
         cov.zero(off + 0x67, 9, "header +0x67")
         s = off + sf.CRC_START
-        cov.mark(s + 0x43, 2, UNDECODED, "SYSF +0x43/+0x44")
+        # Initialized to zero and copied through save/load; no US gameplay reader.
+        cov.mark(s + 0x43, 1, RESERVED, "unused SYSF +0x43")
         cov.zero(s + 0x45, 2, "SYSF +0x45")
         p = off + sf.STREAM_START + 4
-        cov.mark(p, 16, UNDECODED, "BMST +0x00..0x0F")
-        cov.mark(p + 0x50, 2, UNDECODED, "BMST +0x50/+0x51")
-        cov.mark(p + 0x94, 8, UNDECODED, "BMST +0x94..0x9B (objective state)")
+        # Slots 5-7 are addressable through BMGetValue/BMSetValue, but no
+        # shipped US script uses them and every sampled save leaves them zero.
+        cov.mark(p + 0x0A, 6, RESERVED, "unused BMST value slots 5-7")
         opts = p + 0x9C
-        for i, known in enumerate((0x1E, 0x00, 0x0C, 0xE0)):
+        for i, known in enumerate((0x1E, 0x00, 0x1D, 0xE0)):
             cov.bits(opts + i, 1, known=known, name=f"option byte {i}")
         cov.zero(opts + 11, 1, "option byte 11")
         m = p + sf.PartyState.SIZE + 4
-        cov.mark(m + 7, 10, UNDECODED, "MDST runtime bytes 7-16")
         cov.zero(m + 0x16, 10, "MDST pad")
         r = m + sf.MapState.SIZE + 4
         for unit in block.units:
             if unit is None:
                 r += 2
                 continue
-            for rel, size_, label in ((0x0C, 1, "unit +0x19D"), (0x6A, 2, "unit +0x230"), (0x6C, 2, "unit +0x232"),
-                                      (0x6F, 1, "unit +0x235"), (0x89, 2, "unit +0x15C")):
-                cov.mark(r + rel, size_, UNDECODED, label)
+            # The US build does not consume either byte in gameplay. +0x19D
+            # has a debug-editor setter; +0x235 has a dormant UnitGet selector.
+            cov.mark(r + 0x0C, 1, RESERVED, "unused unit +0x19D (debug editor only)")
+            cov.mark(r + 0x6F, 1, RESERVED, "unused unit +0x235 (UnitGet 34)")
+            # Unused in the US build: zero-initialized and serialized, with no
+            # gameplay writer or use in the available scripts. UnitGet can read them.
+            cov.mark(r + 0x6A, 2, RESERVED, "unused unit +0x230 (UnitGet 28)")
+            cov.mark(r + 0x6C, 2, RESERVED, "unused unit +0x232 (UnitGet 32)")
             cov.zero(r + 0x8B, 4, "unit pad")
             r += sf.UNIT_RECORD_SIZE
-        r += 4 + 4 * sf.CONVOY_SLOTS + 4
-        for i in range(sf.FORGE_RECORDS):
-            cov.mark(r + 0x18 * i + 0x14, 4, PLAUSIBLE, "FWEP +0x14..0x17 (appearance)")
         stream_end = off + sf.STREAM_START + len(block.build_stream())
         cov.zero(stream_end, off + size - stream_end, "after the stream")

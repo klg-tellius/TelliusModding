@@ -195,8 +195,8 @@ class SystemData:
     screen_x: int  # s8 screen position (Options > Screen)
     screen_y: int  # s8
     brightness: int  # 0x40 default
-    reserved_43: int
-    region: int  # +0x44, derived from the console settings when the system data is made
+    reserved_43: int  # +0x43: initialized to zero; no shipped US gameplay reader
+    language_code: int  # +0x44; 0 Japanese, 1 English, 2 German, 3 French, 4 Spanish, 5 Italian
     reserved_45: bytes  # 2 bytes, never saved (0)
     last_file_slot: int
 
@@ -208,13 +208,13 @@ class SystemData:
         magic, version, sid, unlocks = r.take(4), r.u32(), r.u64(), r.u16()
         cleared, met = r.take(30), r.take(16)
         sx, sy = r.s8(), r.s8()
-        bright, r43, region = r.u8(), r.u8(), r.u8()
-        return cls(magic, version, sid, unlocks, cleared, met, sx, sy, bright, r43, region, r.take(2), r.u8())
+        bright, r43, language_code = r.u8(), r.u8(), r.u8()
+        return cls(magic, version, sid, unlocks, cleared, met, sx, sy, bright, r43, language_code, r.take(2), r.u8())
 
     def build(self) -> bytes:
         return (self.magic + struct.pack(">IQH", self.version, self.system_id, self.unlocks)
                 + self.cleared_playthroughs + self.met_characters
-                + struct.pack(">bbBBB", self.screen_x, self.screen_y, self.brightness, self.reserved_43, self.region)
+                + struct.pack(">bbBBB", self.screen_x, self.screen_y, self.brightness, self.reserved_43, self.language_code)
                 + self.reserved_45 + bytes((self.last_file_slot,)))
 
     @property
@@ -255,7 +255,7 @@ class ClearRecord:
 class PartyState:
     """``serialize_party_data_to_stream``: ``party_data`` (``0x80330708``)."""
 
-    head: bytes  # +0x00, 16 bytes (zeroed by reinit_party_struct, no other writer found)
+    head: bytes  # +0x00, eight s16 slots; BMSetValue/BMGetValue use indices 0-4 in shipped scripts
     chapter: int  # +0x10 current_chapter_number
     phase: int  # +0x11 army whose phase it is
     turn: int  # +0x12
@@ -263,8 +263,8 @@ class PartyState:
     gold: int  # +0x18
     bonus_exp: int  # +0x1C
     objective_texts: bytes  # +0x20, 4 x 12-byte keys copied from the chapter record
-    byte_50: int  # +0x50, cleared at chapter start
-    byte_51: int  # +0x51
+    reinforcement_uses: int  # +0x50, chapter-local reinforcement action count (limit 2)
+    byte_51: int  # +0x51: forged this chapter; blocks another forge purchase
     cursor_x: int  # +0x52 map cursor tile
     cursor_y: int  # +0x53
     resume_point: int  # +0x54
@@ -279,7 +279,7 @@ class PartyState:
     report_score: int  # +0x72 s16
     tutorials_unlocked: bytes  # +0x74, 128-bit mask (TutorialUnlock/Lock)
     tutorials_learned: bytes  # +0x84, 128-bit mask (TutorialLearn/Forget)
-    objective_state: bytes  # +0x94, 8 bytes read by start_chapter_complete_event_if_flag_set
+    faction_command_records: bytes  # +0x94, two {mode, faction, target_x, target_y} records
     options: bytes  # +0x9C, 12 bytes, see OPTION_FIELDS
     flag_bits: bytes  # +0xB4 event flag table bits (96 slots)
     clear_history: list  # +0x3C4, 40 ClearRecord
@@ -306,15 +306,43 @@ class PartyState:
         out = bytearray(self.head)
         out += struct.pack(">BBH", self.chapter, self.phase, self.turn) + self.phase_states
         out += struct.pack(">II", self.gold, self.bonus_exp) + self.objective_texts
-        out += bytes((self.byte_50, self.byte_51, self.cursor_x, self.cursor_y, self.resume_point,
+        out += bytes((self.reinforcement_uses, self.byte_51, self.cursor_x, self.cursor_y, self.resume_point,
                       self.base_opening_done, self.deployment_surplus, self.playthrough))
         out += struct.pack(">QQIIhh", self.play_time, self.timer_2, self.report_profit, self.report_loss,
                            self.report_exp, self.report_score)
-        out += self.tutorials_unlocked + self.tutorials_learned + self.objective_state + self.options + self.flag_bits
+        out += self.tutorials_unlocked + self.tutorials_learned + self.faction_command_records + self.options + self.flag_bits
         for c in self.clear_history:
             out += struct.pack(">BBHI", c.chapter, c.continued, c.turns, c.seconds)
         out += _put_text(self.chapter_name, 0x18) + self.tail
         return bytes(out)
+
+    def bm_value(self, index: int) -> int:
+        """Signed BMGetValue slot. Shipped chapter scripts use indices 0–4."""
+        if not 0 <= index < 8:
+            raise IndexError(index)
+        return struct.unpack_from(">h", self.head, index * 2)[0]
+
+    def set_bm_value(self, index: int, value: int) -> None:
+        """Set a BMSetValue slot while retaining the other head bytes."""
+        if not 0 <= index < 8:
+            raise IndexError(index)
+        head = bytearray(self.head)
+        struct.pack_into(">h", head, index * 2, value)
+        self.head = bytes(head)
+
+    def option_enabled(self, off_mask: int) -> bool:
+        """Whether an inverted on/off option in byte 2 is enabled."""
+        if off_mask not in (0x01, 0x10):
+            raise ValueError(off_mask)
+        return not bool(self.options[2] & off_mask)
+
+    def set_option_enabled(self, off_mask: int, enabled: bool) -> None:
+        """Change one named option without altering the other saved bits."""
+        if off_mask not in (0x01, 0x10):
+            raise ValueError(off_mask)
+        options = bytearray(self.options)
+        options[2] = options[2] & ~off_mask if enabled else options[2] | off_mask
+        self.options = bytes(options)
 
     def objective_text(self, i: int) -> str:
         return _text(self.objective_texts[i * 12:(i + 1) * 12])
@@ -335,21 +363,22 @@ OPTION_FIELDS = (
     (0, 0x18, "Message speed (0 slow - 3 max)"), (0, 0x20, "Option byte 0 bit 5"), (0, 0xC0, "Option byte 0 bits 6-7"),
     (1, 0x01, "Option byte 1 bit 0 (off)"), (1, 0x02, "Option byte 1 bit 1 (off)"), (1, 0x0C, "Option byte 1 bits 2-3"),
     (1, 0x10, "Option byte 1 bit 4 (off)"), (1, 0x20, "Option byte 1 bit 5 (off)"), (1, 0xC0, "Option byte 1 bits 6-7"),
-    (2, 0x01, "Option byte 2 bit 0 (off)"), (2, 0x02, "Option byte 2 bit 1 (off)"), (2, 0x0C, "Sound output (stereo 1)"),
-    (2, 0x10, "Option byte 2 bit 4 (off)"), (2, 0x20, "Option byte 2 bit 5 (off)"), (2, 0x40, "Option byte 2 bit 6 (off)"),
+    (2, 0x01, "Bonus Exp Display (off)"), (2, 0x02, "Option byte 2 bit 1 (off)"), (2, 0x0C, "Sound output (stereo 1)"),
+    (2, 0x10, "Unit Facing (off)"), (2, 0x20, "Option byte 2 bit 5 (off)"), (2, 0x40, "Option byte 2 bit 6 (off)"),
     (2, 0x80, "Option byte 2 bit 7 (off)"),
     (3, 0x10, "Option byte 3 bit 4 (off)"), (3, 0x20, "Message sounds (off)"), (3, 0x40, "Show other units' moves"),
     (3, 0x80, "Fixed growths"),
 )
+OPTION_TOGGLES = ((0x10, "Unit Facing"), (0x01, "Bonus Exp Display"))
 OPTION_BYTES = ("Bits 0", "Bits 1", "Bits 2", "Bits 3", "Unit speed", "Brightness", "Screen X", "Screen Y",
                 "Music volume", "Sound effect volume", "Difficulty", "Byte 11")
 
 
 # -- MDST ------------------------------------------------------------------------------
 
-MAP_STATE_BYTES = ("restore camera", "sight mode", "weather", "fog type", "fog start", "fog end", "fog colour",
-                   "0x80367291", "0x80367292", "0x80367294", "0x80367295", "0x80367298", "0x80367299",
-                   "0x8036729A", "0x8036729C", "0x8036729D", "0x8036729E")
+MAP_STATE_BYTES = ("restore camera", "sight mode", "weather", "fog type", "fog start", "fog end", "fog red",
+                   "fog green", "fog blue", "light Y angle (signed °)", "light Z angle (signed °)",
+                   "diffuse red", "diffuse green", "diffuse blue", "ambient red", "ambient green", "ambient blue")
 
 
 @dataclass
@@ -417,7 +446,7 @@ class UnitRecord:
     level: int
     exp: int  # 255 = no EXP (max level)
     transform_gauge: int
-    byte_19d: int  # +0x19D 0-100
+    unused_19d: int  # +0x19D; debug editor can set 0-100, no gameplay reader found
     x: int
     y: int
     state_flags: int  # +0x1A0 u32
@@ -434,10 +463,10 @@ class UnitRecord:
     kills: int  # +0x22A lifetime
     map_kills: int  # +0x22C
     tiles_moved: int  # +0x22E
-    counter_230: int
-    counter_232: int
+    unused_230: int  # +0x230, unused in US build; UnitGet selector 28 can read it
+    unused_232: int  # +0x232, unused in US build; UnitGet selector 32 can read it
     last_kill_chapter: int  # +0x234
-    byte_235: int
+    unused_235: int  # +0x235; UnitGet selector 34 can read it, no gameplay writer found
     supports: bytes  # +0x214, 10 support points by RelianceData slot
     ai_attack: int  # index in ATK_SEQID_LIST
     ai_move: int  # MOV_SEQID_LIST
@@ -449,7 +478,7 @@ class UnitRecord:
     ai_258: int
     ai_25a: int
     ai_order: int  # +0x248 turn order
-    field_15c: int
+    facing_angle_x50: int  # +0x15C, signed map-model facing angle in degrees * 50
     padding: bytes  # 4 bytes, 0
 
     @classmethod
@@ -466,24 +495,24 @@ class UnitRecord:
         sup = r.take(10)
         ai = [r.u8() for _ in range(6)]
         aflags, a258, a25a, order = r.u32(), r.u16(), r.u16(), r.u8()
-        f15c, pad = r.u16(), r.take(4)
+        facing_angle_x50, pad = r.s16(), r.take(4)
         return cls(ch, job, *head, state, status, hp, bld, mov, stats, growth, skills, items, wexp, *counters,
-                   last, b235, sup, *ai, aflags, a258, a25a, order, f15c, pad)
+                   last, b235, sup, *ai, aflags, a258, a25a, order, facing_angle_x50, pad)
 
     def build(self) -> bytes:
         out = bytearray(struct.pack(">HH", self.character, self.job))
         out += bytes((self.army, self.prev_slot, self.next_slot, self.linked_slot, self.group, self.level, self.exp,
-                      self.transform_gauge, self.byte_19d, self.x, self.y))
+                      self.transform_gauge, self.unused_19d, self.x, self.y))
         out += struct.pack(">I", self.state_flags) + self.status
         out += bytes((self.hp, self.build_bonus, self.move_bonus)) + self.stats + self.growth_points + self.skills
         for it in self.items:
             out += it.build()
         out += self.weapon_exp
-        out += struct.pack(">6HBB", self.battles, self.kills, self.map_kills, self.tiles_moved, self.counter_230,
-                           self.counter_232, self.last_kill_chapter, self.byte_235)
+        out += struct.pack(">6HBB", self.battles, self.kills, self.map_kills, self.tiles_moved, self.unused_230,
+                           self.unused_232, self.last_kill_chapter, self.unused_235)
         out += self.supports
         out += bytes((self.ai_attack, self.ai_move, self.ai_heal, self.ai_mtype, self.ai_attack_pc, self.ai_move_pc))
-        out += struct.pack(">IHHBH", self.ai_flags, self.ai_258, self.ai_25a, self.ai_order, self.field_15c)
+        out += struct.pack(">IHHBh", self.ai_flags, self.ai_258, self.ai_25a, self.ai_order, self.facing_angle_x50)
         out += self.padding
         assert len(out) == UNIT_RECORD_SIZE
         return bytes(out)
@@ -512,7 +541,7 @@ class ForgeRecord:
     hit: int  # x5
     crit: int  # x3
     weight: int  # weight reduction steps
-    appearance: bytes  # 4 bytes, 80 80 80 FF by default
+    trail_color_rgba: bytes  # +0x14, attack-trail RGBA; 80 80 80 FF by default
 
     @classmethod
     def parse(cls, r: _Reader) -> "ForgeRecord":
@@ -520,7 +549,7 @@ class ForgeRecord:
 
     def build(self) -> bytes:
         return (bytes((self.allocated,)) + self.name
-                + struct.pack(">bbbb", self.might, self.hit, self.crit, self.weight) + self.appearance)
+                + struct.pack(">bbbb", self.might, self.hit, self.crit, self.weight) + self.trail_color_rgba)
 
     @property
     def name_text(self) -> str:
