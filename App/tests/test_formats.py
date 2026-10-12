@@ -298,18 +298,67 @@ def _build_minimal_map_bytes(sections: list[tuple[str, bytes]]) -> bytes:
     names = b""
     name_offsets = {}
     for name, _payload in sections:
-        name_offsets[name] = len(names)
+        name_offsets[name] = 8 + len(names)
         names += name.encode("ascii") + b"\x00"
 
     for (name, _payload), address in zip(sections, section_addrs):
         out += struct.pack(">II", address - HEADER_SIZE, name_offsets[name])
+    out += struct.pack(">II", 0x01000000, 0)
     out += names
 
-    struct.pack_into(">III", out, 0, len(out), table_start - HEADER_SIZE, 0)
+    struct.pack_into(">IIII", out, 0, len(out), table_start - HEADER_SIZE, 0, len(sections))
     return bytes(out)
 
 
 class MapFileGridTests(unittest.TestCase):
+    def test_mapextra_modes_preserve_other_flag_bits(self):
+        capacity = struct.pack(">HHHHf", 2, 1, 0, 0, 2000.0)
+        extra = bytes(8) + struct.pack(">I", 0x30000024)
+        original = _build_minimal_map_bytes([("mapcapacity", capacity), ("mapextra", extra)])
+        parsed = map_file.read_map_bytes(original)
+        sight = map_file.patch_extra_mode(original, parsed.extra, "sight_code", 3)
+        weather = map_file.patch_extra_mode(sight, parsed.extra, "weather_id", 17)
+        reordered = map_file.patch_extra_mode(weather, parsed.extra, "preserve_object_order", 0)
+        result = map_file.read_map_bytes(reordered).extra
+        self.assertEqual((result.sight_code, result.weather_id), (3, 17))
+        self.assertEqual(result.unknown_tail & 0x10000024, 0x10000024)
+        self.assertFalse(result.preserve_object_order)
+
+    def test_sparse_link_writer_creates_section_and_preserves_other_sections(self):
+        capacity = struct.pack(">HHHHf", 3, 2, 0, 0, 2000.0)
+        extra = bytes(12)
+        original = _build_minimal_map_bytes([("mapcapacity", capacity), ("mapextra", extra)])
+
+        edited = map_file.set_link_openings(original, 1, 0, map_file.LINK_PASS_EAST)
+
+        parsed = map_file.read_map_bytes(edited)
+        self.assertEqual(parsed.link[1][0], map_file.LINK_PASS_EAST)
+        self.assertEqual(parsed.link[0][0], -1)
+        start, length = map_file.section_bytes(edited, "mapextra")
+        self.assertEqual(edited[start:start + length], extra)
+        self.assertEqual(map_file.set_link_openings(edited, 1, 0, map_file.LINK_PASS_EAST), edited)
+
+    def test_sparse_link_writer_preserves_high_bits_and_maplink_at(self):
+        capacity = struct.pack(">HHHHf", 3, 2, 0, 0, 2000.0)
+        link = struct.pack(">H", 1) + bytes((1, 0, 0xA5)) + bytes(3)
+        link_at = struct.pack(">H", 1) + bytes((1, 0, 0x0B)) + bytes(3)
+        original = _build_minimal_map_bytes([("mapcapacity", capacity), ("maplink", link),
+                                              ("maplinkAt", link_at), ("mapextra", bytes(12))])
+
+        edited = map_file.set_link_openings(original, 1, 0, 0x03)
+        parsed = map_file.read_map_bytes(edited)
+        self.assertEqual(parsed.link[1][0], 0xA3)
+        self.assertEqual(parsed.link_at[1][0], 0x0B)
+        self.assertEqual(map_file.compose_link_status_grid(parsed, False)[1][0], 0x0BA3)
+
+    def test_sparse_link_writer_rejects_maplink_abs_override(self):
+        capacity = struct.pack(">HHHHf", 2, 1, 0, 0, 2000.0)
+        link_abs = struct.pack(">H", 1) + bytes((1, 0, 0x06)) + bytes(3)
+        original = _build_minimal_map_bytes([("mapcapacity", capacity), ("maplinkAbs", link_abs),
+                                              ("mapextra", bytes(12))])
+        with self.assertRaises(map_file.MapFileError):
+            map_file.set_link_openings(original, 1, 0, 3)
+
     def test_sparse_link_grid_uses_the_same_x_y_indexing_as_panel_grids(self):
         capacity = struct.pack(">HHHHf", 3, 2, 0, 0, 2000.0)
         link = struct.pack(">H", 2) + bytes([2, 1, 0xA5, 0, 1, 0x11])
@@ -340,7 +389,7 @@ class MapFileGridTests(unittest.TestCase):
         self.assertEqual(status[0][1], map_file.LINK_DEFAULT_OPEN)  # listed nowhere
         self.assertEqual(map_file.link_passable_directions(status[0][0]), ("east", "south"))
 
-    def test_link_height_rules_clear_only_blocked_direction_bits(self):
+    def test_link_height_rules_precede_sparse_overrides(self):
         panels = [
             map_file.UniquePanel(100, 100, 100, 100, 0),
             map_file.UniquePanel(600, 100, 600, 100, 0),
@@ -355,10 +404,25 @@ class MapFileGridTests(unittest.TestCase):
 
         status = map_file.compose_link_status_grid(data)
 
-        self.assertEqual(status[0][0], 0)
-        self.assertEqual(status[1][0] & map_file.LINK_PASS_WEST, 0)
+        # The explicit maplink entry reopens the height-blocked west edge.
+        self.assertEqual(status[0][0] & 0x0F, map_file.LINK_PASS_EAST)
+        self.assertEqual(status[1][0] & map_file.LINK_PASS_WEST, map_file.LINK_PASS_WEST)
         self.assertEqual(status[1][0] & map_file.LINK_PASS_EAST, map_file.LINK_PASS_EAST)
         self.assertEqual(status[2][0] & map_file.LINK_PASS_WEST, map_file.LINK_PASS_WEST)
+        data.link = None
+        filtered = map_file.compose_link_status_grid(data)
+        self.assertEqual(filtered[1][0] & map_file.LINK_PASS_WEST, 0)
+        self.assertEqual(filtered[1][0] & map_file.LINK_PASS_EAST, map_file.LINK_PASS_EAST)
+
+    def test_link_boundary_flags_follow_sparse_overrides(self):
+        data = map_file.MapData(
+            capacity=map_file.MapCapacity(3, 3, 0, 0, 2000.0),
+            extra=map_file.MapExtra(0, 0, 0, 0, 0, 0, (0, 0), 0),
+            link=[[0x0F, -1, -1], [-1, -1, -1], [-1, -1, -1]],
+        )
+        status = map_file.compose_link_status_grid(data)
+        self.assertEqual(status[0][0] & 0xFF, 0x96)
+        self.assertEqual(status[1][1] & 0xFF, 0x0F)
 
     def test_link_tiles_are_adjacent_passable_uses_source_direction_bit(self):
         status = [[0, 0, 0], [0, map_file.LINK_PASS_NORTH | map_file.LINK_PASS_EAST, 0], [0, 0, 0]]
@@ -368,6 +432,16 @@ class MapFileGridTests(unittest.TestCase):
         self.assertFalse(map_file.link_tiles_are_adjacent_passable(status, 1, 1, 1, 2))
         self.assertFalse(map_file.link_tiles_are_adjacent_passable(status, 1, 1, 0, 1))
         self.assertFalse(map_file.link_tiles_are_adjacent_passable(status, 1, 1, 2, 2))
+
+    def test_threat_edge_cost_uses_maplink_at_and_boundary_flags(self):
+        status = (map_file.LINK_PASS_WEST |
+                  (map_file.LINK_PASS_EAST << 8) |
+                  (map_file.LINK_PASS_NORTH << 4))
+        self.assertEqual(map_file.link_threat_edge_base_cost(status, map_file.LINK_PASS_WEST), 1)
+        self.assertEqual(map_file.link_threat_edge_base_cost(status, map_file.LINK_PASS_EAST), 1)
+        self.assertEqual(map_file.link_threat_edge_base_cost(status, map_file.LINK_PASS_SOUTH), 2)
+        self.assertIsNone(map_file.link_threat_edge_base_cost(status, map_file.LINK_PASS_NORTH))
+        self.assertIsNone(map_file.link_threat_edge_base_cost(0x1000, map_file.LINK_PASS_WEST))
 
 
 class MapSceneGameplayGridTests(unittest.TestCase):

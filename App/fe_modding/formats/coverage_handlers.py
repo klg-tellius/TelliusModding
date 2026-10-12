@@ -454,12 +454,17 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
                 r = start + 32 * i
                 cov.mark(r, 32, DECODED)
                 # flag word +0x18..+0x1B (CHAPTER_DATA_NOTES): a bits 7-6 base terrain;
-                # b bits 4-2 battle-goal type (sub-values plausible), bit 5 roof and bit 0
-                # rock plausible; c bit 1 animated, bits 4-7 plausible, bit 3 roof test.
+                # b bit 0 skips placed-object drawing, bit 1 initializes
+                # hidden state, bit 4 excludes footprint testing; c bit 1
+                # loads .ga, bit 2 advances its timer, bits 3/4 enter the
+                # footprint test, bit 5 selects a projected texture callback.
+                # Effect bit 1 also copies roof height to the base layer;
+                # bits 0/3/4/5/6/7 have operational render, sorting,
+                # culling or hit-test roles. Their visual themes may be open.
                 cov.bits(r + 0x18, 1, known=0xC0, name="flag_bits_a")
-                cov.bits(r + 0x19, 1, known=0x00, plausible=0x3D, name="flag_bits_b")
-                cov.bits(r + 0x1A, 1, known=0x0A, plausible=0xF0, name="flag_bits_c")
-                cov.zero(r + 0x1B, 1, "effect_type", nonzero=UNDECODED)
+                cov.bits(r + 0x19, 1, known=0x13, plausible=0x2C, name="flag_bits_b")
+                cov.bits(r + 0x1A, 1, known=0x3E, plausible=0xC0, name="flag_bits_c")
+                cov.bits(r + 0x1B, 1, known=0xFB, name="effect flags")
         elif name == "mapbuildinst":
             cov.mark(start, 12 * n_inst, DECODED)  # footprint x2..end_y2: strong evidence
         elif name.startswith("panelindex"):
@@ -468,28 +473,30 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
             cov.mark(start, end - start, DECODED)
         elif name == "maplight":
             cov.mark(start, 12, DECODED)
-            cov.mark(start + 1, 2, UNDECODED, "maplight +1/+2")
             cov.zero(start + 9, 3, "maplight +9")
         elif name == "mapfog":
             cov.mark(start, 7, DECODED)
             cov.zero(start + 7, 1, "mapfog +7")
         elif name == "mapgrid":
             cov.mark(start, 4, DECODED)
-            cov.mark(start, 1, UNDECODED, "mapgrid +0")
+            cov.mark(start, 1, UNREAD, "stored grid alpha; draw replaces it with SetGrid intensity")
         elif name == "mapextra":
             cov.mark(start, 6, DECODED)
             cov.zero(start + 6, 2, "mapextra +6")
-            # tail word: 0x04/0x20 material callbacks and 0x10000000 roof test decoded;
-            # 0x10 callback FUN_800EF1C0 and the 0xC0000/0x1F00000 mode fields not.
-            cov.bits(start + 8, 4, known=0x10000024, name="mapextra flags")
+            # Sight code (bits 18-19), weather ID (bits 20-24), material
+            # callback selects 0x04/0x10/0x20, footprint test 0x10000000,
+            # and object-sort-done/file-order flag 0x20000000.
+            cov.bits(start + 8, 4, known=0x31FC0034, name="mapextra flags")
         elif name.startswith("maplink"):
             count = _u16(data, start)
             cov.mark(start, 2, DECODED)
             for i in range(count):
                 e = start + 2 + 3 * i
                 cov.mark(e, 2, DECODED)
-                # bits 0-3 passability openings decoded; maplinkAt writes bits 8-11
-                # from its low nibble; the high nibble of maplink/maplinkAt is open.
+                # Bits 0-3 are directional: maplink ground openings,
+                # maplinkAt threat-range cost reduction, maplinkAbs ground
+                # openings with complementary flying blocks. Every US source
+                # value is <= 15; upper source bits remain unassigned.
                 cov.bits(e + 2, 1, known=0x0F, name=f"{name} value")
         else:
             cov.mark(start, end - start, UNDECODED, f"section {name}")
