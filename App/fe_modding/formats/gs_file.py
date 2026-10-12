@@ -95,15 +95,16 @@ class GsMesh:
     bounds_min: tuple[float, float, float]
     bounds_max: tuple[float, float, float]
     bone: int
-    extra: tuple[int, int, int] = (0, 0, 0)
+    extra: tuple[int, int, int] = (0, 0, 0)  # zero on all 16,201 disc meshes; preserved on write
 
 
 @dataclass
 class GsChunk:
     """One draw call. ``flags`` is the u16 at record ``+0x08`` (bit 0
     composite-skinned, bit 1 multi-matrix via ``bone_subset``, bit 2 reuse
-    previous material, ``0x40`` additive blend, ``0x80`` subtractive blend,
-    ``0x100`` no Z, ``0x400`` hidden); ``attr_mask`` is the u32 at ``+0x10``
+    previous material, ``0x8`` skips ordinary material/light setup,
+    ``0x40`` additive blend, ``0x80`` subtractive blend,
+    ``0x100`` no Z, ``0x200`` averages two light colours, ``0x400`` hidden); ``attr_mask`` is the u32 at ``+0x10``
     (GX vertex attributes, see ``declare_gs_vertex_format``; top 3 bits are
     the billboard mode)."""
 

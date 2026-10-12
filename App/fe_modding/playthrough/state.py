@@ -125,6 +125,7 @@ class TriggerCheck(Task):
 
     kind: int
     ctx: dict = field(default_factory=dict)
+    cursor: int = 0  # next event-table entry; scripts run before later entries are checked
 
 
 @dataclass

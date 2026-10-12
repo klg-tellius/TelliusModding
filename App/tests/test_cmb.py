@@ -297,6 +297,12 @@ class SourceToolsTests(unittest.TestCase):
 
 
 class ScriptZonesTests(unittest.TestCase):
+    def test_edge_relative_zone_with_map_dimensions(self):
+        from fe_modding.formats.cmb import script_zones as z
+
+        source = '@on_area(x1=3, y1=2, x2=0, y2=0, side="ally", name=None)\ndef edge():\n    pass\n'
+        self.assertEqual(z.zones(source, 8, 6)[0].rect, (3, 2, 7, 5))
+
     SOURCE = (
         "# function 0\n@export\ndef Startup():\n    regist(\"x\")\n\n"
         "# function 1\n@on_area(x1=6, y1=7, x2=4, y2=5, side=\"player\", name=\"mod_zone\")\ndef enter():\n    pass\n\n"

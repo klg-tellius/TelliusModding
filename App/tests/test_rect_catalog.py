@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from fe_modding import rect_catalog as catalog
-from fe_modding.formats import fe10_rect, message, rect, soundroom
+from fe_modding.formats import fe10_rect, lz10, message, pak, rect, soundroom
 from fe_modding.formats.cmb import compile_source, read_cmb, write_cmb
 from fe_modding.games import Game
 
@@ -96,6 +96,18 @@ class RectCatalogTests(unittest.TestCase):
         updated = rect.parse_rect(changes[path])
         self.assertNotEqual(updated.find("RID_NEW").layers[0].file, "s/aaa")
         self.assertEqual(updated.find("RID_A").layers[0].file, "s/aaa")
+
+    def test_preview_reads_texture_bundled_only_in_system_archive(self):
+        layer = rect.RectLayer("window/frame.tpl")
+        image = Image.new("RGBA", (8, 8), "red")
+        texture = catalog.encode_images([image])
+        (self.files / "system.cmp").write_bytes(
+            lz10.compress(pak.pack_pak([("window/frame.tpl", texture)])))
+        preview = catalog.preview_image(self.project, layer)
+        self.assertEqual(preview.size, (8, 8))
+        red, green, blue, _alpha = preview.getpixel((0, 0))
+        self.assertGreater(red, 200)
+        self.assertEqual((green, blue), (0, 0))
 
 
 class Fe10EditableRectTests(unittest.TestCase):

@@ -74,7 +74,7 @@ def _trigger_values(span: st.FunctionSpan) -> Optional[dict]:
     return values
 
 
-def _zone(span: st.FunctionSpan) -> Optional[MapZone]:
+def _zone(span: st.FunctionSpan, width: Optional[int] = None, height: Optional[int] = None) -> Optional[MapZone]:
     values = _trigger_values(span)
     if values is None:
         return None
@@ -87,13 +87,23 @@ def _zone(span: st.FunctionSpan) -> Optional[MapZone]:
     if not all(isinstance(c, int) for c in coords):
         return None
     x1, y1, x2, y2 = coords
-    rect = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+    if span.trigger_type == AREA and width is not None and height is not None:
+        # The map builder can resolve the game's edge-relative endpoint convention.
+        x2 = (x2 & 0xFF) - 0x100 if x2 & 0x80 else x2 & 0xFF
+        y2 = (y2 & 0xFF) - 0x100 if y2 & 0x80 else y2 & 0xFF
+        if x2 <= 0:
+            x2 = width - 1 - x2
+        if y2 <= 0:
+            y2 = height - 1 - y2
+        rect = (x1, y1, x2, y2)
+    else:
+        rect = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
     return MapZone(span.name, span.trigger_type, rect, mode, values.get("name"), span.description, span.export_id)
 
 
-def zones(source: str) -> list[MapZone]:
+def zones(source: str, width: Optional[int] = None, height: Optional[int] = None) -> list[MapZone]:
     """Every zone of the script, in function order. Raises ParseError."""
-    return [z for z in map(_zone, st.function_spans(source)) if z is not None]
+    return [z for span in st.function_spans(source) if (z := _zone(span, width, height)) is not None]
 
 
 def decorator(trigger_type: int, rect, mode, label) -> str:

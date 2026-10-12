@@ -487,7 +487,7 @@ class SaveEditorPage(Page):
         f.add("Report: bonus EXP", self._party, "report_exp", "s16")
         f.add("Report: score", self._party, "report_score", "s16")
         f.add("Byte +0x50", self._party, "byte_50")
-        f.add("Byte +0x51", self._party, "byte_51")
+        f.add("Forged this chapter", self._party, "byte_51")
 
         section_header(b, "Options", "the Options menu, saved per file").pack(anchor="w")
         f = self._fields_in(b, 3)
@@ -680,7 +680,7 @@ class SaveEditorPage(Page):
         f.add("AI +0x258", unit, "ai_258", "u16")
         f.add("AI +0x25A", unit, "ai_25a", "u16")
         f.add("AI turn order", unit, "ai_order")
-        f.add("Field +0x15C", unit, "field_15c", "u16")
+        f.add("Facing angle (degrees × 50)", unit, "facing_angle_x50", "s16")
 
     def _fill_units(self) -> None:
         tree = self._unit_tree
@@ -811,7 +811,7 @@ class SaveEditorPage(Page):
         f.add("Crit steps (x3)", rec, "crit", "s8", width=6)
         f.add("Weight steps", rec, "weight", "s8", width=6)
         for i in range(4):
-            f.add(f"Look byte {i}", rec, ("appearance", i), width=6)
+            f.add(f"Attack trail {('R', 'G', 'B', 'A')[i]}", rec, ("trail_color_rgba", i), width=6)
         self._forge_tree = _tree(tab, {"n": ("#", 40, False), "name": ("Name", 200, False),
                                        "stats": ("Mt / Hit / Crt / Wt", 200, False), "used": ("Used by", 300, True)},
                                  height=18)
@@ -990,7 +990,7 @@ class SaveEditorPage(Page):
         f.pack(anchor="w", pady=(6, 10))
         f.add("System id", self._system, "system_id", "u64", width=22)
         f.add("Unlock bits", self._system, "unlocks", "u16")
-        f.add("Byte +0x44 (console)", self._system, "region")
+        f.add("Console language code", self._system, "language_code")
         f.add("Screen X", self._system, "screen_x", "s8")
         f.add("Screen Y", self._system, "screen_y", "s8")
         f.add("Brightness", self._system, "brightness")

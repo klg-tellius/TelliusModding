@@ -342,6 +342,7 @@ def _add_material(
             "fe9_shape_flags": shape_flags,
             "fe9_color1": list(material.color1),
             "fe9_color2": list(material.color2),
+            "fe9_material_flag1": material.flag1,
         }
     gltf["materials"].append(entry)
     return len(gltf["materials"]) - 1

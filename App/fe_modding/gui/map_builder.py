@@ -1584,11 +1584,13 @@ class MapBuilder(EditorPanel):
         source = self._script.chapter_source()
         if source is None:
             return [], "The Script tab shows another file: open this chapter's script to see and edit its zones."
-        if self._zones_key is None or self._zones_key[0] != source:
+        cap = self._map.map_data.capacity if self._map.map_data is not None else None
+        dimensions = (cap.x_size, cap.y_size) if cap is not None else (None, None)
+        if self._zones_key is None or self._zones_key[0] != (source, dimensions):
             try:
-                self._zones_key = (source, script_zones.zones(source), None)
+                self._zones_key = ((source, dimensions), script_zones.zones(source, *dimensions), None)
             except ParseError as exc:
-                self._zones_key = (source, [], f"The chapter script doesn't parse (line {exc.line}: {exc.message}). "
+                self._zones_key = ((source, dimensions), [], f"The chapter script doesn't parse (line {exc.line}: {exc.message}). "
                                                "Fix it in the Script tab to see its zones.")
         return self._zones_key[1], self._zones_key[2]
 

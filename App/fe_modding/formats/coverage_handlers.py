@@ -172,7 +172,7 @@ def _gs_material_texture(cov: FileCoverage, rec: int, i: int) -> None:
     identity texture matrix, bit 5 sampler override; +4 tex_id; +8..+0x1B the
     translation/scale/rotation floats of the non-identity branch."""
     cov.bits(rec, 2, known=0x0021, name="texture.flags0")
-    cov.mark(rec + 2, 2, UNDECODED, "texture.flags1")
+    cov.zero(rec + 2, 2, "texture.flags1 (zero on all 7,848 disc textures)")
     cov.mark(rec + 4, 2, DECODED)
     cov.mark(rec + 6, 2, UNDECODED, "texture +6")
     cov.mark(rec + 8, 0x14, DECODED)
@@ -203,8 +203,11 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
     for i in range(nums[4] if addrs[4] else 0):
         m = B + addrs[4] + 0x20 * i
         cov.mark(m, 0x20, DECODED)  # name, texture count and pointer, color0 (x1.25 at load)
-        cov.mark(m + 4, 2, UNDECODED, "material +4/+5")
-        cov.mark(m + 7, 1, UNDECODED, "material +7")
+        cov.zero(m + 4, 1, "material +4 (zero on all 7,200 disc materials)")
+        # setup_gs_texcoord_and_material_color tests bit 0 of the +4 halfword
+        # (big-endian byte +5); the other bits still have no meaning.
+        cov.bits(m + 5, 1, known=0x01, name="material +5 flags")
+        cov.zero(m + 7, 1, "material +7 (zero on all 7,200 disc materials)")
         cov.mark(m + 0x0C, 8, PLAUSIBLE, "material color1/color2")
         cov.zero(m + 0x18, 8, "material +0x18 trailer")
         tex_ptr, tex_count = _u32(body, addrs[4] + 0x20 * i + 0x14), body[addrs[4] + 0x20 * i + 6]
@@ -216,15 +219,16 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
             cov.mark(m, 4, DECODED)
             cov.mark(m + 4, 0x18, UNREAD, "mesh bounds")
             cov.mark(m + 0x1C, 2, DECODED)
-            cov.mark(m + 0x1E, 6, UNDECODED, "mesh extra (3 x u16)")
+            cov.zero(m + 0x1E, 6, "mesh +0x1E trailer (zero on all 16,201 disc meshes)")
     for slot in (6, 7, 8):
         ptr = addrs[slot]
         while ptr:
             c = B + ptr
             cov.mark(c, 0x20, DECODED)
             cov.zero(c + 0x0E, 2, "shape +0x0E (runtime slot)")
-            # flags: 0x0008/0x0200 undecoded; 0x6000 = (list index + 1) << 13, no reader
-            cov.bits(c + 8, 2, known=0xFFFF & ~0x6208, plausible=0x6000, name="shape.flags")
+            # 0x0008 skips the ordinary material/light setup; 0x0200 averages
+            # two light colours. 0x6000 mirrors list membership without a reader.
+            cov.bits(c + 8, 2, known=0xFFFF & ~0x6000, plausible=0x6000, name="shape.flags")
             if body[ptr + 8] & 0x60 and not body[ptr + 8] & 0x02:
                 cov.mark(c + 8, 1, UNREAD, "shape.flags 0x6000 (list index)")
             if _u32(body, ptr + 0x10) >> 29:
@@ -266,8 +270,12 @@ def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
     cov.mark(pool, len(data) - pool, DECODED)
 
 
-#: Event codes with an engine meaning (animation.py): loop markers, battle flag, camera/light effects.
-GA_EVENT_KNOWN = {3, 4, 0x1C, 0x1D, 0x28, 0x29}
+#: Combat and effect-movement events (GRAPHICS_NOTES, "Rig contract" and
+#: ".ga footer"; rig_contract.EVENT_NAMES). Unexplained codes remain open.
+GA_EVENT_KNOWN = ({0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 0x11, 0x12,
+                   0x13, 0x1C, 0x1D, 0x28, 0x29, 0x2A, 43, 44, 45, 46,
+                   47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 58, 60}
+                  | set(range(0x14, 0x1C)) | set(range(0x1E, 0x28)))
 
 
 @handles("animation", lambda name, data: _ext(name) == "ga")
@@ -295,13 +303,22 @@ def ga_file(cov: FileCoverage, walker: Walker) -> None:
     cov.zero(footer + 36, 4, "footer pad")
     slots = struct.unpack_from(">9I", data, footer)
     used = sorted((a, s) for s, a in enumerate(slots) if a)
-    water = "water" in cov.name.lower()
     for k, (addr, slot) in enumerate(used):
         end = used[k + 1][0] if k + 1 < len(used) else len(data)
         if slot == 0:
             _ga_events(cov, addr, end)
-        elif slot == 3 and water:
-            cov.mark(addr, end - addr, DECODED)  # map water scroll table (GRAPHICS_NOTES, "Map water")
+        elif slot == 8:
+            _ga_particle_table(cov, addr, end)
+        elif slot in (1, 2, 3, 4):
+            # Material alpha/colour and U/V tracks share this decoded key table.
+            # The U/V readers scale values by 0.001; water uses slot 3.
+            # Keep malformed blocks open rather than assuming their bytes are tracks.
+            try:
+                animation.read_material_tracks(data[addr:end])
+            except (ValueError, struct.error):
+                cov.mark(addr, end - addr, UNDECODED, f"footer slot {slot} malformed material tracks")
+            else:
+                cov.mark(addr, end - addr, DECODED)
         else:
             cov.mark(addr, end - addr, UNDECODED, f"footer slot {slot}")
     cov.fill(PADDING, only_zero=True)
@@ -319,8 +336,6 @@ def _ga_events(cov: FileCoverage, start: int, end: int) -> None:
             code = _u16(data, pos + 4 + 2 * c)
             if code in GA_EVENT_KNOWN:
                 cov.mark(pos + 4 + 2 * c, 2, DECODED)
-            elif code == 1:
-                cov.mark(pos + 4 + 2 * c, 2, PLAUSIBLE, "event code 1 (hit frame)")
             elif code >= 1000:
                 cov.mark(pos + 4 + 2 * c, 2, PLAUSIBLE, "event code >= 1000 (sound id)")
             else:
@@ -328,6 +343,92 @@ def _ga_events(cov: FileCoverage, start: int, end: int) -> None:
         pos += 4 + 2 * n
     if pos < end:
         cov.zero(pos, end - pos, "event track tail")
+
+
+def _ga_particle_table(cov: FileCoverage, start: int, end: int) -> None:
+    """Place only slot-8 fields confirmed by GParticle.cpp's init/update readers."""
+    from . import animation
+
+    data = cov.data
+    cov.mark(start, end - start, UNDECODED, "particle table details")
+    try:
+        layout = animation.read_particle_table_layout(data)
+    except animation.AnimationError:
+        return
+    if layout is None or layout.block_offset != start:
+        return
+    cov.mark(start, 8, DECODED)  # magic, relocation bit, emitter count
+    first_stage_index = 0
+    for emitter_index, emitter in enumerate(layout.emitters):
+        rec = emitter.record_offset
+        cov.mark(rec, 4, DECODED)  # name-path pointer
+        if emitter.local_index == emitter_index:
+            cov.mark(rec + 4, 2, PLAUSIBLE, "particle emitter local index")
+        if emitter.first_stage_index == first_stage_index:
+            cov.mark(rec + 8, 2, PLAUSIBLE, "particle emitter first global stage")
+        first_stage_index += emitter.stage_count
+        # draw_actor_material_batches: low three bits select the draw path;
+        # 0x0600 selects the orientation/matrix branch (0x0400 faces the camera,
+        # 0x0600 applies an extra transform); 0x0800 gates actor visibility;
+        # 0x1000/0x2000 choose blending, 0x4000 disables depth, and 0x8000
+        # selects the alternate TEV order.
+        cov.bits(rec + 6, 2, known=0xFE07, name="particle draw flags")
+        cov.mark(rec + 0x0A, 2, DECODED)  # .gs material index
+        cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
+        # Six signed /64 control slots. Modes 1, 2 and 4 read different
+        # subsets; inactive slots contain defaults on the shipped disc.
+        # +0E: mode-1 common S/T scale; +10: mode-2 GX point/line width;
+        # +12: mode-2 common S/T scale; +14: mode-2 alpha factor;
+        # +16/+18: mode-4 initial S and T scale.
+        cov.mark(rec + 0x0E, 12, DECODED)
+        cov.mark(rec + 0x1A, 2, DECODED)  # initial stage Z rotation, degrees / 64
+        cov.zero(rec + 0x1C, 2, "particle emitter +0x1C pad")
+        cov.mark(rec + 0x1E, 2, DECODED)  # stage count
+        cov.mark(rec + 0x20, 16, DECODED)  # four file-relative table pointers
+        cov.zero(rec + 0x30, 4, "particle emitter tail pad")
+        name_ptr = struct.unpack_from(">I", data, rec)[0]
+        cov.mark(name_ptr, data.index(0, name_ptr) + 1 - name_ptr, DECODED)
+        for stage in range(emitter.stage_count):
+            at = emitter.stages_offset + stage * 12
+            cov.mark(at, 2, PLAUSIBLE, "particle stage local index")
+            cov.mark(at + 2, 10, DECODED)  # start/end frame, initial XYZ / 64
+            at = emitter.stage_curves_offset + stage * 8
+            cov.mark(at, 2, DECODED)  # global stage index
+            cov.zero(at + 2, 2, "particle stage curve-range pad")
+            cov.mark(at + 4, 4, DECODED)  # first curve, curve count
+        # One shipped emitter (EID_FIRE_LONG) retains a curve-range record
+        # despite having zero active stages. Its fields match the usual
+        # global-stage index and full curve span, but runtime use is unproven.
+        if (emitter.stage_count == 0 and
+                emitter.stages_offset == emitter.stage_curves_offset and
+                emitter.curves_offset == emitter.stage_curves_offset + 8 and
+                struct.unpack_from(">4H", data, emitter.stage_curves_offset) ==
+                (emitter.first_stage_index, 0, 0, emitter.curve_count)):
+            cov.mark(emitter.stage_curves_offset, 8, PLAUSIBLE,
+                     "orphan particle curve-range record")
+        for curve in range(emitter.curve_count):
+            at = emitter.curves_offset + curve * 12
+            cov.mark(at, 2, DECODED)  # target channel 0..10
+            cov.bits(at + 2, 1, known=0x3F, name="particle curve scale/flags")
+            cov.zero(at + 3, 1, "particle curve descriptor pad")
+            cov.mark(at + 6, 6, DECODED)  # key count and key-data offset
+            n = struct.unpack_from(">H", data, at + 6)[0]
+            first = struct.unpack_from(">I", data, at + 8)[0]
+            if n and _u16(data, at + 4) == _u16(data, emitter.keys_offset + (first + n - 1) * 4):
+                cov.mark(at + 4, 2, PLAUSIBLE, "particle curve last key frame")
+            cov.mark(emitter.keys_offset + first * 4, n * 4, DECODED)
+
+    # Once every table, string and emitter record has been placed, zero bytes
+    # left between those structures are alignment fill. Keep any nonzero gap
+    # open: EID_FIRE_LONG.ga has three such bytes.
+    records = [(em.record_offset, em.record_offset + 0x34) for em in layout.emitters]
+    rec_index = 0
+    for pos in range(start, end):
+        while rec_index < len(records) and pos >= records[rec_index][1]:
+            rec_index += 1
+        in_record = rec_index < len(records) and records[rec_index][0] <= pos
+        if not in_record and cov.status[pos] == UNDECODED and data[pos] == 0:
+            cov.mark(pos, 1, PADDING, "particle table alignment gap")
 
 
 # ------------------------------------------------------------------ maps
@@ -613,10 +714,6 @@ def cmb_file(cov: FileCoverage, walker: Walker) -> None:
 #: zdbx folders and files decoded field by field (zdbx.py and the battle_* modules).
 DBX_DECODED = ("zu/", "xwp/", "zbg/", "xcam/", "zdbx/camera.dbx", "zdbx/joblist.dbx", "zdbx/weaponlist.dbx",
                "zdbx/skill.dbx", "zdbx/param.dbx", "zdbx/effectlist.dbx", "zdbx/classlist.dbx", "zdbx/bglist.dbx")
-#: Field keys whose unit is unknown (UNDECODED_BYTES, zdbx).
-DBX_UNITS_OPEN = ("移動速度".encode("shift_jis"), "間合い".encode("shift_jis"), b"time")
-
-
 @handles("dbx", lambda name, data: _ext(name) == "dbx")
 def dbx_file(cov: FileCoverage, walker: Walker) -> None:
     full = cov.name.lower().replace("\\", "/")
@@ -625,13 +722,6 @@ def dbx_file(cov: FileCoverage, walker: Walker) -> None:
         cov.fill(UNDECODED, f"dbx {path.split('/')[0]}/{'*' if '/' in path else path}")
         return
     cov.fill(DECODED)
-    data = cov.data
-    pos = 0
-    for line in data.split(b"\n"):
-        stripped = line.strip()
-        if any(stripped.startswith(key) for key in DBX_UNITS_OPEN):
-            cov.mark(pos, len(line), PLAUSIBLE, "dbx field with unknown unit")
-        pos += len(line) + 1
 
 
 # ------------------------------------------------------------------ fonts, media, sound
@@ -837,11 +927,11 @@ def gci_save(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(off + 0x54, 4, "header +0x54")
         cov.zero(off + 0x67, 9, "header +0x67")
         s = off + sf.CRC_START
-        cov.mark(s + 0x43, 2, UNDECODED, "SYSF +0x43/+0x44")
+        cov.mark(s + 0x43, 1, UNDECODED, "SYSF +0x43")
         cov.zero(s + 0x45, 2, "SYSF +0x45")
         p = off + sf.STREAM_START + 4
         cov.mark(p, 16, UNDECODED, "BMST +0x00..0x0F")
-        cov.mark(p + 0x50, 2, UNDECODED, "BMST +0x50/+0x51")
+        cov.mark(p + 0x50, 1, UNDECODED, "BMST +0x50")
         cov.mark(p + 0x94, 8, UNDECODED, "BMST +0x94..0x9B (objective state)")
         opts = p + 0x9C
         for i, known in enumerate((0x1E, 0x00, 0x0C, 0xE0)):
@@ -856,12 +946,9 @@ def gci_save(cov: FileCoverage, walker: Walker) -> None:
                 r += 2
                 continue
             for rel, size_, label in ((0x0C, 1, "unit +0x19D"), (0x6A, 2, "unit +0x230"), (0x6C, 2, "unit +0x232"),
-                                      (0x6F, 1, "unit +0x235"), (0x89, 2, "unit +0x15C")):
+                                      (0x6F, 1, "unit +0x235")):
                 cov.mark(r + rel, size_, UNDECODED, label)
             cov.zero(r + 0x8B, 4, "unit pad")
             r += sf.UNIT_RECORD_SIZE
-        r += 4 + 4 * sf.CONVOY_SLOTS + 4
-        for i in range(sf.FORGE_RECORDS):
-            cov.mark(r + 0x18 * i + 0x14, 4, PLAUSIBLE, "FWEP +0x14..0x17 (appearance)")
         stream_end = off + sf.STREAM_START + len(block.build_stream())
         cov.zero(stream_end, off + size - stream_end, "after the stream")
