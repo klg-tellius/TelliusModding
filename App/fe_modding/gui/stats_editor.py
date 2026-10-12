@@ -68,16 +68,18 @@ from __future__ import annotations
 
 import struct
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
-from ..formats import fe8data, icons, zdbx
+from ..formats import fe8data, icons, item_rules, zdbx
 from .. import excel_io
 from ..formats.fe9_message_scene import to_display
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
+from ..game_code.dol import DolError
 from ..project import ModProject
 from . import record_actions, theme
 from .changelog import ChangeLog
@@ -526,10 +528,10 @@ class StatsEditor(EditorPanel):
         self._status_label.config(text=f"Removed {label}: save FE8Data.bin to keep it", style="Muted.TLabel")
 
     # -- committing -------------------------------------------------------------
-    def _commit(self, form: Optional[_Form]) -> None:
+    def _commit(self, form: Optional[_Form]) -> bool:
         """Write the form's changed fields to the session."""
         if form is None or self._forms.get(self._form_key(form)) is not form:
-            return
+            return True
         data, errors, failed = self._data, [], set()
         for field in form.fields:
             value = field.var.get()
@@ -559,16 +561,19 @@ class StatsEditor(EditorPanel):
                 self._status_label.config(text="Unsaved changes", style="Muted.TLabel")
         except tk.TclError:
             pass
+        return not errors
 
     def _form_key(self, form: _Form) -> str:
         return {"class": "classes", "item": "items", "skill": "skills", "terrain": "terrain", "chapter": "chapters",
                 "general": "general"}[form.kind]
 
-    def flush(self) -> None:
+    def flush(self) -> bool:
         """Apply whatever field still has the focus (a picker button or a
         tab change doesn't take it, so its FocusOut may not have run)."""
+        valid = True
         for form in list(self._forms.values()):
-            self._commit(form)
+            valid = self._commit(form) and valid
+        return valid
 
     # -- form building helpers ---------------------------------------------------------
     @staticmethod
@@ -889,6 +894,9 @@ class StatsEditor(EditorPanel):
         choice("Rank needed", "rank", [(None, "(none)")] + [
             (token, f"{token} · {exp} weapon EXP" if exp else f"{token} · none") for token, exp in fe8data.ITEM_RANKS])
         number("Weapon EXP per use", "weapon_exp", 0, 255)
+        note("A rod with Might is a Light spell; a rod with 0 Might is a staff. "
+             "Light spells require SID_EQUIPLIGHT. Item Properties below can require fixed skills "
+             "(such as SID_EQ_A) or the Black Knight class.")
 
         self._heading(parent, "Icon and model", row, columns)
         row += 1
@@ -926,6 +934,61 @@ class StatsEditor(EditorPanel):
         row = self._token_checks(parent, form, row, columns, "Effective against", "categories",
                                  fe8data.ITEM_CATEGORY_SLOTS, fe8data.ITEM_CATEGORY_TOKENS, item, index)
 
+        self._heading(parent, "Custom use restriction", row, columns)
+        row += 1
+        note("Allowed character (PID), current class (JID), and skill (SID) IDs. "
+             "Any: one listed ID matches. All: one ID from every populated group matches. "
+             "The game's existing locks and weapon ranks still apply.")
+
+        def current_rule():
+            iid = item().iid
+            return item_rules.read_item_rules(self._data).get(iid, item_rules.ItemRule(iid))
+
+        def patch_rule(data, field, value):
+            iid = fe8data._read_item(data, index).iid
+            rules = item_rules.read_item_rules(data)
+            rule = rules.get(iid, item_rules.ItemRule(iid))
+            if field == "mode":
+                updated = replace(rule, mode=value.lower())
+            else:
+                labels = tuple(dict.fromkeys(t.strip() for t in value.replace(";", ",").split(",") if t.strip()))
+                updated = replace(rule, **{field: labels})
+            rules[iid] = updated
+            return item_rules.write_item_rules(data, rules)
+
+        mode_var = tk.StringVar()
+        mode_box = ttk.Combobox(parent, textvariable=mode_var, values=("Any", "All"), state="readonly", width=12)
+        form.add(mode_box, "Restriction mode", mode_var, lambda: current_rule().mode.title(),
+                 lambda data, value: patch_rule(data, "mode", value))
+        labelled("Match", mode_box)
+
+        for field, prefix, label in (("pids", "PID", "Characters"), ("jids", "JID", "Classes"),
+                                     ("sids", "SID", "Skills")):
+            var = tk.StringVar()
+            entry = ttk.Entry(parent, textvariable=var, width=62)
+            browse = ttk.Button(parent, text="Browse…", command=lambda v=var, p=prefix: self._choose_rule_ids(v, p))
+            form.add((entry, browse), label, var, lambda f=field: ", ".join(getattr(current_rule(), f)),
+                     lambda data, value, f=field: patch_rule(data, f, value))
+            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 10))
+            entry.grid(row=row, column=1, columnspan=7, sticky="w")
+            browse.grid(row=row, column=8, sticky="w", padx=(8, 0))
+            row += 1
+
+        def clear_rule():
+            if not self.flush():
+                return
+            rules = item_rules.read_item_rules(self._data)
+            if rules.pop(item().iid, None) is None:
+                return
+            self._data = item_rules.write_item_rules(self._data, rules)
+            self._session.changed(self)
+            self._on_session_changed(self)
+            self._show_item(index)
+
+        ttk.Button(parent, text="Clear custom restriction", command=clear_rule).grid(
+            row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        row += 1
+
         self._heading(parent, "Effects", row, columns)
         row += 1
         pointer("Use / spell effect", "effect", "EID", "staff, tome and consumable effect")
@@ -949,6 +1012,60 @@ class StatsEditor(EditorPanel):
         row += 2
         note("Growth modifiers are added to the unit's growth rates while the weapon is equipped. "
              "The record's last two bytes are alignment padding the game never reads.")
+
+    def _choose_rule_ids(self, var: tk.StringVar, prefix: str) -> None:
+        """Search the current table's IDs and place a multi-selection in a rule field."""
+        records = {"PID": self._fe8.characters, "JID": self._fe8.classes, "SID": self._fe8.skills}[prefix]
+        attr = {"PID": "pid", "JID": "jid", "SID": "sid"}[prefix]
+        options = sorted(getattr(record, attr) for record in records if getattr(record, attr))
+        chosen = set(t.strip() for t in var.get().split(",") if t.strip())
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Choose {prefix} IDs")
+        dialog.transient(self)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query, width=48)
+        search.pack(fill="x")
+        listing = tk.Listbox(body, selectmode="multiple", width=52, height=18, exportselection=False)
+        listing.pack(fill="both", expand=True, pady=8)
+        visible: list[str] = []
+        rebuilding = False
+
+        def refill(*_args):
+            nonlocal rebuilding
+            remember()
+            rebuilding = True
+            visible[:] = [label for label in options if query.get().casefold() in label.casefold()]
+            listing.delete(0, "end")
+            for i, label in enumerate(visible):
+                listing.insert("end", label)
+                if label in chosen:
+                    listing.selection_set(i)
+            rebuilding = False
+
+        def remember(*_args):
+            if rebuilding:
+                return
+            for label in visible:
+                chosen.discard(label)
+            chosen.update(visible[i] for i in listing.curselection())
+
+        def accept():
+            remember()
+            var.set(", ".join(sorted(chosen)))
+            dialog.destroy()
+
+        listing.bind("<<ListboxSelect>>", remember)
+        query.trace_add("write", refill)
+        refill()
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="Apply", command=accept).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=6)
+        search.focus_set()
+        dialog.grab_set()
+        self.wait_window(dialog)
 
     def _token_checks(self, parent, form: _Form, row: int, columns: int, title: str, field: str, slots: int,
                       tokens: dict, item: Callable, index: int, patch: Callable = fe8data.patch_item_field) -> int:
@@ -1412,10 +1529,13 @@ class StatsEditor(EditorPanel):
 
     # -- save/revert ---------------------------------------------------------
     def _save(self) -> None:
-        self.flush()
+        if not self.flush():
+            messagebox.showerror("Could not save", "Fix the invalid fields shown below the editor before saving.",
+                                 parent=self)
+            return
         try:
             self._session.save()
-        except OSError as exc:
+        except (OSError, ValueError, DolError) as exc:
             messagebox.showerror("Could not save", str(exc), parent=self)
             return
         self._status_label.config(text=f"Saved {self._path.name}", style="Muted.TLabel")
