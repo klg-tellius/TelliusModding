@@ -179,6 +179,14 @@ def lbzx(rd: int, ra: int, rb: int) -> int:
     return _x_form(rd, ra, rb, 87)
 
 
+def stbx(rs: int, ra: int, rb: int) -> int:
+    return _x_form(rs, ra, rb, 215)
+
+
+def and_(ra: int, rs: int, rb: int) -> int:
+    return _x_form(rs, ra, rb, 28)
+
+
 def add(rd: int, ra: int, rb: int) -> int:
     return _x_form(rd, ra, rb, 266)
 
