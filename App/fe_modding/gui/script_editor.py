@@ -143,11 +143,12 @@ class ScriptEditor(EditorPanel):
         self._tabs.bind("<<NotebookTabChanged>>", lambda e: self._refresh_bytecode())
 
         search_row = ttk.Frame(right_frame)
-        search_row.pack(fill="x", pady=(4, 0))
+        # Reserve the search controls' height before the expanding editor pane.
+        search_row.pack(side="bottom", fill="x", before=right, pady=(4, 0))
         ttk.Label(search_row, text="Search code").pack(side="left")
         self._search_var = tk.StringVar()
-        self._search_entry = ttk.Entry(search_row, textvariable=self._search_var, width=32)
-        self._search_entry.pack(side="left", padx=(6, 4))
+        self._search_entry = ttk.Entry(search_row, textvariable=self._search_var, width=16)
+        self._search_entry.pack(side="left", fill="x", expand=True, padx=(6, 4))
         self._search_entry.bind("<Return>", self._find_next)
         self._search_entry.bind("<Shift-Return>", self._find_previous)
         self._search_var.trace_add("write", lambda *_: self._clear_search_match())

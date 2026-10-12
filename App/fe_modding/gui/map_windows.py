@@ -458,6 +458,8 @@ class MapSettingsForm(ttk.Frame):
                 f, label = spec
                 ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 10, 4))
                 value = getattr(record, f)
+                if isinstance(value, bool):
+                    value = int(value)
                 var = tk.StringVar(value=hex(value) if f == "unknown_tail" else str(value))
                 ttk.Entry(form, textvariable=var, width=10).grid(row=row, column=col + 1, sticky="w", pady=1)
                 self._vars[f"{prefix}:{f}"] = var
