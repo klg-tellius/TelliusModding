@@ -4,10 +4,33 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from PIL import Image
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fe_modding.formats import dialogue_notation as n, fe10_message as rd
 from fe_modding.formats import fe9_message_scene as ms
 from fe_modding.formats.message import Message
+
+
+class LayoutExampleTests(unittest.TestCase):
+    def test_sample_faces_are_visually_distinct(self):
+        from fe_modding.gui.layout_examples import distinct_sample_faces
+
+        class Face:
+            def __init__(self, color):
+                self.color = color
+
+            def compose(self, **_kwargs):
+                return Image.new("RGBA", (2, 2), self.color)
+
+        class Assets:
+            faces = {"FID_ASHNARD": None, "FID_ASHNARD_ALT": None,
+                     "FID_IKE": None, "NOT_A_FACE": None}
+
+            def face(self, fid):
+                return Face("red" if "ASHNARD" in fid else "blue")
+
+        self.assertEqual(distinct_sample_faces(Assets()), ["FID_ASHNARD", "FID_IKE"])
 
 
 class NotationTests(unittest.TestCase):
