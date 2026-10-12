@@ -378,6 +378,11 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
     pair = [cls] + ([linked] if linked is not None else [])
     if any(LAGUZ_CLASS_TOKENS.intersection(c.categories or ()) or c.innate_weapon for c in pair):
         return "Laguz"
+    # A middle tier points forward to a stronger class, so use its flag first.
+    if "SID_HIGHER" in (cls.skills or ()) or "SID_TIER3" in (cls.skills or ()):
+        return "Promoted"
+    if linked is not None and "SID_HIGHER" in (linked.skills or ()):
+        return "Unpromoted"
     hp_cap = cls.stat_caps[0] if cls.stat_caps else 0
     if linked is not None:
         linked_cap = linked.stat_caps[0] if linked.stat_caps else 0
@@ -386,6 +391,17 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
         if cls.movement != linked.movement:
             return "Promoted" if cls.movement > linked.movement else "Unpromoted"
     return "Promoted" if hp_cap > 40 else "Unpromoted"
+
+
+def class_tier(cls: "ClassEntry", classes: list) -> int:
+    """Human promotion tier (1-3), or 0 for a Laguz class."""
+    if class_category(cls, classes) == "Laguz":
+        return 0
+    if "SID_TIER3" in (cls.skills or ()):
+        return 3
+    if "SID_HIGHER" in (cls.skills or ()):
+        return 2
+    return 1
 
 
 #: Rank tokens (item 0x14) and the minimum weapon EXP each one becomes; "N" means none, like null.
