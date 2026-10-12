@@ -8,6 +8,7 @@ from typing import Optional
 
 from ..battle_sim import Fe9Rules
 from ..formats import fe8data
+from ..formats.item_rules import rule_matches
 
 #: Weapon types a unit can fight with (``fe8data.ITEM_WEAPON_TYPES`` tokens).
 COMBAT_WEAPON_TYPES = frozenset({"sword", "lance", "axe", "bow", "knife", "flame", "thunder", "wind", "rod", "fang"})
@@ -110,6 +111,8 @@ class World:
         """Whether ``unit`` (a SimUnit) may use ``item`` as a weapon or staff."""
         if item is None or item.weapon_type not in COMBAT_WEAPON_TYPES:
             return False
+        if not self.custom_item_allowed(unit, item):
+            return False
         cls = self.classes.get(unit.jid)
         if item.weapon_type == "fang":
             return cls is not None and (cls.innate_weapon == item.iid or "fang" in unit.categories
@@ -118,3 +121,8 @@ class World:
             return True
         ranks = fe8data.class_weapon_rank_map(cls)
         return bool(rank_columns(item) & set(ranks))
+
+    def custom_item_allowed(self, unit, item: fe8data.ItemEntry) -> bool:
+        """Additional FE9 item rule, using the unit's current class and skills."""
+        rule = self.fe8.item_rules.get(item.iid)
+        return rule is None or rule_matches(rule, unit.pid, unit.jid, set(unit.skills))

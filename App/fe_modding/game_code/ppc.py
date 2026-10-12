@@ -106,6 +106,18 @@ def lwz(rd: int, offset: int, ra: int) -> int:
     return _d_form(32, rd, ra, offset)
 
 
+def lhz(rd: int, offset: int, ra: int) -> int:
+    return _d_form(40, rd, ra, offset)
+
+
+def stmw(rs: int, offset: int, ra: int) -> int:
+    return _d_form(47, rs, ra, offset)
+
+
+def lmw(rd: int, offset: int, ra: int) -> int:
+    return _d_form(46, rd, ra, offset)
+
+
 def stw(rs: int, offset: int, ra: int) -> int:
     return _d_form(36, rs, ra, offset)
 

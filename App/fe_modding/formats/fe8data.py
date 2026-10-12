@@ -719,6 +719,7 @@ class Fe8Data:
     classes: list
     items: list
     skills: list
+    item_rules: dict = dataclass_field(default_factory=dict)
 
 
 def _read_character(data: bytes, index: int, base: Optional[int] = None) -> CharacterEntry:
@@ -918,7 +919,9 @@ def read_fe8data(data: bytes) -> Fe8Data:
     skill_count = count(bases["skill"], SKILL_RECORD_SIZE, b"SID_", 300)
     skills = [_read_skill(data, i, bases["skill"]) for i in range(skill_count)]
 
-    return Fe8Data(characters=characters, classes=classes, items=items, skills=skills)
+    from . import item_rules
+    return Fe8Data(characters=characters, classes=classes, items=items, skills=skills,
+                   item_rules=item_rules.read_item_rules(data))
 
 
 def read_fe8data_path(path: Path | str) -> Fe8Data:
@@ -1413,6 +1416,7 @@ def patch_item_field(data: bytes, index: int, field: str, value) -> bytes:
         return _patch_item_pointer(data, off + 0x14, _item_token(value, [r for r, _ in ITEM_RANKS], "rank"),
                                    append=True)
     if field == "iid":
+        old_iid = _read_item(data, index).iid
         iid = (value or "").strip()
         if not iid:
             raise ValueError("An item needs an ID.")
@@ -1421,7 +1425,15 @@ def patch_item_field(data: bytes, index: int, field: str, value) -> bytes:
         others = [it for it in read_fe8data(data).items if it.iid == iid and it.index != index]
         if others:
             raise ValueError(f"item {others[0].index} already has the ID {iid}.")
-        return _patch_item_pointer(data, off, iid, append=True)
+        data = _patch_item_pointer(data, off, iid, append=True)
+        if old_iid and old_iid != iid:
+            from . import item_rules
+            rules = item_rules.read_item_rules(data)
+            if old_iid in rules:
+                from dataclasses import replace
+                rules[iid] = replace(rules.pop(old_iid), iid=iid)
+                data = item_rules.write_item_rules(data, rules)
+        return data
     pointer_offsets = {"miid": 0x04, "help_key": 0x08, "effect": 0x38, "weapon_effect": 0x3C}
     if field not in pointer_offsets:
         raise ValueError(f"Unknown item field {field!r}")
@@ -1834,6 +1846,15 @@ def add_record(data: bytes, kind: str, new_id: Optional[str] = None,
     data = write_table(data, kind, rows + [row])
     if kind in RECORD_ID_FIELDS:
         data = _patch_id(data, kind, index, new_id)
+    if kind == "item" and copy_from is not None:
+        from . import item_rules
+        from dataclasses import replace
+        rules = item_rules.read_item_rules(data)
+        source = rows[copy_from]
+        source_iid = _resolve(data, struct.unpack_from(">I", source.raw, 0)[0])
+        if source_iid in rules:
+            rules[new_id] = replace(rules[source_iid], iid=new_id)
+            data = item_rules.write_item_rules(data, rules)
     return data, index
 
 
@@ -1844,6 +1865,13 @@ def remove_record(data: bytes, kind: str, index: int) -> bytes:
         raise ValueError(f"No {kind} record {index}.")
     if kind in FIXED_TABLES:
         raise ValueError(f"The game is bound to the {len(rows)} {kind} records: they cannot be removed.")
+    if kind == "item":
+        from . import item_rules
+        iid = _resolve(data, struct.unpack_from(">I", rows[index].raw, 0)[0])
+        rules = item_rules.read_item_rules(data)
+        if iid in rules:
+            rules.pop(iid)
+            data = item_rules.write_item_rules(data, rules)
     return write_table(data, kind, rows[:index] + rows[index + 1:])
 
 

@@ -367,6 +367,9 @@ def use_item(world: World, state: GameState, unit: SimUnit, index: Optional[int]
     if index is None or index >= len(unit.items):
         raise CommandError("No such item.")
     iid = unit.items[index][0]
+    definition = world.items.get(iid)
+    if definition is not None and not world.custom_item_allowed(unit, definition):
+        raise CommandError(f"{world.name(unit.pid)} cannot use {world.item_name(iid)}.")
     if iid in ("IID_VULNERARY", "IID_ELIXIR"):
         amount = min(10 if iid == "IID_VULNERARY" else unit.stats[0], unit.stats[0] - unit.hp)
         unit.hp += amount
