@@ -10,6 +10,7 @@ the vanilla ``zdbx.cmp`` for "restore". Entry names are archive paths such as
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from . import model_slots
 from .exceptions import ProjectError
@@ -39,17 +40,50 @@ def modified_entries(project: ModProject, folder: str) -> set[str]:
     return {n for n, b in current.items() if n.startswith(folder + "/") and vanilla.get(n) != b}
 
 
-def read_entries(project: ModProject, folder: str, suffix: str = ".dbx") -> dict[str, str]:
-    """Every ``folder/`` entry's text by archive path (one archive read)."""
-    return {n: b.decode("shift_jis") for n, b in model_slots._read_zdbx(project).items()
-            if n.startswith(folder + "/") and n.endswith(suffix)}
+_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
-def modified_entries(project: ModProject, folder: str) -> set[str]:
-    """Paths under ``folder/`` that differ from vanilla (or are new)."""
+def validate_entry_name(name: str) -> str:
+    """Require a safe, ASCII archive-relative DBX path."""
+    parts = name.split("/")
+    if (len(parts) < 2 or not name.endswith(".dbx") or
+            any(p in ("", ".", "..") or not _SEGMENT.fullmatch(p) for p in parts)):
+        raise ProjectError("Use a relative .dbx path such as xcam/new_script.dbx (letters, digits, _, - or .).")
+    return name
+
+
+def inventory(project: ModProject) -> dict[str, str]:
+    """All current and deleted original DBX paths with their edit state."""
     current = model_slots._read_zdbx(project)
     vanilla = dict(zdbx.read_zdbx_files(model_slots._vanilla_bytes(project, _archive(project))))
-    return {n for n, b in current.items() if n.startswith(folder + "/") and vanilla.get(n) != b}
+    result = {}
+    for name in current.keys() | vanilla.keys():
+        if not name.endswith(".dbx"):
+            continue
+        if name not in current:
+            result[name] = "deleted"
+        elif name not in vanilla:
+            result[name] = "added"
+        elif current[name] != vanilla[name]:
+            result[name] = "edited"
+        else:
+            result[name] = "original"
+    return result
+
+
+def add_entry(project: ModProject, name: str, text: str) -> None:
+    """Add a new DBX without replacing an existing path (case-insensitively)."""
+    validate_entry_name(name)
+    if not text.strip():
+        raise ProjectError("Enter DBX text before adding the file.")
+    tables = model_slots._read_zdbx(project)
+    if any(n.casefold() == name.casefold() for n in tables):
+        raise ProjectError(f"zdbx.cmp already has {name}.")
+    try:
+        tables[name] = zdbx.encode_dbx(text)
+    except UnicodeEncodeError as exc:
+        raise ProjectError(f"{name} has a character Shift-JIS cannot hold: {exc.reason}") from exc
+    model_slots._write_zdbx(project, tables)
 
 
 def read_entry(project: ModProject, name: str) -> str:
@@ -61,6 +95,7 @@ def read_entry(project: ModProject, name: str) -> str:
 
 def write_entry(project: ModProject, name: str, text: str, *, create: bool = False) -> None:
     """Replace one entry's text; ``create=True`` allows a new entry."""
+    validate_entry_name(name)
     tables = model_slots._read_zdbx(project)
     if name not in tables and not create:
         raise ProjectError(f"zdbx.cmp has no {name}.")
@@ -72,6 +107,7 @@ def write_entry(project: ModProject, name: str, text: str, *, create: bool = Fal
 
 
 def remove_entry(project: ModProject, name: str) -> None:
+    validate_entry_name(name)
     tables = model_slots._read_zdbx(project)
     if tables.pop(name, None) is None:
         raise ProjectError(f"zdbx.cmp has no {name}.")
@@ -95,8 +131,24 @@ def is_modified(project: ModProject, name: str) -> bool:
 
 def restore_entry(project: ModProject, name: str) -> None:
     """Put one entry back to vanilla (removing it when vanilla has none)."""
-    original = vanilla_entry(project, name)
-    if original is None:
+    validate_entry_name(name)
+    original_files = dict(zdbx.read_zdbx_files(model_slots._vanilla_bytes(project, _archive(project))))
+    if name not in original_files:
         remove_entry(project, name)
     else:
-        write_entry(project, name, original, create=True)
+        tables = model_slots._read_zdbx(project)
+        if name in tables:
+            tables[name] = original_files[name]
+        else:
+            order = {path: i for i, path in enumerate(original_files)}
+            restored = {}
+            inserted = False
+            for path, data in tables.items():
+                if not inserted and order.get(path, float("inf")) > order[name]:
+                    restored[name] = original_files[name]
+                    inserted = True
+                restored[path] = data
+            if not inserted:
+                restored[name] = original_files[name]
+            tables = restored
+        model_slots._write_zdbx(project, tables)

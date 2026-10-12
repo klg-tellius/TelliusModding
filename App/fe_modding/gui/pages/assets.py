@@ -15,6 +15,7 @@ from ..battle_params_viewer import BattleParamsViewer
 from ..battle_scenery_viewer import BattleSceneryViewer
 from ..battle_simulator import BattleSimulator
 from ..battle_weapons_viewer import BattleWeaponsViewer
+from ..dbx_files_viewer import DbxFilesViewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
 from ..graphics_viewers import (
@@ -64,6 +65,7 @@ ASSET_TOOLS = [
     ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action camera scripts (camera.dbx, xcam/)", BattleCameraViewer),
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
+    ("dbx_files", "DBX Files", "▤", "Browse, edit, add, delete and restore every text entry in zdbx.cmp", DbxFilesViewer),
     ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
@@ -76,6 +78,7 @@ ASSET_FEATURES = {
     "effects": EFFECTS,
     "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_TABLES,
     "battle_sim": BATTLE_TABLES, "battle_params": BATTLE_TABLES,
+    "dbx_files": BATTLE_TABLES,
     "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO,
     "videos": VIDEO,
 }
@@ -98,7 +101,7 @@ class AssetsHub(Page):
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "fonts")),
                             ("Characters and models", ("portraits", "models", "map_objects")),
-                            ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "effects")),
+                            ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment")),
                             ("Sound and video", ("music", "sfx", "videos"))):
@@ -136,6 +139,9 @@ class AssetPage(Page):
         key = route[1] if len(route) > 1 else None
         if key not in TOOLS_BY_KEY:
             return False
+        if key != self._key and self._key == "dbx_files":
+            if not self._panels["dbx_files"].confirm_navigate_away():
+                return False
         feature = ASSET_FEATURES.get(key)
         missing_file = key in ASSET_FILES and not profile_of(self.project).has_file(ASSET_FILES[key])
         if missing_file or (feature is not None and not profile_of(self.project).supports(feature)):
@@ -158,6 +164,10 @@ class AssetPage(Page):
             else:
                 panel = cls(self, self.project, self.shell.changelog)
             self._panels[key] = panel
+        elif key != self._key and key in ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params"):
+            panel._load()
+        elif key != self._key and key == "dbx_files" and not panel.dirty:
+            panel.refresh_from_archive()
         selection = route[2] if len(route) > 2 else None
         if key in ("conversations", "scripts") and selection and not panel.open_file(selection):
             return False
