@@ -7,14 +7,16 @@ optional tuning keys (Japanese key names as in the files):
 - ``移動速度`` move speed, ``間合い`` attack range, ``ルートスケール`` root
   scale, ``ダメージ後退`` knockback when hit (floats).
 - ``走り回数`` run count, ``補間速度`` / ``待機補間速度`` / ``移動補間速度``
-  animation blend speed in general / standing / moving (whole numbers).
+  animation transition duration in general / standing / moving (whole ticks).
 - Flags, present as ``1`` or absent: ``ジャンプ攻撃``, ``ジャンプ攻撃２``,
   ``ジャンプ必殺``, ``ジャンプ止め``, ``ジャンプ奥義`` (the attack variants
   that jump), ``飛行系`` (flying unit), ``大型`` (large unit),
   ``止め飛び去り`` (flies away on the finishing blow).
 
-Vanilla values: move speed 0.15-1.0, range 10-22, knockback 0.1 or 1.0,
-blend speeds 10-30. The engine's exact units were not measured.
+Vanilla values: move speed 0.15-1.0 world units/tick, range 10-22 world
+units, knockback 0.1 or 1.0, blend durations 10-30 ticks. Missing or zero
+blend values fall back to ``zdbx/param.dbx`` (15 general, 20 standing,
+5 moving ticks).
 """
 
 from __future__ import annotations
@@ -25,8 +27,9 @@ from . import dbx
 
 FLOAT_KEYS = {"移動速度": "Move speed", "間合い": "Attack range", "ルートスケール": "Root scale",
               "ダメージ後退": "Knockback"}
-INT_KEYS = {"走り回数": "Run count", "補間速度": "Blend speed", "待機補間速度": "Standing blend speed",
-            "移動補間速度": "Moving blend speed"}
+INT_KEYS = {"走り回数": "Run count", "補間速度": "Blend duration (ticks)",
+            "待機補間速度": "Standing blend duration (ticks)",
+            "移動補間速度": "Moving blend duration (ticks)"}
 FLAG_KEYS = {"ジャンプ攻撃": "Jump attack", "ジャンプ攻撃２": "Jump attack 2", "ジャンプ必殺": "Jump critical",
              "ジャンプ止め": "Jump finisher", "ジャンプ奥義": "Jump skill", "飛行系": "Flying",
              "大型": "Large", "止め飛び去り": "Flies away on finisher"}

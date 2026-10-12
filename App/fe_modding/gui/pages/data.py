@@ -30,7 +30,7 @@ from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain",
-        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect Images"}
+        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}
 #: key -> (icon, description) of the hub tiles.
 TILES = {
     "classes": ("♞", "Stats, weapon ranks, innate skills, movement and build"),
@@ -41,7 +41,7 @@ TILES = {
     "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
     "flags": ("⚐", "The 96 named script flags: campaign, chapter and save file"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
-    "rect_images": ("▧", "Browse rect RIDs, their images and references"),
+        "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
 SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "general", "supports")),
             ("Scripts and AI", ("flags", "ai")),
@@ -222,7 +222,7 @@ FE10_TILES = {
     "growth": ("↗", "FE10Growth.cms: absolute stats at every level, per character"),
     "battle_scenery": ("⛰", "Battle background per map and terrain type"),
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
-    "rect_images": ("▧", "Browse rect RIDs, their images and references"),
+    "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
 FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills", "growth")),
                  ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
@@ -258,7 +258,7 @@ class Fe10GameDataPage(Page):
             grid.pack(fill="x")
             for key in keys:
                 icon, description = FE10_TILES[key]
-                grid.add(key, Card(grid, title="Rect Images" if key == "rect_images" else FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
+                grid.add(key, Card(grid, title="Rect RIDs" if key == "rect_images" else FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
                                    on_click=lambda k=key: self.shell.navigate((self.kind, k))))
             grid.done()
         if self.project.profile.supports(SCRIPTS):

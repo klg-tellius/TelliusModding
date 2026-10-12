@@ -1958,6 +1958,13 @@ def _synthetic_gs_file() -> gs_file.GsFile:
 
 
 class GsFileTests(unittest.TestCase):
+    def test_model_reader_keeps_full_billboard_attribute_mask(self):
+        source = _synthetic_gs_file()
+        source.chunk_lists[0][0].attr_mask |= 0x40000000
+        parsed = model.read_model_bytes(gs_file.write_gs(source))
+        self.assertEqual(parsed.chunks[0].attr_mask, 0x40004601)
+        self.assertEqual(parsed.chunks[0].billboard_mode, 0x40000000)
+
     def test_round_trip_is_byte_identical(self):
         data = gs_file.write_gs(_synthetic_gs_file())
         self.assertEqual(gs_file.write_gs(gs_file.read_gs(data)), data)
@@ -2223,6 +2230,15 @@ class GltfImportTests(unittest.TestCase):
         self.assertEqual(local, [(-0.5, 0.0, -0.5), (-0.5, 0.0, 0.5), (0.5, 0.0, -0.5), (0.5, 0.0, 0.5)])
         self.assertEqual({c.bone for c in raw.chunks}, {1})
         self.assertEqual(raw.bbox_max, (1.0, 5.0, 1.0))
+
+    def test_export_then_import_preserves_material_tev_flag(self):
+        source = _synthetic_gs_file()
+        source.materials[0].unk0 = (0, 1)
+        glb = gltf_export.export_glb([("m", model.read_model_bytes(gs_file.write_gs(source)))])
+        doc, _binary = gltf_import._split_glb(glb)
+        self.assertEqual(doc["materials"][0]["extras"]["fe9_material_flag1"], 1)
+        rebuilt = gs_file.read_gs(gltf_import.import_static_model(glb)[0])
+        self.assertEqual(rebuilt.materials[0].unk0[1], 1)
 
     def test_export_then_import_reproduces_the_mesh(self):
         original = model.read_model_bytes(gs_file.write_gs(_synthetic_gs_file()))

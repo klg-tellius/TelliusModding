@@ -519,13 +519,26 @@ def _tackle(vm, a):
 
 @native("UnitAddItem", "_gi")
 def _add_item(vm, a):
+    from .ai_actions import is_equipment
+
     unit = _unit(vm, a[0])
     if unit is None:
         return 0
-    if len(unit.items) < 8 and isinstance(a[1], str):
+    if isinstance(a[1], str):
         item = vm.world.items.get(a[1])
-        unit.items.append([a[1], item.uses if item is not None else 1, False])
-        vm.state.emit("action", f"{_name(vm, unit)} gets {vm.world.item_name(a[1])}", uid=unit.uid)
+        incoming_equipment = is_equipment(item)
+        same_half = sum(is_equipment(vm.world.items.get(entry[0])) == incoming_equipment
+                        for entry in unit.items)
+        if same_half < 4:
+            entry = [a[1], item.uses if item is not None else 1, False]
+            if incoming_equipment:
+                # Keep the compact simulation inventory grouped like the game's two four-slot halves.
+                position = next((i for i, held in enumerate(unit.items)
+                                 if not is_equipment(vm.world.items.get(held[0]))), len(unit.items))
+                unit.items.insert(position, entry)
+            else:
+                unit.items.append(entry)
+            vm.state.emit("action", f"{_name(vm, unit)} gets {vm.world.item_name(a[1])}", uid=unit.uid)
     return 1
 
 

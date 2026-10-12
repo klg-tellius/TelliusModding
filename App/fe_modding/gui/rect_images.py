@@ -8,13 +8,15 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from PIL import Image, ImageTk
 
 from .. import rect_catalog as catalog
+from ..formats import rect
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .rect_detail import RectDetail
 
 
 class RectImagesPanel(EditorPanel):
-    display_name = "Rect Images"
+    display_name = "Rect RIDs"
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, shell=None):
         super().__init__(parent)
@@ -63,6 +65,8 @@ class RectImagesPanel(EditorPanel):
         self._add_button.pack(side="left")
         self._rename_button = ttk.Button(actions, text="Rename RID…", command=self._rename)
         self._rename_button.pack(side="left", padx=(8, 0))
+        self._edit_button = ttk.Button(actions, text="Edit RID…", command=self._edit)
+        self._edit_button.pack(side="left", padx=(8, 0))
 
         right = ttk.Frame(split, padding=(8, 0, 12, 12))
         split.add(right, weight=2)
@@ -72,6 +76,9 @@ class RectImagesPanel(EditorPanel):
         self._image_list = tk.Listbox(right, height=5, exportselection=False)
         self._image_list.pack(fill="x")
         self._image_list.bind("<<ListboxSelect>>", lambda _event: self._select_image())
+        ttk.Label(right, text="Other layers").pack(anchor="w", pady=(8, 3))
+        self._other_list = tk.Listbox(right, height=4, exportselection=False)
+        self._other_list.pack(fill="x")
         self._replace_button = ttk.Button(right, text="Replace selected image…", command=self._replace)
         self._replace_button.pack(anchor="w", pady=(5, 6))
         self._preview = ttk.Label(right, relief="groove", anchor="center")
@@ -122,7 +129,7 @@ class RectImagesPanel(EditorPanel):
             self._rid_list.delete(0, "end")
             return
         try:
-            self._editable = not catalog.is_fe10(self._project) or self._doc.build() == path.read_bytes()
+            self._editable = self._doc.build() == path.read_bytes()
         except Exception:
             self._editable = False
         self._set_edit_state()
@@ -134,6 +141,7 @@ class RectImagesPanel(EditorPanel):
         state = "normal" if self._editable else "disabled"
         for button in (self._add_button, self._rename_button, self._replace_button):
             button.configure(state=state)
+        self._edit_button.configure(state=state if not catalog.is_fe10(self._project) else "disabled")
 
     def _can_edit(self):
         if not self._editable:
@@ -167,6 +175,7 @@ class RectImagesPanel(EditorPanel):
     def _clear_details(self):
         self._rid_heading.configure(text="Select a RID")
         self._image_list.delete(0, "end")
+        self._other_list.delete(0, "end")
         self._refs_list.delete(0, "end")
         self._refs_heading.configure(text="Referenced in")
         self._image_status.configure(text="")
@@ -183,10 +192,27 @@ class RectImagesPanel(EditorPanel):
         self._clear_details()
         self._rid_heading.configure(text=rid)
         self._layers = list(catalog.image_layers(self._resource))
+        image_indexes = {index for index, _layer in self._layers}
+        for index, layer in enumerate(self._resource.layers):
+            if index in image_indexes:
+                continue
+            if isinstance(layer, rect.TextboxLayer):
+                detail = f"Textbox: window {layer.window or 'none'}, panel {layer.panel or 'none'}, marker {layer.marker or 'none'}"
+            elif isinstance(layer, rect.TextLayer):
+                detail = f"Text: {layer.text}"
+            elif isinstance(layer, rect.SeatsLayer):
+                detail = f"Portrait seats: {len(layer.seats)}"
+            elif isinstance(layer, rect.GradientLayer):
+                detail = "Color gradient"
+            else:
+                kind = getattr(layer, "kind", "unknown")
+                detail = {2: "Textbox", 3: "Text", 4: "Portrait seats", 5: "Color gradient"}.get(kind, f"Layer kind {kind}")
+            self._other_list.insert("end", f"Layer {index}: {detail}")
         for index, layer in self._layers:
             self._image_list.insert("end", f"Layer {index}: {layer.file}  ·  texture {layer.texture}")
         if not self._layers:
-            self._image_status.configure(text="This RID has no textured layers.")
+            note = "See its other layers above." if self._other_list.size() else "It has no layers."
+            self._image_status.configure(text=f"This RID has no textured layers. {note}")
         else:
             self._image_list.selection_set(0)
             self._select_image()
@@ -226,6 +252,13 @@ class RectImagesPanel(EditorPanel):
     def _save(self, changes, note, rid):
         catalog.save_changes(self._project, changes, self._changelog, note)
         self.refresh(self._file_var.get(), rid)
+
+    def _edit(self):
+        path = self._selected_path()
+        if path is None or self._resource is None or catalog.is_fe10(self._project):
+            return
+        RectDetail(self, self._project, path, self._resource, self._changelog, self._can_edit,
+                   lambda rid: self.refresh(self._file_var.get(), rid))
 
     def _rename(self):
         if not self._can_edit():

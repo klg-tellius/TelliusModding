@@ -161,20 +161,22 @@ def _ai_turn(world: World, state: GameState, task: AiTurn) -> Step:
 
 
 def _trigger(world: World, state: GameState, task: TriggerCheck) -> Step:
-    found = triggers.matches(world, state, task.kind, task.ctx)
-    runs = []
-    for t in found:
-        if t.type in triggers.ONCE:
-            state.seen.add((t.script, t.function))
-        ctx = dict(task.ctx)
-        if "action" not in ctx and t.type == 5:
-            ctx["action"] = t.params.get("action")
-        runs.append(triggers.start(world, t.script, t.function, ctx=ctx))
+    found = triggers.matches(world, state, task.kind, task.ctx, start=task.cursor)
     name = TRIGGER_NAMES.get(task.kind, str(task.kind))
-    if runs:
-        state.emit("trigger", f"{name} event: " + ", ".join(r.name for r in runs))
-    _done(state, task, *runs)
-    return Step("trigger", f"Check {name} events", ", ".join(r.name for r in runs) or "none", task_done=True)
+    if not found:
+        _done(state, task)
+        return Step("trigger", f"Check {name} events", "none", task_done=True)
+    t = found[0]
+    task.cursor = triggers.index(world).index(t) + 1
+    if t.type in triggers.ONCE:
+        state.seen.add((t.script, t.function))
+    ctx = dict(task.ctx)
+    if "action" not in ctx and t.type == 5:
+        ctx["action"] = t.params.get("action")
+    run = triggers.start(world, t.script, t.function, ctx=ctx)
+    state.emit("trigger", f"{name} event: {run.name}")
+    state.push_front(run)
+    return Step("trigger", f"Check {name} events", run.name)
 
 
 def _script(world: World, state: GameState, task: ScriptRun) -> Step:

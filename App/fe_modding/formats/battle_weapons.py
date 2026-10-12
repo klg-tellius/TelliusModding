@@ -10,9 +10,11 @@ A file has two blocks:
   ``kind``, ``missile`` and optionally ``effectId`` (``EID_`` effect played
   with the weapon) and ``damageEffId`` (``EID_..._WP`` effect on the target).
 
-``kind`` and ``missile`` meanings below are read off the vanilla files (every
-weapon of a type shares the code); the engine's use of the values is not
-traced further.
+``kind`` is also the index of the executable's category-name table
+(``sw, sp, ax, ar, mg, kn, ja, ha, ms, aw, cr, br``). Its primary runtime
+uses are projectile setup and motion, visual marker names, and magic-camera
+loading; see ``research/docs/toInclude/battle_staging_and_camera.md``.
+``missile`` controls effect placement and the special wave-impact camera.
 """
 
 from __future__ import annotations

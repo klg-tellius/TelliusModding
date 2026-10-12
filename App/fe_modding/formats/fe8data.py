@@ -81,13 +81,12 @@ Thunder/Wind, one D each, no ambiguity). Letters follow the standard FE
 E/D/C/B/A/S order (confirmed by JID_BKNIGHT - the Black Knight, a known
 elite swordsman - resolving to "SC-------", the only class sampled with
 an S rank); a few classes (JID_PALADIN_S, JID_SAGE) show `*` instead of a
-letter at one or more positions, read as "usable without a fixed rank
-requirement" rather than a specific grade. Position 7 ("Staff" here) is
-the one weaker link in this chain: Priest/Bishop/Valkyrie all carry a
-rank there, consistent with Tellius's staff-healer archetype, but nothing
-pins it down as confidently as positions 0-6; position 8 ("Light") was
-never seen as anything but the `*` wildcard, so it's the single
-lowest-confidence entry in WEAPON_TYPE_NAMES. Checked against
+letter at one or more positions. The promotion sequence scans the
+promoted class's rank string for `*` and offers those positions as new
+weapon choices. Position 7 is Staff and position 8 is Knife, confirmed by
+the executable's MCA_RD/MCA_KN menu keys and selection-result switch
+(PROMOTION_CHOICES.md). `*` is a selectable promotion option,
+not a fixed rank. Checked against
 ItemEntry.rank on the chance the two were the same small enum - they are
 NOT: real sword items span 0 (Iron) to 17 (Alondite, Ike's legendary
 personal sword), far more granular than the letter grade's 6 values, so
@@ -97,13 +96,10 @@ pointers) are class-innate skills, granted automatically to every unit of
 that class - confirmed the same way the Chant investigation above ruled
 things out: JID_HERON/JID_BIRD_HE and their promotions resolve to
 `SID_ANIMALIZE`/`SID_LYCANTHROPE`/`SID_FLY`/`SID_HIGHER` here, all
-laguz-transformation traits, not player-visible "learned" skills. Neither
-field has write support yet: weapon_ranks' pointer is shared across
-multiple classes with an identical rank curve (JID_SWORDER and
-JID_SWORDER/F both point at the exact same string), so patching it
-in-place would silently change every class sharing that pointer - a real
-footgun that needs its own guard before this is safe to expose as
-editable.
+laguz-transformation traits, not player-visible "learned" skills. Both
+fields can now be edited. Rank-string pointers can be shared across
+classes (JID_SWORDER and JID_SWORDER/F share one), so the writer appends
+a new string and repoints only the edited class.
 
 **Character skills and weapon ranks**: ``build_person_data_table`` reads
 the record word by word. 0x18 goes through ``map_byte_values_from_table``
@@ -378,7 +374,9 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
     pair = [cls] + ([linked] if linked is not None else [])
     if any(LAGUZ_CLASS_TOKENS.intersection(c.categories or ()) or c.innate_weapon for c in pair):
         return "Laguz"
-    # A middle tier points forward to a stronger class, so use its flag first.
+    # The two-tier retail data uses reciprocal links.  A configured middle
+    # tier instead points forward, so use its explicit class skill before
+    # comparing caps against the (stronger) third tier.
     if "SID_HIGHER" in (cls.skills or ()) or "SID_TIER3" in (cls.skills or ()):
         return "Promoted"
     if linked is not None and "SID_HIGHER" in (linked.skills or ()):
@@ -394,7 +392,7 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
 
 
 def class_tier(cls: "ClassEntry", classes: list) -> int:
-    """Human promotion tier (1-3), or 0 for a Laguz class."""
+    """Human promotion tier (1–3), or 0 for a Laguz class."""
     if class_category(cls, classes) == "Laguz":
         return 0
     if "SID_TIER3" in (cls.skills or ()):
@@ -435,18 +433,18 @@ ITEM_PROPERTY_TOKENS = {
     "beastsamul": "Keeps a laguz transformed (Demi Band, Laguz Band)",
     "JH": "Vanilla: Demi Band",
     "noneart": "Vanilla: Boots",
-    "heroonly": "Only Ike can use it (Regal Sword, Ragnell)",
-    "blackonly": "Only the Black Knight can use it (Alondite)",
-    "finalonly": "Only Ashnard can use it (Gurgurant)",
+    "heroonly": "Requires SID_HERO (Ike has it; Regal Sword, Ragnell)",
+    "blackonly": "Requires class JID_BKNIGHT (Alondite)",
+    "finalonly": "Requires SID_FINAL (Ashnard has it; Gurgurant)",
     "humanonly": "Only beorc can use it",
     "beastonly": "Only laguz can use it",
     "knightonly": "Only knights can use it (not used in vanilla)",
     "shootonly": "Vanilla: Double Bow, Longbow",
-    "eqA": "User lock A (Rolf's Bow: Rolf only)",
-    "eqB": "User lock B (Amiti: Elincia only)",
-    "eqC": "User lock C (Laguz Band)",
-    "eqD": "User lock D (Knight Ward: soldiers, knights, paladins)",
-    "eqrevA": "Everyone except lock A (Demi Band)",
+    "eqA": "Requires SID_EQ_A (Rolf's Bow)",
+    "eqB": "Requires SID_EQ_B (Amiti)",
+    "eqC": "Requires SID_EQ_C (Laguz Band)",
+    "eqD": "Requires SID_EQ_D (Knight Ward)",
+    "eqrevA": "Blocked by SID_EQREV_A (Demi Band)",
 }
 #: Tokens vanilla items carry that the engine never matches (no effect).
 ITEM_IGNORED_PROPERTY_TOKENS = ("areaattack", "absolutehit")
@@ -478,15 +476,12 @@ STAT_NAMES = ["HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res"]
 # ClassEntry.weapon_ranks / module docstring). Positions 0-6 confirmed by
 # real single-weapon-type classes (Fighter -> only position 2 set, Archer
 # -> only position 3, Mage_F/Mage_T/Mage_W -> only position 4/5/6
-# respectively, ...). Position 7 (here "Staff") is the weaker of the two
-# magic-adjacent guesses: Priest/Bishop/Valkyrie all carry a rank there,
-# consistent with Tellius's staff-healer archetype, but no class was found
-# with a *letter* rank at position 8 to independently confirm "Light" - it
-# was only ever seen as the '*' wildcard marker (ClassEntry.weapon_ranks'
-# own docstring), so position 8 is the single lowest-confidence entry here.
-WEAPON_TYPE_NAMES = ["Sword", "Lance", "Axe", "Bow", "Fire", "Thunder", "Wind", "Staff", "Light"]
-#: The characters of a weapon rank string: '-' unusable, '*' usable without a
-#: fixed rank, else the rank letter.
+# respectively, ...). The promotion menu confirms positions 7 and 8 as
+# Staff and Knife: MCA_RD/MCA_KN labels and the result-to-skill switch.
+# A '*' in the promoted class string offers that choice.
+WEAPON_TYPE_NAMES = ["Sword", "Lance", "Axe", "Bow", "Fire", "Thunder", "Wind", "Staff", "Knife"]
+#: The characters of a weapon rank string: '-' unavailable, '*' a selectable
+#: promotion weapon on a target class, else the starting rank letter.
 WEAPON_RANK_CHARS = "-*EDCBAS"
 
 

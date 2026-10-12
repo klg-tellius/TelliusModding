@@ -196,7 +196,7 @@ class SystemData:
     screen_y: int  # s8
     brightness: int  # 0x40 default
     reserved_43: int
-    region: int  # +0x44, derived from the console settings when the system data is made
+    language_code: int  # +0x44; 0 Japanese, 1 English, 2 German, 3 French, 4 Spanish, 5 Italian
     reserved_45: bytes  # 2 bytes, never saved (0)
     last_file_slot: int
 
@@ -208,13 +208,13 @@ class SystemData:
         magic, version, sid, unlocks = r.take(4), r.u32(), r.u64(), r.u16()
         cleared, met = r.take(30), r.take(16)
         sx, sy = r.s8(), r.s8()
-        bright, r43, region = r.u8(), r.u8(), r.u8()
-        return cls(magic, version, sid, unlocks, cleared, met, sx, sy, bright, r43, region, r.take(2), r.u8())
+        bright, r43, language_code = r.u8(), r.u8(), r.u8()
+        return cls(magic, version, sid, unlocks, cleared, met, sx, sy, bright, r43, language_code, r.take(2), r.u8())
 
     def build(self) -> bytes:
         return (self.magic + struct.pack(">IQH", self.version, self.system_id, self.unlocks)
                 + self.cleared_playthroughs + self.met_characters
-                + struct.pack(">bbBBB", self.screen_x, self.screen_y, self.brightness, self.reserved_43, self.region)
+                + struct.pack(">bbBBB", self.screen_x, self.screen_y, self.brightness, self.reserved_43, self.language_code)
                 + self.reserved_45 + bytes((self.last_file_slot,)))
 
     @property
@@ -264,7 +264,7 @@ class PartyState:
     bonus_exp: int  # +0x1C
     objective_texts: bytes  # +0x20, 4 x 12-byte keys copied from the chapter record
     byte_50: int  # +0x50, cleared at chapter start
-    byte_51: int  # +0x51
+    byte_51: int  # +0x51: forged this chapter; blocks another forge purchase
     cursor_x: int  # +0x52 map cursor tile
     cursor_y: int  # +0x53
     resume_point: int  # +0x54
@@ -279,7 +279,7 @@ class PartyState:
     report_score: int  # +0x72 s16
     tutorials_unlocked: bytes  # +0x74, 128-bit mask (TutorialUnlock/Lock)
     tutorials_learned: bytes  # +0x84, 128-bit mask (TutorialLearn/Forget)
-    objective_state: bytes  # +0x94, 8 bytes read by start_chapter_complete_event_if_flag_set
+    objective_state: bytes  # +0x94, 8 bytes written at chapter start and goal-event launch; purpose open
     options: bytes  # +0x9C, 12 bytes, see OPTION_FIELDS
     flag_bits: bytes  # +0xB4 event flag table bits (96 slots)
     clear_history: list  # +0x3C4, 40 ClearRecord
@@ -449,7 +449,7 @@ class UnitRecord:
     ai_258: int
     ai_25a: int
     ai_order: int  # +0x248 turn order
-    field_15c: int
+    facing_angle_x50: int  # +0x15C, signed map-model facing angle in degrees * 50
     padding: bytes  # 4 bytes, 0
 
     @classmethod
@@ -466,9 +466,9 @@ class UnitRecord:
         sup = r.take(10)
         ai = [r.u8() for _ in range(6)]
         aflags, a258, a25a, order = r.u32(), r.u16(), r.u16(), r.u8()
-        f15c, pad = r.u16(), r.take(4)
+        facing_angle_x50, pad = r.s16(), r.take(4)
         return cls(ch, job, *head, state, status, hp, bld, mov, stats, growth, skills, items, wexp, *counters,
-                   last, b235, sup, *ai, aflags, a258, a25a, order, f15c, pad)
+                   last, b235, sup, *ai, aflags, a258, a25a, order, facing_angle_x50, pad)
 
     def build(self) -> bytes:
         out = bytearray(struct.pack(">HH", self.character, self.job))
@@ -483,7 +483,7 @@ class UnitRecord:
                            self.counter_232, self.last_kill_chapter, self.byte_235)
         out += self.supports
         out += bytes((self.ai_attack, self.ai_move, self.ai_heal, self.ai_mtype, self.ai_attack_pc, self.ai_move_pc))
-        out += struct.pack(">IHHBH", self.ai_flags, self.ai_258, self.ai_25a, self.ai_order, self.field_15c)
+        out += struct.pack(">IHHBh", self.ai_flags, self.ai_258, self.ai_25a, self.ai_order, self.facing_angle_x50)
         out += self.padding
         assert len(out) == UNIT_RECORD_SIZE
         return bytes(out)
@@ -512,7 +512,7 @@ class ForgeRecord:
     hit: int  # x5
     crit: int  # x3
     weight: int  # weight reduction steps
-    appearance: bytes  # 4 bytes, 80 80 80 FF by default
+    trail_color_rgba: bytes  # +0x14, attack-trail RGBA; 80 80 80 FF by default
 
     @classmethod
     def parse(cls, r: _Reader) -> "ForgeRecord":
@@ -520,7 +520,7 @@ class ForgeRecord:
 
     def build(self) -> bytes:
         return (bytes((self.allocated,)) + self.name
-                + struct.pack(">bbbb", self.might, self.hit, self.crit, self.weight) + self.appearance)
+                + struct.pack(">bbbb", self.might, self.hit, self.crit, self.weight) + self.trail_color_rgba)
 
     @property
     def name_text(self) -> str:

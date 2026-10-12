@@ -101,6 +101,7 @@ class ImportedMaterial:
     shape_flags: int = 0  # blend bits (0x40 additive...) glTF cannot express
     color1: Optional[tuple[int, int, int, int]] = None
     color2: Optional[tuple[int, int, int, int]] = None
+    material_flag1: int = 0  # .gs byte +5, preserved by glTF extras
 
     @property
     def pass_flag(self) -> int:
@@ -415,6 +416,7 @@ def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedSce
                 int(extras.get("fe9_shape_flags", 0) or 0),
                 colour("fe9_color1"),
                 colour("fe9_color2"),
+                int(extras.get("fe9_material_flag1", 0) or 0) & 0xFF,
             )
         )
     default_material: Optional[int] = None
@@ -665,7 +667,7 @@ def _material_record(
     color0 = tuple(max(0, min(255, round(c * 255 / COLOR_LOAD_SCALE))) for c in (r, g, b)) + (max(0, min(255, round(a * 255))),)
     return gs_file.GsMaterial(
         name=src.name,
-        unk0=(0, 0),
+        unk0=(0, src.material_flag1),
         unk1=0,
         color0=color0,
         color1=src.color1 or (0, 0, 0, 255),

@@ -4,11 +4,12 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image
 
-from .formats import fe10_rect, lz10, message, rect, soundroom, tpl
+from .formats import fe10_rect, lz10, message, pak, rect, soundroom, tpl
 from .formats.cmb import read_cmb, write_cmb
 from .formats.cmb.model import PUSHSTR_OPS
 from .games import Game
@@ -255,10 +256,28 @@ def image_path(project, file_name: str) -> Path:
     return project.files_dir / parts
 
 
+@lru_cache(maxsize=2)
+def _system_archive_files(path: Path, modified_ns: int, size: int) -> dict[str, bytes]:
+    archive = lz10.decompress(path.read_bytes())
+    return {entry.name.replace("\\", "/").casefold(): pak.read_pak_file_content(archive, entry)
+            for entry in pak.read_pak_entries(archive)}
+
+
 def preview_image(project, layer) -> Image.Image:
     path = image_path(project, layer_file(layer))
-    raw = path.read_bytes()
-    if path.suffix.casefold() == ".cms":
+    if path.is_file():
+        raw = path.read_bytes()
+    elif not is_fe10(project) and (project.files_dir / "system.cmp").is_file():
+        archive_path = project.files_dir / "system.cmp"
+        stat = archive_path.stat()
+        archive = _system_archive_files(archive_path, stat.st_mtime_ns, stat.st_size)
+        name = path.relative_to(project.files_dir).as_posix().casefold()
+        if name not in archive:
+            raise FileNotFoundError(path)
+        raw = archive[name]
+    else:
+        raise FileNotFoundError(path)
+    if raw[:1] == b"\x10":
         raw = lz10.decompress(raw)
     images = tpl.read_tpl_images(io.BytesIO(raw))
     return images[layer_texture(layer)]
