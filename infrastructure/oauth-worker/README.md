@@ -19,7 +19,8 @@ bound to the exact archive origin, and checked against a secure HTTP-only cookie
 
    Generate `OAUTH_STATE_SECRET` with at least 32 random bytes. Never store these
    values in the repository or in `.dev.vars` committed to Git.
-4. Run `npm run deploy` and note the exact Worker URL.
+4. Run `npm run deploy`. The production Worker URL for this repository is
+   `https://tellius-archive-oauth.klgtellius.workers.dev`.
 5. Set `backend.base_url` in `wiki/admin/config.yml` to that URL. Register the same
    URL in the GitHub OAuth App, then rebuild the wiki.
 6. Confirm `/healthz`, trusted-editor publication, and outsider Open Authoring.

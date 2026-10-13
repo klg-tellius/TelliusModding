@@ -2,7 +2,7 @@ backend:
   name: github
   repo: klg-tellius/TelliusModding
   branch: main
-  base_url: https://tellius-archive-oauth.klg-tellius.workers.dev
+  base_url: https://tellius-archive-oauth.klgtellius.workers.dev
   auth_endpoint: /auth
   open_authoring: true
   use_graphql: true
