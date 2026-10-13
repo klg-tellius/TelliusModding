@@ -1,0 +1,33 @@
+name: Tellius Archive correction
+description: Report an unclear, incomplete, or incorrect archive article
+title: "[Archive] "
+labels: [documentation]
+body:
+  - type: input
+    id: article
+    attributes:
+      label: Article
+      placeholder: Combat Resolution
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Article URL
+      placeholder: https://klg-tellius.github.io/TelliusModding/systems/combat-mechanics/
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What needs changing?
+      description: Quote only the shortest phrase needed to locate the claim.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or proposed explanation
+      description: Name the game/region, file, test, or source when possible. Do not attach copyrighted game files.
+    validations:
+      required: false

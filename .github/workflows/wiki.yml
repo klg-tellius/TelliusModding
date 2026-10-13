@@ -1,0 +1,71 @@
+name: Tellius Archive
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - wiki/**
+      - mkdocs.yml
+      - requirements-wiki.txt
+      - App/tools/validate_wiki.py
+      - App/tools/normalize_wiki_html_links.py
+      - App/tools/check_built_wiki.py
+      - theme_overrides/**
+      - docs/tellius_archive.html
+      - CONTENT-LICENSE.md
+      - .github/workflows/wiki.yml
+  pull_request:
+    paths:
+      - wiki/**
+      - mkdocs.yml
+      - requirements-wiki.txt
+      - App/tools/validate_wiki.py
+      - App/tools/normalize_wiki_html_links.py
+      - App/tools/check_built_wiki.py
+      - theme_overrides/**
+      - docs/tellius_archive.html
+      - CONTENT-LICENSE.md
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-wiki.txt
+      - run: python -m pip install -r requirements-wiki.txt
+      - run: python App/tools/validate_wiki.py
+      - run: python App/tools/normalize_wiki_html_links.py
+      - run: mkdocs build --strict
+      - run: python App/tools/check_built_wiki.py
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy last validated artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

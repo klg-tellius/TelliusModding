@@ -1,0 +1,83 @@
+site_name: Tellius Archive
+site_description: A field guide to modding Fire Emblem Path of Radiance and Radiant Dawn
+site_url: https://klg-tellius.github.io/TelliusModding/
+repo_url: https://github.com/klg-tellius/TelliusModding
+repo_name: klg-tellius/TelliusModding
+docs_dir: wiki
+site_dir: site
+use_directory_urls: true
+strict: true
+
+theme:
+  name: material
+  custom_dir: theme_overrides
+  language: en
+  logo: assets/images/archive-mark.svg
+  favicon: assets/images/archive-mark.svg
+  font:
+    text: Source Sans 3
+    code: JetBrains Mono
+  features:
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tooltips
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Use dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Use light theme
+
+plugins:
+  - search
+  - tags
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_css:
+  - assets/stylesheets/archive.css
+extra_javascript:
+  - assets/javascripts/article-tools.js
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/klg-tellius/TelliusModding
+      name: TelliusModding on GitHub
+  consent:
+    title: No tracking cookies
+    description: The archive does not use analytics or advertising cookies.
+
+copyright: >-
+  Original wiki text and diagrams are licensed CC BY-SA 4.0. Fire Emblem and game
+  assets belong to Nintendo and Intelligent Systems; this is an independent project.

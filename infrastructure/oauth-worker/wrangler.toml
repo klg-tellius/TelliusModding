@@ -1,0 +1,13 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "tellius-archive-oauth"
+main = "src/index.js"
+compatibility_date = "2026-10-13"
+
+[vars]
+ALLOWED_ORIGIN = "https://klg-tellius.github.io"
+GITHUB_SCOPE = "public_repo,user"
+
+# Set these as encrypted Worker secrets; never add values to this file:
+#   npx wrangler secret put GITHUB_OAUTH_ID
+#   npx wrangler secret put GITHUB_OAUTH_SECRET
+#   npx wrangler secret put OAUTH_STATE_SECRET
