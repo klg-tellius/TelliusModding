@@ -84,14 +84,17 @@ class LayoutExamples(tk.Toplevel):
         seats = ttk.Frame(right)
         seats.pack(fill="x", pady=(0, 6))
         tip(ttk.Label(seats, text="Show seats:"),
-            "Seats 0-3 each have their text box: hiding the seat hides its box too. A greyed seat is "
-            "off-screen in this layout (no portrait there is ever seen).").pack(side="left", padx=(0, 4))
+            "Seats 0-3 each have their text box: hiding the seat hides its box too.").pack(side="left", padx=(0, 4))
         self._seat_checks = []
         for i, enabled in enumerate(self._seat_enabled):
             check = ttk.Checkbutton(seats, text=str(i), variable=enabled,
                                     command=self._render)
             check.pack(side="left", padx=(0, 3))
             self._seat_checks.append(check)
+        self._offscreen = tip(ttk.Label(seats, text="", style="Muted.TLabel"),
+                              "These seats are placed outside the screen: a portrait there is never seen. "
+                              "Probably used for a character who talks from off-screen.")
+        self._offscreen.pack(side="left", padx=(8, 0))
         self._image = ttk.Label(right)
         self._image.pack(fill="both", expand=True)
         self._status = ttk.Label(right, wraplength=600)
@@ -113,7 +116,13 @@ class LayoutExamples(tk.Toplevel):
             count = min(9, len(seats))
             visible = [i < count and -SEAT_MARGIN <= seats[i][0] <= SCENE_WIDTH + SEAT_MARGIN for i in range(9)]
             for i, check in enumerate(self._seat_checks):
-                check.state(("!disabled",) if visible[i] else ("disabled",))
+                check.pack_forget()
+            for i, check in enumerate(self._seat_checks):
+                if visible[i]:
+                    check.pack(side="left", padx=(0, 3), before=self._offscreen)
+            hidden = [str(i) for i in range(count) if not visible[i]]
+            self._offscreen.configure(text=(f"Seat{'s' if len(hidden) > 1 else ''} {', '.join(hidden)}: off-screen"
+                                            if hidden else ""))
             portraits = tuple(Portrait(fid=self._faces[i % len(self._faces)])
                               if self._faces and visible[i] and self._seat_enabled[i].get()
                               else Portrait()
