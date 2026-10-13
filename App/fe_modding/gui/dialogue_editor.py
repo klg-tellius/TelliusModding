@@ -34,6 +34,7 @@ from . import theme
 from .editor_panel import EditorPanel
 from .scene_editor import DialogueStage, background_names, layout_labels
 from .layout_examples import LayoutExamples
+from .widgets import info, tip
 
 SCRIPT_SOURCES_DIR = "script_sources"  # ScriptEditor's .fe9s sidecar folder
 
@@ -91,19 +92,26 @@ class DialogueEditor(EditorPanel):
             button = ttk.Button(top, text=label, command=command, state="disabled")
             button.pack(side="left", padx=(0, 4))
             self._manage_buttons.append(button)
+        info(top, "Type an ID (or part of it) and press Enter, or open the list. Messages are saved sorted by ID, "
+                  "like vanilla; a new message plays once a chapter script calls its ID "
+                  "(e.g. TalkEvent(\"MS_05_EV_03\") in the Scripts tab).").pack(side="left", padx=(2, 8))
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="right", padx=(8, 0))
         self._save_button = ttk.Button(top, text="Save Chapter", command=self._save, state="disabled")
         self._save_button.pack(side="right")
+        self._chapter_buttons = []
+        for label, command, help_text in (
+                ("Export chapter…", self._export_chapter,
+                 "Every message of this chapter in one UTF-8 text file: a === MESSAGE_ID === line, then the "
+                 "message as the editor shows it."),
+                ("Import chapter…", self._import_chapter,
+                 "Read a file written by Export chapter: the messages it lists replace those with the same ID, "
+                 "new IDs are added, the others are kept.")):
+            button = tip(ttk.Button(top, text=label, command=command, state="disabled"), help_text)
+            button.pack(side="right", padx=(0, 6))
+            self._chapter_buttons.append(button)
         self._empty_label = ttk.Label(self, text="", style="Muted.TLabel", padding=(8, 0))
         self._empty_label.pack(anchor="w")
-        ttk.Label(
-            self,
-            text="Type an ID (or part of it) and press Enter, or open the list. Messages are saved sorted by ID, "
-            "like vanilla; a new message plays once a chapter script calls its ID "
-            "(e.g. TalkEvent(\"MS_05_EV_03\") in the Scripts tab).",
-            style="Muted.TLabel", padding=(8, 0),
-        ).pack(anchor="w")
 
         paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
@@ -143,10 +151,6 @@ class DialogueEditor(EditorPanel):
         self._text_widget.tag_configure("find", background=theme.color("highlight"))
         self._notation_error = ttk.Label(left, text="", style="Danger.TLabel", wraplength=600)
         self._notation_error.pack(anchor="w")
-        ttk.Label(left, text="Write dialogue directly. Highlighted <actions> can be typed, inserted with buttons, "
-                  "or double-clicked to edit. Pause power n waits 2^n frames.\n"
-                  "Import/export uses UTF-8 text for this message. Literal < and >: <Bytes:3C> / <Bytes:3E>.",
-                  style="Muted.TLabel", wraplength=600, justify="left").pack(anchor="w", pady=(4, 0))
 
         preview_frame = ttk.Frame(right)
         preview_frame.pack(fill="both", expand=True)
@@ -172,11 +176,13 @@ class DialogueEditor(EditorPanel):
             ('Undo', lambda: self._edit_event('<<Undo>>')),
             ('Redo', lambda: self._edit_event('<<Redo>>')),
             ('Find / Replace', self._find_replace),
-            ('Import…', self._import_text), ('Export…', self._export_text),
         ):
             button = ttk.Button(row, text=label, command=callback)
             button.pack(side='left', padx=(0, 3))
             self._editor_buttons.append(button)
+        info(row, "Write dialogue directly. Highlighted <actions> can be typed, inserted with the buttons, or "
+                  "double-clicked to edit. Pause power n waits 2^n frames. Literal < and >: <Bytes:3C> / "
+                  "<Bytes:3E>.").pack(side="left", padx=(2, 0))
         if self._fe9:
             ttk.Label(row, text="Layout").pack(side="left", padx=(8, 2))
             self._scene_layout_choice = tk.StringVar()
@@ -407,7 +413,8 @@ class DialogueEditor(EditorPanel):
         body = ttk.Frame(window, padding=10)
         body.pack(fill='both', expand=True)
         window.geometry("760x620")
-        ttk.Label(body, text="Choose an action to insert at the text cursor.").pack(anchor="w")
+        ttk.Label(body, text="Choose an action to insert at the text cursor; hover one for what it does.").pack(
+            anchor="w")
         names = list(dict.fromkeys(
             list((notation.FE10_NAMES if self._fe10 else notation.FE9_NAMES).values())
             + (["Pause power"] if self._fe10 else ["Markup"])))
@@ -434,10 +441,11 @@ class DialogueEditor(EditorPanel):
             for child in actions.winfo_children():
                 child.destroy()
             words = query.get().casefold().split()
-            visible = [name for name in names if all(word in name.casefold() for word in words)]
+            visible = [name for name in names
+                       if all(word in (name + " " + notation.ACTION_HELP.get(name, "")).casefold() for word in words)]
             for i, name in enumerate(visible):
-                ttk.Button(actions, text=name, command=lambda n=name: choose(n)).grid(
-                    row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
+                tip(ttk.Button(actions, text=name, command=lambda n=name: choose(n)),
+                    notation.ACTION_HELP.get(name, "")).grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=3)
             for column in range(3):
                 actions.columnconfigure(column, weight=1)
 
@@ -461,34 +469,95 @@ class DialogueEditor(EditorPanel):
             self._replace_selection('<' + value + '>')
         return 'break'
 
-    def _import_text(self):
-        if self._selected_index() is None:
-            return
-        path = filedialog.askopenfilename(parent=self, title='Import dialogue text', filetypes=[('Text files', '*.txt'), ('All files', '*.*')])
-        if not path:
-            return
-        try:
-            text = Path(path).read_text(encoding='utf-8-sig')
-        except (OSError, UnicodeError) as error:
-            messagebox.showerror('Could not import text', str(error), parent=self)
-            return
-        replace = messagebox.askyesnocancel('Import dialogue text',
-                    'Replace this entire message?\nYes: replace message.\nNo: insert at cursor or replace selected text.\nThis can be undone.', parent=self)
-        if replace is not None:
-            self._replace_selection(text, whole=replace)
+    EXPORT_HEADER = "# Tellius dialogue export"
 
-    def _export_text(self):
-        index = self._selected_index()
-        if index is None:
+    def _export_chapter(self):
+        if self._current_path is None:
             return
-        path = filedialog.asksaveasfilename(parent=self, title='Export dialogue text', defaultextension='.txt',
-                    initialfile='dialogue.txt', filetypes=[('Text files', '*.txt')])
+        self._flush_edit()
+        path = filedialog.asksaveasfilename(parent=self, title='Export chapter dialogue', defaultextension='.txt',
+                                            initialfile=f'{self._current_path.stem}_dialogue.txt',
+                                            filetypes=[('Text files', '*.txt')])
+        if not path:
+            return
+        parts = [f"{self.EXPORT_HEADER}: {self._current_path.name}\n"]
+        for msg in self._messages:
+            parts.append(f"=== {self._id_label(msg.speaker)} ===\n{self._drafts.get(msg.speaker, self._shown(msg.text))}\n")
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write("\n".join(parts))
+        except (OSError, UnicodeError) as error:
+            messagebox.showerror('Could not export dialogue', str(error), parent=self)
+            return
+        self._status_label.config(text=f"Exported {len(self._messages)} messages")
+
+    @classmethod
+    def parse_chapter_export(cls, text: str) -> list[tuple[str, str]]:
+        """(message ID, editor text) pairs of an Export chapter file, in order."""
+        blocks: list[tuple[str, list[str]]] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("=== ") and stripped.endswith(" ===") and len(stripped) > 8:
+                blocks.append((stripped[4:-4].strip(), []))
+            elif blocks:
+                blocks[-1][1].append(line)
+            elif stripped and not stripped.startswith("#"):
+                raise ValueError("The file does not start with a === MESSAGE_ID === line.")
+        out = []
+        for msg_id, lines in blocks:
+            while lines and not lines[-1].strip():
+                lines.pop()
+            out.append((msg_id, "\n".join(lines)))
+        return out
+
+    def _import_chapter(self):
+        if self._current_path is None:
+            return
+        self._flush_edit()
+        path = filedialog.askopenfilename(parent=self, title='Import chapter dialogue',
+                                          filetypes=[('Text files', '*.txt'), ('All files', '*.*')])
         if not path:
             return
         try:
-            Path(path).write_text(self._text_widget.get('1.0', 'end-1c'), encoding='utf-8')
-        except (OSError, UnicodeError) as error:
-            messagebox.showerror('Could not export text', str(error), parent=self)
+            blocks = self.parse_chapter_export(Path(path).read_text(encoding='utf-8-sig'))
+        except (OSError, UnicodeError, ValueError) as error:
+            messagebox.showerror('Could not import dialogue', str(error), parent=self)
+            return
+        parsed, problems = [], []
+        for msg_id, text in blocks:
+            raw_id, problem = self._id_problem(msg_id, ignore=next(
+                (m.speaker for m in self._messages if self._id_label(m.speaker) == msg_id), None))
+            if raw_id is None:
+                problems.append(f"{msg_id}: {problem}")
+                continue
+            try:
+                parsed.append((raw_id, notation.parse(text, self._fe10).raw))
+            except notation.NotationError as error:
+                problems.append(f"{msg_id}: {error}")
+        if problems:
+            messagebox.showerror('Could not import dialogue', "Nothing was imported:\n" + "\n".join(problems[:12]),
+                                 parent=self)
+            return
+        by_id = {m.speaker: i for i, m in enumerate(self._messages)}
+        changed = added = 0
+        for raw_id, raw_text in parsed:
+            if raw_id in by_id:
+                if self._messages[by_id[raw_id]].text != raw_text:
+                    self._messages[by_id[raw_id]] = message.Message(speaker=raw_id, text=raw_text)
+                    changed += 1
+            else:
+                self._messages.append(message.Message(speaker=raw_id, text=raw_text))
+                added += 1
+            self._drafts.pop(raw_id, None)
+        if not changed and not added:
+            self._status_label.config(text="Import: no change")
+            return
+        self._messages.sort(key=_sort_key)
+        current = self._selected_index()
+        self._refresh_message_list(select=current if current is not None and current < len(self._messages) else 0)
+        self._mark_dirty()
+        self._changelog.append(self._current_path.name, f"Imported dialogue: {changed} changed, {added} added")
+        self._status_label.config(text=f"Imported: {changed} changed, {added} added")
 
     def _find_replace(self):
         if self._selected_index() is None:
@@ -602,7 +671,7 @@ class DialogueEditor(EditorPanel):
         self._refresh_message_list()
         self._dirty = False
         self._save_button.config(state="normal")
-        for button in self._manage_buttons:
+        for button in self._manage_buttons + self._chapter_buttons:
             button.config(state="normal")
         status = f"{len(self._messages)} messages"
         if self._fe10:

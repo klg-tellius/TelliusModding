@@ -11,6 +11,11 @@ from ..formats.fe9_conversation import Event, Portrait, Scene, Textbox
 from ..formats.fe9_conversation_render import ConversationRenderer
 from ..formats.fe9_message_scene import layout_from_label
 from .scene_editor import background_names, layout_labels
+from .widgets import tip
+
+#: Scene width in pixels; a seat placed beyond it (some layouts park seats at x 1080-1528) is never seen.
+SCENE_WIDTH = 608
+SEAT_MARGIN = 64
 
 
 def distinct_sample_faces(assets, limit=9):
@@ -78,7 +83,9 @@ class LayoutExamples(tk.Toplevel):
         bg_box.bind("<<ComboboxSelected>>", self._render)
         seats = ttk.Frame(right)
         seats.pack(fill="x", pady=(0, 6))
-        ttk.Label(seats, text="Show seats:").pack(side="left", padx=(0, 4))
+        tip(ttk.Label(seats, text="Show seats:"),
+            "Seats 0-3 each have their text box: hiding the seat hides its box too. A greyed seat is "
+            "off-screen in this layout (no portrait there is ever seen).").pack(side="left", padx=(0, 4))
         self._seat_checks = []
         for i, enabled in enumerate(self._seat_enabled):
             check = ttk.Checkbutton(seats, text=str(i), variable=enabled,
@@ -102,16 +109,20 @@ class LayoutExamples(tk.Toplevel):
         label = self._labels[selection[0]]
         layout = layout_from_label(label)
         try:
-            count = min(9, len(self._assets.seats(layout)))
+            seats = self._assets.seats(layout)
+            count = min(9, len(seats))
+            visible = [i < count and -SEAT_MARGIN <= seats[i][0] <= SCENE_WIDTH + SEAT_MARGIN for i in range(9)]
             for i, check in enumerate(self._seat_checks):
-                check.state(("!disabled",) if i < count else ("disabled",))
+                check.state(("!disabled",) if visible[i] else ("disabled",))
             portraits = tuple(Portrait(fid=self._faces[i % len(self._faces)])
-                              if self._faces and i < count and self._seat_enabled[i].get()
+                              if self._faces and visible[i] and self._seat_enabled[i].get()
                               else Portrait()
                               for i in range(9))
             definitions = [part for part in self._assets.layout(layout).parts
                            if part.kind == 2]
-            boxes = tuple(Textbox(text=f"Textbox {i + 1}", visible=i < len(definitions))
+            # box i belongs to seat i (the speaker seat lights both): a hidden seat hides its box
+            boxes = tuple(Textbox(text=f"Textbox {i + 1}",
+                                  visible=i < len(definitions) and (i >= count or self._seat_enabled[i].get()))
                           for i in range(4))
             scene = Scene(layout=layout, background=self._background.get(),
                           portraits=portraits, boxes=boxes, speaker_seat=-1,
@@ -121,8 +132,10 @@ class LayoutExamples(tk.Toplevel):
             image = result.image.resize((608, 448), Image.Resampling.LANCZOS)
             self._photo = ImageTk.PhotoImage(image)
             self._image.configure(image=self._photo)
-            shown = sum(enabled.get() for enabled in self._seat_enabled[:count])
-            note = (f"{count} seat{'s' if count != 1 else ''} ({shown} shown); "
+            on_screen = sum(visible)
+            shown = sum(enabled.get() for enabled, seen in zip(self._seat_enabled, visible) if seen)
+            note = (f"{on_screen} seat{'s' if on_screen != 1 else ''} on screen ({shown} shown)"
+                    + (f", {count - on_screen} off-screen" if count > on_screen else "") + "; "
                     f"{min(4, len(definitions))} textbox{'es' if len(definitions) != 1 else ''}.")
             if result.diagnostics:
                 note += "  " + "; ".join(d.description for d in result.diagnostics)
