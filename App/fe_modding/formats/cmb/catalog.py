@@ -217,7 +217,8 @@ class ExternSig:
     group: str = ""  # registration hub / defining script
     args: list = field(default_factory=list)  # [{"name":..., "kind":...}]
     uses: int = 0
-    note: str = ""
+    note: str = ""  # what the function does
+    returns: str = ""  # what it returns, when that is worth testing
 
     def arg_kind(self, i: int) -> str:
         return self.args[i]["kind"] if i < len(self.args) else "int"
