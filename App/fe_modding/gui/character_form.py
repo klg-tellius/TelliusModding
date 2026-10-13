@@ -19,6 +19,23 @@ from typing import Callable, Optional
 from ..formats import fe8data
 from . import record_actions, message_reference
 from .fe8_session import Fe8DataSession
+from .widgets import tip
+
+STAT_HELP = {
+    "level": "Base level.", "build": "Constitution added to the class's (rescue and weight checks).",
+    "weight": "Weight added to the class's (who can rescue whom).",
+    "start_transform_gauge": "A laguz's transformation gauge when deployed (0-20).",
+    "roster_order": "Default position in the unit lists.",
+    "biorhythm_pattern": "The biorhythm curve (0: a random one).",
+    "biorhythm_phase": "Where on the curve the unit starts (0 = 30).",
+}
+ROW_HELP = {
+    "Class base": "The class's base stats, read-only here: edit them in Game Data › Classes.",
+    "Personal bonus": "Added to the class's base stats.",
+    "Class growth %": "The class's rates, used for autolevelled units (read-only here).",
+    "Personal growth %": "The character's growth rates.",
+    "Fixed growth start": "The accumulators the fixed ('Fraction') level-up mode starts from.",
+}
 
 POINTER_FIELDS = ["pid", "mpid", "fid", "jid", "sid0", "sid1", "sid2", "aid_unpromoted", "aid_promoted",
                   "weapon_ranks"]
@@ -29,11 +46,13 @@ BYTE_FIELDS = ["level", "build", "weight", "start_transform_gauge", "roster_orde
 class CharacterForm(ttk.Frame):
     def __init__(self, parent: tk.Misc, session: Fe8DataSession, *,
                  on_open_class: Optional[Callable[[str], None]] = None,
-                 on_open_character: Optional[Callable[[Optional[str]], None]] = None, project=None):
+                 on_open_character: Optional[Callable[[Optional[str]], None]] = None, project=None,
+                 navigate: Optional[Callable[[tuple], None]] = None):
         super().__init__(parent, style="Page.TFrame")
         self._session = session
         self._on_open_class = on_open_class
         self._on_open_character = on_open_character  # a PID, or None for the character list
+        self._navigate = navigate
         self._project = project or session.project
         self._index: Optional[int] = None
         self._vars: dict[str, tk.StringVar] = {}
@@ -73,13 +92,13 @@ class CharacterForm(ttk.Frame):
         identity.master.pack(side="left", fill="both", expand=True, padx=(0, 12))
         self._pointer(identity, 0, "Character (PID)", "pid", c.pid, "PID")
         self._pointer(identity, 1, "Name key (MPID)", "mpid", c.mpid, "MPID")
-        self._pointer(identity, 2, "Portrait (FID)", "fid", c.fid, "FID")
+        self._picker(identity, 2, "Portrait (FID)", "fid", c.fid, "FID",
+                     open_=(lambda: self._navigate(("asset", "portraits", c.pid))) if self._navigate and c.pid
+                     else None)
         self._pointer(identity, 3, "Class (JID)", "jid", c.jid, "JID")
         if c.jid and self._on_open_class is not None:
-            link = ttk.Button(identity, text="Open class", command=lambda: self._on_open_class(c.jid))
+            link = ttk.Button(identity, text="Open", command=lambda: self._on_open_class(c.jid))
             link.grid(row=3, column=2, sticky="w", padx=(6, 0))
-        ttk.Label(identity, text=f"Character record {index} (saves hold number {index + 1})",
-                  style="SurfaceCaption.TLabel").grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         skills = self._group(top, "Skills")
         skills.master.pack(side="left", fill="both", expand=True, padx=(0, 12))
@@ -90,21 +109,14 @@ class CharacterForm(ttk.Frame):
         innate_skills = ", ".join(sid for sid in cls.skills if sid) if cls else ""
         ttk.Label(skills, text=innate_skills or "None", style="SurfaceMuted.TLabel",
                   wraplength=290, justify="left").grid(row=3, column=1, sticky="w")
-        ttk.Label(skills, text="Weapon ranks", style="Surface.TLabel").grid(row=4, column=0, sticky="w", pady=2,
-                                                                            padx=(0, 8))
-        var = tk.StringVar(value=c.weapon_ranks or "")
-        ttk.Entry(skills, textvariable=var, width=12).grid(row=4, column=1, sticky="w")
-        self._vars["weapon_ranks"] = var
-        ttk.Label(skills, text=" ".join(w[:2] for w in fe8data.WEAPON_TYPE_NAMES) + "\n- unusable, * no fixed rank, "
-                  "else E-S; empty: the class's", style="SurfaceCaption.TLabel", justify="left").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self._weapon_ranks(skills, 4, c.weapon_ranks, cls.weapon_ranks if cls else None)
 
-        models = self._group(top, "Map animation IDs")
+        models = self._group(top, "Map models", "The unit's map animation set (AID); empty: the class's own.")
         models.master.pack(side="left", fill="both", expand=True)
-        self._pointer(models, 0, "Unpromoted", "aid_unpromoted", c.aid_unpromoted, "AID")
-        self._pointer(models, 1, "Promoted", "aid_promoted", c.aid_promoted, "AID")
-        ttk.Label(models, text="Empty: the class's own AID is used.", style="SurfaceCaption.TLabel").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        for row, (label, field, value) in enumerate((("Unpromoted", "aid_unpromoted", c.aid_unpromoted),
+                                                     ("Promoted", "aid_promoted", c.aid_promoted))):
+            self._picker(models, row, label, field, value, "AID",
+                         open_=(lambda f=field: self._open_map_model(self._vars[f].get())) if self._navigate else None)
 
         stats = self._group(self._body, "Level, build and stats")
         stats.master.pack(fill="x", pady=(12, 0))
@@ -114,7 +126,8 @@ class CharacterForm(ttk.Frame):
                  ("Roster order", "roster_order", c.roster_order),
                  ("Biorhythm", "biorhythm_pattern", c.biorhythm_pattern),
                  ("Phase", "biorhythm_phase", c.biorhythm_phase))):
-            ttk.Label(stats, text=label, style="Surface.TLabel").grid(row=0, column=col * 2, sticky="w", padx=(0, 6))
+            tip(ttk.Label(stats, text=label, style="Surface.TLabel"), STAT_HELP.get(field, "")).grid(
+                row=0, column=col * 2, sticky="w", padx=(0, 6))
             self._entry(stats, 0, col * 2 + 1, field, value, width=5)
         grid = ttk.Frame(stats, style="Surface.TFrame")
         grid.grid(row=1, column=0, columnspan=12, sticky="w", pady=(12, 0))
@@ -128,24 +141,18 @@ class CharacterForm(ttk.Frame):
             ("Fixed growth start", c.fixed_growth_start, "fixed_growth_start"),
         ]
         for r, (label, values, field) in enumerate(rows, start=1):
-            ttk.Label(grid, text=label, style="Surface.TLabel" if field else "SurfaceMuted.TLabel").grid(
-                row=r, column=0, sticky="w", padx=(0, 10), pady=2)
+            tip(ttk.Label(grid, text=label, style="Surface.TLabel" if field else "SurfaceMuted.TLabel"),
+                ROW_HELP.get(label, "")).grid(row=r, column=0, sticky="w", padx=(0, 10), pady=2)
             for i in range(8):
                 if field:
                     self._entry(grid, r, i + 1, f"{field}{i}", values[i], width=5)
                 else:
                     ttk.Label(grid, text="" if values is None else str(values[i]),
                               style="SurfaceMuted.TLabel").grid(row=r, column=i + 1)
-        ttk.Label(stats, text="Class rows are read-only here; edit them in Game Data › Classes. Transform gauge: "
-                  "a laguz's gauge when deployed (0-20). Roster order: the unit lists' default sort position. "
-                  "Biorhythm: the pattern (0 = a random one) and its starting phase (0 = 30). Fixed growth start: "
-                  "the accumulators the fixed (\"Fraction\") level-up mode starts from.",
-                  style="SurfaceCaption.TLabel", wraplength=760, justify="left").grid(
-            row=2, column=0, columnspan=12, sticky="w", pady=(8, 0))
 
-    def _group(self, parent: tk.Misc, title: str) -> ttk.Frame:
+    def _group(self, parent: tk.Misc, title: str, help_text: str = "") -> ttk.Frame:
         outer = ttk.Frame(parent, style="Surface.TFrame", padding=14)
-        ttk.Label(outer, text=title, style="SurfaceHeading.TLabel").pack(anchor="w", pady=(0, 8))
+        tip(ttk.Label(outer, text=title, style="SurfaceHeading.TLabel"), help_text).pack(anchor="w", pady=(0, 8))
         inner = ttk.Frame(outer, style="Surface.TFrame")
         inner.pack(fill="both", expand=True)
         return inner
@@ -200,6 +207,83 @@ class CharacterForm(ttk.Frame):
             box = ttk.Combobox(parent, textvariable=var, values=[""] + options, width=26)
         box.grid(row=row, column=1, sticky="w")
         self._vars[field] = var
+
+    def _picker(self, parent, row: int, label: str, field: str, value, prefix: str, open_=None) -> None:
+        """A label typed or picked from a list that narrows as you type, with an Open button."""
+        from .map_builder import _LabelPicker
+
+        ttk.Label(parent, text=label, style="Surface.TLabel").grid(row=row, column=0, sticky="w", pady=2, padx=(0, 8))
+        options = sorted(self._session.labels_by_prefix.get(prefix, {}).keys())
+        if value and value not in options:
+            options.append(value)
+        box = _LabelPicker(parent, width=26)
+        box.set_choices([("", "")] + [(o, o) for o in options])
+        var = tk.StringVar(value=value or "")
+        box.configure(textvariable=var)
+        box.grid(row=row, column=1, sticky="w")
+        self._vars[field] = var
+        if open_ is not None:
+            ttk.Button(parent, text="Open", command=open_).grid(row=row, column=2, sticky="w", padx=(6, 0))
+
+    def _weapon_ranks(self, parent, row: int, ranks: Optional[str], class_ranks: Optional[str]) -> None:
+        """The class's ranks (read-only) above the character's, one picker per weapon type."""
+        tip(ttk.Label(parent, text="Weapon ranks", style="Surface.TLabel"),
+            "- can't use, * usable without a set rank, E to S the starting rank. When the character has ranks "
+            "of its own, each letter replaces the class's, a - included: Soren (------D--) only uses wind "
+            "although Mages have fire and thunder. Tick 'Use the class's' to leave the field empty.").grid(
+            row=row, column=0, sticky="nw", pady=2, padx=(0, 8))
+        table = ttk.Frame(parent, style="Surface.TFrame")
+        table.grid(row=row, column=1, columnspan=2, sticky="w")
+        names = fe8data.WEAPON_TYPE_NAMES
+        for i, name in enumerate(names):
+            ttk.Label(table, text=name[:2], style="SurfaceMuted.TLabel").grid(row=0, column=i + 1)
+        ttk.Label(table, text="Class", style="SurfaceMuted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 4))
+        for i, letter in enumerate((class_ranks or "").ljust(len(names), "-")[:len(names)]):
+            ttk.Label(table, text=letter, style="SurfaceMuted.TLabel").grid(row=1, column=i + 1)
+        ttk.Label(table, text="Own", style="Surface.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 4))
+        letters = [tk.StringVar(value=ch) for ch in (ranks or class_ranks or "").ljust(len(names), "-")[:len(names)]]
+        use_class = tk.BooleanVar(value=not ranks)
+        boxes = []
+        for i, var in enumerate(letters):
+            box = ttk.Combobox(table, textvariable=var, values=list(fe8data.WEAPON_RANK_CHARS), width=2,
+                               state="readonly")
+            box.grid(row=2, column=i + 1, padx=1)
+            boxes.append(box)
+
+        class _Ranks:
+            def get(self) -> str:
+                return "" if use_class.get() else "".join(v.get() or "-" for v in letters)
+
+        def sync() -> None:
+            for box in boxes:
+                box.configure(state="disabled" if use_class.get() else "readonly")
+
+        ttk.Checkbutton(table, text="Use the class's", variable=use_class, command=sync).grid(
+            row=3, column=0, columnspan=len(names) + 1, sticky="w", pady=(2, 0))
+        sync()
+        self._vars["weapon_ranks"] = _Ranks()
+
+    def _open_map_model(self, aid: str) -> None:
+        from ..formats import anim_registry
+        from ..game_profile import PATH_OF_RADIANCE_PROFILE
+
+        aid = aid.strip()
+        if not aid:
+            fe8 = self._session.fe8
+            c = fe8.characters[self._index]
+            cls = next((k for k in fe8.classes if k.jid == c.jid), None)
+            aid = cls.aid if cls is not None and cls.aid else ""
+        try:
+            records = anim_registry.read_anim_registry_path(
+                PATH_OF_RADIANCE_PROFILE.path(self._project.extracted_dir / "files", "anim_data"))
+        except Exception:  # noqa: BLE001
+            records = []
+        folder = next((r.class_folder.rstrip("/") for r in records if r.base_aid == aid), None)
+        if folder is None:
+            messagebox.showinfo("Map model", f"No map model folder is registered for {aid or 'this AID'}.",
+                                parent=self)
+            return
+        self._navigate(("asset", "models", f"ymu/{folder}"))
 
     def _entry(self, parent, row: int, column: int, field: str, value, width: int) -> None:
         var = tk.StringVar(value=str(value))

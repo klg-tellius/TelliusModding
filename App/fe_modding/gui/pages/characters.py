@@ -190,7 +190,8 @@ class CharacterPage(Page):
         stats = ScrollFrame(self._notebook, padding=(16, 12))
         self._form = CharacterForm(stats.body, shell.session,
                                    on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
-                                   on_open_character=self._open_character, project=shell.project)
+                                   on_open_character=self._open_character, project=shell.project,
+                                   navigate=shell.navigate)
         self._form.pack(fill="both", expand=True)
         support_scroll = ScrollFrame(self._notebook, padding=(16, 12))
         self._build_supports(support_scroll.body)
