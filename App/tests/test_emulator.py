@@ -60,3 +60,32 @@ class LaunchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SaveRunTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.extracted = root / "extracted"
+        (self.extracted / "sys").mkdir(parents=True)
+        (self.extracted / "files").mkdir()
+        (self.extracted / "sys" / "main.dol").write_bytes(b"DOL")
+        (self.extracted / "sys" / "boot.bin").write_bytes(b"GFEE01")
+        self.run_dir = root / "build" / emulator.RUN_FOLDER
+
+    def test_card_folder_holds_only_the_save_and_main_dol_is_unpatched(self):
+        card = self.run_dir / emulator.CARD_FOLDER
+        card.mkdir(parents=True)
+        (card / "stale.gci").write_bytes(b"old")
+        dol, folder = emulator.prepare_save_run(self.extracted, self.run_dir, "My Save", b"GCI")
+        self.assertEqual(dol.read_bytes(), b"DOL")
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["My Save.gci"])
+        self.assertEqual((folder / "My Save.gci").read_bytes(), b"GCI")
+        self.assertTrue((self.run_dir / "files").exists())
+
+    def test_config_overrides_reach_the_command_line(self):
+        config = emulator.save_card_config(Path(self._tmp.name) / "card")
+        self.assertEqual(config[0], "Dolphin.Core.SlotA=8")
+        self.assertTrue(config[1].startswith("Dolphin.Core.GCIFolderAPathOverride="))
+        self.assertEqual(emulator.command("D", "I", config=config)[-2:], ["--config=" + c for c in config])

@@ -772,6 +772,61 @@ class SaveFile:
         return bytes(out)
 
 
+#: The resume point the game writes after a chapter clear: loading goes to the chapter start
+#: (GameController label 10) of the block's chapter with the saved army.
+CHAPTER_START_RESUME = 4
+
+
+def retarget_to_chapter_start(block: SaveBlock, chapter: int) -> None:
+    """Make a file-save block load at the start of ``chapter`` (a ChapterData id, the game's
+    ``current_chapter_number``) with its army, gold, convoy and supports, as a save written
+    between chapters does: resume point 4, turn 1, phase states 1/2/2/2 and the per-chapter
+    bytes (Opening1 done, forged, reinforcement uses) cleared. ``build()`` re-signs it."""
+    if not block.decoded:
+        raise ValueError(f"block {block.location} could not be decoded ({block.error})")
+    if block.header.save_kind != 2 or block.is_checkpoint:
+        raise ValueError("only a file save (not a checkpoint) can be moved to a chapter start")
+    if not 0 <= chapter <= 0xFF:
+        raise ValueError(f"chapter {chapter} is out of range")
+    party = block.party
+    block.header.chapter = party.chapter = chapter
+    block.header.resume_point = party.resume_point = CHAPTER_START_RESUME
+    party.phase, party.turn, party.phase_states = 0, 1, bytes((1, 2, 2, 2))
+    party.base_opening_done = party.byte_51 = party.reinforcement_uses = 0
+
+
+def without_checkpoints_of(save: SaveFile, file_slot: int, data: Optional[bytes] = None) -> bytes:
+    """``data`` (default: the file as read) with every checkpoint of ``save`` that suspends
+    ``file_slot`` invalidated (its magic cleared, as the game does to a block it rejects), so
+    loading that slot cannot resume one."""
+    out = bytearray(save.data if data is None else data)
+    for b in save.blocks:
+        if b.is_checkpoint and b.header.owner_slot == file_slot:
+            out[b.offset + 0x40:b.offset + 0x44] = bytes(4)
+    return bytes(out)
+
+
+def play_copy(save: SaveFile, index: int, chapter: Optional[int] = None, rebuild: tuple = ()) -> bytes:
+    """The .gci to test block ``save.blocks[index]`` in the emulator, without touching ``save``:
+    the blocks at the indices in ``rebuild`` (unsaved edits) and the chosen one re-encoded,
+    the chosen one first moved to the start of ``chapter`` when given, and the slot's other
+    blocks and checkpoints invalidated so the file menu loads exactly this one."""
+    import copy
+
+    clone = copy.deepcopy(save)
+    block = clone.blocks[index]
+    if not block.decoded or block.header.save_kind != 2 or block.is_checkpoint:
+        raise ValueError("choose a file save block (not a checkpoint or a consumed copy)")
+    if chapter is not None:
+        retarget_to_chapter_start(block, chapter)
+    blocks = [clone.blocks[i] for i in sorted(set(rebuild) | {index})]
+    out = bytearray(without_checkpoints_of(clone, block.header.file_slot, clone.to_bytes(blocks)))
+    for other in clone.blocks:          # the slot's newest valid block is the one that loads
+        if other is not block and not other.is_checkpoint and other.header.file_slot == block.header.file_slot:
+            out[other.offset + 0x40:other.offset + 0x44] = bytes(4)
+    return bytes(out)
+
+
 def block_label(b: SaveBlock) -> str:
     h = b.header
     where = "Checkpoint" if b.is_checkpoint else f"File {h.file_slot + 1}"

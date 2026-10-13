@@ -10,6 +10,10 @@ tree in ``build/dolphin_run``: copies of ``extracted/sys`` with a ``main.dol`` t
 chosen chapter (``game_code.chapter_jump``), and ``files`` as a directory junction to
 ``extracted/files``, so the project's own files are read in place and its ``main.dol`` is
 never touched.
+
+:func:`prepare_save_run` boots the same tree unpatched with a memory card: Dolphin's slot A
+becomes a GCI folder (``build/dolphin_run/card_a``) holding one save, through command-line
+config overrides (:func:`save_card_config`) that are not written to Dolphin's own settings.
 """
 
 from __future__ import annotations
@@ -70,19 +74,22 @@ def configured_dolphin() -> Optional[Path]:
 
 
 def command(dolphin: Path | str, image: Path | str, *, batch: bool = True,
-            save_state: Optional[Path | str] = None) -> list[str]:
+            save_state: Optional[Path | str] = None, config: tuple[str, ...] = ()) -> list[str]:
     """The command line: ``--exec`` runs the image; ``--batch`` closes Dolphin with the game
-    (no game list window); ``--save_state`` loads a state once the game starts."""
+    (no game list window); ``--save_state`` loads a state once the game starts; each
+    ``config`` entry (``System.Section.Key=Value``) is a ``--config`` override for this run."""
     args = [str(dolphin), "--exec=" + str(image)]
     if batch:
         args.append("--batch")
     if save_state:
         args.append("--save_state=" + str(save_state))
+    args += ["--config=" + c for c in config]
     return args
 
 
 def launch(image: Path | str, dolphin: Optional[Path | str] = None, *, batch: bool = True,
-           save_state: Optional[Path | str] = None, popen=subprocess.Popen) -> subprocess.Popen:
+           save_state: Optional[Path | str] = None, config: tuple[str, ...] = (),
+           popen=subprocess.Popen) -> subprocess.Popen:
     """Start Dolphin on ``image`` and return at once. ``dolphin`` defaults to the configured/found one."""
     image = Path(image)
     if not image.is_file():
@@ -93,12 +100,15 @@ def launch(image: Path | str, dolphin: Optional[Path | str] = None, *, batch: bo
     if not Path(dolphin).is_file():
         raise EmulatorError(f"Dolphin was not found at {dolphin}. Set its location in Settings > Preferences.")
     try:
-        return popen(command(dolphin, image, batch=batch, save_state=save_state))
+        return popen(command(dolphin, image, batch=batch, save_state=save_state, config=config))
     except OSError as exc:
         raise EmulatorError(f"Dolphin could not be started: {exc}") from exc
 
 
 RUN_FOLDER = "dolphin_run"
+CARD_FOLDER = "card_a"
+#: Dolphin's ``EXIDeviceType::MemoryCardFolder`` (``Core/HW/EXI/EXI_Device.h``).
+GCI_FOLDER_DEVICE = 8
 
 
 def _is_link(path: Path) -> bool:
@@ -168,11 +178,47 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str, chapter_
     except (DolError, ValueError) as exc:
         raise EmulatorError(f"Could not patch main.dol for the jump: {exc}") from exc
 
+    return _copy_run_tree(extracted_dir, run_dir, bytes(dol.data))
+
+
+def save_card_config(card_dir: Path | str) -> tuple[str, ...]:
+    """Overrides that make slot A a GCI folder at ``card_dir`` for one run. The override path is
+    used as is, with no region subfolder (``CEXIMemoryCard::GetGCIFolderPath``)."""
+    return (f"Dolphin.Core.SlotA={GCI_FOLDER_DEVICE}",
+            f"Dolphin.Core.GCIFolderAPathOverride={Path(card_dir).resolve()}")
+
+
+def _copy_run_tree(extracted_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
     sys_dir = run_dir / "sys"
     sys_dir.mkdir(parents=True, exist_ok=True)
-    for item in source_sys.iterdir():
+    for item in (extracted_dir / "sys").iterdir():
         if item.is_file() and item.name != "main.dol":
             shutil.copyfile(item, sys_dir / item.name)
-    (sys_dir / "main.dol").write_bytes(bytes(dol.data))
-    _link_directory(run_dir / "files", files)
+    (sys_dir / "main.dol").write_bytes(main_dol)
+    _link_directory(run_dir / "files", extracted_dir / "files")
     return sys_dir / "main.dol"
+
+
+def prepare_save_run(extracted_dir: Path | str, run_dir: Path | str, gci_name: str, gci: bytes) -> tuple[Path, Path]:
+    """Make ``run_dir`` a disc tree booting the project's own ``main.dol`` plus a GCI folder
+    (``run_dir/card_a``) holding only ``gci`` (saved as ``gci_name``). Returns the
+    ``sys/main.dol`` for Dolphin and the card folder for :func:`save_card_config`. The folder
+    is emptied first; whatever the game saves during the run stays there, never in the
+    original save file."""
+    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
+    if not (extracted_dir / "sys" / "main.dol").is_file() or not (extracted_dir / "files").is_dir():
+        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(extracted_dir)
+    if detected is not None and not profile(detected).supports(PLAY):
+        raise EmulatorError(profile(detected).unavailable(PLAY))
+    name = Path(gci_name).name
+    if not name.lower().endswith(".gci"):
+        name += ".gci"
+    dol = _copy_run_tree(extracted_dir, run_dir, (extracted_dir / "sys" / "main.dol").read_bytes())
+    card = run_dir / CARD_FOLDER
+    card.mkdir(parents=True, exist_ok=True)
+    for old in card.iterdir():
+        if old.is_file():
+            old.unlink()
+    (card / name).write_bytes(gci)
+    return dol, card
