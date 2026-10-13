@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from .. import chapters, hub
 from ..hub_creation import GRASS, MAX_SIZE, MIN_SIZE
 from .map_builder import _BuildCanvas
+from .widgets import info, tip
 
 
 class GuidedHubDialog(tk.Toplevel):
@@ -15,8 +16,12 @@ class GuidedHubDialog(tk.Toplevel):
 
     def __init__(self, parent, *, ids: list[str], destination_ids: list[str], free: list[int], titles: dict[str, str],
                  avatars: dict[str, str], starters: dict[str, str], saved: dict | None = None,
-                 size: tuple[int, int] | None = None, terrain: list | None = None):
+                 size: tuple[int, int] | None = None, terrain: list | None = None, map_info=None):
+        """``map_info(chapter_id)`` gives a template chapter's ``(size, terrain)``, to place the
+        links on its map when the hub copies it."""
         super().__init__(parent)
+        self._map_info = map_info
+        self._keep_map = tk.BooleanVar(value=map_info is not None and not saved)
         self.title("Edit hub" if saved else "Create hub")
         self.geometry("1100x750")
         self.minsize(900, 600)
@@ -44,6 +49,8 @@ class GuidedHubDialog(tk.Toplevel):
         self._new_destination = tk.StringVar()
         self._description = tk.StringVar()
         self._build(ids, destination_ids, free)
+        if not saved:
+            self._starter_changed()
         self._redraw()
         self.transient(parent.winfo_toplevel())
         self.grab_set()
@@ -65,18 +72,29 @@ class GuidedHubDialog(tk.Toplevel):
         ttk.Combobox(top, textvariable=self._avatar, values=list(self._avatars), state="readonly", width=28).grid(
             row=1, column=1, columnspan=2, sticky="w", padx=6)
         if not self._saved:
-            ttk.Label(top, text="Map assets from").grid(row=1, column=3, sticky="w")
-            ttk.Combobox(top, textvariable=self._starter, values=list(self._starters), state="readonly", width=28).grid(
-                row=1, column=4, columnspan=2, sticky="w", padx=6)
-        ttk.Label(top, text="Width × height").grid(row=2, column=0, sticky="w")
+            tip(ttk.Label(top, text="Template chapter"),
+                "The new hub is a copy of this chapter, like Add chapter makes: its chapter data, map and "
+                "assets. Its units are replaced by the avatar and its events by the hub's.").grid(
+                row=1, column=3, sticky="w")
+            starter = ttk.Combobox(top, textvariable=self._starter, values=list(self._starters), state="readonly",
+                                   width=28)
+            starter.grid(row=1, column=4, columnspan=2, sticky="w", padx=6)
+            starter.bind("<<ComboboxSelected>>", lambda e: self._starter_changed())
         sizes = ttk.Frame(top)
-        sizes.grid(row=2, column=1, sticky="w", padx=6)
+        sizes.grid(row=2, column=0, columnspan=6, sticky="w")
+        if not self._saved and self._map_info is not None:
+            ttk.Radiobutton(sizes, text="Copy the template's map", variable=self._keep_map, value=True,
+                            command=self._starter_changed).pack(side="left")
+            ttk.Radiobutton(sizes, text="Blank map", variable=self._keep_map, value=False,
+                            command=self._starter_changed).pack(side="left", padx=(12, 6))
+        self._size_entries = []
         for var in (self._width, self._height):
             entry = ttk.Entry(sizes, textvariable=var, width=5, state="disabled" if self._saved else "normal")
-            entry.pack(side="left", padx=(0, 8))
+            entry.pack(side="left", padx=(0, 4))
+            self._size_entries.append(entry)
             var.trace_add("write", lambda *_: self._redraw())
-        ttk.Label(top, text=f"{MIN_SIZE}–{MAX_SIZE} tiles per side; flat grass surface").grid(
-            row=2, column=2, columnspan=4, sticky="w")
+        tip(ttk.Label(sizes, text="tiles", style="Muted.TLabel"),
+            f"Width × height of a blank map: {MIN_SIZE}–{MAX_SIZE} tiles per side, flat grass.").pack(side="left")
 
         middle = ttk.PanedWindow(self, orient="horizontal")
         middle.pack(fill="both", expand=True, padx=12)
@@ -122,19 +140,38 @@ class GuidedHubDialog(tk.Toplevel):
         self._placement = ttk.Label(side, text="Select a linked chapter to place its tile and return point.",
                                     wraplength=300, justify="left")
         self._placement.pack(anchor="w")
-        ttk.Label(side, text="Arrive enters the chapter. Visit shows its description and stays in the hub.",
-                  wraplength=300, justify="left").pack(anchor="w", pady=(16, 0))
+        info(side, "Each linked chapter gets an action tile with two commands: Arrive enters the chapter, Visit "
+                   "shows its description and stays in the hub. After the chapter, the avatar comes back on the "
+                   "return point.").pack(anchor="w", pady=(16, 0))
         bottom = ttk.Frame(self, padding=12)
         bottom.pack(fill="x")
         ttk.Button(bottom, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(bottom, text="Save hub" if self._saved else "Create hub", command=self._accept).pack(
             side="right", padx=(0, 8))
 
+    def _starter_changed(self) -> None:
+        """Show the template's map (size and terrain) when the hub copies it."""
+        keep = self._keep_map.get() and self._map_info is not None
+        for entry in self._size_entries:
+            entry.configure(state="disabled" if keep or self._saved else "normal")
+        if keep:
+            source = self._starters.get(self._starter.get())
+            found = self._map_info(source) if source else None
+            if found is not None:
+                (width, height), self._terrain = found
+                self._width.set(str(width))
+                self._height.set(str(height))
+        elif not self._saved:
+            self._terrain = None
+        self._redraw()
+
     def _dimensions(self):
         try:
             width, height = int(self._width.get()), int(self._height.get())
         except ValueError:
             return None
+        if self._keep_map.get() and not self._saved:
+            return (width, height) if width > 0 and height > 0 else None
         return (width, height) if MIN_SIZE <= width <= MAX_SIZE and MIN_SIZE <= height <= MAX_SIZE else None
 
     def _label(self, item):
@@ -244,7 +281,8 @@ class GuidedHubDialog(tk.Toplevel):
             setup = hub.HubSetup(int(self._chapter.get()), int(self._activation.get()),
                                  self._avatars[self._avatar.get()],
                                  tuple(hub.Destination(**d) for d in self._destinations), *self._start)
-            self.result = (setup, self._starters.get(self._starter.get()), self._title.get().strip(), dimensions)
+            self.result = (setup, self._starters.get(self._starter.get()), self._title.get().strip(), dimensions,
+                           bool(self._keep_map.get()) and not self._saved)
         except (ValueError, TypeError) as exc:
             messagebox.showerror("Invalid hub", str(exc), parent=self)
             return

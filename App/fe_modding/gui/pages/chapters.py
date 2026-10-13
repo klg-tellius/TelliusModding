@@ -147,8 +147,11 @@ class ChaptersHub(Page):
                 (("+", "new campaign"), "New campaign…", "Several chapters and characters at once", "+",
                  self._new_campaign),
                 (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order),
-                (("+", "hub setup"), "Create hub…", "Create a hub map and place chapter links", "◎",
-                 self._hub_setup)):
+                (("+", "hub setup"), *(("Modify hub…", "Change the hub's chapter links and descriptions")
+                                        if hub.saved_setup(self.project) is not None or
+                                        (self.project.directory / "hub_draft.json").is_file() else
+                                        ("Create hub…", "A hub chapter from a template, with links to chapters")),
+                 "◎", self._hub_setup)):
             self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=285,
                                         on_click=command))
         self._actions.done()
@@ -282,12 +285,24 @@ class ChaptersHub(Page):
             capacity = map_file.read_map_bytes(map_bin).capacity
             size = capacity.x_size, capacity.y_size
             terrain = map_file.terrain_grid(map_bin)
+        def map_info(chapter_id):
+            path = chapters.chapter_paths(self.project, chapter_id).map
+            try:
+                packed_map = lz10.decompress(path.read_bytes())
+                bin_entry = next(e for e in pak.read_pak_entries(packed_map) if e.name == "map.bin")
+                data = pak.read_pak_file_content(packed_map, bin_entry)
+                cap = map_file.read_map_bytes(data).capacity
+                return (cap.x_size, cap.y_size), map_file.terrain_grid(data)
+            except Exception:  # noqa: BLE001 - the dialog then keeps the blank-map size
+                return None
+
         dialog = GuidedHubDialog(self, ids=playable, destination_ids=destination_ids, free=free, titles=titles,
-                                 avatars=avatars, starters=starters, saved=saved, size=size, terrain=terrain)
+                                 avatars=avatars, starters=starters, saved=saved, size=size, terrain=terrain,
+                                 map_info=map_info)
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        setup, source_id, title, dimensions = dialog.result
+        setup, source_id, title, dimensions, keep_map = dialog.result
         page = self.shell.existing_page("chapter")
         script = getattr(page, "_script", None) if page is not None else None
         if script is not None and script.dirty:
@@ -305,7 +320,8 @@ class ChaptersHub(Page):
         try:
             if saved is None:
                 plan = hub_creation.create_chapter(self.project, session.data, source_id, setup.chapter, title,
-                                                   *dimensions, setup.avatar_pid, (setup.start_x, setup.start_y))
+                                                   *dimensions, setup.avatar_pid, (setup.start_x, setup.start_y),
+                                                   keep_map=keep_map)
                 session.data = plan.fe8data
                 session.changed(self)
                 session.save()
@@ -319,6 +335,7 @@ class ChaptersHub(Page):
             return
         self.shell.changelog.append(f"Chapter {setup.chapter:02d}", "Configured hub chapter")
         self.shell.rebuild_index()
+        self._build()
         if page is not None:
             page.refresh_chapter_lists()
             if page._chapter == f"{setup.chapter:02d}":
