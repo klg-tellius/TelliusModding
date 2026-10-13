@@ -98,22 +98,22 @@ class ChaptersHub(Page):
         self._scroll = ScrollFrame(self, padding=(28, 4, 28, 28))
         self._scroll.pack(fill="both", expand=True)
         body = self._scroll.body
-        self._actions = CardGrid(body, card_width=260)
+        self._actions = CardGrid(body, card_width=285)
         self._actions.pack(fill="x")
         self._story_header = section_header(body, "Story", "in the order a new game plays them")
         self._story_header.pack(anchor="w", pady=(20, 8), fill="x")
-        self._story = CardGrid(body, card_width=260)
+        self._story = CardGrid(body, card_width=285)
         self._story.pack(fill="x")
         self._other_header = section_header(body, "Other chapters",
                                             "not played in the story: trial maps, tutorials, unused records "
                                             "and added chapters no chapter leads to")
         self._other_header.pack(anchor="w", pady=(20, 8), fill="x")
-        self._other = CardGrid(body, card_width=260)
+        self._other = CardGrid(body, card_width=285)
         self._other.pack(fill="x")
         self._note = ttk.Label(body, style="Muted.TLabel", wraplength=900, justify="left",
-                               text="Disc numbers are the game's chapter numbers (the Prologue is 01). An added "
-                                    "chapter starts as a copy of another one; each chapter's Overview sets what "
-                                    "comes next.")
+                               text="The number in a card's corner is the chapter's place in the story. An "
+                                    "added chapter starts as a copy of another one; each chapter's Overview sets "
+                                    "what comes next.")
         self._note.pack(anchor="w", pady=(16, 0))
         self._built_for = None
         self._keys: dict = {}
@@ -149,7 +149,7 @@ class ChaptersHub(Page):
                 (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order),
                 (("+", "hub setup"), "Create hub…", "Create a hub map and place chapter links", "◎",
                  self._hub_setup)):
-            self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=260,
+            self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=285,
                                         on_click=command))
         self._actions.done()
 
@@ -164,25 +164,26 @@ class ChaptersHub(Page):
         other = [c for c in index.chapters if c.id not in position]
         for grid, rows in ((self._story, story), (self._other, other)):
             for c in rows:
-                chips = []
-                if c.id in position:
-                    chips.append((f"#{position[c.id]}", "accent_bg"))
+                counts = []
                 if c.message_count:
-                    chips.append(f"{c.message_count} messages")
+                    counts.append(f"{c.message_count} messages")
                 if c.units_by_difficulty:
-                    chips.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
-                if len(c.phases) > 1:
-                    parts = _part_folders(self.project, c.id, c.phases)
-                    label = (f"{len(parts)} parts" if len(parts) > 1 else
-                             f"{len(c.phases)} map phases")
-                    chips.append((label, "accent_bg"))
+                    counts.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
+                if c.function_count:
+                    counts.append(f"{c.function_count} functions")
+                structure = []
+                if c.phases:
+                    structure.append(f"{len(c.phases)} map phase{'s' if len(c.phases) > 1 else ''}")
+                    parts = _part_folders(self.project, c.id, c.phases) if len(c.phases) > 1 else c.phases
+                    if len(parts) > 1:
+                        structure.append((f"{len(parts)} parts", "accent_bg"))
                 if not c.has_map:
-                    chips.append(("no map", "chip_named"))
+                    structure.append(("no map", "chip_named"))
                 key = (c.id, c.title)
                 self._keys[key] = True
                 grid.add(key, Card(grid, title=c.title,
-                                   subtitle=f"Disc {c.id}  ·  " + ", ".join(c.phases or ("no map folder",)),
-                                   chips=tuple(chips), width=260,
+                                   badge=f"#{position[c.id]}" if c.id in position else "",
+                                   chip_rows=(tuple(counts), tuple(structure)), width=285,
                                    on_click=lambda cid=c.id: self.shell.navigate(("chapter", cid))))
             grid.done()
         if other:

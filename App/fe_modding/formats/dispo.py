@@ -128,18 +128,25 @@ FLAG_BITS = (
     (FLAG_AUTOLEVEL, "Autolevel", "Grows the unit from its base stats to its level with the class growths."),
     (FLAG_HOLD_POSITION, "Hold position", "The AI never moves the unit; it still attacks, heals and acts from its tile."),
     (FLAG_COMMANDER, "Group commander", "Leader of its army: the army list shows it and its Charisma helps its army."),
-    (FLAG_SPAWN_WHEN_ABSENT, "Spawn if absent", "A reinforcement appears even when the character is not already in play."),
+    (FLAG_SPAWN_WHEN_ABSENT, "Create if not recruited",
+     "Player sections only. Each record is a starting slot: when its character is not in your army, the slot "
+     "normally goes to another unit of your reserve. With this flag the character is created from this record "
+     "instead (how new recruits join)."),
     (FLAG_AI_DOOR_KEY, "AI uses Door Key", "The AI may use a Door Key: the unit walks to the nearest door and opens it."),
     (FLAG_AI_CHEST_KEY, "AI uses Chest Key", "The AI may use a Chest Key on chests. Thieves with Lockpick (SID_KEY0) can do both without these bits."),
-    (FLAG_BRIDGE_BARRIER, "Blocked by bridge cover", "Terrain 55 (bridge cover) costs 48 to enter. Cleared on fliers."),
+    (FLAG_BRIDGE_BARRIER, "Can't enter bridge cover",
+     "Tiles of terrain 55 (bridge cover) become impassable for this unit. Vanilla sets it on every unit "
+     "except fliers."),
     (0x80, "Bit 0x80", "Not read by the game."),
 )
 ITEM_FLAG_DROP = 0x01
 ITEM_FLAG_RING = 0x02
 #: Every used bit of fields 40-47.
 ITEM_FLAG_BITS = (
-    (ITEM_FLAG_DROP, "drop", "Dropped when the unit is defeated (one item per unit; cleared if it changes side)."),
-    (ITEM_FLAG_RING, "ring", "Class ring: withheld in one game mode; with drop set it becomes the unit's only drop."),
+    (ITEM_FLAG_DROP, "Drops", "Dropped when the unit is defeated (one item per unit; cleared if it changes side)."),
+    (ITEM_FLAG_RING, "Ignore in first playthrough",
+     "The item is not given on a first playthrough, only from the second one on (vanilla: the class rings). "
+     "With Drops also set it becomes the unit's only drop."),
 )
 #: One-line help for every field, shown by the editors.
 FIELD_HELP = {

@@ -20,6 +20,101 @@ from PIL import Image, ImageTk
 from . import theme
 
 
+# -- tooltips -------------------------------------------------------------------
+
+TIP_DELAY_MS = 450
+
+
+class _Tooltip:
+    """A text box shown next to a widget while the pointer rests on it."""
+
+    def __init__(self, widget: tk.Misc, text: Callable[[], str] | str):
+        self._widget, self._text = widget, text
+        self._window: Optional[tk.Toplevel] = None
+        self._job = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+        widget.bind("<Destroy>", self._hide, add="+")
+
+    def text(self) -> str:
+        return self._text() if callable(self._text) else self._text
+
+    def _schedule(self, _event=None) -> None:
+        self._cancel()
+        if self.text():
+            self._job = self._widget.after(TIP_DELAY_MS, self._show)
+
+    def _cancel(self) -> None:
+        if self._job is not None:
+            try:
+                self._widget.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+
+    def _show(self) -> None:
+        self._job = None
+        text = self.text()
+        if not text or not self._widget.winfo_exists():
+            return
+        window = tk.Toplevel(self._widget)
+        window.overrideredirect(True)
+        try:
+            window.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        tk.Label(window, text=text, justify="left", wraplength=360, padx=8, pady=5, borderwidth=1,
+                 relief="solid", background=theme.color("surface_hover"), foreground=theme.color("fg"),
+                 font=theme.font("caption")).pack()
+        window.update_idletasks()
+        x = self._widget.winfo_rootx() + 8
+        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
+        x = min(x, screen_w - window.winfo_width() - 8)
+        if y + window.winfo_height() > screen_h:
+            y = self._widget.winfo_rooty() - window.winfo_height() - 4
+        window.geometry(f"+{max(0, x)}+{max(0, y)}")
+        self._window = window
+
+    def _hide(self, _event=None) -> None:
+        self._cancel()
+        if self._window is not None:
+            try:
+                self._window.destroy()
+            except tk.TclError:
+                pass
+            self._window = None
+
+
+def tip(widget: tk.Misc, text: Callable[[], str] | str) -> tk.Misc:
+    """Show ``text`` (or what the callable returns) when the pointer rests on
+    ``widget``; returns the widget so it can be chained into ``.pack()``."""
+    if text:
+        widget._tellius_tip = _Tooltip(widget, text)  # keep it alive with the widget
+    return widget
+
+
+def info(parent: tk.Misc, text: str, *, bg_token: str = "") -> tk.Label:
+    """A small "?" mark that explains the control next to it on hover."""
+    label = tk.Label(parent, text="?", font=theme.font("caption"), cursor="question_arrow", padx=4, pady=0,
+                     borderwidth=0)
+
+    def paint() -> None:
+        label.configure(foreground=theme.color("muted"))
+        if bg_token:
+            label.configure(background=theme.color(bg_token))
+        else:
+            try:
+                label.configure(background=ttk.Style(label).lookup("TFrame", "background") or theme.color("bg"))
+            except tk.TclError:
+                pass
+
+    paint()
+    theme.on_change(label, paint)
+    return tip(label, text)
+
+
 # -- scrolling ------------------------------------------------------------------
 
 class ScrollFrame(ttk.Frame):
@@ -178,7 +273,8 @@ class Link(tk.Label):
 
 class Card(tk.Frame):
     """A clickable tile: optional image on the left, a title, a subtitle, a
-    caption and a row of chips. ``on_click`` runs on a left click."""
+    caption and a row of chips (``chip_rows`` stacks several rows). ``badge``
+    is a short tag in the top-right corner. ``on_click`` runs on a left click."""
 
     def __init__(
         self,
@@ -192,6 +288,8 @@ class Card(tk.Frame):
         width: int = 240,
         image_box: Optional[tuple[int, int]] = None,
         icon: str = "",
+        badge: str = "",
+        chip_rows: tuple = (),
     ):
         # no width/height options: a tk.Frame re-requests them on every
         # configure (each hover repaint), which briefly resizes the card
@@ -211,6 +309,11 @@ class Card(tk.Frame):
             icon_label = tk.Label(inner, text=icon, font=(theme.font("title")[0], 18), width=2)
             icon_label.pack(side="left", padx=(0, 10))
             self._painted.append((icon_label, "accent"))
+        if badge:
+            corner = tk.Frame(inner, borderwidth=0)
+            corner.pack(side="right", anchor="n", padx=(6, 0))
+            self._painted.append((corner, ""))
+            Chip(corner, badge, "accent_bg").pack()
         text = tk.Frame(inner, borderwidth=0)
         text.pack(side="left", fill="both", expand=True)
         self._painted.append((text, ""))
@@ -229,11 +332,11 @@ class Card(tk.Frame):
                 self._labels.append(label)
         self._wrap = 0
         text.bind("<Configure>", self._on_text_resized)
-        if chips:
+        for n, chip_row in enumerate(((chips,) if chips else ()) + tuple(r for r in chip_rows if r)):
             row = tk.Frame(text, borderwidth=0)
-            row.pack(fill="x", pady=(6, 0))
+            row.pack(fill="x", pady=(6 if n == 0 else 3, 0))
             self._painted.append((row, ""))
-            for chip in chips:
+            for chip in chip_row:
                 label, token = chip if isinstance(chip, tuple) else (chip, "chip_generic")
                 Chip(row, label, token).pack(side="left", padx=(0, 4))
         self._paint()
