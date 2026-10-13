@@ -543,7 +543,7 @@ for _key, _label, _rows, _column, _default, _lo, _hi in (
 
 
 # -- promotion -------------------------------------------------------------------------------------
-G_PROMOTION = "Promotion"
+G_PROMOTION = "Promotion"      # same group as three_tier_code
 
 # A unit promotes when its EXP passes level 20 (the class-change scene E_CC_Kari) or with a Master
 # Seal (IID_MASTERPROOF_UFX); both ask can_unit_promote (0x8003D538), and the EXP cap
@@ -558,13 +558,8 @@ CATALOG.add(Patch(
     "longer an SID_EVENTCC class, so the story's own class change (Ike's) does nothing for it.",
     versions={v: tuple(Edit(a, _word(0x4182000C), _word(0x4800000C)) for a in sites)
               for v, sites in _EVENTCC_TESTS.items()}))
-_PROMOTION_LEVEL = {US: (0x8003D24C, 0x8003D5D0), EU: (0x8003D3EC, 0x8003D770), JP: (0x8003C53C, 0x8003C8C0)}
-CATALOG.add(Tunable(
-    "promotion.min_level", G_PROMOTION, "Lowest level for a Master Seal",
-    "A unit must be at least this level to use a Master Seal (vanilla 10).",
-    default=10, minimum=1, maximum=20, unit="",
-    versions={v: (Field(a, "imm16s", _hex("2c00")), Field(b, "imm16s", _hex("3800")))
-              for v, (a, b) in _PROMOTION_LEVEL.items()}))
+# The Master Seal level (li r0,10 at can_unit_promote+0x98) is left alone: three_tier_code hooks
+# that instruction.
 
 
 # -- supports ----------------------------------------------------------------------------------------
