@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  <meta name="theme-color" content="#1f5c78">
+  {% if page and page.meta and page.meta.description %}
+    <meta name="description" content="{{ page.meta.description | e }}">
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% if page and page.meta and page.meta.id %}
+    <div class="article-kicker">
+      <span>{{ page.meta.section | replace("-", " ") | title }}</span>
+      {% for game in page.meta.games or [] %}
+        <span class="article-game">{{ "Path of Radiance" if game == "path-of-radiance" else "Radiant Dawn" }}</span>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {{ super() }}
+  {% if page and page.meta and page.meta.id %}
+    <aside class="article-record" aria-label="Article information and contribution links">
+      <div>
+        <strong>Article status</strong>
+        <span class="status status--{{ page.meta.status | e }}">{{ page.meta.status | replace("-", " ") | title }}</span>
+        <span>Last reviewed {{ page.meta.last_reviewed }}</span>
+      </div>
+      <nav class="article-actions" aria-label="Article actions"
+           data-article-title="{{ page.meta.title | e }}"
+           data-source-path="{{ page.meta.source_path | e }}"
+           data-collection="{{ page.meta.cms_collection | e }}"
+           data-entry-id="{{ page.meta.id | e }}">
+        <a class="article-action article-action--primary" href="{{ config.site_url }}admin/#/collections/{{ page.meta.cms_collection }}/entries/{{ page.meta.id }}">Edit in wiki</a>
+        <a class="article-action source-link" href="#">View Markdown source</a>
+        <a class="article-action history-link" href="#">View history</a>
+        <a class="article-action issue-link" href="#">Report an error</a>
+      </nav>
+    </aside>
+  {% endif %}
+{% endblock %}
