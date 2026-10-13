@@ -24,6 +24,7 @@ list, so existing ids never move; deleting one that isn't last is refused.
 
 from __future__ import annotations
 
+import re
 import threading
 import tkinter as tk
 from collections import namedtuple
@@ -40,6 +41,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .code_editor import CodeEditor
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 FILE_NAME = "cp_data.bin"
 SOURCES_DIR = "ai_sources"
@@ -130,7 +132,9 @@ class CpDataPanel(EditorPanel):
                             command=self._on_kind_changed).pack(side="left", padx=(0, 8))
         buttons = ttk.Frame(frame)
         buttons.pack(fill="x", pady=(4, 0))
-        ttk.Button(buttons, text="Copy as new...", command=self._copy_script).pack(side="left")
+        tip(ttk.Button(buttons, text="New…", command=self._new_script),
+            "A new script that does nothing yet (a copy of SEQ_NOATTACK or SEQ_NOMOVE).").pack(side="left")
+        ttk.Button(buttons, text="Create copy…", command=self._copy_script).pack(side="left", padx=(6, 0))
         ttk.Button(buttons, text="Delete", command=self._delete_script).pack(side="left", padx=(6, 0))
         self._script_list.bind("<<TreeviewSelect>>", lambda e: self._select_script())
         uses = ttk.Frame(frame)
@@ -242,6 +246,11 @@ class CpDataPanel(EditorPanel):
         self._notebook.add(page, text="Heal")
         frame, self._heal_list = self._side_list(page, "Heal behaviours", 240)
         self._heal_list.bind("<<TreeviewSelect>>", lambda e: self._select_heal())
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(4, 0))
+        ttk.Button(buttons, text="New…", command=lambda: self._add_record("heal", copy=False)).pack(side="left")
+        ttk.Button(buttons, text="Create copy…", command=lambda: self._add_record("heal", copy=True)).pack(
+            side="left", padx=(6, 0))
         form = ttk.Frame(page)
         form.pack(side="left", fill="both", expand=True)
         self._heal_vars: dict[str, tk.IntVar] = {}
@@ -249,13 +258,12 @@ class CpDataPanel(EditorPanel):
                 ("resume_at", "Stop retreating at HP %", "Once retreating, it keeps going until its HP reaches this."),
                 ("priority", "Try healing items first (0/1)", "Non-zero: the unit uses its own healing items before moving."))
         for r, (key, text, hint) in enumerate(rows):
-            ttk.Label(form, text=text).grid(row=r, column=0, sticky="w", pady=4)
+            tip(ttk.Label(form, text=text), hint).grid(row=r, column=0, sticky="w", pady=4)
             var = tk.StringVar()
             spin = ttk.Spinbox(form, from_=0, to=255, width=6, textvariable=var, command=self._apply_heal)
             spin.grid(row=r, column=1, padx=8)
             spin.bind("<FocusOut>", lambda e: self._apply_heal())
             spin.bind("<Return>", lambda e: self._apply_heal())
-            ttk.Label(form, text=hint, style="Muted.TLabel").grid(row=r, column=2, sticky="w")
             self._heal_vars[key] = var
 
     # movement types
@@ -264,6 +272,11 @@ class CpDataPanel(EditorPanel):
         self._notebook.add(page, text="Movement types")
         frame, self._mtype_list = self._side_list(page, "Movement types", 240)
         self._mtype_list.bind("<<TreeviewSelect>>", lambda e: self._select_mtype())
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(4, 0))
+        ttk.Button(buttons, text="New…", command=lambda: self._add_record("mtype", copy=False)).pack(side="left")
+        ttk.Button(buttons, text="Create copy…", command=lambda: self._add_record("mtype", copy=True)).pack(
+            side="left", padx=(6, 0))
         form = ttk.Frame(page)
         form.pack(side="left", fill="both", expand=True)
         ttk.Label(form, style="Muted.TLabel", wraplength=700, justify="left", text=(
@@ -293,8 +306,10 @@ class CpDataPanel(EditorPanel):
     def _build_steal(self) -> None:
         page = ttk.Frame(self._notebook, padding=8)
         self._notebook.add(page, text="Steal items")
-        ttk.Label(page, style="Muted.TLabel", wraplength=700, justify="left",
-                  text="Items an AI thief may steal (TBL_STEALITEMS). Earlier items are preferred.").pack(anchor="w")
+        head = ttk.Frame(page)
+        head.pack(anchor="w")
+        ttk.Label(head, text="Items an AI thief may steal").pack(side="left")
+        info(head, "TBL_STEALITEMS. Earlier items are preferred: use ▲ ▼ to order them.").pack(side="left", padx=(4, 0))
         self._steal_list = self._tree(page, ("item",), (300,), height=16)
         self._steal_list.pack(side="left", fill="y", pady=(4, 0))
         side = ttk.Frame(page)
@@ -304,6 +319,11 @@ class CpDataPanel(EditorPanel):
         self._steal_box.pack()
         ttk.Button(side, text="Add", command=self._add_steal).pack(fill="x", pady=(4, 0))
         ttk.Button(side, text="Remove selected", command=self._remove_steal).pack(fill="x", pady=(4, 0))
+        order = ttk.Frame(side)
+        order.pack(fill="x", pady=(10, 0))
+        ttk.Button(order, text="▲ Up", command=lambda: self._move_steal(-1)).pack(side="left", fill="x", expand=True)
+        ttk.Button(order, text="▼ Down", command=lambda: self._move_steal(1)).pack(side="left", fill="x", expand=True,
+                                                                                padx=(4, 0))
 
     # routes & targets
     def _build_routes(self) -> None:
@@ -312,6 +332,12 @@ class CpDataPanel(EditorPanel):
         frame, self._table_list = self._side_list(page, "Tables", 260)
         self._table_list.heading("id", text="kind")
         self._table_list.bind("<<TreeviewSelect>>", lambda e: self._select_table())
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(4, 0))
+        tip(ttk.Button(buttons, text="New route…", command=lambda: self._new_table("route")),
+            "A waypoint list (TBL_MAP...) for follow_route.").pack(side="left")
+        tip(ttk.Button(buttons, text="New target list…", command=lambda: self._new_table("targets")),
+            "A character list (TBL_PID_...) for a script's targets= filter.").pack(side="left", padx=(6, 0))
         right = ttk.Frame(page)
         right.pack(side="left", fill="both", expand=True)
         self._table_info = ttk.Label(right, text="", style="Muted.TLabel", wraplength=700, justify="left")
@@ -321,11 +347,12 @@ class CpDataPanel(EditorPanel):
         row = ttk.Frame(right)
         row.pack(fill="x", pady=(4, 0))
         self._table_var = tk.StringVar()
-        ttk.Entry(row, textvariable=self._table_var, width=24).pack(side="left")
+        self._table_entry = ttk.Combobox(row, textvariable=self._table_var, width=34)
+        self._table_entry.pack(side="left")
+        self._table_entry.bind("<KeyRelease>", self._filter_table_choices)
+        tip(self._table_entry, "A route point as x,y, or a character: type part of its name or PID to search.")
         ttk.Button(row, text="Add", command=self._add_table_item).pack(side="left", padx=4)
         ttk.Button(row, text="Remove selected", command=self._remove_table_item).pack(side="left")
-        ttk.Label(right, style="Muted.TLabel",
-                  text="Route points are typed as x,y. Target lists take PID_ names.").pack(anchor="w", pady=(4, 0))
 
     # -- loading --------------------------------------------------------------------------
     def _load(self) -> None:
@@ -559,28 +586,48 @@ class CpDataPanel(EditorPanel):
         self._store_script(f"entry {index} moved to {index + step}")
         self._after_raw_edit(index + step)
 
-    def _copy_script(self) -> None:
-        if self._script is None or not self._leave_source():
-            return
-        name = simpledialog.askstring("Copy script", "Name of the new script (SEQ_...):", parent=self,
-                                      initialvalue=self._script.name + "_COPY")
+    def _ask_name(self, title: str, prefix: str, initial: str) -> Optional[str]:
+        """A new, unused ASCII section name starting with ``prefix``, or None."""
+        name = simpledialog.askstring(title, f"Name ({prefix}...):", parent=self, initialvalue=initial)
         if not name:
-            return
+            return None
         name = name.strip()
-        if not name.startswith("SEQ_") or " " in name or not name.isascii() or self._doc.section(name):
-            messagebox.showerror("Invalid name", "Use a new ASCII name starting with SEQ_ and no spaces.", parent=self)
-            return
+        if not name.startswith(prefix) or " " in name or not name.isascii() or self._doc.section(name):
+            messagebox.showerror("Invalid name", f"Use a new ASCII name starting with {prefix} and no spaces.",
+                                 parent=self)
+            return None
+        return name
+
+    def _add_script(self, name: str, entries: list, source_of: Optional[str], note: str) -> None:
         kind_list = "ATK_SEQID_LIST" if self._script_kind.get() == "attack" else "MOV_SEQID_LIST"
         new_id = cp.add_to_id_list(self._doc, kind_list, name)
         section = cp.Section(name, [])
         cp.write_script(section, cp.Script(name, new_id, [cp.Entry(e.op, e.a, e.b, e.c, e.d, e.e, e.f)
-                                                           for e in self._script.entries]))
+                                                           for e in entries]))
         self._doc.sections.insert(self._doc.sections.index(self._doc.section(kind_list)), section)
-        if self._script.name in self._sources:
-            self._sources[name] = self._sources[self._script.name]
-        self._changed(f"{name}: new script (id {new_id}) copied from {self._script.name}")
+        if source_of in self._sources:
+            self._sources[name] = self._sources[source_of]
+        self._changed(f"{name}: new script (id {new_id}) {note}")
         self._refresh_choices()
         self._fill_scripts(select=name)
+
+    def _new_script(self) -> None:
+        if self._doc is None or not self._leave_source():
+            return
+        attack = self._script_kind.get() == "attack"
+        name = self._ask_name("New script", "SEQ_", "SEQ_NEW_ATTACK" if attack else "SEQ_NEW_MOVE")
+        if name is None:
+            return
+        template = self._doc.section("SEQ_NOATTACK" if attack else "SEQ_NOMOVE")
+        entries = cp.read_script(template).entries if template is not None else []
+        self._add_script(name, entries, None, "that does nothing yet")
+
+    def _copy_script(self) -> None:
+        if self._script is None or not self._leave_source():
+            return
+        name = self._ask_name("Create copy", "SEQ_", self._script.name + "_COPY")
+        if name is not None:
+            self._add_script(name, self._script.entries, self._script.name, f"copied from {self._script.name}")
 
     def _delete_script(self) -> None:
         if self._script is None:
@@ -870,6 +917,35 @@ class CpDataPanel(EditorPanel):
             self._changed(f"{record.name}: retreat {record.retreat_below}%, resume {record.resume_at}%, "
                           f"priority {record.priority}")
 
+    def _add_record(self, kind: str, copy: bool) -> None:
+        """A new heal behaviour or movement type, empty or a copy of the selected one."""
+        if self._doc is None:
+            return
+        tree = self._heal_list if kind == "heal" else self._mtype_list
+        selection = tree.selection()
+        if copy and not selection:
+            return
+        prefix, list_name = ("SEQ_", "HEAL_SEQID_LIST") if kind == "heal" else ("MTYPE_", "MTYPE_TABLEID_LIST")
+        initial = (selection[0] + "_COPY") if copy else ("SEQ_NEW_HEAL" if kind == "heal" else "MTYPE_NEW")
+        name = self._ask_name("Create copy" if copy else "New", prefix, initial)
+        if name is None:
+            return
+        new_id = cp.add_to_id_list(self._doc, list_name, name)
+        section = cp.Section(name, [])
+        if kind == "heal":
+            source = cp.read_heal(self._doc.section(selection[0])) if copy else None
+            cp.write_heal(section, cp.HealRecord(name, new_id, source.retreat_below if source else 0,
+                                                 source.resume_at if source else 0, source.priority if source else 0))
+        else:
+            values = dict(cp.read_mtype(self._doc.section(selection[0])).values) if copy else \
+                {key: 0 for key in cp.MTYPE_FIELD_NAMES}
+            values["id"] = new_id
+            cp.write_mtype(section, cp.MType(name, values))
+        self._doc.sections.insert(self._doc.sections.index(self._doc.section(list_name)), section)
+        self._changed(f"{name}: new {'heal behaviour' if kind == 'heal' else 'movement type'} (id {new_id})")
+        self._refresh_choices()
+        (self._fill_heal if kind == "heal" else self._fill_mtypes)(select=name)
+
     # -- movement types ----------------------------------------------------------------------
     def _fill_mtypes(self, select: Optional[str] = None) -> None:
         self._mtype_list.delete(*self._mtype_list.get_children())
@@ -942,6 +1018,22 @@ class CpDataPanel(EditorPanel):
         self._changed(f"thieves may no longer steal {removed}")
         self._fill_steal()
 
+    def _move_steal(self, step: int) -> None:
+        selection = self._steal_list.selection()
+        if not selection:
+            return
+        index = int(selection[0])
+        section = self._steal_section()
+        items = cp.read_list(section)
+        if not 0 <= index + step < len(items):
+            return
+        items[index], items[index + step] = items[index + step], items[index]
+        cp.write_list(section, items)
+        self._changed(f"steal order: {items[index + step]} moved {'up' if step < 0 else 'down'}")
+        self._fill_steal()
+        self._steal_list.selection_set(str(index + step))
+        self._steal_list.see(str(index + step))
+
     # -- routes & targets -----------------------------------------------------------------------
     def _fill_tables(self, select: Optional[str] = None) -> None:
         self._table_list.delete(*self._table_list.get_children())
@@ -964,6 +1056,7 @@ class CpDataPanel(EditorPanel):
         if section is None:
             return
         route = cp.is_route_section(section)
+        self._filter_table_choices()
         self._table_info.configure(text=(
             f"{section.name}: waypoints an AI unit walks along (follow_route, opcode 216), or the tiles "
             "rock_attack_force tries." if route else
@@ -971,6 +1064,44 @@ class CpDataPanel(EditorPanel):
         values = [f"{x}, {y}" for x, y in cp.read_route(section)] if route else [str(v) for v in cp.read_list(section)]
         for i, value in enumerate(values):
             self._table_items.insert("", "end", iid=str(i), values=(i, value))
+
+    def _character_choices(self) -> list[str]:
+        session = self._session_provider()
+        fe8 = getattr(session, "fe8", None) if session is not None else None
+        if fe8 is None:
+            return list(self._value_lists.get("pid", []))
+        index = getattr(session, "index", None)
+        names = getattr(index, "by_pid", {}) if index is not None else {}
+        out = []
+        for c in fe8.characters:
+            if c.pid:
+                name = getattr(names.get(c.pid), "name", "")
+                out.append(f"{name} ({c.pid})" if name else c.pid)
+        return sorted(out, key=str.casefold)
+
+    def _filter_table_choices(self, event=None) -> None:
+        section = self._selected_table()
+        if section is None or cp.is_route_section(section):
+            self._table_entry["values"] = []
+            return
+        text = self._table_var.get().casefold()
+        choices = self._character_choices()
+        self._table_entry["values"] = [c for c in choices if text in c.casefold()] if text else choices
+
+    def _new_table(self, kind: str) -> None:
+        if self._doc is None:
+            return
+        prefix = "TBL_MAP" if kind == "route" else "TBL_PID_"
+        name = self._ask_name("New route" if kind == "route" else "New target list", prefix,
+                              prefix + ("_NEW" if kind == "route" else "NEW"))
+        if name is None:
+            return
+        section = cp.Section(name, [])
+        (cp.write_route if kind == "route" else cp.write_list)(section, [])
+        self._doc.sections.append(section)
+        self._changed(f"{name}: new {'route' if kind == 'route' else 'target list'}")
+        self._refresh_choices()
+        self._fill_tables(select=name)
 
     def _table_values(self, section: cp.Section) -> list:
         return cp.read_route(section) if cp.is_route_section(section) else cp.read_list(section)
@@ -994,8 +1125,10 @@ class CpDataPanel(EditorPanel):
                 return
             values.append((x, y))
         else:
+            match = re.search(r"\((PID_[^)]+)\)\s*$", text)
+            text = match.group(1) if match else text
             if not text.startswith("PID_"):
-                messagebox.showerror("Invalid character", "Type a PID_ name.", parent=self)
+                messagebox.showerror("Invalid character", "Pick a character or type a PID_ name.", parent=self)
                 return
             values.append(text)
         self._write_table(section, values)
