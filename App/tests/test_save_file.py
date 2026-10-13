@@ -80,6 +80,41 @@ class BlockTests(unittest.TestCase):
         again = sf.SaveBlock.parse(out, 0, 0x4000)
         self.assertEqual(again.party.gold, 99)
 
+    def test_named_options_preserve_other_bits_and_round_trip(self):
+        party = self.block.party
+        options = bytearray(party.options)
+        options[2] = 0x15
+        party.options = bytes(options)
+        self.assertFalse(party.option_enabled(0x01))
+        self.assertFalse(party.option_enabled(0x10))
+        party.set_option_enabled(0x10, True)
+        self.assertEqual(party.options[2], 0x05)
+        party.set_option_enabled(0x01, True)
+        self.assertEqual(party.options[2], 0x04)
+        party.set_option_enabled(0x10, False)
+        self.assertEqual(party.options[2], 0x14)
+        again = sf.SaveBlock.parse(self.block.build(), 0, 0x4000)
+        self.assertTrue(again.crc_ok)
+        self.assertEqual(again.party.options[2], 0x14)
+
+    def test_named_party_and_unused_unit_fields_round_trip(self):
+        party = self.block.party
+        party.reinforcement_uses = 2
+        party.faction_command_records = bytes((1, 2, 8, 9, 3, 4, 255, 255))
+        party.set_bm_value(4, -123)
+        unit = self.block.units[0]
+        unit.unused_19d = 27
+        unit.unused_230 = 1234
+        unit.unused_232 = 5678
+        unit.unused_235 = 7
+        again = sf.SaveBlock.parse(self.block.build(), 0, 0x4000)
+        self.assertTrue(again.crc_ok)
+        self.assertEqual(again.party.reinforcement_uses, 2)
+        self.assertEqual(again.party.faction_command_records, party.faction_command_records)
+        self.assertEqual(again.party.bm_value(4), -123)
+        self.assertEqual((again.units[0].unused_19d, again.units[0].unused_230,
+                          again.units[0].unused_232, again.units[0].unused_235), (27, 1234, 5678, 7))
+
     def test_adding_a_unit_moves_the_later_chunks(self):
         clone = sf.SaveBlock.parse(self.raw, 0, 0x4000).units[1]
         slot = self.block.add_unit(clone, after=2)

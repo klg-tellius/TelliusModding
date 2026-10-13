@@ -228,6 +228,8 @@ class SaveEditorPage(Page):
         self._terrain: Optional[int] = None
         self._history: Optional[int] = None
         self._fields: list[_Fields] = []
+        self._option_vars: dict[int, tk.BooleanVar] = {}
+        self._option_checks: dict[int, ttk.Checkbutton] = {}
 
         self._build_overview()
         self._build_units()
@@ -422,6 +424,7 @@ class SaveEditorPage(Page):
             self._notebook.select(list(TABS).index("raw"))
 
     def _refresh_lists(self) -> None:
+        self._refresh_options()
         self._fill_units()
         self._fill_convoy()
         self._fill_forges()
@@ -484,28 +487,46 @@ class SaveEditorPage(Page):
         f.add("Base opening done", self._party, "base_opening_done")
         f.add("Report: gold gained", self._party, "report_profit", "u32")
         f.add("Report: gold spent", self._party, "report_loss", "u32")
-        f.add("Report: bonus EXP", self._party, "report_exp", "s16")
-        f.add("Report: score", self._party, "report_score", "s16")
-        f.add("Byte +0x50", self._party, "byte_50")
+        f.add("Report: combat EXP", self._party, "report_exp", "s16")
+        f.add("Report: bonus EXP", self._party, "report_score", "s16")
+        f.add("Reinforcement uses this chapter", self._party, "reinforcement_uses")
         f.add("Forged this chapter", self._party, "byte_51")
+
+        section_header(b, "Faction commands", "Order and Demand map commands; target 255 means unset").pack(anchor="w", pady=(12, 0))
+        f = self._fields_in(b, 4)
+        f.pack(anchor="w", pady=(4, 12))
+        for base, faction in ((0, "Player"), (4, "Other")):
+            for offset, label in enumerate(("Mode", "Faction ID", "Target X", "Target Y")):
+                f.add(f"{faction} {label}", self._party, ("faction_command_records", base + offset))
 
         section_header(b, "Options", "the Options menu, saved per file").pack(anchor="w")
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(4, 12))
+        self._option_fields = f
         for i, name in enumerate(sf.OPTION_BYTES):
             kind = dict(sf.DIFFICULTIES) if i == 10 else ("s8" if i in (6, 7) else "u8")
             f.add(name, self._party, ("options", i), kind,
                   on_set=(lambda v: setattr(self.block.header, "difficulty", v)) if i == 10 else None)
+        toggles = ttk.Frame(b, style="Page.TFrame")
+        toggles.pack(anchor="w", pady=(0, 8))
+        for mask, label in sf.OPTION_TOGGLES:
+            var = tk.BooleanVar(value=False)
+            check = ttk.Checkbutton(toggles, text=label, variable=var,
+                                    command=lambda m=mask: self._set_option(m))
+            check.pack(side="left", padx=(0, 18))
+            self._option_vars[mask] = var
+            self._option_checks[mask] = check
         ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left",
                   text="Known option bits: byte 0 - 0x02 unit window off, 0x04 terrain window off, 0x18 message "
-                       "speed; byte 2 - 0x0C sound output; byte 3 - 0x20 message sounds off, 0x40 show other "
+                       "speed; byte 2 - 0x01 Bonus Exp Display off, 0x10 Unit Facing off, 0x0C sound output; "
+                       "byte 3 - 0x20 message sounds off, 0x40 show other "
                        "units' moves, 0x80 fixed growths.").pack(anchor="w")
 
         section_header(b, "Map state", "MDST").pack(anchor="w", pady=(12, 0))
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(4, 12))
         for i, name in enumerate(sf.MAP_STATE_BYTES):
-            f.add(name, self._map_state, ("values", i))
+            f.add(name, self._map_state, ("values", i), "s8" if i in (4, 5, 9, 10) else "u8")
         f.add("Camera rotation", self._map_state, "camera_rotation")
         f.add("Camera X", self._map_state, "camera_x", "s16")
         f.add("Camera Y", self._map_state, "camera_y", "s16")
@@ -524,6 +545,20 @@ class SaveEditorPage(Page):
         f.add("Turns", rec, "turns", "u16")
         f.add("Seconds", rec, "seconds", "u32")
         self._history_fields = f
+
+    def _refresh_options(self) -> None:
+        party = self._party()
+        for mask, var in self._option_vars.items():
+            var.set(party.option_enabled(mask) if party else False)
+            self._option_checks[mask].configure(state="normal" if party else "disabled")
+
+    def _set_option(self, mask: int) -> None:
+        party = self._party()
+        if party is None:
+            return
+        party.set_option_enabled(mask, self._option_vars[mask].get())
+        self._option_fields.load()
+        self.mark_dirty()
 
     class _TimeView:
         """Play time ticks shown as whole seconds."""
@@ -655,10 +690,10 @@ class SaveEditorPage(Page):
         f.add("Kills", unit, "kills", "u16")
         f.add("Kills this map", unit, "map_kills", "u16")
         f.add("Tiles moved", unit, "tiles_moved", "u16")
-        f.add("Counter +0x230", unit, "counter_230", "u16")
-        f.add("Counter +0x232", unit, "counter_232", "u16")
+        f.add("Unused +0x230 (UnitGet 28)", unit, "unused_230", "u16")
+        f.add("Unused +0x232 (UnitGet 32)", unit, "unused_232", "u16")
         f.add("Last kill chapter", unit, "last_kill_chapter")
-        f.add("Byte +0x235", unit, "byte_235")
+        f.add("Unused +0x235 (UnitGet 34)", unit, "unused_235")
 
         section_header(b, "Advanced", "links are unit slots, 0 = none").pack(anchor="w")
         f = self._fields_in(b, 3)
@@ -669,7 +704,7 @@ class SaveEditorPage(Page):
         f.add("State flags", unit, "state_flags", "u32")
         for i in range(4):
             f.add(f"Status byte {i}", unit, ("status", i))
-        f.add("Byte +0x19D", unit, "byte_19d")
+        f.add("Unused +0x19D (debug editor only)", unit, "unused_19d")
         f.add("AI attack", unit, "ai_attack")
         f.add("AI move", unit, "ai_move")
         f.add("AI heal", unit, "ai_heal")

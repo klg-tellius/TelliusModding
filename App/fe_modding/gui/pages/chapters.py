@@ -22,11 +22,13 @@ the chosen difficulty (``emulator.prepare_chapter_run``, ``game_code.chapter_jum
 from __future__ import annotations
 
 import re
+import json
 import tkinter as tk
+from dataclasses import asdict
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from ... import chapter_phase_ops, chapters, hub, script_sources
+from ... import chapter_phase_ops, chapters, hub, hub_creation, script_sources
 from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
 from ...game_code import chapter_flow, chapter_jump
@@ -145,7 +147,7 @@ class ChaptersHub(Page):
                 (("+", "new campaign"), "New campaign…", "Several chapters and characters at once", "+",
                  self._new_campaign),
                 (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order),
-                (("+", "hub setup"), "Hub setup…", "Connect a prepared hub to the campaign", "◎",
+                (("+", "hub setup"), "Create hub…", "Create a hub map and place chapter links", "◎",
                  self._hub_setup)):
             self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=260,
                                         on_click=command))
@@ -198,29 +200,136 @@ class ChaptersHub(Page):
         if profile_of(self.project).script_dialect != "fe9":
             messagebox.showerror("Hub setup", "Hub routing currently supports Path of Radiance.", parent=self)
             return
+        from ...formats import dispo, fe8data, lz10, map_file, pak
+        from ..hub_dialog import GuidedHubDialog
+
+        session = self.shell.session
+        if not session.available:
+            messagebox.showerror("Hub setup", "This project has no FE8Data.bin.", parent=self)
+            return
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Hub setup", f"Story flow is unavailable: {why}", parent=self)
+            return
         ids = chapters.list_chapter_ids(self.project)
-        dialog = HubSetupDialog(self, ids, hub.saved_setup(self.project))
+        records = fe8data.read_chapter_data(session.data)
+        record_ids = {record.chapter_id for record in records}
+        playable = [cid for cid in ids if cid.isdigit() and int(cid) in record_ids]
+        destination_ids = [cid for cid in playable if int(cid) not in (29, chapter_flow.GAME_CLEARED)
+                           and all(getattr(chapters.chapter_paths(self.project, cid), field) is not None
+                                   for field in ("script", "map", "deployment"))]
+        configured = hub.saved_setup(self.project)
+        draft_path = self.project.directory / "hub_draft.json"
+        draft = json.loads(draft_path.read_text(encoding="utf-8")) if configured is None and draft_path.is_file() else None
+        saved = configured or draft
+        if saved is None:
+            free = chapters.free_chapter_ids(self.project, record_ids)
+            if not free:
+                messagebox.showerror("Hub setup", "No free chapter number from 33 to 89.", parent=self)
+                return
+        else:
+            free = []
+        titles = chapters.chapter_titles(self.project)
+        names = {pid: info.name for pid, info in getattr(self.shell.index, "by_pid", {}).items() if info.name}
+        used = set()
+        for cid in ids:
+            if saved is not None and int(cid) == saved["chapter"]:
+                continue
+            for folder in chapters.chapter_phases(self.project, cid):
+                deployment, _map = chapters.phase_paths(self.project, folder)
+                if deployment is not None:
+                    used.update(hub._deployment_pids(deployment)[0])
+        avatar_pids = [character.pid for character in fe8data.read_fe8data(session.data).characters
+                       if character.pid and character.pid.startswith("PID_") and character.pid not in used]
+        avatars = {f"{names.get(pid, pid)} ({pid})": pid for pid in avatar_pids}
+        if saved and saved["avatar_pid"] not in avatar_pids:
+            avatars[saved["avatar_pid"]] = saved["avatar_pid"]
+        if not avatars:
+            messagebox.showerror("Hub setup", "No character is reserved for the hub. Create a character that is "
+                                 "not deployed in another chapter first.", parent=self)
+            return
+        starters = {f"{chapters.chapter_display_title(cid, titles)} ({cid})": cid for cid in playable
+                    if len(chapters.chapter_phases(self.project, cid)) == 1
+                    and chapters.chapter_paths(self.project, cid).map is not None
+                    and chapters.chapter_paths(self.project, cid).deployment is not None
+                    and chapters.chapter_paths(self.project, cid).script is not None}
+        if not starters and saved is None:
+            messagebox.showerror("Hub setup", "No single-phase chapter has map, deployment and script assets.",
+                                 parent=self)
+            return
+        size = None
+        terrain = None
+        if saved:
+            saved = dict(saved)
+            deployment = chapters.chapter_paths(self.project, f"{saved['chapter']:02d}").deployment
+            if deployment is not None:
+                packed_units = lz10.decompress(deployment.read_bytes())
+                for entry in pak.read_pak_entries(packed_units):
+                    if not entry.name.startswith("dispos_"):
+                        continue
+                    doc = dispo.parse_dispo(pak.read_pak_file_content(packed_units, entry))
+                    unit = next((unit for section in doc.sections for unit in section.units
+                                 if unit[dispo.FIELD["pid"]] == saved["avatar_pid"]), None)
+                    if unit is not None:
+                        saved["start_x"] = unit[dispo.FIELD["pos_x"]]
+                        saved["start_y"] = unit[dispo.FIELD["pos_y"]]
+                        break
+            map_path = chapters.chapter_paths(self.project, f"{saved['chapter']:02d}").map
+            packed = lz10.decompress(map_path.read_bytes())
+            entry = next(e for e in pak.read_pak_entries(packed) if e.name == "map.bin")
+            map_bin = pak.read_pak_file_content(packed, entry)
+            capacity = map_file.read_map_bytes(map_bin).capacity
+            size = capacity.x_size, capacity.y_size
+            terrain = map_file.terrain_grid(map_bin)
+        dialog = GuidedHubDialog(self, ids=playable, destination_ids=destination_ids, free=free, titles=titles,
+                                 avatars=avatars, starters=starters, saved=saved, size=size, terrain=terrain)
         self.wait_window(dialog)
         if dialog.result is None:
             return
+        setup, source_id, title, dimensions = dialog.result
         page = self.shell.existing_page("chapter")
         script = getattr(page, "_script", None) if page is not None else None
         if script is not None and script.dirty:
             messagebox.showwarning("Unsaved script", "Save or revert the open script before setting up the hub.",
                                    parent=self)
             return
+        if page is not None and any(getattr(page, name).dirty for name in ("_map", "_deployment", "_dialogue")):
+            messagebox.showwarning("Unsaved chapter", "Save or revert the open map, deployment, and dialogue "
+                                   "before configuring the hub.", parent=self)
+            return
+        if saved is None and session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?", "Creating a hub saves FE8Data.bin, including its unsaved edits. Continue?",
+                parent=self):
+            return
         try:
-            hub.install(self.project, dialog.result)
+            if saved is None:
+                plan = hub_creation.create_chapter(self.project, session.data, source_id, setup.chapter, title,
+                                                   *dimensions, setup.avatar_pid, (setup.start_x, setup.start_y))
+                session.data = plan.fe8data
+                session.changed(self)
+                session.save()
+            if configured is None:
+                draft_path.write_text(json.dumps(asdict(setup), indent=2) + "\n", encoding="utf-8")
+            hub.install(self.project, setup)
+            if draft_path.is_file():
+                draft_path.unlink()
         except Exception as exc:  # noqa: BLE001 - show validation and codec failures together
             messagebox.showerror("Could not set up hub", str(exc), parent=self)
             return
-        self.shell.changelog.append(f"Chapter {dialog.result.chapter:02d}", "Configured hub chapter")
+        self.shell.changelog.append(f"Chapter {setup.chapter:02d}", "Configured hub chapter")
         self.shell.rebuild_index()
-        messagebox.showinfo(
-            "Hub ready",
-            "The hub's destinations and return locations are installed. In the story event that ends hub mode, "
-            'add clr("HUB_ACTIVE") before setting gf_complete. The next victory resumes the saved story chapter.',
-            parent=self)
+        if page is not None:
+            page.refresh_chapter_lists()
+            if page._chapter == f"{setup.chapter:02d}":
+                paths = chapters.chapter_paths(self.project, page._chapter)
+                page._map.select_chapter(paths.map)
+                page._deployment.select_chapter(paths.deployment)
+                page._dialogue.select_chapter(paths.dialogue)
+                page._script.reload_if_open(paths.script)
+        self.shell.navigate(("chapter", f"{setup.chapter:02d}", "build"))
+        messagebox.showinfo("Hub ready", "The hub and its chapter links are installed. The Build tab is open "
+                            "for map decoration. To leave hub mode, clear HUB_ACTIVE in the departing chapter's "
+                            "story event before its victory.", parent=self)
 
     def _add_chapter(self) -> None:
         ids = chapters.list_chapter_ids(self.project)
@@ -1074,66 +1183,6 @@ class AddPhaseDialog(tk.Toplevel):
 
     def _finish(self, choice: str) -> None:
         self.result = choice
-        self.destroy()
-
-
-class HubSetupDialog(tk.Toplevel):
-    """Collect the prepared hub chapter and tile routes in one editor dialog."""
-
-    def __init__(self, parent, chapter_ids: list[str], saved: dict | None):
-        super().__init__(parent)
-        self.title("Hub setup")
-        self.result: hub.HubSetup | None = None
-        frame = ttk.Frame(self, padding=16)
-        frame.pack(fill="both", expand=True)
-        existing = saved or {}
-        ids = [cid for cid in chapter_ids if cid.isdigit()]
-        added = [cid for cid in ids if 33 <= int(cid) < 90]
-        self._hub = tk.StringVar(value=str(existing.get("chapter", added[0] if added else "")))
-        self._activation = tk.StringVar(value=str(existing.get("activation_chapter", "01")))
-        self._avatar = tk.StringVar(value=existing.get("avatar_pid", "PID_HUB"))
-        ttk.Label(frame, text="Prepared hub chapter:").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Combobox(frame, textvariable=self._hub, values=added, state="readonly", width=16).grid(
-            row=0, column=1, sticky="w", pady=4)
-        ttk.Label(frame, text="Activate after chapter:").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Combobox(frame, textvariable=self._activation, values=ids, state="readonly", width=16).grid(
-            row=1, column=1, sticky="w", pady=4)
-        ttk.Label(frame, text="Dedicated avatar PID:").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(frame, textvariable=self._avatar, width=30).grid(row=2, column=1, sticky="w", pady=4)
-        ttk.Label(frame, text="Destinations (one per line): chapter, action X, action Y, return X, return Y",
-                  wraplength=570).grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 4))
-        self._destinations = tk.Text(frame, width=64, height=9)
-        self._destinations.grid(row=4, column=0, columnspan=2, sticky="ew")
-        for destination in existing.get("destinations", []):
-            self._destinations.insert("end", ", ".join(str(destination[k]) for k in
-                                                       ("chapter", "x", "y", "return_x", "return_y")) + "\n")
-        ttk.Label(frame, text="The hub map and its single avatar deployment must already exist. "
-                  "Each action tile uses Arrive. The avatar returns near the last selected destination.",
-                  style="Muted.TLabel", wraplength=570, justify="left").grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(16, 0))
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Install hub", style="Accent.TButton", command=self._accept).pack(
-            side="right", padx=(0, 8))
-        self.transient(parent.winfo_toplevel())
-        self.grab_set()
-
-    def _accept(self) -> None:
-        try:
-            destinations = []
-            for number, line in enumerate(self._destinations.get("1.0", "end").splitlines(), 1):
-                if not line.strip():
-                    continue
-                fields = [int(part.strip(), 10) for part in line.split(",")]
-                if len(fields) != 5:
-                    raise ValueError(f"Destination line {number} needs five comma-separated numbers.")
-                destinations.append(hub.Destination(*fields))
-            self.result = hub.HubSetup(int(self._hub.get()), int(self._activation.get()),
-                                       self._avatar.get().strip(), tuple(destinations))
-        except ValueError as exc:
-            messagebox.showerror("Invalid hub setup", str(exc), parent=self)
-            return
         self.destroy()
 
 

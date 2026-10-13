@@ -1,6 +1,7 @@
 """Read-only examples of every FE9 dialogue layout."""
 from __future__ import annotations
 
+import hashlib
 import tkinter as tk
 from tkinter import ttk
 
@@ -10,6 +11,28 @@ from ..formats.fe9_conversation import Event, Portrait, Scene, Textbox
 from ..formats.fe9_conversation_render import ConversationRenderer
 from ..formats.fe9_message_scene import layout_from_label
 from .scene_editor import background_names, layout_labels
+
+
+def distinct_sample_faces(assets, limit=9):
+    """Choose visually distinct faces instead of distinct IDs/aliases."""
+    faces = []
+    fingerprints = set()
+    for fid in sorted(assets.faces):
+        if not fid.startswith("FID_"):
+            continue
+        try:
+            image = assets.face(fid).compose(mouth_frame=2, left_eye_frame=0,
+                                             right_eye_frame=0).convert("RGBA")
+        except (OSError, ValueError, KeyError, IndexError):
+            continue
+        fingerprint = (image.size, hashlib.sha256(image.tobytes()).digest())
+        if fingerprint in fingerprints:
+            continue
+        fingerprints.add(fingerprint)
+        faces.append(fid)
+        if len(faces) == limit:
+            break
+    return faces
 
 
 class LayoutExamples(tk.Toplevel):
@@ -26,7 +49,8 @@ class LayoutExamples(tk.Toplevel):
         self._background = tk.StringVar(value=background if background in names and background != "支援背景"
                                         else next((name for name in names if
                                                    name != "支援背景"), ""))
-        self._faces = self._sample_faces()
+        self._faces = distinct_sample_faces(self._assets)
+        self._seat_enabled = [tk.BooleanVar(value=True) for _ in range(9)]
 
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill="both", expand=True)
@@ -52,6 +76,15 @@ class LayoutExamples(tk.Toplevel):
                               state="readonly", width=24)
         bg_box.pack(side="left")
         bg_box.bind("<<ComboboxSelected>>", self._render)
+        seats = ttk.Frame(right)
+        seats.pack(fill="x", pady=(0, 6))
+        ttk.Label(seats, text="Show seats:").pack(side="left", padx=(0, 4))
+        self._seat_checks = []
+        for i, enabled in enumerate(self._seat_enabled):
+            check = ttk.Checkbutton(seats, text=str(i), variable=enabled,
+                                    command=self._render)
+            check.pack(side="left", padx=(0, 3))
+            self._seat_checks.append(check)
         self._image = ttk.Label(right)
         self._image.pack(fill="both", expand=True)
         self._status = ttk.Label(right, wraplength=600)
@@ -62,20 +95,6 @@ class LayoutExamples(tk.Toplevel):
             self._list.see(index)
             self._render()
 
-    def _sample_faces(self):
-        faces = []
-        for fid in sorted(self._assets.faces):
-            if not fid.startswith("FID_"):
-                continue
-            try:
-                self._assets.face(fid)
-            except (OSError, ValueError, KeyError):
-                continue
-            faces.append(fid)
-            if len(faces) == 9:
-                break
-        return faces
-
     def _render(self, _event=None):
         selection = self._list.curselection()
         if not selection:
@@ -84,8 +103,11 @@ class LayoutExamples(tk.Toplevel):
         layout = layout_from_label(label)
         try:
             count = min(9, len(self._assets.seats(layout)))
+            for i, check in enumerate(self._seat_checks):
+                check.state(("!disabled",) if i < count else ("disabled",))
             portraits = tuple(Portrait(fid=self._faces[i % len(self._faces)])
-                              if self._faces and i < count else Portrait()
+                              if self._faces and i < count and self._seat_enabled[i].get()
+                              else Portrait()
                               for i in range(9))
             definitions = [part for part in self._assets.layout(layout).parts
                            if part.kind == 2]
@@ -99,7 +121,8 @@ class LayoutExamples(tk.Toplevel):
             image = result.image.resize((608, 448), Image.Resampling.LANCZOS)
             self._photo = ImageTk.PhotoImage(image)
             self._image.configure(image=self._photo)
-            note = (f"{count} seat{'s' if count != 1 else ''}; "
+            shown = sum(enabled.get() for enabled in self._seat_enabled[:count])
+            note = (f"{count} seat{'s' if count != 1 else ''} ({shown} shown); "
                     f"{min(4, len(definitions))} textbox{'es' if len(definitions) != 1 else ''}.")
             if result.diagnostics:
                 note += "  " + "; ".join(d.description for d in result.diagnostics)

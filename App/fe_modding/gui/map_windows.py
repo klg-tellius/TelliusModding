@@ -298,6 +298,76 @@ class MapObjectsWindow(_Window):
             more.grid(row=4, column=0, columnspan=4, sticky="w", pady=(6, 0))
             ttk.Button(more, text="View model...", command=lambda: self.map.view_model(self, obj.filename)).pack(side="left")
             ttk.Button(more, text="Export .glb...", command=lambda: self.map.export_prop(self, obj.filename)).pack(side="left", padx=(6, 0))
+            ttk.Button(more, text="Object flags...", command=lambda: self._object_flags(inst.desc_index)).pack(side="left", padx=(6, 0))
+
+    def _object_flags(self, desc_index: int) -> None:
+        data = self.map.map_data
+        if data is None or not 0 <= desc_index < len(data.build_desc):
+            return
+        obj = data.build_desc[desc_index]
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Object flags — {obj.filename}")
+        dialog.transient(self)
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill="both", expand=True)
+        fields = ("flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")
+        raw = {}
+        for row, field in enumerate(fields):
+            ttk.Label(frame, text=field.replace("_", " ")).grid(row=row, column=0, sticky="w", pady=2)
+            raw[field] = tk.StringVar(value=f"0x{getattr(obj, field):02X}")
+            ttk.Entry(frame, textvariable=raw[field], width=8).grid(row=row, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
+                  + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
+                  style="Muted.TLabel").grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 3))
+        toggles = (
+            ("flag_bits_b", 0x01, "Skip placed-object draw (B bit 0)"),
+            ("flag_bits_b", 0x02, "Initially hidden (B bit 1)"),
+            ("flag_bits_b", 0x10, "Exclude from footprint test (B bit 4)"),
+            ("flag_bits_c", 0x04, "Advance animation timer (C bit 2)"),
+            ("flag_bits_c", 0x08, "Footprint test candidate (C bit 3)"),
+            ("flag_bits_c", 0x10, "Footprint test candidate (C bit 4)"),
+            ("flag_bits_c", 0x20, "Projected texture target (C bit 5)"),
+            ("effect_type", 0x01, "Second actor update pass (effect bit 0)"),
+            ("effect_type", 0x02, "Copy roof height to base layer too (effect bit 1)"),
+            ("effect_type", 0x08, "Extended frustum test (effect bit 3)"),
+            ("effect_type", 0x10, "Exclude from footprint test (effect bit 4)"),
+            ("effect_type", 0x40, "Skip placed-object draw (effect bit 6)"),
+            ("effect_type", 0x80, "Exclude from tile-object lookup (effect bit 7)"),
+        )
+        checks = []
+        for row, (field, mask, label) in enumerate(toggles if self.map.verified_us_map_layout else (), start=5):
+            initial = bool(getattr(obj, field) & mask)
+            var = tk.BooleanVar(value=initial)
+            ttk.Checkbutton(frame, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w")
+            checks.append((field, mask, initial, var))
+        ttk.Label(frame, text="These flags belong to the object definition and affect every placement. "
+                  "C bit 0 is probably unused in the US build; raw bytes preserve it. "
+                  "The footprint test also depends on map flags and runtime state.",
+                  style="Muted.TLabel", wraplength=390, justify="left").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        def apply() -> None:
+            try:
+                values = {field: int(var.get(), 0) for field, var in raw.items()}
+                if any(not 0 <= value <= 255 for value in values.values()):
+                    raise ValueError("Each raw flag must be a byte (0–255).")
+                for field, mask, initial, var in checks:
+                    if var.get() != initial:
+                        values[field] = (values[field] | mask) if var.get() else (values[field] & ~mask)
+                changed = {field: value for field, value in values.items() if value != getattr(obj, field)}
+                if changed:
+                    def edit(files):
+                        out = files["map.bin"]
+                        for field, value in changed.items():
+                            out = map_file.patch_object_field(out, obj, field, value)
+                        files["map.bin"] = out
+                    self.builder.edit_map(edit, f"Changed flags of {obj.filename}", raise_errors=True)
+            except (ValueError, struct.error, map_file.MapFileError) as exc:
+                messagebox.showerror("Object flags", str(exc), parent=dialog)
+                return
+            dialog.destroy()
+
+        ttk.Button(frame, text="Apply", command=apply).grid(row=19, column=0, sticky="w", pady=(10, 0))
+        dialog.grab_set()
 
     def _apply(self) -> None:
         index = self._shown
@@ -360,22 +430,26 @@ class MapObjectsWindow(_Window):
 #: ``(field, label)`` or ``("rgb", label, (red, green, blue))`` (three byte fields and a colour picker).
 SETTINGS_SECTIONS = [
     ("light", "Lighting", map_file.patch_light_field, [
-        ("enabled", "Enabled"), ("unknown1", "Unknown 1"), ("unknown2", "Unknown 2"),
+        ("enabled", "Enabled"), ("angle_y", "Light Y angle (°)"), ("angle_z", "Light Z angle (°)"),
         ("rgb", "Model colour", ("model_red", "model_green", "model_blue")),
         ("rgb", "Light colour", ("light_red", "light_green", "light_blue")),
     ]),
     ("fog", "Fog", map_file.patch_fog_field, [
-        ("enabled", "Enabled"), ("effect_type", "Effect type"), ("transparency", "Transparency"),
+        ("enabled", "Enabled"), ("mode_code", "Mode code"),
+        ("start_distance", "Start distance"), ("end_distance", "End distance"),
         ("rgb", "Fog colour", ("red", "green", "blue")),
-        ("unused1", "Unused 1"), ("unused2", "Unused 2"),
+        ("unused2", "Unused 2"),
     ]),
     ("grid", "Grid colour", map_file.patch_grid_field, [
-        ("unknown", "Unknown"), ("rgb", "Grid colour", ("red", "green", "blue")),
+        ("unknown", "Stored alpha (draw uses SetGrid)"), ("rgb", "Grid colour", ("red", "green", "blue")),
     ]),
     ("extra", "Grid size & map extra (mapextra)", map_file.patch_extra_field, [
         ("grid_buffer", "Grid border (tiles)"), ("half_x_size", "Half width"), ("half_y_size", "Half height"),
         ("panel_offset_x", "Panel offset X"), ("panel_offset_y", "Panel offset Y"),
-        ("texture_projection_extent_x2", "Texture extent ×2"), ("unknown_tail", "Map flags"),
+        ("texture_projection_extent_x2", "Texture extent ×2"),
+        ("sight_code", "Sight code (difficulty 1)"), ("weather_id", "Weather ID (0–17)"),
+        ("preserve_object_order", "Keep object file order (0/1)"),
+        ("unknown_tail", "Raw map flags"),
     ]),
 ]
 
@@ -456,6 +530,8 @@ class MapSettingsForm(ttk.Frame):
                     row = self._colour_row(form, row, prefix, record, spec[1], spec[2])
                     continue
                 f, label = spec
+                if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order") and not self.map.verified_us_map_layout:
+                    continue
                 ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 10, 4))
                 value = getattr(record, f)
                 if isinstance(value, bool):
@@ -467,8 +543,11 @@ class MapSettingsForm(ttk.Frame):
                 if col >= 6:
                     col, row = 0, row + 1
             row += 1 if col else 0
-        ttk.Label(form, text="Grid border: the tiles around the map edge outside the playable grid. "
-                             "Map flags: 0x20 water, 0x10000000 roof/house tile rectangles.",
+        hint = ("Sight code 0–3 is active only on difficulty 1; codes 1/2/3 select runtime modes 3/1/2. "
+                "The raw flags also contain 0x20 water and 0x10000000 footprint testing. "
+                "Bit 0x02 is probably unused in the US build and is preserved raw.") if self.map.verified_us_map_layout else (
+                "This region's map flags remain available as a raw value; named US modes are hidden.")
+        ttk.Label(form, text=hint,
                   style="Muted.TLabel", wraplength=720, justify="left").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
         ttk.Button(form, text="Apply", style="Accent.TButton", command=self._apply).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
 
@@ -527,9 +606,32 @@ class MapSettingsForm(ttk.Frame):
                 if record is None:
                     continue
                 for f in _section_fields(rows):
+                    if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order", "unknown_tail"):
+                        continue
                     value = int(self._vars[f"{prefix}:{f}"].get(), 0)
                     if value != getattr(record, f):
                         pending.append((record, f, value, patch))
+            if data.extra is not None:
+                extra = data.extra
+                flags = int(self._vars["extra:unknown_tail"].get(), 0)
+                if not 0 <= flags <= 0xFFFFFFFF:
+                    raise ValueError("Raw map flags must be a 32-bit value.")
+                if self.map.verified_us_map_layout:
+                    sight = int(self._vars["extra:sight_code"].get(), 0)
+                    weather = int(self._vars["extra:weather_id"].get(), 0)
+                    keep_order = int(self._vars["extra:preserve_object_order"].get(), 0)
+                    if not 0 <= sight <= 3 or (weather != extra.weather_id and not 0 <= weather <= 17):
+                        raise ValueError("Sight code must be 0–3 and weather ID must be 0–17.")
+                    if keep_order not in (0, 1):
+                        raise ValueError("Keep object file order must be 0 or 1.")
+                    if sight != extra.sight_code:
+                        flags = (flags & ~map_file.MAP_EXTRA_SIGHT_MASK) | (sight << 18)
+                    if weather != extra.weather_id:
+                        flags = (flags & ~map_file.MAP_EXTRA_WEATHER_MASK) | (weather << 20)
+                    if keep_order != extra.preserve_object_order:
+                        flags = (flags & ~map_file.MAP_EXTRA_OBJECT_ORDER_MASK) | (keep_order << 29)
+                if flags != extra.unknown_tail:
+                    pending.append((extra, "unknown_tail", flags, map_file.patch_extra_field))
         except ValueError as exc:
             messagebox.showerror("Map settings", str(exc), parent=self)
             return

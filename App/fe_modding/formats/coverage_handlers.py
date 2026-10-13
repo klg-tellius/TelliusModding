@@ -14,7 +14,7 @@ import struct
 
 from . import lz10, pak
 from .common import HEADER_SIZE, SECTION_TABLE_SENTINEL
-from .coverage import (DECODED, PADDING, PLAUSIBLE, UNCLASSIFIED, UNDECODED, UNREAD, FileCoverage, Walker,
+from .coverage import (DECODED, PADDING, PLAUSIBLE, RESERVED, UNCLASSIFIED, UNDECODED, UNREAD, FileCoverage, Walker,
                        _base, _ext, _u16, _u32, handles)
 
 
@@ -454,12 +454,17 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
                 r = start + 32 * i
                 cov.mark(r, 32, DECODED)
                 # flag word +0x18..+0x1B (CHAPTER_DATA_NOTES): a bits 7-6 base terrain;
-                # b bits 4-2 battle-goal type (sub-values plausible), bit 5 roof and bit 0
-                # rock plausible; c bit 1 animated, bits 4-7 plausible, bit 3 roof test.
+                # b bit 0 skips placed-object drawing, bit 1 initializes
+                # hidden state, bit 4 excludes footprint testing; c bit 1
+                # loads .ga, bit 2 advances its timer, bits 3/4 enter the
+                # footprint test, bit 5 selects a projected texture callback.
+                # Effect bit 1 also copies roof height to the base layer;
+                # bits 0/3/4/5/6/7 have operational render, sorting,
+                # culling or hit-test roles. Their visual themes may be open.
                 cov.bits(r + 0x18, 1, known=0xC0, name="flag_bits_a")
-                cov.bits(r + 0x19, 1, known=0x00, plausible=0x3D, name="flag_bits_b")
-                cov.bits(r + 0x1A, 1, known=0x0A, plausible=0xF0, name="flag_bits_c")
-                cov.zero(r + 0x1B, 1, "effect_type", nonzero=UNDECODED)
+                cov.bits(r + 0x19, 1, known=0x13, plausible=0x2C, name="flag_bits_b")
+                cov.bits(r + 0x1A, 1, known=0x3E, plausible=0xC0, name="flag_bits_c")
+                cov.bits(r + 0x1B, 1, known=0xFB, name="effect flags")
         elif name == "mapbuildinst":
             cov.mark(start, 12 * n_inst, DECODED)  # footprint x2..end_y2: strong evidence
         elif name.startswith("panelindex"):
@@ -468,28 +473,30 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
             cov.mark(start, end - start, DECODED)
         elif name == "maplight":
             cov.mark(start, 12, DECODED)
-            cov.mark(start + 1, 2, UNDECODED, "maplight +1/+2")
             cov.zero(start + 9, 3, "maplight +9")
         elif name == "mapfog":
             cov.mark(start, 7, DECODED)
             cov.zero(start + 7, 1, "mapfog +7")
         elif name == "mapgrid":
             cov.mark(start, 4, DECODED)
-            cov.mark(start, 1, UNDECODED, "mapgrid +0")
+            cov.mark(start, 1, UNREAD, "stored grid alpha; draw replaces it with SetGrid intensity")
         elif name == "mapextra":
             cov.mark(start, 6, DECODED)
             cov.zero(start + 6, 2, "mapextra +6")
-            # tail word: 0x04/0x20 material callbacks and 0x10000000 roof test decoded;
-            # 0x10 callback FUN_800EF1C0 and the 0xC0000/0x1F00000 mode fields not.
-            cov.bits(start + 8, 4, known=0x10000024, name="mapextra flags")
+            # Sight code (bits 18-19), weather ID (bits 20-24), material
+            # callback selects 0x04/0x10/0x20, footprint test 0x10000000,
+            # and object-sort-done/file-order flag 0x20000000.
+            cov.bits(start + 8, 4, known=0x31FC0034, name="mapextra flags")
         elif name.startswith("maplink"):
             count = _u16(data, start)
             cov.mark(start, 2, DECODED)
             for i in range(count):
                 e = start + 2 + 3 * i
                 cov.mark(e, 2, DECODED)
-                # bits 0-3 passability openings decoded; maplinkAt writes bits 8-11
-                # from its low nibble; the high nibble of maplink/maplinkAt is open.
+                # Bits 0-3 are directional: maplink ground openings,
+                # maplinkAt threat-range cost reduction, maplinkAbs ground
+                # openings with complementary flying blocks. Every US source
+                # value is <= 15; upper source bits remain unassigned.
                 cov.bits(e + 2, 1, known=0x0F, name=f"{name} value")
         else:
             cov.mark(start, end - start, UNDECODED, f"section {name}")
@@ -927,27 +934,32 @@ def gci_save(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(off + 0x54, 4, "header +0x54")
         cov.zero(off + 0x67, 9, "header +0x67")
         s = off + sf.CRC_START
-        cov.mark(s + 0x43, 1, UNDECODED, "SYSF +0x43")
+        # Initialized to zero and copied through save/load; no US gameplay reader.
+        cov.mark(s + 0x43, 1, RESERVED, "unused SYSF +0x43")
         cov.zero(s + 0x45, 2, "SYSF +0x45")
         p = off + sf.STREAM_START + 4
-        cov.mark(p, 16, UNDECODED, "BMST +0x00..0x0F")
-        cov.mark(p + 0x50, 1, UNDECODED, "BMST +0x50")
-        cov.mark(p + 0x94, 8, UNDECODED, "BMST +0x94..0x9B (objective state)")
+        # Slots 5-7 are addressable through BMGetValue/BMSetValue, but no
+        # shipped US script uses them and every sampled save leaves them zero.
+        cov.mark(p + 0x0A, 6, RESERVED, "unused BMST value slots 5-7")
         opts = p + 0x9C
-        for i, known in enumerate((0x1E, 0x00, 0x0C, 0xE0)):
+        for i, known in enumerate((0x1E, 0x00, 0x1D, 0xE0)):
             cov.bits(opts + i, 1, known=known, name=f"option byte {i}")
         cov.zero(opts + 11, 1, "option byte 11")
         m = p + sf.PartyState.SIZE + 4
-        cov.mark(m + 7, 10, UNDECODED, "MDST runtime bytes 7-16")
         cov.zero(m + 0x16, 10, "MDST pad")
         r = m + sf.MapState.SIZE + 4
         for unit in block.units:
             if unit is None:
                 r += 2
                 continue
-            for rel, size_, label in ((0x0C, 1, "unit +0x19D"), (0x6A, 2, "unit +0x230"), (0x6C, 2, "unit +0x232"),
-                                      (0x6F, 1, "unit +0x235")):
-                cov.mark(r + rel, size_, UNDECODED, label)
+            # The US build does not consume either byte in gameplay. +0x19D
+            # has a debug-editor setter; +0x235 has a dormant UnitGet selector.
+            cov.mark(r + 0x0C, 1, RESERVED, "unused unit +0x19D (debug editor only)")
+            cov.mark(r + 0x6F, 1, RESERVED, "unused unit +0x235 (UnitGet 34)")
+            # Unused in the US build: zero-initialized and serialized, with no
+            # gameplay writer or use in the available scripts. UnitGet can read them.
+            cov.mark(r + 0x6A, 2, RESERVED, "unused unit +0x230 (UnitGet 28)")
+            cov.mark(r + 0x6C, 2, RESERVED, "unused unit +0x232 (UnitGet 32)")
             cov.zero(r + 0x8B, 4, "unit pad")
             r += sf.UNIT_RECORD_SIZE
         stream_end = off + sf.STREAM_START + len(block.build_stream())

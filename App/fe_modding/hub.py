@@ -7,11 +7,12 @@ generates the event-script glue and installs conditional chapter routing.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from . import chapters, script_sources
-from .formats import dispo, event_flags as ef, fe8data, lz10, map_file, pak
+from .formats import dispo, event_flags as ef, fe8data, fe9_message_scene, lz10, map_file, message, pak
 from .formats.cmb import compile_source, read_cmb, write_cmb
 from .formats.cmb.parser import parse
 from .game_code.catalog import Session, State
@@ -37,6 +38,7 @@ class Destination:
     y: int
     return_x: int
     return_y: int
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,12 @@ class HubSetup:
     activation_chapter: int
     avatar_pid: str
     destinations: tuple[Destination, ...]
+    start_x: int | None = None
+    start_y: int | None = None
+
+
+def description_key(chapter: int) -> str:
+    return f"MS_HUB_{chapter:02d}_INFO"
 
 
 def config_path(project) -> Path:
@@ -105,6 +113,10 @@ def hub_script(source: str, setup: HubSetup) -> str:
         body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="arrive", name=None)',
                  f'def HubGoTo{dest.chapter}():', *_flag_assignments(dest.chapter),
                  '    set("gf_complete")']
+        if dest.description.strip():
+            body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="visit", name=None)',
+                     f'def HubDescribe{dest.chapter}():',
+                     f'    TalkEvent("{description_key(dest.chapter)}")']
     body += [END_MARK]
     return _replace_generated(source, "\n".join(body))
 
@@ -146,6 +158,10 @@ def _validate_setup(project, setup: HubSetup, current: dict | None, flow: Chapte
         raise ValueError(f"Character {setup.avatar_pid} has no CharacterData record.")
     if not setup.destinations:
         raise ValueError("The hub needs at least one destination tile.")
+    if (setup.start_x is None) != (setup.start_y is None):
+        raise ValueError("Provide both avatar start coordinates.")
+    if setup.start_x is not None and (not 0 <= setup.start_x < 64 or not 0 <= setup.start_y < 64):
+        raise ValueError("The avatar start must be on a tile from 0 to 63.")
     ids, tiles = set(), set()
     for dest in setup.destinations:
         if dest.chapter not in available or dest.chapter in (setup.chapter, GAME_CLEARED):
@@ -161,6 +177,12 @@ def _validate_setup(project, setup: HubSetup, current: dict | None, flow: Chapte
         tiles.add((dest.x, dest.y))
         if any(not 0 <= coordinate < 64 for coordinate in (dest.x, dest.y, dest.return_x, dest.return_y)):
             raise ValueError("Hub tile coordinates must be between 0 and 63.")
+        if len(dest.description) > 240 or any(c in dest.description for c in "$\x00\r\n"):
+            raise ValueError(f"Destination {dest.chapter} has an invalid description (240 characters maximum; no control codes).")
+        try:
+            dest.description.encode(message.ENCODING)
+        except UnicodeEncodeError as exc:
+            raise ValueError(f"Destination {dest.chapter} has text the game cannot encode.") from exc
     if current and current["chapter"] != setup.chapter:
         raise ValueError("Change the existing hub chapter by removing its setup first.")
     if not flow.available:
@@ -186,6 +208,8 @@ def _validate_setup(project, setup: HubSetup, current: dict | None, flow: Chapte
         if dest.x >= capacity.x_size or dest.return_x >= capacity.x_size or \
                 dest.y >= capacity.y_size or dest.return_y >= capacity.y_size:
             raise ValueError(f"Destination {dest.chapter} has a tile outside the hub map.")
+    if setup.start_x is not None and (setup.start_x >= capacity.x_size or setup.start_y >= capacity.y_size):
+        raise ValueError("The avatar start is outside the hub map.")
     hub_units, player_units = _deployment_pids(deployment_path)
     if hub_units != {setup.avatar_pid} or player_units != {setup.avatar_pid}:
         raise ValueError("The prepared hub must deploy only the dedicated avatar, in its player section.")
@@ -214,12 +238,37 @@ def _deployment_pids(path: Path) -> tuple[set[str], set[str]]:
     return pids, player_pids
 
 
+def _avatar_position_bytes(path: Path, pid: str, x: int, y: int) -> bytes:
+    packed = lz10.decompress(path.read_bytes())
+    entries = pak.read_pak_entries(packed)
+    files, reserved = [], []
+    found = False
+    for entry in entries:
+        content = pak.read_pak_file_content(packed, entry)
+        if entry.name.startswith("dispos_"):
+            doc = dispo.parse_dispo(content)
+            for section in doc.sections:
+                for unit in section.units:
+                    if unit[dispo.FIELD["pid"]] == pid:
+                        dispo.move_unit(unit, x, y)
+                        found = True
+            content = dispo.build_dispo(doc)
+        files.append((entry.name, content))
+        reserved.append(entry.reserved)
+    if not found:
+        raise ValueError(f"The hub deployment has no {pid} unit to position.")
+    return lz10.compress(pak.pack_pak(files, reserved))
+
+
 def prepare(project, setup: HubSetup) -> dict:
     """Validate and compile all source changes without writing project files."""
     current = saved_setup(project)
     editor = CodeEditor(project.extracted_dir, project.write_keeping_original)
     flow = ChapterFlow(editor)
     _validate_setup(project, setup, current, flow)
+    deployment_path, _map = chapters.phase_paths(project, chapters.chapter_phases(project, f"{setup.chapter:02d}")[0])
+    deployment_data = (_avatar_position_bytes(deployment_path, setup.avatar_pid, setup.start_x, setup.start_y)
+                       if setup.start_x is not None else None)
     startup = script_sources.startup_path(project)
     hub_path = script_sources.chapter_script(project, f"{setup.chapter:02d}")
     activation_path = script_sources.chapter_script(project, f"{setup.activation_chapter:02d}")
@@ -264,6 +313,21 @@ def prepare(project, setup: HubSetup) -> dict:
         scripts[old_path] = _remove_generated(script_sources.peek(project, old_path))
     scripts[activation_path] = activation_script(scripts[activation_path])
     scripts[hub_path] = hub_script(scripts[hub_path], setup)
+    dialogue = chapters.chapter_paths(project, f"{setup.chapter:02d}").dialogue
+    if dialogue is None:
+        raise ValueError("The hub has no chapter message file.")
+    old_messages = message.read_messages_path(dialogue)
+    messages = [m for m in old_messages if not re.fullmatch(r"MS_HUB_\d{2}_INFO", m.speaker)]
+    for dest in setup.destinations:
+        if dest.description.strip():
+            key = description_key(dest.chapter)
+            collision = next((m.speaker for m in messages
+                              if message.engine_name_hash(m.speaker) == message.engine_name_hash(key)), None)
+            if collision:
+                raise ValueError(f"The message ID for destination {dest.chapter} collides with {collision}.")
+            raw = fe9_message_scene.to_raw("$RGMAP会話|$O3$G" + dest.description.strip() + "$K")
+            messages.append(message.Message(key, raw))
+    message_data = message.write_messages(messages, message.read_text_order_path(dialogue))
     helpers = ef.exported_functions(parse(scripts[startup]))
     compiled = {}
     for path, source in scripts.items():
@@ -291,7 +355,9 @@ def prepare(project, setup: HubSetup) -> dict:
     scratch.set_patch(HUB_PATCH, True)
     scratch._write(HUB_CONFIG, router_config)
     return {"editor": editor, "flow": flow, "compiled": compiled, "slots": slots,
-            "flags": expected, "normal_successor": normal_successor}
+            "flags": expected, "normal_successor": normal_successor,
+            "message": (dialogue, message_data),
+            "deployment": (deployment_path, deployment_data) if deployment_data is not None else None}
 
 
 def install(project, setup: HubSetup) -> dict:
@@ -302,13 +368,16 @@ def install(project, setup: HubSetup) -> dict:
         sidecar = script_sources.sidecar_path(project, path)
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         sidecar.write_text(source, encoding="utf-8")
+    project.write_keeping_original(*prepared["message"])
+    if prepared["deployment"] is not None:
+        project.write_keeping_original(*prepared["deployment"])
     flow = prepared["flow"]
     if flow.next_of(setup.chapter) != setup.chapter:
         flow.set_next(setup.chapter, setup.chapter)
     slots = prepared["slots"]
     HubFlow(prepared["editor"]).install(setup.chapter, slots["active"],
                                         slots["destination"], slots["pending"])
-    saved = {**asdict(setup), "version": 1, "slots": slots, "flags": prepared["flags"],
+    saved = {**asdict(setup), "version": 2, "slots": slots, "flags": prepared["flags"],
              "normal_successor": prepared["normal_successor"]}
     config_path(project).write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
     return saved

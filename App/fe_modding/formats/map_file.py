@@ -135,34 +135,40 @@ class MapObject:
         always set together (raw value 3), never independently. Real object
         *size* doesn't discriminate this at all (some ordinary props are far
         larger than these "map-wide" entries) - filename is what does.
-      - flag_bits_b: bit 5 = castle roof (meaning unclear); bit 4-2 = battle
-        goal, CONFIRMED to be a real 3-bit type field (not just bit 3 in
-        isolation, and not "a chapter-12 cutscene trigger" as bit 3 alone
-        was previously guessed to be) - checked against every real chapter:
-        the same bit pattern recurs on invisible marker objects across
-        dozens of chapters (not just the one chapter the old guess was based
-        on), each literally named after its own win condition -
+      - flag_bits_b: bit 5 occurs on castle roofs; bits 2-4 commonly
+        co-occur on invisible goal markers across dozens of chapters,
+        each literally named after its own win condition -
         `ascendancy_01`, `defense_01`, `attainment_01`, `secession_01`,
-        `visit_01` - with the 3-bit field taking a handful of distinct
-        values (7 most commonly, also 6 and 2 seen) that plausibly
-        distinguish sub-variants of the same named goal, though the exact
-        value-to-submeaning mapping isn't independently confirmed;
-        bit 2 = destroyed house (possibly "invisible at start"); bit 0 = rock
+        `visit_01`. That correlation does not prove a 3-bit enum: bit 4
+        independently excludes footprint testing, and bit 2 sets an actor
+        runtime flag whose visual meaning remains open.
+        bit 1 sets the instance's initial hidden state (all 11 shipped
+        users are destroyed-house models); bit 0 suppresses placed-object
+        drawing (the four shipped users are rock models).
       - flag_bits_c: bit 7 = ballista/catapult; bit 6 = thicket; bit 5 =
         wall/building (possibly impassable terrain); bit 4 = openable door;
+        bit 2 advances the .ga animation timer on each map update and
+        staggers identical adjacent instances across animation frames;
         bit 1 = has a matching .ga file - CONFIRMED with zero exceptions:
         checked against every real object across every real chapter map (873
         objects), cross-referenced against the actual archive contents
         (does a `<filename>.ga` really exist alongside this map.bin) - bit 1
         set means "yes" in 268/268 real cases, bit 1 clear alongside bit 0
         also clear means "no" in 18/18 real cases, no exceptions either way.
-        The old "bit 0 = no .ga file" reading is REFUTED by this same
-        check: bit 0 is set on the large majority of objects regardless of
-        whether they actually have a `.ga` file (588 of 873, only 48 of
-        which do), so it tracks something else entirely - ruled out, not
-        yet re-identified.
-    effect_type is a separate byte ("type for effect?" in the source),
-    purpose not confirmed.
+        The old "bit 0 = no .ga file" reading is refuted by a later
+        876-object US archive census: the bit occurs both with and without
+        a matching `.ga` file. A second US executable reader scan found no
+        test of bit 0, so it is probably unused in that build; preserve it
+        raw for all regions.
+    effect_type is a bitfield, not an enum. Bit 0 selects one of two actor
+    update passes; bit 1 copies roof-panel corner heights into the base
+    elevation buffer as well as the combined buffer in
+    ``load_uniquepanel_sections``; bit 3 selects an extended frustum-overlap test and is
+    also set by the engine for a footprint wider than one tile; bit 4
+    excludes footprint and tile-object hit tests; bit 6 suppresses
+    placed-object drawing; bit 7 excludes tile-object lookup. Bits 4/5/7
+    also contribute to the optional object sort key. The remaining visual
+    meanings are unresolved.
     """
 
     offset_x: float
@@ -216,11 +222,11 @@ class MapBuildInstance:
     scale exactly. `height()` (not `height_raw()`) is what
     :meth:`world_transform` actually uses.
 
-    The meaning of the second (x2, y2) pair alongside (end_x2, end_y2)
-    remains genuinely unconfirmed - could be a second placement point for a
-    stretched/linear object (a bridge, a wall run) or something else
-    entirely; nothing in the Twentieth finding's live-debugging pass touched
-    these two fields.
+    The (x2, y2) through (end_x2, end_y2) bytes give an inclusive tile
+    footprint. The engine tests this rectangle for selected roof, door,
+    house, and rock objects when mapextra bit 0x10000000 is set. See
+    CHAPTER_DATA_NOTES.md for the engine reader and corpus evidence; the
+    older second-placement-point hypothesis has been ruled out.
     """
 
     x: int  # from the left
@@ -347,8 +353,8 @@ class UniquePanel:
 @dataclass(frozen=True)
 class MapLight:
     enabled: int  # always seen as 1
-    unknown1: int
-    unknown2: int
+    angle_y: int  # signed degrees; negated for the renderer's Y rotation
+    angle_z: int  # signed degrees; renderer's Z rotation
     model_red: int
     model_green: int
     model_blue: int
@@ -362,9 +368,9 @@ class MapLight:
 @dataclass(frozen=True)
 class MapFog:
     enabled: int
-    unused1: int
-    effect_type: int  # "Fog effect str" in the source notes - likely a small style selector despite the name, not literal text
-    transparency: int
+    mode_code: int  # stored code; runtime fog type is mode_code + 1 when enabled
+    start_distance: int  # signed, scaled by 5 * map scale for rendering
+    end_distance: int  # signed, scaled by 5 * map scale for rendering
     red: int
     green: int
     blue: int
@@ -374,7 +380,7 @@ class MapFog:
 
 @dataclass(frozen=True)
 class MapGrid:
-    unknown: int
+    unknown: int  # stored RGBA alpha; the known draw path replaces it with SetGrid intensity
     red: int
     green: int
     blue: int
@@ -416,11 +422,17 @@ class MapExtra:
     not part of half_y_size as previously modeled. The global last-record
     map texture callback reads the map-state copy of this byte and uses
     `(value >> 1)` as its projection extent; for bmap01, 0x40 produces the
-    live-captured texture6 matrix extent 32. unknown_tail (bytes 8-11) is
-    confirmed consumed by FUN_80040f90 (apply_map_extra_flags) as two
-    bitfields - a 2-bit toggle and a 5-bit (0-17) enum - plausibly a
-    fog/lighting/weather preset selector given it's decoded right alongside
-    maplight/mapfog loading, not independently confirmed further."""
+    live-captured texture6 matrix extent 32. unknown_tail (bytes 8-11)
+    contains a 2-bit sight-mode code at bits 18-19 and a 5-bit weather ID
+    at bits 20-24. apply_map_extra_flags maps sight codes 0/1/2/3 to
+    runtime modes 0/3/1/2, with nonzero modes enabled only on difficulty 1.
+    Weather IDs 0-17 are accepted; larger values fall back to 0. Bit 29
+    marks the placed-object order as ready; when clear, the engine sorts
+    instances and then sets this bit. All 58 US chapter maps ship with it
+    set. Bit 0x02 is set on all 58 US chapter maps, but a second executable
+    reader scan found no test of it. It is probably unused in the US build
+    and remains raw for every region. Other bits control texture callbacks
+    and footprint tests or remain open."""
 
     panel_offset_x: int  # byte 0 - purpose NOT confirmed, see docstring (old name: model_grid_offset high byte)
     panel_offset_y: int  # byte 1 - purpose NOT confirmed, see docstring (old name: model_grid_offset low byte)
@@ -437,6 +449,38 @@ class MapExtra:
         """Backward-compatible name for byte 4 used by older research scripts."""
         return self.texture_projection_extent_x2
 
+    @property
+    def sight_code(self) -> int:
+        return (self.unknown_tail >> 18) & 3
+
+    @property
+    def weather_id(self) -> int:
+        return (self.unknown_tail >> 20) & 31
+
+    @property
+    def preserve_object_order(self) -> bool:
+        return bool(self.unknown_tail & MAP_EXTRA_OBJECT_ORDER_MASK)
+
+
+MAP_EXTRA_SIGHT_MASK = 0x000C0000
+MAP_EXTRA_WEATHER_MASK = 0x01F00000
+MAP_EXTRA_OBJECT_ORDER_MASK = 0x20000000
+
+
+def patch_extra_mode(data: bytes, record: MapExtra, field: str, value: int) -> bytes:
+    """Patch one confirmed mapextra mode while preserving every other bit."""
+    masks = {"sight_code": (MAP_EXTRA_SIGHT_MASK, 18, 3),
+             "weather_id": (MAP_EXTRA_WEATHER_MASK, 20, 17),
+             "preserve_object_order": (MAP_EXTRA_OBJECT_ORDER_MASK, 29, 1)}
+    if field not in masks:
+        raise MapFileError(f"Unknown mapextra mode {field!r}.")
+    mask, shift, maximum = masks[field]
+    if not isinstance(value, int) or not 0 <= value <= maximum:
+        raise MapFileError(f"{field} must be between 0 and {maximum}.")
+    current = struct.unpack_from(">I", data, record.address + 8)[0]
+    word = (current & ~mask) | (value << shift)
+    return patch_extra_field(data, record, "unknown_tail", word)
+
 
 Grid = list[list[int]]  # indexed [x][y]
 
@@ -447,7 +491,7 @@ LINK_PASS_NORTH = 0x08
 #: A tile ``maplink`` does not list starts open in every direction. The sections only list the
 #: exceptions (``bmap03`` lists 8 of its 1,156 tiles, mostly with one or two directions closed), 43
 #: retail maps have no ``maplink`` at all and units move on them, and walls between unlisted tiles come
-#: from the height post-pass clearing these bits.
+#: from the height filter, which runs before the sparse overrides.
 LINK_DEFAULT_OPEN = LINK_PASS_WEST | LINK_PASS_EAST | LINK_PASS_SOUTH | LINK_PASS_NORTH
 LINK_PASS_DIRECTIONS = (
     ("west", LINK_PASS_WEST),
@@ -509,16 +553,18 @@ def compose_link_status_grid(data: "MapData", apply_height_rules: bool = True) -
     ``maplink`` writes the low byte, ``maplinkAt`` writes bits 8-11, and
     ``maplinkAbs`` runs last and replaces the cell with ``value`` in the low
     nibble plus its inverse in bits 4-7. Unlisted tiles start as :data:`LINK_DEFAULT_OPEN`.
-    If ``apply_height_rules`` is true,
-    the low directional passability bits are then filtered the same way
-    ``apply_wall_height_passability`` (0x800237A0) does: west/east/south/
-    north openings are cleared when the matching edge's two corner-height
-    deltas are 400 units or greater.
+    With ``apply_height_rules``, mirror the native setup order: mark outer
+    boundaries, filter openings by the 400-unit edge-height rule, apply the
+    sparse overrides, then mark the tactical-grid inset boundary. Explicit
+    maplink openings therefore take precedence over the height filter.
     """
     if data.capacity is None:
         raise MapFileError("link status grid requires mapcapacity.")
     width, height = data.capacity.x_size, data.capacity.y_size
     status: Grid = [[LINK_DEFAULT_OPEN] * height for _ in range(width)]
+    if apply_height_rules:
+        _set_link_boundary_flags(status, 0, width - 1, 0, height - 1)
+        _apply_link_height_rules(data, status)
 
     if data.link is not None:
         for x in range(min(width, len(data.link))):
@@ -542,15 +588,46 @@ def compose_link_status_grid(data: "MapData", apply_height_rules: bool = True) -
                     status[x][y] = (value & 0xFF) + (((~value) << 4) & 0xF0)
 
     if apply_height_rules:
-        _apply_link_height_rules(data, status)
+        inset = data.extra.grid_buffer if data.extra is not None else 0
+        _set_link_boundary_flags(status, inset, width - inset - 1,
+                                 inset, height - inset - 1)
     return status
+
+
+def _set_link_boundary_flags(status: Grid, left: int, right: int,
+                             top: int, bottom: int) -> None:
+    """Replace outward ground openings with flying-block edge flags."""
+    width = len(status)
+    height = len(status[0]) if width else 0
+    if not (0 <= left <= right < width and 0 <= top <= bottom < height):
+        return
+    for x in range(left, right + 1):
+        status[x][top] = (status[x][top] & ~0x88) | 0x80
+        status[x][bottom] = (status[x][bottom] & ~0x44) | 0x40
+    for y in range(top, bottom + 1):
+        status[left][y] = (status[left][y] & ~0x11) | 0x10
+        status[right][y] = (status[right][y] & ~0x22) | 0x20
 
 
 def link_passable_directions(value: int) -> tuple[str, ...]:
     """Return the confirmed low-nibble directional openings in a composed
-    link/status value. These are passability bits, not wall bits: the native
-    height post-pass clears them when adjacent tile edges are too far apart."""
+    link/status value. These are passability bits: the native height filter
+    clears them before the sparse overrides are applied."""
     return tuple(name for name, bit in LINK_PASS_DIRECTIONS if value & bit)
+
+
+def link_threat_edge_base_cost(value: int, direction_bit: int) -> int | None:
+    """Cost of crossing one edge in native threat-range search.
+
+    Returns ``None`` when its boundary flag blocks the edge. Otherwise an
+    ordinary opening or matching ``maplinkAt`` bit costs 1, and an edge with
+    neither costs 2. Terrain type 0x1C can raise the 1-cost case to 3.
+    """
+    if direction_bit not in (LINK_PASS_WEST, LINK_PASS_EAST, LINK_PASS_SOUTH, LINK_PASS_NORTH):
+        raise ValueError("Invalid map-link direction bit.")
+    if value & ((direction_bit << 4) | (direction_bit << 12)):
+        return None
+    return 1 if value & (direction_bit | (direction_bit << 8)) else 2
 
 
 def link_tiles_are_adjacent_passable(status: Grid, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
@@ -767,14 +844,14 @@ def _read_unique_panel(stream: BinaryIO, address: int, max_index: int) -> list[U
 
 def _read_light(stream: BinaryIO, address: int) -> MapLight:
     stream.seek(address)
-    enabled, u1, u2, mr, mg, mb, lr, lg, lb, ua, ub, uc = struct.unpack(">BBBBBBBBBBBB", stream.read(12))
-    return MapLight(enabled, u1, u2, mr, mg, mb, lr, lg, lb, (ua, ub, uc), address=address)
+    enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, ua, ub, uc = struct.unpack(">BbbBBBBBBBBB", stream.read(12))
+    return MapLight(enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, (ua, ub, uc), address=address)
 
 
 def _read_fog(stream: BinaryIO, address: int) -> MapFog:
     stream.seek(address)
-    enabled, unused1, effect_type, transparency, r, g, b, unused2 = struct.unpack(">BBBBBBBB", stream.read(8))
-    return MapFog(enabled, unused1, effect_type, transparency, r, g, b, unused2, address=address)
+    enabled, mode_code, start_distance, end_distance, r, g, b, unused2 = struct.unpack(">BBbbBBBB", stream.read(8))
+    return MapFog(enabled, mode_code, start_distance, end_distance, r, g, b, unused2, address=address)
 
 
 def _read_grid_colors(stream: BinaryIO, address: int) -> MapGrid:
@@ -840,8 +917,8 @@ _UNIQUE_PANEL_FIELDS = {
 
 _LIGHT_FIELDS = {
     "enabled": (0, ">B"),
-    "unknown1": (1, ">B"),
-    "unknown2": (2, ">B"),
+    "angle_y": (1, ">b"),
+    "angle_z": (2, ">b"),
     "model_red": (3, ">B"),
     "model_green": (4, ">B"),
     "model_blue": (5, ">B"),
@@ -852,9 +929,9 @@ _LIGHT_FIELDS = {
 
 _FOG_FIELDS = {
     "enabled": (0, ">B"),
-    "unused1": (1, ">B"),
-    "effect_type": (2, ">B"),
-    "transparency": (3, ">B"),
+    "mode_code": (1, ">B"),
+    "start_distance": (2, ">b"),
+    "end_distance": (3, ">b"),
     "red": (4, ">B"),
     "green": (5, ">B"),
     "blue": (6, ">B"),
@@ -997,6 +1074,93 @@ def replace_section(data: bytes, name: str, payload: bytes, pointer_fields: list
     new_data_size = data_size + delta
     header = struct.pack(">IIII", HEADER_SIZE + new_data_size + len(tail), new_data_size, len(pointers), section_count)
     return header + bytes(body[16:]) + bytes(tail)
+
+
+def insert_section_before(data: bytes, before_name: str, name: str, payload: bytes) -> bytes:
+    """Add a pointer-free section before an existing section.
+
+    Section data and the pointer table use data-relative addresses. Existing
+    section names stay in place; the new name is appended after them.
+    """
+    if len(payload) % 4:
+        raise MapFileError("A section must be a multiple of 4 bytes.")
+    named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+    if any(existing == name for _address, existing in named):
+        raise MapFileError(f"Section {name!r} already exists.")
+    match = next((address for address, existing in named if existing == before_name), None)
+    if match is None:
+        raise MapFileError(f"No section {before_name!r}.")
+    _size, data_size, _pointer_count, section_count = struct.unpack_from(">IIII", data)
+    entries, table = _sections(data)
+    delta = len(payload)
+    body = bytearray(data[:HEADER_SIZE + data_size])
+    body[match:match] = payload
+    pointer_offsets = []
+    for relative in _pointer_offsets(data):
+        old_at = HEADER_SIZE + relative
+        new_at = old_at + (delta if old_at >= match else 0)
+        target = struct.unpack_from(">I", data, old_at)[0]
+        new_target = target + (delta if HEADER_SIZE + target >= match else 0)
+        struct.pack_into(">I", body, new_at, new_target)
+        pointer_offsets.append(new_at - HEADER_SIZE)
+    old_tail = data[table + section_count * 8:]
+    if len(old_tail) < 8:
+        raise MapFileError("Missing section table sentinel.")
+    name_offset = len(old_tail)
+    tail = bytearray(struct.pack(f">{len(pointer_offsets)}I", *pointer_offsets))
+    for address, offset in entries:
+        tail += struct.pack(">II", address + (delta if HEADER_SIZE + address >= match else 0), offset)
+    tail += struct.pack(">II", match - HEADER_SIZE, name_offset)
+    tail += old_tail + name.encode("ascii") + b"\x00"
+    new_data_size = data_size + delta
+    header = struct.pack(">IIII", HEADER_SIZE + new_data_size + len(tail), new_data_size,
+                         len(pointer_offsets), section_count + 1)
+    return header + bytes(body[16:]) + bytes(tail)
+
+
+def set_link_openings(data: bytes, x: int, y: int, openings: int) -> bytes:
+    """Edit a tile's confirmed directional openings in sparse ``maplink``.
+
+    Existing high bits, other records and the optional maplinkAt section are
+    preserved. A maplinkAbs record overrides maplink, so such a tile is
+    rejected until its override semantics are better understood.
+    """
+    parsed = read_map_bytes(data)
+    cap = parsed.capacity
+    if cap is None or not (0 <= x < cap.x_size and 0 <= y < cap.y_size):
+        raise MapFileError(f"Tile ({x}, {y}) is outside the map.")
+    if not isinstance(openings, int) or not 0 <= openings <= 15:
+        raise MapFileError("Openings must be a four-bit value (0-15).")
+    if parsed.link_abs is not None and parsed.link_abs[x][y] != -1:
+        raise MapFileError("This tile has a maplinkAbs override; its maplink openings cannot be edited here.")
+    if parsed.link is None:
+        if openings == LINK_DEFAULT_OPEN:
+            return data
+        payload = struct.pack(">HBBB", 1, x, y, openings)
+        payload += bytes(-len(payload) % 4)
+        named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+        before = next((name for _address, name in named if name == "mapextra"), named[-1][1])
+        return insert_section_before(data, before, "maplink", payload)
+    start, length = section_bytes(data, "maplink")
+    count = struct.unpack_from(">H", data, start)[0]
+    if 2 + 3 * count > length:
+        raise MapFileError("maplink record count exceeds section length.")
+    payload = bytearray(data[start:start + length])
+    for i in range(count):
+        at = 2 + 3 * i
+        if payload[at] == x and payload[at + 1] == y:
+            payload[at + 2] = (payload[at + 2] & 0xF0) | openings
+            return data[:start] + bytes(payload) + data[start + length:]
+    if openings == LINK_DEFAULT_OPEN:
+        return data
+    if count >= 0xFFFF:
+        raise MapFileError("maplink has too many records.")
+    if length - (2 + 3 * count) > 3 or any(payload[2 + 3 * count:]):
+        raise MapFileError("maplink has trailing data beyond alignment padding; cannot safely add a record.")
+    payload = payload[:2 + 3 * count] + bytes((x, y, openings))
+    struct.pack_into(">H", payload, 0, count + 1)
+    payload += bytes(-len(payload) % 4)
+    return replace_section(data, "maplink", bytes(payload))
 
 
 def write_panel_layer(

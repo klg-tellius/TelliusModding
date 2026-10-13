@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import copy
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from . import rect_catalog
-from .formats import message, rect
+from .formats import fe10_rect, message, rect
 from .games import Game
 
 
@@ -62,15 +63,48 @@ LAYER_FIELDS = {
     ),
 }
 
+FE10_RESOURCE_FIELDS = RESOURCE_FIELDS[:3] + (RESOURCE_FIELDS[3], RESOURCE_FIELDS[4])
+FE10_LAYER_FIELDS = {
+    2: (
+        Field("window", "Window RID", "text"), Field("cursor", "Page cursor RID", "text"),
+        Field("color", "Text color #RRGGBBAA", "color"),
+        *(Field(name, label, minimum=-32768, maximum=32767) for name, label in
+          (("text_x", "Text X"), ("text_y", "Text Y"), ("cursor_x", "Cursor X"), ("cursor_y", "Cursor Y"))),
+        Field("width", "Text width", minimum=0, maximum=65535),
+        Field("nameplate", "Nameplate x0,y0,x1,y1", "rect"),
+        *(Field(name, label, minimum=0, maximum=255) for name, label in
+          (("line_height", "Line height"), ("lines", "Lines"), ("speed", "Typing speed"))),
+        Field("position", "Portrait position (-1 = shared)", minimum=-128, maximum=127),
+    ),
+    3: LAYER_FIELDS[rect.TextLayer],
+    4: LAYER_FIELDS[rect.SeatsLayer],
+    5: LAYER_FIELDS[rect.GradientLayer],
+}
+
+FE10_OFFSETS = {"text_x": (0x14, "h"), "text_y": (0x16, "h"),
+                "cursor_x": (0x18, "h"), "cursor_y": (0x1a, "h"),
+                "width": (0x1c, "H"), "line_height": (0x26, "B"),
+                "lines": (0x27, "B"), "speed": (0x28, "B"),
+                "position": (0x29, "b")}
+
 
 def fields_for(value) -> tuple[Field, ...]:
+    if isinstance(value, fe10_rect.EditableResource):
+        return FE10_RESOURCE_FIELDS
+    if isinstance(value, fe10_rect.EditableLayer):
+        return FE10_LAYER_FIELDS.get(value.kind, ())
     if isinstance(value, rect.RectResource):
         return RESOURCE_FIELDS
     return LAYER_FIELDS.get(type(value), ())
 
 
 def display(value, field: Field) -> str:
-    item = getattr(value, field.name)
+    if isinstance(value, (fe10_rect.EditableResource, fe10_rect.EditableLayer)):
+        item = _fe10_value(value, field.name)
+    else:
+        item = getattr(value, field.name)
+    if field.kind == "color":
+        return "#" + "".join(f"{part:02X}" for part in item)
     if field.kind == "colors":
         return ", ".join("#" + "".join(f"{part:02X}" for part in color) for color in item)
     if field.kind == "seats":
@@ -102,6 +136,11 @@ def parse(field: Field, raw: str):
             if len(colors) != 4:
                 raise ValueError("use four #RRGGBBAA colors")
             return tuple(colors)
+        if field.kind == "color":
+            value = raw.strip().removeprefix("#")
+            if len(value) != 8:
+                raise ValueError("use #RRGGBBAA")
+            return tuple(bytes.fromhex(value))
         if field.kind == "seats":
             seats = []
             for line in raw.splitlines():
@@ -132,8 +171,81 @@ def update(value, inputs: dict[str, str]):
     changed = copy.deepcopy(value)
     for field in fields_for(value):
         if field.name in inputs:
-            setattr(changed, field.name, parse(field, inputs[field.name]))
+            parsed = parse(field, inputs[field.name])
+            if isinstance(changed, (fe10_rect.EditableResource, fe10_rect.EditableLayer)):
+                _set_fe10_value(changed, field.name, parsed)
+            else:
+                setattr(changed, field.name, parsed)
     return changed
+
+
+def _fe10_value(value, name):
+    if isinstance(value, fe10_rect.EditableResource):
+        offset, fmt = {"mode": (5, "B"), "depth": (6, "H"), "duration": (8, "f"),
+                       "brightness": (12, "B"), "effect": (14, "B")}[name]
+        return struct.unpack_from(">" + fmt, value.descriptor, offset)[0]
+    raw = value.raw
+    if value.kind == 2:
+        if name in ("window", "cursor"):
+            return value.strings.get(8 if name == "window" else 12, "")
+        if name == "color": return tuple(raw[0x10:0x14])
+        if name == "nameplate": return struct.unpack_from(">4h", raw, 0x1e)
+        offset, fmt = FE10_OFFSETS[name]
+        return struct.unpack_from(">" + fmt, raw, offset)[0]
+    if value.kind == 3:
+        if name == "text": return value.strings.get(8, "")
+        offset, fmt = {"depth": (2, "b"), "x": (12, "h"), "y": (14, "h"),
+                       "style_a": (16, "B"), "style_b": (17, "B"), "color": (18, "B"),
+                       "align": (20, "b")}[name]
+        return struct.unpack_from(">" + fmt, raw, offset)[0]
+    if value.kind == 4:
+        return [(seat.x, seat.y, seat.skip, seat.facing, seat.index)
+                for seat in fe10_rect.Layer(value.kind, raw).seats()]
+    if value.kind == 5:
+        return (struct.unpack_from(">4h", raw, 8) if name == "rect" else
+                tuple(tuple(raw[16 + i * 4:20 + i * 4]) for i in range(4)))
+    raise ValueError("Unsupported layer")
+
+
+def _set_fe10_value(value, name, item):
+    if isinstance(value, fe10_rect.EditableResource):
+        offset, fmt = {"mode": (5, "B"), "depth": (6, "H"), "duration": (8, "f"),
+                       "brightness": (12, "B"), "effect": (14, "B")}[name]
+        raw = bytearray(value.descriptor)
+        struct.pack_into(">" + fmt, raw, offset, item)
+        value.descriptor = bytes(raw)
+        return
+    if value.kind == 2 and name in ("window", "cursor") or value.kind == 3 and name == "text":
+        offset = 8 if name in ("window", "text") else 12
+        if item:
+            value.strings[offset] = item
+        else:
+            value.strings.pop(offset, None)
+            raw = bytearray(value.raw)
+            raw[offset:offset + 4] = bytes(4)
+            value.raw = bytes(raw)
+        return
+    raw = bytearray(value.raw)
+    if value.kind == 2:
+        if name == "color": raw[0x10:0x14] = bytes(item)
+        elif name == "nameplate": struct.pack_into(">4h", raw, 0x1e, *item)
+        else:
+            offset, fmt = FE10_OFFSETS[name]
+            struct.pack_into(">" + fmt, raw, offset, item)
+    elif value.kind == 3:
+        offset, fmt = {"depth": (2, "b"), "x": (12, "h"), "y": (14, "h"),
+                       "style_a": (16, "B"), "style_b": (17, "B"), "color": (18, "B"),
+                       "align": (20, "b")}[name]
+        struct.pack_into(">" + fmt, raw, offset, item)
+    elif value.kind == 4:
+        if len(item) != struct.unpack_from(">H", raw, 8)[0]:
+            raise ValueError("Changing the number of portrait seats is not supported")
+        for index, seat in enumerate(item):
+            struct.pack_into(">hhHBB", raw, 10 + index * 8, *seat)
+    elif value.kind == 5:
+        if name == "rect": struct.pack_into(">4h", raw, 8, *item)
+        else: raw[16:32] = bytes(part for color in item for part in color)
+    value.raw = bytes(raw)
 
 
 def validate_links(project, resource, *, paths: list[Path] | None = None) -> list[str]:
@@ -151,10 +263,32 @@ def validate_links(project, resource, *, paths: list[Path] | None = None) -> lis
 
 
 def prepare_edit(project, path: Path, old_name: str, edited: rect.RectResource, original: bytes) -> dict[Path, bytes]:
-    if project.game != Game.PATH_OF_RADIANCE:
-        raise ValueError("Non-image RID editing currently supports Path of Radiance")
     if path.read_bytes() != original:
         raise ValueError("Rect file changed since this editor opened; refresh before saving")
+    if project.game == Game.RADIANT_DAWN:
+        doc = fe10_rect.read_editable_rect(original)
+        if doc.build() != original:
+            raise ValueError("Rect file cannot be rebuilt byte-for-byte")
+        current = doc.find(old_name)
+        if (current is None or edited.name != old_name or
+                len(edited.layers) != len(current.layers) or
+                any(a.kind != b.kind for a, b in zip(edited.layers, current.layers))):
+            raise ValueError("RID identity or layer structure changed")
+        names = {item.name for rect_path in rect_catalog.rect_paths(project)
+                 for item in rect_catalog.read_doc(project, rect_path).resources}
+        names.add(old_name)
+        for index, layer in enumerate(edited.layers):
+            if layer.kind == 2:
+                for offset in (8, 12):
+                    name = layer.strings.get(offset, "")
+                    if name and name not in names and name != current.layers[index].strings.get(offset):
+                        raise ValueError(f"Unknown RID link: {name}")
+        doc.resources[doc.resources.index(current)] = copy.deepcopy(edited)
+        data = doc.build()
+        fe10_rect.read_editable_rect(data)
+        return {path: data} if data != original else {}
+    if project.game != Game.PATH_OF_RADIANCE:
+        raise ValueError("Unsupported game")
     doc = rect.parse_rect(original)
     if doc.build() != original:
         raise ValueError("Rect file cannot be rebuilt byte-for-byte")
@@ -184,6 +318,12 @@ def prepare_edit(project, path: Path, old_name: str, edited: rect.RectResource, 
 
 
 def describe(layer) -> str:
+    if isinstance(layer, fe10_rect.EditableLayer):
+        return {2: "Textbox: dialogue position, color, window and cursor RIDs.",
+                3: "Text: draws a string or message ID.",
+                4: "Portrait seats: positions character portraits.",
+                5: "Gradient: draws a rectangle with four corner colors."}.get(
+                    layer.kind, "This layer has no decoded editable fields; its bytes are preserved.")
     if isinstance(layer, rect.TextboxLayer):
         return "Textbox: positions dialogue and starts its window, panel, and page cursor RIDs."
     if isinstance(layer, rect.TextLayer):

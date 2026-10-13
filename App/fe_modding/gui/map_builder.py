@@ -1354,7 +1354,7 @@ class MapBuilder(EditorPanel):
                 return map_file.read_map_bytes(files["map.bin"]).build_inst[index]
 
             if desc is not None:
-                files["map.bin"] = map_file.patch_build_inst_field(files["map.bin"], current(), "desc_index", desc)
+                map_props.set_instance_object(files, index, desc)
             if tile is not None:
                 map_props.move_instance(files, index, *tile)
             if angle is not None:
@@ -2224,6 +2224,36 @@ class MapBuilder(EditorPanel):
         if grid is not None:
             name = grid[tile[0]][tile[1]]
             ttk.Label(body, text=f"{self._map.terrain_label(name)} [{name}]", style="Muted.TLabel").pack(anchor="w")
+        if data is not None and data.capacity is not None and self._map.verified_us_map_layout:
+            x, y = tile
+            raw_link = data.link[x][y] if data.link is not None else -1
+            override = data.link_abs is not None and data.link_abs[x][y] != -1
+            status = map_file.compose_link_status_grid(data)[x][y]
+            effective = status & 0x0F
+            openings = effective if raw_link == -1 else raw_link & 0x0F
+            ttk.Label(body, text="Directional openings", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10, 2))
+            self._link_vars = {}
+            for name, bit in map_file.LINK_PASS_DIRECTIONS:
+                var = tk.BooleanVar(value=bool(openings & bit))
+                self._link_vars[bit] = var
+                ttk.Checkbutton(body, text=name.capitalize(), variable=var,
+                                state="disabled" if override else "normal").pack(anchor="w")
+            shown = ", ".join(map_file.link_passable_directions(effective)) or "none"
+            ttk.Label(body, text=f"Effective openings: {shown}." +
+                      (" maplinkAbs overrides this tile." if override else ""),
+                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
+            edge_flags = ", ".join(name for name, bit in map_file.LINK_PASS_DIRECTIONS
+                                    if status & (bit << 4)) or "none"
+            ttk.Label(body, text=f"Flying movement blocks: {edge_flags}.",
+                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
+            threat_costs = [(name, map_file.link_threat_edge_base_cost(status, bit))
+                            for name, bit in map_file.LINK_PASS_DIRECTIONS]
+            threat_edges = ", ".join(f"{name} {'blocked' if cost is None else cost}"
+                                      for name, cost in threat_costs)
+            ttk.Label(body, text=f"Threat-range edge cost: {threat_edges}. Terrain can raise cost 1 to 3.",
+                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
+            if not override:
+                ttk.Button(body, text="Apply openings", command=lambda: self._apply_tile_link(tile)).pack(anchor="w", pady=(4, 0))
         if not corners:
             ttk.Label(body, text="This map has no panel layers.", style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
             return
@@ -2249,6 +2279,15 @@ class MapBuilder(EditorPanel):
                              "rise to the height vanilla gives the props covering the tile (trees, walls, houses). "
                              "An estimate: check the result in game.",
                   style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _apply_tile_link(self, tile) -> None:
+        openings = sum(bit for bit, var in self._link_vars.items() if var.get())
+        try:
+            self.edit_map(lambda files: files.__setitem__("map.bin", map_file.set_link_openings(
+                files["map.bin"], tile[0], tile[1], openings)),
+                f"Set directional openings of tile {tile}", raise_errors=True)
+        except map_file.MapFileError as exc:
+            messagebox.showerror("Directional openings", str(exc), parent=self)
 
     def _apply_tile(self, tile) -> None:
         data = self._map.map_data

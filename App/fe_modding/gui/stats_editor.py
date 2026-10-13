@@ -20,7 +20,7 @@ Editable, per tab:
 - classes: ID (JID), name key (MJID), description key (MH_J), promotes-to,
   class model AID, innate weapon, weapon ranks (a new rank string is added to
   the pool, so classes that shared the old one keep it), the five innate
-  skills, build, weight, movement, skill capacity, vision, movement type,
+  skills, Occult-scroll mastery skill, build, weight, movement, skill capacity, vision, movement type,
   caps, base stats, growth rates, growth modifiers and the three category
   tokens (check boxes);
 - items: every field of the 96-byte record, decoded (``fe8data.ItemEntry``):
@@ -753,6 +753,28 @@ class StatsEditor(EditorPanel):
             ttk.Button(parent, text="Open ›", command=lambda v=var: self.select_skill(v.get().strip())).grid(
                 row=row, column=5, sticky="w", padx=(6, 0))
             row += 1
+
+        self._heading(parent, "Occult scroll", row)
+        row += 1
+        ttk.Label(parent, text="Mastery skill").grid(row=row, column=0, sticky="w", pady=2)
+        occult = fe8data.occult_skills(self._data)
+        occult_values = ["(none)"] + [f"{s.sid} · {self.skill_name(s)}" for s in occult]
+        occult_sid = {shown: s.sid for shown, s in zip(occult_values[1:], occult)}
+        shown_by_sid = {sid: shown for shown, sid in occult_sid.items()}
+        var = tk.StringVar()
+        box = ttk.Combobox(parent, textvariable=var, values=occult_values, state="readonly", width=38)
+        box.grid(row=row, column=1, columnspan=4, sticky="w")
+
+        def read_occult() -> str:
+            jid = cls().jid
+            matches = [s.sid for s in fe8data.occult_skills(self._data) if jid in s.restricted_to]
+            return shown_by_sid.get(matches[0], "(none)") if matches else "(none)"
+
+        form.add(box, "Occult skill", var, read_occult,
+                 lambda data, v: fe8data.assign_occult_skill(data, index, occult_sid.get(v)))
+        ttk.Label(parent, text="Edits the Occult skills' class restrictions; it is not an innate class skill.",
+                  style="Muted.TLabel").grid(row=row, column=5, columnspan=5, sticky="w", padx=(8, 0))
+        row += 1
 
         self._heading(parent, "Movement and build", row)
         row += 1

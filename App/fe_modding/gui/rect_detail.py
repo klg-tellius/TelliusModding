@@ -8,11 +8,11 @@ from tkinter import messagebox, ttk
 from PIL import ImageTk
 
 from .. import rect_catalog, rect_editor
-from ..formats import rect
+from ..formats import fe10_rect, rect
 
 
 class RectDetail(tk.Toplevel):
-    def __init__(self, parent, project, path, resource, changelog, can_save, on_save):
+    def __init__(self, parent, project, path, resource, changelog, can_save, on_save, layer_index=None):
         super().__init__(parent)
         self.title(f"Edit {resource.name}")
         self.transient(parent.winfo_toplevel())
@@ -31,7 +31,7 @@ class RectDetail(tk.Toplevel):
         self._photo = None
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._close)
-        self._parts.selection_set(0)
+        self._parts.selection_set(layer_index + 1 if layer_index is not None else 0)
         self._select()
 
     def _build(self):
@@ -45,7 +45,10 @@ class RectDetail(tk.Toplevel):
         self._parts.pack(fill="both", expand=True, pady=(5, 0))
         self._parts.insert("end", "RID settings")
         for index, layer in enumerate(self._resource.layers):
-            self._parts.insert("end", f"Layer {index}: {type(layer).__name__.removesuffix('Layer')}")
+            kind = ({1: "Image", 2: "Textbox", 3: "Text", 4: "Portrait seats", 5: "Gradient",
+                     6: "Tinted image"}.get(layer.kind, f"Kind {layer.kind}")
+                    if isinstance(layer, fe10_rect.EditableLayer) else type(layer).__name__.removesuffix('Layer'))
+            self._parts.insert("end", f"Layer {index}: {kind}")
         self._parts.bind("<<ListboxSelect>>", self._select)
         self._meaning = ttk.Label(left, wraplength=270, justify="left", style="Muted.TLabel")
         self._meaning.pack(fill="x", pady=(12, 0))
@@ -118,8 +121,8 @@ class RectDetail(tk.Toplevel):
         target = self._target(index)
         meaning = ("Settings shared by all layers. The game builds each layer using these timing and draw settings."
                    if index == 0 else rect_editor.describe(target))
-        if isinstance(target, rect.TextLayer):
-            resolved = rect_editor.resolved_text(self._project, target.text)
+        if isinstance(target, rect.TextLayer) or isinstance(target, fe10_rect.EditableLayer) and target.kind == 3:
+            resolved = rect_editor.resolved_text(self._project, target.text if isinstance(target, rect.TextLayer) else target.strings.get(8, ""))
             if resolved:
                 meaning += f"\n\nResolved text: {resolved[:180]}"
         if isinstance(target, rect.TextboxLayer):
@@ -136,7 +139,8 @@ class RectDetail(tk.Toplevel):
             ttk.Label(self._form, text=field.label).pack(anchor="w", pady=(9, 2))
             value = rect_editor.display(target, field)
             if field.kind == "seats":
-                widget = tk.Text(self._form, height=max(4, min(12, len(target.seats) + 1)), wrap="none")
+                count = len(target.seats) if isinstance(target, rect.SeatsLayer) else len(target.raw[10:]) // 8
+                widget = tk.Text(self._form, height=max(4, min(12, count + 1)), wrap="none")
                 widget.insert("1.0", value)
             else:
                 widget = ttk.Entry(self._form)
@@ -157,6 +161,10 @@ class RectDetail(tk.Toplevel):
 
     def _refresh_preview(self, *, collect=True):
         if collect and not self._collect():
+            return
+        if isinstance(self._resource, fe10_rect.EditableResource):
+            self._preview.configure(image="", text="Preview unavailable for Radiant Dawn")
+            self._preview_note.configure(text="Properties are decoded from the selected rect resource. Unknown layer bytes are preserved.")
             return
         try:
             image, notes = rect_editor.render(self._project, self._resource, self._resources())
