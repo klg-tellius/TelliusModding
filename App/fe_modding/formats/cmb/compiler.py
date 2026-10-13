@@ -167,6 +167,19 @@ class _FunctionCompiler:
         self.error(line, f"Unknown variable {name!r} (declare it with 'var {name}' or assign it first)")
         return False, 0
 
+    def resolve_read(self, name: str, line: int):
+        is_global, slot = self.resolve(name, line)
+        if is_global:
+            self.m.global_reads.setdefault(name, line)
+        return is_global, slot
+
+    def resolve_write(self, name: str, line: int):
+        """A store or an address taken (natives fill ``&var`` out-parameters)."""
+        is_global, slot = self.resolve(name, line)
+        if is_global:
+            self.m.global_writes.add(name)
+        return is_global, slot
+
     # -- expressions --
     def expr(self, e: A.Expr, line: int) -> None:
         if isinstance(e, A.Num):
@@ -177,11 +190,11 @@ class _FunctionCompiler:
         elif isinstance(e, A.StrOffset):
             self.emit(_I("pushstr8", RawStr(e.offset)))
         elif isinstance(e, A.Name):
-            is_global, slot = self.resolve(e.id, line)
+            is_global, slot = self.resolve_read(e.id, line)
             self.emit(Instr(var_op("pushvar", is_global, False), [slot]))
         elif isinstance(e, A.Index):
             self.expr(e.index, line)
-            is_global, slot = self.resolve(e.base.id, line)
+            is_global, slot = self.resolve_read(e.base.id, line)
             self.emit(Instr(var_op("pusharray", is_global, False), [slot]))
         elif isinstance(e, A.AddrOf):
             self.address(e.target, line)
@@ -224,11 +237,11 @@ class _FunctionCompiler:
 
     def address(self, target, line: int) -> None:
         if isinstance(target, A.Name):
-            is_global, slot = self.resolve(target.id, line)
+            is_global, slot = self.resolve_write(target.id, line)
             self.emit(Instr(var_op("pushaddr", is_global, False), [slot]))
         else:
             self.expr(target.index, line)
-            is_global, slot = self.resolve(target.base.id, line)
+            is_global, slot = self.resolve_write(target.base.id, line)
             self.emit(Instr(var_op("pushaddrarray", is_global, False), [slot]))
 
     def call(self, c: A.Call, line: int) -> None:
@@ -462,6 +475,8 @@ class _ModuleCompiler:
         self.diagnostics: list[Diagnostic] = []
         self.pool = _Pool(base.pool if base else [])
         self.globals = {g.name: g.slot for g in module.globals}
+        self.global_reads: dict[str, int] = {}  # name -> first line that reads it
+        self.global_writes: set[str] = set()
         self.func_index = {fd.name: i for i, fd in enumerate(module.functions)}
         self.func_params = {fd.name: fd.params for fd in module.functions}
         self.known_script_functions = known_script_functions
@@ -650,6 +665,13 @@ class _ModuleCompiler:
             if not 0 <= g.slot < GLOBAL_TABLE_SLOTS:
                 self.diag("error", g.line, f"global {g.name} @ {g.slot}: the engine's global table has "
                           f"slots 0-{GLOBAL_TABLE_SLOTS - 1} only")
+        # The table is never cleared (not at boot, not between chapters) and is not saved, so a
+        # global this script only reads holds heap leftovers or whatever another script stored.
+        for name, line in sorted(self.global_reads.items(), key=lambda kv: kv[1]):
+            if name not in self.global_writes:
+                self.diag("warning", line, f"global {name} is read but this script never assigns it; "
+                          "global slots are never cleared, so it holds whatever an earlier script "
+                          "or chapter left there (assign it first, e.g. in Startup)")
         needed = max((g.slot + 1 for g in self.module.globals), default=0)
         if self.base is not None:
             header = self.base.header

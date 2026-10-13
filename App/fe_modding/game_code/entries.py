@@ -450,6 +450,93 @@ CATALOG.add(Tunable(
     versions={**{v: (Field(a, "imm16s", _hex("1c63")),) for v, a in _CLASS_CRIT_SITE.items()}, JP: ()},
     requires=(_class_crit_hook,)))
 
+# apply_terrain_defense_bonus copies three bytes of the tile's TerrainData stats block (defence,
+# resistance, avoid; bytes 4, 5, 3 for fliers) into the actor; the six `lbz` become `li r0,0`.
+_TERRAIN_LOADS = {US: 0x801A953C, EU: 0x801AB984, JP: 0x801A72A4}
+_TERRAIN_STEPS = ((0x00, 0x88030004), (0x10, 0x88030005), (0x20, 0x88030003),
+                  (0x34, 0x88030001), (0x44, 0x88030002), (0x54, 0x88030000))
+CATALOG.add(Patch(
+    "combat.no_terrain_bonus", G_COMBAT, "No terrain bonus in combat",
+    "Terrain gives no Defence, Resistance or Avoid in battle (forts, forests, ...). Healing tiles still heal "
+    "and the map's terrain window still shows the table values.",
+    versions={v: tuple(Edit(a + d, _word(w), _word(ppc.li(0, 0))) for d, w in _TERRAIN_STEPS)
+              for v, a in _TERRAIN_LOADS.items()}))
+
+# compute_charisma_horror_modifiers: a commander with SID_CHARISMA 1-3 tiles away gives +5 to two
+# combat modifiers; each opposing SID_HORROR unit 1-3 tiles away gives -5 to two (`cmplwi r0,3`,
+# `addi r0,r3,+-5`).
+_CHARISMA = {US: (0x801A8240, 0x801A824C), EU: (0x801AA688, 0x801AA694), JP: (0x801A5FD0, 0x801A5FDC)}
+_HORROR = {US: (0x801A81B0, 0x801A81BC), EU: (0x801AA5F8, 0x801AA604), JP: (0x801A5F40, 0x801A5F4C)}
+_CHARISMA_RANGE = {US: 0x801A8234, EU: 0x801AA67C, JP: 0x801A5FC4}
+_HORROR_RANGE = {US: 0x801A8170, EU: 0x801AA5B8, JP: 0x801A5F00}
+CATALOG.add(Tunable(
+    "combat.charisma_bonus", G_COMBAT, "Charisma bonus",
+    "Added to two combat modifiers of a unit whose group commander has Charisma nearby (vanilla 5).",
+    default=5, minimum=0, maximum=50, unit="",
+    versions=_fields("imm16s", _hex("3803"), _CHARISMA)))
+CATALOG.add(Tunable(
+    "combat.charisma_range", G_COMBAT, "Charisma range",
+    "Farthest distance, in tiles, at which a Charisma commander helps (vanilla 3).",
+    default=3, minimum=1, maximum=30, unit="tiles",
+    versions=_fields("imm16u", _hex("2800"), {v: (a,) for v, a in _CHARISMA_RANGE.items()})))
+CATALOG.add(Tunable(
+    "combat.horror_penalty", G_COMBAT, "Horror penalty",
+    "Added to two combat modifiers for each enemy with Horror nearby (vanilla -5).",
+    default=-5, minimum=-50, maximum=0, unit="",
+    versions=_fields("imm16s", _hex("3803"), _HORROR)))
+CATALOG.add(Tunable(
+    "combat.horror_range", G_COMBAT, "Horror range",
+    "Farthest distance, in tiles, at which an enemy's Horror applies (vanilla 3).",
+    default=3, minimum=1, maximum=30, unit="tiles",
+    versions=_fields("imm16u", _hex("2800"), {v: (a,) for v, a in _HORROR_RANGE.items()})))
+
+# apply_support_combat_bonus (battle) and compute_support_bonus_summary (status screen) count a
+# partner within `cmplwi r0,3` tiles, then halve the summed bonus with halve_support_bonus_vector.
+_SUPPORT_RANGE = {US: (0x801A8E18, 0x801A8D28), EU: (0x801AB260, 0x801AB170), JP: (0x801A6BA8, 0x801A6AB8)}
+_SUPPORT_HALVE_CALLS = {US: (0x801A8E78, 0x801A8D8C), EU: (0x801AB2C0, 0x801AB1D4), JP: (0x801A6C08, 0x801A6B1C)}
+_HALVE_SUPPORT = {US: 0x8003B8D4, EU: 0x8003BA74, JP: 0x8003ABC4}
+CATALOG.add(Tunable(
+    "support.range", G_COMBAT, "Support bonus range",
+    "Farthest distance, in tiles, at which a support partner gives its bonus (vanilla 3).",
+    default=3, minimum=1, maximum=30, unit="tiles",
+    versions=_fields("imm16u", _hex("2800"), _SUPPORT_RANGE)))
+CATALOG.add(Patch(
+    "support.full_bonus", G_COMBAT, "Double support bonuses",
+    "The summed support bonus is not halved, so every support gives twice the vanilla Atk, Def, Hit, Avoid, "
+    "Crit and Crit avoid (in battle and on the status screen).",
+    versions={v: tuple(Edit(a, _word(ppc.bl(a, _HALVE_SUPPORT[v])), _word(ppc.NOP)) for a in sites)
+              for v, sites in _SUPPORT_HALVE_CALLS.items()}))
+
+# compare_combat_actor_speed (thief Spd > target Spd) is used only by the steal filters: the
+# player's target list and the AI's two steal scans. `srwi r3,r0,31` becomes `li r3,1`.
+_STEAL_SPEED = {US: 0x8003DCC0, EU: 0x8003DE60, JP: 0x8003CF68}
+CATALOG.add(Patch(
+    "combat.steal_ignores_speed", G_COMBAT, "Steal from faster units",
+    "A thief can steal from any unit, not only from slower ones (player and enemy thieves).",
+    versions={v: (Edit(a, _word(0x54030FFE), _word(ppc.li(3, 1))),) for v, a in _STEAL_SPEED.items()}))
+
+
+# -- economy -----------------------------------------------------------------------------------------
+G_ECONOMY = "Gold and forge"
+
+# SetGold clamps the party's gold to 9,999,999 (`lis r5,0x99` + `addi r0,r5,-0x6981`).
+_GOLD_CAP = {US: 0x8014D294, EU: 0x8014E61C, JP: 0x8014A6AC}
+CATALOG.add(Tunable(
+    "economy.gold_cap", G_ECONOMY, "Gold cap",
+    "Most gold the party can hold (vanilla 9,999,999). Gold above a lowered cap is lost the next time gold "
+    "changes. The money windows are only known to show seven digits, so the cap cannot be raised.",
+    default=9999999, minimum=0, maximum=9999999, unit="gold",
+    versions=_fields("lis_addi", _hex("3ca03805"), {v: (a,) for v, a in _GOLD_CAP.items()})))
+
+# forge_menu_entry_get_availability greys out the base menu's Forge entry (`li r4,2`) once
+# party_forged_this_chapter is set.
+_FORGE_GATE = {US: 0x801772F0, EU: 0x80178CF4, JP: 0x80174990}
+CATALOG.add(Patch(
+    "economy.unlimited_forging", G_ECONOMY, "Forge more than once per chapter",
+    "The base menu's Forge entry stays available after a forge. The game keeps at most 48 forged weapons; "
+    "what happens past that is untested.",
+    versions={v: (Edit(a, _word(ppc.li(4, 2)), _word(ppc.li(4, 0))),) for v, a in _FORGE_GATE.items()}))
+
 
 # -- map and camera ----------------------------------------------------------------------------------
 G_MAP = "Map and camera"

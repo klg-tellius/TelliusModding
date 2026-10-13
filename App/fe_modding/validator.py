@@ -286,6 +286,45 @@ def _check_scripts(project: ModProject, known: set, issues: list) -> None:
                                 f"Scripts/{path.name}", f"The script names {label}, which does not exist.", route))
 
 
+def _check_script_globals(project: ModProject, issues: list) -> None:
+    """``startup.cmb`` stays loaded under every other script, and global opcodes address the
+    engine's one 32-slot table absolutely: the two reservations must fit together (else the
+    later script's functions are never registered) and must not share a slot."""
+    from .formats.cmb import read_cmb_path
+    from .formats.cmb.compiler import GLOBAL_TABLE_SLOTS
+
+    scripts = project.extracted_dir / "files" / "Scripts"
+    startup_path = scripts / "startup.cmb"
+    if not startup_path.is_file():
+        return
+    try:
+        startup = read_cmb_path(startup_path)
+    except Exception:  # noqa: BLE001 - the file check reports unreadable scripts
+        return
+    startup_slots = startup.global_slots()
+    for path in sorted(scripts.glob("*.cmb")):
+        if path.name.lower() == "startup.cmb":
+            continue
+        try:
+            script = read_cmb_path(path)
+        except Exception:  # noqa: BLE001
+            continue
+        match = re.fullmatch(r"[Cc](\d+)", path.stem)
+        area = f"Chapter {match.group(1).zfill(2)}" if match else "Scripts"
+        route = ("chapter", match.group(1).zfill(2), "script") if match else ()
+        total = startup.global_count + script.global_count
+        if total > GLOBAL_TABLE_SLOTS:
+            issues.append(Issue(ERROR, area, f"Scripts/{path.name}",
+                                f"The script reserves {script.global_count} global slots and startup.cmb "
+                                f"{startup.global_count}; above {GLOBAL_TABLE_SLOTS} the game refuses to "
+                                "register the script's functions.", route))
+        shared = sorted(startup_slots & script.global_slots())
+        if shared:
+            issues.append(Issue(WARNING, area, f"Scripts/{path.name}",
+                                f"Global slot(s) {', '.join(map(str, shared))} are also used by startup.cmb; "
+                                "both scripts read and write the same word.", route))
+
+
 def _check_shops(project: ModProject, iids: set, issues: list) -> None:
     folder = profile_of(project).shop_folder(project.extracted_dir / "files")
     for path in sorted(folder.glob("*.bin")) if folder.is_dir() else []:
@@ -339,5 +378,6 @@ def validate_project(project: ModProject, flow=None) -> Report:
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
+    _check_script_globals(project, issues)
     _check_shops(project, iids, issues)
     return Report(sorted(issues, key=lambda i: (SEVERITIES.index(i.severity), i.area, i.where, i.message)))
