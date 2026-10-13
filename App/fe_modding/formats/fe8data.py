@@ -1458,6 +1458,46 @@ def _patch_item_pointer(data: bytes, offset: int, label: Optional[str], *, appen
 #: Skill pointer fields naming a string resolved elsewhere (added when new).
 SKILL_KEY_FIELDS = {"japanese_name": 0x04, "msid": 0x08, "help_key": 0x0C, "help2_key": 0x10, "effect": 0x14}
 SKILL_BYTE_FIELDS = {"param0": 0x19, "param1": 0x1A, "param2": 0x1B}
+OCCULT_SCROLL = "IID_ESOTERIC"
+
+
+def occult_skills(data: bytes) -> list[SkillEntry]:
+    """Return the skills the Occult scroll can teach.
+
+    The relationship belongs to SkillData rather than JobData: an Occult
+    skill names ``IID_ESOTERIC`` at +0x20, while its restriction list names
+    the classes that may learn it.
+    """
+    return [skill for skill in read_fe8data(data).skills
+            if skill.params[0] and OCCULT_SCROLL in skill.skill_items]
+
+
+def assign_occult_skill(data: bytes, class_index: int, skill_sid: Optional[str]) -> bytes:
+    """Make one class eligible for exactly one Occult skill (or none).
+
+    A zero-length restriction list means "anyone", so a skill losing its last
+    eligible class is restricted to its own SID.  Runtime eligibility compares
+    these entries only with the unit's PID and JID, making that existing SID a
+    safe no-unit sentinel without adding a fake class label.
+    """
+    fe8 = read_fe8data(data)
+    try:
+        jid = fe8.classes[class_index].jid
+    except IndexError:
+        raise ValueError(f"Class index {class_index} does not exist.") from None
+    if not jid:
+        raise ValueError("The class needs a JID before an Occult skill can be assigned.")
+    candidates = [skill for skill in fe8.skills if skill.params[0] and OCCULT_SCROLL in skill.skill_items]
+    if skill_sid is not None and skill_sid not in {skill.sid for skill in candidates}:
+        raise ValueError(f"{skill_sid} is not taught by the Occult scroll.")
+    for skill in candidates:
+        labels = [label for label in skill.restricted_to if label not in {jid, skill.sid}]
+        if skill.sid == skill_sid:
+            labels.append(jid)
+        elif not labels:
+            labels = [skill.sid]
+        data = patch_skill_field(data, skill.index, "restricted_to", labels)
+    return data
 
 
 def patch_skill_field(data: bytes, index: int, field: str, value) -> bytes:

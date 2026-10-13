@@ -277,6 +277,22 @@ class FieldTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fe8data.patch_skill_field(self.data, 0, "sid", "SID_COUNTER")
 
+    def test_assign_occult_skill_from_the_class_side(self):
+        data = fe8data.patch_item_field(self.data, 0, "iid", "IID_ESOTERIC")
+        data = fe8data.patch_skill_field(data, 0, "skill_items", ["IID_ESOTERIC"])
+        data = fe8data.patch_skill_field(data, 1, "skill_items", ["IID_ESOTERIC"])
+        data = fe8data.patch_skill_field(data, 0, "restricted_to", ["JID_RANGER"])
+        data = fe8data.patch_skill_field(data, 1, "restricted_to", ["JID_CLERIC"])
+
+        data = fe8data.assign_occult_skill(data, 0, "SID_COUNTER")
+        by_sid = {s.sid: s for s in fe8data.read_fe8data(data).skills}
+        self.assertEqual(by_sid["SID_ELITE"].restricted_to, ["SID_ELITE"])
+        self.assertEqual(by_sid["SID_COUNTER"].restricted_to, ["JID_CLERIC", "JID_RANGER"])
+
+        data = fe8data.assign_occult_skill(data, 0, None)
+        by_sid = {s.sid: s for s in fe8data.read_fe8data(data).skills}
+        self.assertEqual(by_sid["SID_COUNTER"].restricted_to, ["JID_CLERIC"])
+
     def test_small_sections(self):
         data = fe8data.patch_game_data(self.data, "boss_exp_bonus", 2, 99)
         self.assertEqual(fe8data.read_game_data(data)["boss_exp_bonus"][2], 99)

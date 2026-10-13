@@ -48,11 +48,13 @@ class MapPropTests(unittest.TestCase):
         self.assertEqual(inst.height(), 0.0)  # no terrain model: ground level
 
         # the same name replaces the model; its old image goes, the new one takes its place
-        map_props.import_prop(entries, files, _quad_glb(translation=(2.5, 1.0, 2.5)), "stone")
+        map_props.import_prop(entries, files, _quad_glb(translation=(12.5, 1.0, 2.5)), "stone")
         self.assertEqual(len(tpl.read_tpl_image_info(io.BytesIO(files["texpack.tpl"]))), 1)
         again = map_file.read_map_bytes(files["map.bin"])
         self.assertEqual(len(again.build_desc), 3)
         self.assertEqual(again.build_desc[2].offset_y, 1.0)
+        self.assertEqual((again.build_inst[index].x2, again.build_inst[index].y2,
+                          again.build_inst[index].end_x2, again.build_inst[index].end_y2), (1, 0, 1, 2))
 
         map_props.remove_instance(files, index)
         self.assertEqual(map_file.read_map_bytes(files["map.bin"]).capacity.build_inst_count, 2)
@@ -97,6 +99,17 @@ class MapPropTests(unittest.TestCase):
         for angle, rect in expected.items():
             record = map_file.instance_record(wide, 0, 5, 5, angle, 0.0)
             self.assertEqual(tuple(record[4:8]), rect, angle)
+
+    def test_switching_object_recomputes_footprint(self):
+        _entries, files = _files()
+        wide = map_file.MapObject(0, 0, 0, 15.0, 1.0, 10.0, 0, 0, 1, 0, "wall")
+        files["map.bin"], desc_index = map_file.add_build_object(files["map.bin"], wide)
+        before = map_file.read_map_bytes(files["map.bin"]).build_inst[1]
+        map_props.set_instance_object(files, 1, desc_index)
+        after = map_file.read_map_bytes(files["map.bin"]).build_inst[1]
+        self.assertEqual((after.desc_index, after.x2, after.y2, after.end_x2, after.end_y2),
+                         (desc_index, 0, 0, 2, 1))
+        self.assertEqual(after.height(), before.height())
 
     def test_bad_names_are_refused(self):
         entries, files = _files()

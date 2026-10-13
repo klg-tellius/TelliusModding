@@ -103,6 +103,18 @@ class HubScriptTests(unittest.TestCase):
         self.assertEqual(hub.activation_script(activation), activation)
         compile_source(activation, global_flags=[hub.ACTIVE, hub.STARTED])
 
+    def test_optional_description_uses_separate_visit_action(self):
+        setup = hub.HubSetup(40, 5, "PID_HUB", (
+            hub.Destination(6, 2, 3, 4, 5, "A short chapter description"),
+            hub.Destination(8, 6, 7, 8, 9),
+        ))
+        source = hub.hub_script("# Fresh hub\n", setup)
+        self.assertIn('@on_location(x=2, y=3, action="visit", name=None)', source)
+        self.assertIn('TalkEvent("MS_HUB_06_INFO")', source)
+        self.assertEqual(source.count('action="arrive"'), 2)
+        self.assertEqual(source.count('action="visit"'), 1)
+        compile_source(source, global_flags=[hub.ACTIVE, hub.STARTED, *hub.DEST, *hub.PENDING])
+
     def test_flag_bytes_are_aligned_without_reordering_existing_slots(self):
         names, dest_slot = hub.flag_names(30)
         self.assertEqual((dest_slot, len(names)), (32, 18))
@@ -112,9 +124,44 @@ class HubScriptTests(unittest.TestCase):
                          bytes((40, 3, 0x40, 4, 5)))
 
 
+class HubCreationTests(unittest.TestCase):
+    def test_avatar_deployment_clears_copied_units(self):
+        from fe_modding import chapters, hub_creation
+        from fe_modding.formats import dispo, lz10, pak
+        from tests.dispo_fixture import build_minimal_dispo_bytes
+
+        source = build_minimal_dispo_bytes((b"bmap05_mikata_c", b"bmap05_first_c"))
+        donor = lz10.compress(pak.pack_pak([("dispos_c.bin", source)]))
+        renamed = chapters._renumber_dispos(donor, "05", "33")
+        packed = lz10.decompress(hub_creation.avatar_deployment(renamed, "PID_HUB", 3, 4))
+        entry = pak.read_pak_entries(packed)[0]
+        doc = dispo.parse_dispo(pak.read_pak_file_content(packed, entry))
+        player = doc.section("bmap33_mikata_c")
+        self.assertEqual(len(player.units), 1)
+        self.assertEqual(player.units[0][dispo.FIELD["pid"]], "PID_HUB")
+        self.assertEqual((player.units[0][dispo.FIELD["pos_x"]], player.units[0][dispo.FIELD["pos_y"]]), (3, 4))
+        self.assertFalse(doc.section("bmap33_first_c").units)
+
+    def test_flat_map_has_selected_dimensions_and_only_ground(self):
+        from fe_modding import hub_creation
+        from fe_modding.formats import gs_file, lz10, map_file, pak
+        from tests.test_map_heights import _map_bin
+
+        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor")]))
+        for width, height in ((4, 4), (23, 17), (63, 63)):
+            packed = lz10.decompress(hub_creation.blank_map(donor, width, height))
+            files = {entry.name: pak.read_pak_file_content(packed, entry) for entry in pak.read_pak_entries(packed)}
+            parsed = map_file.read_map_bytes(files["map.bin"])
+            self.assertEqual((parsed.capacity.x_size, parsed.capacity.y_size), (width, height))
+            self.assertEqual(len(parsed.build_inst), 1)
+            self.assertEqual(set(t for column in map_file.terrain_grid(files["map.bin"]) for t in column),
+                             {hub_creation.GRASS})
+            self.assertEqual(gs_file.read_gs(files["flat.gs"]).bbox_max[::2], (width * 5.0, height * 5.0))
+
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES for real assets")
 class RealAssetIntegrationTests(unittest.TestCase):
     def test_prepared_hub_installs_and_reconfigures(self):
+        from fe_modding import hub_creation
         from fe_modding.games import Game
         from fe_modding.project import ModProject
 
@@ -178,6 +225,15 @@ class RealAssetIntegrationTests(unittest.TestCase):
             self.assertEqual(first["chapter"], 33)
             self.assertEqual(hub.install(project, setup)["slots"], first["slots"])
             self.assertEqual(hub.saved_setup(project)["normal_successor"], 34)
+            generated = hub_creation.create_chapter(project, project.read_logical("game_data"), "05", 34,
+                                                    "Generated Hub", 16, 12, "PID_SOTHE", (1, 1))
+            self.assertIsNotNone(generated.fe8data)
+            generated_map = chapters.chapter_paths(project, "34").map
+            packed_map = lz10.decompress(generated_map.read_bytes())
+            map_entry = next(e for e in pak.read_pak_entries(packed_map) if e.name == "map.bin")
+            from fe_modding.formats import map_file
+            capacity = map_file.read_map_bytes(pak.read_pak_file_content(packed_map, map_entry)).capacity
+            self.assertEqual((capacity.x_size, capacity.y_size), (16, 12))
 
 
 if __name__ == "__main__":

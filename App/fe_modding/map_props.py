@@ -242,6 +242,17 @@ def import_prop(
         new_c = (existing.flag_bits_c & ~FLAG_C_ANIMATED) | (FLAG_C_ANIMATED if animated else 0)
         if new_c != existing.flag_bits_c:
             map_bin = map_file.patch_object_field(map_bin, existing, "flag_bits_c", new_c)
+        updated = map_file.read_map_bytes(map_bin)
+        desc_index = next(i for i, obj in enumerate(updated.build_desc) if obj.filename == name)
+        new_obj = updated.build_desc[desc_index]
+        if map_file.footprint_tiles(existing) != map_file.footprint_tiles(new_obj):
+            records = map_file.instance_records(map_bin)
+            for i, inst in enumerate(updated.build_inst):
+                if inst.desc_index == desc_index:
+                    records[i] = map_file.instance_record(
+                        new_obj, desc_index, inst.x, inst.y, inst.angle, inst.height()
+                    )
+            map_bin = map_file.set_build_instances(map_bin, records)
     files["map.bin"] = map_bin
     if max(hi[0] - lo[0], hi[2] - lo[2]) > 60:
         warnings.append("The prop is wider than 12 tiles; props are modelled at 5 units per tile.")
@@ -328,6 +339,16 @@ def rotate_instance(files: dict[str, bytes], index: int, angle: int) -> None:
     inst = data.build_inst[index]
     records = map_file.instance_records(files["map.bin"])
     records[index] = map_file.instance_record(data.build_desc[inst.desc_index], inst.desc_index, inst.x, inst.y, angle, inst.height())
+    files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+
+
+def set_instance_object(files: dict[str, bytes], index: int, desc_index: int) -> None:
+    """Select a different object and recompute the instance's tile footprint."""
+    data = map_file.read_map_bytes(files["map.bin"])
+    inst = data.build_inst[index]
+    obj = data.build_desc[desc_index]
+    records = map_file.instance_records(files["map.bin"])
+    records[index] = map_file.instance_record(obj, desc_index, inst.x, inst.y, inst.angle, inst.height())
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
 
 

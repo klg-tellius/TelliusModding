@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+import struct
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from fe_modding import rect_catalog, rect_editor
-from fe_modding.formats import rect
+from fe_modding.formats import fe10_rect, rect
 from fe_modding.games import Game
 
 
@@ -85,6 +86,49 @@ class RectEditorTests(unittest.TestCase):
         with self.assertRaises(OSError):
             rect_catalog.save_changes(project, changes, SimpleNamespace(append=lambda *args: None), "Edit")
         self.assertEqual(self.path.read_bytes(), original)
+
+
+class RadiantDawnRectEditorTests(unittest.TestCase):
+    def test_edit_non_image_layers_preserves_unknown_bytes(self):
+        doc = fe10_rect.EditableRect([], [], [], bytes(12))
+        box = fe10_rect.new_image_resource("RID_BOX", "s/unused", 16, 16)
+        textbox = bytearray(0x30)
+        textbox[0] = 2
+        textbox[3] = 0x7a  # undecoded field must survive the edit
+        struct.pack_into(">hhhhH", textbox, 0x14, 10, 20, 30, 40, 150)
+        textbox[0x26:0x2a] = bytes((28, 3, 7, 255))
+        seats = bytearray(18)
+        seats[0] = 4
+        struct.pack_into(">HhhHBB", seats, 8, 1, 60, 130, 0, 1, 0)
+        box.layers = [fe10_rect.EditableLayer(bytes(textbox), {8: "RID_FRAME"}),
+                      fe10_rect.EditableLayer(bytes(seats))]
+        doc.add(box)
+        doc.add(fe10_rect.new_image_resource("RID_FRAME", "s/frame", 16, 16))
+        with tempfile.TemporaryDirectory() as root:
+            files = Path(root) / "files"
+            files.mkdir()
+            path = files / "rect.bin"
+            original = doc.build()
+            path.write_bytes(original)
+            project = SimpleNamespace(files_dir=files, game=Game.RADIANT_DAWN)
+            edited = fe10_rect.read_editable_rect(original).find("RID_BOX")
+            edited.layers[0] = rect_editor.update(edited.layers[0], {"text_x": "45", "width": "200"})
+            edited.layers[1] = rect_editor.update(edited.layers[1], {"seats": "77, 142, 0, 1, 0"})
+            changed = rect_editor.prepare_edit(project, path, "RID_BOX", edited, original)[path]
+            saved = fe10_rect.read_editable_rect(changed).find("RID_BOX")
+            self.assertEqual(struct.unpack_from(">h", saved.layers[0].raw, 0x14)[0], 45)
+            self.assertEqual(struct.unpack_from(">H", saved.layers[0].raw, 0x1c)[0], 200)
+            self.assertEqual(saved.layers[0].raw[3], 0x7a)
+            self.assertEqual(saved.layers[1].raw[3:], seats[3:8] + seats[8:10] +
+                             struct.pack(">hhHBB", 77, 142, 0, 1, 0))
+
+    def test_rejects_change_to_seat_count(self):
+        raw = bytearray(18)
+        raw[0] = 4
+        struct.pack_into(">H", raw, 8, 1)
+        layer = fe10_rect.EditableLayer(bytes(raw))
+        with self.assertRaisesRegex(ValueError, "number of portrait seats"):
+            rect_editor.update(layer, {"seats": ""})
 
 
 if __name__ == "__main__":

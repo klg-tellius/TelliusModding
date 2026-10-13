@@ -8,7 +8,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from PIL import Image, ImageTk
 
 from .. import rect_catalog as catalog
-from ..formats import rect
+from ..formats import fe10_rect, rect
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -29,6 +29,7 @@ class RectImagesPanel(EditorPanel):
         self._resource = None
         self._visible_rids: list[str] = []
         self._layers: list[tuple[int, object]] = []
+        self._other_indices: list[int] = []
         self._preview_photo = None
         self._build()
         self.refresh()
@@ -79,6 +80,7 @@ class RectImagesPanel(EditorPanel):
         ttk.Label(right, text="Other layers").pack(anchor="w", pady=(8, 3))
         self._other_list = tk.Listbox(right, height=4, exportselection=False)
         self._other_list.pack(fill="x")
+        self._other_list.bind("<Double-Button-1>", self._edit_other)
         self._replace_button = ttk.Button(right, text="Replace selected image…", command=self._replace)
         self._replace_button.pack(anchor="w", pady=(5, 6))
         self._preview = ttk.Label(right, relief="groove", anchor="center")
@@ -141,7 +143,7 @@ class RectImagesPanel(EditorPanel):
         state = "normal" if self._editable else "disabled"
         for button in (self._add_button, self._rename_button, self._replace_button):
             button.configure(state=state)
-        self._edit_button.configure(state=state if not catalog.is_fe10(self._project) else "disabled")
+        self._edit_button.configure(state=state)
 
     def _can_edit(self):
         if not self._editable:
@@ -182,6 +184,7 @@ class RectImagesPanel(EditorPanel):
         self._preview.configure(image="", text="")
         self._preview_photo = None
         self._layers = []
+        self._other_indices = []
 
     def _select_rid(self):
         selected = self._rid_list.curselection()
@@ -196,7 +199,11 @@ class RectImagesPanel(EditorPanel):
         for index, layer in enumerate(self._resource.layers):
             if index in image_indexes:
                 continue
-            if isinstance(layer, rect.TextboxLayer):
+            self._other_indices.append(index)
+            if isinstance(layer, fe10_rect.EditableLayer):
+                detail = {2: "Textbox", 3: "Text", 4: "Portrait seats", 5: "Color gradient"}.get(
+                    layer.kind, f"Layer kind {layer.kind}")
+            elif isinstance(layer, rect.TextboxLayer):
                 detail = f"Textbox: window {layer.window or 'none'}, panel {layer.panel or 'none'}, marker {layer.marker or 'none'}"
             elif isinstance(layer, rect.TextLayer):
                 detail = f"Text: {layer.text}"
@@ -255,10 +262,20 @@ class RectImagesPanel(EditorPanel):
 
     def _edit(self):
         path = self._selected_path()
-        if path is None or self._resource is None or catalog.is_fe10(self._project):
+        if path is None or self._resource is None or not self._editable:
             return
+        selected = self._other_list.curselection()
+        layer_index = self._other_indices[selected[0]] if selected else None
         RectDetail(self, self._project, path, self._resource, self._changelog, self._can_edit,
-                   lambda rid: self.refresh(self._file_var.get(), rid))
+                   lambda rid: self.refresh(self._file_var.get(), rid), layer_index=layer_index)
+
+    def _edit_other(self, event):
+        if not self._other_indices:
+            return
+        index = self._other_list.nearest(event.y)
+        self._other_list.selection_clear(0, "end")
+        self._other_list.selection_set(index)
+        self._edit()
 
     def _rename(self):
         if not self._can_edit():
