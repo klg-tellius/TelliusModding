@@ -32,6 +32,7 @@ from ...formats.cmb import CompileError, compile_source, read_cmb
 from ...formats.cmb.parser import ParseError, parse
 from .chapters import open_script
 from .. import theme
+from ..widgets import info
 
 TABS = {"campaign": "Campaign flags", "chapter": "Chapter flags", "save": "Save file"}
 ON, OFF = "☑", "☐"
@@ -51,22 +52,19 @@ class FlagsPanel(ttk.Frame):
         actions.pack(anchor="w", pady=(0, 6))
         ttk.Button(actions, text="Export Excel…", command=self._export_excel).pack(side="left")
         ttk.Button(actions, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
-        ttk.Label(actions, text="Workbook: campaign and chapter registrations; existing slots stay fixed.",
-                  style="Muted.TLabel").pack(side="left", padx=(12, 0))
-        ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
-                  text=f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
-                       "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. "
-                       f"A save stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags "
-                       "are always added after the existing ones.").pack(anchor="w", pady=(2, 8))
+        info(actions, f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
+                      "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. A save "
+                      f"stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags are "
+                      f"always added after the existing ones. The engine's table has {slots} slots, so there can "
+                      "be no more.\n\nGrey rows: slots the engine registers itself (0-7) or reserved and unused "
+                      "ones. The Excel workbook holds the campaign and chapter registrations; existing slots stay "
+                      "fixed. A save's flags are edited in Tools › Saves.").pack(side="left", padx=(10, 0))
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self._campaign = _CampaignTab(self._notebook, self)
         self._chapter = _ChapterTab(self._notebook, self)
         tabs = [("campaign", self._campaign), ("chapter", self._chapter)]
-        self._save = None
-        if profile_of(shell.project).supports(SAVES):
-            self._save = _SaveTab(self._notebook, self)
-            tabs.append(("save", self._save))
+        self._save = None  # a save's flags are edited in Tools › Saves
         self._tab_keys = [key for key, _tab in tabs]
         for key, tab in tabs:
             self._notebook.add(tab, text=TABS[key])
@@ -302,12 +300,12 @@ class _CampaignTab(ttk.Frame):
     def __init__(self, parent: tk.Misc, page: FlagsPanel):
         super().__init__(parent, padding=12)
         self._page = page
-        ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
-                  text="Registered once at power-on: slots 0-7 by the engine, the rest by RegistGlobalFlags in "
-                       "startup.cmb. Any chapter can set, clear or test them with set(\"name\"), clr(\"name\"), "
-                       "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(anchor="w")
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x")
+        info(bar, "Registered once at power-on: slots 0-7 by the engine, the rest by RegistGlobalFlags in "
+                  "startup.cmb. Any chapter can set, clear or test them with set(\"name\"), clr(\"name\"), "
+                  "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(
+            side="right", padx=(6, 0))
         ttk.Button(bar, text="Add campaign flag…", command=self._add).pack(side="left")
         self._rename_button = ttk.Button(bar, text="Rename reserved slot…", command=self._rename, state="disabled")
         self._rename_button.pack(side="left", padx=(6, 0))
@@ -418,11 +416,9 @@ class _ChapterTab(ttk.Frame):
         self._combo.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self._summary = ttk.Label(top, style="Muted.TLabel")
         self._summary.pack(side="left")
-        ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
-                  text=f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, "
-                       "and cleared when the next "
-                       "chapter starts. Talk, battle and base-conversation events use a flag named by their "
-                       "label to run only once.").pack(anchor="w", pady=(8, 0))
+        info(top, f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, and "
+                  "cleared when the next chapter starts. Talk, battle and base-conversation events use a flag "
+                  "named by their label to run only once.").pack(side="left", padx=(8, 0))
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x")
         ttk.Button(bar, text="Add chapter flag…", command=self._add).pack(side="left")
