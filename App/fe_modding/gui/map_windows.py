@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 
 from .. import map_props
-from ..formats import map_file
+from ..formats import fe8data, map_file
 from . import map_scene
 from .model_viewer import _ModelPreview
 from .widgets import ScrollFrame, info, tip
@@ -471,13 +471,13 @@ def _hex_colour(rgb) -> str | None:
 
 
 #: Weather ids (mapextra bits 20-24, 0-17; ``spawn_map_weather_children_for_current_chapter``).
-#: The names come from the effect each id starts; ids with no decoded effect name the vanilla
-#: map that uses them.
+#: The names come from the effect each id starts, or from its battle sky (BattleSkyData: 12
+#: night_01, 13 sunset_01, 15 mountain_01); the others name the vanilla map that uses them.
 WEATHER_NAMES = {
     0: "None", 1: "Light overlay (as Ch.6, Ch.17, Ch.23)", 2: "Rain (as Ch.24)", 3: "Light rain (unused)", 4: "Heavy rain (as Ch.8)",
     5: "Snow (as Ch.18, Ch.20)", 6: "Snow 6 (unused)", 7: "Snow 7 (as Ch.19)", 8: "Sandstorm (as Ch.15)", 9: "Effect 9 (unused)",
-    10: "Waves (as Ch.13)", 11: "Effect 11 (as Ch.14)", 12: "Effect 12 (as Ch.5)", 13: "Effect 13 (as Ch.4)",
-    14: "Effect 14 (as Ch.7, Ch.10)", 15: "Effect 15 (as Ch.9, Ch.12)", 16: "Effect 16 (unused)",
+    10: "Waves (as Ch.13)", 11: "Effect 11 (as Ch.14)", 12: "Night (as Ch.5)", 13: "Sunset (as Ch.4)",
+    14: "Effect 14 (as Ch.7, Ch.10)", 15: "Mountain (as Ch.9, Ch.12)", 16: "Effect 16 (unused)",
     17: "Light overlay 2 (as the Prologue)",
 }
 #: Fog-of-war code (mapextra bits 18-19): the game maps 0/1/2/3 to runtime modes 0/3/1/2
@@ -615,6 +615,7 @@ class MapSettingsForm(ttk.Frame):
             self._choice(row, "extra:weather_id", "Weather", WEATHER_NAMES, extra.weather_id,
                          "Effect drawn over the map: rain, snow, sandstorm, waves...")
             row += 1
+            row = self._sky_row(row, extra.weather_id)
             self._choice(row, "extra:sight_code", "Fog of war", SIGHT_NAMES, extra.sight_code,
                          "Fog of war hides the units outside your units' vision. The game uses it on Hard "
                          "only (any difficulty above Normal in the Japanese release).")
@@ -657,6 +658,64 @@ class MapSettingsForm(ttk.Frame):
         water.grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(4, 0))
         ttk.Button(water, text="Import water .glb...", command=lambda: self._undoable(lambda: self.map.import_water(self))).pack(side="left")
         ttk.Button(water, text="Water flow...", command=lambda: self._undoable(lambda: self.map.water_flow(self))).pack(side="left", padx=(6, 0))
+
+    def _session(self):
+        session = getattr(self.builder, "fe8_session", None)
+        session = session() if callable(session) else session
+        return session if session is not None and getattr(session, "available", False) else None
+
+    def _sky_row(self, row: int, weather_id: int) -> int:
+        """The sky behind this map's battles: BattleSkyData's entry for its weather id."""
+        session = self._session()
+        if session is None:
+            return row
+        skies = fe8data.read_battle_skies(session.data)
+        current = skies[weather_id] if weather_id < len(skies) else None
+        sharing = [i for i, name in enumerate(skies) if name == current and i != weather_id]
+        tip(ttk.Label(self, text="Battle sky"),
+            f"The sky drawn behind this map's fights: BattleSkyData's entry {weather_id} (the weather id). Every "
+            "map with this weather uses it" + (f"; weather ids {', '.join(map(str, sharing))} show the same sky"
+                                                if sharing else "") +
+            ". It is saved with FE8Data.bin (Chapter data › Save FE8Data.bin).").grid(row=row, column=0, sticky="w")
+        cell = ttk.Frame(self)
+        cell.grid(row=row, column=1, columnspan=5, sticky="w", pady=1)
+        from .battle_scene_editor import scene_models
+
+        names = sorted(scene_models(self.builder.project))
+        var = tk.StringVar(value=current or "")
+        box = ttk.Combobox(cell, textvariable=var, values=[""] + names, state="readonly", width=24)
+        box.pack(side="left")
+        box.bind("<<ComboboxSelected>>", lambda e: self._set_sky(weather_id, var.get()))
+        ttk.Button(cell, text="Browse in 3D…", command=lambda: self._browse_sky(weather_id, var.get(), names)).pack(
+            side="left", padx=(6, 0))
+        return row + 1
+
+    def _browse_sky(self, weather_id: int, current: str, names: list[str]) -> None:
+        from .battle_scene_editor import BattleSceneBrowser
+
+        dialog = BattleSceneBrowser(self, self.builder.project, names, current or None, title="Battle skies")
+        self.wait_window(dialog)
+        if dialog.result:
+            self._set_sky(weather_id, dialog.result)
+
+    def _set_sky(self, weather_id: int, name: str) -> None:
+        session = self._session()
+        if session is None:
+            return
+        skies = list(fe8data.read_battle_skies(session.data))
+        while len(skies) <= weather_id:
+            skies.append(None)
+        if skies[weather_id] == (name or None):
+            return
+        skies[weather_id] = name or None
+        try:
+            session.data = fe8data.write_battle_skies(session.data, skies)
+        except ValueError as exc:
+            messagebox.showerror("Battle sky", str(exc), parent=self)
+            return
+        session.changed(self)
+        self.builder.changelog.append("FE8Data.bin", f"Battle sky of weather {weather_id}: {name or 'none'}")
+        self.render()
 
     def _colour_row(self, row: int, prefix: str, record, label: str, fields, help_text: str) -> int:
         """A colour as a swatch and a picker (which applies at once), with the
