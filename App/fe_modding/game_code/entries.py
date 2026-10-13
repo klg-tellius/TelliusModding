@@ -516,6 +516,132 @@ CATALOG.add(Patch(
     versions={v: (Edit(a, _word(0x54030FFE), _word(ppc.li(3, 1))),) for v, a in _STEAL_SPEED.items()}))
 
 
+# The weapon triangle (sword/lance/axe, types 0-2) and the magic trinity (fire/thunder/wind, 4-6)
+# are one table read by build_strike_forecast_log: 4-byte rows (attacker type, defender type, Hit
+# bonus, Atk bonus), ended by a negative byte. Reaver weapons (item flags +4 bit 0x80) negate both.
+_TRIANGLE = {US: 0x80297240, EU: 0x802A1368, JP: 0x80291D68}
+_TRIANGLE_ROWS = 12
+_TRIANGLE_DISADVANTAGE = (0, 2, 4, 6, 8, 10)     # rows like sword vs lance; the odd rows are advantages
+
+
+def _triangle_fields(rows: tuple[int, ...], column: int) -> dict[str, tuple[Field, ...]]:
+    return {v: tuple(Field(a + 4 * r + column, "s8") for r in rows) for v, a in _TRIANGLE.items()}
+
+
+_ADVANTAGE = tuple(r for r in range(_TRIANGLE_ROWS) if r not in _TRIANGLE_DISADVANTAGE)
+for _key, _label, _rows, _column, _default, _lo, _hi in (
+        ("hit_advantage", "Hit with triangle advantage", _ADVANTAGE, 2, 10, 0, 100),
+        ("atk_advantage", "Atk with triangle advantage", _ADVANTAGE, 3, 1, 0, 20),
+        ("hit_disadvantage", "Hit with triangle disadvantage", _TRIANGLE_DISADVANTAGE, 2, -10, -100, 0),
+        ("atk_disadvantage", "Atk with triangle disadvantage", _TRIANGLE_DISADVANTAGE, 3, -1, -20, 0)):
+    CATALOG.add(Tunable(
+        f"combat.triangle_{_key}", G_COMBAT, _label,
+        f"Added for the weapon triangle (sword, lance, axe) and the magic trinity (fire, thunder, wind) "
+        f"(vanilla {_default:+d}). Reaver weapons swap the sign.",
+        default=_default, minimum=_lo, maximum=_hi, unit="",
+        versions=_triangle_fields(_rows, _column)))
+
+
+# -- promotion -------------------------------------------------------------------------------------
+G_PROMOTION = "Promotion"
+
+# A unit promotes when its EXP passes level 20 (the class-change scene E_CC_Kari) or with a Master
+# Seal (IID_MASTERPROOF_UFX); both ask can_unit_promote (0x8003D538), and the EXP cap
+# get_remaining_exp_to_level_or_promotion_cap (0x8003D13C) only lets a unit past level 20 / 0 EXP when
+# it would pass. Both refuse units whose class has SID_EVENTCC: Ranger (Ike) and Thief (Volke,
+# Sothe), so these only promote through a script's UnitClassChange, which requires the skill.
+_EVENTCC_TESTS = {US: (0x8003D20C, 0x8003D594), EU: (0x8003D3AC, 0x8003D734), JP: (0x8003C4FC, 0x8003C884)}
+CATALOG.add(Patch(
+    "promotion.event_classes", G_PROMOTION, "Ike and thieves promote normally",
+    "Ranger (Ike) and Thief (Volke, Sothe) carry the class skill SID_EVENTCC, which stops their EXP at level 20 "
+    "and refuses the Master Seal. With this on they promote like everyone else. A unit promoted early is no "
+    "longer an SID_EVENTCC class, so the story's own class change (Ike's) does nothing for it.",
+    versions={v: tuple(Edit(a, _word(0x4182000C), _word(0x4800000C)) for a in sites)
+              for v, sites in _EVENTCC_TESTS.items()}))
+_PROMOTION_LEVEL = {US: (0x8003D24C, 0x8003D5D0), EU: (0x8003D3EC, 0x8003D770), JP: (0x8003C53C, 0x8003C8C0)}
+CATALOG.add(Tunable(
+    "promotion.min_level", G_PROMOTION, "Lowest level for a Master Seal",
+    "A unit must be at least this level to use a Master Seal (vanilla 10).",
+    default=10, minimum=1, maximum=20, unit="",
+    versions={v: (Field(a, "imm16s", _hex("2c00")), Field(b, "imm16s", _hex("3800")))
+              for v, (a, b) in _PROMOTION_LEVEL.items()}))
+
+
+# -- supports ----------------------------------------------------------------------------------------
+G_SUPPORT = "Supports"
+
+# apply_chapter_end_support_and_unit_flags calls process_support_relationships once on the player
+# army list; each pass adds one point per partner unless a conversation is waiting. The hook calls
+# it N times, so N points never skip a conversation.
+_SUPPORT_PASS_CALL = {US: 0x8002E984, EU: 0x8002EB24, JP: 0x8002DD58}
+_SUPPORT_PASS = {US: 0x80015234, EU: 0x80015310, JP: 0x800149F8}
+SUPPORT_HOOK = CAVE_ADDRESS + 0x900
+_SUPPORT_COUNT_AT = SUPPORT_HOOK + 0x18
+
+
+def _support_hook_code(version: str) -> bytes:
+    return _words(*ppc.assemble(SUPPORT_HOOK, [
+        ppc.stwu(1, -16, 1), ppc.MFLR_R0, ppc.stw(0, 20, 1), ppc.stw(31, 8, 1), ppc.stw(30, 12, 1),
+        ppc.mr(30, 3), ppc.li(31, 1),
+        "loop", ppc.cmpwi(31, 0), ("le", "end"), ppc.mr(3, 30), ("bl", _SUPPORT_PASS[version]),
+        ppc.addi(31, 31, -1), ("b", "loop"),
+        "end", ppc.lwz(30, 12, 1), ppc.lwz(31, 8, 1), ppc.lwz(0, 20, 1), ppc.MTLR_R0, ppc.addi(1, 1, 16),
+        ppc.BLR]))
+
+
+_support_hook = Patch(
+    "support.points.hook", G_SUPPORT, "Support points hook", "Repeats the chapter-end support pass.",
+    versions={v: (
+        Edit(a, _word(ppc.bl(a, _SUPPORT_PASS[v])), _word(ppc.bl(a, SUPPORT_HOOK))),
+        Edit(SUPPORT_HOOK, bytes(len(_support_hook_code(v))), _support_hook_code(v), wild=((0x1A, 2),)),
+    ) for v, a in _SUPPORT_PASS_CALL.items()}, internal=True)
+CATALOG.add(_support_hook)
+CATALOG.add(Tunable(
+    "support.points_per_chapter", G_SUPPORT, "Support points per chapter",
+    "Points each pair of partners who finish a chapter on the map gains (vanilla 1; 0 stops supports growing). "
+    "Points still stop at each threshold until its conversation is seen.",
+    default=1, minimum=0, maximum=10, unit="",
+    versions={v: (Field(_SUPPORT_COUNT_AT, "imm16s", _hex("3be0")),) for v in ALL}, requires=(_support_hook,)))
+
+# A unit with 5 support stars (C=1, B=2, A=3 over all partners) gains no points and cannot rank up:
+# `cmpwi rX,5` in process_support_relationships (twice) and can_unit_raise_support_rank (twice), and
+# `subfic r0,r3,5` (stars left) in the base's support list.
+_STAR_LIMIT = {
+    US: ((0x80015294, "2c03"), (0x800152A4, "2c03"), (0x80036C3C, "2c06"), (0x80036D64, "2c07"), (0x80181814, "2003")),
+    EU: ((0x80015370, "2c03"), (0x80015380, "2c03"), (0x80036DDC, "2c06"), (0x80036F04, "2c07"), (0x80183668, "2003")),
+    JP: ((0x80014A58, "2c03"), (0x80014A68, "2c03"), (0x80035F2C, "2c06"), (0x80036054, "2c07"), (0x8017F1A8, "2003")),
+}
+CATALOG.add(Tunable(
+    "support.star_limit", G_SUPPORT, "Support star limit",
+    "Support stars a unit can hold (C = 1, B = 2, A = 3, summed over its partners; vanilla 5). A unit at the "
+    "limit gains no points and cannot rank up any support.",
+    default=5, minimum=1, maximum=30, unit="stars",
+    versions={v: tuple(Field(a, "imm16s", _hex(op)) for a, op in sites) for v, sites in _STAR_LIMIT.items()}))
+
+
+# -- random numbers ----------------------------------------------------------------------------------
+G_RANDOM = "Random numbers"
+
+# main seeds both generators once at boot from OSGetTick (prng_seed_from_state_table, then
+# prng_seed_direct_set); the hook replaces both timer reads with `li r3,seed`.
+_SEED_TICKS = {US: ((0x80014C40, 0x80014C48), 0x8020B08C), EU: ((0x80014D58, 0x80014D60), 0x80213DE8),
+               JP: ((0x80014404, 0x8001440C), 0x80205858)}
+_fixed_seed = Patch(
+    "random.fixed_seed", G_RANDOM, "Same random numbers every boot",
+    "Seeds the random number generator with a fixed number instead of the console's timer, so the same "
+    "actions give the same hits, level-ups and AI rolls after every reset.",
+    versions={v: tuple(Edit(a, _word(ppc.bl(a, tick)), _word(ppc.li(3, 0)), wild=((2, 2),)) for a in sites)
+              for v, (sites, tick) in _SEED_TICKS.items()})
+CATALOG.add(_fixed_seed)
+CATALOG.add(Tunable(
+    "random.seed", G_RANDOM, "Random seed",
+    "The fixed seed (turns on 'Same random numbers every boot'). Different seeds give different but repeatable "
+    "rolls.",
+    default=0, minimum=0, maximum=32767, unit="",
+    versions={v: tuple(Field(a, "imm16s", _hex("3860")) for a in sites) for v, (sites, _) in _SEED_TICKS.items()},
+    requires=(_fixed_seed,)))
+
+
 # -- economy -----------------------------------------------------------------------------------------
 G_ECONOMY = "Gold and forge"
 
@@ -536,6 +662,33 @@ CATALOG.add(Patch(
     "The base menu's Forge entry stays available after a forge. The game keeps at most 48 forged weapons; "
     "what happens past that is untested.",
     versions={v: (Edit(a, _word(ppc.li(4, 2)), _word(ppc.li(4, 0))),) for v, a in _FORGE_GATE.items()}))
+
+# A forge Hit step is worth 5 and a Crit step 3: `mulli` in get_item_hit / get_item_critical and in
+# the forge screen's comparison panel (three places each). Might and Weight steps are plain adds.
+_FORGE_HIT_STEP = {
+    US: ((0x8001D4D0, "1c00"), (0x80132E10, "1cc8"), (0x80133538, "1c65"), (0x801339B0, "1c00")),
+    EU: ((0x8001D618, "1c00"), (0x80133C40, "1cc8"), (0x80134368, "1c65"), (0x801347E0, "1c00")),
+    JP: ((0x8001CA40, "1c00"), (0x80130518, "1cc8"), (0x80130C40, "1c65"), (0x801310B8, "1c00")),
+}
+_FORGE_CRIT_STEP = {
+    US: ((0x8001D450, "1c00"), (0x80132E78, "1cc8"), (0x8013359C, "1c65"), (0x80133AC8, "1c00")),
+    EU: ((0x8001D598, "1c00"), (0x80133CA8, "1cc8"), (0x801343CC, "1c65"), (0x801348F8, "1c00")),
+    JP: ((0x8001C9C8, "1c00"), (0x80130580, "1cc8"), (0x80130CA4, "1c65"), (0x801311D0, "1c00")),
+}
+for _key, _label, _sites, _default in (("hit", "Hit", _FORGE_HIT_STEP, 5), ("crit", "Critical", _FORGE_CRIT_STEP, 3)):
+    CATALOG.add(Tunable(
+        f"economy.forge_{_key}_step", G_ECONOMY, f"Forge {_label} per step",
+        f"{_label} a forged weapon gains for each step bought (vanilla {_default}). The price per step is unchanged.",
+        default=_default, minimum=0, maximum=20, unit="",
+        versions={v: tuple(Field(a, "imm16s", _hex(op)) for a, op in s) for v, s in _sites.items()}))
+
+# init_actor_from_deployment_record skips dispos items flagged 0x02 (the class rings) while the
+# playthrough number is 1 (`beq` after `cmplwi r0,1` on party+0x57).
+_RING_GATE = {US: 0x8003EDF4, EU: 0x8003EF94, JP: 0x8003E0CC}
+CATALOG.add(Patch(
+    "economy.rings_first_playthrough", G_ECONOMY, "Class rings on the first playthrough",
+    "Enemies carry (and drop) the 17 class rings marked for later playthroughs on the first one too.",
+    versions={v: (Edit(a, _word(0x41820074), _word(ppc.NOP)),) for v, a in _RING_GATE.items()}))
 
 
 # -- map and camera ----------------------------------------------------------------------------------
