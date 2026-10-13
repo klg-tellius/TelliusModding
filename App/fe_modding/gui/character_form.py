@@ -228,10 +228,10 @@ class CharacterForm(ttk.Frame):
     def _weapon_ranks(self, parent, row: int, ranks: Optional[str], class_ranks: Optional[str]) -> None:
         """The class's ranks (read-only) above the character's, one picker per weapon type."""
         tip(ttk.Label(parent, text="Weapon ranks", style="Surface.TLabel"),
-            "- can't use, * usable without a set rank, E to S the starting rank. When the character has ranks "
-            "of its own, each letter replaces the class's, a - included: Soren (------D--) only uses wind "
-            "although Mages have fire and thunder. Tick 'Use the class's' to leave the field empty.").grid(
-            row=row, column=0, sticky="nw", pady=2, padx=(0, 8))
+            "The game starts from the class's ranks; a letter here replaces the class's for that weapon type. "
+            "- keeps the class's rank, * makes the type usable without a set rank, E to S set the starting "
+            "rank. A character cannot lose a weapon type its class can use: Soren (------D--) keeps the Mage's "
+            "fire and thunder and gets D in wind.").grid(row=row, column=0, sticky="nw", pady=2, padx=(0, 8))
         table = ttk.Frame(parent, style="Surface.TFrame")
         table.grid(row=row, column=1, columnspan=2, sticky="w")
         names = fe8data.WEAPON_TYPE_NAMES
@@ -241,26 +241,30 @@ class CharacterForm(ttk.Frame):
         for i, letter in enumerate((class_ranks or "").ljust(len(names), "-")[:len(names)]):
             ttk.Label(table, text=letter, style="SurfaceMuted.TLabel").grid(row=1, column=i + 1)
         ttk.Label(table, text="Own", style="Surface.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 4))
-        letters = [tk.StringVar(value=ch) for ch in (ranks or class_ranks or "").ljust(len(names), "-")[:len(names)]]
-        use_class = tk.BooleanVar(value=not ranks)
-        boxes = []
+        letters = [tk.StringVar(value=ch) for ch in (ranks or "").ljust(len(names), "-")[:len(names)]]
+        ttk.Label(table, text="Result", style="SurfaceMuted.TLabel").grid(row=3, column=0, sticky="w", padx=(0, 4))
+        results = []
         for i, var in enumerate(letters):
-            box = ttk.Combobox(table, textvariable=var, values=list(fe8data.WEAPON_RANK_CHARS), width=2,
-                               state="readonly")
-            box.grid(row=2, column=i + 1, padx=1)
-            boxes.append(box)
+            ttk.Combobox(table, textvariable=var, values=list(fe8data.WEAPON_RANK_CHARS), width=2,
+                         state="readonly").grid(row=2, column=i + 1, padx=1)
+            result = ttk.Label(table, text="", style="SurfaceMuted.TLabel")
+            result.grid(row=3, column=i + 1)
+            results.append(result)
+        base = (class_ranks or "").ljust(len(names), "-")[:len(names)]
+
+        def refresh(*_):
+            for var, result, class_letter in zip(letters, results, base):
+                result.configure(text=class_letter if var.get() in ("", "-") else var.get())
+
+        for var in letters:
+            var.trace_add("write", refresh)
+        refresh()
 
         class _Ranks:
             def get(self) -> str:
-                return "" if use_class.get() else "".join(v.get() or "-" for v in letters)
+                text = "".join(v.get() or "-" for v in letters)
+                return "" if not ranks and set(text) == {"-"} else text
 
-        def sync() -> None:
-            for box in boxes:
-                box.configure(state="disabled" if use_class.get() else "readonly")
-
-        ttk.Checkbutton(table, text="Use the class's", variable=use_class, command=sync).grid(
-            row=3, column=0, columnspan=len(names) + 1, sticky="w", pady=(2, 0))
-        sync()
         self._vars["weapon_ranks"] = _Ranks()
 
     def _open_map_model(self, aid: str) -> None:
