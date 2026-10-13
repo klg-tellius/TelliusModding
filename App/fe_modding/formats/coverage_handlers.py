@@ -674,9 +674,12 @@ def client_bin(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("staffroll", lambda name, data: _base(name).startswith("staffroll"))
 def staffroll(cov: FileCoverage, walker: Walker) -> None:
-    for name, start, end in labeled_sections(cov):
-        cov.mark(start, end - start, UNDECODED, f"section {name}")
-    cov.fill(UNDECODED, "staffroll (never parsed)")
+    """Staff credits (``staffroll.py``): build time, author, line count, 12-byte rows of three
+    string pointers, the sorted string pool; read by ``draw_staffroll_ui``."""
+    from . import staffroll as sr
+
+    _roundtrip(cov, sr.build_staffroll(sr.read_staffroll(cov.data)))
+    cov.fill(DECODED)
 
 
 # ------------------------------------------------------------------ text and scripts
