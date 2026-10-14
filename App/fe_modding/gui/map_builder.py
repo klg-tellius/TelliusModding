@@ -209,6 +209,7 @@ class _BuildCanvas(tk.Canvas):
         self.units: list[dict] = []
         self.highlighting = False  # a section's units are highlighted (the others are drawn dimmed)
         self.zones: list[dict] = []
+        self.hub_marks: list[dict] = []  # a hub's chapter links (hub_tool.HubTool.marks)
         self.heights = None  # [x][y] mean combined elevation, for the heights layer
         self.selected_tiles: set = set()
         self.show = {"image": True, "terrain": False, "heights": False, "grid": True, "props": True, "zones": True,
@@ -329,6 +330,8 @@ class _BuildCanvas(tk.Canvas):
         if self.show["zones"]:
             for zone in self.zones:
                 self._draw_zone(zone)
+        for mark in self.hub_marks:
+            self._draw_hub_mark(mark)
         if self.show["units"]:
             self.highlighting = any(unit["highlight"] for unit in self.units)
             # the highlighted section's units on top, the selected unit above them
@@ -365,6 +368,34 @@ class _BuildCanvas(tk.Canvas):
         if self.cell >= 16:
             self.create_text(x0 + pad + 2, y0 + pad + 1, anchor="nw", text=zone["text"], fill=color,
                              font=("Segoe UI", max(7, min(10, int(self.cell / 3))), "bold"))
+
+    def _draw_hub_mark(self, mark: dict) -> None:
+        from .hub_tool import LINK_COLOR, RETURN_COLOR
+
+        selected = mark["selected"]
+        font = ("Segoe UI", max(7, min(10, int(self.cell / 3))), "bold")
+        centers = {}
+        for which in ("action", "return"):
+            if mark[which] is not None:
+                x0, y0, x1, y1 = self.box(*mark[which])
+                centers[which] = ((x0 + x1) / 2, (y0 + y1) / 2)
+        if len(centers) == 2 and centers["action"] != centers["return"]:
+            self.create_line(*centers["action"], *centers["return"], fill=RETURN_COLOR, width=2, dash=(4, 3),
+                             arrow="last")
+        if "action" in centers:
+            x0, y0, x1, y1 = self.box(*mark["action"])
+            self.create_rectangle(x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill=LINK_COLOR, stipple="gray50",
+                                  outline="#ffe14d" if selected else LINK_COLOR, width=3 if selected else 2)
+            if self.cell >= 16:
+                self.create_text(*centers["action"], text=f"{mark['chapter']:02d}", fill="#ffffff", font=font)
+        if "return" in centers:
+            x0, y0, x1, y1 = self.box(*mark["return"])
+            pad = max(3, self.cell * 0.2)
+            self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, outline="#ffe14d" if selected else RETURN_COLOR,
+                             width=3 if selected else 2)
+            if self.cell >= 22 and centers.get("action") != centers["return"]:
+                self.create_text(x1 - 2, y0 + 1, anchor="ne", text=f"{mark['chapter']:02d}", fill=RETURN_COLOR,
+                                 font=("Segoe UI", 7, "bold"))
 
     def preview_tiles(self, tiles, color: str) -> None:
         self.delete("preview")
@@ -506,6 +537,8 @@ class MapBuilder(EditorPanel):
         self._form_vars: dict = {}
         self._windows: dict[str, tk.Toplevel] = {}
         self._highlight: tuple[str, str] | None = None  # (variant, section) highlighted on the canvas
+        self._chapter_id: str | None = None
+        self.on_install_hub: Optional[Callable[[object], bool]] = None  # the chapter page installs a hub
 
         self._build_widgets()
         map_editor.add_listener(self._on_map_changed)
@@ -612,7 +645,12 @@ class MapBuilder(EditorPanel):
             button.pack(fill="x", pady=(0, 2))
             self._tool_buttons[key] = button
             self._bind_toolbar_tooltip(button, label)
-        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(4, 5))
+        self._hub_button = ttk.Button(toolbar, text="◎", style="BuildToolbar.TButton",
+                                      command=lambda: self._choose_tool("hub"))
+        self._tool_buttons["hub"] = self._hub_button
+        self._bind_toolbar_tooltip(self._hub_button, "Hub: chapter links")
+        self._toolbar_separator = ttk.Separator(toolbar, orient="horizontal")
+        self._toolbar_separator.pack(fill="x", pady=(4, 5))
         for label, icon, command in (("Objects list", "▤", self.open_objects),
                                      ("Units list", "☷", self.open_disposition)):
             button = ttk.Button(toolbar, text=icon, style="BuildToolbarAction.TButton",
@@ -725,6 +763,11 @@ class MapBuilder(EditorPanel):
         self._zone_open_script = ttk.Button(frame, text="Open this chapter's script", command=self._open_chapter_script)
         self._tool_frames["zone"] = frame
         self._zone_kind_changed()
+
+        from .hub_tool import HubTool
+
+        self._hub = HubTool(parent, self)
+        self._tool_frames["hub"] = self._hub
 
         self._tool_changed()
 
@@ -1058,6 +1101,9 @@ class MapBuilder(EditorPanel):
         zones, _problem = self._zone_state()
         selected_zone = self._selection[1] if self._selection and self._selection[0] == "zone" else None
         canvas.zones = []
+        canvas.hub_marks = self._hub.marks()
+        if canvas.hub_marks:
+            zones = [z for z in zones if not z.function.startswith(("HubGoTo", "HubDescribe"))]
         for zone in zones:
             x1, y1, x2, y2 = zone.rect
             if x2 < 0 or y2 < 0 or x1 >= cap.x_size or y1 >= cap.y_size:
@@ -1941,6 +1987,9 @@ class MapBuilder(EditorPanel):
             self._place_prop(tile)
         elif tool == "unit":
             self._place_unit(tile)
+        elif tool == "hub":
+            self._press_state = self._hub.press(tile)
+            self._refresh_canvas()
         elif tool == "zone":
             zone = None if event is not None and event.state & 0x0001 else self._zone_at(tile)  # Shift: draw anyway
             if zone is not None:
@@ -2014,6 +2063,8 @@ class MapBuilder(EditorPanel):
             return
         if state["kind"] == "zone":
             self._move_zone(state["function"], target[0] - state["start"][0], target[1] - state["start"][1])
+        elif state["kind"] == "hub":
+            self._hub.place(state["index"], state["which"], target)
         elif state["kind"] == "unit":
             self._move_unit(state["key"], target)
         elif state["kind"] == "prop":
@@ -2903,6 +2954,30 @@ class MapBuilder(EditorPanel):
             self._on_open_function(name)
 
     # -- workspace --------------------------------------------------------------------------
+    def set_chapter(self, chapter_id: str | None) -> None:
+        """The chapter page's chapter: on the hub chapter the Hub tool is shown."""
+        self._chapter_id = chapter_id
+        if self._hub.load(chapter_id):
+            self._hub_button.pack(fill="x", pady=(0, 2), before=self._toolbar_separator)
+        else:
+            self._hub_button.pack_forget()
+            if self._tool.get() == "hub":
+                self._choose_tool("select")
+        self._refresh_canvas()
+
+    def choose_hub_tool(self) -> None:
+        if self._hub.data is not None:
+            self._choose_tool("hub")
+
+    def hub_changed(self) -> None:
+        self._refresh_canvas()
+
+    def map_size(self) -> tuple[int, int] | None:
+        return self._canvas.size
+
+    def install_hub(self, setup) -> bool:
+        return bool(self.on_install_hub(setup)) if self.on_install_hub is not None else False
+
     def refresh_chapter_list(self) -> None:
         pass
 

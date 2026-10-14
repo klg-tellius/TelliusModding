@@ -64,6 +64,40 @@ def saved_setup(project) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
+DRAFT_NAME = "hub_draft.json"
+
+
+def draft_path(project) -> Path:
+    return project.directory / DRAFT_NAME
+
+
+def working_setup(project) -> dict | None:
+    """The hub being edited: its draft (changes not installed yet), else the installed setup."""
+    path = draft_path(project)
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return saved_setup(project)
+
+
+def hub_chapter(project) -> int | None:
+    setup = working_setup(project)
+    return setup["chapter"] if setup else None
+
+
+def save_draft(project, setup: dict) -> None:
+    keys = ("chapter", "activation_chapter", "avatar_pid", "destinations", "start_x", "start_y")
+    data = {key: setup.get(key) for key in keys}
+    with open(draft_path(project), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(data, indent=2) + "\n")
+
+
+def setup_from(data: dict) -> HubSetup:
+    return HubSetup(data["chapter"], data["activation_chapter"], data["avatar_pid"],
+                    tuple(Destination(d["chapter"], d["x"], d["y"], d["return_x"], d["return_y"],
+                                      d.get("description", "")) for d in data.get("destinations", ())),
+                    data.get("start_x"), data.get("start_y"))
+
+
 def _replace_generated(source: str, block: str) -> str:
     if (START_MARK in source) != (END_MARK in source):
         raise ValueError("A hub-generated script block has only one boundary marker.")
@@ -210,9 +244,10 @@ def _validate_setup(project, setup: HubSetup, current: dict | None, flow: Chapte
             raise ValueError(f"Destination {dest.chapter} has a tile outside the hub map.")
     if setup.start_x is not None and (setup.start_x >= capacity.x_size or setup.start_y >= capacity.y_size):
         raise ValueError("The avatar start is outside the hub map.")
-    hub_units, player_units = _deployment_pids(deployment_path)
-    if hub_units != {setup.avatar_pid} or player_units != {setup.avatar_pid}:
-        raise ValueError("The prepared hub must deploy only the dedicated avatar, in its player section.")
+    _hub_units, player_units = _deployment_pids(deployment_path)
+    if player_units != {setup.avatar_pid}:
+        raise ValueError("The hub's player army must be the dedicated avatar alone; other armies may hold "
+                         "decoration units.")
     for chapter_id in chapters.list_chapter_ids(project):
         if int(chapter_id) == setup.chapter:
             continue
@@ -379,5 +414,8 @@ def install(project, setup: HubSetup) -> dict:
                                         slots["destination"], slots["pending"])
     saved = {**asdict(setup), "version": 2, "slots": slots, "flags": prepared["flags"],
              "normal_successor": prepared["normal_successor"]}
-    config_path(project).write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
+    with open(config_path(project), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(saved, indent=2) + "\n")
+    if draft_path(project).is_file():
+        draft_path(project).unlink()
     return saved
