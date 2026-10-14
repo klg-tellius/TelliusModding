@@ -32,6 +32,8 @@ The script supplies a `BGM_*` cue, native code hashes the name into a global run
 
   Of those 111 built-in cues, **24 are unused** in the retail game: registered names (`BGM_DUMMY_69` through `_74`, several unused `BGM_OPENING*`/`BGM_PRO0*`/`BGM_COLOSSEUM_*` slots, and a few unused event stingers) that all share one placeholder path with no backing file anywhere on the disc. They resolve by name exactly like any real cue; they simply have nothing to actually stream if ever triggered unmodified.
 
+  Every cue name is registered at boot in the game's single by-name table, the same one that holds data records and named script functions. That table has a fixed 10,240 entries; RAM snapshots show about 6,600–6,800 in use, so roughly 3,400 names are left for everything a mod adds. Running out would hang the game while it registers names. <span class="confidence confidence--confirmed">engine</span>
+
 ## Four BGM channels, crossfaded by name
 
   Starting a new track doesn't simply cut off whatever was playing. The engine tracks up to **four simultaneous BGM channels** at once, each an independent playback slot. Stopping or changing a track works by name, not by slot number: given a cue name, the engine hashes it the same way as above, then checks each of the four channels' own currently-playing name (hashed the same way) to find which one, if any, is already playing that exact cue — then either cuts it immediately or runs a real per-frame volume fade-out over a caller-specified duration (every observed case fades over 100–500 ms).
