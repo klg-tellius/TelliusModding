@@ -40,9 +40,14 @@ import zlib
 from dataclasses import dataclass, field, fields
 from typing import Optional
 
+from . import game_text
+
 GCI_HEADER_SIZE = 0x40
 SAVE_MAGIC = b"FE8J"
 SAVE_VERSION = 0x20050201
+#: Block magic -> version: US and JP write "FE8J"/0x20050201, PAL "FE8X"/0x20050801 (the PAL
+#: loader rejects the other pair, so a save does not move between releases).
+SAVE_MAGICS = {b"FE8J": 0x20050201, b"FE8X": 0x20050801}
 SYSF_MAGIC = b"SYSF"
 CRC_START = 0x70
 CRC_EXEMPT = 0x12345678
@@ -114,11 +119,11 @@ class _Reader:
 
 
 def _text(raw: bytes) -> str:
-    return raw.split(b"\0")[0].decode("shift_jis", "replace")
+    return game_text.decode(raw.split(b"\0")[0])     # CP932, or the PAL hybrid (accented letters)
 
 
 def _put_text(text: str, size: int) -> bytes:
-    raw = text.encode("shift_jis")
+    raw = game_text.encode(text)
     if len(raw) >= size:
         raise ValueError(f"{text!r} is longer than {size - 1} bytes")
     return raw.ljust(size, b"\0")
@@ -644,7 +649,7 @@ class SaveBlock:
     @classmethod
     def parse(cls, gci: bytes, offset: int, size: int) -> Optional["SaveBlock"]:
         raw = bytes(gci[offset:offset + size])
-        if len(raw) < STREAM_START or raw[0x40:0x44] != SAVE_MAGIC:
+        if len(raw) < STREAM_START or raw[0x40:0x44] not in SAVE_MAGICS:
             return None
         header = BlockHeader.parse(raw[:BlockHeader.SIZE])
         block = cls(offset, size, header, raw)

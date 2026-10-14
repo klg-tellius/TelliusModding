@@ -341,7 +341,7 @@ class MapObjectsWindow(_Window):
             ttk.Checkbutton(frame, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w")
             checks.append((field, mask, initial, var))
         ttk.Label(frame, text="These flags belong to the object definition and affect every placement. "
-                  "C bit 0 is probably unused in the US build; raw bytes preserve it. "
+                  "C bit 0 is probably unused in the retail builds; raw bytes preserve it. "
                   "The footprint test also depends on map flags and runtime state.",
                   style="Muted.TLabel", wraplength=390, justify="left").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -545,7 +545,7 @@ class MapSettingsForm(ttk.Frame):
             row += 1 if col else 0
         hint = ("Sight code 0–3 is active only on difficulty 1; codes 1/2/3 select runtime modes 3/1/2. "
                 "The raw flags also contain 0x20 water and 0x10000000 footprint testing. "
-                "Bit 0x02 is probably unused in the US build and is preserved raw.") if self.map.verified_us_map_layout else (
+                "Bit 0x02 is probably unused in the retail builds and is preserved raw.") if self.map.verified_us_map_layout else (
                 "This region's map flags remain available as a raw value; named US modes are hidden.")
         ttk.Label(form, text=hint,
                   style="Muted.TLabel", wraplength=720, justify="left").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
