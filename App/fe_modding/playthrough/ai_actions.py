@@ -439,11 +439,12 @@ class ActionRoutines:
                                f"on {self.world.name(best[0].pid)} (hit {best_hit}, score {best_value})")
 
     def _staff_silence(self, index, item, pred, reach):
-        """Silence: a foe not silenced holding a usable tome or staff, hit over 4; the best hit + Mag."""
+        """Silence: a foe not silenced whose class is a mage class (category mask bit 0, ``mage``) holding a
+        usable tome or staff, hit over 4; the best hit + Mag."""
         world = self.world
 
         def magic_user(u):
-            return u.status != "silence" and any(
+            return u.status != "silence" and "mage" in u.categories and any(
                 world.can_wield(u, it) and (it.weapon_type in combat.MAGIC_TYPES) for _i, it in equipment(world, u))
 
         return self._status_staff(index, item, pred, reach, magic_user, lambda u: u.stats[2])

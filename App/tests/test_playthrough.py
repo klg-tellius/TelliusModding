@@ -771,6 +771,18 @@ class AiActionTests(unittest.TestCase):
         low.stats[7] = high.stats[7] = 30  # (10 - 30) x 5 + 5 + 30 - 6 < 5
         self.assertIsNone(step.try_use_staff(step._predicate(), False))
 
+    def test_silence_staff_only_targets_mage_classes(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_SILENCE"] = _item("IID_SILENCE", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, faction=ENEMY, jid="JID_CLERIC", items=("IID_SILENCE",))
+        caster.stats[2] = 10
+        target = _unit(state, "PID_A", 3, 0, jid="JID_CLERIC", items=("IID_LIVE",))
+        step = _ai_step(world, state, caster)
+        target.categories = []  # a staff user, but not a mage class (category mask bit 0)
+        self.assertIsNone(step.try_use_staff(step._predicate(), False))
+        target.categories = ["mage"]
+        self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], target.uid)
+
     def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
         world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])
         state = GameState()
