@@ -119,6 +119,9 @@ def _read_fst_order(fst: bytes) -> list[str]:
     return paths
 
 
+read_fst_paths = _read_fst_order
+
+
 def _build_tree(files_dir: Path, retail_order: list[str]) -> _Node:
     rank = {path.lower(): i for i, path in enumerate(retail_order)}
 

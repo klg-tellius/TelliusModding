@@ -27,6 +27,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .sfx_import_dialog import SfxImportDialog
+from .widgets import list_buttons
 
 try:
     import winsound
@@ -86,10 +87,14 @@ class SfxViewer(EditorPanel):
         for key, title, width, anchor in COLUMNS:
             self._tree.heading(key, text=title)
             self._tree.column(key, width=width, anchor=anchor, stretch=key == "name")
+        self._delete_button = list_buttons(
+            left, "Add sound effect…", self._add_cue, self._delete_cue,
+            "Deletes a sound effect the mod added (its sound stays in the banks). The game's own cues can be "
+            "replaced, not deleted.")
         scroll = ttk.Scrollbar(left, command=self._tree.yview)
         self._tree.config(yscrollcommand=scroll.set)
-        self._tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self._tree.pack(side="left", fill="both", expand=True)
         self._tree.bind("<<TreeviewSelect>>", lambda _e: self._show_detail())
         self._tree.bind("<Double-1>", lambda _e: self._play())
         self._tree.bind("<Return>", lambda _e: self._play())
@@ -108,9 +113,8 @@ class SfxViewer(EditorPanel):
         self._stop_button.pack(side="left", padx=(6, 0))
         edit = ttk.Frame(right)
         edit.pack(anchor="w", pady=(14, 0))
-        ttk.Button(edit, text="Add sound effect...", command=self._add_cue).pack(side="left")
         self._replace_button = ttk.Button(edit, text="Replace audio...", command=self._replace_cue, state="disabled")
-        self._replace_button.pack(side="left", padx=(6, 0))
+        self._replace_button.pack(side="left")
         self._play_status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=360, justify="left")
         self._play_status.pack(anchor="w", pady=(6, 0))
         if winsound is None:
@@ -219,6 +223,37 @@ class SfxViewer(EditorPanel):
         cue = self._selected_cue()
         if cue is not None:
             self._open_import(cue)
+
+    def _original_cue_names(self) -> set[str]:
+        """The cues of gcfesnd.bin as extracted (its kept original, else the file itself)."""
+        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
+        try:
+            return {c.name for c in gcfesnd.read_sfx_cues_path(original if original.is_file() else path)}
+        except (OSError, gcfesnd.GcfesndError):
+            return set()
+
+    def _delete_cue(self) -> None:
+        cue = self._selected_cue()
+        if cue is None:
+            return
+        if cue.name in self._original_cue_names():
+            messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "
+                                "the game plays it, so it can't be deleted. Replace its audio instead.", parent=self)
+            return
+        if not messagebox.askyesno("Delete sound effect", f"Delete {cue.name}? Scripts that play it then play "
+                                   "nothing.", icon="warning", parent=self):
+            return
+        self._stop()
+        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        try:
+            self._project.write_keeping_original(path, gcfesnd.remove_sfx_cue(path.read_bytes(), cue.name))
+        except (OSError, gcfesnd.GcfesndError) as exc:
+            messagebox.showerror("Delete sound effect", str(exc), parent=self)
+            return
+        self._changelog.append(cue.name, "Deleted sound effect")
+        self._load()
+        self._play_status.config(text=f"Deleted {cue.name}.")
 
     def _after_edit(self, name: str) -> None:
         """Reload the tables and select the cue that was just added/replaced."""

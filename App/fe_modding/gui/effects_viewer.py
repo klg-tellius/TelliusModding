@@ -79,8 +79,8 @@ class EffectsViewer(EditorPanel):
             self._tree.column(key, width=width, anchor=anchor, stretch=key == "name")
         scroll = ttk.Scrollbar(left, command=self._tree.yview)
         self._tree.config(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")  # first: a wide list would push it out of view
         self._tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         self._tree.bind("<<TreeviewSelect>>", lambda _e: self._show_selected())
 
         right = ttk.Frame(body, padding=(12, 0, 0, 0))

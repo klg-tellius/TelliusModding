@@ -56,6 +56,7 @@ from ..formats import stm, thp
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import confirm_delete_added, list_buttons
 
 try:
     import winsound
@@ -93,6 +94,7 @@ class VideoViewer(EditorPanel):
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
         ttk.Label(left, text="Cutscenes").pack(anchor="w")
+        self._delete_button = list_buttons(left, "New video…", self._add_new_video, self._delete_video)
         self._file_list = tk.Listbox(left, exportselection=False)
         self._file_list.pack(fill="both", expand=True, pady=(4, 0))
         self._file_list.bind("<<ListboxSelect>>", lambda e: self._on_file_selected())
@@ -126,8 +128,6 @@ class VideoViewer(EditorPanel):
             button_row, text="Import Replacement Video...", command=self._import_video, state="disabled"
         )
         self._import_button.pack(side="left", padx=(6, 0))
-        self._add_video_button = ttk.Button(button_row, text="New Video...", command=self._add_new_video)
-        self._add_video_button.pack(side="left", padx=(6, 0))
 
         self._progress = ttk.Progressbar(right, mode="indeterminate")
         self._status_label = ttk.Label(right, text="", style="Muted.TLabel")
@@ -156,6 +156,7 @@ class VideoViewer(EditorPanel):
         self._close_current_file()
 
         self._current_path = self._all_files[selection[0]]
+        self._delete_button.config(state="normal")
         self._status_label.config(text="Loading...")
         self._play_button.config(state="disabled")
         self._export_audio_button.config(state="disabled")
@@ -444,6 +445,23 @@ class VideoViewer(EditorPanel):
             ),
         )
 
+    def _delete_video(self) -> None:
+        path = self._current_path
+        if path is None or not confirm_delete_added(self, self._project, path, "video"):
+            return
+        self._pause()
+        self._close_current_file()
+        path.unlink()
+        self._changelog.append(path.stem, "Deleted video")
+        self._current_path = None
+        self._info = None
+        self._info_label.config(text="(no video selected)")
+        self._preview_label.config(image="")
+        for button in (self._play_button, self._pause_button, self._export_audio_button, self._import_button,
+                       self._delete_button):
+            button.config(state="disabled")
+        self._load_video_list()
+
     def _on_new_video_added(self, dest: Path, data: bytes) -> None:
         self._load_video_list()
         if dest in self._all_files:
@@ -464,7 +482,7 @@ class VideoViewer(EditorPanel):
         self._file_list.config(state="disabled")
         self._import_button.config(state="disabled")
         self._export_audio_button.config(state="disabled")
-        self._add_video_button.config(state="disabled")
+        self._delete_button.config(state="disabled")
         self._status_label.config(text=status_text)
         self._progress.pack(fill="x", pady=(4, 0))
         self._progress.start(12)
@@ -514,7 +532,7 @@ class VideoViewer(EditorPanel):
         loaded = self._info is not None
         self._import_button.config(state="normal" if loaded else "disabled")
         self._export_audio_button.config(state="normal" if (loaded and self._info.has_audio) else "disabled")
-        self._add_video_button.config(state="normal")
+        self._delete_button.config(state="normal" if self._current_path is not None else "disabled")
 
     # -- cleanup ----------------------------------------------------------
     def cleanup(self) -> None:

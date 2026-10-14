@@ -160,6 +160,20 @@ class MusyxWriteTests(unittest.TestCase):
         relocs = struct.unpack_from(">3I", out, 0x20 + struct.unpack_from(">I", out, 4)[0])
         self.assertEqual(relocs, (0, 20, 40))
 
+    def test_removing_an_added_cue_restores_the_file(self):
+        data = _container(["SFX_ONE", "SFX_TWO"])
+        out = gcfesnd.add_sfx_cue(data, "SFX_THREE", flags=8, volume=7, pan=9, sound_id=11,
+                                  extra=bytes([1, 2, 3, 4]), range_value=5)
+        self.assertEqual(gcfesnd.remove_sfx_cue(out, "SFX_THREE"), data)
+        out = gcfesnd.add_sfx_cue(out, "SFX_FOUR", flags=0, volume=1, pan=1, sound_id=12, extra=bytes(4),
+                                  range_value=1)
+        middle = gcfesnd.remove_sfx_cue(out, "SFX_THREE")
+        self.assertEqual([c.name for c in gcfesnd.read_sfx_cues(middle)], ["SFX_ONE", "SFX_TWO", "SFX_FOUR"])
+        self.assertEqual(gcfesnd.read_sfx_cues(middle)[2].sound_id, 12)
+        self.assertEqual(struct.unpack_from(">I", middle, 0)[0], len(middle))
+        with self.assertRaises(gcfesnd.GcfesndError):
+            gcfesnd.remove_sfx_cue(data, "SFX_NONE")
+
 
 if __name__ == "__main__":
     unittest.main()

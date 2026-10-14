@@ -231,6 +231,36 @@ def track_hover(widget: tk.Misc, on_change: Callable[[bool], None]) -> None:
 
 # -- small pieces -----------------------------------------------------------------
 
+def list_buttons(parent: tk.Misc, add_text: str, on_add, on_delete, delete_help: str = "") -> ttk.Button:
+    """The Add… / Delete row under an asset list; returns the Delete button."""
+    row = ttk.Frame(parent)
+    row.pack(fill="x", side="bottom", pady=(6, 0))
+    ttk.Button(row, text=add_text, command=on_add).pack(side="left")
+    delete = ttk.Button(row, text="Delete", command=on_delete, state="disabled")
+    delete.pack(side="left", padx=(6, 0))
+    tip(delete, delete_help or "Deletes one the mod added. The game's own files can be replaced, not deleted: "
+                               "the game loads them.")
+    return delete
+
+
+def confirm_delete_added(parent: tk.Misc, project, path: Path, kind: str, users: list[str] = ()) -> bool:
+    """Ask before deleting ``path`` (a file under files/); False, after saying why, for a
+    file of the source disc."""
+    from tkinter import messagebox
+
+    added = project.is_added_file(path)
+    if added is False:
+        messagebox.showinfo(f"Delete {kind}", f"{path.name} is one of the game's own files: the game loads it, "
+                            "so it can't be deleted. Replace it instead.", parent=parent)
+        return False
+    text = f"Delete {path.name}? This can't be undone."
+    if added is None:
+        text += "\n\nThe disc's file list isn't in this project, so it can't tell whether the game loads it."
+    if users:
+        text += f"\n\nStill pointing to it: {', '.join(users)}."
+    return messagebox.askyesno(f"Delete {kind}", text, icon="warning", parent=parent)
+
+
 def section_header(parent: tk.Misc, text: str, detail: str = "") -> ttk.Frame:
     row = ttk.Frame(parent, style="Page.TFrame")
     ttk.Label(row, text=text, style="Subtitle.TLabel").pack(side="left")
