@@ -145,7 +145,7 @@ class ChaptersHub(Page):
                 (("+", "new campaign"), "New campaign…", "Several chapters and characters at once", "+",
                  self._new_campaign),
                 (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order),
-                (("+", "hub setup"), *(("Modify hub…", "Open the hub chapter: its map, events and links")
+                (("+", "hub setup"), *(("Edit hub…", "Open the hub chapter: its map, events and links")
                                         if hub.hub_chapter(self.project) is not None else
                                         ("Create hub…", "A hub chapter from a template, with links to chapters")),
                  "◎", self._hub_setup)):
@@ -198,7 +198,7 @@ class ChaptersHub(Page):
             grid.filter(lambda key: key is None or all(w in f"{key[0]} {key[1]}".casefold() for w in words))
 
     def _hub_setup(self) -> None:
-        """Modify hub: open the hub chapter's Build tab. Create hub: copy a template chapter
+        """Edit hub: open the hub chapter's Build tab. Create hub: copy a template chapter
         as the hub (the avatar alone in it), then open it there."""
         current = hub.hub_chapter(self.project)
         if current is not None and f"{current:02d}" in chapters.list_chapter_ids(self.project):
