@@ -654,8 +654,9 @@ CATALOG.add(Tunable(
 _FORGE_GATE = {US: 0x801772F0, EU: 0x80178CF4, JP: 0x80174990}
 CATALOG.add(Patch(
     "economy.unlimited_forging", G_ECONOMY, "Forge more than once per chapter",
-    "The base menu's Forge entry stays available after a forge. The game keeps at most 48 forged weapons; "
-    "what happens past that is untested.",
+    "The base menu's Forge entry stays available after a forge. The game keeps at most 48 forged weapons: a "
+    "49th forge overwrites the last three convoy slots and the weapon stays unforged (the Saves page warns "
+    "when a save's forge records are all used).",
     versions={v: (Edit(a, _word(ppc.li(4, 2)), _word(ppc.li(4, 0))),) for v, a in _FORGE_GATE.items()}))
 
 # A forge Hit step is worth 5 and a Crit step 3: `mulli` in get_item_hit / get_item_critical and in
