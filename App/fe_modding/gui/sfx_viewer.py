@@ -27,7 +27,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .sfx_import_dialog import SfxImportDialog
-from .widgets import list_buttons
+from .widgets import list_buttons, tip
 
 try:
     import winsound
@@ -119,16 +119,11 @@ class SfxViewer(EditorPanel):
         self._play_status.pack(anchor="w", pady=(6, 0))
         if winsound is None:
             self._play_status.config(text="Playback needs Windows (winsound) - not available here.")
-        ttk.Label(
-            right,
-            text="Cue names and parameters come from Sound/gcfesnd.bin.\n"
-            "Playback decodes the cue's sample from the MusyX banks, or renders\n"
-            "the sequenced songs of gcfesnd.slib; envelopes, panning and\n"
-            "layering are ignored, so it is only approximate.\n"
-            "Range is inferred from the game's accessors, not confirmed.",
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", side="bottom")
+        tip(self._play_button, "Decodes the cue's sample from the MusyX banks, or renders the sequenced songs of "
+                               "gcfesnd.slib; envelopes, panning and layering are ignored, so it is only "
+                               "approximate.")
+        tip(self._detail, "Cue names and parameters come from Sound/gcfesnd.bin. Range is inferred from the game's "
+                          "accessors, not confirmed.")
 
     def _on_unmap(self, event: tk.Event) -> None:
         if event.widget is self:

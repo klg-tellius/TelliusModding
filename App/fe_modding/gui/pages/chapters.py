@@ -42,7 +42,7 @@ from ..map_editor import MapEditor
 from ..script_editor import ScriptEditor
 from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
-from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
+from ..widgets import Card, CardGrid, Link, ScrollFrame, info, section_header
 
 TABS = ["overview", "build", "map_settings", "chapter_data", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
@@ -88,6 +88,9 @@ class ChaptersHub(Page):
         top = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 8))
         top.pack(fill="x")
         ttk.Label(top, text="Chapters", style="Title.TLabel").pack(side="left")
+        info(top, "The number in a card's corner is the chapter's place in the story. An added chapter starts "
+                  "as a copy of another one; each chapter's Overview sets what comes next.").pack(
+            side="left", padx=(8, 0), pady=(8, 0))
         self._query = tk.StringVar()
         search = ttk.Entry(top, textvariable=self._query, width=30)
         search.pack(side="right")
@@ -108,11 +111,6 @@ class ChaptersHub(Page):
         self._other_header.pack(anchor="w", pady=(20, 8), fill="x")
         self._other = CardGrid(body, card_width=285)
         self._other.pack(fill="x")
-        self._note = ttk.Label(body, style="Muted.TLabel", wraplength=900, justify="left",
-                               text="The number in a card's corner is the chapter's place in the story. An "
-                                    "added chapter starts as a copy of another one; each chapter's Overview sets "
-                                    "what comes next.")
-        self._note.pack(anchor="w", pady=(16, 0))
         self._built_for = None
         self._keys: dict = {}
 

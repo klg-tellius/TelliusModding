@@ -50,7 +50,7 @@ from ..formats import gcfesnd, stm
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from .widgets import confirm_delete_added, list_buttons
+from .widgets import confirm_delete_added, list_buttons, tip
 
 try:
     import winsound
@@ -81,7 +81,9 @@ class MusicEditor(EditorPanel):
 
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
-        ttk.Label(left, text="Tracks").pack(anchor="w")
+        tip(ttk.Label(left, text="Tracks"), "The .stm streams of Sound/. A new track is written there, but "
+            "nothing in this page maps a track ID to it for the game to play: it needs wiring elsewhere "
+            "before it is heard in game.").pack(anchor="w")
 
         search_var = tk.StringVar()
         ttk.Entry(left, textvariable=search_var).pack(fill="x", pady=(4, 4))
@@ -129,18 +131,8 @@ class MusicEditor(EditorPanel):
         self._status_label = ttk.Label(right, text="", style="Muted.TLabel", wraplength=480)
         self._status_label.pack(anchor="w", fill="x", pady=(8, 0))
 
-        ttk.Label(
-            right,
-            text="Import accepts WAV, MP3, OGG, FLAC, and other common formats\n"
-            "(converted automatically via the bundled FFmpeg). Mono or\n"
-            "stereo only.\n\n"
-            "A new track is written to Sound/ but nothing here maps a track\n"
-            "ID to a filename for the game to actually play it - that lookup\n"
-            "hasn't been reverse-engineered, so a new track needs manual\n"
-            "wiring elsewhere before it's audible in-game.",
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", side="bottom", pady=(8, 0))
+        tip(self._import_button, "Accepts WAV, MP3, OGG, FLAC and other common formats, converted with FFmpeg. "
+                                 "Mono or stereo only.")
 
     # -- data loading ---------------------------------------------------------
     def _load_track_list(self) -> None:

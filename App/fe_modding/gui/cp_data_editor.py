@@ -279,10 +279,9 @@ class CpDataPanel(EditorPanel):
             side="left", padx=(6, 0))
         form = ttk.Frame(page)
         form.pack(side="left", fill="both", expand=True)
-        ttk.Label(form, style="Muted.TLabel", wraplength=700, justify="left", text=(
-            "How a unit scores the tiles it could attack from: every weight multiplies one term of the score "
-            "(signed, -128 to 127). The highest-scoring tile wins.")).grid(row=0, column=0, columnspan=6,
-                                                                           sticky="w", pady=(0, 6))
+        info(form, "How a unit scores the tiles it could attack from: every weight multiplies one term of the "
+                   "score (signed, -128 to 127). The highest-scoring tile wins.").grid(
+            row=0, column=0, sticky="w", pady=(0, 6))
         self._mtype_vars: dict[str, tk.StringVar] = {}
         fields = [f for f in cp.MTYPE_FIELDS if f[1] != "id"]
         for i, (_, key, text) in enumerate(fields):

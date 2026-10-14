@@ -340,10 +340,10 @@ class MapObjectsWindow(_Window):
             var = tk.BooleanVar(value=initial)
             ttk.Checkbutton(frame, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w")
             checks.append((field, mask, initial, var))
-        ttk.Label(frame, text="These flags belong to the object definition and affect every placement. "
-                  "C bit 0 is probably unused in the US build; raw bytes preserve it. "
-                  "The footprint test also depends on map flags and runtime state.",
-                  style="Muted.TLabel", wraplength=390, justify="left").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        info(frame, "These flags belong to the object definition and affect every placement. "
+                    "C bit 0 is probably unused in the US build; raw bytes preserve it. "
+                    "The footprint test also depends on map flags and runtime state.").grid(
+            row=18, column=0, sticky="w", pady=(8, 0))
 
         def apply() -> None:
             try:
