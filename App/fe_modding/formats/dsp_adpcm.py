@@ -358,12 +358,17 @@ def correlate_coefs(source: list[int]) -> list[int]:
         # NaN coefficients in C - not a crash there, but NaN would poison every
         # downstream calculation here. Skipping leaves the inert identity vector
         # instead, which is the same "no meaningful prediction" outcome (silence).
+        used = 0
         for record in records:
             filtered = _matrix_filter(record)
+            if filtered is None:
+                continue
             vec1[1] += filtered[1]
             vec1[2] += filtered[2]
-        vec1[1] /= len(records)
-        vec1[2] /= len(records)
+            used += 1
+        if used:
+            vec1[1] /= used
+            vec1[2] /= used
 
     vec_best = [[0.0, 0.0, 0.0] for _ in range(8)]
     vec_best[0] = _merge_finish_record(vec1)
@@ -513,7 +518,11 @@ def _finish_record(vec_in: list[float]) -> list[float]:
     return [1.0, v[2] * v[1] + v[1], v[2]]
 
 
-def _matrix_filter(src: list[float]) -> list[float]:
+def _matrix_filter(src: list[float]) -> list[float] | None:
+    """None for a degenerate record (a reflection coefficient of exactly +-1,
+    which a flat run such as a square wave's can produce through rounding).
+    The reference divides by zero there and carries inf/NaN into the averages;
+    callers skip the record instead."""
     mtx = [[0.0, 0.0, 0.0] for _ in range(3)]
     mtx[2][0] = 1.0
     for i in (1, 2):
@@ -521,6 +530,8 @@ def _matrix_filter(src: list[float]) -> list[float]:
 
     for i in (2, 1):
         val = 1.0 - (mtx[i][i] * mtx[i][i])
+        if val == 0.0:
+            return None
         for y in range(1, i + 1):
             mtx[i - 1][y] = ((mtx[i][i] * mtx[i][y]) + mtx[i][y]) / val
 
@@ -569,6 +580,9 @@ def _filter_records(vec_best: list[list[float]], exp: int, records: list[list[fl
         counts = [0] * exp
 
         for record in records:
+            filtered = _matrix_filter(record)
+            if filtered is None:
+                continue
             best_i = 0
             best_val = 1.0e30
             for i in range(exp):
@@ -577,7 +591,6 @@ def _filter_records(vec_best: list[list[float]], exp: int, records: list[list[fl
                     best_val = val
                     best_i = i
             counts[best_i] += 1
-            filtered = _matrix_filter(record)
             for k in range(3):
                 buffer_list[best_i][k] += filtered[k]
 
