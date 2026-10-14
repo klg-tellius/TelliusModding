@@ -115,6 +115,27 @@ An item definition describes what a weapon or usable object is. A deployment or 
 <table><thead><tr><th>Information</th><th>Location</th></tr></thead><tbody><tr><td>Definition and combat properties</td><td><a class="wl" href="../../formats/fe8data/">FE8Data.bin</a> item table</td></tr><tr><td>Chapter inventory</td><td><a class="wl" href="../../formats/dispo-format/">dispos.cmp</a> item slots</td></tr><tr><td>Shop availability</td><td><a class="wl" href="../../formats/shop-format/">shop inventory sections</a></td></tr><tr><td>Item icon</td><td><code>window/icon.tpl</code>, first image, cell 96 + icon (see <a class="wl" href="../graphics-system/">Graphics &amp; Images</a>)</td></tr><tr><td>Battle model</td><td><a class="wl" href="../../formats/zdbx/"><code>xwp/&lt;NAME&gt;.dbx</code></a> in <code>zdbx.cmp</code>, which names the pack <code>xwp/&lt;folder&gt;/&lt;model&gt;.cmp</code></td></tr><tr><td>Current durability</td><td>Runtime/save inventory instance</td></tr></tbody></table>
 </div>
 
+## What each usable item does
+
+Using an item runs the handler registered under its ID: the game looks up `IID_<name>_UFX`, so the effect belongs to the item ID, not to the item's fields. Each handler has a test that greys the item out in the menu when it would do nothing.
+
+<div class="table-wrap">
+<table><thead><tr><th>Items</th><th>Usable when</th><th>Effect</th></tr></thead><tbody>
+    <tr><td>Vulnerary</td><td>HP below maximum</td><td>+10 HP</td></tr>
+    <tr><td>Elixir</td><td>HP below maximum</td><td>+127 HP (full)</td></tr>
+    <tr><td>Antitoxin</td><td>poisoned</td><td>clears poison</td></tr>
+    <tr><td>Pure Water</td><td>the Ward counter is not already 7</td><td>sets the Ward counter to 7: Resistance +7, one less each phase</td></tr>
+    <tr><td>Torch (item)</td><td>fog of war, and no Torch counter already at 4</td><td>sets the Torch counter to 4: vision + the counter</td></tr>
+    <tr><td>Laguz Stone</td><td>a laguz unit</td><td>transforms the unit</td></tr>
+    <tr><td>Stat boosters (Seraph Robe, Energy Ring, Spirit Dust, Secret Book, Speedwing, Ashera Icon, Dracoshield, Talisman)</td><td>at least one stat would rise</td><td>adds the item's eight stat bonuses for good, each clamped to the class cap (Luck to 40); the Seraph Robe raises maximum HP, not current HP</td></tr>
+    <tr><td>Boots, Body Ring</td><td>Move or Con would rise</td><td>adds the item's Mov and Con bonuses; total Move stops at 20 and Con at 99</td></tr>
+    <tr><td>Arms Scroll</td><td>the equipped weapon is a sword, lance, axe, bow, tome or staff and its rank is below the class's limit</td><td>raises that weapon type's rank one step</td></tr>
+    <tr><td>Master Seal</td><td>the unit can promote (see <a class="wl" href="../classes/">Classes</a>)</td><td>promotes the unit</td></tr>
+  </tbody></table>
+</div>
+
+A new item with a stat booster's fields but a different ID has no use effect: the handler list is fixed in the executable. <span class="confidence confidence--confirmed">confirmed</span>
+
 ## Special properties
 
 <div class="table-wrap">

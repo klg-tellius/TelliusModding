@@ -798,6 +798,24 @@ class AiActionTests(unittest.TestCase):
         actions.use_staff(world, state, caster, target, 0)
         self.assertEqual((target.status, target.status_turns), ("sleep", 5))
 
+    def test_stat_boosters_respect_the_caps_and_luck_caps_at_40(self):
+        world, state = _ai_world(), GameState()
+        luck = _item("IID_LUCKDROP", weapon_type="item", might=0, uses=1)
+        luck.stat_bonus = [0, 0, 0, 0, 0, 3, 0, 0, 0, 0]
+        boots = _item("IID_BOOTS", weapon_type="item", might=0, uses=1)
+        boots.stat_bonus = [0] * 8 + [2, 0]
+        world.items.update({"IID_LUCKDROP": luck, "IID_BOOTS": boots})
+        u = _unit(state, "PID_A", 0, 0, items=("IID_LUCKDROP", "IID_LUCKDROP", "IID_BOOTS"))
+        u.stats[5], u.move = 38, 19
+        for entry in u.items:
+            entry[1] = 1
+        actions.use_item(world, state, u, 0)
+        self.assertEqual(u.stats[5], 40)  # the class record's Luck cap is never loaded
+        actions.use_item(world, state, u, 0)  # nothing to raise: not used up
+        self.assertEqual([iid for iid, *_ in u.items], ["IID_LUCKDROP", "IID_BOOTS"])
+        actions.use_item(world, state, u, 1)
+        self.assertEqual(u.move, 20)
+
     def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
         world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])
         state = GameState()

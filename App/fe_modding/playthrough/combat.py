@@ -201,10 +201,12 @@ def gain_exp(world: World, state: GameState, unit: SimUnit, exp: int) -> None:
 
 def level_up(world: World, state: GameState, unit: SimUnit) -> None:
     """Random growth (the archive's ``level-up-growth``): a point per full
-    100% of the rate, then one roll for the rest, capped by the class."""
+    100% of the rate, then one roll for the rest, capped by the class (Luck always at 40)."""
+    from .actions import stat_caps
+
     char, cls = world.characters.get(unit.pid), world.classes.get(unit.jid)
     growth = list(char.growth) if char is not None else (list(cls.growths) if cls is not None else [0] * 8)
-    caps = list(cls.stat_caps) if cls is not None else [99] * 8
+    caps = stat_caps(world, unit)
     unit.level += 1
     gains = []
     for i, rate in enumerate(growth[:8]):

@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..formats import fe8data
 from . import combat, movement
 from .state import PLAYER, GameState, SimUnit, Task, TriggerCheck, hostile
 from .world import IMPASSABLE, World
@@ -365,18 +366,56 @@ def steal(world: World, state: GameState, unit: SimUnit, target: SimUnit, index:
                          f"{world.name(target.pid)}", uid=target.uid)
 
 
+#: The stat boosters (``IID_*DROP_UFX``): each adds the item's eight stat bonuses (record 0x4B-0x52) for good.
+STAT_BOOSTERS = frozenset({"IID_HPDROP", "IID_POWERDROP", "IID_MAGICDROP", "IID_TECHDROP", "IID_SPEEDDROP",
+                           "IID_LUCKDROP", "IID_DEFDROP", "IID_MDDROP"})
+#: Boots and Body Ring (``IID_BOOTS_UFX``, ``IID_BODYRING_UFX``): the item's Mov and Con bonuses (0x53, 0x54).
+MOVE_BUILD_BOOSTERS = frozenset({"IID_BOOTS", "IID_BODYRING"})
+#: Luck's cap is a constant in the engine (``decay_stats_to_cap``, the level-up and the Luck getter): the
+#: class record's Luck cap is never loaded.
+LUCK_CAP = 40
+
+
+def stat_caps(world: World, unit: SimUnit) -> list:
+    cls = world.classes.get(unit.jid)
+    caps = list(cls.stat_caps[:8]) if cls is not None else [99] * 8
+    caps[5] = LUCK_CAP
+    return caps
+
+
 def use_item(world: World, state: GameState, unit: SimUnit, index: Optional[int]) -> None:
-    """Vulnerary +10 HP, Elixir full HP; other items are logged (their effects aren't simulated)."""
+    """Vulnerary +10 HP, Elixir full HP; a stat booster adds its stat bonuses up to
+    the class caps (max HP only, not current HP) and Boots / Body Ring their Mov (total at most 20) and Con
+    (at most 99), usable only when something would change; other items are logged (not simulated)."""
     if index is None or index >= len(unit.items):
         raise CommandError("No such item.")
     iid = unit.items[index][0]
     definition = world.items.get(iid)
     if definition is not None and not world.custom_item_allowed(unit, definition):
         raise CommandError(f"{world.name(unit.pid)} cannot use {world.item_name(iid)}.")
+    who, what = world.name(unit.pid), world.item_name(iid)
     if iid in ("IID_VULNERARY", "IID_ELIXIR"):
         amount = min(10 if iid == "IID_VULNERARY" else unit.stats[0], unit.stats[0] - unit.hp)
         unit.hp += amount
-        state.emit("action", f"{world.name(unit.pid)} uses {world.item_name(iid)}: +{amount} HP", uid=unit.uid)
+        state.emit("action", f"{who} uses {what}: +{amount} HP", uid=unit.uid)
+    elif iid in STAT_BOOSTERS and definition is not None:
+        caps = stat_caps(world, unit)
+        new = [min(v + b, c) if b > 0 else v + b for v, b, c in zip(unit.stats, definition.stat_bonus[:8], caps)]
+        if new == unit.stats:
+            state.emit("action", f"{what} would not raise any of {who}'s stats (the game greys it out)", uid=unit.uid)
+            return
+        gains = [f"{fe8data.STAT_NAMES[i]} +{n - v}" for i, (v, n) in enumerate(zip(unit.stats, new)) if n != v]
+        unit.stats[:8] = new
+        unit.hp = min(unit.hp, unit.stats[0])
+        state.emit("action", f"{who} uses {what}: " + ", ".join(gains), uid=unit.uid)
+    elif iid in MOVE_BUILD_BOOSTERS and definition is not None:
+        move, build = min(unit.move + definition.stat_bonus[8], 20), min(unit.build + definition.stat_bonus[9], 99)
+        if (move, build) == (unit.move, unit.build):
+            state.emit("action", f"{what} would not raise {who}'s Move or Con (the game greys it out)", uid=unit.uid)
+            return
+        state.emit("action", f"{who} uses {what}: Move {unit.move} -> {move}, Con {unit.build} -> {build}",
+                   uid=unit.uid)
+        unit.move, unit.build = move, build
     else:
         state.emit("action", f"{world.name(unit.pid)} uses {world.item_name(iid)} (effect not simulated)",
                    uid=unit.uid)

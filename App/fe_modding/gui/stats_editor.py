@@ -825,7 +825,8 @@ class StatsEditor(EditorPanel):
                        lambda d, i, v: patch(d, index, f"growth_modifier{i}", v), low=-128, high=127)
         row += 1
         ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "Base stats add to a character's personal stats (Luck base is unused). "
+            "Base stats add to a character's personal stats. The game ignores the Luck base and the Luck cap: "
+            "Luck is capped at 40 for every class. "
             "Growth % is the class rate used for automatic leveling; it is not added to a character's personal rate. "
             "Growth modifiers add signed percentage points to the personal growth of characters in this class "
             "during level ups. For example, 45% personal growth plus a +5 class modifier becomes 50%.")).grid(

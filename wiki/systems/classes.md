@@ -79,7 +79,7 @@ A class supplies the abilities shared by a kind of unit. Two characters in the s
 
 ## Stats and movement type
 
-  After the movement byte, a class record holds its movement type — the column of terrain movement costs its units use (see [FE8Data.bin](../formats/fe8data.md)) — then eight base stats added to each unit's own, eight caps, and eight class growth rates (the Ranger's HP growth is 90). The game's loader skips the class Luck base and cap. <span class="confidence confidence--confirmed">engine</span>
+  After the movement byte, a class record holds its movement type — the column of terrain movement costs its units use (see [FE8Data.bin](../formats/fe8data.md)) — then eight base stats added to each unit's own, eight caps, and eight class growth rates (the Ranger's HP growth is 90). The game's loader skips the class Luck base and cap: Luck is capped at 40 for every class, in level-ups, stat boosters and the Luck shown in battle. <span class="confidence confidence--confirmed">engine</span>
 
 ## Open questions
 
