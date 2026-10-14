@@ -79,7 +79,7 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
 <table><thead><tr><th>Offset</th><th>Size</th><th>Meaning</th></tr></thead><tbody>
     <tr><td><code>+0x00</code></td><td>8</td><td><code>"SYSF"</code> and the version stamp</td></tr>
     <tr><td><code>+0x08</code></td><td>8</td><td>Random system id made with the data; a save is only written over data with the same id</td></tr>
-    <tr><td><code>+0x10</code></td><td>2</td><td>Unlocks: bit 0 game finished (clear records, trial map 1), bits 1 and 2 trial maps 2 and 3, bits 4 and 5 trial maps 4–6. Finishing on Normal or Easy sets bit 0, Hard bits 0–1, Maniac bits 0–2.</td></tr>
+    <tr><td><code>+0x10</code></td><td>2</td><td>Unlocks: bit 0 game finished (clear records, trial map 1), bits 1 and 2 trial maps 2 and 3, bits 4 and 5 trial maps 4–6. Finishing on Normal or Easy sets bit 0, Hard bits 0–1, Maniac bits 0–2. Bits 3, 4 and 5 are also set by the GBA link (Connect GBA), one per recognised Game Boy Advance Fire Emblem cartridge; the North American and European games recognise <em>Fire Emblem</em> and <em>The Sacred Stones</em>.</td></tr>
     <tr><td><code>+0x12</code></td><td>30</td><td>Ids of the playthroughs that reached the ending; their count + 1 is the playthrough number shown on a new file</td></tr>
     <tr><td><code>+0x30</code></td><td>16</td><td>Characters met: one bit per character number below 128, set whenever a unit is deployed</td></tr>
     <tr><td><code>+0x40</code></td><td>3</td><td>Screen position X and Y and brightness (the Screen menu)</td></tr>

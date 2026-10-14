@@ -25,16 +25,16 @@ This page records the boundaries of the current game description. An open item m
 
 ## Payloads not decoded field-by-field
 
-- `zbg/`'s 3D battle scenery: the `mapextraB`, `mapfogB` and `maplightB` sections of its `map.bin` (where its models stand is in [Battle Staging & Camera](../systems/battle-staging.md)).
+- `zbg/`'s 3D battle scenery: each `map.bin` holds `mapcapacityB`, `mapbuilddescB`, `mapbuildinstB`, `maplightB`, `mapfogB` and `mapextraB` (no panel or link layers), read by the same code and in the same layouts as a chapter map's sections (see [Map File Format](../formats/map-format.md)), so they share the chapter maps' few open flag bits (where its models stand is in [Battle Staging & Camera](../systems/battle-staging.md)).
 - Whether the battle tool's button `current` has a visible effect, whether two unused-looking `ztool/` layouts can be loaded dynamically, and the visual meaning of the lens flare's EFB threshold. Their DBX blocks, fields, and main dialog callbacks are catalogued in [ZDBX & DBX](../formats/zdbx.md).
 
 ## Partially described formats
 
 - `tut_data.bin` / `tut_data_en.bin` — the same labeled-section container; per-chapter trigger data and the [tutorial browser](../systems/tutorial-browser.md) topic/list ownership are identified, but several record fields still need names.
 
-## Unidentified payload
+## The GBA link program
 
-  `client.bin` — mostly high-entropy bytes with a couple of disc-identifier strings (`AFEJ01`, `FIREEMBLEM6`); more likely save-data structure or region metadata than moddable content.
+  `client.bin` is a Game Boy Advance program: it opens with a GBA cartridge header (ARM branch, Nintendo logo, title `FIREEMBLEM6`, code `AFEJ01`) followed by about 18 KB of GBA code. The title menu's **Connect GBA** sends it to a Game Boy Advance plugged into a controller port; it reports which cartridge is inserted, and a *Fire Emblem* or *Fire Emblem: The Sacred Stones* cartridge unlocks bonus content and is remembered in the system data (see [Save format](../formats/save-format.md)). <span class="confidence confidence--confirmed">engine</span> The GBA code itself has not been disassembled, and how the transfer to the GBA runs is not traced. <span class="confidence confidence--open">open</span>
 
 ## Open mechanical questions
 

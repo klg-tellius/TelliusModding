@@ -46,11 +46,12 @@ Use the top-level folder to identify the asset family, peel off any compression 
     <tr><td><code>FE8Data.bin</code></td><td><a class="wl" href="../../formats/fe8data/">Characters, classes, items, and skills</a> — one uncompressed file, no container layer</td></tr>
     <tr><td><code>FE8Anim.bin</code></td><td><a class="wl" href="../../formats/fe8anim/">The map-model registry</a> tying each animation ID to its folder, weapon type, per-army textures and actions</td></tr>
     <tr><td><code>FE8Effect.bin</code></td><td><a class="wl" href="../../formats/fe8effect/">The visual-effect registry</a> for spell and skill particle effects</td></tr>
+    <tr><td><code>title.cmp</code></td><td>The title screen's two textures, <code>window/title.tpl</code> and <code>s/qig</code>, in a <a class="wl" href="../../formats/pack-archive/">pack</a></td></tr>
     <tr><td><code>system.cmp</code></td><td>Loaded at boot: the common message text (skill and menu help) plus copies of <code>FE8Data.bin</code>, <code>FE8Anim.bin</code>, <code>FE8Effect.bin</code> and 13 other loose files. The game's file lookup searches loaded archives before the disc, so these copies are the ones it reads <span class="badge strong">engine</span></td></tr>
     <tr><td><a class="wl" href="../../formats/zdbx/"><code>zdbx.cmp</code></a></td><td>The battle engine's text tables: the class-to-model job list and hundreds of plain-text parameter files for class models, weapons, scenery, and camera scripts</td></tr>
     <tr><td><a class="wl" href="../../formats/sound-room/"><code>soundroom.bin</code></a></td><td>The Sound Room's picture list: which full-screen illustrations it cycles through behind the track menu, and where each sits on screen</td></tr>
     <tr><td><code>tut_data.bin</code> / <code>tut_data_en.bin</code></td><td>The <a class="wl" href="../../systems/tutorial-browser/">tutorial/glossary browser</a> and tutorial-popup system's per-chapter trigger and topic tables</td></tr>
-    <tr><td><code>client.bin</code></td><td>Mostly high-entropy data with a couple of disc-identifier strings — not a moddable content file</td></tr>
+    <tr><td><code>client.bin</code></td><td>A Game Boy Advance program, sent to a GBA plugged into a controller port by the title menu's "Connect GBA" to check which Fire Emblem cartridge it holds</td></tr>
   </tbody></table>
 </div>
 
