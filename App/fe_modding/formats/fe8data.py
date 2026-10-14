@@ -419,7 +419,7 @@ ITEM_PROPERTY_TOKENS = {
     "magsw": "Magic sword - attacks with magic, not strength (Runesword, Sonic Sword)",
     "stormsw": "Vanilla: Alondite, Ragnell, Gurgurant",
     "longfar": "Siege weapon (siege tomes, ballistae)",
-    "sh": "Vanilla: the ballistae and the Onager",
+    "sh": "Siege machine (the ballistae and the Onager): its attacks play on the map, not in a battle scene",
     "revatr": "Not used in vanilla",
     "breath": "Vanilla: the dragon breaths",
     "fang": "Laguz natural weapon",
