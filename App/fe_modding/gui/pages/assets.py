@@ -34,6 +34,8 @@ from ..music_editor import MusicEditor
 from ..portrait_viewer import PortraitViewer
 from ..sfx_viewer import SfxViewer
 from ..soundroom_editor import SoundRoomEditor
+from ..staffroll_editor import StaffRollEditor
+from ..tutorials_editor import TutorialsEditor
 from ..shell import TOOL_ASSETS, Page
 from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
@@ -68,6 +70,8 @@ ASSET_TOOLS = [
     ("dbx_files", "DBX Files", "▤", "Browse, edit, add, delete and restore every text entry in zdbx.cmp", DbxFilesViewer),
     ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
+    ("tutorials", "Tutorials", "?", "The in-game tutorial list (tut_data_en.bin): groups, order, start flags", TutorialsEditor),
+    ("staff_credits", "Staff Credits", "≡", "The end credits (ending/staffroll_noa.bin): edit, add and reorder lines", StaffRollEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
