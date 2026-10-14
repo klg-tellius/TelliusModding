@@ -52,16 +52,14 @@ inside the terrain's own raw mesh bounding box** (`bmap01`: 228/228;
 `bmap07`: 381/381) - up from the previous version's much weaker,
 wrongly-anchored check.
 
-**`map_scale` defaults to 1.0, not `MapCapacity.scale_unit` (2000.0).**
-The investigation's own "what's still open" note flags that the runtime
-`mapScale` value (map-state struct +0x6C) was never independently confirmed
-to equal `scale_unit` at all - it might be a copy, a per-instance cache, or
-a different field entirely. Empirically, `map_scale=1.0` is what produces
-physically sensible results against real data (props landing inside the
-terrain's footprint, as above); a literal `2000.0` multiplier would blow up
-every prop's own mesh geometry by three orders of magnitude relative to the
-terrain it needs to sit on. Exposed as a parameter (not hardcoded) so a
-future confirmation of the real value doesn't need surgery here.
+**`map_scale` is 1.0 here; the engine uses 0.2 and a rotation.** `load_map_data`
+sets map-state `+0x6C` to the constant 0.2 for chapter maps (3.0 for battle
+backdrops, see :mod:`fe_modding.formats.battle_terrain`) and `+0x70` to a
+rotation of 270 degrees about X (identity for backdrops); `MapCapacity.scale_unit`
+is not involved. Every instance goes through the same two, so the engine's
+chapter map is this scene turned Z-up and shrunk to a fifth, one similarity
+transform for the whole map that its camera works in. Drawing at scale 1.0
+with no parent rotation gives the same picture in the app's Y-up space.
 """
 
 from __future__ import annotations
