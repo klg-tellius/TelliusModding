@@ -965,7 +965,8 @@ class StatsEditor(EditorPanel):
         self._byte_row(stats_frame, form, 6, "Growth modifiers", stats, lambda i: cls().growth_modifiers[i],
                        lambda d, i, v: patch(d, index, f"growth_modifier{i}", v), low=-128, high=127)
         row += 1
-        # final, boss and doorbreak are item categories: no vanilla class has them
+        # no vanilla class has final, boss or doorbreak (only the axes list doorbreak); bosses are marked by
+        # their character's SID_BOSS / SID_FINAL skill, so these get a box only on a class that has them
         row = self._token_checks(parent, form, row, 10, "Categories", "categories", fe8data.CLASS_CATEGORY_SLOTS,
                                  fe8data.ITEM_CATEGORY_TOKENS, cls, index, fe8data.patch_class_field,
                                  help_text="What the class is: weapons effective against a category hit it harder, "
