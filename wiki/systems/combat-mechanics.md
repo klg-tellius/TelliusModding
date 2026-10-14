@@ -58,6 +58,10 @@ A status staff cast on the enemy's phase therefore costs the target four of its 
 
 The Berserk staff rolls its hit chance and plays its animation, but the unit has no counter for a Berserk ("Confuse") status, so a hit changes nothing. It has no effect in this game. <span class="confidence confidence--confirmed">confirmed</span>
 
+## The weapon triangle
+
+  When the forecast is built, the game looks the two weapon types up in a fixed table of twelve pairs. Swords beat axes, axes beat lances, lances beat swords; among tomes, fire beats wind, wind beats thunder, thunder beats fire. The side with the advantage gets **+10 Hit and +1 Attack**, the other side **−10 Hit and −1 Attack**. Bows, knives, staves and laguz weapons are in no pair. An item property, `revatr`, reverses both bonuses for its wielder, but no retail weapon carries it. <span class="confidence confidence--confirmed">engine</span>
+
 ## Weapon effectiveness — bonus damage against certain enemy types
 
   Before any of that, the equipped weapon's own type value already decided which pair of stats is even being compared: most weapon types weigh Strength against the target's Defense, but a specific small range of type values switches the whole calculation to Magic against Resistance instead.

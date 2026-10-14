@@ -19,6 +19,8 @@ source_path: "systems/items-weapons.md"
 
 An item definition describes what a weapon or usable object is. A deployment or save places an instance of that item in a unit's inventory, and runtime state tracks mutable values such as remaining durability and whether the item is equipped. Combat then combines the equipped weapon's properties with the unit's effective stats.
 
+Every weapon, by type: [Swords](./weapons-swords.md), [Lances](./weapons-lances.md), [Axes](./weapons-axes.md), [Bows](./weapons-bows.md), [Knives](./weapons-knives.md), [Tomes](./weapons-tomes.md), [Staves](./weapons-staves.md), [Laguz natural weapons](./weapons-laguz.md); and [Ragnell and Alondite](./ragnell-and-alondite.md).
+
 ## From item definition to combat
 
 1. An `IID_` selects a reusable item record in [FE8Data.bin](../formats/fe8data.md).
