@@ -783,6 +783,21 @@ class AiActionTests(unittest.TestCase):
         target.categories = ["mage"]
         self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], target.uid)
 
+    def test_sleep_lasts_five_phases_and_berserk_does_nothing(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_BERSERK"] = _item("IID_BERSERK", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, jid="JID_CLERIC", items=("IID_SLEEP", "IID_BERSERK"))
+        target = _unit(state, "PID_A", 1, 0, faction=ENEMY)
+        state.rng = SimpleNamespace(roll_percent=lambda hit: (True, 0))
+        actions.use_staff(world, state, caster, target, 1)
+        self.assertEqual((target.status, target.status_turns), ("", 0))
+        target.skills.append("SID_BOSS")  # bosses resist status staves
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual(target.status, "")
+        target.skills.remove("SID_BOSS")
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual((target.status, target.status_turns), ("sleep", 5))
+
     def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
         world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])
         state = GameState()

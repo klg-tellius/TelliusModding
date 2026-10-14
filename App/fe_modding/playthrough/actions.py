@@ -289,8 +289,9 @@ def staff_heal(world: World, unit: SimUnit, item) -> int:
 def use_staff(world: World, state: GameState, unit: SimUnit, target: Optional[SimUnit], index: Optional[int],
               to: Optional[tuple] = None) -> None:
     """Healing staves heal (Fortify: every unit of the caster's side in its range); Restore clears a
-    status; Silence, Sleep and Berserk hit with ``ai_actions.magic_hit`` and last
-    ``ai_actions.STATUS_TURNS`` phases; Rescue brings the target next to the caster; Warp sends it to
+    status; Silence and Sleep hit with ``ai_actions.magic_hit`` and last ``ai_actions.STATUS_TURNS``
+    phases (Berserk rolls the same hit but has no effect, as in the game; a boss or the final boss
+    resists, ``check_actor_skill_6_or_7``); Rescue brings the target next to the caster; Warp sends it to
     ``to``; Ward's Res bonus is not simulated."""
     from . import ai_actions
 
@@ -322,10 +323,12 @@ def use_staff(world: World, state: GameState, unit: SimUnit, target: Optional[Si
         if iid in ai_actions.STATUS_STAVES:
             hit = ai_actions.magic_hit(unit, target, d)
             ok, roll = state.rng.roll_percent(hit)
-            if ok:
-                target.status, target.status_turns = ai_actions.STATUS_STAVES[iid], ai_actions.STATUS_TURNS
+            ok = ok and not ({"SID_BOSS", "SID_FINAL"} & set(target.skills))
+            status = ai_actions.STATUS_STAVES[iid]
+            if ok and status:
+                target.status, target.status_turns = status, ai_actions.STATUS_TURNS
             state.emit("action", f"{world.name(unit.pid)} uses {name} on {world.name(target.pid)}: hit {hit}, "
-                                 f"roll {roll}: " + (target.status if ok else "missed"), uid=target.uid)
+                                 f"roll {roll}: " + ((status or "no effect") if ok else "missed"), uid=target.uid)
         elif iid == "IID_REST":
             state.emit("action", f"{world.name(unit.pid)} restores {world.name(target.pid)}"
                                  + (f" (no longer {target.status})" if target.status else ""), uid=target.uid)

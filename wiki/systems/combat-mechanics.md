@@ -42,7 +42,21 @@ A battle between two units is a sequence of **exchanges**, and each exchange can
 
 ## Status effects and how long they last
 
-  Each status is a small counter of phases on the unit, shown as a number on its status panel. At the start of a side's phase every counter of that side's units drops by one; when one would reach zero the unit first plays the "status cured" animation. Poison from a poisoned weapon starts at 5, so it lasts five of the victim's phases. The Snipe skill sets a counter of 5 during which the target cannot act, and Impact a counter of 2. Silence blocks tome and staff use while its counter runs. A separate one-phase counter (set by a fall into a pit, for example) keeps a unit from acting and runs out at the end of its own phase. <span class="confidence confidence--confirmed">confirmed</span> How long a status staff's effect starts at is not settled yet <span class="confidence confidence--open">open</span>.
+  Each status is a small counter of phases on the unit, shown as a number on its status panel. At the start of a side's phase every counter of that side's units drops by one; when one would reach zero the unit first plays the "status cured" animation. 
+
+| Status | Set by | Starting value | Effect |
+|---|---|---|---|
+| Poison | a poisoned weapon | 5 | damage at the start of each own phase |
+| Sleep | the Sleep staff, Deadeye | 5 | cannot act |
+| Silence | the Silence staff | 5 | cannot use tomes or staves |
+| Shock | Stun | 2 | Move is 0 |
+| Ward | the Ward staff | 7 | Resistance + the counter: +7, then +6, +5... as it runs down |
+| Torch | the Torch staff (on the user) | 4 | vision in fog + the counter |
+| Paralyse | falling into a pit, being shoved | 1 | cannot act; runs out at the end of the unit's own phase |
+
+A status staff cast on the enemy's phase therefore costs the target four of its own phases: the counter reaches zero at the start of the fifth and the unit acts normally. Sleep, Silence and the combat procs fail against bosses and the final boss. <span class="confidence confidence--confirmed">confirmed</span>
+
+The Berserk staff rolls its hit chance and plays its animation, but the unit has no counter for a Berserk ("Confuse") status, so a hit changes nothing. It has no effect in this game. <span class="confidence confidence--confirmed">confirmed</span>
 
 ## Weapon effectiveness — bonus damage against certain enemy types
 

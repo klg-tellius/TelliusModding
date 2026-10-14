@@ -46,7 +46,10 @@ STAFF_ROUTINES = {"IID_LIVE": "heal_adjacent", "IID_RELIVE": "heal_adjacent", "I
                   "IID_REBLOW": "heal_ranged", "IID_RESERVE": "fortify", "IID_REST": "restore",
                   "IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": "sleep", "IID_WARP": "warp",
                   "IID_RESCUE": "heal_ranged", "IID_MSHIELD": "ward"}
-STATUS_STAVES = {"IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": "berserk"}
+#: The status each status staff sets when it hits (the ``IID_*_UFX`` handlers at 0x802971B8/C8/D8). Berserk
+#: rolls its hit like the others but its handler writes no counter (the unit status block has no slot for
+#: "Confuse"), so a hit changes nothing.
+STATUS_STAVES = {"IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": ""}
 #: 0x80273B78: the tiles next to a target, in the order the adjacent routines try them.
 ADJACENT = ((1, 0), (-1, 0), (0, 1), (0, -1))
 #: The order ``dispatch_adjacent_with_vtable_offset_8`` visits a tile's neighbours (link bits 8, 2, 4, 1).
@@ -56,10 +59,9 @@ COUNT_TABLE = tuple((dx, dy) for dy in range(-3, 4) for dx in range(-3, 4) if 0 
 #: Heal amounts the heal-item choice compares (``check_use_healing_item_action*``): others count 0.
 ITEM_HEAL = {"IID_VULNERARY": 10}
 EQUIPMENT_SLOTS = ITEM_SLOTS = 4
-#: Phases a status staff's effect lasts. The countdown is decoded (``tick_phase_start_status_counters``:
-#: each 3-bit counter at unit +0x1A4 drops by one at the start of its side's phase, as the engine does
-#: here; poison starts at 5), but the value a status staff writes was not found, so this keeps the
-#: series' usual 5.
+#: Phases a status staff's effect lasts: the Sleep and Silence handlers write 5 into the unit's counter
+#: (+0x1A4), and ``tick_phase_start_status_counters`` takes one off at the start of each of its side's
+#: phases, as the engine does here.
 STATUS_TURNS = 5
 NO_SCORE = -(1 << 31)
 
