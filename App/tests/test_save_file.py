@@ -179,3 +179,15 @@ class RealSaveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForgePoolTests(unittest.TestCase):
+    def test_a_full_forge_pool_is_reported(self):
+        save = sf.SaveFile.from_bytes(build_gci(build_block([unit_record(1, 2)])))
+        block = save.blocks[0]
+        self.assertEqual(sf.validate(block), [])
+        for record in block.forges:
+            record.allocated = 1
+        problems = sf.validate(block)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("convoy slots 198-200", problems[0])

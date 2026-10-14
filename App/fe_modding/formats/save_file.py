@@ -814,6 +814,11 @@ def validate(block: SaveBlock, fe8=None) -> list:
         item_ok(it, f"convoy slot {i + 1}")
     if block.terrain and block.terrain.count > TERRAIN_ENTRIES:
         out.append(f"terrain table count {block.terrain.count} > {TERRAIN_ENTRIES}")
+    if block.forges and all(f.allocated for f in block.forges):
+        # allocate_free_forge_result_slot returns 0 when full and the setters then write
+        # pool[-1]: the 24 bytes before the pool, which are convoy slots 198-200.
+        out.append(f"all {FORGE_RECORDS} forge records are used: the next forge would overwrite convoy "
+                   f"slots {CONVOY_SLOTS - 2}-{CONVOY_SLOTS} and the weapon would stay unforged")
     return out
 
 
