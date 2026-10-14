@@ -88,13 +88,15 @@ A story chapter is not one file — it is four independent files that happen to 
 
 <div class="table-wrap">
 <table class="tight"><thead><tr><th>Special case</th><th>What happens</th></tr></thead><tbody>
-    <tr><td>Chapter 27</td><td>Two numbers (slots 28 and 29) for one chapter on two maps. No save menu between them, and the second half's script only has an intro.</td></tr>
-    <tr><td>Chapter 17</td><td>One number, four battles. The script ends each of the first three with <code>Complete18(part)</code> instead of a victory: the number stays the same, the save menu opens, and <code>Opening18_2</code>, <code>_3</code> or <code>_4</code> sets up the next battle, loading another map when needed.</td></tr>
+    <tr><td>Chapter 27</td><td>Two numbers (slots 28 and 29) for one chapter on two maps. Clearing 28 is a continued part: the army isn't sorted out (units that joined keep their army), the war record entry is flagged as carrying on and is merged with 29's, there is no save menu, and support points are not counted again at the start of 29. The second half's script only has an intro.</td></tr>
+    <tr><td>Chapter 17</td><td>One number, four battles. The script ends each of the first three with <code>Complete18(part)</code> instead of a victory: the number stays the same, the save menu opens, and <code>Opening18_2</code>, <code>_3</code> or <code>_4</code> sets up the next battle, loading another map when needed. <code>Complete18</code> works in any chapter, but only chapter 18's later parts skip the support pass: elsewhere support points are counted again at the start of each part.</td></tr>
     <tr><td>After the Endgame</td><td>Number 32 means the game is cleared: the Endgame map is reloaded for the final scene, the ending plays, the clear is recorded per difficulty in the system data, and the title screen returns.</td></tr>
     <tr><td>Starting directly</td><td>The development chapter select starts any chapter record with an empty army, keeping the difficulty (see <a class="wl" href="../developer-debug-tools/">Developer &amp; Debug Tools</a>).</td></tr>
     <tr><td>Saves</td><td>A save stores the chapter number and a resume point: the base, preparations, the start of the chapter (the save made after a victory), part 2&amp;ndash;4 of Chapter 17, or a suspended battle (see <a class="wl" href="../../formats/save-format/">GameCube Save (.gci)</a>).</td></tr>
   </tbody></table>
 </div>
+
+Support points are added once per battle map, at its start; the two exceptions above (29, and the parts of chapter 18) are the engine's only ways of keeping a chapter's later maps from counting again. <span class="confidence confidence--confirmed">engine</span>
 
 ## Adding chapters
 

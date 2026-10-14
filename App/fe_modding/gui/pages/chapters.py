@@ -31,7 +31,7 @@ from tkinter import messagebox, ttk
 from ... import chapter_phase_ops, chapters, hub, hub_creation, script_sources
 from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
-from ...game_code import chapter_flow, chapter_jump
+from ...game_code import chapter_flow, chapter_jump, chapter_parts
 from ...formats.cmb.catalog import TRIGGERS
 from ...game_profile import CHAPTERS, profile_of
 from ...project_index import difficulty_name
@@ -795,13 +795,34 @@ class ChapterPage(Page):
         self.shell.changelog.append(clone.folder, f"Cloned phase from {source_folder}")
         self.shell.rebuild_index()
         if playable:
+            supports = self._count_supports_once()
             self._select_tab("script")
             messagebox.showinfo(
                 "Playable part needs setup",
                 f"Opening18_{part} now loads {clone.folder}. In the Script tab, add deployment "
                 f"calls for its copied sections and change the preceding battle's victory path "
-                f"to Complete18({part - 1}). Save the script when it compiles.",
+                f"to Complete18({part - 1}). Save the script when it compiles." + supports,
                 parent=self)
+
+    def _count_supports_once(self) -> str:
+        """Chapters other than 18 count support points again at each Complete18 part; turn on the
+        Game Code fix that makes them count once. Returns a note for the message."""
+        if self._chapter == "18":
+            return ""
+        from ...game_code.chapter_parts import PART_SUPPORTS_PATCH
+        from ...game_code.catalog import State
+        from ...game_code.editor import CodeEditor
+        try:
+            editor = CodeEditor(self.project.extracted_dir, self.project.write_keeping_original)
+            if editor.status(PART_SUPPORTS_PATCH).state != State.ORIGINAL:
+                return ""
+            editor.set_patch(PART_SUPPORTS_PATCH, True)
+        except (OSError, ModdingError, ValueError):
+            return ("\n\nSupport points will be counted again at the start of each part; the Game Code entry "
+                    "\"Count supports once in split chapters\" fixes that, but main.dol could not be changed.")
+        self.shell.changelog.append("main.dol", f"Game Code: {PART_SUPPORTS_PATCH.name}")
+        return ("\n\nGame Code \"Count supports once in split chapters\" is now on, so support points are "
+                "counted once for the whole chapter.")
 
     def _remove_phase(self) -> None:
         if self._chapter is None or self._phase is None:
@@ -980,6 +1001,16 @@ class ChapterPage(Page):
         if chapter == chapter_flow.CONTINUED_PART or chapter - 1 == chapter_flow.CONTINUED_PART:
             notes.append("Chapters 28 and 29 are the two halves of Ch.27: the game skips the save menu and the "
                          "army cleanup between them, whatever the flow says.")
+        parts = chapter_parts.ChapterParts(flow.editor)
+        if chapter != chapter_flow.CONTINUED_PART and parts.available:
+            continued = tk.BooleanVar(value=chapter in parts.continued())
+            check = ttk.Checkbutton(box, text="The next chapter is this chapter's second part", variable=continued,
+                                    command=lambda: self._set_continued(chapter, continued.get()))
+            check.pack(anchor="w", pady=(6, 0))
+            if continued.get():
+                notes.append("Like chapters 28 and 29: no save menu before the next chapter, the army isn't sorted "
+                             "out (units that joined keep their army), support points aren't counted again, and the "
+                             "war record lists the two as separate rows.")
         if chapter > chapter_flow.LAST_RETAIL_STORY and not in_story:
             notes.append("Not reached from the Prologue: pick it as the next chapter of a story chapter.")
         for note in notes:
@@ -994,6 +1025,18 @@ class ChapterPage(Page):
             if nxt == flow.next_of(chapter):
                 return
             description = flow.set_next(chapter, nxt)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not change the story flow", str(exc), parent=self)
+        else:
+            self.shell.changelog.append("main.dol", f"Story flow: {description}")
+        self._render_overview()
+
+    def _set_continued(self, chapter: int, on: bool) -> None:
+        flow, why = open_flow(self.project)
+        try:
+            if flow is None:
+                raise ValueError(why)
+            description = chapter_parts.ChapterParts(flow.editor).set_continued(chapter, on)
         except (ValueError, OSError, ModdingError) as exc:
             messagebox.showerror("Could not change the story flow", str(exc), parent=self)
         else:
