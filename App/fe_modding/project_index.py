@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import chapters
-from .formats import anim_registry, dispo, fe8data, lz10, message, pak, zdbx
+from .formats import anim_registry, dispo, fe8data, game_text, lz10, message, pak, zdbx
 from .formats.fe9_portraits import read_face_table
 from .game_profile import CHAPTERS, GAME_DATA, profile_of
 from .project import ModProject
@@ -130,6 +130,7 @@ class ProjectIndex:
     def __init__(self, project: ModProject):
         self.project = project
         self.files = project.extracted_dir / "files"
+        game_text.use_for_extraction(project.extracted_dir)
         self.profile = profile_of(project)
         self._lock = threading.Lock()
         self.ready = False
@@ -182,7 +183,12 @@ class ProjectIndex:
             return {}
 
     def text(self, key: Optional[str]) -> str:
-        return (self.texts.get(key) or "").strip() if key else ""
+        if not key:
+            return ""
+        try:
+            return game_text.from_raw(self.texts.get(key) or "").strip()
+        except UnicodeError:
+            return (self.texts.get(key) or "").strip()
 
     def _read_deployments(self) -> list[Deployment]:
         out = []

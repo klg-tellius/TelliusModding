@@ -20,17 +20,18 @@ import re
 from bisect import bisect_right
 from dataclasses import dataclass, field
 
+from . import game_text
 from .fe9_conversation import Token, tokenize
 
 
 def to_display(raw: str) -> str:
-    """cp437 source string -> readable Shift-JIS text."""
-    return raw.encode("cp437").decode("shift_jis", errors="replace")
+    """cp437 source string -> readable text (CP932, or the PAL hybrid: see ``game_text``)."""
+    return game_text.from_raw(raw)
 
 
 def to_raw(display: str) -> str:
     """Readable text -> cp437 source string (raises UnicodeEncodeError)."""
-    return display.encode("shift_jis").decode("cp437")
+    return game_text.to_raw(display)
 
 
 @dataclass(frozen=True)

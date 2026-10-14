@@ -2660,7 +2660,23 @@ class DiscFe8DataTests(unittest.TestCase):
         self.assertEqual(sum(sum(c.values()) for c in summary.values()), len(self.data))
         self.assertEqual(sum(c["undecoded"] for c in summary.values()), 0)
 
+    def test_japanese_chapter_records_read_and_refuse_edits(self):
+        if not fe8data.japanese_chapter_layout(self.data):
+            self.skipTest("not the Japanese release")
+        chapters = fe8data.read_chapter_data(self.data)
+        self.assertEqual(len(chapters), 44)
+        first = next(c for c in chapters if c.chapter_id == 1)
+        self.assertEqual((first.map_name, first.script, first.title_key), ("bmap01", "C01", None))
+        self.assertEqual(len(first.enemy_bonus_levels), 3)              # no Easy mode
+        self.assertTrue(first.title_text.startswith("序章"))   # literal title: Prologue
+        with self.assertRaises(ValueError):
+            fe8data.patch_chapter_field(self.data, 1, "bgm", "BGM_MAP01")
+        with self.assertRaises(ValueError):
+            fe8data.add_record(self.data, "chapter", copy_from=1)
+
     def test_roster_order_gauge_and_chapter_bonus_levels(self):
+        if fe8data.japanese_chapter_layout(self.data):
+            self.skipTest("US/PAL values")
         fe8 = fe8data.read_fe8data(self.data)
         by_pid = {c.pid: c for c in fe8.characters}
         self.assertEqual([by_pid[p].roster_order for p in ("PID_IKE", "PID_TIAMAT", "PID_OSCAR")], [1, 2, 3])

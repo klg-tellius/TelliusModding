@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..formats import game_text
+
 from . import ai_actions, ai_vm, combat, event_vm, setup, triggers
 from .actions import AfterAction, Combat
 from .state import (ENEMY, PHASE_ORDER, PLAYER, AiPhase, AiTurn, GameState, MessageShow, PhaseEnd, PhaseStart,
@@ -217,7 +219,7 @@ def page_text(timeline, index: int) -> str:
 
 def decode(text: str) -> str:
     try:
-        return text.encode("cp437").decode("shift_jis", errors="replace")
+        return game_text.from_raw(text)
     except UnicodeEncodeError:
         return text
 

@@ -100,13 +100,13 @@ class _Pool:
         self.size = 0
         for text in self.entries:
             self.offsets.setdefault(text, self.size)
-            self.size += len(text.encode("cp932")) + 1
+            self.size += len(text.encode("cp932", "surrogateescape")) + 1
 
     def intern(self, text: str) -> int:
         if text not in self.offsets:
             self.entries.append(text)
             self.offsets[text] = self.size
-            self.size += len(text.encode("cp932")) + 1
+            self.size += len(text.encode("cp932", "surrogateescape")) + 1
         return self.offsets[text]
 
     def text_at(self, offset: int) -> Optional[str]:

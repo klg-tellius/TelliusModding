@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fe_modding.formats import fe9_message_scene as ms
 from fe_modding.formats import lz10
-from fe_modding.formats.fe9_font import (FONT_FILES, GameFont, GlyphBitmap, ImportOptions, build_gcf,
+from fe_modding.formats.fe9_font import (FONT_FILES, GameFont, GlyphBitmap, ImportOptions, build_gcf, resolve_font_files,
                                          char_of, code_of, import_truetype, rebuild)
 
 
@@ -110,7 +110,7 @@ class TrueTypeImportTests(unittest.TestCase):
 class VanillaFontTests(unittest.TestCase):
     def test_rebuild_keeps_every_glyph(self):
         files = next(Path(os.environ["FE9_EXTRACTED"]).glob("**/files/Fonts")).parent
-        for name, relative in FONT_FILES:
+        for name, relative in resolve_font_files(files, FONT_FILES):
             with self.subTest(font=name):
                 data = (files / relative).read_bytes()
                 if relative.endswith(".cms"):

@@ -347,6 +347,8 @@ class ModProject:
         except (KeyError, ValueError) as exc:
             raise ProjectError(f"Project file '{project_file}' has an invalid or missing game id.") from exc
 
+        from .formats import game_text
+        game_text.use_for_extraction(directory / "extracted")
         return cls(
             name=data.get("name", directory.name),
             game=game,

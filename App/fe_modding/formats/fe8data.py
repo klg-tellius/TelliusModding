@@ -466,6 +466,12 @@ ITEM_TRAIL_COLORS = (
 SKILL_TABLE_OFFSET = 0xE398  # first record (SID_HERO); the count word sits just before it
 SKILL_RECORD_SIZE = 0x28
 CHAPTER_RECORD_SIZE = 0x60
+#: The Japanese release (GFEJ01) has no Easy mode: its chapter records drop the fourth bonus
+#: level and its padding (0x5C bytes), and the first field is the title itself (or a message
+#: key for the trial maps) instead of a ``MCTnn`` key.
+JP_CHAPTER_RECORD_SIZE = 0x5C
+JP_CHAPTER_LAYOUT_ERROR = ("This FE8Data.bin uses the Japanese chapter record layout (no Easy mode, "
+                           "literal chapter titles); chapter records can be read but not edited.")
 
 # HP, Str, Mag, Skl, Spd, Lck, Def, Res - standard Fire Emblem stat order,
 # not independently confirmed field-by-field but consistent with every
@@ -1073,7 +1079,7 @@ def terrain_stats_block(t: "TerrainType") -> bytes:
 
 
 def read_message_texts(system_cmp_path: Path | str) -> dict:
-    """Every ``mess/common.m`` message of ``system.cmp`` by key. Keys are
+    """Every ``mess/common.m`` message of ``system.cmp`` (PAL: the loose ``Mess/common.m``) by key. Keys are
     Shift-JIS (``MT_平地``); the message reader decodes them as cp437, so
     they are re-decoded here."""
     import io
@@ -1082,8 +1088,13 @@ def read_message_texts(system_cmp_path: Path | str) -> dict:
 
     decompressed = lz10.decompress(Path(system_cmp_path).read_bytes())
     entries = pak.read_pak_entries(decompressed)
-    common_entry = next(e for e in entries if e.name == "mess/common.m")
-    messages = message.read_messages(io.BytesIO(pak.read_pak_file_content(decompressed, common_entry)))
+    common_entry = next((e for e in entries if e.name == "mess/common.m"), None)
+    if common_entry is None:
+        # The PAL system.cmp carries no messages: it loads the loose Mess/common.m (English;
+        # d_/f_/i_/s_common.m are German, French, Italian and Spanish).
+        messages = message.read_messages_path(Path(system_cmp_path).parent / "Mess" / "common.m")
+    else:
+        messages = message.read_messages(io.BytesIO(pak.read_pak_file_content(decompressed, common_entry)))
     texts = {}
     for m in messages:
         try:
@@ -1833,6 +1844,8 @@ class RawRecord:
 
 
 def read_table(data: bytes, kind: str) -> list[RawRecord]:
+    if kind == "chapter":
+        require_editable_chapters(data)
     size = TABLES[kind][1]
     start = table_start(data, kind)
     listed = listed_pointer_fields(data)
@@ -1846,6 +1859,8 @@ def read_table(data: bytes, kind: str) -> list[RawRecord]:
 def write_table(data: bytes, kind: str, rows: list[RawRecord]) -> bytes:
     """Rebuild a table from ``rows`` (count word + records). The table stays
     in place when it fits, else moves to the end of the data section."""
+    if kind == "chapter":
+        require_editable_chapters(data)
     count = table_count(data, kind)
     if kind in FIXED_TABLES and len(rows) != count:
         raise ValueError(f"The game is bound to the {count} {kind} records: "
@@ -2071,6 +2086,24 @@ class ChapterRecord:
     trial_turn_grades: tuple  # 0x54-0x57, trial maps: most turns for grade A, B, C, D
     trial_loss_grades: tuple  # 0x58-0x5B, trial maps: most units lost for grade A, B, C, D
     trial_score_grades: tuple  # 0x5C-0x5F, trial maps: fewest player kills on the map (unit +0x22C) for A, B, C, D
+    title_text: Optional[str] = None  # Japanese layout only (+0x00): the title text, or a message key (trial maps)
+
+
+def japanese_chapter_layout(data: bytes) -> bool:
+    """True for the Japanese ``ChapterData`` layout: records 1-3 start every 0x5C bytes with a
+    listed title pointer, where the 0x60-byte US/PAL records hold unlisted trial grades."""
+    start = _section_start(data, "ChapterData")
+    if start is None:
+        return False
+    (count,) = struct.unpack_from(">I", data, start)
+    listed = listed_pointer_fields(data)
+    probes = [start + 4 + i * JP_CHAPTER_RECORD_SIZE for i in range(1, min(count, 4))]
+    return bool(probes) and all(p in listed for p in probes)
+
+
+def require_editable_chapters(data: bytes) -> None:
+    if japanese_chapter_layout(data):
+        raise ValueError(JP_CHAPTER_LAYOUT_ERROR)
 
 
 def read_chapter_data(data: bytes) -> list[ChapterRecord]:
@@ -2081,6 +2114,24 @@ def read_chapter_data(data: bytes) -> list[ChapterRecord]:
     (count,) = struct.unpack_from(">I", data, start)
     listed = listed_pointer_fields(data)
     result = []
+    if japanese_chapter_layout(data):
+        for i in range(count):
+            off = start + 4 + i * JP_CHAPTER_RECORD_SIZE
+            label = lambda o: _listed_label(data, off + o, listed)  # noqa: E731
+            rec = data[off : off + JP_CHAPTER_RECORD_SIZE]
+            result.append(ChapterRecord(
+                index=i, offset=off, title_key=None, map_name=label(0x04), script=label(0x08),
+                message=label(0x0C), bgm=label(0x10),
+                objectives=[label(0x14 + 4 * k) for k in range(4)],
+                hard_objectives=[label(o) for o in (0x24, 0x28, 0x2C)],
+                maniac_objectives=[label(o) for o in (0x30, 0x34, 0x38)],
+                chapter_id=rec[0x3C], enemy_bonus_levels=tuple(rec[0x3D:0x40]),
+                base_background=label(0x40), scene_map=label(0x44), scene_sky=label(0x48),
+                talk_background=label(0x4C),
+                trial_turn_grades=tuple(rec[0x50:0x54]), trial_loss_grades=tuple(rec[0x54:0x58]),
+                trial_score_grades=tuple(rec[0x58:0x5C]), title_text=label(0x00),
+            ))
+        return result
     for i in range(count):
         off = start + 4 + i * CHAPTER_RECORD_SIZE
         label = lambda o: _listed_label(data, off + o, listed)  # noqa: E731
@@ -2193,6 +2244,7 @@ def patch_chapter_field(data: bytes, index: int, field: str, value) -> bytes:
     the string pool when new, or None), a :data:`CHAPTER_BYTE_FIELDS` name
     (0-255), or ``chapter_id`` (0-255, unique: ``find_chapter_record_by_id``
     matches it)."""
+    require_editable_chapters(data)
     off = table_start(data, "chapter") + index * CHAPTER_RECORD_SIZE
     if field in CHAPTER_POINTER_FIELDS:
         return _patch_label_field(data, off + CHAPTER_POINTER_FIELDS[field], (value or "").strip() or None,

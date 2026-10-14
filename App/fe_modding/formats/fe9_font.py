@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from . import tpl
+from . import game_text, tpl
 
 
 @dataclass(frozen=True)
@@ -31,8 +31,9 @@ class Glyph:
 MISSING_GLYPH_CODE = 0x8199  # font_missing_glyph_key in main.dol
 
 #: Font index -> (name, file under files/). Index order is game_font_handles; ``#Fxx`` uses it.
-#: The system font is read from the LZ10 ``.cms`` (``system.gcf`` is never loaded); fonts 1-4 are
-#: also bundled in ``system.cmp``, which the build refreshes from the loose files.
+#: The US and JP system font is read from the LZ10 ``.cms`` (their ``system.gcf`` is never loaded);
+#: the PAL build has no ``.cms`` and loads ``Fonts/system.gcf`` (see :func:`resolve_font_files`).
+#: Fonts 1-4 are also bundled in ``system.cmp``, which the build refreshes from the loose files.
 FONT_FILES = (("system", "Fonts/system.cms"), ("fe_font", "Fonts/fe_font.gcf"),
               ("talk", "Fonts/talk.gcf"), ("bigkana", "Fonts/bigkana.gcf"), ("alpha", "Fonts/alpha.gcf"))
 #: Radiant Dawn: the same GCF fonts, every one LZ10-wrapped, each with a ``_w`` twin drawn in 16:9
@@ -46,6 +47,19 @@ FONT_FILES_FE10 = (("system", "Fonts/system.cms"), ("system_w", "Fonts/system_w.
                    ("alpha", "Fonts/alpha.cms"), ("alpha_w", "Fonts/alpha_w.cms"), ("ruby", "Fonts/ruby.cms"))
 
 
+def resolve_font_files(files: Path, font_files=FONT_FILES) -> tuple[tuple[str, str], ...]:
+    """``font_files`` with each missing ``.cms`` replaced by its ``.gcf`` twin when that exists
+    (the PAL disc ships and loads an uncompressed ``Fonts/system.gcf``)."""
+    result = []
+    for name, relative in font_files:
+        if relative.endswith(".cms") and not (files / relative).is_file():
+            twin = relative[:-4] + ".gcf"
+            if (files / twin).is_file():
+                relative = twin
+        result.append((name, relative))
+    return tuple(result)
+
+
 @dataclass(frozen=True)
 class GlyphBitmap:
     """One glyph as drawn: an L-mode coverage mask plus its placement metrics."""
@@ -56,19 +70,20 @@ class GlyphBitmap:
 
 
 def code_of(char: str) -> int:
-    """The game text code of a character (one byte, or a two-byte CP932 code)."""
+    """The game text code of a character (one byte, or a two-byte CP932 code; see ``game_text``)."""
     try:
-        return int.from_bytes(char.encode("cp932"), "big")
+        return game_text.char_code(char)
     except UnicodeEncodeError:
         raise ValueError(f"U+{ord(char):04X} has no game text encoding") from None
 
 
 def char_of(code: int) -> str | None:
-    """The character a glyph code stands for, or None when CP932 has none."""
-    try:
-        return (bytes((code,)) if code < 0x100 else code.to_bytes(2, "big")).decode("cp932")
-    except UnicodeDecodeError:
+    """The character a glyph code stands for, or None when the release's text rules have none."""
+    raw = bytes((code,)) if code < 0x100 else code.to_bytes(2, "big")
+    if len(raw) == 2 and not game_text.is_lead_byte(raw[0]):
         return None
+    text = game_text.decode(raw)
+    return None if len(text) != 1 or 0xDC80 <= ord(text) <= 0xDCFF else text
 
 
 class GameFont:

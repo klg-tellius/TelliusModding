@@ -76,7 +76,8 @@ class FontViewer(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._files = project.extracted_dir / "files"
-        self._fonts = [(name, self._files / rel) for name, rel in profile_of(project).font_files
+        self._fonts = [(name, self._files / rel)
+                       for name, rel in fe9_font.resolve_font_files(self._files, profile_of(project).font_files)
                        if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]
         self._pending: dict[str, bytes] = {}  # font name -> unsaved GCF bytes
         self._loaded: dict[str, GameFont] = {}

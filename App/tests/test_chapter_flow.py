@@ -239,6 +239,9 @@ class AddStoryChapterTests(unittest.TestCase):
         from fe_modding.games import Game
         from fe_modding.project import ModProject
         source = Path(os.environ["FE9_EXTRACTED_FILES"])
+        from fe_modding.formats import fe8data
+        if fe8data.japanese_chapter_layout((source / "FE8Data.bin").read_bytes()):
+            self.skipTest("Japanese chapter records are read-only")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -260,7 +263,7 @@ class AddStoryChapterTests(unittest.TestCase):
         shutil.copy(source / "FE8Data.bin", files / "FE8Data.bin")
         sys_dir = self.project.extracted_dir / "sys"
         sys_dir.mkdir()
-        dol = RETAIL_DIR / "GFEE01.dol"
+        dol = RETAIL_DIR / ((source.parent / "sys" / "boot.bin").read_bytes()[:6].decode("ascii") + ".dol")
         shutil.copy(dol if dol.is_file() else source.parent / "sys" / "main.dol", sys_dir / "main.dol")
         shutil.copy(source.parent / "sys" / "boot.bin", sys_dir / "boot.bin")
         self.files = files

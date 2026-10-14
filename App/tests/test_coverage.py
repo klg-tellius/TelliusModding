@@ -171,7 +171,7 @@ class Fe10ContainerTest(unittest.TestCase):
 FILES = os.environ.get("FE9_EXTRACTED_FILES")
 #: Small real files, one per handler family that has no other test here.
 SAMPLES = ("FE8Data.bin", "FE8Anim.bin", "FE8Effect.bin", "cp_data.bin", "s/rect.bin", "window/RectDesc.bin",
-           "tut_data_en.bin", "client.bin", "etc/curb.g", "etc/curb.gs", "etc/curb.ga", "etc/cursor.tpl",
+           "tut_data_en.bin|tut_data.bin", "client.bin", "etc/curb.g", "etc/curb.gs", "etc/curb.ga", "etc/cursor.tpl",
            "zmap/bmap01/map.cmp", "zmap/bmap01/dispos.cmp", "Scripts/C01.cmb", "Sound/gcfesnd.bin",
            "Sound/gcfesnd.sdir", "Sound/gcfesnd.pool", "zbg/map10_house/bf.cmp")
 
@@ -181,7 +181,8 @@ class RealFilesTest(unittest.TestCase):
     def test_handlers_place_every_byte(self):
         report = Report()
         walker = Walker(report)
-        for rel in SAMPLES:
+        for choices in SAMPLES:   # "a|b": the first that exists (the JP disc has one tut_data.bin)
+            rel = next((r for r in choices.split("|") if (Path(FILES) / r).is_file()), choices.split("|")[0])
             walker.child(rel, (Path(FILES) / rel).read_bytes())
         for fmt, totals in report.formats.items():
             self.assertFalse(fmt.startswith("unknown"), fmt)
