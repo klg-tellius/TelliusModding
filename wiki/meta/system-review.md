@@ -15,9 +15,9 @@ source_path: "meta/system-review.md"
 ---
 # Game System Documentation Review
 
-This page answers two separate questions for every item in the [Complete Game Systems Inventory](game-systems-inventory.md): **does an article claim responsibility for explaining it, and has a human reviewer confirmed that the explanation is accessible, thorough, and honest about its limits?** Coverage alone is not approval.
+This page answers two separate questions for every item in the [Complete Game Systems Inventory](game-systems-inventory.md): **does an article claim responsibility for explaining it, and has a reviewer confirmed that the explanation is accessible, thorough, and honest about its limits?** Coverage alone is not approval.
 
-The 148-entry uncovered baseline captured before plan execution is assigned to concrete articles and research batches in the [Uncovered Systems Writing Roadmap](uncovered-systems-roadmap.md). All are now covered; the dashboard tracks their pending human review.
+The 148-entry uncovered baseline captured before plan execution is assigned to concrete articles and research batches in the [Uncovered Systems Writing Roadmap](uncovered-systems-roadmap.md). All are now covered; the dashboard tracks their review state.
 
 ## Review states
 
@@ -55,13 +55,13 @@ System articles use these optional front-matter fields. Empty lists are valid wh
 system_entries: ["FE9-SYS-117", "FE9-SYS-131"]
 system_reviewed: ["FE9-SYS-117"]
 system_reviewed_with_gaps: []
-system_reviewed_by: "reviewer's GitHub name"
+system_reviewed_by: "reviewer's GitHub name or AI agent/model"
 system_reviewed_on: "2026-10-13"
 system_known_gaps: []
 system_gap_work: []
 ```
 
-`system_entries` means “this page intends to explain these systems.” Moving an ID into `system_reviewed` is a human sign-off, not a progress marker. A reviewed page must be published, contain at least 700 words, and include recognizable example/mental-model, rules/lifecycle, and limits/interactions sections.
+`system_entries` means “this page intends to explain these systems.” Moving an ID into `system_reviewed` is a reviewer's sign-off against the rubric, not a progress marker. The reviewer may be a person or an AI agent; either way `system_reviewed_by` names who signed off (a GitHub name, or the agent and model such as `Claude Opus 5.5`), and an AI review carries the same obligations: it must check the article against the sources and executable evidence it cites, not just its structure. A person may re-review any AI-approved system and replace the sign-off. A reviewed page must be published, contain at least 700 words, and include recognizable example/mental-model, rules/lifecycle, and limits/interactions sections.
 
 For a reviewed system with an unresolved question, also add its ID to `system_reviewed_with_gaps`, include a `## Known gaps` (or equivalent) section, and record both fields below:
 

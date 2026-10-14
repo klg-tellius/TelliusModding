@@ -1,7 +1,7 @@
 """Validate and report coverage of the FE9 system inventory.
 
-Articles claim responsibility with ``system_entries``.  A human review is a
-separate assertion in ``system_reviewed``; unresolved but well-disclosed work
+Articles claim responsibility with ``system_entries``.  A review (by a person or
+an AI agent) is a separate assertion in ``system_reviewed``; unresolved but well-disclosed work
 also appears in ``system_reviewed_with_gaps`` and must document both the gap
 and the investigation already attempted.
 """
