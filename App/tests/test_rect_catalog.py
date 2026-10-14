@@ -109,6 +109,19 @@ class RectCatalogTests(unittest.TestCase):
         self.assertGreater(red, 200)
         self.assertEqual((green, blue), (0, 0))
 
+    def test_texture_files_lists_every_kind_of_texture(self):
+        texture = catalog.encode_images([Image.new("RGBA", (4, 2), "blue")])
+        (self.files / "s" / "abc").write_bytes(texture)
+        (self.files / "s" / "rect.bin").write_bytes(b"")
+        (self.files / "ending").mkdir()
+        (self.files / "ending" / "a.tpl").write_bytes(texture)
+        (self.files / "ending" / "b.cms").write_bytes(lz10.compress(texture))
+        (self.files / "system.cmp").write_bytes(lz10.compress(pak.pack_pak([("window/frame.tpl", texture)])))
+        self.assertEqual(catalog.texture_files(self.project),
+                         ["ending/a.tpl", "ending/b.cms", "s/abc", "window/frame.tpl"])
+        for name in catalog.texture_files(self.project):
+            self.assertEqual(catalog.texture_images(self.project, name)[0].size, (4, 2))
+
 
 class Fe10EditableRectTests(unittest.TestCase):
     def test_add_and_roundtrip(self):
