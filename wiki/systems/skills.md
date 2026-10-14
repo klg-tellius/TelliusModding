@@ -86,7 +86,7 @@ A skill is an ability or trait attached to a unit. Some skills add a command to 
     <table class="tight"><thead><tr><th>Skill</th><th>Real effect</th></tr></thead><tbody>
           <tr><td><a class="wl" href="../skill-sol/">Sol</a></td><td>Self-heal equal to the damage just dealt, applied at the very end of the damage pipeline</td></tr>
           <tr><td><a class="wl" href="../skill-luna/">Luna</a></td><td>Halves the target's effective Defense/Resistance directly inside the damage formula</td></tr>
-          <tr><td>Astra</td><td>(effect not independently traced beyond the strike-count/damage pipeline it hooks into)</td></tr>
+          <tr><td><a class="wl" href="../skill-astra/">Astra</a></td><td>Turns one strike into five strikes at half damage (rounded up); hit and critical still rolled per strike</td></tr>
           <tr><td><a class="wl" href="../skill-aether/">Aether</a></td><td>Combines Sol's and Luna's effects in one activation</td></tr>
           <tr><td><a class="wl" href="../skill-counter/">Counter</a></td><td>Checked on the defending unit and can grant a bonus retaliation strike</td></tr>
           <tr><td><a class="wl" href="../skill-corrosion/">Corrosion</a></td><td>Reduces the target's equipped weapon durability</td></tr>
@@ -94,8 +94,8 @@ A skill is an ability or trait attached to a unit. Some skills add a command to 
           <tr><td><a class="wl" href="../skill-miracle/">Pray</a></td><td>On an otherwise lethal hit, reduces damage to a survivable amount</td></tr>
           <tr><td><a class="wl" href="../skill-wing-guard/">Wing Guard</a></td><td>Zeroes incoming damage on its confirmed block path</td></tr>
           <tr><td><a class="wl" href="../skill-vantage/">Vantage</a></td><td>Reverses the normal attacker-then-defender exchange order</td></tr>
-          <tr><td>Wrath</td><td>(bit position confirmed; specific effect not independently traced)</td></tr>
-          <tr><td>Snipe</td><td>(bit position confirmed; specific effect not independently traced)</td></tr>
+          <tr><td><a class="wl" href="../skill-wrath/">Wrath</a></td><td>+50 critical rate at half HP or less; no activation roll</td></tr>
+          <tr><td><a class="wl" href="../skill-deadeye/">Deadeye</a> (Snipe)</td><td>Doubles final hit; a hit can put the target to sleep for 5 phases (Skill / 2, bosses immune)</td></tr>
         </tbody></table>
     </div>
 

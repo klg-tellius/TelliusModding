@@ -19,14 +19,18 @@ tunables of :mod:`fe_modding.game_code.entries`):
   doubles the final Hit; Gamble halves Hit and doubles Crit; a target under a
   status condition is hit 100%. Parity drops terrain bonuses.
 - Skill activation chances (``entries.PROCS``) and the effects of Sol, Luna,
-  Aether, Counter, Cancel, Pray, Wing Guard and Vantage.
+  Aether, Counter, Cancel, Pray, Wing Guard and Vantage. Astra: one strike
+  becomes five consecutive strikes at half damage rounded up (strike effect
+  bit 0), hit and crit rolled per strike, only with five free strike slots.
+  Snipe (Deadeye's roll): a hit puts a non-boss target to sleep for 5 phases;
+  rolled and logged here, the sleep itself is applied by the playthrough.
 
 **Not confirmed** - the community formulas in :data:`FORMULAS`, kept in one
 place so they can be corrected: Hit = weapon Hit + Skl x 2 + Lck / 2,
 Avoid = attack speed x 2 + Lck + terrain, attack speed = Spd - max(0,
 weight - Con), Crit = weapon Crit + Skl / 2, crit avoid = Lck, and the
 weapon triangle (+-10 Hit, +-1 Atk). Astra's damage (half, rounded up, like
-the ``NetuzoSet`` "halve damage" effect bit), Deathblow (lethal, like the
+the ``NetuzoSet`` "halve damage" effect bit; confirmed 2026-10-14), Deathblow (lethal, like the
 "lethal damage" bit) and Aether's two-strike form are also unverified. The
 procs whose effect is untraced (Rumbling, Corrosion, Impact, Snipe,
 Sunlight) are rolled and logged but change nothing.
