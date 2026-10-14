@@ -332,13 +332,13 @@ class PartyState:
 
     def option_enabled(self, off_mask: int) -> bool:
         """Whether an inverted on/off option in byte 2 is enabled."""
-        if off_mask not in (0x01, 0x10):
+        if off_mask not in dict(OPTION_TOGGLES):
             raise ValueError(off_mask)
         return not bool(self.options[2] & off_mask)
 
     def set_option_enabled(self, off_mask: int, enabled: bool) -> None:
         """Change one named option without altering the other saved bits."""
-        if off_mask not in (0x01, 0x10):
+        if off_mask not in dict(OPTION_TOGGLES):
             raise ValueError(off_mask)
         options = bytearray(self.options)
         options[2] = options[2] & ~off_mask if enabled else options[2] | off_mask
@@ -357,20 +357,25 @@ class PartyState:
         self.options = self.options[:10] + bytes((value,)) + self.options[11:]
 
 
-# (byte, mask, name). Bits marked "off" are 1 when the option is turned off.
+# (byte, mask, name), from the Options menu (``unpack_config_menu_to_globals``; row names
+# MCFG_* in Mess/common.m). Bits marked "off" are 1 when the option is turned off.
 OPTION_FIELDS = (
-    (0, 0x01, "Option bit 0 (off)"), (0, 0x02, "Unit window (off)"), (0, 0x04, "Terrain window (off)"),
-    (0, 0x18, "Message speed (0 slow - 3 max)"), (0, 0x20, "Option byte 0 bit 5"), (0, 0xC0, "Option byte 0 bits 6-7"),
-    (1, 0x01, "Option byte 1 bit 0 (off)"), (1, 0x02, "Option byte 1 bit 1 (off)"), (1, 0x0C, "Option byte 1 bits 2-3"),
-    (1, 0x10, "Option byte 1 bit 4 (off)"), (1, 0x20, "Option byte 1 bit 5 (off)"), (1, 0xC0, "Option byte 1 bits 6-7"),
-    (2, 0x01, "Bonus Exp Display (off)"), (2, 0x02, "Option byte 2 bit 1 (off)"), (2, 0x0C, "Sound output (stereo 1)"),
-    (2, 0x10, "Unit Facing (off)"), (2, 0x20, "Option byte 2 bit 5 (off)"), (2, 0x40, "Option byte 2 bit 6 (off)"),
-    (2, 0x80, "Option byte 2 bit 7 (off)"),
-    (3, 0x10, "Option byte 3 bit 4 (off)"), (3, 0x20, "Message sounds (off)"), (3, 0x40, "Show other units' moves"),
-    (3, 0x80, "Fixed growths"),
+    (0, 0x01, "No menu row (menu flag 0x4)"), (0, 0x02, "Unit Window (off)"), (0, 0x04, "Terrain / Goal (off)"),
+    (0, 0x18, "Message Speed (0 slow, 1 normal, 2 fast, 3 max)"), (0, 0x20, "Game Speed fast"),
+    (0, 0xC0, "Animation (0 on, 1 off, 2 individual)"),
+    (1, 0x01, "C Stick X-axis reversed"), (1, 0x02, "Guide Window (off)"),
+    (1, 0x0C, "Help Window (0 window, 1 captions, 2 off)"), (1, 0x10, "No menu row (menu flag 0x10)"),
+    (1, 0x20, "No menu row (menu flag 0x8)"), (1, 0xC0, "Combat Window (0 simple, 1 detailed, 2 off)"),
+    (2, 0x01, "Bonus Exp Display (off)"), (2, 0x02, "Rumble Feature (off)"),
+    (2, 0x0C, "Sound Output (0 mono, 1 stereo, 2 surround)"), (2, 0x10, "Unit Facing (off)"),
+    (2, 0x20, "Autoend Turns (off)"), (2, 0x40, "Autocursor (off)"), (2, 0x80, "C Stick Y-axis reversed"),
+    (3, 0x08, "Trial map"), (3, 0x10, "Combat Camera fixed (side view)"), (3, 0x20, "Message Sounds (off)"),
+    (3, 0x40, "Show other units' moves"), (3, 0x80, "Fixed growths"),
 )
-OPTION_TOGGLES = ((0x10, "Unit Facing"), (0x01, "Bonus Exp Display"))
-OPTION_BYTES = ("Bits 0", "Bits 1", "Bits 2", "Bits 3", "Unit speed", "Brightness", "Screen X", "Screen Y",
+#: The on/off rows of byte 2 (bit set = off), shown as check boxes.
+OPTION_TOGGLES = ((0x40, "Autocursor"), (0x20, "Autoend Turns"), (0x10, "Unit Facing"), (0x02, "Rumble Feature"),
+                  (0x01, "Bonus Exp Display"))
+OPTION_BYTES = ("Bits 0", "Bits 1", "Bits 2", "Bits 3", "Grid thickness", "Brightness", "Screen X", "Screen Y",
                 "Music volume", "Sound effect volume", "Difficulty", "Byte 11")
 
 

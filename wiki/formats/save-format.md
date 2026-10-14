@@ -117,7 +117,7 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
     <tr><td><code>0x58</code>, <code>0x60</code></td><td>8, 8</td><td>Play-time tick counters</td></tr>
     <tr><td><code>0x68</code>–<code>0x73</code></td><td>12</td><td>Soren's chapter report: gold earned, gold spent, Combat Exp, Bonus Exp (four signed 16-bit counters)</td></tr>
     <tr><td><code>0x74</code>, <code>0x84</code></td><td>16, 16</td><td>Tutorials unlocked and tutorials read (one bit each)</td></tr>
-    <tr><td><code>0x9C</code></td><td>12</td><td>Options: menu switches (unit and terrain windows, message speed, fixed growths…), unit speed, brightness, screen position, music and sound volume, difficulty</td></tr>
+    <tr><td><code>0x9C</code></td><td>12</td><td>Options: four bytes of menu switches (every row of the Options menu, plus fixed growths, trial map and "show other units' moves"), grid thickness, brightness, screen position, music and sound volume, difficulty</td></tr>
     <tr><td><code>0xA8</code></td><td>12</td><td>The 96 event flag bits</td></tr>
     <tr><td><code>0xB4</code></td><td>0x140</td><td>Clear history: 40 entries of chapter, part flag, turns and play time in seconds</td></tr>
     <tr><td><code>0x1F4</code></td><td>0x18</td><td>Map name, <code>bmap02</code> or <code>trial_05</code></td></tr>
@@ -183,4 +183,4 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
 
 ## What remains unknown
 
-  Every byte is stored and restored as listed, but a few have no known gameplay meaning yet: the first 16 bytes of `BMST`, its bytes `0x50`, `0x51` and `0x94`–`0x9B`, the labels of some option switches, three unit counters, and two system-data bytes. <span class="confidence confidence--open">open</span>
+  Every byte is stored and restored as listed, but a few have no known gameplay meaning yet: the first 16 bytes of `BMST`, its bytes `0x50`, `0x51` and `0x94`–`0x9B`, three saved option bits that have no menu row, three unit counters, and two system-data bytes. <span class="confidence confidence--open">open</span>

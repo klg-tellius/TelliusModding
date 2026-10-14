@@ -51,7 +51,7 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   A blow that deals damage shakes every camera sideways. The shake's strength is 1.8 × the strike's quake value (0.5 for an attack, 1.8 for a critical or skill, 0.5 for a shot, 1.2 for magic). It swings once per tick and fades by 0.06 × the quake value each tick, for 60 ticks.
 
-  The fight opens on the free camera `cam1`, pointed at the midpoint between the two units 9 units up, playing `standby`: a zoom from 170 down to 70 units. At range it plays `standby2` instead. The picture is a 30° vertical field of view at 4:3.
+  The fight opens on the free camera `cam1`, pointed at the midpoint between the two units 9 units up, playing `standby`: a zoom from 170 down to 70 units. At range it plays `standby2` instead. The picture is a 30° vertical field of view at 4:3. When the Combat Camera option is set to "Fixed", the whole fight is filmed this way from the side: `cam1` plays `sideview` and keeps looking at the midpoint between the units, backing off to 1.4 × their distance plus `SideCamLen` (clamped by `SideCamMin`/`SideCamMax`). <span class="confidence confidence--confirmed">engine</span>
 
 ## Effects
 
