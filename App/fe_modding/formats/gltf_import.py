@@ -623,10 +623,19 @@ def _invert_3x4(m: skeleton.Mat3x4) -> tuple[list[list[float]], Vec3]:
 
 
 def _chunk_lists(chunks: list[gs_file.GsChunk]) -> tuple[list, list, list]:
-    """Chunks split into the three draw lists by their flag bits ``0x6000``."""
+    """Chunks split into the three draw lists by their flag bits ``0x6000``, multi-matrix chunks
+    first in each list.
+
+    ``build_and_cache_gs_shape_bone_matrices`` fills the position-matrix slots for the next (up to
+    ten) single-matrix and composite chunks of the list at once, and those chunks later draw from
+    their slot without reloading it; a multi-matrix chunk between them reloads slots 0..n with its
+    own bones (``build_gs_shape_compound_bone_matrices``), so every chunk after it would be drawn
+    with another bone's matrix. Drawing the multi-matrix chunks first avoids that."""
     lists: tuple[list, list, list] = ([], [], [])
     for chunk in chunks:
         lists[(chunk.flags >> 13 & 3) - 1].append(chunk)
+    for items in lists:
+        items.sort(key=lambda chunk: not chunk.flags & FLAG_MULTI_MATRIX)
     return lists
 
 
