@@ -8,7 +8,7 @@ article_type: "system-reference"
 tags: ["Structure"]
 aliases: ["tellius_archive.html#/developer-debug-tools"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/developer-debug-tools.md"
@@ -17,39 +17,59 @@ source_path: "systems/developer-debug-tools.md"
 
 *A full set of internal testing menus and helpers, built into the shipped disc but never reachable through normal play*
 
-The shipped disc's executable retains a substantial internal testing and debugging layer that ordinary play never reaches: three complete developer-menu trees, plus a scattering of standalone debug helpers wired into normal systems like the tactical map and the portrait renderer. None of this is corrupted or vestigial code — every piece described here is complete, functional, and would run correctly if invoked.
+The shipped disc's executable retains a substantial internal testing and debugging layer that ordinary play never reaches: three complete developer-menu trees and two small ones, plus a scattering of standalone debug helpers wired into normal systems like the tactical map and the portrait renderer. None of this is corrupted or vestigial code — every piece described here is complete, functional, and would run correctly if invoked.
 
-## Three named root menus
+## The developer root menus
 
-  Three separate top-level debug menus exist as complete, working menu trees, each built and registered when the game starts up rather than assembled on demand:
+  The map pause menu can list five developer roots, each named after a developer. Three are complete menu trees; the other two are small. All of them are built when the game starts:
 
 <div class="table-wrap">
 <table><thead><tr><th>Menu</th><th>Covers</th></tr></thead><tbody>
-    <tr><td>First root menu</td><td>The largest of the three, covering six full categories — System, Game state, Event, Visualize, Display, and Sound testing — plus memory-card file operations. Fully mapped; see below.</td></tr>
-    <tr><td>Second root menu</td><td>Base/storage and tutorial-system testing: filling the party's shared storage with a stock item, testing the base-visit flow and its pre-visit report screen, forcing a specific reinforcement group, unlocking every tutorial message in the game at once, and a small text-rendering test tool (see below)</td></tr>
-    <tr><td>Third root menu</td><td>Dialog-system testing: standalone two-option and three-option dialog boxes, a location-name display test, a tutorial-dialog test, and a flag that force-enables every "extra" scenario flag at once</td></tr>
+    <tr><td>Kaneko</td><td>The largest: five categories (System, Game, Event, Visualize, Display), a Sound test row and the memory-card file rows. Fully mapped below.</td></tr>
+    <tr><td>Akiyama</td><td>Base/storage and tutorial-system testing: filling the party's shared storage with a stock item, testing the base-visit flow and its pre-visit report screen, forcing a specific reinforcement group, unlocking every tutorial message in the game at once, and a small text-rendering test tool (see below)</td></tr>
+    <tr><td>Murakami</td><td>Dialog-system testing: standalone two-option and three-option dialog boxes, a location-name display test, a tutorial-dialog test, and a row that turns on every extras flag at once. "Glossary" and "Test" are disabled.</td></tr>
+    <tr><td>Yamamoto</td><td>One row, "Face test", which starts a portrait test in the first free portrait slot</td></tr>
+    <tr><td>(unnamed)</td><td>A single "None" row with no action</td></tr>
   </tbody></table>
 </div>
 
-## One shared list, viewed through different windows
+## How the Kaneko menu is built
 
-  The first menu's six categories are not six independent lists of entries. Underneath, a single flat list of menu records exists once; each category — and several sub-menus one level deeper, such as opening a specific unit's stat editor — simply points at a different starting position and length within that same list, the same way scrolling a long list to different starting points shows different but overlapping windows onto it. Two categories can genuinely show some of the exact same rows. This is confirmed directly: the row shown for "Game settings," for instance, does not lead to any settings of its own — it opens the same window that happens to also contain the entire System category underneath it.
+  Every row is a small menu object with its own label and action. At start-up one routine fills a single array with the rows of every list, each list followed by its own header, and each category row opens its list by pointing at that header. The lists are separate; a few rows, such as the paged flag editor, are reused by more than one list. <span class="confidence confidence--confirmed">engine</span>
 
-## The first menu's six categories
+## The Kaneko menu's contents
 
 <div class="table-wrap">
-<table><thead><tr><th>Category</th><th>Real content</th></tr></thead><tbody>
-    <tr><td>System</td><td>A memory-usage report, an event/chapter turn-boundary log dump, a support-pair ("Bond") list dump, a full army-roster dump, a convoy-reset action, a tool that identifies whatever building sits under the debug cursor and opens a submenu for it, a toggle for the game's Random-vs-Fixed growth-mode setting, and a counter tied to a multiple-playthrough/postgame-content slot list</td></tr>
-    <tr><td>Game</td><td>Live status readouts (chapter, turn count, gold, a separate "event points" counter, difficulty rank), a convoy-size readout, a building-status readout, and the entry point into the per-unit stat editor described below</td></tr>
-    <tr><td>Event</td><td>A skill/flag browser that can grant or remove any of the game's skills and status flags on the selected unit; a two-axis tool that warps the selected unit to any tile by resolving the destination tile object directly; and an editor for a small per-unit flag array tied to event conditions</td></tr>
-    <tr><td>Visualize</td><td>A paginated map-marker toggle tool, 16 markers per page, with a real page-index/page-count display — this is the one category confirmed to have its own genuine scrolling state rather than just reusing another category's window</td></tr>
-    <tr><td>Display</td><td>Ten independent on/off overlay toggles for renderer debug views: a process-tree view, a performance readout, a 2D-primitive overlay, a GPU performance readout, an in-game debug-info overlay, a broadcast-safe-area guide frame, a sound-test overlay, a "battle off" toggle, a visualizer for scenes where skipping is disallowed, plus toggles for the camera implementation, a debug console overlay, and a guide-window overlay</td></tr>
+<table><thead><tr><th>List</th><th>Rows</th></tr></thead><tbody>
+    <tr><td>Root</td><td>System, Game, Event, Visualize, Display, Sound (sound test), and the memory-card rows: write the save to the host PC, suspend save, copy, delete or write a save slot, check that the save file exists, create or delete the whole save file, and list every slot in the debug console</td></tr>
+    <tr><td>System</td><td>Memory usage, file usage, ARAM usage, name-registry usage ("IdentBase"), connect to the host file server, sweep files, free-memory check. In the retail build the host-PC rows only print a message, and ARAM usage does nothing.</td></tr>
+    <tr><td>Game</td><td>The unit under the cursor (opens the unit editor below), the building under the cursor (opens two rows that put the map object in its first or last pose), open or close the roof over the cursor, convoy size (selecting it empties the convoy), Game settings, TrickyTerrain, Clear Map (wins the chapter), Unit list, Log (chapter and turn history), Bond (support pairs)</td></tr>
+    <tr><td>Game settings</td><td>Difficulty, growth mode (random or fixed), number of playthroughs, chapter, total and on-hand gold, bonus experience, turn number, and who plays the enemy, other and partner phases (see below)</td></tr>
+    <tr><td>Event</td><td>Messages (message viewer), script demo (event browser), a console list of every script function, and Edit flags, a 5-page grid of flags with 16 per page</td></tr>
+    <tr><td>Visualize</td><td>Movie (one row per movie on the disc; selecting it plays it), mini portraits, monitor position adjustment, portrait-screen mode, dialog backgrounds, the controller guide, skill icons, item icons</td></tr>
+    <tr><td>Display</td><td>Twelve switches: process tree, performance, 2D primitives, GPU performance, in-game debug info, safe-frame guide, sound test, battle off, skip-prohibited scenes, camera implementation, guide window, debug console</td></tr>
   </tbody></table>
 </div>
 
-## A complete per-unit stat editor
+  Three more rows (shadow volume, shadow mapping, none) are built, but no list opens them. <span class="confidence confidence--confirmed">engine</span>
 
-  Selecting a unit from the Game category opens a real, fully wired stat editor for that unit, reachable through several differently-labeled rows that all converge on the same tool: it directly reads and writes level (1&ndash;20), experience (0&ndash;99), transformation gauge, several other capped byte fields, and one unclamped field that changes every turn (see [Biorhythm](./biorhythm.md)). A separate row computes each stat's remaining "growth doping" headroom by comparing the unit's current stat against a stored cap. Another row is a genuine support-rank editor, raising or lowering the stored rank between the selected unit and a chosen partner. A further, unlabeled row cycles a small per-unit state value through three settings — its exact effect (most likely a deployment or roster status) is not confirmed.
+## The unit editor
+
+  The unit row opens an editor for the unit under the cursor. Each of its rows opens a list: <span class="confidence confidence--confirmed">engine</span>
+
+- **Items**: the unit's items with their uses (`uses/max`), adjustable.
+- **Parameters**: 18 values changed with L/R: level (1–20), experience (0–99), max HP, HP, the seven stats, constitution, move, laguz gauge (0–20), a targeting-weight value ("Hate"), battle count (the [biorhythm](./biorhythm.md) turn counter), biorhythm and weight.
+- **Skills**: one row per skill the unit has; selecting a skill removes it, and selecting an "Empty" row opens a browser of all 98 skills to give one.
+- **Weapon Level**: one row per weapon type with the rank points (0–251, where 251 is S) and the rank letter.
+- **Conditions**: one row per status counter (poison, sleep, silence and the others), each capped at the largest value its storage holds.
+- **JID** and **PID**: give the unit a new class or turn it into another character. A new character also takes that character's default class, promoted or unpromoted to match the unit's previous class.
+- **Edit Support**: the support level with each partner, raised or lowered on both units at once.
+- **General Doping**: raises the unit's stats.
+- The remaining rows show the unit's position, equip a laguz unit's natural weapon ("weapon present"), and play the death sequence ("Funeral").
+
+## Who plays each army's phase
+
+  For each of the four armies the game stores who plays its phase: 0 no phase, 1 the player, 2 the computer. Chapter start sets the player army to 1 and the enemy, other and partner armies to 2, and nothing in the retail scripts changes them. On a phase set to 1 the game runs the player's map controls instead of the AI; on a phase set to 0 it skips that army. The Game settings rows switch the enemy, other and partner values. <span class="confidence confidence--confirmed">engine</span> Whether every army's units can be selected and moved on a player-controlled phase has not been tried in game. <span class="confidence confidence--open">open</span>
 
 ## A working battle previewer
 
@@ -70,7 +90,7 @@ The shipped disc's executable retains a substantial internal testing and debuggi
 
 ## Why they stay hidden
 
-  Two separate, dormant switches keep the menus out of normal play, and neither is a missing piece of code. The map pause menu walks a zero-terminated list of root menus; the list holds the ordinary pause menu first and then a zero, so the walk stops before it reaches the four developer roots stored behind it. Moving the roots in front of the zero shows all of them. Separately, the start-up process that launches the game controller runs the production title screen, while a complete development title screen (build information, memory-card import and export, the battle previewer, chapter and difficulty selection, and a "Production version" entry that continues to the normal file menu) sits in the executable with nothing pointing at it. <span class="confidence confidence--confirmed">engine</span>
+  Two separate, dormant switches keep the menus out of normal play, and neither is a missing piece of code. The map pause menu walks a zero-terminated list of root menus; the list holds the ordinary pause menu first and then a zero, so the walk stops before it reaches the five developer roots stored behind it. Moving the roots in front of the zero shows all of them. Separately, the start-up process that launches the game controller runs the production title screen, while a complete development title screen (build information, memory-card import and export, the battle previewer, chapter and difficulty selection, and a "Production version" entry that continues to the normal file menu) sits in the executable with nothing pointing at it. <span class="confidence confidence--confirmed">engine</span>
 
 ## Starting a chapter directly
 
@@ -86,5 +106,3 @@ The shipped disc's executable retains a substantial internal testing and debuggi
 ## Overlay switches
 
   The Display category's overlays are plain flag bytes read by the main loop every frame: process tree, performance meter, GPU performance meter, in-game debug information, safe-frame guide, sound-test overlay, 2D-primitive overlay, battle-display off and skip-block visualisation. They start at zero and nothing but the menu sets them. <span class="confidence confidence--confirmed">engine</span>
-
-  Open: none of the menu labels that read like they should show a real item, skill, weapon-rank, or status-condition list actually lead to one anywhere in this build — each stat is instead edited one field at a time through the shared editor above, and whether a separate list ever existed is unresolved. <span class="confidence confidence--open">open</span> A handful of individual byte-sized unit fields, and the exact effect of the unlabeled per-unit state toggle mentioned above, are also unresolved.
