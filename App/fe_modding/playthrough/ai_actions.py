@@ -89,6 +89,9 @@ def magic_hit(caster: SimUnit, target: SimUnit, distance: Optional[int] = None) 
 
 
 def is_equipment(item) -> bool:
+    """Whether ``item`` belongs in slots 0-3: the game's flags B ``& 5``, which
+    ``derive_item_default_capability_flags`` (``0x8001E71C``) sets for every weapon type,
+    tome and staff, and clears for the ``item`` and ``acc`` types."""
     return item is not None and item.weapon_type not in (None, "item", "acc")
 
 

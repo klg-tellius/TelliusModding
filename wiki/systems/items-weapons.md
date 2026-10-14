@@ -69,6 +69,10 @@ An item definition describes what a weapon or usable object is. A deployment or 
   </tbody></table>
 </div>
 
+## Which half of the inventory an item goes to
+
+  A unit carries eight items: slots 0–3 hold weapons, tomes and staves, slots 4–7 everything else. When an item is loaded the game derives a few capability bits from its weapon type: physical weapons (sword, lance, axe, bow, knife and laguz strikes) are marked as weapons, fire, thunder and wind as magic weapons, a `rod` item with might as a light tome and one without might as a staff, `item` as a consumable and `acc` as an accessory. Giving an item (in a script, or as a reward) puts weapons, tomes and staves in the first free slot of the first half and the rest in the second half; when that half is full the item is not added. <span class="confidence confidence--confirmed">confirmed</span>
+
 ## How weapon properties enter combat
 
 - **Might** contributes to Attack before defense is subtracted.
