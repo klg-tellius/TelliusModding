@@ -56,8 +56,10 @@ COUNT_TABLE = tuple((dx, dy) for dy in range(-3, 4) for dx in range(-3, 4) if 0 
 #: Heal amounts the heal-item choice compares (``check_use_healing_item_action*``): others count 0.
 ITEM_HEAL = {"IID_VULNERARY": 10}
 EQUIPMENT_SLOTS = ITEM_SLOTS = 4
-#: Phases a status staff's effect lasts: not traced in this game (the status nibbles at unit +0x1A4 count
-#: down somewhere not decoded), the series' usual value.
+#: Phases a status staff's effect lasts. The countdown is decoded (``tick_phase_start_status_counters``:
+#: each 3-bit counter at unit +0x1A4 drops by one at the start of its side's phase, as the engine does
+#: here; poison starts at 5), but the value a status staff writes was not found, so this keeps the
+#: series' usual 5.
 STATUS_TURNS = 5
 NO_SCORE = -(1 << 31)
 

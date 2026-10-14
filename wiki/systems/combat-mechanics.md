@@ -8,7 +8,7 @@ article_type: "system-reference"
 tags: ["Balance","Combat"]
 aliases: ["tellius_archive.html#/combat-mechanics"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/combat-mechanics.md"
@@ -39,6 +39,10 @@ A battle between two units is a sequence of **exchanges**, and each exchange can
 ## Proc skills — the actual check
 
   See [Skills](./skills.md) for the mechanism (a per-actor bitmask checked by raw table position, rolled against the same shared RNG) and for which specific skills have a confirmed real effect once they trigger.
+
+## Status effects and how long they last
+
+  Each status is a small counter of phases on the unit, shown as a number on its status panel. At the start of a side's phase every counter of that side's units drops by one; when one would reach zero the unit first plays the "status cured" animation. Poison from a poisoned weapon starts at 5, so it lasts five of the victim's phases. The Snipe skill sets a counter of 5 during which the target cannot act, and Impact a counter of 2. Silence blocks tome and staff use while its counter runs. A separate one-phase counter (set by a fall into a pit, for example) keeps a unit from acting and runs out at the end of its own phase. <span class="confidence confidence--confirmed">confirmed</span> How long a status staff's effect starts at is not settled yet <span class="confidence confidence--open">open</span>.
 
 ## Weapon effectiveness — bonus damage against certain enemy types
 
