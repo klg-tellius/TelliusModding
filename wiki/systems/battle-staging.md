@@ -39,7 +39,9 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   The attack clip follows the strike: `攻撃1` (attack), `攻撃2` for a unit's second blow, `必殺1` (critical), `必殺2` for a critical that kills, `奥義` when an attack skill triggers, and `投げ` / `必殺投げ` / `奥義投げ` for thrown weapons; a missing clip falls back to the plain attack or critical. When a model has a variant named after its previous action — `必殺1_攻撃1`, a critical that flows out of an attack, or `回避_回避`, a second dodge — that variant plays instead.
 
-  Bows and thrown weapons let go of their missile on the clip's release marker. Arrows travel 6 units a tick, thrown spears 5, hand axes 4.5 and knives 2.8, and they strike 2.8 units short of the target. A shot is followed by a 20-tick pause (`WaitShoot1`).
+  A blow that deals damage pushes the struck unit back, away from the striker: 3 units by default at 0.4 a tick, but each model can set its own distance (`ダメージ後退`), 0.1 for armoured, mounted and dragon models and 1.0 for birds. A unit that dodges while the striker stands closer than 0.8 × its own reach steps back to that distance, 1 unit a tick. No unit ever stands more than 90 units from the centre of the scene. <span class="confidence confidence--confirmed">engine</span>
+
+  Bows and thrown weapons let go of their missile on the clip's release marker. Arrows travel 6 units a tick, thrown spears 5, hand axes 4.5 and knives 2.8, and they strike 2.8 units short of the target. A shot is followed by a 20-tick pause (`WaitShoot1`). A hand axe comes back: it leaves at 4.5 units a tick and is slowed and pulled back so that it returns to the thrower's hand on the throw clip's catch marker, rising and falling once on the way and spinning 70° a tick. <span class="confidence confidence--confirmed">engine</span>
 
 ## The camera
 
@@ -72,4 +74,4 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   Effect materials rest fully transparent; the effect's animation fades each one in and out with one alpha track per material (see [.g / .gs / .ga](../formats/model-formats.md)).
 
-  <span class="confidence confidence--open">Open</span> Which unit the opening camera turns to after its zoom, and the exact pushback distances on damage and dodges, are not decoded.
+  <span class="confidence confidence--open">Open</span> How a model attaches its weapon and why some multi-part shapes and dragon rigs look wrong in the app's preview are not decoded yet.
