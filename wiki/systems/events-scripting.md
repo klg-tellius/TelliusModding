@@ -79,6 +79,8 @@ A chapter's [compiled script](../formats/event-script.md) is not a single linear
 
   The seen/flag set is used in two ways. For goal events, the dispatcher starts the chapter-complete or game-over event only after the relevant `gf_complete` or `gf_gameover` flag is already set. For talk, location, battle, and base-conversation style events, the same set suppresses events that have already fired.
 
+  When a moment comes (a phase starts, a unit finishes an action, and so on), the engine walks every loaded function in load order — the current script's functions in file order, then the scripts loaded after it — and runs each one of that trigger kind whose condition holds, one at a time: the next condition is only tested after the previous event has finished. Functions of a script put to sleep are skipped. Pressing Start while an event runs skips it (a fade-out cancels the rest). <span class="confidence confidence--confirmed">engine</span>
+
 ## Base conversation list
 
   Base conversations are also surfaced through a real menu/list path. The base-conversation list screen scans runnable type-14 events, builds visible rows, draws the row name, seen-state marker, divider, and star count, then resolves the selected list node back to the event index and display name before opening a confirmation dialog or starting the selected event. The list UI is therefore not a static table of menu text; it is a view over runnable event records and their info flags.
