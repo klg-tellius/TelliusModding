@@ -41,6 +41,8 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   A blow that deals damage pushes the struck unit back, away from the striker: 3 units by default at 0.4 a tick, but each model can set its own distance (`ダメージ後退`), 0.1 for armoured, mounted and dragon models and 1.0 for birds. A unit that dodges while the striker stands closer than 0.8 × its own reach steps back to that distance, 1 unit a tick. No unit ever stands more than 90 units from the centre of the scene. <span class="confidence confidence--confirmed">engine</span>
 
+  A swing leaves a glowing trail. It is drawn on the weapon model, between two marker bones at the base and tip (`_sw1_`/`_sw2_` on swords, `_sp_` on lances, `_ax_` on axes, `_ex_` on arrows), from the clip's start marker for the weapon kind to its end marker, in the weapon's trail colour (blue by default); it keeps the last 10 ticks of the weapon's path, smoothed, and fades out over 20 ticks once the swing ends. A dark colour (every channel under 128) darkens the picture instead of brightening it. A custom weapon model needs these two marker bones to have a trail. <span class="confidence confidence--confirmed">engine</span>
+
   Bows and thrown weapons let go of their missile on the clip's release marker. Arrows travel 6 units a tick, thrown spears 5, hand axes 4.5 and knives 2.8, and they strike 2.8 units short of the target. A shot is followed by a 20-tick pause (`WaitShoot1`). A hand axe comes back: it leaves at 4.5 units a tick and is slowed and pulled back so that it returns to the thrower's hand on the throw clip's catch marker, rising and falling once on the way and spinning 70° a tick. <span class="confidence confidence--confirmed">engine</span>
 
 ## The camera
