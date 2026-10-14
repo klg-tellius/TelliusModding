@@ -27,6 +27,9 @@ GROUP_NOTES = {
     G_GROWTH: "How many points a level-up gives. Random mode rolls each stat (+1 per 100% of growth and per "
               "success); fixed mode adds the growth rate to a hidden counter and pays out when it passes the "
               "threshold. The mode is chosen per save unless forced here.",
+    "Army phases": "Each army's phase can be played by you, by the computer, or skipped. The setting takes effect "
+                   "at the start of the next chapter. Not yet tried in game: whether every army's units can be "
+                   "moved by the player, and how the computer plays your own army.",
 }
 
 
@@ -61,6 +64,36 @@ class _Row:
         value = max(self.tunable.minimum, min(self.tunable.maximum, value))
         if value == self.page.editor.status(self.tunable).value:
             self.refresh()
+            return
+        self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
+
+
+class _ChoiceRow:
+    """One value picked from a list: a read-only combobox bound to a tunable with ``choices``."""
+
+    def __init__(self, page: "CodePage", parent: tk.Misc, tunable: Tunable):
+        self.page, self.tunable = page, tunable
+        self.var = tk.StringVar()
+        self.box = ttk.Combobox(parent, textvariable=self.var, values=list(tunable.choices),
+                                state="readonly", width=max(len(c) for c in tunable.choices) + 2)
+        self.box.bind("<<ComboboxSelected>>", lambda e: self.apply())
+
+    def label(self, value: float) -> str:
+        index = int(value - self.tunable.minimum)
+        return self.tunable.choices[index] if 0 <= index < len(self.tunable.choices) else f"{value:g}"
+
+    def refresh(self) -> None:
+        status = self.page.editor.status(self.tunable)
+        available = status.state not in (State.UNAVAILABLE, State.CONFLICT)
+        self.box.configure(state="readonly" if available else "disabled")
+        self.var.set(self.label(status.value if status.value is not None else self.tunable.default))
+
+    def apply(self) -> None:
+        if self.var.get() not in self.tunable.choices:
+            self.refresh()
+            return
+        value = self.tunable.minimum + self.tunable.choices.index(self.var.get())
+        if value == self.page.editor.status(self.tunable).value:
             return
         self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
 
@@ -263,9 +296,14 @@ class CodePage(Page):
         if isinstance(entry, Tunable):
             control = ttk.Frame(row, style="Surface.TFrame")
             control.pack(side="right")
-            value = _Row(self, control, entry)
+            if entry.choices:
+                value = _ChoiceRow(self, control, entry)
+                vanilla = value.label(entry.default)
+            else:
+                value = _Row(self, control, entry)
+                vanilla = f"{entry.default:g}"
             value.box.pack(side="left")
-            ttk.Label(control, text=f" {entry.unit}   vanilla {entry.default:g}",
+            ttk.Label(control, text=f" {entry.unit}   vanilla {vanilla}",
                       style="SurfaceCaption.TLabel").pack(side="left")
             ttk.Button(control, text="Reset", width=6,
                        command=lambda e=entry: self.run(lambda: self.editor.reset(e))).pack(side="left", padx=(8, 0))

@@ -47,6 +47,8 @@ class MiniPPC:
             elif op == 40:                                  # lhz
                 address = (base + _s16(imm)) & 0xFFFFFFFF
                 self.r[rd] = (self.memory.get(address, 0) << 8) | self.memory.get(address + 1, 0)
+            elif op == 38:                                  # stb
+                self.memory[(base + _s16(imm)) & 0xFFFFFFFF] = self.r[rd] & 0xFF
             elif op == 36:                                  # stw
                 value = self.r[rd]
                 address = (base + _s16(imm)) & 0xFFFFFFFF

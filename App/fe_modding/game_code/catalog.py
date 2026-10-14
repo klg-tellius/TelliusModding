@@ -131,6 +131,7 @@ class Tunable:
     versions: dict[str, tuple[Field, ...]]
     unit: str = ""
     requires: tuple[Patch, ...] = ()     # patches (hooks, stubs) that must be on for the value to act
+    choices: tuple[str, ...] = ()        # names for the values minimum..maximum (shown as a list)
 
 
 Entry = Patch | Tunable
