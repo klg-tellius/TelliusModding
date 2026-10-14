@@ -132,6 +132,23 @@ class ProjectChecks(unittest.TestCase):
         self.assertTrue(any("story flow" in i.message for i in warnings))
         self.assertFalse(any("story flow" in i.message for i in validator.validate_project(self.project).warnings))
 
+    def test_more_than_forty_clears_is_a_warning(self):
+        class Flow:  # 1..30, then ten added chapters 33..42, then 31 and the ending
+            available = True
+            def next_of(self, chapter):
+                return {30: 33, 42: 31}.get(chapter, chapter + 1)
+        class Retail:
+            available = True
+            def next_of(self, chapter):
+                return chapter + 1
+        self.write("FE8Data.bin", build())
+        def history(flow):
+            return [i.message for i in validator.validate_project(self.project, flow).warnings
+                    if "clear history" in i.message]
+        self.assertEqual(len(history(Flow())), 1)
+        self.assertIn("clears 41 chapters", history(Flow())[0])
+        self.assertEqual(history(Retail()), [])
+
     def test_retail_flow_stops_at_the_ending(self):
         class RetailFlow:  # no table entries: every chapter leads to the next id
             available = True

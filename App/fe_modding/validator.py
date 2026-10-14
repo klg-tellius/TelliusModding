@@ -34,6 +34,9 @@ SEVERITIES = (ERROR, WARNING)
 FIRST_SPECIAL_CHAPTER = 90
 #: The chapter number that plays the ending; the story flow stops there.
 GAME_CLEARED = 32
+#: Slots of the clear history (party_data+0x3C4). append_chapter_clear_history_entry writes a 41st
+#: entry to slot -1 (over the event-flag bits for slots 64-95), so it is never kept.
+CLEAR_HISTORY_SLOTS = 40
 #: Retail ``ChapterData`` records between the story and the trial maps: 51, 52 and 58 name
 #: scripts that are not on the disc (leftovers), 80-82 are the tutorials. Their files and titles
 #: are only checked when the story flow leads to them.
@@ -374,6 +377,12 @@ def validate_project(project: ModProject, flow=None) -> Report:
             if current == GAME_CLEARED:
                 break
             current = flow.next_of(current)
+        clears = len(reachable - {0, GAME_CLEARED})
+        if clears > CLEAR_HISTORY_SLOTS:
+            issues.append(Issue(WARNING, "Chapters", "story flow",
+                                f"The story flow clears {clears} chapters, but the save's clear history (the "
+                                f"ending's war record) holds {CLEAR_HISTORY_SLOTS}: clears after the "
+                                f"{CLEAR_HISTORY_SLOTS}th are not recorded."))
     titles = chapters.chapter_titles(project)
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
