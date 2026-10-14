@@ -1,7 +1,8 @@
 """Apply a mod patch (``.tpatch``, see ``patch.py``) to a retail disc image.
 
 Needs no project, so the launcher's File menu offers it as well as the Disc
-& Patch page: this is what someone who received a mod runs."""
+& Patch page, and it is the whole of Tellius Patcher (``patcher.py``), the
+program players run."""
 
 from __future__ import annotations
 
@@ -12,17 +13,19 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
-from .. import patch
+from .. import patch, runtime_tools, tools
 from ..exceptions import ModdingError
 from ..games import get_game_info
 
 
 class ApplyPatchDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, *, patch_path: str = ""):
+    def __init__(self, parent: tk.Misc, *, patch_path: str = "", standalone: bool = False):
+        """``standalone``: the program's only window (Tellius Patcher), not a dialog over the app."""
         super().__init__(parent)
-        self.title("Apply a patch")
+        self.title("Tellius Patcher" if standalone else "Apply a patch")
         self.resizable(False, False)
-        self.transient(parent.winfo_toplevel())
+        if not standalone:
+            self.transient(parent.winfo_toplevel())
         self._info: Optional[patch.PatchInfo] = None
         self._busy = False
 
@@ -58,7 +61,8 @@ class ApplyPatchDialog(tk.Toplevel):
         if patch_path:
             self._set_patch(patch_path)
         self._update_state()
-        self.grab_set()
+        if not standalone:
+            self.grab_set()
         self.focus_set()
 
     def _row(self, parent: tk.Misc, label: str, var: tk.StringVar, browse) -> None:
@@ -127,20 +131,29 @@ class ApplyPatchDialog(tk.Toplevel):
         if Path(output).exists() and not messagebox.askyesno(
                 "Replace the file?", f"{output} already exists. Replace it?", parent=self):
             return
+        needs_wit = not tools.WIT_EXE.is_file()
+        if needs_wit and not messagebox.askyesno(
+                "Download WIT?", "Reading and writing disc images needs Wiimm's ISO Tools (WIT), a small free "
+                "tool. Download it now from wit.wiimm.de? The download is checked against a known checksum and "
+                "needs no administrator access.", parent=self):
+            return
         self._busy = True
         self._update_state()
         self._close.configure(state="disabled")
-        self._status.configure(text="Extracting, patching and building - this takes a minute …")
+        self._status.configure(text=("Downloading WIT, then extracting" if needs_wit else "Extracting")
+                               + ", patching and building - this takes a minute …")
         self._progress.pack(side="left", padx=(8, 0))
         self._progress.start(12)
         results: "queue.Queue" = queue.Queue()
 
         def worker():
             try:
+                if needs_wit:
+                    runtime_tools.install_tool("wit")
                 results.put(("ok", patch.apply_patch_to_disc(patch_path, disc, output)))
             except ModdingError as exc:
                 results.put(("error", str(exc)))
-            except OSError as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed download or an unexpected error alike
                 results.put(("error", f"Unexpected error: {exc}"))
 
         threading.Thread(target=worker, daemon=True).start()
