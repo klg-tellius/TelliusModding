@@ -39,6 +39,12 @@ A published article should move from accessible explanation to precise reference
 
 Do not publish game-derived files, long copyrighted text, private credentials, research process diaries, or speculation presented as fact.
 
+## System coverage review
+
+Every Path of Radiance system has a stable `FE9-SYS-NNN` identity in the [Complete Game Systems Inventory](game-systems-inventory.md). A system article lists the entries it intends to explain in `system_entries`; this is an ownership claim, not proof that the page is complete. A reviewer moves an ID into `system_reviewed` only after applying the full [Game System Documentation Review](system-review.md) rubric.
+
+If a system is understood except for a genuine research boundary, use the reviewed-with-gaps path: state the gap precisely, document the work already attempted, and explain the next useful test. If the inventory itself is missing a system, submit a supported System proposal instead of renumbering or silently inserting entries.
+
 ## Metadata
 
 Keep an article's `id` stable after publication. Use `aliases` when a route changes. Choose one of `published`, `draft`, `stub`, or `research-needed`; only `published` pages must satisfy the complete teaching standard.

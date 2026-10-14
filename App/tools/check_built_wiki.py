@@ -76,8 +76,8 @@ def main() -> int:
                 continue
             if not destination.exists():
                 errors.append(f"{relative}: broken generated URL: {reference}")
-    if article_pages != 91:
-        errors.append(f"generated {article_pages} article pages, expected 91")
+    if article_pages != 115:
+        errors.append(f"generated {article_pages} article pages, expected 115")
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

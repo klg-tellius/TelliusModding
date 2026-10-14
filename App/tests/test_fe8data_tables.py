@@ -296,6 +296,18 @@ class FieldTests(unittest.TestCase):
     def test_small_sections(self):
         data = fe8data.patch_game_data(self.data, "boss_exp_bonus", 2, 99)
         self.assertEqual(fe8data.read_game_data(data)["boss_exp_bonus"][2], 99)
+        # Japanese retail FE8Data ends GameData after five rows. Simulate that
+        # exported boundary and ensure the reader/writer cannot spill into the
+        # following TerrainData section.
+        short = bytearray(self.data)
+        game_start = fe8data.symbol_offsets(short)["GameData"]
+        terrain_symbol = next(position for position, _offset, name in fe8data._symbol_entries(short)
+                              if name == "TerrainData")
+        struct.pack_into(">I", short, terrain_symbol, game_start + 20)
+        self.assertEqual(len(fe8data.read_game_data(short)), 5)
+        self.assertNotIn("laguz_growth_bonus", fe8data.read_game_data(short))
+        with self.assertRaisesRegex(ValueError, "not present"):
+            fe8data.patch_game_data(short, "laguz_growth_bonus", 0, 10)
         data = fe8data.write_group_names(data, fe8data.read_group_names(data) + ["MG_新軍"])
         self.assertEqual(fe8data.read_group_names(data), [None, "MG_クリミア軍", "MG_新軍"])
         data = fe8data.write_battle_skies(data, ["cloudy_01", "sky_01", "night_01"])
