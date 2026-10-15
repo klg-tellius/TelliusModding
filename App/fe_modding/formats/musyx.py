@@ -8,16 +8,23 @@ into playable PCM; it is not a MusyX sequencer.
   offsets). Type 0 is a *song* group, type 1 an *FX* group whose third
   offset points at the FX table: ``u16 count, u16 pad`` then 10-byte entries
   ``u16 fx_id, u16 macro, u8 max_voices, u8 priority, u8 volume, u8 pan,
-  u8 key, u8 voice_group``. A cue's ``sound_id`` is an FX id; the macro id may
-  carry a ``0x8000`` flag that is masked off (layout from the public MusyX
-  decompilation, https://github.com/AxioDL/musyx).
-- ``.pool``: 4 big-endian offsets, the first (``0x10``) starting the sound
-  macro table. Each macro is ``u32 size`` (including this 8-byte header),
+  u8 key, u8 voice_group``. A cue's ``sound_id`` is an FX id. Its "macro" is
+  an object id: with the ``0x8000`` flag it names a *layer* instead (layout
+  from the public MusyX decompilation, https://github.com/AxioDL/musyx).
+- ``.pool``: 4 big-endian offsets: sound macros (``0x10``), tables, keymaps
+  (unused here, 0) and layers. Each macro is ``u32 size`` (including this 8-byte header),
   ``u16 id``, ``u16`` pad, then 8-byte commands. A command's opcode is the low
   byte of its first word; ``0x10`` (start sample) carries the sample id in the
   two bytes above it, ``0x08`` (play macro) the target macro id the same way,
   ``0x00`` ends the macro. Sample ids are one id space across the three banks,
-  so a macro's sample may sit in another bank.
+  so a macro's sample may sit in another bank; macro ids do not overlap
+  between banks either. A layer is ``u32 size, u16 id (0x8000 flag), u16 pad,
+  u32 count`` then 12-byte entries ``u16 macro, u8 key_low, u8 key_high,
+  s8 transpose, u8 volume, s8 priority_offset, u8 span, u8 pan`` + 3 pad: the
+  macros it starts together (typically a left/right pair, pan 0 and 127).
+  The layer list ends with ``0xFFFFFFFF``. Checked against the game's own
+  audio: a layered cue plays the layer's macros, not the macro with the
+  same number.
 - ``.sdir``: 32-byte sample records sorted by id (the game binary-searches
   them) and ended by a 4-byte record with id ``0xFFFF``, followed by the ADPCM
   info blocks; each record is ``u16 id, u16 pad, u32 samp_offset,
@@ -52,6 +59,9 @@ OP_START_SAMPLE = 0x10
 OP_ADD_KEY = 0x18
 OP_SET_KEY = 0x19
 OP_RANDOM_KEY = 0x17
+OP_WAIT_MS = 0x07
+WAIT_FOREVER = 0xFFFF
+LOOP_PREVIEW_SECONDS = 4.0   # a looping sample sounds until the game stops it; preview this long
 FORMAT_DSP_ADPCM = 0
 MAX_MACRO_DEPTH = 8
 GROUP_HEADER_SIZE = 0x28
@@ -62,6 +72,8 @@ MIDI_SETUP_SIZE = 0x54
 END_OF_PAGES = 0xFF
 FX_ENTRY_SIZE = 10
 MACRO_ID_MASK = 0x7FFF
+LAYER_FLAG = 0x8000
+LAYER_ENTRY_SIZE = 12
 
 
 class MusyxError(Exception):
@@ -92,6 +104,18 @@ class FxEntry:
     key: int
     voice_group: int
     group_id: int
+
+
+@dataclass
+class LayerEntry:
+    macro: int
+    key_low: int
+    key_high: int
+    transpose: int
+    volume: int
+    priority_offset: int
+    span: int
+    pan: int
 
 
 @dataclass
@@ -158,6 +182,7 @@ class Bank:
         self.macros: dict[int, list[tuple[int, int]]] = {}
         self.samples: dict[int, SampleEntry] = {}
         self.fx: dict[int, FxEntry] = {}
+        self.layers: dict[int, list[LayerEntry]] = {}  # layer id with its 0x8000 flag
         self.song_groups: list[SongGroup] = []
         self._parse_pool(pool)
         self._parse_sdir(sdir)
@@ -191,6 +216,20 @@ class Bank:
             if macro_id not in self.macros:  # a duplicate id keeps its first definition
                 self.macros[macro_id] = [
                     struct.unpack_from(">II", pool, i) for i in range(offset + 8, offset + size - 7, 8)]
+            offset += size
+        self._parse_layers(pool, header[3])
+
+    def _parse_layers(self, pool: bytes, offset: int) -> None:
+        while offset and offset + 12 <= len(pool):
+            size, layer_id, _pad, count = struct.unpack_from(">IHHI", pool, offset)
+            if size == 0xFFFFFFFF or size < 12:
+                break
+            entries = []
+            for i in range(min(count, (size - 12) // LAYER_ENTRY_SIZE)):
+                macro, low, high, transpose, volume, priority, span, pan = struct.unpack_from(
+                    ">HBBbBbBB", pool, offset + 12 + LAYER_ENTRY_SIZE * i)
+                entries.append(LayerEntry(macro, low, high, transpose, volume, priority, span, pan))
+            self.layers[layer_id] = entries
             offset += size
 
     def _parse_sdir(self, sdir: bytes) -> None:
@@ -243,6 +282,23 @@ class Bank:
                 break
         return None
 
+    def start_delay_ms(self, macro_id: int, depth: int = 0) -> int:
+        """Milliseconds of timed waits (``0x07``: ms in the high half of word 1;
+        byte 3 set means "until the sample ends" instead) before the first
+        start-sample command. The game starts such sounds that much later."""
+        if depth > MAX_MACRO_DEPTH or macro_id not in self.macros:
+            return 0
+        total = 0
+        for word0, word1 in self.macros[macro_id]:
+            opcode = word0 & 0xFF
+            if opcode in (OP_START_SAMPLE, OP_END):
+                break
+            if opcode == OP_WAIT_MS and not (word0 >> 24) & 1 and (word1 >> 16) != WAIT_FOREVER:
+                total += word1 >> 16
+            elif opcode == OP_PLAY_MACRO:
+                return total + self.start_delay_ms((word0 >> 8) & 0xFFFF, depth + 1)
+        return total
+
     def decode(self, sample_id: int) -> tuple[int, list[int]]:
         entry = self.samples.get(sample_id)
         if entry is None:
@@ -281,27 +337,39 @@ class SoundBanks:
         return None
 
     def resolve(self, sound_id: int) -> tuple[Bank, int] | None:
-        """(bank holding the sample, sample id) a cue's sound id plays, or
-        None if unresolved. The FX entry gives the macro; the macro's own bank
-        is tried first for the sample, then the others: sample ids are one id
-        space spread over the banks (a macro of gcfesnd_etc may start a sample
-        only gcfesnd holds)."""
+        """(bank holding the sample, sample id) of the first voice a cue's
+        sound id plays, or None if unresolved."""
         entry = self.fx_entry(sound_id)
         if entry is None:
             return None
-        macro_id = entry.macro & MACRO_ID_MASK
-        for macro_bank in self.banks:
-            sample_id = macro_bank.first_sample(macro_id)
-            if sample_id is None:
-                continue
-            for bank in (macro_bank, *self.banks):
-                if sample_id in bank.samples:
-                    return bank, sample_id
-        return None
+        voices = self.voices(entry.macro, entry.key)
+        return (voices[0][0], voices[0][1]) if voices else None
+
+    def voices(self, object_id: int, note: int) -> list[tuple[Bank, int, int, float, float]]:
+        """(bank, sample id, note, gain, start delay in seconds) for every voice
+        an object id starts with ``note``: one for a macro, one per matching
+        entry for a layer (``0x8000`` flag)."""
+        if not object_id & LAYER_FLAG:
+            voice = self.voice_for_macro(object_id, note)
+            return [(*voice, 1.0, self._start_delay(object_id))] if voice else []
+        layer = next((b.layers[object_id] for b in self.banks if object_id in b.layers), None)
+        out = []
+        for part in layer or []:
+            if part.key_low <= note <= part.key_high:
+                voice = self.voice_for_macro(part.macro, max(0, min(127, note + part.transpose)))
+                if voice:
+                    out.append((*voice, part.volume / 127.0, self._start_delay(part.macro)))
+        return out
+
+    def _start_delay(self, macro_id: int) -> float:
+        bank = next((b for b in self.banks if macro_id in b.macros), None)
+        return bank.start_delay_ms(macro_id) / 1000.0 if bank else 0.0
 
     def voice_for_macro(self, macro_id: int, note: int) -> tuple[Bank, int, int] | None:
-        """(bank holding the sample, sample id, note) for a macro started with ``note``."""
-        macro_id &= MACRO_ID_MASK
+        """(bank holding the sample, sample id, note) for a macro started with
+        ``note``. A layer id (``0x8000`` flag) is not a macro: use :meth:`voices`."""
+        if macro_id & LAYER_FLAG:
+            return None
         for macro_bank in self.banks:
             plan = macro_bank.first_voice(macro_id, note)
             if plan is None:
@@ -320,20 +388,34 @@ class SoundBanks:
         return bank.samples[sample_id], self._pcm_cache[key]
 
     def render(self, sound_id: int) -> Sfx:
+        """Mono render of a cue's sound: every voice it starts (a layer's
+        left/right pair is mixed down), resampled by note versus base key and
+        delayed by any timed wait before its sample starts. A looping sample
+        repeats its loop for a few seconds."""
         entry = self.fx_entry(sound_id)
         if entry is None:
             raise MusyxError(f"Sound id {sound_id} is not an FX id.")
-        voice = self.voice_for_macro(entry.macro, entry.key)
-        if voice is None:
-            raise MusyxError(f"Sound id {sound_id} (macro {entry.macro & MACRO_ID_MASK}) starts no sample: a silent cue.")
-        bank, sample_id, note = voice
-        info, pcm = self.sample_pcm(bank, sample_id)
-        ratio = 2.0 ** ((note - info.base_key) / 12.0)
-        if abs(ratio - 1.0) > 1e-3:
-            positions = np.arange(int(len(pcm) / ratio)) * ratio
-            pcm = np.interp(positions, np.arange(len(pcm)), pcm).astype(np.float32)
-        ints = np.clip(pcm * entry.volume / 127.0 * 32768.0, -32768, 32767).astype(np.int16)
-        return Sfx(info.sample_rate, ints.tolist(), bank.name, sample_id)
+        voices = self.voices(entry.macro, entry.key)
+        if not voices:
+            raise MusyxError(f"Sound id {sound_id} (object {entry.macro:#06x}) starts no sample: a silent cue.")
+        rate = self.sample_pcm(voices[0][0], voices[0][1])[0].sample_rate
+        mix = np.zeros(0, dtype=np.float32)
+        for bank, sample_id, note, gain, delay in voices:
+            info, pcm = self.sample_pcm(bank, sample_id)
+            end = info.loop_offset + info.loop_length
+            if info.loop_length and end <= len(pcm):
+                want = int(LOOP_PREVIEW_SECONDS * info.sample_rate)
+                repeats = max(0, -(-(want - end) // info.loop_length))
+                pcm = np.concatenate([pcm[:end]] + [pcm[info.loop_offset:end]] * repeats)
+            step = 2.0 ** ((note - info.base_key) / 12.0) * info.sample_rate / rate
+            if abs(step - 1.0) > 1e-3:
+                pcm = np.interp(np.arange(int(len(pcm) / step)) * step, np.arange(len(pcm)), pcm).astype(np.float32)
+            start = int(delay * rate)
+            if start + len(pcm) > len(mix):
+                mix = np.pad(mix, (0, start + len(pcm) - len(mix)))
+            mix[start:start + len(pcm)] += pcm * gain / len(voices)
+        ints = np.clip(mix * entry.volume / 127.0 * 32768.0, -32768, 32767).astype(np.int16)
+        return Sfx(rate, ints.tolist(), voices[0][0].name, voices[0][1])
 
 
 def read_stbl_names(path: Path | str) -> list[str]:
