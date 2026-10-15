@@ -12,6 +12,7 @@ last_reviewed: "2026-10-13"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/script-functions.md"
+system_entries: ["FE9-SYS-041"]
 ---
 # Script Functions
 

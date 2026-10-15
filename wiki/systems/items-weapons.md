@@ -8,16 +8,45 @@ article_type: "system-reference"
 tags: ["Balance","Economy"]
 aliases: ["tellius_archive.html#/items-weapons"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/items-weapons.md"
+system_entries: ["FE9-SYS-178", "FE9-SYS-182", "FE9-SYS-190", "FE9-SYS-191", "FE9-SYS-192", "FE9-SYS-194", "FE9-SYS-195", "FE9-SYS-196"]
+system_reviewed: ["FE9-SYS-178", "FE9-SYS-182", "FE9-SYS-190", "FE9-SYS-191", "FE9-SYS-192", "FE9-SYS-194", "FE9-SYS-195", "FE9-SYS-196"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-14"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Items & Weapons
+
+## FE9-SYS-178 — Weapon experience and rank growth
+
+<span id="fe9-sys-178"></span> Each unit stores separate WEXP for sword, lance, axe, bow, fire, thunder, wind, and staff. A qualifying committed weapon or staff action adds the item's configured WEXP once through its action handler; a miss is still a committed action, while additional strikes in that action do not independently grant another action award. Siege and scripted paths award only when their handler invokes the same progression entry point. Thresholds are E 1, D 31, C 71, B 121, A 181, and S 251, with saturation at the supported cap. Class/skill access is still required: reaching a threshold does not grant a weapon family the class cannot use. Promotion can add access, after which stored WEXP participates in legality. The result is saved unit progression and can trigger rank-up presentation.
+
+## FE9-SYS-182 — Stat boosters and permanent bonuses
+
+<span id="fe9-sys-182"></span> Consumable boosters write permanent HP/Str/Mag/Skl/Spd/Lck/Def/Res, build, or movement gains into mutable unit state, capped by the applicable effective-stat rule. This differs from an equipped item's temporary stat bonus and from Ward/Pure Water temporary Resistance. The availability check rejects a target with no legal positive delta; confirmation applies only the capped delta, refreshes derived/UI values, consumes the instance at commit, and serializes the result. Each booster definition supplies the affected field and amount.
 
 *How an item definition becomes inventory, equipment, combat statistics, and durability*
 
 An item definition describes what a weapon or usable object is. A deployment or save places an instance of that item in a unit's inventory, and runtime state tracks mutable values such as remaining durability and whether the item is equipped. Combat then combines the equipped weapon's properties with the unit's effective stats.
+
+## FE9-SYS-190 through FE9-SYS-196 — Ownership boundaries
+
+<span id="fe9-sys-190"></span> **Item definitions.** The 0x60-byte `FE8Data.bin` record is immutable shared data: identity and text keys, weapon and attack types, rank, properties, effectiveness categories, effects, price, uses, combat values, range, icon, WEXP, stat/growth modifiers, and trail color. The complete field table below is the primary implementation trail. Editing it changes how every instance of that IID is interpreted; it does not locate or mutate an individual carried copy.
+
+<span id="fe9-sys-191"></span> **Item instances.** A unit or convoy slot stores the item identity plus mutable remaining uses and state flags such as equipped, droppable, and the optional six-bit forge-record reference. Moving or trading an item transfers this instance state. A forged instance continues to use the ordinary base definition and overlays the linked forge record; deleting or reassigning that record without repairing the instance creates an orphaned reference.
+
+<span id="fe9-sys-192"></span> **Personal inventory.** Units own eight serialized slots whose instances carry definition identity, remaining uses, and flags. Commands filter, equip, trade, use, remove, compact, or deliver instances; committed mutations refresh equipment and presentation before save. A preview or cancelled transfer must not mutate slots. Full destinations use the caller's explicit prompt/convoy/discard/failure route rather than overwriting an instance. Relationship eligibility and action cost belong to the calling [Map Action](./map-actions.md), while the shared inventory layer owns slot validation, compaction, and equipment repair.
+
+<span id="fe9-sys-194"></span> **Item legality and restrictions.** Legality composes rather than relying on one “usable” bit. The current class must permit the weapon family, stored WEXP must meet the item's rank, range and target must fit the action, silence/form/state can suppress categories, and property tokens or native checks can restrict named characters, classes, or special weapons. Menu, AI, forecast, and final resolution call the same composed predicates; named exceptions stay with their item, class, status, or story owner.
+
+<span id="fe9-sys-195"></span> **Durability and breaking.** Remaining uses belong to the instance. Each weapon, staff, siege, or scripted action handler records consumption at its defined successful commit point unless the definition carries unbreakable behavior. Multi-strike and multi-target variants follow that handler's action/strike semantics rather than a second global decrement. Reaching zero removes the depleted instance and invokes the common equipment/menu refresh; definition maximum uses remain unchanged.
+
+<span id="fe9-sys-196"></span> **Consumable effects.** Healing, antidotes, temporary Resistance, keys, stat boosters, promotion seals, skill scrolls, and story items share a wrapper: validate item and target, confirm one action, dispatch the effect owner, consume/remove the instance only at the proper commit boundary, refresh unit/map/UI state, and mark the action as required. They do not share one effect formula. Invalid or cancelled targets leave both state and uses unchanged; Staff, Status, Skills, Classes, and Map Actions own the effect-specific predicates and consequences.
 
 ## From item definition to combat
 
@@ -121,6 +150,10 @@ An item definition describes what a weapon or usable object is. A deployment or 
     <tr><td><code>flutter</code></td><td>Vortex</td><td>Plays the Vortex animation; treated as a long-range attack in battle</td></tr>
     <tr><td><code>valuable</code></td><td>Unique and legendary weapons, Knight Ring</td><td>Cannot be sold or discarded</td></tr>
     <tr><td><code>JH</code></td><td>Demi Band</td><td>Halves the laguz transformation bonus to Str, Mag, Skl, Spd, Def and Res</td></tr>
-    <tr><td><code>noneart</code></td><td>Boots</td><td>No effect found in the executable <span class="badge open">open</span></td></tr>
+    <tr><td><code>noneart</code></td><td>Boots</td><td>Property token preserved by the format; no independent US executable consumer is required for the Boots movement-booster effect</td></tr>
   </tbody></table>
 </div>
+
+## Interactions and review boundary
+
+All item/weapon systems on this page are reviewed without a blocking research gap. WEXP thresholds, permanent boosters, definition-versus-instance ownership, eight-slot inventory behavior, legality composition, durability/breakage, and effect-owner dispatch define the lifecycle. Invalid forge references and malformed edited combinations are validation/repair concerns; per-item target predicates live with the effect systems rather than in a second master matrix. No new primary article is needed.

@@ -8,6 +8,7 @@ on:
       - mkdocs.yml
       - requirements-wiki.txt
       - App/tools/validate_wiki.py
+      - App/tools/review_systems.py
       - App/tools/normalize_wiki_html_links.py
       - App/tools/check_built_wiki.py
       - theme_overrides/**
@@ -20,6 +21,7 @@ on:
       - mkdocs.yml
       - requirements-wiki.txt
       - App/tools/validate_wiki.py
+      - App/tools/review_systems.py
       - App/tools/normalize_wiki_html_links.py
       - App/tools/check_built_wiki.py
       - theme_overrides/**
