@@ -51,6 +51,7 @@ OP_PLAY_MACRO = 0x08
 OP_START_SAMPLE = 0x10
 OP_ADD_KEY = 0x18
 OP_SET_KEY = 0x19
+OP_RANDOM_KEY = 0x17
 FORMAT_DSP_ADPCM = 0
 MAX_MACRO_DEPTH = 8
 GROUP_HEADER_SIZE = 0x28
@@ -214,7 +215,9 @@ class Bank:
         """(sample id, MIDI note it plays at) for the first start-sample command
         reachable from a macro started with ``note``. Set-key and add-key
         commands before it change the note (``0x19`` fixes it, ``0x18`` offsets
-        it by a signed byte, from the played note if byte 3 is set)."""
+        it by a signed byte, from the played note if byte 3 is set, ``0x17``
+        picks a random note between bytes 1 and 3: the middle one is used,
+        which matches the game's audio within the random spread)."""
         if depth > MAX_MACRO_DEPTH or macro_id not in self.macros:
             return None
         current = note
@@ -224,6 +227,10 @@ class Bank:
                 return (word0 >> 8) & 0xFFFF, current
             if opcode == OP_SET_KEY:
                 current = (word0 >> 8) & 0x7F
+            elif opcode == OP_RANDOM_KEY:
+                # the game picks a note in [byte 1, byte 3]; render the middle one
+                low, high = (word0 >> 8) & 0x7F, (word0 >> 24) & 0x7F
+                current = (min(low, high) + max(low, high) + 1) // 2
             elif opcode == OP_ADD_KEY:
                 delta = (word0 >> 8) & 0xFF
                 delta -= 256 if delta > 127 else 0
