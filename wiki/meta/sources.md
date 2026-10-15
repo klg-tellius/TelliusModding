@@ -25,6 +25,9 @@ Tellius Archive documents formats and behavior for interoperability. It does not
 `telliusmodding-source`
 : Behavior implemented and tested in the public TelliusModding source tree.
 
+`path-of-radiance-us-manual`
+: Nintendo and Intelligent Systems, *Fire Emblem: Path of Radiance* US instruction booklet. Used for the player-facing chapter loop, controls, menus, base facilities, unit commands, save requirements, and GBA-link feature boundaries; native formulas still require direct executable or in-game evidence.
+
 `project-credits`
 : Third-party tools and research leads listed in the repository's `CREDITS.md`. Their inclusion does not transfer ownership or imply endorsement.
 

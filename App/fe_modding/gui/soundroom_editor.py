@@ -66,8 +66,8 @@ class SoundRoomEditor(EditorPanel):
         info(bar, "The pictures behind the Sound Room's track menu, shown as a slideshow: playing a track (A) shows "
                   "the next one; with the menu hidden (X), A/Right shows the next and Left the previous. Each "
                   "picture is an s/rect.bin resource (add new ones on the Backgrounds page) placed at an X/Y "
-                  "screen offset. The track list is fixed in the game code and does not come from this "
-                  "file.").pack(side="right")
+                  "screen offset. The track list is in the game code; edit it on the Soundroom Tracks "
+                  "page.").pack(side="right")
 
         body = ttk.Frame(self, padding=8)
         body.pack(fill="both", expand=True)

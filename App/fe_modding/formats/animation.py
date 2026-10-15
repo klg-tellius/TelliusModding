@@ -82,7 +82,8 @@ none) with one track per ``.gs`` material, each a ``u16`` key count, a
 value (0-255) replaces the material's alpha, which is how effects fade in
 and out. Slot 2 is laid out the same with RGB565 colours
 (``interpolate_keyframe_color``; no vanilla effect uses it), slots 3/4 are
-the U/V scroll tracks (``interpolate_animation_channel_uv_scale_u``/``_v``)
+the U/V scroll tracks (``interpolate_animation_channel_uv_scale_u``/``_v``), read only by
+the map water shader ``setup_map_texture_material_multi_pass`` as scroll speeds (never by effects)
 and slot 8 the particle emitters (``update_actor_material_runtime``).
 :func:`read_particle_table_layout` exposes its confirmed header, emitter,
 stage and curve/key ranges; the unresolved controls and original block remain

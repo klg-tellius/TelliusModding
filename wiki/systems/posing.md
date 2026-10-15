@@ -8,16 +8,31 @@ article_type: "system-reference"
 tags: ["Graphics","Animation"]
 aliases: ["tellius_archive.html#/posing"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/posing.md"
+system_entries: ["FE9-SYS-312", "FE9-SYS-313", "FE9-SYS-317"]
+system_reviewed: ["FE9-SYS-312", "FE9-SYS-313", "FE9-SYS-317"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-14"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Skeleton Posing & Skinning
 
 *How skeleton, animation curves, and weighted mesh vertices combine into a moving model*
 
 A moving battle model combines three data sets: a `.g` skeleton holding each bone's transform values, `.ga` curves that overwrite some of those values over time, and a `.gs` mesh whose vertices carry bone indices and weights.
+
+## FE9-SYS-312 — Skeleton and skinning
+
+<span id="fe9-sys-312"></span> The skeleton is a child/sibling hierarchy of local transforms. Every frame, local matrices chain into world matrices. Rigid shapes reference one bone or a subset loaded into up to ten GameCube matrix slots; blended vertices instead combine up to four `world × skin` matrices on the CPU using weights stored in 256ths. Positions and normals follow the same bone ownership, with normals excluding translation.
+
+## FE9-SYS-313 — Animation-track evaluation
+
+<span id="fe9-sys-313"></span> A `.ga` clip supplies keyed value curves for selected bones. At frame *t*, each driven channel linearly interpolates between neighboring keys and overwrites the corresponding translation, rotation, or scale value. The engine rebuilds the local matrix with Maya-style pivots and X→Y→Z Euler order, then chains the hierarchy. Undriven bones retain their seed values, which is why incomplete clips still depend on the model's base skeleton.
 
 ## How one vertex reaches its animated position
 
@@ -40,3 +55,17 @@ A moving battle model combines three data sets: a `.g` skeleton holding each bon
   Blending happens on the CPU and uses the same matrices as the hardware path: a vertex weighted to bones *b*<sub>i</sub> is drawn at `Σ wi · world[bi] × skin_matrix[bi] × vertex`, with at most four bones and weights in 256ths. The result is stored at the fixed-point scale of the mesh's blended-vertex buffer, so an animation that carries a model far from its origin (battle clips with root motion move vertices up to about five times the body's rest size) needs a coarser scale. <span class="confidence confidence--confirmed">confirmed</span>
 
   Character rigs mostly use identity skinning matrices and store body vertices in model space, with bone pivots placed at the joints. Static models are different: a single-bone shape stores vertices in that bone's local space, so its apparent world placement comes from the bone chain. Multi-matrix shapes draw through `world[bone] × skin_matrix[bone] × vertex`; on nearly all character classes this keeps triangles rigid under animation, with a few dragon variants as the known exceptions.
+
+## Worked example
+
+Consider an elbow vertex weighted 75% to the upper-arm bone and 25% to the forearm. The clip interpolates both bones' rotation curves at the requested frame, constructs their local matrices around joint pivots, chains each through the shoulder and root, multiplies by each skinning matrix, transforms the stored vertex twice, and blends the results 0.75/0.25. A rigid glove vertex can instead name one loaded matrix slot and avoid CPU blending.
+
+## Interactions and limits
+
+Animation evaluation supplies transforms; battle/map/cutscene controllers choose clips, time, looping, transitions, and event markers. Materials and textures are separate draw inputs. Fixed hardware matrix slots require shapes to declare subsets, while CPU-blended buffers require a scale large enough for root motion. Malformed bone indices, non-normalized weights, missing channels, incompatible pivots, or too-fine fixed-point scale can deform geometry even when each file parses.
+
+FE9-SYS-312 and FE9-SYS-313 define format-to-runtime evaluation. For FE9-SYS-317, the scene controller owns actor slots and authored root coordinates; the actor owns skeleton/clip evaluation; attachments inherit a named bone matrix plus their local transform. Visibility/fades are presenter state. Normal completion and skip drive actors to an endpoint, release attachments and actor resources, and signal the same scene wait. A missing required model rejects that actor instead of creating persistent campaign state.
+
+## Review boundary
+
+All three posing systems are reviewed without a blocking research gap. Scene ownership, root placement, clip evaluation, bone-local attachments, visibility, skip convergence, and failure teardown are established. Individual slot numbers, authored coordinate values, and prop offsets belong to each scene/resource rather than a universal posing rule. No new primary article is required.
