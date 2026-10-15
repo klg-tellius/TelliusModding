@@ -21,7 +21,7 @@ Many `.cmp` files, once passed through [LZ10](./lz10.md), turn out to hold not r
 
   Three real bundling patterns use it: a chapter's [deployment data](./dispo-format.md) packs its four unit files (`dispos_c.bin`, `_n`, `_h`, `_m`) into one archive; a chapter's [map data](./map-format.md) packs `map.bin` alongside that same chapter's 3D scenery models, traveling together because the map references them by name; and a character or object's [skeleton/mesh/animation trio](./model-formats.md) (`skeleton.g`, `body.gs`, one `.ga` per battle animation) packs into a single `pack.cmp` per class.
 
-  Each directory entry preserves the filename, content offset, and content length. Payload starts are padded to 32-byte boundaries; padding is not part of the recorded file length.
+  Each directory entry preserves the filename, content offset, and content length. Names are ASCII except one: the chapter maps `bmap04`, `bmap12` and `bmap12_2` hold `ｆlowerpot_01`, whose first letter is a full-width Shift-JIS `ｆ`, so a writer must keep that encoding to rebuild those archives. Payload starts are padded to 32-byte boundaries; padding is not part of the recorded file length.
 
 ## How extraction works
 

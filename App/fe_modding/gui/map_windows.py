@@ -319,21 +319,7 @@ class MapObjectsWindow(_Window):
         ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 3))
-        toggles = (
-            ("flag_bits_b", 0x01, "Skip placed-object draw (B bit 0)"),
-            ("flag_bits_b", 0x02, "Initially hidden (B bit 1)"),
-            ("flag_bits_b", 0x10, "Exclude from footprint test (B bit 4)"),
-            ("flag_bits_c", 0x04, "Advance animation timer (C bit 2)"),
-            ("flag_bits_c", 0x08, "Footprint test candidate (C bit 3)"),
-            ("flag_bits_c", 0x10, "Footprint test candidate (C bit 4)"),
-            ("flag_bits_c", 0x20, "Projected texture target (C bit 5)"),
-            ("effect_type", 0x01, "Second actor update pass (effect bit 0)"),
-            ("effect_type", 0x02, "Copy roof height to base layer too (effect bit 1)"),
-            ("effect_type", 0x08, "Extended frustum test (effect bit 3)"),
-            ("effect_type", 0x10, "Exclude from footprint test (effect bit 4)"),
-            ("effect_type", 0x40, "Skip placed-object draw (effect bit 6)"),
-            ("effect_type", 0x80, "Exclude from tile-object lookup (effect bit 7)"),
-        )
+        toggles = map_props.PROP_FLAG_TOGGLES
         checks = []
         for row, (field, mask, label) in enumerate(toggles if self.map.verified_us_map_layout else (), start=5):
             initial = bool(getattr(obj, field) & mask)

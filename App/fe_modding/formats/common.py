@@ -46,6 +46,17 @@ def decode_str(data: bytes) -> str:
         return data.decode("latin-1")
 
 
+def encode_str(text: str) -> bytes:
+    """The inverse of :func:`decode_str`: ASCII, else Shift-JIS, else latin-1,
+    so a name read from a file is written back as the same bytes."""
+    for encoding in ("ascii", "shift_jis", "latin-1"):
+        try:
+            return text.encode(encoding)
+        except UnicodeEncodeError:
+            continue
+    raise UnicodeEncodeError("shift_jis", text, 0, len(text), "no encoding for this name")
+
+
 def read_cstring(stream: BinaryIO) -> bytes:
     """Read a single NUL-terminated string starting at the stream's current position."""
     chunks = []

@@ -708,3 +708,78 @@ def set_water_scroll(ga: bytes, values: tuple[float, float, float, float]) -> by
     anim.footer.blocks[WATER_SCROLL_SLOT] = block
     return animation.write_animation(anim)
 
+
+
+# -- editing a prop's definition in its saved map ---------------------------------------------------
+
+#: The editable fields of a map object (``mapbuilddesc``): its bounds and its flag bytes.
+PROP_FIELDS = ("offset_x", "offset_y", "offset_z", "size_x", "size_y", "size_z",
+               "flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")
+
+#: Flag bits with a known effect (``map_file.MapObject``): (field, mask, label).
+PROP_FLAG_TOGGLES = (
+    ("flag_bits_b", 0x01, "Skip placed-object draw (B bit 0)"),
+    ("flag_bits_b", 0x02, "Initially hidden (B bit 1)"),
+    ("flag_bits_b", 0x10, "Exclude from footprint test (B bit 4)"),
+    ("flag_bits_c", 0x04, "Advance animation timer (C bit 2)"),
+    ("flag_bits_c", 0x08, "Footprint test candidate (C bit 3)"),
+    ("flag_bits_c", 0x10, "Footprint test candidate (C bit 4)"),
+    ("flag_bits_c", 0x20, "Projected texture target (C bit 5)"),
+    ("effect_type", 0x01, "Second actor update pass (effect bit 0)"),
+    ("effect_type", 0x02, "Copy roof height to base layer too (effect bit 1)"),
+    ("effect_type", 0x08, "Extended frustum test (effect bit 3)"),
+    ("effect_type", 0x10, "Exclude from footprint test (effect bit 4)"),
+    ("effect_type", 0x40, "Skip placed-object draw (effect bit 6)"),
+    ("effect_type", 0x80, "Exclude from tile-object lookup (effect bit 7)"),
+)
+
+
+def write_map_container(project, path: Path, entries: list[pak.PakEntry], files: dict[str, bytes]) -> None:
+    """Pack ``files`` back into ``path`` in the entries' order (keeping the
+    extracted file in ``originals/``)."""
+    packed = pak.pack_pak([(e.name, files[e.name]) for e in entries], [e.reserved for e in entries])
+    project.write_keeping_original(Path(path), lz10.compress(packed))
+
+
+def edit_prop(project, path: Path, name: str, changes: dict) -> bool:
+    """Set ``changes`` (``PROP_FIELDS`` -> value) on prop ``name`` of the saved
+    map ``path``; False when nothing changed."""
+    unknown = set(changes) - set(PROP_FIELDS)
+    if unknown:
+        raise ValueError(f"Not an editable field: {', '.join(sorted(unknown))}")
+    for field, value in changes.items():
+        if field.startswith(("flag", "effect")) and not 0 <= int(value) <= 255:
+            raise ValueError(f"{field} must be a byte (0-255).")
+    entries, files = read_map_container(path)
+    data = map_file.read_map_bytes(files["map.bin"])
+    objs = [o for o in data.build_desc if o.filename == name]
+    if not objs:
+        raise ValueError(f"{Path(path).parent.name} has no object {name}.")
+    out = files["map.bin"]
+    for obj in objs:
+        for field, value in changes.items():
+            if getattr(obj, field) != value:
+                out = map_file.patch_object_field(out, obj, field, value)
+    if out == files["map.bin"]:
+        return False
+    files["map.bin"] = out
+    write_map_container(project, path, entries, files)
+    return True
+
+
+def maps_with_same_prop(extracted_dir: Path, path: Path, name: str) -> list[Path]:
+    """The other saved maps holding prop ``name`` with the same model, skeleton,
+    animation and images as in ``path``."""
+    _entries, source = read_map_container(path)
+    out = []
+    for other in map_paths(extracted_dir):
+        if other == Path(path):
+            continue
+        try:
+            if not any(p.name == name for p in map_props_info(other)):
+                continue
+            if same_prop(source, name, read_map_container(other)[1], name):
+                out.append(other)
+        except Exception:  # noqa: BLE001 - an unreadable map is just not a match
+            continue
+    return out

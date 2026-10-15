@@ -23,7 +23,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .common import decode_str, read_cstring
+from .common import decode_str, encode_str, read_cstring
 
 MAGIC = b"pack"
 ALIGNMENT = 32
@@ -96,7 +96,7 @@ def pack_pak(files: list[tuple[str, bytes]], reserved: list[int] | None = None) 
     name_offsets = []
     for name, _ in files:
         name_offsets.append(len(out))
-        out += name.encode("ascii") + b"\x00"
+        out += encode_str(name) + b"\x00"  # bmap04 and bmap12 hold a full-width Shift-JIS name
 
     content_offsets = []
     for _, content in files:
