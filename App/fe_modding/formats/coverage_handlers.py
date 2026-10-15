@@ -718,9 +718,23 @@ def cmb_file(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(addr + 0x0F, 1, "function +0x0F", nonzero=UNREAD)
 
 
-#: zdbx folders and files decoded field by field (zdbx.py and the battle_* modules).
+#: zdbx folders and files decoded field by field (zdbx.py and the battle_* modules), and the UI /
+#: scene layouts of research/docs/toInclude/dbx_ui_layouts.md (battle HUD, system desktop, lens
+#: flare, the battle tool's windows and preview scene).
 DBX_DECODED = ("zu/", "xwp/", "zbg/", "xcam/", "zdbx/camera.dbx", "zdbx/joblist.dbx", "zdbx/weaponlist.dbx",
-               "zdbx/skill.dbx", "zdbx/param.dbx", "zdbx/effectlist.dbx", "zdbx/classlist.dbx", "zdbx/bglist.dbx")
+               "zdbx/skill.dbx", "zdbx/param.dbx", "zdbx/effectlist.dbx", "zdbx/classlist.dbx", "zdbx/bglist.dbx",
+               "zdbx/battle.dbx", "zdbx/system.dbx", "zdbx/lensflare.dbx", "ztool/")
+#: ztool windows with no loader in the US executable (variants of the win4 layout).
+DBX_NO_LOADER = ("ztool/batwin.dbx", "ztool/win4.dbx")
+
+
+def _dbx_lines(data: bytes):
+    pos = 0
+    for line in data.split(b"\n"):
+        yield pos, line
+        pos += len(line) + 1
+
+
 @handles("dbx", lambda name, data: _ext(name) == "dbx")
 def dbx_file(cov: FileCoverage, walker: Walker) -> None:
     full = cov.name.lower().replace("\\", "/")
@@ -728,7 +742,16 @@ def dbx_file(cov: FileCoverage, walker: Walker) -> None:
     if not any(f"/{p}" in f"/{path}" or f"/{p}" in f"/{full}" for p in DBX_DECODED):
         cov.fill(UNDECODED, f"dbx {path.split('/')[0]}/{'*' if '/' in path else path}")
         return
+    if any(f"/{p}" in f"/{path}" or f"/{p}" in f"/{full}" for p in DBX_NO_LOADER):
+        cov.fill(PLAUSIBLE, "ztool window with no loader found (win4 layout variant)")
+        return
     cov.fill(DECODED)
+    for pos, line in _dbx_lines(cov.data):
+        key = line.strip().split(b"\t", 1)[0].split(b" ", 1)[0]
+        if key == b"current":        # button +0xB8: stored, never read
+            cov.mark(pos, len(line), UNREAD, "Button current (never read)")
+        elif key == b"flareNum":     # fetched, but the flare loop is fixed at 16
+            cov.mark(pos, len(line), UNREAD, "LensFlare flareNum (loop fixed at 16)")
 
 
 # ------------------------------------------------------------------ fonts, media, sound

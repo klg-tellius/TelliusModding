@@ -4305,8 +4305,7 @@ class _ModelPreview(ttk.Frame):
             by_name = {bone.name.lower(): i for i, bone in enumerate(bones)}
             anchored = []
             for sample in samples:
-                name = sample.name_path.strip("|").split("|")[-1].lower()
-                index = by_name.get(name)
+                index = particle_preview.anchor_bone(sample.name_path, by_name)
                 if index is not None:
                     anchored.append(replace(sample, position=engine_pose.apply(world[index], sample.position)))
                 else:
