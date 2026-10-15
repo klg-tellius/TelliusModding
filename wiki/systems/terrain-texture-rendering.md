@@ -12,6 +12,13 @@ last_reviewed: "2026-10-13"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/terrain-texture-rendering.md"
+system_entries: ["FE9-SYS-081"]
+system_reviewed: ["FE9-SYS-081"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-13"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Terrain Texture Blending
 
@@ -19,11 +26,13 @@ source_path: "systems/terrain-texture-rendering.md"
 
 A map's [terrain model](../formats/map-format.md) can list several textures on one material, but listing them is not enough to make them all appear. Ordinary static rendering only ever binds the first texture on a material — anything beyond that requires the map system to register a callback for that specific material by name when its chapter loads, entirely separately from anything stored in the model file itself.
 
+<span id="fe9-sys-081"></span>
+
 ## The default path: one texture, modulated
 
   Without a callback, a material's draw is about as simple as GameCube-era rendering gets: bind the first listed texture, and multiply it by the vertex/light color. This is the standard "texture times lighting" look used across most props and scenery that don't need special treatment.
 
-## The callback path: blending two more textures in
+## Rules and lifecycle: blending two more textures in
 
   For terrain that needs a richer surface — a road cutting across grass, for instance — the map system can attach up to two extra rendering steps to a named material at load time:
 
@@ -51,4 +60,10 @@ A map's [terrain model](../formats/map-format.md) can list several textures on o
 
   The dual-sample blend is attached by name, to materials called `map_base` or `map_wall`; `map_water` gets its own multi-pass step. The final overlay multiply is attached without a name, to every material of the terrain models. So a terrain material with any other name still has its last listed texture multiplied over it: a Prologue terrain rebuilt with its own material name and an all-white last texture drew its first texture unchanged. <span class="confidence confidence--confirmed">engine + in game</span>
 
-  Open: full pixel-for-pixel parity — exact texture filtering, draw ordering against other scene elements, and ambient/material color interaction — is not yet completely mapped. The blend structure and both projection formulas above are.
+## Native order and sampler state
+
+Callback-array order is draw order. The projected dual callback first combines texture 0 sampled through UV0 and UV1 using the projected mask, then the global last-record callback multiplies the final material texture, and the optional common-texture callback multiplies the moving cloud overlay. The terrain images carry their sampler state in TPL: the shipped mipmapped map textures use repeat wrapping, trilinear minification, linear magnification, zero LOD bias, and one stored half-size level. Lighting enters through the raster color in the base sample before the later multiplicative stages. The final actor is submitted in its scene render list; these callbacks do not reorder unrelated objects.
+
+## Interactions and limits
+
+FE9-SYS-081 is reviewed without a blocking gap. Material-name selection, callback order, both UV sources, mask polarity, projection matrices, texture identities, TEV combination, mip/filter state, light modulation, weather overlay, and the separate water path are established. Emulator-versus-hardware pixel rounding remains a fidelity test rather than an unknown system rule.

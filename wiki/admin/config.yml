@@ -86,7 +86,60 @@ collections:
       - *sources_field
       - { name: cms_collection, label: CMS collection, widget: hidden, default: systems }
       - *source_path_field
+      - { name: system_entries, label: Covered system IDs, widget: list, required: false, default: [], hint: "FE9-SYS-NNN entries this article intends to explain. Coverage is not review approval." }
+      - { name: system_reviewed, label: Reviewed system IDs, widget: list, required: false, default: [], hint: "Only add after a human applies the complete review rubric." }
+      - { name: system_reviewed_with_gaps, label: Reviewed IDs with gaps, widget: list, required: false, default: [] }
+      - { name: system_reviewed_by, label: System reviewer, widget: string, required: false }
+      - { name: system_reviewed_on, label: System review date, widget: datetime, required: false, date_format: YYYY-MM-DD, time_format: false, format: YYYY-MM-DD }
+      - { name: system_known_gaps, label: Known gaps, widget: list, required: false, default: [], hint: "Use FE9-SYS-NNN: precise gap description." }
+      - { name: system_gap_work, label: Gap investigation performed, widget: list, required: false, default: [], hint: "Use FE9-SYS-NNN: work attempted and result." }
       - *body_field
+
+  - name: system_proposals
+    label: System proposals
+    label_singular: System proposal
+    folder: wiki/proposals
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{proposal_status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: proposals }
+      - { name: article_type, label: Article type, widget: hidden, default: system-proposal }
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: proposals }
+      - *source_path_field
+      - { name: proposed_system_name, label: Proposed system name, widget: string }
+      - { name: proposed_system_scope, label: Scope, widget: text, hint: "Define what belongs to this system and what does not." }
+      - { name: proposed_system_reason, label: Why it is missing, widget: text, hint: "Explain why existing inventory entries cannot absorb it." }
+      - { name: proposed_system_evidence, label: Evidence source keys, widget: list, min: 1 }
+      - { name: proposal_status, label: Proposal status, widget: select, options: [proposed, accepted, rejected, merged], default: proposed }
+      - { name: accepted_system_id, label: Accepted FE9 system ID, widget: string, required: false }
+      - name: body
+        label: Proposal documentation
+        widget: markdown
+        default: |
+          # Proposed system
+
+          ## Why this is a distinct system
+
+          ## Supporting documentation
+
+          ## Inputs, rules, and outputs
+
+          ## Relationship to the existing inventory
+
+          ## Known gaps
 
   - name: guides
     label: Guides and learning paths

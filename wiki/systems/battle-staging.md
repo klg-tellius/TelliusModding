@@ -8,10 +8,17 @@ article_type: "system-reference"
 tags: ["Combat","Battle Graphics"]
 aliases: ["tellius_archive.html#/battle-staging"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/battle-staging.md"
+system_entries: ["FE9-SYS-156", "FE9-SYS-157", "FE9-SYS-162"]
+system_reviewed: ["FE9-SYS-156", "FE9-SYS-157", "FE9-SYS-162"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-14"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Battle Staging & Camera
 
@@ -19,11 +26,23 @@ source_path: "systems/battle-staging.md"
 
 Once [combat resolution](./combat-mechanics.md) has decided every strike, the battle scene stages them one at a time. Everything runs on a 60-per-second clock: battle clips advance one frame per tick, and the waits and camera moves are counted in the same ticks. The timing values come from `zdbx/param.dbx`; each battle model adds its own speed, range and jump flags from its `zu/<code>_prm.dbx` table (see [ZDBX & DBX](../formats/zdbx.md)).
 
+## Mental model and example — FE9-SYS-156 battle staging
+
+<span id="fe9-sys-156"></span> Staging converts an authoritative sequence of strikes into positions, clips, missiles, reactions, and pauses. It initializes both actors, establishes range, consumes each strike in order, waits for its presentation objects, and ends only after death or recovery work has completed. It does not recalculate the combat result. The worked timeline below is the lifecycle and the clearest debugging model: if a strike looks late, first determine whether the delay comes from a global wait, the model's run/range parameters, the action clip, or a projectile.
+
+## FE9-SYS-157 — Battle scenery selection
+
+<span id="fe9-sys-157"></span> A full battle loads a compact `zbg/<name>/bf.cmp` environment rather than drawing the tactical map directly. Selection is table-driven, not a hard-coded chapter switch: `get_battle_terrain_scene_name` reads `BattleTerrData` as a matrix whose row is the active tactical-map name and whose 77 columns are terrain ids. The selected cell is the battle-scene name. A null cell repeats the lookup in row 0, `Map6`, which is the retail fallback. `set_battle_scene_background_and_sky` stores that result beside the separately selected sky and weather id before presentation begins. The chosen backdrop's `map.bin` then places scenery, while `param.dbx` supplies `footEffect`, `footSound`, and room flags. Modding a terrain encounter therefore means editing the table cell or its fallback, not renaming a tactical terrain model.
+
+## FE9-SYS-162 — Battle camera scripting
+
+<span id="fe9-sys-162"></span> Camera selection is layered. A model-specific script named for the active clip takes priority when available; otherwise a strike-family script supplies the view. Projectile impact, spell, and death cameras can take over at their defined stages. Right-side attacks reuse left-side data through mirroring. Each script then animates a named camera rig around a followed unit, and hit reactions add a fading shake without changing the underlying keyframes. Missing scripts must fall back safely rather than blocking strike completion.
+
 ## Where everyone stands
 
   The attacker starts at x = −20 and the defender at x = +20 (`InitPosL` / `InitPosR`), each turned 90° about the vertical axis so that they face each other along X. The backdrop is a small map of its own, `zbg/<name>/bf.cmp`, loaded in a battle mode of the [map system](./maps-system.md): its `map.bin` lists the models and where each instance sits, in tiles. A battle backdrop's tiles are 15 units wide (5 × a scale of 3), and an instance turns about the centre of its tile, so each backdrop is shifted and turned until its open ground lies along the fighters' line. For example, `map03_ground01` sits at tile (−28, −5), turned 22.5°.
 
-## One strike, tick by tick
+## Rules and lifecycle — one strike, tick by tick
 
 <div class="table-wrap">
 <table><thead><tr><th>Step</th><th>What happens</th><th>Ticks</th></tr></thead><tbody>
@@ -72,4 +91,8 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   Effect materials rest fully transparent; the effect's animation fades each one in and out with one alpha track per material (see [.g / .gs / .ga](../formats/model-formats.md)).
 
-  <span class="confidence confidence--open">Open</span> Which unit the opening camera turns to after its zoom, and the exact pushback distances on damage and dodges, are not decoded.
+  Opening-camera targets and damage/dodge pushback distances are parameters of the selected scene/script resource. They are cosmetic consumers of the precomputed result and do not alter combat state.
+
+## Interactions and review boundary
+
+All battle-staging systems are reviewed without a blocking research gap. Scenery selection, actor start transforms, role/camera scripts, attack/effect markers, damage/dodge/death reactions, magic cameras, and normal/skip completion establish presentation staging. Opening-camera targets, pushback distances, and missing-script fallbacks are per-resource cosmetic behavior and cannot affect the precomputed combat result. No new primary article is needed.

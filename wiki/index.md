@@ -40,4 +40,7 @@ The **Tellius Archive** documents, at the byte level, how *Fire Emblem: Path of 
 - [Browse game systems](systems/chapters.md)
 - [Follow a learning path](guides/learning-paths.md)
 - [See every topic and its status](meta/topic-registry.md)
+- [Inventory every engine and gameplay system](meta/game-systems-inventory.md)
+- [Review system documentation coverage](meta/system-review.md)
+- [Plan the uncovered-system articles](meta/uncovered-systems-roadmap.md)
 

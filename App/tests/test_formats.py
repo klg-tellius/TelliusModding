@@ -1245,6 +1245,15 @@ class DspAdpcmTests(unittest.TestCase):
         decoded = dsp_adpcm.decode(encoded, info, len(pcm))
         self.assertEqual(decoded, [0] * 100)
 
+    def test_square_wave_does_not_divide_by_zero(self):
+        # Flat runs give records whose reflection coefficient rounds to
+        # exactly +-1; the reference divides by zero on them. They are skipped.
+        t = [i / 32000 for i in range(8400, 9800)]
+        pcm = [int((1 if math.sin(2 * math.pi * 880 * x) >= 0 else -1) * math.exp(-x * 5) * 0.4 * 32767) for x in t]
+        coefs = dsp_adpcm.correlate_coefs(pcm)
+        self.assertEqual(len(coefs), 16)
+        self.assertTrue(all(-32768 <= c <= 32767 for c in coefs))
+
 
 class StmTests(unittest.TestCase):
     def test_round_trip_with_loop_point(self):

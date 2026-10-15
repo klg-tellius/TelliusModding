@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+from review_systems import review_repository, update_or_check_report
+
 
 ROOT = Path(__file__).resolve().parents[2]
 WIKI = ROOT / "wiki"
@@ -122,8 +124,8 @@ def main() -> int:
         shell_match = re.search(r"const routes = (\{.*?\});", legacy_shell, re.S)
         if not shell_match or set(json.loads(shell_match.group(1))) != set(routes):
             errors.append("docs/tellius_archive.html does not cover every legacy article id")
-    if migrated < 73:      # the 73 articles migrated from the single-file archive; new ones may follow
-        errors.append(f"found {migrated} migrated format/system references, expected at least 73")
+    if migrated != 98:
+        errors.append(f"found {migrated} migrated format/system references, expected 98")
 
     cms = (WIKI / "admin" / "config.yml").read_text(encoding="utf-8")
     for required in ("open_authoring: true", "publish_mode: editorial_workflow", "auth_endpoint: /auth"):
@@ -131,6 +133,13 @@ def main() -> int:
             errors.append(f"CMS configuration is missing {required!r}")
     if re.search(r"(?:client_secret|oauth_secret|access_token)\s*:", cms, re.I):
         errors.append("CMS configuration appears to contain a secret")
+
+    system_errors, system_state = review_repository()
+    errors.extend(system_errors)
+    if system_state:
+        report_error = update_or_check_report(system_state, write=False)
+        if report_error:
+            errors.append(report_error)
 
     if errors:
         for error in errors:

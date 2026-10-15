@@ -599,6 +599,34 @@ class Shell(ttk.Frame):
                                                 chapter_id, difficulty)
         self.run_task(f"Preparing chapter {chapter_id:02d} for Dolphin …", work, self._launch)
 
+    def play_from_save(self, gci_name: str, gci: bytes) -> None:
+        """Start Dolphin on the extracted files with ``gci`` alone on memory card A (a GCI
+        folder in ``build/dolphin_run``); the game boots normally and the file menu loads it."""
+        if not self.extracted or self._task_running:
+            return
+        if emulator.configured_dolphin() is None:
+            messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
+                                parent=self)
+            return
+        if not self.confirm_unsaved(" and won't be played", "play without them."):
+            return
+        project = self.project
+
+        def work():
+            project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
+            return emulator.prepare_save_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+                                             gci_name, gci)
+
+        def started(result) -> None:
+            dol, card = result
+            try:
+                emulator.launch(dol, config=emulator.save_card_config(card))
+            except emulator.EmulatorError as exc:
+                messagebox.showerror("Could not start Dolphin", str(exc), parent=self)
+                return
+            self.set_status(f"Started Dolphin with {gci_name} on memory card A ({card})")
+        self.run_task("Preparing the save for Dolphin …", work, started)
+
     def open_play_chapter(self) -> None:
         """Play in Dolphin from the menu: the open chapter if a chapter page shows
         one, else a dialog that also picks the chapter."""
