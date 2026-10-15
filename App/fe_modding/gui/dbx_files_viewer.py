@@ -1,4 +1,7 @@
-"""Browse and edit every text DBX entry inside Path of Radiance's zdbx.cmp."""
+"""Browse and edit every text DBX entry inside Path of Radiance's zdbx.cmp: a Form
+(blocks and fields with English notes), a Layout (widgets with a position on the
+640 x 480 screen, dragged to move) and the raw Text, all on the same text
+(``gui/dbx_form.py``)."""
 
 from __future__ import annotations
 
@@ -9,6 +12,7 @@ from .. import battle_tables
 from ..exceptions import ProjectError
 from ..project import ModProject
 from .changelog import ChangeLog
+from .dbx_form import DbxForm, DbxLayout
 from .editor_panel import EditorPanel
 
 
@@ -54,7 +58,16 @@ class DbxFilesViewer(EditorPanel):
 
         self._title = ttk.Label(right, text="Select a DBX file", font=("Segoe UI", 12, "bold"))
         self._title.pack(anchor="w", pady=(0, 5))
-        self._editor = tk.Text(right, wrap="none", undo=True, font=("Consolas", 10))
+        self._tabs = ttk.Notebook(right)
+        self._tabs.pack(fill="both", expand=True)
+        self._form = DbxForm(self._tabs, self._current_text, self._replace_text)
+        self._layout = DbxLayout(self._tabs, self._current_text, self._replace_text, self._layout_selected)
+        text_tab = ttk.Frame(self._tabs)
+        self._tabs.add(self._form, text="Form")
+        self._tabs.add(self._layout, text="Layout")
+        self._tabs.add(text_tab, text="Text")
+        self._tabs.bind("<<NotebookTabChanged>>", lambda e: self._refresh_views())
+        self._editor = tk.Text(text_tab, wrap="none", undo=True, font=("Consolas", 10))
         self._editor.pack(fill="both", expand=True)
         self._editor.bind("<<Modified>>", self._text_modified)
         actions = ttk.Frame(right)
@@ -76,6 +89,35 @@ class DbxFilesViewer(EditorPanel):
             if not self._loading:
                 self._dirty = self._editor.get("1.0", "end-1c") != self._saved_text
                 self._save_btn.configure(state="normal" if self._path and self._dirty else "disabled")
+
+    # -- typed views ------------------------------------------------------------
+    def _current_text(self) -> str:
+        return self._editor.get("1.0", "end-1c")
+
+    def _replace_text(self, text: str) -> None:
+        """Put a Form/Layout edit into the text (one undo step), keeping the view."""
+        top = self._editor.yview()[0]
+        self._editor.edit_separator()
+        self._editor.delete("1.0", "end")
+        self._editor.insert("1.0", text)
+        self._editor.edit_separator()
+        self._editor.yview_moveto(top)
+        self._dirty = text != self._saved_text
+        self._save_btn.configure(state="normal" if self._path and self._dirty else "disabled")
+
+    def _editable(self) -> bool:
+        return bool(self._path) and self._inventory.get(self._path) != "deleted" or self._new
+
+    def _refresh_views(self) -> None:
+        current = self._tabs.select()
+        if current == str(self._form):
+            self._form.show(self._path or "", self._editable())
+        elif current == str(self._layout):
+            self._layout.show(self._editable())
+
+    def _layout_selected(self, start: int) -> None:
+        self._form.refresh()
+        self._form.select_block(start)
 
     def _confirm_discard(self) -> bool:
         if not self._dirty:
@@ -156,6 +198,11 @@ class DbxFilesViewer(EditorPanel):
         self._delete_btn.configure(state="normal" if path and state != "deleted" and not new else "disabled")
         self._restore_btn.configure(state="normal" if state in ("edited", "deleted", "added") and not new else "disabled")
         self._loading = False
+        has_layout = DbxLayout.has_layout(display_text)
+        self._tabs.tab(self._layout, state="normal" if has_layout else "disabled")
+        if not has_layout and self._tabs.select() == str(self._layout):
+            self._tabs.select(self._form)
+        self._refresh_views()
 
     def _after_change(self, message: str, path: str | None) -> None:
         self._changelog.append(self.display_name, message)

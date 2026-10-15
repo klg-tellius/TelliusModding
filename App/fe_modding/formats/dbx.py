@@ -139,6 +139,31 @@ class DbxDoc:
     def remove_field(self, field: Field) -> None:
         del self.lines[field.line]
 
+    def duplicate_block(self, block: Block, name: str | None = None) -> None:
+        """Insert a copy of ``block`` (its lines from ``{`` to ``}``) right after
+        it, with a blank line between; ``name`` replaces the copy's ``name``."""
+        eol = self.eol
+        copy = list(self.lines[block.start:block.end + 1])
+        if not _split_line(copy[-1])[1]:
+            copy[-1] += eol
+        if not _split_line(self.lines[block.end])[1]:
+            self.lines[block.end] += eol
+        at = block.end + 1
+        self.lines[at:at] = [eol] + copy
+        if name is not None:
+            new = next(b for b in self.blocks() if b.start == at + 1)
+            field = next((f for f in new.fields if f.key == "name"), None)
+            if field is None:
+                raise DbxError("The block has no name to change.")
+            self.set_value(field, name)
+
+    def remove_block(self, block: Block) -> None:
+        """Remove ``block`` and one blank line before it, if there is one."""
+        start = block.start
+        if start > 0 and not _split_line(self.lines[start - 1])[0].strip():
+            start -= 1
+        del self.lines[start:block.end + 1]
+
 
 def parse(text: str) -> DbxDoc:
     return DbxDoc(text)

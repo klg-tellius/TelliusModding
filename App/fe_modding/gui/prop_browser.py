@@ -248,19 +248,111 @@ class PropBrowser(ttk.Frame):
 
 
 class MapObjectsPanel(EditorPanel):
-    """Assets › Map Objects: every map's props, read only."""
+    """Game Data › Map Objects: every map's props, with the selected prop's
+    definition (bounds and flags) edited in its saved map, or in every map
+    holding the same prop."""
 
     def __init__(self, parent: tk.Misc, project, changelog=None) -> None:
         super().__init__(parent, style="Page.TFrame", padding=(12, 10))
+        self._project = project
+        self._changelog = changelog
+        self._info: Optional[map_props.PropInfo] = None
         top = ttk.Frame(self, style="Page.TFrame")
         top.pack(fill="x", pady=(0, 6))
         self._export = ttk.Button(top, text="Export .glb...", state="disabled", command=lambda: self.browser.export_selected())
         self._export.pack(side="left")
         info(top, "Every prop of every chapter map. To use one on another map, open that chapter's Build tab, "
                   "choose Place prop and Add from another map...").pack(side="left", padx=(10, 0))
-        self.browser = PropBrowser(self, project, on_select=lambda info: self._export.configure(
-            state="normal" if info is not None else "disabled"))
+        self._form = ttk.LabelFrame(self, text="Object definition (affects every placement of it on the map)", padding=8)
+        self._form.pack(side="bottom", fill="x", pady=(8, 0))
+        self._build_form(self._form)
+        self.browser = PropBrowser(self, project, on_select=self._selected)
         self.browser.pack(fill="both", expand=True)
+
+    def _build_form(self, frame: ttk.Frame) -> None:
+        self._vars: dict[str, tk.StringVar] = {}
+        for column, (title, keys) in enumerate((("Origin offset (x, y, z)", ("offset_x", "offset_y", "offset_z")),
+                                                ("Size (x, y, z)", ("size_x", "size_y", "size_z")))):
+            ttk.Label(frame, text=title).grid(row=column, column=0, sticky="w", padx=(0, 8))
+            for k, key in enumerate(keys):
+                self._vars[key] = tk.StringVar()
+                ttk.Entry(frame, textvariable=self._vars[key], width=9).grid(row=column, column=1 + k, sticky="w", padx=2)
+        ttk.Label(frame, text="Raw flags (A, B, C, effect)").grid(row=2, column=0, sticky="w")
+        for k, key in enumerate(("flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")):
+            self._vars[key] = tk.StringVar()
+            ttk.Entry(frame, textvariable=self._vars[key], width=9).grid(row=2, column=1 + k, sticky="w", padx=2)
+        checks = ttk.Frame(frame)
+        checks.grid(row=0, column=5, rowspan=4, sticky="nw", padx=(18, 0))
+        self._toggles = []
+        for k, (field, mask, label) in enumerate(map_props.PROP_FLAG_TOGGLES):
+            var = tk.BooleanVar()
+            ttk.Checkbutton(checks, text=label, variable=var).grid(row=k % 7, column=k // 7, sticky="w", padx=(0, 12))
+            self._toggles.append((field, mask, var))
+        self._everywhere = tk.BooleanVar(value=False)
+        self._everywhere_check = ttk.Checkbutton(frame, text="Also in the other maps with the same prop",
+                                                 variable=self._everywhere)
+        self._everywhere_check.grid(row=3, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=0, columnspan=6, sticky="w", pady=(6, 0))
+        self._apply_button = ttk.Button(buttons, text="Apply", command=self._apply, state="disabled")
+        self._apply_button.pack(side="left")
+        self._form_status = ttk.Label(buttons, text="", style="Muted.TLabel")
+        self._form_status.pack(side="left", padx=(10, 0))
+        info(buttons, "Sizes are in world units (5 per tile). Written to the saved map.cmp at once; a chapter "
+                      "open with unsaved Build edits would overwrite this when saved, so save or discard it first. "
+                      "The map's model, textures and placements are not touched.").pack(side="left", padx=(10, 0))
+
+    def _selected(self, prop: Optional[map_props.PropInfo]) -> None:
+        self._info = prop
+        self._export.configure(state="normal" if prop is not None else "disabled")
+        self._apply_button.configure(state="normal" if prop is not None else "disabled")
+        if prop is None:
+            return
+        obj = prop.obj
+        for key in map_props.PROP_FIELDS:
+            value = getattr(obj, key)
+            self._vars[key].set(f"0x{value:02X}" if isinstance(value, int) else f"{value:g}")
+        for field, mask, var in self._toggles:
+            var.set(bool(getattr(obj, field) & mask))
+        self._form_status.configure(text=f"{prop.map_name}/{prop.name}")
+
+    def _changes(self) -> dict:
+        obj = self._info.obj
+        values = {}
+        for key in map_props.PROP_FIELDS:
+            text = self._vars[key].get().strip()
+            values[key] = int(text, 0) if key.startswith(("flag", "effect")) else float(text)
+        for field, mask, var in self._toggles:
+            if var.get() != bool(getattr(obj, field) & mask):
+                values[field] = (values[field] | mask) if var.get() else (values[field] & ~mask)
+        return {k: v for k, v in values.items() if v != getattr(obj, k)}
+
+    def _apply(self) -> None:
+        prop = self._info
+        if prop is None:
+            return
+        try:
+            changes = self._changes()
+        except ValueError as exc:
+            messagebox.showerror("Map Objects", f"Not a number: {exc}", parent=self)
+            return
+        if not changes:
+            self._form_status.configure(text="Nothing changed.")
+            return
+        paths = [prop.path]
+        if self._everywhere.get():
+            paths += map_props.maps_with_same_prop(self._project.extracted_dir, prop.path, prop.name)
+        written = []
+        try:
+            for path in paths:
+                if map_props.edit_prop(self._project, path, prop.name, changes):
+                    written.append(path.parent.name)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Map Objects", str(exc), parent=self)
+        if written and self._changelog is not None:
+            self._changelog.append(prop.name, f"Edited object definition in {', '.join(written)}")
+        self._form_status.configure(text=f"Saved in {len(written)} map(s): {', '.join(written)}" if written else "Nothing written.")
+        self.browser.scan()
 
     def cleanup(self) -> None:
         self.browser.cleanup()

@@ -4,10 +4,14 @@ patch to share the mod without the game (``patch.py``)."""
 
 from __future__ import annotations
 
+import queue
+import threading
+from pathlib import Path
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, ttk
 
-from ... import patch
+from ... import patch, text_export
+from ...games import Game
 from ..mod_details_dialog import ModDetailsDialog
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
@@ -49,6 +53,13 @@ class DiscPage(Page):
         row.pack(fill="x")
         self._create_patch_card(row).pack(side="left", fill="both", expand=True, padx=(0, 12))
         self._apply_patch_card(row).pack(side="left", fill="both", expand=True)
+
+        if project.game == Game.PATH_OF_RADIANCE:
+            section_header(body, "Version control").pack(anchor="w", pady=(28, 10))
+            row = ttk.Frame(body, style="Page.TFrame")
+            row.pack(fill="x")
+            self._text_export_card(row).pack(side="left", fill="both", expand=True, padx=(0, 12))
+            ttk.Frame(row, style="Page.TFrame").pack(side="left", fill="both", expand=True)
 
     def _panel(self, parent: tk.Misc, title: str, text: str) -> ttk.Frame:
         frame = ttk.Frame(parent, style="Surface.TFrame", padding=18)
@@ -118,3 +129,60 @@ class DiscPage(Page):
                       "or with python -m fe_modding.patch apply PATCH DISC OUTPUT.")
         ttk.Button(frame, text="Apply patch…", command=self.shell.apply_patch).pack(anchor="w")
         return frame
+
+    def _text_export_card(self, parent: tk.Misc) -> ttk.Frame:
+        frame = self._panel(parent, "Export as text",
+                            "Writes the game data as text files to keep in version control (git) and compare "
+                            "between versions: FE8Data tables, deployments, shops, messages, decompiled scripts, "
+                            "sound cues, the face table and the DBX tables.")
+        self._caption(frame, "Export only: the game's own files stay the ones the app edits and builds. Each "
+                      "export replaces the folder's previous one.")
+        self._export_status = tk.StringVar(value="")
+        ttk.Button(frame, text="Export as text…", command=self._export_text,
+                   state="normal" if self.shell.extracted else "disabled").pack(anchor="w")
+        ttk.Label(frame, textvariable=self._export_status, style="SurfaceCaption.TLabel", wraplength=460,
+                  justify="left").pack(anchor="w", pady=(6, 0))
+        return frame
+
+    def _export_text(self) -> None:
+        chosen = filedialog.askdirectory(title="Folder for the text export (for example a text_export folder "
+                                               "in your git repository)", initialdir=str(self.project.directory),
+                                         mustexist=False, parent=self)
+        if not chosen:
+            return
+        dest = Path(chosen)
+        results: "queue.Queue" = queue.Queue()
+
+        def work() -> None:
+            try:
+                results.put(("done", text_export.export_project(
+                    self.project, dest, progress=lambda label: results.put(("progress", label)))))
+            except Exception as exc:  # noqa: BLE001
+                results.put(("error", exc))
+
+        threading.Thread(target=work, daemon=True).start()
+        self._export_status.set("Exporting…")
+
+        def poll() -> None:
+            while True:
+                try:
+                    kind, value = results.get_nowait()
+                except queue.Empty:
+                    self.after(150, poll)
+                    return
+                if kind == "progress":
+                    self._export_status.set(f"Exporting: {value}…")
+                    continue
+                if kind == "error":
+                    self._export_status.set(f"Export failed: {value}")
+                    return
+                written, problems = value
+                text = f"Wrote {len(written)} files to {dest}."
+                if problems:
+                    text += " Skipped: " + "; ".join(problems)
+                self._export_status.set(text)
+                self.shell.changelog.append("Text export", f"Exported {len(written)} files to {dest}")
+                return
+
+        self.after(150, poll)
+

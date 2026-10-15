@@ -1,0 +1,221 @@
+"""Export a Path of Radiance project's game data as text, for version control
+and diffs (Disc & Patch › **Export as text…**).
+
+One folder, rewritten on each export, in a stable order so two exports of
+nearly the same project differ only where the data does:
+
+- ``FE8Data/``: characters, classes, items, skills, chapters, terrain types,
+  battle scenes, battle skies, army groups and difficulty constants (JSON,
+  one record per object, file offsets left out);
+- ``deployments/<map folder>/<dispos file>.json``: every section and unit,
+  each field by name with its label (``PID_``, ``IID_``...) or number;
+- ``shops/``: each shop section's item list per difficulty file;
+- ``messages/<file>.txt``: every message as ``## ID`` then its text;
+- ``scripts/<CNN>.fe9s``: every event script decompiled to the app's script
+  language;
+- ``sound/``: music and sound-effect cues (TSV);
+- ``faces.tsv``: the face table;
+- ``zdbx/``: every battle-engine DBX table, as UTF-8 text.
+
+Export only: the binary files stay the source of truth. Each part is
+optional; a part that cannot be read is listed in the returned problems
+instead of stopping the export.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import enum
+import json
+import shutil
+from pathlib import Path
+from typing import Callable, Optional
+
+SKIP_KEYS = {"offset", "address"}
+MARKER = ".tellius_text_export"
+
+
+def _plain(value):
+    """``value`` as JSON-friendly data (dataclasses as dicts, bytes as text or hex)."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value) if f.name not in SKIP_KEYS}
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return bytes(value).decode("ascii")
+        except UnicodeDecodeError:
+            return bytes(value).hex()
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    return value
+
+
+def _write_json(path: Path, data) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(_plain(data), ensure_ascii=False, indent=1)
+    path.write_text(text + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def _write_text(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text.replace("\r\n", "\n"))
+    return path
+
+
+def _fe8data(files: Path, out: Path) -> list[Path]:
+    from .formats import fe8data
+
+    data = (files / "FE8Data.bin").read_bytes()
+    fe = fe8data.read_fe8data(data)
+    written = [_write_json(out / "FE8Data" / f"{name}.json", getattr(fe, name))
+               for name in ("characters", "classes", "items", "skills")]
+    for name, reader in (("chapters", fe8data.read_chapter_data), ("terrain", fe8data.read_terrain_types),
+                         ("battle_scenes", fe8data.read_battle_terrain), ("battle_skies", fe8data.read_battle_skies),
+                         ("army_groups", fe8data.read_group_keys), ("difficulty", fe8data.read_game_data)):
+        written.append(_write_json(out / "FE8Data" / f"{name}.json", reader(data)))
+    return written
+
+
+def _deployments(files: Path, out: Path) -> list[Path]:
+    from .formats import dispo, lz10, pak
+
+    written = []
+    for cmp_path in sorted((files / "zmap").glob("*/dispos.cmp")):
+        raw = lz10.decompress(cmp_path.read_bytes())
+        for entry in pak.read_pak_entries(raw):
+            if not entry.name.startswith("dispos_"):
+                continue
+            sections = []
+            for section in dispo.read_dispo_bytes(pak.read_pak_file_content(raw, entry)):
+                units = []
+                for unit in section.units:
+                    units.append({(dispo.field_name(f.index) or f"field_{f.index}"):
+                                  (f.label.decode("ascii", "replace") if f.label else f.value) for f in unit.fields})
+                sections.append({"name": section.name, "units": units})
+            written.append(_write_json(out / "deployments" / cmp_path.parent.name / f"{Path(entry.name).stem}.json",
+                                       sections))
+    return written
+
+
+def _shops(files: Path, out: Path) -> list[Path]:
+    from .formats import shop
+
+    written = []
+    for path in sorted((files / "shop").glob("shopitem_*.bin")):
+        doc = shop.parse_shop(path.read_bytes())
+        written.append(_write_json(out / "shops" / f"{path.stem}.json",
+                                   {s.name: s.items for s in doc.sections}))
+    return written
+
+
+def _messages(files: Path, out: Path) -> list[Path]:
+    from .formats import game_text, message
+
+    def readable(text: str) -> str:  # message.py reads bytes as cp437; show the game's own characters
+        return game_text.decode(text.encode(message.ENCODING))
+
+    written = []
+    for path in sorted((files / "Mess").glob("*.m")):
+        lines = []
+        for m in message.read_messages_path(path):
+            lines.append(f"## {readable(m.speaker)}\n{readable(m.text)}\n")
+        written.append(_write_text(out / "messages" / f"{path.stem}.txt", "\n".join(lines)))
+    return written
+
+
+def _scripts(files: Path, out: Path) -> list[Path]:
+    from .formats.cmb import decompile, read_cmb_path
+
+    written = []
+    for path in sorted((files / "Scripts").glob("*.cmb")):
+        source = decompile(read_cmb_path(path))
+        source = source[0] if isinstance(source, tuple) else source
+        written.append(_write_text(out / "scripts" / f"{path.stem}.fe9s", source))
+    return written
+
+
+def _sound(files: Path, out: Path) -> list[Path]:
+    from .formats import gcfesnd
+
+    data = (files / "Sound" / "gcfesnd.bin").read_bytes()
+    bgm = ["name\tpath\tvolume"] + [f"{c.name}\t{c.path}\t{(c.control_word >> 8) & 0xFF}"
+                                    for c in gcfesnd.read_bgm_cues(data)]
+    sfx = ["name\tsound_id\tvolume\tpan\tflags\trange"] + [
+        f"{c.name}\t{c.sound_id}\t{c.volume}\t{c.pan}\t{c.flags}\t{c.range_value}" for c in gcfesnd.read_sfx_cues(data)]
+    return [_write_text(out / "sound" / "bgm_cues.tsv", "\n".join(bgm) + "\n"),
+            _write_text(out / "sound" / "sfx_cues.tsv", "\n".join(sfx) + "\n")]
+
+
+def _faces(files: Path, out: Path) -> list[Path]:
+    from .formats.fe9_portraits import read_face_table
+
+    rows = ["fid\tname_key\tfile\tleft_eye\tright_eye\tmouth\tparts\tmenu_face\tauto_mouth\tdepth\tmenu_offset"]
+    for r in read_face_table((files / "Face" / "facedata.bin").read_bytes()).values():
+        rows.append("\t".join(str(v) for v in (r.fid, r.name_id, r.filename, r.left_eye, r.right_eye, r.mouth,
+                                                r.flags, r.mini_portrait, r.default_mouth, r.depth, r.menu_offset)))
+    return [_write_text(out / "faces.tsv", "\n".join(rows) + "\n")]
+
+
+def _zdbx(project, out: Path) -> list[Path]:
+    from . import battle_tables
+
+    written = []
+    for name, state in sorted(battle_tables.inventory(project).items()):
+        if state == "deleted":
+            continue
+        written.append(_write_text(out / "zdbx" / name, battle_tables.read_entry(project, name)))
+    return written
+
+
+PARTS: tuple[tuple[str, str], ...] = (
+    ("FE8Data", "Characters, classes, items, skills, chapters and the other FE8Data tables"),
+    ("deployments", "Deployments of every chapter map"),
+    ("shops", "Shops"),
+    ("messages", "Messages"),
+    ("scripts", "Event scripts (decompiled)"),
+    ("sound", "Music and sound-effect cues"),
+    ("faces", "Face table"),
+    ("zdbx", "Battle-engine DBX tables"),
+)
+
+
+def export_project(project, dest: Path, parts: Optional[set[str]] = None,
+                   progress: Optional[Callable[[str], None]] = None) -> tuple[list[Path], list[str]]:
+    """Write the text export to ``dest`` (the parts' folders are replaced) and
+    return ``(written files, problems)``."""
+    files = project.extracted_dir / "files"
+    dest = Path(dest)
+    marker = dest / MARKER
+    if dest.is_dir() and any(dest.iterdir()) and not marker.is_file():
+        raise ValueError(f"{dest} is not empty and holds no earlier text export ({MARKER}); "
+                         "choose an empty folder or a previous export's folder.")
+    dest.mkdir(parents=True, exist_ok=True)
+    marker.write_text("Written by Tellius Modding's Export as text; its folders are replaced on each export.\n",
+                      encoding="utf-8", newline="\n")
+    runners = {
+        "FE8Data": lambda: _fe8data(files, dest), "deployments": lambda: _deployments(files, dest),
+        "shops": lambda: _shops(files, dest), "messages": lambda: _messages(files, dest),
+        "scripts": lambda: _scripts(files, dest), "sound": lambda: _sound(files, dest),
+        "faces": lambda: _faces(files, dest), "zdbx": lambda: _zdbx(project, dest),
+    }
+    written, problems = [], []
+    for name, label in PARTS:
+        if parts is not None and name not in parts:
+            continue
+        if progress is not None:
+            progress(label)
+        target = dest / ("faces.tsv" if name == "faces" else name)
+        if target.is_dir():
+            shutil.rmtree(target)
+        try:
+            written += runners[name]()
+        except FileNotFoundError as exc:
+            problems.append(f"{label}: missing {Path(exc.filename).name if exc.filename else exc}")
+        except Exception as exc:  # noqa: BLE001 - one unreadable part must not stop the rest
+            problems.append(f"{label}: {exc}")
+    return written, problems

@@ -51,7 +51,7 @@ source_path: "formats/zdbx.md"
 - `effectList.dbx` catalogs spell, skill, status, environmental, and UI effects.
 - `camera.dbx` defines the default battle-camera rig.
 - `bgList.dbx` maps battle-scenery identifiers to locations: the Prologue (`MAP01`) fights in front of `zbg/map01_woods`, a separate 3D scene rather than the map terrain. <span class="confidence confidence--confirmed">confirmed in game</span>
-- `param.dbx` contains global battle timing, fade, and camera parameters.
+- `param.dbx` contains global battle timing, fade, and camera parameters: waits before and after each kind of strike (ticks), camera shake per attack kind, the HP-digit growth, shake and flash, the dodge and knock-back distances, the flight of knives, hand spears, hand axes and arrows, the name-plate motion, the laguz jump event codes, the default animation blend times and the blade-flash effects.
 
 ## Weapon, scenery, camera and unit-parameter tables
 

@@ -51,7 +51,7 @@ ASSET_TOOLS = [
      "Base conversations, Conversation Room supports, support chat lines (FE10Conversation.cms)", Fe10ConversationLists),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
-    ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse and export", MapObjectsPanel),
+    ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse, export, edit", MapObjectsPanel),
     ("backgrounds", "Backgrounds", "▭", "Conversation backgrounds (s/)", BackgroundViewer),
     ("illustrations", "Illustrations", "✎", "Textures in illust/", IllustrationViewer),
     ("ending", "Ending Art", "✦", "Textures in ending/", EndingViewer),
