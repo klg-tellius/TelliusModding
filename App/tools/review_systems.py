@@ -259,7 +259,7 @@ def update_or_check_report(state: dict[str, dict], write: bool) -> str | None:
     if updated == text:
         return None
     if write:
-        REVIEW_PAGE.write_text(updated, encoding="utf-8")
+        REVIEW_PAGE.write_bytes(updated.encode("utf-8"))
         return None
     return "meta/system-review.md: coverage report is stale; run python App/tools/review_systems.py --write-report"
 
