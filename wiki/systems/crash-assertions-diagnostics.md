@@ -5,7 +5,7 @@ description: "How FE9 reports invalid resources and engine state, and how to tur
 games: ["path-of-radiance"]
 section: "systems"
 article_type: "system-reference"
-tags: ["Debugging", "Engine", "Research needed"]
+tags: ["Debugging", "Engine"]
 aliases: []
 status: "published"
 last_reviewed: "2026-10-14"
@@ -14,11 +14,11 @@ cms_collection: "systems"
 source_path: "systems/crash-assertions-diagnostics.md"
 system_entries: ["FE9-SYS-014", "FE9-SYS-375"]
 system_reviewed: ["FE9-SYS-014", "FE9-SYS-375"]
-system_reviewed_with_gaps: ["FE9-SYS-014"]
-system_reviewed_by: "Codex"
-system_reviewed_on: "2026-10-14"
-system_known_gaps: ["FE9-SYS-014: The predicted assertion freeze, missing-file, heap-exhaustion and missing-script outcomes have not yet been observed in an isolated Dolphin fixture session."]
-system_gap_work: ["FE9-SYS-014: Completed the US/EU/JP call census for the no-op game debug printer, the 57-site engine assertion path, and active OSReport/panic/exception paths; compared retained diagnostic strings, source/line metadata, DVD warnings, GX hangs, TRK separation, and post-call control. A clean PAL batch boot with Dolphin file logging captured OSREPORT_HLE apploader output and active EXI OSREPORT SDK/OS/arena banners. Isolated assertion/failure fixtures and hardware capture remain."]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Claude Opus 5.5"
+system_reviewed_on: "2026-10-15"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Crash, Assertions & Diagnostic Output
 
@@ -63,7 +63,7 @@ Patching out checks is hazardous. Assertions often guard bounds, allocation resu
 <span id="fe9-sys-375"></span> The retail executables contain three distinct mechanisms, and their retained strings must not be treated as one console:
 
 - `debug_console_printf` (`0x800056CC`) is disabled. Its byte-identical `0x54`-byte US, PAL, and Japanese body only saves the variadic argument registers, sets return register `r3` to zero, restores the stack, and returns. It never calls a formatter or output primitive. The US/PAL/Japanese executables contain 432/430/427 direct calls respectively, covering script diagnostics, database and chapter loading, combat/EXP dumps, animation/resource complaints, debug menus, memory-card timing, audio cues, and developer viewers; every one is silent and control continues exactly as if a zero-returning stub had been called.
-- `report_assertion_failure` is active and has exactly 57 direct call sites in each retail build. Its `0x34`-byte wrapper has the same structure in all three regions, forwarding source filename, line, and assertion text to the build's assertion handler. Those sites are concentrated in placed-object, `GActor`, skeleton/animation, material, shape, camera, and actor-material rendering code. The handler (`0x8005B010`) never returns. It walks up to 16 stack frames and formats the message with `vsprintf`, but it sends the stack trace, the message and the file/line only to the disabled `debug_console_printf`, so no text reaches the screen or any log. It then loops: each frame it reads the pads and presents the last rendered image again, alternating between the two external framebuffers. The retail result is a **frozen picture with no error text**. The loop ends only through the standard soft reset: holding exactly Start+B+X for 30 consecutive frames, or pressing and releasing the console Reset button. The handler then waits for GX to drain and calls `OSResetSystem` with a code derived from the video-mode flags. While bit `0x100` of `script_state_flags` is set, the loop ignores both inputs and the console stays frozen. The same chord-and-button logic runs every frame in normal play (`debug_input_state_init`, `0x8005AE78`), so the soft reset behaves the same with or without an assertion. An assertion is not a recoverable log call, even though the caller's decompile shows instructions after it.
+- `report_assertion_failure` is active and has exactly 57 direct call sites in each retail build. Its `0x34`-byte wrapper has the same structure in all three regions, forwarding source filename, line, and assertion text to the build's assertion handler. Those sites are concentrated in placed-object, `GActor`, skeleton/animation, material, shape, camera, and actor-material rendering code. The handler (`0x8005B010`) never returns. It walks up to 16 stack frames and formats the message with `vsprintf`, but it sends the stack trace, the message and the file/line only to the disabled `debug_console_printf`, so no text reaches the screen or any log. It then loops: each frame it reads the pads, copies the embedded framebuffer to an external framebuffer with the clear flag set, and presents it. After the first copy the buffer holds only the clear colour, so the retail result is a **black screen with no error text**. At most one partly drawn frame can appear first. The loop ends only through the standard soft reset: holding exactly Start+B+X for 30 consecutive frames, or pressing and releasing the console Reset button. The handler then waits for GX to drain and calls `OSResetSystem` with a code derived from the video-mode flags. While bit `0x100` of `script_state_flags` is set, the loop ignores both inputs and the console stays frozen. The same chord-and-button logic runs every frame in normal play (`debug_input_state_init`, `0x8005AE78`), so the soft reset behaves the same with or without an assertion. An assertion is not a recoverable log call, even though the caller's decompile shows instructions after it.
 - SDK `OSReport` is also active. Its region-mapped `0x80`-byte implementation builds a variadic argument list and calls `vprintf`; exactly 95 direct calls exist in each build. Ordinary users such as initialization banners, DVD warnings, script `Report`, audio/GX diagnostics, and platform status messages return after the report. Fatal owners add their own policy: `os_panic`, GPU-hang handling, DMA faults, and unhandled exceptions report context and then halt, reset, or remain in their exception path.
 
 MetroTRK code is linked into all builds, but there is no direct call edge from `debug_console_printf`, `report_assertion_failure`, or `OSReport` to a TRK transport routine. TRK availability therefore does not turn the disabled game printer into an output sink. The static implementation and regional behavior are complete for FE9-SYS-375; whether a particular `OSReport`/`vprintf` message is captured by a specific Dolphin configuration or physical debug connection remains an environment-observation question under FE9-SYS-014.
@@ -82,9 +82,22 @@ A clean PAL image was batch-booted with an isolated Dolphin user directory and o
 - Active `OSREPORT` lines arrived through Dolphin's EXI/IPL device and included the Dolphin OS heading, kernel build timestamp, emulated console type, `Memory 24 MB`, arena bounds, and the EXI/SI/OS/DVD/PAD/VI/CARD/DSP/GX/AR/ARQ/AI release banners.
 - The game continued through boot and disc reads after those reports, confirming these ordinary report owners return rather than halt.
 
-This observation answers the Dolphin sink question for ordinary SDK reports: with the two categories and file output enabled, they are visible in the emulator log. It does not exercise the assertion handler. Static analysis predicts a frozen frame with no text and no log line, released only by the soft-reset chord or the Reset button; a fixture that actually reaches `report_assertion_failure` must confirm it.
+This observation answers the Dolphin sink question for ordinary SDK reports: with the two categories and file output enabled, they are visible in the emulator log. It does not exercise the assertion handler or any failure path; the fixture session below does.
 
-Representative test families are missing files, missing archive sections, truncated records, invalid counts/indices, allocation exhaustion, bad script arguments, impossible scene transitions, renderer/audio initialization failures, and stale object references. Each should be tested independently; deliberately corrupting multiple layers produces ambiguous evidence.
+### Failure fixtures
+
+A second session ran four isolated fixtures on the US disc in a separate Dolphin user directory, with the GDB stub and `OSREPORT`/`DVD`/`PowerPC` file logging. Each fixture got a fresh boot. About 40 seconds in (the health-and-safety screen), the runner stopped at the entry of `pad_process_frame_input`, a clean frame boundary on the main thread. It injected one call with the link register pointing at a trap, then restored the registers if the call returned. The runner and its results are kept in `research/dolphin_fx/`.
+
+| Fixture | Injected call | Visible result | Log | How control ends |
+|---|---|---|---|---|
+| Engine assertion | `report_assertion_failure("GUtil.h", 0xB8, …)`, a real assertion site in `render_placed_object` | Black screen; captures 2 s and 5 s later are pixel-identical | Nothing. The message, file, line and stack trace go only to the disabled printer | The handler loops in `assertion_handler_freeze_until_soft_reset`. Setting the soft-reset latch (as Start+B+X held for 30 frames would) calls `OSResetSystem`; the apploader runs again and the DOL is re-read from disc |
+| Missing file | `load_relocatable_resource_default("zz_missing.bin")` | Game keeps running | One SDK line: `Warning: DVDOpen(): file 'zz_missing.bin' was not found under /.` | Returns at once with a **non-null** pointer. The module table gains a slot marked loaded, with size 0, one reference and a 32-byte leftover heap block, into which the archive loader stamps its signature. Any consumer then reads garbage |
+| Missing script | `cm_load_script("Scripts/zz_missing.cmb")` | Game keeps running | The same `DVDOpen()` warning, with the path lower-cased in place | Returns 1 (success) and links the empty module into the live script-module chain, so later script lookups walk a bogus module |
+| Heap exhaustion | `heap_alloc(Base, 0x1000000)` on the 5.2 MiB `Base` heap | Last frame stays on screen | With Dolphin's default fast memory: a run of `Invalid read/write from 0x00000010…` warnings from `0x800C5E28` onward, and the game limps on with corrupted low memory. With MMU emulation on: `Unhandled Exception 2`, then a full CPU context dump (`SRR0 = 0x800C5E28`) | The memory report prints nothing. The module purge and the retry run, then the null block header is dereferenced. On accurate emulation, the data-access exception reaches `__OSUnhandledException`, which dumps the context and halts in `PPCHalt` |
+
+These results settle the severity question for each family. An engine assertion is fatal and silent: black screen, soft reset only. A missing file or script is not detected by the game at all. The only trace is the SDK's `DVDOpen` warning, and the failure surfaces later in whatever consumes the empty module. Heap exhaustion is fatal: on hardware, and on Dolphin with MMU emulation, it produces the SDK's unhandled-exception context dump and a halt. Dolphin's default settings hide this and continue in a corrupted state. So when testing a mod in Dolphin, turn MMU emulation on whenever you investigate a crash: a run that survives with fast memory proves nothing.
+
+Retail hardware has no further output path. `OSReport` writes to the EXI debug channel that Dolphin emulates, and a retail console has nothing attached to it, so a player sees only the screen states in the table.
 
 ## Interactions and limits
 
@@ -94,6 +107,6 @@ Diagnostics can differ by build, region, environment, and optimization. Some str
 
 ## Known gaps and required evidence
 
-FE9-SYS-014 remains **reviewed with a gap**. The static behaviour is complete: the no-op printer, the 57 assertion sites, the handler's frozen-frame soft-reset loop, the 95 `OSReport` calls and their fatal owners, and heap exhaustion, which purges modules and retries, then faults on a null block (see [Runtime Engine Architecture](runtime-engine-architecture.md#fe9-sys-009)). What is missing is one controlled Dolphin session that injects four isolated fixtures from the title screen: a direct call to `report_assertion_failure`, a load of a file that does not exist, an allocation larger than the current heap, and a script load of a missing `.cmb`. For each, record what the screen and log show and how control ends (continue, return 0, freeze, reset or exception). The session must use a separate Dolphin user directory with the GDB stub, never the normal profile. Physical hardware is not required: the visible frame and the `OSReport` EXI path are emulated, and retail consoles have no other output sink.
+No known gap remains. The static behaviour, the active `OSReport` sink and the four failure families are confirmed in an isolated Dolphin session. Renderer and video failures need no separate fixture: GX FIFO setup, the GPU-hang check, VI configuration and video-mode detection call `os_panic`, which goes through the same `OSReport`-then-halt path as the exception handler. The MusyX/AX audio library (`0x80240000`–`0x80266FFF`) never calls `OSReport`, `report_assertion_failure` or `os_panic`; only its GBA DSP command helpers panic. An audio failure therefore produces no diagnostic of any kind. Whatever it does is the audio owner's own behaviour, not part of this system.
 
 Do not patch out the checks to create evidence; preserve the rejected condition and use disposable fixtures or copies. This focused article remains the correct primary home, so no new article is currently required.
