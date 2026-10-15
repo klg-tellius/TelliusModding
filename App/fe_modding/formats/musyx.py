@@ -11,16 +11,16 @@ into playable PCM; it is not a MusyX sequencer.
   u8 key, u8 voice_group``. A cue's ``sound_id`` is an FX id. Its "macro" is
   an object id: with the ``0x8000`` flag it names a *layer* instead (layout
   from the public MusyX decompilation, https://github.com/AxioDL/musyx).
-- ``.pool``: 4 big-endian offsets: sound macros (``0x10``), tables, keymaps
-  (unused here, 0) and layers. Each macro is ``u32 size`` (including this 8-byte header),
-  ``u16 id``, ``u16`` pad, then 8-byte commands. A command's opcode is the low
-  byte of its first word; ``0x10`` (start sample) carries the sample id in the
-  two bytes above it, ``0x08`` (play macro) the target macro id the same way,
-  ``0x00`` ends the macro. Sample ids are one id space across the three banks,
-  so a macro's sample may sit in another bank; macro ids do not overlap
-  between banks either. A layer is ``u32 size, u16 id (0x8000 flag), u16 pad,
+- ``.pool``: 4 big-endian offsets: sound macros (``0x10``), curve tables,
+  keymaps (unused here, 0) and layers. Each list is a chain of ``u32 size``
+  (including the 8-byte header), ``u16 id``, ``u16`` pad, then the data, ended
+  by ``0xFFFFFFFF``. A macro's data is 8-byte commands (every opcode is
+  decoded in ``musyx_macro.py``); a curve table used by the set-ADSR command
+  is a little-endian linear ADSR (``musyx_macro.AdsrTable``). Sample ids are
+  one id space across the three banks, so a macro's sample may sit in another
+  bank; macro ids do not overlap between banks either. A layer is ``u32 size, u16 id (0x8000 flag), u16 pad,
   u32 count`` then 12-byte entries ``u16 macro, u8 key_low, u8 key_high,
-  s8 transpose, u8 volume, s8 priority_offset, u8 span, u8 pan`` + 3 pad: the
+  s8 transpose, u8 volume, s16 priority_offset, u8 pan`` + 3 pad: the
   macros it starts together (typically a left/right pair, pan 0 and 127).
   The layer list ends with ``0xFFFFFFFF``. Checked against the game's own
   audio: a layered cue plays the layer's macros, not the macro with the
@@ -30,15 +30,17 @@ into playable PCM; it is not a MusyX sequencer.
   info blocks; each record is ``u16 id, u16 pad, u32 samp_offset,
   u32 pad, u8 base_key, u24 sample_rate, u8 format + u24 sample_count,
   u32 loop_offset, u32 loop_length, u32 adpcm_info_offset``. The ADPCM info
-  (offset into the ``.sdir`` itself) is 0x28 bytes: 8 bytes of unknown header,
-  then the 16 DSP-ADPCM coefficients (found by trying offsets: only this one
-  decodes to smooth audio).
+  (offset into the ``.sdir`` itself) is 0x28 bytes (MusyX ``SNDADPCMinfo``):
+  ``u16 coefficient_count`` (8), ``u8`` initial predictor/scale (= the
+  first data byte), ``u8`` loop predictor/scale (= the header byte of the
+  frame holding the loop start), ``s16, s16`` loop history (y[-2], y[-1]),
+  then the 16 DSP-ADPCM coefficients. Every shipped sample is format 0.
 - ``.samp``: the raw sample data (DSP-ADPCM frames for format 0).
 
-Only the first start-sample command reachable from a macro is used, played at
-the sample's own rate: pitch, ADSR and layering commands are ignored, so a cue
-that layers or transposes samples will sound approximate. Not decoded:
-non-ADPCM sample formats (reported as unsupported)."""
+The renderer follows the first start-sample command reachable from a macro
+(through play-macro), with the note changes, timed waits and linear ADSR
+before it and every voice of a layer. Panning, pitch-wheel routing and
+macro variables are not played back, so some cues sound approximate."""
 
 from __future__ import annotations
 
@@ -48,7 +50,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import dsp_adpcm
+from . import dsp_adpcm, musyx_macro
+from .musyx_macro import AdsrTable
 
 BANKS = ("gcfesnd", "gcfesnd_etc", "gcfesnd_magic")
 SDIR_RECORD_SIZE = 32
@@ -60,6 +63,9 @@ OP_ADD_KEY = 0x18
 OP_SET_KEY = 0x19
 OP_RANDOM_KEY = 0x17
 OP_WAIT_MS = 0x07
+OP_SET_ADSR = 0x0C
+OP_PITCH_WHEEL_RANGE = 0x33
+DEFAULT_PITCH_WHEEL_RANGE = 2  # MusyX channel default (semitones)
 WAIT_FOREVER = 0xFFFF
 LOOP_PREVIEW_SECONDS = 4.0   # a looping sample sounds until the game stops it; preview this long
 FORMAT_DSP_ADPCM = 0
@@ -114,7 +120,6 @@ class LayerEntry:
     transpose: int
     volume: int
     priority_offset: int
-    span: int
     pan: int
 
 
@@ -183,6 +188,7 @@ class Bank:
         self.samples: dict[int, SampleEntry] = {}
         self.fx: dict[int, FxEntry] = {}
         self.layers: dict[int, list[LayerEntry]] = {}  # layer id with its 0x8000 flag
+        self.adsr: dict[int, AdsrTable] = {}  # curve tables, by id
         self.song_groups: list[SongGroup] = []
         self._parse_pool(pool)
         self._parse_sdir(sdir)
@@ -218,6 +224,10 @@ class Bank:
                     struct.unpack_from(">II", pool, i) for i in range(offset + 8, offset + size - 7, 8)]
             offset += size
         self._parse_layers(pool, header[3])
+        for table_id, data in musyx_macro.parse_curve_tables(pool).items():
+            table = musyx_macro.adsr_table(table_id, data)
+            if table is not None:
+                self.adsr[table_id] = table
 
     def _parse_layers(self, pool: bytes, offset: int) -> None:
         while offset and offset + 12 <= len(pool):
@@ -226,9 +236,9 @@ class Bank:
                 break
             entries = []
             for i in range(min(count, (size - 12) // LAYER_ENTRY_SIZE)):
-                macro, low, high, transpose, volume, priority, span, pan = struct.unpack_from(
-                    ">HBBbBbBB", pool, offset + 12 + LAYER_ENTRY_SIZE * i)
-                entries.append(LayerEntry(macro, low, high, transpose, volume, priority, span, pan))
+                macro, low, high, transpose, volume, priority, pan = struct.unpack_from(
+                    ">HBBbBhB", pool, offset + 12 + LAYER_ENTRY_SIZE * i)
+                entries.append(LayerEntry(macro, low, high, transpose, volume, priority, pan))
             self.layers[layer_id] = entries
             offset += size
 
@@ -299,6 +309,40 @@ class Bank:
                 return total + self.start_delay_ms((word0 >> 8) & 0xFFFF, depth + 1)
         return total
 
+    def pitch_wheel_range(self, macro_id: int, depth: int = 0) -> tuple[int, int]:
+        """(up, down) semitones of the last ``0x33`` before the first start-sample
+        command (a play-macro hands over to the child macro); (2, 2) when
+        none is set."""
+        result = (DEFAULT_PITCH_WHEEL_RANGE, DEFAULT_PITCH_WHEEL_RANGE)
+        if depth > MAX_MACRO_DEPTH or macro_id not in self.macros:
+            return result
+        for word0, _word1 in self.macros[macro_id]:
+            opcode = word0 & 0xFF
+            if opcode == OP_PITCH_WHEEL_RANGE:
+                result = ((word0 >> 8) & 0xFF, (word0 >> 16) & 0xFF)
+            elif opcode in (OP_START_SAMPLE, OP_END):
+                break
+            elif opcode == OP_PLAY_MACRO:  # the child voice plays the sample with its own range
+                return self.pitch_wheel_range((word0 >> 8) & 0xFFFF, depth + 1)
+        return result
+
+    def adsr_table_id(self, macro_id: int, depth: int = 0) -> int | None:
+        """Curve table of the last linear set-ADSR command (``0x0C``, dls 0)
+        before the first start-sample command, following play-macro."""
+        if depth > MAX_MACRO_DEPTH or macro_id not in self.macros:
+            return None
+        table = None
+        for word0, _word1 in self.macros[macro_id]:
+            opcode = word0 & 0xFF
+            if opcode == OP_SET_ADSR and not word0 >> 24:
+                table = (word0 >> 8) & 0xFFFF
+            elif opcode in (OP_START_SAMPLE, OP_END):
+                break
+            elif opcode == OP_PLAY_MACRO:
+                inner = self.adsr_table_id((word0 >> 8) & 0xFFFF, depth + 1)
+                return inner if inner is not None else table
+        return table
+
     def decode(self, sample_id: int) -> tuple[int, list[int]]:
         entry = self.samples.get(sample_id)
         if entry is None:
@@ -349,17 +393,67 @@ class SoundBanks:
         """(bank, sample id, note, gain, start delay in seconds) for every voice
         an object id starts with ``note``: one for a macro, one per matching
         entry for a layer (``0x8000`` flag)."""
+        return [voice[:5] for voice in self.voices_with_macro(object_id, note)]
+
+    def voices_with_macro(self, object_id: int, note: int) -> list[tuple[Bank, int, int, float, float, int]]:
+        """:meth:`voices` plus the macro id each voice runs (6-tuples)."""
         if not object_id & LAYER_FLAG:
             voice = self.voice_for_macro(object_id, note)
-            return [(*voice, 1.0, self._start_delay(object_id))] if voice else []
+            return [(*voice, 1.0, self._start_delay(object_id), object_id)] if voice else []
         layer = next((b.layers[object_id] for b in self.banks if object_id in b.layers), None)
         out = []
         for part in layer or []:
             if part.key_low <= note <= part.key_high:
                 voice = self.voice_for_macro(part.macro, max(0, min(127, note + part.transpose)))
                 if voice:
-                    out.append((*voice, part.volume / 127.0, self._start_delay(part.macro)))
+                    out.append((*voice, part.volume / 127.0, self._start_delay(part.macro), part.macro))
         return out
+
+    def pitch_wheel_range(self, macro_id: int) -> tuple[int, int]:
+        """(up, down) pitch-bend range in semitones a macro sets with ``0x33``
+        before its sample starts; MusyX's channel default is 2."""
+        bank = next((b for b in self.banks if macro_id in b.macros), None)
+        return bank.pitch_wheel_range(macro_id) if bank else (DEFAULT_PITCH_WHEEL_RANGE,) * 2
+
+    def macro_listing(self, object_id: int) -> list[str]:
+        """Readable listing of the macro (or layer) an FX entry names, with
+        every macro it jumps to or starts (``musyx_macro`` command names)."""
+        lines: list[str] = []
+        todo: list[int] = []
+        if object_id & LAYER_FLAG:
+            layer = next((b.layers[object_id] for b in self.banks if object_id in b.layers), None)
+            lines.append(f"layer {object_id & MACRO_ID_MASK}:" if layer else f"layer {object_id & MACRO_ID_MASK}: missing")
+            for part in layer or []:
+                lines.append(f"  macro {part.macro}, keys {part.key_low}-{part.key_high}, transpose {part.transpose}, "
+                             f"volume {part.volume}, pan {part.pan}")
+                todo.append(part.macro)
+        else:
+            todo.append(object_id)
+        seen: set[int] = set()
+        while todo:
+            macro_id = todo.pop(0)
+            if macro_id in seen:
+                continue
+            seen.add(macro_id)
+            bank = next((b for b in self.banks if macro_id in b.macros), None)
+            if bank is None:
+                lines.append(f"macro {macro_id}: missing")
+                continue
+            lines.append(f"macro {macro_id} ({bank.name}):")
+            for step, command in enumerate(musyx_macro.disassemble(bank.macros[macro_id])):
+                lines.append(f"  {step:3d}  {command}")
+                if "macro" in command.fields and command.fields["macro"] not in seen:
+                    todo.append(command.fields["macro"])
+        return lines
+
+    def adsr(self, macro_id: int) -> AdsrTable | None:
+        """Linear ADSR a macro sets before its sample starts (curve table ids
+        are one space across the banks), or None for the default envelope."""
+        bank = next((b for b in self.banks if macro_id in b.macros), None)
+        table_id = bank.adsr_table_id(macro_id) if bank else None
+        if table_id is None:
+            return None
+        return next((b.adsr[table_id] for b in self.banks if table_id in b.adsr), None)
 
     def _start_delay(self, macro_id: int) -> float:
         bank = next((b for b in self.banks if macro_id in b.macros), None)
@@ -390,32 +484,61 @@ class SoundBanks:
     def render(self, sound_id: int) -> Sfx:
         """Mono render of a cue's sound: every voice it starts (a layer's
         left/right pair is mixed down), resampled by note versus base key and
-        delayed by any timed wait before its sample starts. A looping sample
-        repeats its loop for a few seconds."""
+        delayed by any timed wait before its sample starts and shaped by the
+        macro's ADSR. A looping sample repeats its loop for a few seconds and
+        is then keyed off (the ADSR release)."""
         entry = self.fx_entry(sound_id)
         if entry is None:
             raise MusyxError(f"Sound id {sound_id} is not an FX id.")
-        voices = self.voices(entry.macro, entry.key)
+        voices = self.voices_with_macro(entry.macro, entry.key)
         if not voices:
             raise MusyxError(f"Sound id {sound_id} (object {entry.macro:#06x}) starts no sample: a silent cue.")
         rate = self.sample_pcm(voices[0][0], voices[0][1])[0].sample_rate
         mix = np.zeros(0, dtype=np.float32)
-        for bank, sample_id, note, gain, delay in voices:
+        for bank, sample_id, note, gain, delay, macro_id in voices:
             info, pcm = self.sample_pcm(bank, sample_id)
             end = info.loop_offset + info.loop_length
-            if info.loop_length and end <= len(pcm):
+            looping = bool(info.loop_length and end <= len(pcm))
+            if looping:
                 want = int(LOOP_PREVIEW_SECONDS * info.sample_rate)
                 repeats = max(0, -(-(want - end) // info.loop_length))
                 pcm = np.concatenate([pcm[:end]] + [pcm[info.loop_offset:end]] * repeats)
             step = 2.0 ** ((note - info.base_key) / 12.0) * info.sample_rate / rate
             if abs(step - 1.0) > 1e-3:
                 pcm = np.interp(np.arange(int(len(pcm) / step)) * step, np.arange(len(pcm)), pcm).astype(np.float32)
+            table = self.adsr(macro_id)
+            if table is not None:
+                pcm = apply_adsr(pcm, rate, table, key_off=looping)
             start = int(delay * rate)
             if start + len(pcm) > len(mix):
                 mix = np.pad(mix, (0, start + len(pcm) - len(mix)))
             mix[start:start + len(pcm)] += pcm * gain / len(voices)
         ints = np.clip(mix * entry.volume / 127.0 * 32768.0, -32768, 32767).astype(np.int16)
         return Sfx(rate, ints.tolist(), voices[0][0].name, voices[0][1])
+
+
+def apply_adsr(pcm: np.ndarray, rate: int, table: AdsrTable, key_off: bool) -> np.ndarray:
+    """Shape ``pcm`` with a linear MusyX ADSR (the engine steps it once per
+    millisecond): attack 0 -> full, decay full -> sustain, then sustain; a
+    sustain of 0 ends the voice after the decay. With ``key_off`` the last
+    ``release_ms`` of the clip fade linearly to silence (the key off of a
+    looping sound); a one-shot sample has ended before its release."""
+    t = np.arange(len(pcm), dtype=np.float32) * (1000.0 / rate)
+    level = table.sustain_level
+    env = np.full(len(pcm), level, dtype=np.float32)
+    attack, decay = table.attack_ms, table.decay_ms
+    if attack:
+        env[t < attack] = t[t < attack] / attack
+    in_decay = (t >= attack) & (t < attack + decay)
+    if decay:
+        env[in_decay] = 1.0 - (1.0 - level) * (t[in_decay] - attack) / decay
+    if level == 0.0:
+        pcm, env = pcm[t < attack + decay], env[t < attack + decay]
+    if key_off and table.release_ms:
+        n = min(len(env), int(table.release_ms * rate / 1000))
+        if n:
+            env[-n:] *= np.linspace(1.0, 0.0, n, dtype=np.float32)
+    return (pcm * env).astype(np.float32)
 
 
 def read_stbl_names(path: Path | str) -> list[str]:

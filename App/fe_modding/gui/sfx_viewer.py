@@ -7,9 +7,10 @@ Playback resolves a cue's sound id through the MusyX banks (``formats/musyx.py``
 to one DSP-ADPCM sample, or, for the sequenced cues (both id bytes equal, an
 index into ``gcfesnd.stbl``), renders the song from ``gcfesnd.slib``
 (``formats/musyx_song.py``). The result goes to a scratch WAV played with the
-stdlib ``winsound`` (Windows-only, like the Music page). Envelopes, panning
-and layered samples of the original sound macros are ignored, so it is an
-approximation of the in-game sound."""
+stdlib ``winsound`` (Windows-only, like the Music page). Layers, note changes,
+timed waits and linear ADSR envelopes are followed; panning, reverb and the
+macro variables are not, so it is an approximation of the in-game sound. The
+cue's sound macro is listed read-only (``formats/musyx_macro.py``)."""
 
 from __future__ import annotations
 
@@ -117,11 +118,21 @@ class SfxViewer(EditorPanel):
         self._replace_button.pack(side="left")
         self._play_status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=360, justify="left")
         self._play_status.pack(anchor="w", pady=(6, 0))
+        ttk.Label(right, text="Sound macro").pack(anchor="w", pady=(12, 0))
+        macro_frame = ttk.Frame(right)
+        macro_frame.pack(fill="both", expand=True, pady=(4, 0))
+        self._macro_text = tk.Text(macro_frame, height=12, width=60, wrap="none", font=("Consolas", 9))
+        macro_scroll = ttk.Scrollbar(macro_frame, command=self._macro_text.yview)
+        self._macro_text.config(yscrollcommand=macro_scroll.set, state="disabled")
+        macro_scroll.pack(side="right", fill="y")
+        self._macro_text.pack(side="left", fill="both", expand=True)
+        tip(self._macro_text, "The MusyX commands the game runs for this sound (read-only): note changes, waits, "
+                              "envelope, sample start/stop, controller routing and variables.")
         if winsound is None:
             self._play_status.config(text="Playback needs Windows (winsound) - not available here.")
-        tip(self._play_button, "Decodes the cue's sample from the MusyX banks, or renders the sequenced songs of "
-                               "gcfesnd.slib; envelopes, panning and layering are ignored, so it is only "
-                               "approximate.")
+        tip(self._play_button, "Decodes the cue's samples from the MusyX banks, or renders the sequenced songs of "
+                               "gcfesnd.slib, with layers, note changes, waits and ADSR envelopes; panning and "
+                               "reverb are ignored, so it is only approximate.")
         tip(self._detail, "Cue names and parameters come from Sound/gcfesnd.bin. Range is inferred from the game's "
                           "accessors, not confirmed.")
 
@@ -199,6 +210,20 @@ class SfxViewer(EditorPanel):
             f"Bytes +0x0C: {cue.extra.hex(' ')}\n"
             f"Range (+0x10): {cue.range_value}\n"
             f"Record offset: {cue.offset:#x}"))
+        self._show_macro(cue)
+
+    def _show_macro(self, cue: gcfesnd.SfxCue) -> None:
+        entry = self._banks.fx_entry(cue.sound_id) if self._banks else None
+        if entry is not None:
+            text = "\n".join(self._banks.macro_listing(entry.macro))
+        elif self._banks and cue.sound_id > 0xFF:
+            text = f"Sequenced song {cue.sound_id >> 8} (gcfesnd.slib): no FX macro."
+        else:
+            text = "No FX entry for this sound id."
+        self._macro_text.config(state="normal")
+        self._macro_text.delete("1.0", "end")
+        self._macro_text.insert("1.0", text)
+        self._macro_text.config(state="disabled")
 
     # -- adding / replacing ---------------------------------------------------
     def _open_import(self, cue: gcfesnd.SfxCue | None) -> None:
