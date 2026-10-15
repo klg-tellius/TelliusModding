@@ -355,6 +355,20 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(reopened.reset_all(), 1)
         self.assertEqual((self.root / "sys" / "main.dol").read_bytes(), self.retail)
 
+    def test_hashed_edit_reverts_from_the_kept_original(self):
+        from fe_modding.game_code.editor import CodeEditor
+        window = CATALOG.entries["battle.info_window"]
+        window_without_files = Patch(window.id, window.group, window.name, window.description, window.versions)
+        editor = CodeEditor(self.root)
+        editor.set_patch(window_without_files, True)
+        stranger = CodeEditor(self.root)                 # no retail copy anywhere: cannot rebuild TRK
+        self.assertEqual(stranger.status(window).state, State.APPLIED)
+        with self.assertRaises(DolError):
+            stranger.set_patch(window_without_files, False)
+        kept = CodeEditor(self.root, original=lambda path: self.retail if path.name == "main.dol" else None)
+        kept.set_patch(window_without_files, False)
+        self.assertEqual((self.root / "sys" / "main.dol").read_bytes(), self.retail)
+
     def test_unknown_executable_is_not_editable(self):
         from fe_modding.game_code.editor import CodeEditor
         (self.root / "sys" / "boot.bin").write_bytes(b"GXXX01\x00\x00" + bytes(0x438))
@@ -364,6 +378,108 @@ class EditorTests(unittest.TestCase):
         editor = CodeEditor(self.root)
         self.assertFalse(editor.supported)
         self.assertEqual(editor.status(CATALOG.entries["combat.crit_multiplier"]).state, State.UNAVAILABLE)
+
+
+class BattleWindowTests(unittest.TestCase):
+    """FE7Dragon's info window (game_code/battle_window.py)."""
+
+    # The MetroTRK library around the space, the same layout in every build: TRKNubMainLoop starts
+    # 0x3210 before trk_target_step_out_of_range, trk_debugger_notify_and_dispatch_a ends 0x2668 after.
+    TRK_BEFORE, TRK_AFTER = 0x3210, 0x2668
+
+    def test_hooks_return_after_their_sites(self):
+        from fe_modding.game_code import battle_window as bw
+        from fe_modding.game_code.battle_window_data import HOOKS
+        for code in bw.VERSIONS:
+            h = HOOKS[bw._KEYS[code]]
+            code_bytes = bw.trk_code(code)
+            for start, body, site in ((0, h["map"], h["map_site"]),
+                                      (bw._FORECAST_OFFSET, h["forecast"], h["forecast_site"])):
+                end = h["trk"] + start + len(body)
+                self.assertEqual(code_bytes[start + len(body):start + len(body) + 4], word(ppc.b(end, site + 4)))
+                for offset in range(0, len(body), 4):          # relative branches stay in the body
+                    w = int.from_bytes(body[offset:offset + 4], "big")
+                    if w >> 26 == 16:
+                        target = offset + ((w & 0xFFFC) ^ 0x8000) - 0x8000
+                    elif w >> 26 == 18:
+                        self.assertFalse(w & 2, f"{code} +{offset:#x}: absolute branch")
+                        target = offset + ((w & 0x03FFFFFC) ^ 0x02000000) - 0x02000000
+                    else:
+                        continue
+                    self.assertTrue(0 <= target <= len(body), f"{code} +{offset:#x}")
+
+    def test_trk_space_is_not_reached_from_outside_trk(self):
+        from fe_modding.game_code import battle_window as bw
+        from fe_modding.game_code.battle_window_data import HOOKS
+        found = 0
+        for code in bw.VERSIONS:
+            path = RETAIL_DIR / f"{code}.dol"
+            if not path.is_file():
+                continue
+            found += 1
+            dol, base = Dol.open(path), HOOKS[bw._KEYS[code]]["trk"]
+            low, high = base, base + bw._TRK_SIZE
+            outside = []
+            for section in dol.sections:
+                values = dol.words(section.address, section.size // 4)
+                for i, w in enumerate(values):
+                    at = section.address + 4 * i
+                    if base - self.TRK_BEFORE <= at < base + self.TRK_AFTER:    # TRK calling TRK
+                        continue
+                    if not section.is_text:
+                        if low <= w < high:
+                            outside.append(at)
+                    elif w >> 26 == 18:
+                        target = (w & 0x03FFFFFC) - (0x04000000 if w & 0x02000000 else 0)
+                        if low <= (target if w & 2 else at + target) < high:
+                            outside.append(at)
+            with self.subTest(code):
+                self.assertEqual(outside, [])
+        if not found:
+            self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
+
+    def test_battle_dbx_edit_round_trip(self):
+        from fe_modding.game_code import battle_window as bw
+        blocks = []
+        for (cls, name), fields in bw.DBX_EDITS.items():
+            lines = [f"\tclass\t{cls}", f"\tname\t{name}"]
+            lines += [f"\t{key}\t{retail}" for key, (retail, _patched) in fields.items() if retail is not None]
+            blocks.append("{\r\n" + "\r\n".join(lines) + "\r\n}\r\n")
+        retail = "#\r\n# battle.dbx\r\n#\r\n\r\n" + "\r\n".join(blocks)
+        patched = bw.edit_battle_dbx(retail, True)
+        doc = __import__("fe_modding.formats.dbx", fromlist=["parse"]).parse(patched)
+        self.assertEqual(doc.find("Picture", "ParamWin").get("pos"), "221,344")
+        self.assertEqual(doc.find("Number", "NumAtkL").get("kerning"), "-4")
+        self.assertEqual(bw.edit_battle_dbx(patched, True), patched)
+        self.assertEqual(bw.edit_battle_dbx(patched, False), retail)
+
+    @unittest.skipUnless(__import__("os").environ.get("FE9_EXTRACTED_FILES"),
+                         "set FE9_EXTRACTED_FILES to an extracted files/ directory")
+    def test_files_install_and_remove(self):
+        import os
+        import shutil
+        import tempfile
+        from fe_modding.formats import tpl, zdbx
+        from fe_modding.game_code import battle_window as bw
+        source = Path(os.environ["FE9_EXTRACTED_FILES"]).parent
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative in (bw.ARCHIVE, bw.BOX_SOURCE, bw.LABEL_FONT):
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(source / relative, root / relative)
+            retail = (root / bw.ARCHIVE).read_bytes()
+            files = bw.GameFiles(root, lambda p, d: p.write_bytes(d), lambda p: retail if p.name == "zdbx.cmp" else None)
+            self.assertEqual(sorted(bw.install_files(files)), sorted([bw.BOX_MEMBER, bw.NUMBER_MEMBER, bw.BATTLE_DBX]))
+            self.assertEqual(bw.install_files(files), [])
+            self.assertTrue(bw.files_installed(files))
+            members = dict(zdbx.read_zdbx_files((root / bw.ARCHIVE).read_bytes()))
+            number = tpl.read_tpl_image_info(__import__("io").BytesIO(members[bw.NUMBER_MEMBER]))[0]
+            self.assertEqual((number.width, number.height), (200, 50))
+            self.assertEqual((root / bw.LOOSE_BOX).read_bytes(), members[bw.BOX_MEMBER])
+            bw.remove_files(files)
+            self.assertEqual(dict(zdbx.read_zdbx_files((root / bw.ARCHIVE).read_bytes())),
+                             dict(zdbx.read_zdbx_files(retail)))
+            self.assertFalse((root / "files" / "zdbx").exists())
 
 
 if __name__ == "__main__":

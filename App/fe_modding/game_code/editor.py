@@ -9,8 +9,9 @@ import os
 from pathlib import Path
 
 from . import entries  # noqa: F401  (registers the catalog)
+from .battle_window import GameFiles
 from .catalog import CATALOG, Entry, Patch, Session, State, Status, Tunable
-from .dol import Dol
+from .dol import Dol, DolError
 from .versions import Identification, identify, read_boot_code
 
 
@@ -19,14 +20,38 @@ def _format(value) -> str:
 
 
 class CodeEditor:
-    def __init__(self, extracted_dir: Path | str, writer=None):
-        """``writer(path, data)`` saves the file (the project's keeps an original copy)."""
+    def __init__(self, extracted_dir: Path | str, writer=None, original=None):
+        """``writer(path, data)`` saves a file (the project's keeps an original copy);
+        ``original(path)`` returns a file as extracted, or None (for patches that also edit files)."""
         self._writer = writer
+        self._original = original
         self.extracted_dir = Path(extracted_dir)
         self.path = self.extracted_dir / "sys" / "main.dol"
         self.dol = Dol.open(self.path)
         self.identification: Identification = identify(self.dol, read_boot_code(self.extracted_dir))
-        self.session = Session(self.dol, self.identification.version)
+        self.session = Session(self.dol, self.identification.version, self._retail_reader())
+
+    def _retail_reader(self):
+        """Reads the retail main.dol: the project's kept original, or this file as opened when it
+        is still retail (the first write keeps it as the original from then on)."""
+        version = self.identification.version
+        if version is None:
+            return None
+        retail = None
+        if self.dol.sha1() == version.dol_sha1:
+            retail = Dol(bytes(self.dol.data))
+        elif self._original is not None and (kept := self._original(self.path)) is not None:
+            candidate = Dol(kept)
+            retail = candidate if candidate.sha1() == version.dol_sha1 else None
+        if retail is None:
+            return None
+
+        def read(address: int, length: int) -> bytes | None:
+            try:
+                return retail.read(address, length)
+            except DolError:
+                return None
+        return read
 
     @property
     def version(self):
@@ -49,7 +74,24 @@ class CodeEditor:
     def set_patch(self, patch: Patch, enabled: bool) -> str:
         self.session.set_patch(patch, enabled)
         self._save()
-        return f"{patch.name}: {'on' if enabled else 'off'}"
+        self._patch_files(patch, enabled)
+        files = " (with zdbx.cmp and its textures)" if patch.files is not None else ""
+        return f"{patch.name}: {'on' if enabled else 'off'}{files}"
+
+    @property
+    def game_files(self) -> GameFiles:
+        def write(path: Path, data: bytes) -> None:
+            if self._writer is not None:
+                self._writer(path, data)
+            else:
+                path.write_bytes(data)
+        return GameFiles(self.extracted_dir, write, self._original or (lambda _path: None))
+
+    def _patch_files(self, patch: Patch, enabled: bool) -> None:
+        """The disc files a patch needs besides main.dol (installed again when already on)."""
+        if patch.files is not None and self.supported:
+            install, remove = patch.files
+            (install if enabled else remove)(self.game_files)
 
     def set_value(self, tunable, value: float) -> str:
         old = self.status(tunable).value
@@ -65,6 +107,8 @@ class CodeEditor:
     def reset(self, entry: Entry) -> str:
         self.session.reset(entry)
         self._save()
+        if isinstance(entry, Patch):
+            self._patch_files(entry, False)
         return f"{entry.name}: reset"
 
     def reset_all(self) -> int:
@@ -72,6 +116,9 @@ class CodeEditor:
         for entry in changed:
             self.session.reset(entry)
         self._save()
+        for entry in changed:
+            if isinstance(entry, Patch):
+                self._patch_files(entry, False)
         return len(changed)
 
     def _drop_idle_hooks(self) -> None:

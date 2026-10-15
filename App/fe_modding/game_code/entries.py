@@ -947,6 +947,19 @@ for _key, _name, _what, _default, _minimum, _maximum, _unit, _at, _kind in (
         versions={v: (Field(BATTLE_STATS_DATA + _at, _kind),) for v in _BATTLE_STATS},
         requires=(_battle_stats,)))
 
+# FE7Dragon's info window (battle_window.py): a box at the bottom middle in animated and map battles.
+from . import battle_window  # noqa: E402
+
+battle_info_window = Patch(
+    "battle.info_window", G_BATTLE, "Battle info window",
+    "A parchment box at the bottom middle of the screen with both fighters' hit, damage and critical "
+    "rate, in animated battles and in map battles. Also edits zdbx.cmp (battle.dbx and two textures "
+    "rebuilt from your disc) and adds files/zdbx/ztex/.",
+    versions={v: battle_window.edits(v) for v in battle_window.VERSIONS},
+    credit=f"{battle_window.CREDIT} {battle_window.SOURCE_URL}",
+    files=(battle_window.install_files, battle_window.remove_files))
+CATALOG.add(battle_info_window)
+
 
 from . import chapter_flow  # noqa: E402,F401  (registers the story-flow hook)
 from . import hub_flow  # noqa: E402,F401  (registers the hub routing extension)
