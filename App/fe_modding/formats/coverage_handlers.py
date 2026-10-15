@@ -795,50 +795,55 @@ def musyx_sdir(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(pos + 2, 2, "record +2")
         cov.zero(pos + 8, 4, "record +8")
         info = _u32(data, pos + 28)
-        cov.mark(info, 8, UNDECODED, "ADPCM info header")
-        cov.mark(info + 8, 32, DECODED)
+        cov.mark(info, 40, DECODED)  # SNDADPCMinfo: count, initial/loop ps, loop history, coefficients
         pos += 32
     cov.mark(pos, 4, DECODED)
     cov.fill(PADDING, only_zero=True)
 
 
-#: Sound-macro opcodes musyx.py reads: end, play macro, start sample.
-MACRO_OPS_DECODED = {0x00, 0x08, 0x10}
-
-
 @handles("musyx pool", lambda name, data: _ext(name) == "pool")
 def musyx_pool(cov: FileCoverage, walker: Walker) -> None:
-    """Four table offsets; the first is the sound-macro table. The other
-    three (public MusyX: ADSR tables, keymaps, layers) are not parsed."""
+    """Four chains (macros, curve tables, keymaps, layers), each of
+    ``u32 size, u16 id, u16 pad`` entries ended by ``0xFFFFFFFF``. Every macro
+    opcode the game's interpreter handles is decoded (musyx_macro.py); curve
+    tables are linear ADSRs, layers 12-byte entries (musyx.py)."""
+    from .musyx_macro import SPECS
     data = cov.data
     offsets = struct.unpack_from(">4I", data, 0)
     cov.mark(0, 16, DECODED)
-    later = sorted(o for o in offsets[1:] if o)
-    end = later[0] if later else len(data)
-    pos = offsets[0]
-    while pos + 4 <= end:
-        size = _u32(data, pos)
-        if size == 0xFFFFFFFF or size < 8:
-            cov.mark(pos, 4, DECODED)
-            break
-        cov.mark(pos, 6, DECODED)
-        cov.zero(pos + 6, 2, "macro pad")
-        for c in range(pos + 8, pos + size - 7, 8):
-            op = data[c + 3]
-            cov.mark(c, 8, DECODED if op in MACRO_OPS_DECODED else UNDECODED, "" if op in MACRO_OPS_DECODED
-                     else f"macro command op {op:#04x}")
-        pos += size
-    for i, off in enumerate(offsets[1:], 1):
-        if off:
-            stop = min([o for o in offsets if o > off] + [len(data)])
-            cov.mark(off, stop - off, UNDECODED, f"pool table {i} (not parsed)")
+    for kind, start in zip(("macro", "curve", "keymap", "layer"), offsets):
+        pos = start
+        while start and pos + 4 <= len(data):
+            size = _u32(data, pos)
+            if size == 0xFFFFFFFF or size < 8:
+                cov.mark(pos, 4, DECODED)
+                break
+            cov.mark(pos, 6, DECODED)
+            cov.zero(pos + 6, 2, f"{kind} pad")
+            if kind == "macro":
+                for c in range(pos + 8, pos + size - 7, 8):
+                    op = data[c + 3] & 0x7F
+                    cov.mark(c, 8, DECODED if op in SPECS else UNDECODED,
+                             "" if op in SPECS else f"macro command op {op:#04x}")
+            elif kind == "curve":
+                cov.mark(pos + 8, size - 8, DECODED)  # little-endian linear ADSR
+            elif kind == "layer":
+                count = _u32(data, pos + 8)
+                cov.mark(pos + 8, 4, DECODED)
+                for e in range(pos + 12, pos + 12 + 12 * count, 12):
+                    cov.mark(e, 9, DECODED)
+                    cov.zero(e + 9, 3, "layer entry pad")
+            else:
+                cov.mark(pos + 8, size - 8, UNDECODED, "keymap")
+            pos += size
     cov.fill(PADDING, only_zero=True)
 
 
 @handles("musyx proj", lambda name, data: _ext(name) == "proj")
 def musyx_proj(cov: FileCoverage, walker: Walker) -> None:
-    """Group chain: header, FX tables, song pages and MIDI setups are parsed
-    (musyx.py); the macro/sample/curve/keymap/layer id lists are not."""
+    """Group chain: header, id lists (musyx_macro.parse_id_list), FX tables,
+    song pages and MIDI setups (musyx.py)."""
+    from .musyx_macro import id_list_size
     data = cov.data
     offset = 0
     while offset + 0x28 <= len(data):
@@ -865,10 +870,22 @@ def musyx_proj(cov: FileCoverage, walker: Walker) -> None:
         for i in range(5):
             lst = _u32(data, offset + 8 + 4 * i)
             if lst and lst < stop:
-                cov.mark(lst, 2, UNDECODED, f"group id list {i} (not parsed)")
+                cov.mark(lst, id_list_size(data, lst), DECODED)
         if not next_offset or next_offset == 0xFFFFFFFF or next_offset <= offset:
             break
         offset = next_offset
+    # What is left: 0xFF end markers (page tables, group chain) and zero alignment.
+    i = 0
+    while i < len(data):
+        if cov.status[i] == UNCLASSIFIED and data[i] == 0xFF:
+            j = i
+            while j < len(data) and cov.status[j] == UNCLASSIFIED and data[j] == 0xFF:
+                j += 1
+            cov.mark(i, j - i, DECODED)
+            i = j
+        else:
+            i += 1
+    cov.fill(PADDING, only_zero=True)
     cov.fill(UNDECODED, "proj (not parsed)")
 
 
@@ -879,34 +896,22 @@ def musyx_tables(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("musyx slib", lambda name, data: _ext(name) == "slib")
 def musyx_slib(cov: FileCoverage, walker: Walker) -> None:
-    """Song blobs (musyx_song.py): headers, tracks and note/controller events
-    decoded; the pitch-bend and modulation streams are not."""
+    """Song blobs (musyx_song.py): headers, tracks, note/controller events and
+    the pitch-bend/modulation delta streams. A stream that does not end
+    inside its blob is left undecoded."""
+    from .musyx_song import STREAM_END, parse_song, split_slib, stream_size
     data = cov.data
-    cov.fill(DECODED)
-    pos = 0
-    while pos + 0x20 <= len(data):
-        size = _u32(data, pos)
-        if not size:
-            break
-        song = pos + 0x20
+    for blob, size in split_slib(data):
+        song = blob + 0x20
         pattern_table = _u32(data, song + 4)
-        patterns = []
-        p = song + pattern_table
-        while p + 4 <= pos + size:
-            off = _u32(data, p)
-            if not off or off >= size:
-                break
-            patterns.append(off)
-            p += 4
-        for off in patterns:
-            base = song + off
-            if base + 12 > len(data):
-                continue
-            bend, mod = _u32(data, base + 4), _u32(data, base + 8)
-            for stream_off, label in ((bend, "pitch-bend stream"), (mod, "modulation stream")):
+        for i in range(len(parse_song(data, blob, size).patterns)):  # patterns the tracks use
+            off = _u32(data, song + pattern_table + 4 * i)
+            for stream_off, label in ((_u32(data, song + off + 4), "pitch-bend stream"),
+                                      (_u32(data, song + off + 8), "modulation stream")):
                 if stream_off:
-                    cov.mark(base + 4 + stream_off, 4, UNDECODED, label)
-        pos += size
+                    n = stream_size(data, song + stream_off, blob + size)
+                    ok = data[song + stream_off + n - 2:song + stream_off + n] == STREAM_END
+                    cov.mark(song + stream_off, n, DECODED if ok else UNDECODED, "" if ok else label)
     cov.fill(DECODED)
 
 
