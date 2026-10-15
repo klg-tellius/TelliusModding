@@ -20,14 +20,10 @@ class DispoRulesTests(unittest.TestCase):
     def test_laguz_lookup_without_data(self):
         self.assertFalse(dispo_rules.laguz_lookup(None)("JID_X", "PID_X"))
 
-    def test_ring_flag_only_on_rings(self):
+    def test_first_playthrough_flag_on_every_item(self):
         self.assertTrue(dispo_rules.is_ring_item("IID_MAGESRING"))
-        self.assertTrue(dispo_rules.is_ring_item("IID_COIN"))
-        self.assertFalse(dispo_rules.is_ring_item("IID_VULNERARY"))
         masks = [b[0] for b in dispo_rules.item_flag_bits("IID_VULNERARY", 0)]
-        self.assertEqual(masks, [dispo.ITEM_FLAG_DROP])
-        masks = [b[0] for b in dispo_rules.item_flag_bits("IID_VULNERARY", dispo.ITEM_FLAG_RING)]
-        self.assertIn(dispo.ITEM_FLAG_RING, masks)
+        self.assertEqual(masks, [dispo.ITEM_FLAG_DROP, dispo.ITEM_FLAG_RING])
 
     def test_unused_flag_bits_appear_when_set(self):
         self.assertNotIn(0x80, [b[0] for b in dispo_rules.unit_flag_bits(0x01)])
@@ -37,7 +33,17 @@ class DispoRulesTests(unittest.TestCase):
     def test_warnings(self):
         self.assertEqual(dispo_rules.warnings(1, True, 5, [("IID_COIN", 3)]), [])
         found = dispo_rules.warnings(0, False, 5, [("IID_VULNERARY", 3), ("IID_X", 1)])
-        self.assertEqual(len(found), 3)
+        self.assertEqual(len(found), 2)
+
+    def test_slot_half_warnings(self):
+        kinds = {"IID_IRONSWORD": True, "IID_VULNERARY": False}
+        items = [("IID_IRONSWORD", 0), ("IID_VULNERARY", 1)] + [(0, 0)] * 4 + [("IID_IRONSWORD", 0), (0, 0)]
+        found = dispo_rules.warnings(1, False, 0, items, kinds.get)
+        self.assertEqual(len(found), 2)
+        self.assertIn("Drops flag", found[0])
+        self.assertIn("slot 7", found[1])
+        five = [("IID_IRONSWORD", 0)] * 4 + [(0, 0)] * 4
+        self.assertEqual(dispo_rules.warnings(1, False, 0, five, kinds.get), [])
 
 
 if __name__ == "__main__":

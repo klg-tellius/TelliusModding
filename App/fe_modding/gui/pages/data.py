@@ -9,7 +9,7 @@ shared session (``fe8_session.py``). Each tab lists its records as tiles
 (the item and skill tiles show their icon; classes have no icon, and are filtered
 as unpromoted, promoted or laguz like items by weapon type); a tile opens
 the record's form, and fields apply as soon as they are left. The Flags tab
-holds the 96 script flags (campaign, chapter, save file). The Supports tab
+holds the 96 script flags (campaign and chapter). The Supports tab
 lists every support pair (a character's partners and bonds are edited on their
 page), edits the affinity bonus table and the support conversations
 (``Mess/yell.m``, through a Dialogue editor)."""
@@ -39,7 +39,7 @@ TILES = {
     "terrain": ("▦", "Movement cost per movement type, bonuses, healing"),
     "general": ("≡", "Difficulty constants, army groups, battle skies"),
     "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
-    "flags": ("⚐", "The 96 named script flags: campaign, chapter and save file"),
+    "flags": ("⚐", "The 96 named script flags: campaign and chapter"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
         "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }

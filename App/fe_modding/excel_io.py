@@ -19,6 +19,34 @@ ITEM_FIELDS=('iid','miid','help_key','weapon_type','attack_type','rank',*(f'prop
 TERRAIN_FIELDS=('name','name_key','avoid','defense','resistance','alt_avoid','alt_defense','alt_resistance','heal','object_tile',*(f'move_cost_{i}' for i in range(len(fe8data.MOVEMENT_TYPE_NAMES))))
 FE8_SHEETS=('Characters','Items','Terrain')
 DISPO_FIELDS=[dispo.FIELD_NAMES.get(i,f'field{i}') for i in range(len(dispo.FIELD_LAYOUT))]
+#: The unit flags (field 38) and item flags (40-47) as one yes/no column per bit.
+_UNIT_FLAG_COLUMNS=(('autolevel',dispo.FLAG_AUTOLEVEL),('hold_position',dispo.FLAG_HOLD_POSITION),
+ ('group_commander',dispo.FLAG_COMMANDER),('create_if_not_recruited',dispo.FLAG_SPAWN_WHEN_ABSENT),
+ ('ai_door_key',dispo.FLAG_AI_DOOR_KEY),('ai_chest_key',dispo.FLAG_AI_CHEST_KEY),
+ ('no_bridge_cover',dispo.FLAG_BRIDGE_BARRIER))
+_ITEM_FLAG_COLUMNS=(('drops',dispo.ITEM_FLAG_DROP),('ignore_first_playthrough',dispo.ITEM_FLAG_RING))
+
+
+def _dispo_columns():
+ """Export columns: the record's fields in a readable form. Weapons are items 1-4,
+ other items 5-8 (the slots the game uses); unread fields are left out."""
+ cols=[]
+ for i,name in enumerate(DISPO_FIELDS):
+  if i not in dispo.FIELD_NAMES or name=='flags' or name.endswith('_flag'):
+   continue
+  if name.startswith('item') and name[4:].isdigit():
+   slot=int(name[4:])
+   cols.append((f'{"weapon" if slot<4 else "item"}{slot%4+1}',('field',i)))
+   for flag_name,mask in _ITEM_FLAG_COLUMNS:
+    cols.append((f'{"weapon" if slot<4 else "item"}{slot%4+1}_{flag_name}',('bit',dispo.FIELD[f'item{slot}_flag'],mask)))
+   continue
+  cols.append((name,('field',i)))
+  if name=='faction':
+   cols+=[(flag_name,('bit',dispo.FIELD['flags'],mask)) for flag_name,mask in _UNIT_FLAG_COLUMNS]
+ return cols
+
+
+DISPO_COLUMNS=_dispo_columns()
 def _ref(r,c):
  o=''
  while c: c,rem=divmod(c-1,26); o=chr(65+rem)+o
@@ -118,15 +146,20 @@ def export_fe8(path,data,docs=None,only=None):
  if data and only in (None,'Terrain'):
   sheets['Terrain']=[['index',*TERRAIN_FIELDS]]+[[t.index,t.name,t.name_key,t.avoid,t.defense,t.resistance,*t.alt_bonus,t.heal,t.flag7,*t.move_costs] for t in fe8data.read_terrain_types(data)]
  if docs:
-  headers=['section','unit_index','linked_label',*DISPO_FIELDS]
+  headers=['section','unit_index','linked_label',*(name for name,_how in DISPO_COLUMNS)]
   for name,doc in docs.items():
    rows=[headers]
    for s in doc.sections:
-    if s.is_link: rows.append([s.name,'',s.header,*(['']*len(DISPO_FIELDS))])
+    if s.is_link: rows.append([s.name,'',s.header,*(['']*len(DISPO_COLUMNS))])
     else:
-     for i,u in enumerate(s.units): rows.append([s.name,i,'',*u])
+     for i,u in enumerate(s.units):
+      rows.append([s.name,i,'',*(u[how[1]] if how[0]=='field' else ('yes' if u[how[1]]&how[2] else '')
+                                 for _name,how in DISPO_COLUMNS)])
    sheets['Dispo '+name.removeprefix('dispos_').removesuffix('.bin')]=rows
  write_workbook(path,sheets)
+def _pointer(v):
+ """A label cell: 0 is an empty pointer, anything else a label."""
+ return 0 if v==0 or str(v).strip()=='0' else str(v).strip()
 def _num(v,field):
  if v in (None,''): return None
  try: return int(v)
@@ -179,8 +212,17 @@ def import_fe8(path,data,docs=None,only=None):
       if row[cols['linked_label']] not in ('',None): s.header=str(row[cols['linked_label']])
      else:
       u=s.units[int(i)]
-      for fi,field in enumerate(DISPO_FIELDS):
-       if field in cols and cols[field]<len(row) and row[cols[field]] not in ('',None): u[fi]=str(row[cols[field]]) if fi in dispo.POINTER_FIELDS else _num(row[cols[field]],field)
+      for fi,field in enumerate(DISPO_FIELDS):  # raw columns (older exports)
+       if field in cols and cols[field]<len(row) and row[cols[field]] not in ('',None): u[fi]=_pointer(row[cols[field]]) if fi in dispo.POINTER_FIELDS else _num(row[cols[field]],field)
+      for field,how in DISPO_COLUMNS:
+       if field not in cols or field in DISPO_FIELDS:
+        continue
+       v=row[cols[field]] if cols[field]<len(row) else None
+       if how[0]=='field':
+        if v not in ('',None): u[how[1]]=_pointer(v) if how[1] in dispo.POINTER_FIELDS else _num(v,field)
+       else:
+        on=str(v).strip().casefold() in ('yes','y','true','1','x') if v not in ('',None) else False
+        u[how[1]]=(u[how[1]]|how[2]) if on else (u[how[1]]&~how[2])
     except (ValueError,TypeError,IndexError,KeyError) as e: errors.append(f'{name} row {rn}: {e}')
  if data and only in (None,'Terrain') and 'Terrain' in sheets:
   out,terrain_errors=_import_terrain(sheets['Terrain'],out)

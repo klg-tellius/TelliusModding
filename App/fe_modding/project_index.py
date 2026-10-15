@@ -120,6 +120,7 @@ class ChapterInfo:
     has_script: bool = False
     has_map: bool = False
     has_deployment: bool = False
+    function_count: int = 0
 
 
 class ProjectIndex:
@@ -243,8 +244,18 @@ class ProjectIndex:
                 has_script=paths.script is not None,
                 has_map=paths.map is not None,
                 has_deployment=paths.deployment is not None,
+                function_count=self._function_count(paths.script),
             ))
         self.by_chapter = {c.id: c for c in self.chapters}
+
+    @staticmethod
+    def _function_count(path) -> int:
+        from .formats.cmb.binary import count_functions
+
+        try:
+            return count_functions(path.read_bytes()) if path is not None else 0
+        except Exception:  # noqa: BLE001
+            return 0
 
     def _build_characters(self) -> None:
         data = self.profile.path(self.files, "game_data").read_bytes()

@@ -8,7 +8,7 @@ from tkinter import messagebox, ttk
 from PIL import ImageTk
 
 from .. import rect_catalog, rect_editor
-from ..formats import fe10_rect, rect
+from ..formats import fe10_rect, rect, tpl
 
 
 class RectDetail(tk.Toplevel):
@@ -29,6 +29,7 @@ class RectDetail(tk.Toplevel):
         self._selected = None
         self._inputs = {}
         self._photo = None
+        self._textures = None  # every .tpl a layer can name, read on first use
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._parts.selection_set(layer_index + 1 if layer_index is not None else 0)
@@ -142,12 +143,56 @@ class RectDetail(tk.Toplevel):
                 count = len(target.seats) if isinstance(target, rect.SeatsLayer) else len(target.raw[10:]) // 8
                 widget = tk.Text(self._form, height=max(4, min(12, count + 1)), wrap="none")
                 widget.insert("1.0", value)
+            elif field.name == "file":
+                widget = self._texture_picker(value)
             else:
                 widget = ttk.Entry(self._form)
                 widget.insert(0, value)
             widget.pack(fill="x")
             self._inputs[field.name] = widget
+        if "file" in self._inputs:
+            self._texture_thumbnail = ttk.Label(self._form, style="Muted.TLabel", compound="left")
+            self._texture_thumbnail.pack(anchor="w", pady=(8, 0), after=self._inputs["file"])
+            self._show_texture()
         self._refresh_preview(collect=False)
+
+    def _texture_picker(self, value: str):
+        """The texture file: typed, or picked from the game's .tpl files, the list narrowing as you type."""
+        from .map_builder import _LabelPicker
+
+        if self._textures is None:
+            try:
+                self._textures = rect_catalog.texture_files(self._project)
+            except OSError:
+                self._textures = []
+        picker = _LabelPicker(self._form, width=40)
+        names = self._textures if value in self._textures or not value else [value, *self._textures]
+        picker.set_choices([(name, name) for name in names])
+        picker.set(value)
+        picker.bind("<<ComboboxSelected>>", lambda _e: (self._show_texture(), self._refresh_preview()), add="+")
+        picker.bind("<FocusOut>", lambda _e: self._show_texture(), add="+")
+        return picker
+
+    def _show_texture(self) -> None:
+        """A thumbnail of the chosen texture (the layer's texture index of it)."""
+        label = getattr(self, "_texture_thumbnail", None)
+        if label is None or not label.winfo_exists():
+            return
+        name = self._inputs["file"].get().strip()
+        index_widget = self._inputs.get("texture")
+        try:
+            images = rect_catalog.texture_images(self._project, name)
+            index = int(index_widget.get()) if index_widget is not None else 0
+            image = images[min(max(index, 0), len(images) - 1)].copy()
+        except (OSError, KeyError, ValueError, IndexError, tpl.TplError):
+            self._texture_photo = None
+            label.configure(image="", text="Not a texture file of the game." if name else "")
+            return
+        size = f"{image.width} × {image.height}"
+        image.thumbnail((160, 120))
+        self._texture_photo = ImageTk.PhotoImage(image)
+        label.configure(image=self._texture_photo,
+                        text=f"  {size}" + (f", {len(images)} images in the file" if len(images) > 1 else ""))
 
     def _resources(self):
         result = {}

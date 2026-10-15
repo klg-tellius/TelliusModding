@@ -183,8 +183,8 @@ class DispoSectionHeaderTests(unittest.TestCase):
 class DispoFieldDescriptionTests(unittest.TestCase):
     def test_flags_and_item_flags_are_named(self):
         self.assertEqual(dispo.describe_field(F["flags"], 0x46),
-                         "0x46 (Hold position, Group commander, Blocked by bridge cover)")
-        self.assertEqual(dispo.describe_field(F["item0_flag"], 3), "3 (drop, ring)")
+                         "0x46 (Hold position, Group commander, Can't enter bridge cover)")
+        self.assertEqual(dispo.describe_field(F["item0_flag"], 3), "3 (Drops, Ignore in first playthrough)")
         self.assertEqual(dispo.describe_field(F["faction"], 3), "3 (Partner)")
         self.assertEqual(dispo.describe_field(F["level"], 7), "7")
 

@@ -21,6 +21,7 @@ from ..formats import map_file
 from . import map_scene
 from .editor_panel import EditorPanel
 from .model_viewer import _ModelPreview, load_named_model_set
+from .widgets import info
 
 ALL_MAPS = "All maps"
 COLUMNS = (("map", "Map", 150), ("name", "Object", 190), ("placed", "Placed", 60), ("tiles", "Tiles", 60),
@@ -255,8 +256,8 @@ class MapObjectsPanel(EditorPanel):
         top.pack(fill="x", pady=(0, 6))
         self._export = ttk.Button(top, text="Export .glb...", state="disabled", command=lambda: self.browser.export_selected())
         self._export.pack(side="left")
-        ttk.Label(top, text="Every prop of every chapter map. To use one on another map, open that chapter's Build tab, "
-                            "choose Place prop and Add from another map...", style="Muted.TLabel").pack(side="left", padx=(10, 0))
+        info(top, "Every prop of every chapter map. To use one on another map, open that chapter's Build tab, "
+                  "choose Place prop and Add from another map...").pack(side="left", padx=(10, 0))
         self.browser = PropBrowser(self, project, on_select=lambda info: self._export.configure(
             state="normal" if info is not None else "disabled"))
         self.browser.pack(fill="both", expand=True)

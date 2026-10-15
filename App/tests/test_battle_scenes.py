@@ -71,10 +71,10 @@ class BattleSceneTests(unittest.TestCase):
                                    "map02_cliff01": Path("cliff.cmp")},
         )
         bse.BattleScenePanel._update_note(panel, 1, rows, 1)
-        self.assertEqual(note.options["text"], "first terrain scene: map01_woods")
+        self.assertEqual(note.options["text"], "default: map01_woods")
         panel._map = "unknown"
         bse.BattleScenePanel._update_note(panel, 1, rows, None)
-        self.assertEqual(note.options["text"], "first terrain scene: map02_cliff01")
+        self.assertEqual(note.options["text"], "default: map02_cliff01")
 
     def test_rows_and_users(self):
         self.assertEqual(bse.find_row(ROWS, "bmap02"), 2)

@@ -21,10 +21,10 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 
 from .. import map_props
-from ..formats import map_file
+from ..formats import fe8data, map_file
 from . import map_scene
 from .model_viewer import _ModelPreview
-from .widgets import ScrollFrame
+from .widgets import ScrollFrame, info, tip
 
 ANGLES = {"0°": 0, "90°": 192, "180°": 128, "270°": 64}
 
@@ -340,10 +340,10 @@ class MapObjectsWindow(_Window):
             var = tk.BooleanVar(value=initial)
             ttk.Checkbutton(frame, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w")
             checks.append((field, mask, initial, var))
-        ttk.Label(frame, text="These flags belong to the object definition and affect every placement. "
-                  "C bit 0 is probably unused in the US build; raw bytes preserve it. "
-                  "The footprint test also depends on map flags and runtime state.",
-                  style="Muted.TLabel", wraplength=390, justify="left").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        info(frame, "These flags belong to the object definition and affect every placement. "
+                    "C bit 0 is probably unused in the US build; raw bytes preserve it. "
+                    "The footprint test also depends on map flags and runtime state.").grid(
+            row=18, column=0, sticky="w", pady=(8, 0))
 
         def apply() -> None:
             try:
@@ -470,18 +470,47 @@ def _hex_colour(rgb) -> str | None:
     return "#%02x%02x%02x" % tuple(values) if len(values) == 3 and all(0 <= v <= 255 for v in values) else None
 
 
+#: Weather ids (mapextra bits 20-24, 0-17; ``spawn_map_weather_children_for_current_chapter``).
+#: The names come from the effect each id starts, or from its battle sky (BattleSkyData: 12
+#: night_01, 13 sunset_01, 15 mountain_01); the others name the vanilla map that uses them.
+WEATHER_NAMES = {
+    0: "None", 1: "Light overlay (as Ch.6, Ch.17, Ch.23)", 2: "Rain (as Ch.24)", 3: "Light rain (unused)", 4: "Heavy rain (as Ch.8)",
+    5: "Snow (as Ch.18, Ch.20)", 6: "Snow 6 (unused)", 7: "Snow 7 (as Ch.19)", 8: "Sandstorm (as Ch.15)", 9: "Effect 9 (unused)",
+    10: "Waves (as Ch.13)", 11: "Effect 11 (as Ch.14)", 12: "Night (as Ch.5)", 13: "Sunset (as Ch.4)",
+    14: "Effect 14 (as Ch.7, Ch.10)", 15: "Mountain (as Ch.9, Ch.12)", 16: "Effect 16 (unused)",
+    17: "Light overlay 2 (as the Prologue)",
+}
+#: Fog-of-war code (mapextra bits 18-19): the game maps 0/1/2/3 to runtime modes 0/3/1/2
+#: and keeps it only on Hard (US/PAL; any difficulty but Normal in JP).
+SIGHT_NAMES = {0: "None", 1: "Fog of war, mode 3 (unused in vanilla)", 2: "Fog of war, mode 1 (as Ch.5)",
+               3: "Fog of war, mode 2 (as Ch.14)"}
+SECTION_HELP = {
+    "grid": "The tactical grid: the playable area and how its lines are drawn.",
+    "light": "The directional light on the map's models.",
+    "fog": "Distance fog: the map fades into this colour away from the camera. Scripts can change it "
+           "during the chapter (SetFog).",
+    "weather": "Weather and fog of war of the map.",
+    "advanced": "Values the engine reads but that rarely need changing.",
+}
+
+
 class MapSettingsForm(ttk.Frame):
-    """The open map's map-wide records - capacity scale, lighting, fog, grid
-    colour, the grid border (``mapextra.grid_buffer``) and the rest of
-    ``mapextra`` - and its water surface. Edits go through the builder
-    (``edit_map``), so they are on the Build tab's Undo/Redo and Save Chapter
-    writes them. Follows the builder's map."""
+    """The open map's map-wide settings, grouped by what they do: the grid
+    (size, playable border, line colour), lighting, distance fog, weather and
+    fog of war, and an Advanced group (texture projection, panel offsets,
+    object order, the other map flag bits); then its water surface. Edits go
+    through the builder (``edit_map``), so they are on the Build tab's
+    Undo/Redo and Save Chapter writes them. Follows the builder's map.
+
+    Values the game never reads are not offered: maplight ``enabled`` (always
+    1), mapfog byte 7, the grid's stored alpha (the draw uses SetGrid) and the
+    half sizes, which are kept equal to ceil(size / 2)."""
 
     def __init__(self, parent, builder) -> None:
         super().__init__(parent)
         self.builder = builder
         self.map = builder.map_editor
-        self._vars: dict[str, tk.StringVar] = {}
+        self._vars: dict[str, tk.Variable] = {}
         self.map.add_listener(self._on_map_changed)
         self.bind("<Destroy>", self._on_destroy)
         self.render()
@@ -494,6 +523,41 @@ class MapSettingsForm(ttk.Frame):
         if self.winfo_exists():
             self.render()
 
+    # -- layout helpers --------------------------------------------------------------------
+    def _section(self, row: int, key: str, title: str) -> int:
+        head = ttk.Frame(self)
+        head.grid(row=row, column=0, columnspan=8, sticky="w", pady=(14, 2))
+        ttk.Label(head, text=title, font=("Segoe UI", 10, "bold")).pack(side="left")
+        info(head, SECTION_HELP[key]).pack(side="left", padx=(4, 0))
+        return row + 1
+
+    def _number(self, row: int, col: int, key: str, label: str, value, help_text: str, unit: str = "") -> None:
+        tip(ttk.Label(self, text=label), help_text).grid(row=row, column=col, sticky="w",
+                                                         padx=(0 if col == 0 else 14, 6), pady=1)
+        cell = ttk.Frame(self)
+        cell.grid(row=row, column=col + 1, sticky="w", pady=1)
+        var = tk.StringVar(value=str(value))
+        tip(ttk.Entry(cell, textvariable=var, width=7), help_text).pack(side="left")
+        if unit:
+            ttk.Label(cell, text=unit, style="Muted.TLabel").pack(side="left", padx=(4, 0))
+        self._vars[key] = var
+
+    def _check(self, row: int, col: int, key: str, label: str, value: bool, help_text: str) -> None:
+        var = tk.BooleanVar(value=bool(value))
+        tip(ttk.Checkbutton(self, text=label, variable=var), help_text).grid(
+            row=row, column=col, columnspan=2, sticky="w", pady=1)
+        self._vars[key] = var
+
+    def _choice(self, row: int, key: str, label: str, names: dict, value: int, help_text: str) -> None:
+        tip(ttk.Label(self, text=label), help_text).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=1)
+        choices = [f"{k} · {name}" for k, name in names.items()]
+        if value not in names:
+            choices.append(str(value))
+        var = tk.StringVar(value=next((c for c in choices if c.split(" ·", 1)[0] == str(value)), str(value)))
+        ttk.Combobox(self, textvariable=var, values=choices, state="readonly", width=40).grid(
+            row=row, column=1, columnspan=5, sticky="w", pady=1)
+        self._vars[key] = var
+
     def render(self) -> None:
         for child in self.winfo_children():
             child.destroy()
@@ -502,76 +566,172 @@ class MapSettingsForm(ttk.Frame):
         if data is None or data.capacity is None:
             ttk.Label(self, text="This chapter has no map open.", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
             return
-        form = self
-        cap = data.capacity
-        size = f"Map {cap.x_size} × {cap.y_size} tiles"
-        buffer = data.extra.grid_buffer if data.extra is not None else 0
-        if 0 < buffer * 2 < min(cap.x_size, cap.y_size):
-            size += f"   ·   playable grid {cap.x_size - 2 * buffer} × {cap.y_size - 2 * buffer} (inside a {buffer}-tile border)"
-        ttk.Label(form, text="Map capacity", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, columnspan=8, sticky="w")
-        ttk.Label(form, text=f"{size}   ·   {cap.build_desc_count} object types   ·   {cap.build_inst_count} placed objects",
-                  style="Muted.TLabel").grid(row=1, column=0, columnspan=8, sticky="w", pady=(0, 4))
-        ttk.Label(form, text="Scale unit").grid(row=2, column=0, sticky="w")
-        var = tk.StringVar(value=str(cap.scale_unit))
-        ttk.Entry(form, textvariable=var, width=10).grid(row=2, column=1, sticky="w")
-        self._vars["capacity:scale_unit"] = var
-        row = 3
-        for prefix, title, _patch, rows in SETTINGS_SECTIONS:
-            record = getattr(data, prefix)
-            if record is None:
-                continue
-            ttk.Label(form, text=title, font=("Segoe UI", 10, "bold")).grid(row=row, column=0, columnspan=8, sticky="w", pady=(12, 2))
+        cap, extra, us = data.capacity, data.extra, self.map.verified_us_map_layout
+        row = self._section(0, "grid", "Grid")
+        size = f"{cap.x_size} × {cap.y_size} tiles"
+        tip(ttk.Label(self, text="Map size"), "The whole map, border included. Changing it needs a new map.").grid(
+            row=row, column=0, sticky="w")
+        ttk.Label(self, text=size, style="Muted.TLabel").grid(row=row, column=1, columnspan=3, sticky="w")
+        row += 1
+        if extra is not None:
+            playable = (f"playable {cap.x_size - 2 * extra.grid_buffer} × {cap.y_size - 2 * extra.grid_buffer}"
+                        if 0 < extra.grid_buffer * 2 < min(cap.x_size, cap.y_size) else "")
+            self._number(row, 0, "extra:grid_buffer", "Border", extra.grid_buffer,
+                         "Tiles along each edge that units and the cursor cannot enter.", "tiles  " + playable)
             row += 1
-            col = 0
-            for spec in rows:
-                if spec[0] == "rgb":
-                    if col:
-                        col, row = 0, row + 1
-                    row = self._colour_row(form, row, prefix, record, spec[1], spec[2])
-                    continue
-                f, label = spec
-                if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order") and not self.map.verified_us_map_layout:
-                    continue
-                ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 10, 4))
-                value = getattr(record, f)
-                if isinstance(value, bool):
-                    value = int(value)
-                var = tk.StringVar(value=hex(value) if f == "unknown_tail" else str(value))
-                ttk.Entry(form, textvariable=var, width=10).grid(row=row, column=col + 1, sticky="w", pady=1)
-                self._vars[f"{prefix}:{f}"] = var
-                col += 2
-                if col >= 6:
-                    col, row = 0, row + 1
-            row += 1 if col else 0
-        hint = ("Sight code 0–3 is active only on difficulty 1; codes 1/2/3 select runtime modes 3/1/2. "
-                "The raw flags also contain 0x20 water and 0x10000000 footprint testing. "
-                "Bit 0x02 is probably unused in the US build and is preserved raw.") if self.map.verified_us_map_layout else (
-                "This region's map flags remain available as a raw value; named US modes are hidden.")
-        ttk.Label(form, text=hint,
-                  style="Muted.TLabel", wraplength=720, justify="left").grid(row=row, column=0, columnspan=8, sticky="w", pady=(4, 0))
-        ttk.Button(form, text="Apply", style="Accent.TButton", command=self._apply).grid(row=row + 1, column=0, sticky="w", pady=(10, 0))
+        if data.grid is not None:
+            row = self._colour_row(row, "grid", data.grid, "Line colour", ("red", "green", "blue"),
+                                   "Colour of the grid lines (their strength is set by scripts with SetGrid).")
+        if data.light is not None:
+            row = self._section(row, "light", "Lighting")
+            light = data.light
+            self._number(row, 0, "light:angle_y", "Direction", light.angle_y,
+                         "Horizontal angle of the light, in degrees.", "° around")
+            self._number(row, 2, "light:angle_z", "Height", light.angle_z,
+                         "Vertical angle of the light, in degrees.", "° up")
+            row += 1
+            row = self._colour_row(row, "light", light, "Model colour", ("model_red", "model_green", "model_blue"),
+                                   "Base colour applied to the map's models.")
+            row = self._colour_row(row, "light", light, "Light colour", ("light_red", "light_green", "light_blue"),
+                                   "Colour of the directional light.")
+        if data.fog is not None:
+            row = self._section(row, "fog", "Distance fog")
+            fog = data.fog
+            self._check(row, 0, "fog:enabled", "Fog on", fog.enabled, "Draw the distance fog on this map.")
+            row += 1
+            distance_help = "Distance from the camera, in tiles (the game scales it by 5 × map scale)."
+            self._number(row, 0, "fog:start_distance", "Starts at", fog.start_distance,
+                         "Where the fog begins. " + distance_help, "tiles")
+            self._number(row, 2, "fog:end_distance", "Full at", fog.end_distance,
+                         "Where the fog hides everything. " + distance_help, "tiles")
+            row += 1
+            if fog.mode_code:  # 0 on every vanilla map
+                self._number(row, 0, "fog:mode_code", "Fog type", fog.mode_code,
+                             "Render fog type minus 1. 0 on every vanilla map.")
+                row += 1
+            row = self._colour_row(row, "fog", fog, "Colour", ("red", "green", "blue"), "Colour of the fog.")
+        if extra is not None and us:
+            row = self._section(row, "weather", "Weather")
+            self._choice(row, "extra:weather_id", "Weather", WEATHER_NAMES, extra.weather_id,
+                         "Effect drawn over the map: rain, snow, sandstorm, waves...")
+            row += 1
+            row = self._sky_row(row, extra.weather_id)
+            self._choice(row, "extra:sight_code", "Fog of war", SIGHT_NAMES, extra.sight_code,
+                         "Fog of war hides the units outside your units' vision. The game uses it on Hard "
+                         "only (any difficulty above Normal in the Japanese release).")
+            row += 1
+        if extra is not None:
+            row = self._section(row, "advanced", "Advanced")
+            self._number(row, 0, "extra:texture_projection_extent_x2", "Texture projection",
+                         extra.texture_projection_extent_x2,
+                         "Twice the size of the map's projected ground texture (the engine uses half of it).")
+            row += 1
+            self._number(row, 0, "extra:panel_offset_x", "Panel offset X", extra.panel_offset_x,
+                         "Read by a 2D panel draw; its effect is not decoded. Keep the vanilla value.")
+            self._number(row, 2, "extra:panel_offset_y", "Panel offset Y", extra.panel_offset_y,
+                         "Read by a 2D panel draw; its effect is not decoded. Keep the vanilla value.")
+            row += 1
+            if us:
+                self._check(row, 0, "extra:preserve_object_order", "Objects already sorted",
+                            extra.preserve_object_order,
+                            "Set on every vanilla map. When off, the game sorts the placed objects on load "
+                            "and sets it.")
+                row += 1
+            other = extra.unknown_tail & ~(map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK
+                                           | map_file.MAP_EXTRA_OBJECT_ORDER_MASK) if us else extra.unknown_tail
+            self._number(row, 0, "extra:other_flags", "Other map flags", hex(other),
+                         "0x20 draws water, 0x04 and 0x10 pick texture effects, 0x10000000 tests object "
+                         "footprints (roofs). 0x02 is set on every vanilla map and not read.")
+            row += 1
+        ttk.Button(self, text="Apply", style="Accent.TButton", command=self._apply).grid(
+            row=row, column=0, sticky="w", pady=(12, 0))
+        row += 1
 
         waters = self.map.water_names()
-        ttk.Label(form, text="Water", font=("Segoe UI", 10, "bold")).grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(18, 2))
-        ttk.Label(form, text=("Water objects: " + ", ".join(waters)) if waters else "This map has no water.",
-                  style="Muted.TLabel").grid(row=row + 3, column=0, columnspan=8, sticky="w")
-        water = ttk.Frame(form)
-        water.grid(row=row + 4, column=0, columnspan=8, sticky="w", pady=(4, 0))
+        head = ttk.Frame(self)
+        head.grid(row=row, column=0, columnspan=8, sticky="w", pady=(22, 2))
+        ttk.Label(head, text="Water", font=("Segoe UI", 10, "bold")).pack(side="left")
+        info(head, "The animated water surface objects of the map.").pack(side="left", padx=(4, 0))
+        ttk.Label(self, text=("Water objects: " + ", ".join(waters)) if waters else "This map has no water.",
+                  style="Muted.TLabel").grid(row=row + 1, column=0, columnspan=8, sticky="w")
+        water = ttk.Frame(self)
+        water.grid(row=row + 2, column=0, columnspan=8, sticky="w", pady=(4, 0))
         ttk.Button(water, text="Import water .glb...", command=lambda: self._undoable(lambda: self.map.import_water(self))).pack(side="left")
         ttk.Button(water, text="Water flow...", command=lambda: self._undoable(lambda: self.map.water_flow(self))).pack(side="left", padx=(6, 0))
 
-    def _colour_row(self, form, row: int, prefix: str, record, label: str, fields) -> int:
-        """Red, green and blue byte fields with a swatch and a colour picker
-        (which applies at once); returns the next free row."""
-        ttk.Label(form, text=f"{label} (R, G, B)").grid(row=row, column=0, sticky="w")
+    def _session(self):
+        session = getattr(self.builder, "fe8_session", None)
+        session = session() if callable(session) else session
+        return session if session is not None and getattr(session, "available", False) else None
+
+    def _sky_row(self, row: int, weather_id: int) -> int:
+        """The sky behind this map's battles: BattleSkyData's entry for its weather id."""
+        session = self._session()
+        if session is None:
+            return row
+        skies = fe8data.read_battle_skies(session.data)
+        current = skies[weather_id] if weather_id < len(skies) else None
+        sharing = [i for i, name in enumerate(skies) if name == current and i != weather_id]
+        tip(ttk.Label(self, text="Battle sky"),
+            f"The sky drawn behind this map's fights: BattleSkyData's entry {weather_id} (the weather id). Every "
+            "map with this weather uses it" + (f"; weather ids {', '.join(map(str, sharing))} show the same sky"
+                                                if sharing else "") +
+            ". It is saved with FE8Data.bin (Chapter data › Save FE8Data.bin).").grid(row=row, column=0, sticky="w")
+        cell = ttk.Frame(self)
+        cell.grid(row=row, column=1, columnspan=5, sticky="w", pady=1)
+        from .battle_scene_editor import scene_models
+
+        names = sorted(scene_models(self.builder.project))
+        var = tk.StringVar(value=current or "")
+        box = ttk.Combobox(cell, textvariable=var, values=[""] + names, state="readonly", width=24)
+        box.pack(side="left")
+        box.bind("<<ComboboxSelected>>", lambda e: self._set_sky(weather_id, var.get()))
+        ttk.Button(cell, text="Browse in 3D…", command=lambda: self._browse_sky(weather_id, var.get(), names)).pack(
+            side="left", padx=(6, 0))
+        return row + 1
+
+    def _browse_sky(self, weather_id: int, current: str, names: list[str]) -> None:
+        from .battle_scene_editor import BattleSceneBrowser
+
+        dialog = BattleSceneBrowser(self, self.builder.project, names, current or None, title="Battle skies")
+        self.wait_window(dialog)
+        if dialog.result:
+            self._set_sky(weather_id, dialog.result)
+
+    def _set_sky(self, weather_id: int, name: str) -> None:
+        session = self._session()
+        if session is None:
+            return
+        skies = list(fe8data.read_battle_skies(session.data))
+        while len(skies) <= weather_id:
+            skies.append(None)
+        if skies[weather_id] == (name or None):
+            return
+        skies[weather_id] = name or None
+        try:
+            session.data = fe8data.write_battle_skies(session.data, skies)
+        except ValueError as exc:
+            messagebox.showerror("Battle sky", str(exc), parent=self)
+            return
+        session.changed(self)
+        self.builder.changelog.append("FE8Data.bin", f"Battle sky of weather {weather_id}: {name or 'none'}")
+        self.render()
+
+    def _colour_row(self, row: int, prefix: str, record, label: str, fields, help_text: str) -> int:
+        """A colour as a swatch and a picker (which applies at once), with the
+        red, green and blue bytes beside it; returns the next free row."""
+        tip(ttk.Label(self, text=label), help_text).grid(row=row, column=0, sticky="w", pady=1)
+        cell = ttk.Frame(self)
+        cell.grid(row=row, column=1, columnspan=5, sticky="w", pady=1)
         names = [f"{prefix}:{f}" for f in fields]
-        for i, (f, name) in enumerate(zip(fields, names)):
+        swatch = tk.Label(cell, width=4, relief="solid", borderwidth=1,
+                          bg=_hex_colour([getattr(record, f) for f in fields]) or "#000000")
+        swatch.pack(side="left")
+        for f, name, letter in zip(fields, names, "RGB"):
             var = tk.StringVar(value=str(getattr(record, f)))
             self._vars[name] = var
-            ttk.Entry(form, textvariable=var, width=10).grid(row=row, column=1 + 2 * i, sticky="w", pady=1)
-        swatch = tk.Label(form, width=4, relief="solid", borderwidth=1,
-                          bg=_hex_colour([getattr(record, f) for f in fields]) or "#000000")
-        swatch.grid(row=row, column=6, sticky="w", padx=(10, 4))
+            ttk.Label(cell, text=letter, style="Muted.TLabel").pack(side="left", padx=(8, 2))
+            ttk.Entry(cell, textvariable=var, width=4).pack(side="left")
 
         def refresh(*_):
             colour = _hex_colour([self._vars[n].get() for n in names])
@@ -589,54 +749,55 @@ class MapSettingsForm(ttk.Frame):
                     self._vars[name].set(str(int(value)))
                 self._apply()
 
-        ttk.Button(form, text="Pick...", command=pick).grid(row=row, column=7, sticky="w")
+        ttk.Button(cell, text="Pick...", command=pick).pack(side="left", padx=(10, 0))
         return row + 1
 
     def _undoable(self, action) -> None:
         self.builder.run_undoable(action)
 
+    def _value(self, key: str) -> int:
+        var = self._vars[key]
+        if isinstance(var, tk.BooleanVar):
+            return int(var.get())
+        text = var.get().strip()
+        return int(text.split(" ·", 1)[0], 0)
+
     def _apply(self) -> None:
         data = self.map.map_data
         if data is None:
             return
+        patches = {"light": map_file.patch_light_field, "fog": map_file.patch_fog_field,
+                   "grid": map_file.patch_grid_field, "extra": map_file.patch_extra_field}
+        pending = []
         try:
-            pending = [(data.capacity, "scale_unit", float(self._vars["capacity:scale_unit"].get()), map_file.patch_capacity_field)]
-            for prefix, _title, patch, rows in SETTINGS_SECTIONS:
-                record = getattr(data, prefix)
-                if record is None:
+            for key in self._vars:
+                prefix, f = key.split(":", 1)
+                if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order", "other_flags"):
                     continue
-                for f in _section_fields(rows):
-                    if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order", "unknown_tail"):
-                        continue
-                    value = int(self._vars[f"{prefix}:{f}"].get(), 0)
-                    if value != getattr(record, f):
-                        pending.append((record, f, value, patch))
-            if data.extra is not None:
-                extra = data.extra
-                flags = int(self._vars["extra:unknown_tail"].get(), 0)
+                record = getattr(data, prefix)
+                value = self._value(key)
+                if record is not None and value != getattr(record, f):
+                    pending.append((record, f, value, patches[prefix]))
+            extra = data.extra
+            if extra is not None:
+                flags = self._value("extra:other_flags")
                 if not 0 <= flags <= 0xFFFFFFFF:
-                    raise ValueError("Raw map flags must be a 32-bit value.")
+                    raise ValueError("Other map flags must be a 32-bit value.")
                 if self.map.verified_us_map_layout:
-                    sight = int(self._vars["extra:sight_code"].get(), 0)
-                    weather = int(self._vars["extra:weather_id"].get(), 0)
-                    keep_order = int(self._vars["extra:preserve_object_order"].get(), 0)
-                    if not 0 <= sight <= 3 or (weather != extra.weather_id and not 0 <= weather <= 17):
-                        raise ValueError("Sight code must be 0–3 and weather ID must be 0–17.")
-                    if keep_order not in (0, 1):
-                        raise ValueError("Keep object file order must be 0 or 1.")
-                    if sight != extra.sight_code:
-                        flags = (flags & ~map_file.MAP_EXTRA_SIGHT_MASK) | (sight << 18)
-                    if weather != extra.weather_id:
-                        flags = (flags & ~map_file.MAP_EXTRA_WEATHER_MASK) | (weather << 20)
-                    if keep_order != extra.preserve_object_order:
-                        flags = (flags & ~map_file.MAP_EXTRA_OBJECT_ORDER_MASK) | (keep_order << 29)
+                    known = (map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK
+                             | map_file.MAP_EXTRA_OBJECT_ORDER_MASK)
+                    flags = ((flags & ~known) | (self._value("extra:sight_code") << 18)
+                             | (self._value("extra:weather_id") << 20)
+                             | (self._value("extra:preserve_object_order") << 29))
                 if flags != extra.unknown_tail:
                     pending.append((extra, "unknown_tail", flags, map_file.patch_extra_field))
+                if data.capacity is not None:  # keep the half sizes in step with the map size
+                    for f, size in (("half_x_size", data.capacity.x_size), ("half_y_size", data.capacity.y_size)):
+                        if getattr(extra, f) != (size + 1) // 2:
+                            pending.append((extra, f, (size + 1) // 2, map_file.patch_extra_field))
         except ValueError as exc:
             messagebox.showerror("Map settings", str(exc), parent=self)
             return
-        if pending[0][2] == data.capacity.scale_unit:
-            pending.pop(0)
         if not pending:
             return
 

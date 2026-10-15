@@ -283,6 +283,40 @@ def preview_image(project, layer) -> Image.Image:
     return images[layer_texture(layer)]
 
 
+def texture_files(project) -> list[str]:
+    """Every .tpl a layer can name: the files under files/ (.cms ones are
+    compressed, those of s/ have no extension) and, for Path of Radiance, the
+    ones inside system.cmp (paths relative to files/)."""
+    names = set()
+    if project.files_dir.is_dir():
+        names = {path.relative_to(project.files_dir).as_posix()
+                 for pattern in ("*.tpl", "*.cms") for path in project.files_dir.rglob(pattern)}
+    folder = project.files_dir / "s"  # the rect textures: .tpl files without the extension
+    if folder.is_dir():
+        names.update(f"s/{path.name}" for path in folder.iterdir() if path.is_file() and not path.suffix)
+    archive_path = project.files_dir / "system.cmp"
+    if not is_fe10(project) and archive_path.is_file():
+        stat = archive_path.stat()
+        known = {name.casefold() for name in names}
+        names.update(name for name in _system_archive_files(archive_path, stat.st_mtime_ns, stat.st_size)
+                     if name.endswith(".tpl") and name not in known)
+    return sorted(names, key=str.casefold)
+
+
+def texture_images(project, file_name: str) -> list[Image.Image]:
+    """The images of one .tpl a layer can name (see :func:`texture_files`)."""
+    path = image_path(project, file_name)
+    if path.is_file():
+        raw = path.read_bytes()
+    else:
+        archive_path = project.files_dir / "system.cmp"
+        stat = archive_path.stat()
+        raw = _system_archive_files(archive_path, stat.st_mtime_ns, stat.st_size)[file_name.casefold()]
+    if raw[:1] == b"\x10":
+        raw = lz10.decompress(raw)
+    return tpl.read_tpl_images(io.BytesIO(raw))
+
+
 def new_texture_path(project, rect_path: Path) -> tuple[Path, str]:
     folder = rect_path.parent
     if folder.name.casefold() == "s":

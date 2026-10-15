@@ -18,8 +18,10 @@ from ..formats import dbx
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import tip
 
 RIG_ENTRY = "zdbx/camera.dbx"
+NO_SCENERY = "(no scenery)"
 FRAME_COLUMNS = (
     ("n", "#", 36), ("pos", "Position x, y, z", 150), ("rot", "Rotation x, y, z", 150),
     ("dist", "Distance", 70), ("time", "Time", 60),
@@ -83,7 +85,7 @@ class BattleCameraViewer(EditorPanel):
         self._camera_box.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=2)
 
         self._frame_tree = ttk.Treeview(right, columns=[c[0] for c in FRAME_COLUMNS], show="headings",
-                                        selectmode="browse", height=8)
+                                        selectmode="browse", height=5)
         for key, title, width in FRAME_COLUMNS:
             self._frame_tree.heading(key, text=title)
             self._frame_tree.column(key, width=width, anchor="w")
@@ -111,6 +113,52 @@ class BattleCameraViewer(EditorPanel):
         ttk.Button(bottom, text="Apply script", command=self._apply_script).pack(side="left")
         ttk.Button(bottom, text="Restore original", command=self._restore_script).pack(side="left", padx=(6, 0))
         ttk.Button(bottom, text="Add script...", command=self._add_script).pack(side="left", padx=(6, 0))
+
+        preview = ttk.Frame(right)
+        preview.pack(fill="x", pady=(10, 0))
+        tip(ttk.Button(preview, text="Preview", style="Accent.TButton", command=self._preview),
+            "Plays a short fight (Ike with an Iron Sword against a Fighter with an Iron Axe) with this script, "
+            "as edited here, driving the camera from the first frame.").pack(side="left")
+        ttk.Label(preview, text="Scenery").pack(side="left", padx=(12, 4))
+        self._scenery = tk.StringVar(value=NO_SCENERY)
+        self._scenery_box = ttk.Combobox(preview, textvariable=self._scenery, state="readonly", width=24,
+                                         values=[NO_SCENERY])
+        self._scenery_box.pack(side="left")
+        self._scenery_box.bind("<<ComboboxSelected>>", lambda _e: self._preview())
+        self._player_parent = right
+        self._player = None  # the BattlePlayer, made on the first preview
+
+    def _preview(self) -> None:
+        """Play the preview fight with the selected script as edited (not yet applied)."""
+        name = self._selected_script()
+        if name is None:
+            self._say("Select a camera script to preview.")
+            return
+        from .. import battle_sim
+        from ..formats import fe8data
+        from .battle_window import BattlePlayer, preview_log
+
+        script = bc.CameraScript(name, self._caption.get(), self._camera.get().strip(), tuple(self._frames))
+        try:
+            fe8 = fe8data.read_fe8data(self._project.read_logical("game_data"))
+        except Exception as exc:  # noqa: BLE001 - no game data: nothing to stage
+            self._fail(exc)
+            return
+        rules = battle_sim.Fe9Rules()
+        if self._player is None:
+            self._player = BattlePlayer(self._player_parent, self._project.files_dir, rules, fe8)
+            self._player.pack(fill="both", expand=True, pady=(6, 0))
+            self._scenery_box.configure(values=[NO_SCENERY] + sorted(self._player.sceneries(), key=str.casefold))
+            if self._scenery.get() == NO_SCENERY and "map03_ground01" in self._player.sceneries():
+                self._scenery.set("map03_ground01")
+        scenery = self._scenery.get()
+        self._player.play(preview_log(fe8, rules), 1, None if scenery == NO_SCENERY else scenery,
+                          camera_script=script)
+
+    def cleanup(self) -> None:
+        if self._player is not None:
+            self._player.cleanup()
+        super().cleanup()
 
     # -- rigs tab ----------------------------------------------------------------
     def _build_rigs(self, tab: ttk.Frame) -> None:

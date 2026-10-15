@@ -34,6 +34,7 @@ from ..game_profile import SHOPS, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 NONE_LABEL = "(none)"
 LIST_KINDS = ("W", "I")
@@ -146,15 +147,34 @@ class ShopEditor(EditorPanel):
             self._pickers[kind] = var
             self._picker_boxes.append(box)
 
-        ttk.Label(forge, text="Forge", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(forge, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "Each row is a weapon family (Swords, Lances, etc.); each fixed column is a base choice "
-            "(Iron, Slim, Steel, etc.). At their intersection, choose the item the player can forge. "
-            "(none) removes that choice. This table is separate for each chapter and difficulty. "
-            "Changing a cell changes the offered item, not its stats or price; click Save Shops to write it.")
-                  ).pack(anchor="w")
+        head = ttk.Frame(forge)
+        head.pack(fill="x")
+        ttk.Label(head, text="Forge", style="Heading.TLabel").pack(side="left")
+        info(head, "Tick the weapons the player can forge in this chapter (this difficulty). The forge offers "
+                   "each weapon under its family and base; Save Shops writes the list.").pack(
+            side="left", padx=(6, 0))
+        self._grid_shown = tk.BooleanVar(value=False)
+        tip(ttk.Checkbutton(head, text="Other items…", variable=self._grid_shown, command=self._toggle_forge_grid),
+            "Show the raw grid (family × base) to offer a weapon the game does not normally forge there.").pack(
+            side="left", padx=(16, 0))
+        checks = ttk.Frame(forge)
+        checks.pack(anchor="w", pady=(4, 0))
+        self._forge_checks: dict[int, tuple[tk.BooleanVar, ttk.Checkbutton]] = {}
+        for r, row_name in enumerate(shop.FORGE_ROW_NAMES):
+            ttk.Label(checks, text=row_name).grid(row=r, column=0, sticky="w", padx=(0, 10), pady=1)
+            column = 1
+            for c in range(len(shop.FORGE_BASES)):
+                cell = r * len(shop.FORGE_BASES) + c
+                if shop.FORGE_DEFAULT_ITEMS[cell] is None:
+                    continue
+                var = tk.BooleanVar()
+                check = ttk.Checkbutton(checks, text=shop.FORGE_DEFAULT_ITEMS[cell], variable=var,
+                                        command=lambda i=cell: self._toggle_forge(i))
+                check.grid(row=r, column=column, sticky="w", padx=(0, 12), pady=1)
+                self._forge_checks[cell] = (var, check)
+                column += 1
         grid = ttk.Frame(forge)
-        grid.pack(anchor="w", pady=(4, 0))
+        self._forge_grid = grid
         for c, base in enumerate(shop.FORGE_BASES):
             ttk.Label(grid, text=shop.FORGE_BASE_NAMES[base]).grid(row=0, column=c + 1, sticky="w", padx=2)
         self._forge_vars: list[tk.StringVar] = []
@@ -215,6 +235,9 @@ class ShopEditor(EditorPanel):
             box["values"] = labels
         for box in self._forge_boxes:
             box["values"] = [NONE_LABEL] + list(self._forge_labels.values())
+        for cell, (_var, check) in self._forge_checks.items():
+            iid = shop.FORGE_DEFAULT_ITEMS[cell]
+            check.configure(text=names.get(iid) or iid)
 
     def _label(self, value) -> str:
         if not value:
@@ -298,6 +321,7 @@ class ShopEditor(EditorPanel):
         for i, var in enumerate(self._forge_vars):
             item = cells[i][0] if i < len(cells) else None
             var.set("" if item is None else self._forge_labels.get(item, item) if item else NONE_LABEL)
+        self._sync_forge_checks()
         self._update_status()
 
     def _item_name(self, iid) -> str:
@@ -421,6 +445,37 @@ class ShopEditor(EditorPanel):
         self._changed([self._difficulty], f"{self._where(kind)}: moved {items[index + step]}")
         self._select(kind, index + step)
 
+    def _toggle_forge_grid(self) -> None:
+        if self._grid_shown.get():
+            self._forge_grid.pack(anchor="w", pady=(8, 0))
+        else:
+            self._forge_grid.pack_forget()
+
+    def _sync_forge_checks(self) -> None:
+        """Tick the weapons the forge section offers; a cell holding another item shows it."""
+        section = self._sections().get("F")
+        cells = shop.forge_cells(section) if section else []
+        for cell, (var, check) in self._forge_checks.items():
+            item = cells[cell][0] if cell < len(cells) else None
+            default = shop.FORGE_DEFAULT_ITEMS[cell]
+            var.set(bool(item))
+            name = self._item_name(default)
+            if item and item != default:
+                name = f"{self._item_name(item)} (instead of {name})"
+            check.configure(text=name, state="normal" if section is not None else "disabled")
+
+    def _toggle_forge(self, cell: int) -> None:
+        var, _check = self._forge_checks[cell]
+        current = self._forge_vars[cell].get()
+        if var.get():
+            if current in ("", NONE_LABEL):
+                default = shop.FORGE_DEFAULT_ITEMS[cell]
+                self._forge_vars[cell].set(self._forge_labels.get(default, default))
+        else:
+            self._forge_vars[cell].set(NONE_LABEL)
+        self._set_forge(cell)
+        self._sync_forge_checks()
+
     def _set_forge(self, cell: int) -> None:
         section = self._sections().get("F")
         if section is None:
@@ -433,6 +488,8 @@ class ShopEditor(EditorPanel):
         row, base = divmod(cell, len(shop.FORGE_BASES))
         where = f"{shop.FORGE_ROW_NAMES[row]} / {shop.FORGE_BASE_NAMES[shop.FORGE_BASES[base]]}"
         self._changed([self._difficulty], f"{self._where('F')}: {where} = {iid or 'none'}")
+        if cell in self._forge_checks:
+            self._sync_forge_checks()
 
     def _edit_price(self, kind: str) -> None:
         section = self._sections().get(kind)

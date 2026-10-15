@@ -22,6 +22,7 @@ from ..character_form import CharacterForm
 from ..shell import Page, plain_text
 from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header
+from ..widgets import info as help_mark
 
 CATEGORY_CHIPS = {PLAYABLE: "chip_playable", NAMED: "chip_named", GENERIC: "chip_generic"}
 TABS = ["stats", "supports", "look", "appearances", "scripts"]
@@ -190,7 +191,8 @@ class CharacterPage(Page):
         stats = ScrollFrame(self._notebook, padding=(16, 12))
         self._form = CharacterForm(stats.body, shell.session,
                                    on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
-                                   on_open_character=self._open_character, project=shell.project)
+                                   on_open_character=self._open_character, project=shell.project,
+                                   navigate=shell.navigate)
         self._form.pack(fill="both", expand=True)
         support_scroll = ScrollFrame(self._notebook, padding=(16, 12))
         self._build_supports(support_scroll.body)
@@ -414,10 +416,9 @@ class CharacterPage(Page):
             if model:
                 ttk.Button(models, text="Open in 3D Models", command=lambda m=model: self.shell.navigate(
                     ("asset", "models", m))).grid(row=r, column=3, sticky="w")
-        ttk.Label(models, style="SurfaceCaption.TLabel", wraplength=720, justify="left",
-                  text="Models are shared by every unit that resolves to them. To give this character a model of "
-                       "their own, open the model and use New slot…; Model tables… shows the lines that pick it.").grid(
-            row=len(rows), column=0, columnspan=4, sticky="w", pady=(10, 0))
+        help_mark(models, "Models are shared by every unit that resolves to them. To give this character a model "
+                          "of their own, open the model and use New slot…; Model tables… shows the lines that "
+                          "pick it.", bg_token="surface").grid(row=len(rows), column=0, sticky="w", pady=(10, 0))
         ttk.Button(body, text="Simulate a battle…", command=lambda: self.shell.navigate(
             ("asset", "battle_sim", info.pid))).pack(anchor="w", pady=(16, 0))
 

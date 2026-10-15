@@ -92,5 +92,27 @@ class PatchTests(unittest.TestCase):
         self.assertFalse((self.target.parent / "escape.bin").exists())
 
 
+class PatcherTests(unittest.TestCase):
+    def test_the_patch_given_or_the_only_one_beside_the_program(self):
+        from fe_modding import patcher
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.assertEqual(patcher.find_patch([], folder), "")
+            (folder / "mod.tpatch").write_bytes(b"")
+            self.assertEqual(patcher.find_patch([], folder), str(folder / "mod.tpatch"))
+            self.assertEqual(patcher.find_patch(["other.TPATCH"], folder), "other.TPATCH")
+            (folder / "second.tpatch").write_bytes(b"")
+            self.assertEqual(patcher.find_patch([], folder), "")  # two: the player chooses
+
+    def test_self_test_report(self):
+        from fe_modding import patcher
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            self.assertEqual(patcher.self_test(str(report)), 0)
+            self.assertTrue(json.loads(report.read_text(encoding="utf-8"))["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

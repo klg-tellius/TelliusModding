@@ -7,8 +7,9 @@ from ``zdbx/param.dbx`` and the models' ``_prm.dbx``, and the game camera
 plays the ``xcam/`` scripts: nothing is picked by hand. Loading models is
 slow, so they are cached for the window's life.
 
-Used by the battle simulator's "Render fight" button and by the playthrough
-(:mod:`.playthrough_battle`).
+Used by the battle simulator's "Render fight" button, by the playthrough
+(:mod:`.playthrough_battle`) and, as a :class:`BattlePlayer` frame, by the
+Battle Cameras page's preview.
 """
 
 from __future__ import annotations
@@ -18,32 +19,51 @@ from pathlib import Path
 from tkinter import ttk
 from typing import Optional
 
+from .. import battle_sim
 from ..battle_sim import camera as battle_camera
 from ..battle_sim import scene_assets as sa
+from ..battle_sim.units import weapon_from_item
 from ..formats import effects as effects_fmt
 from . import battle_stage
 
+#: The camera preview's fight: Ike with an Iron Sword against a level-1 Fighter with an Iron Axe.
+PREVIEW_UNITS = (("PID_IKE", "Ike", "IID_IRONSWORD"), ("JID_FIGHTER", "Fighter", "IID_IRONAXE"))
 
-class BattleWindow(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, title: str = "Battle"):
+
+def preview_log(fe8, rules, distance: int = 1):
+    """A fight between :data:`PREVIEW_UNITS` (every strike that can hit hits)."""
+    units = []
+    for label, name, iid in PREVIEW_UNITS:
+        try:
+            unit = (battle_sim.from_character(fe8, label, name=name) if label.startswith("PID_")
+                    else battle_sim.from_class(fe8, label, name=name))
+        except (KeyError, AttributeError):
+            unit = battle_sim.Combatant(name=name)
+        item = next((i for i in (fe8.items if fe8 else ()) if i.iid == iid), None)
+        if item is not None:
+            unit.weapon = weapon_from_item(item)
+        units.append(unit)
+    return battle_sim.simulate(*units, rules=rules, distance=distance)
+
+
+class BattlePlayer(ttk.Frame):
+    """A note line, the staged fight and its playback controls: the body of
+    :class:`BattleWindow`, also embedded by the Battle Cameras page."""
+
+    def __init__(self, parent: tk.Misc, files: Path, rules, fe8):
         super().__init__(parent)
-        self.title(title)
-        self.geometry("880x760")
-        self.minsize(480, 420)
-        self.transient(parent.winfo_toplevel())
         self._files = Path(files)
         self._rules, self._fe8 = rules, fe8
         self._cache = battle_stage.SetCache()
         self._assets: Optional[sa.BattleAssets] = None
         self._camera: Optional[battle_camera.GameCamera] = None
         self._effects: dict = {}
-        self.top = ttk.Frame(self, padding=(8, 6))
+        self.top = ttk.Frame(self, padding=(0, 6))
         self.top.pack(fill="x")
         self._note = ttk.Label(self.top, text="", style="Muted.TLabel")
         self._note.pack(side="left", fill="x", expand=True)
         self.view = battle_stage.StageView(self)
-        self.view.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.view.pack(fill="both", expand=True)
 
     # -- assets -----------------------------------------------------------------------------------
     def assets(self) -> sa.BattleAssets:
@@ -78,13 +98,15 @@ class BattleWindow(tk.Toplevel):
         return self._effects[eid]
 
     # -- playing ----------------------------------------------------------------------------------
-    def play(self, log, distance: int, scenery: Optional[str] = None, *, autoplay: bool = True) -> bool:
+    def play(self, log, distance: int, scenery: Optional[str] = None, *, autoplay: bool = True,
+             camera_script=None) -> bool:
         """Stage ``log`` in ``scenery`` (a ``zbg/`` folder name, or None) and
-        play it. False when nothing could be staged (the note says why)."""
-        self.deiconify()
-        self.lift()
+        play it. With ``camera_script`` (a ``battle_camera.CameraScript``), that
+        script alone drives the camera from the first tick instead of the
+        game's. False when nothing could be staged (the note says why)."""
         assets = self.assets()
         units = [log.attacker, log.defender]
+        top = self.winfo_toplevel()
         try:
             # the attacker as the player's unit, the defender as the enemy's, unless a texture names them
             found = [assets.unit(u, ranged=distance > 1, army=army)
@@ -93,7 +115,7 @@ class BattleWindow(tk.Toplevel):
                 self._note.configure(text="Neither unit has a battle model (jobList.dbx): nothing to play.")
                 self.view.set_stage(None)
                 return False
-            self.configure(cursor="watch")
+            top.configure(cursor="watch")
             self.update_idletasks()
             units3d = [battle_stage.load_unit(self._cache, a) for a in found]
             path = assets.sceneries().get(scenery) if scenery else None
@@ -104,12 +126,20 @@ class BattleWindow(tk.Toplevel):
             camera = self._camera.with_packs(assets.camera_packs([a.code for a in found])) \
                 if self._camera is not None else None
             stage.set_log(log, distance, camera)
+            if camera_script is not None and camera is not None:
+                camera = battle_camera.GameCamera({**camera.scripts, camera_script.name: camera_script},
+                                                  camera.rigs)
+                opening = stage.timeline.camera[0] if stage.timeline.camera else None
+                stage.timeline.camera[:] = [battle_camera.Cue(1, camera_script.name, 0, False,
+                                                              opening.dest if opening is not None else None)]
+                stage.shots = camera.track(stage.timeline.camera, stage.timeline.quakes,
+                                           int(stage.timeline.length))
         except Exception as exc:  # noqa: BLE001 - show what failed instead of a dead window
             self._note.configure(text=f"Could not load the battle models: {exc}")
             self.view.set_stage(None)
             return False
         finally:
-            self.configure(cursor="")
+            top.configure(cursor="")
         notes = []
         for u, a in zip(units, found):
             what = f"{u.name}: {a.code or 'no model'}"
@@ -123,10 +153,39 @@ class BattleWindow(tk.Toplevel):
             self.view.play_when_shown()
         return True
 
+    def cleanup(self) -> None:
+        self.view.cleanup()
+
+
+class BattleWindow(tk.Toplevel):
+    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, title: str = "Battle"):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("880x760")
+        self.minsize(480, 420)
+        self.transient(parent.winfo_toplevel())
+        self.player = BattlePlayer(self, files, rules, fe8)
+        self.player.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.top, self.view = self.player.top, self.player.view
+        self.protocol("WM_DELETE_WINDOW", self.close)
+
+    def assets(self) -> sa.BattleAssets:
+        return self.player.assets()
+
+    def sceneries(self) -> list[str]:
+        return self.player.sceneries()
+
+    def play(self, log, distance: int, scenery: Optional[str] = None, *, autoplay: bool = True) -> bool:
+        """Stage ``log`` in ``scenery`` (a ``zbg/`` folder name, or None) and
+        play it. False when nothing could be staged (the note says why)."""
+        self.deiconify()
+        self.lift()
+        return self.player.play(log, distance, scenery, autoplay=autoplay)
+
     def close(self) -> None:
         self.view.stop()
         if self.winfo_exists():
             self.withdraw()
 
     def cleanup(self) -> None:
-        self.view.cleanup()
+        self.player.cleanup()

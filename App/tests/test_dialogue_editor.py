@@ -261,21 +261,20 @@ class EditorTests(unittest.TestCase):
             span = doc.at_byte(positions[-1])
             self.assertEqual(doc.text[span.start:span.end], '<Wait>')
 
-    def test_import_export_and_undo(self):
+    def test_chapter_export_and_import(self):
         editor = self.editor
-        source = Path(self.temp.name) / 'source.txt'
         target = Path(self.temp.name) / 'export.txt'
-        source.write_text('<Seat:2>Hello<Wait>', encoding='utf-8')
-        before = editor._text_widget.get('1.0', 'end-1c')
-        with patch('fe_modding.gui.dialogue_editor.filedialog.askopenfilename', return_value=str(source)), patch('fe_modding.gui.dialogue_editor.messagebox.askyesnocancel', return_value=True):
-            editor._import_text()
-        self.assertEqual(editor._messages[0].text, '$F2Hello$K')
         with patch('fe_modding.gui.dialogue_editor.filedialog.asksaveasfilename', return_value=str(target)):
-            editor._export_text()
-        self.assertEqual(target.read_text(encoding='utf-8'), source.read_text(encoding='utf-8'))
-        editor._text_widget.edit_undo()
-        editor._flush_edit()
-        self.assertEqual(editor._text_widget.get('1.0', 'end-1c'), before)
+            editor._export_chapter()
+        blocks = editor.parse_chapter_export(target.read_text(encoding='utf-8'))
+        self.assertEqual(len(blocks), len(editor._messages))
+        first_id = blocks[0][0]
+        edited = target.read_text(encoding='utf-8').replace(
+            f'=== {first_id} ===\n{blocks[0][1]}', f'=== {first_id} ===\n<Seat:2>Hello<Wait>', 1)
+        target.write_text(edited, encoding='utf-8')
+        with patch('fe_modding.gui.dialogue_editor.filedialog.askopenfilename', return_value=str(target)):
+            editor._import_chapter()
+        self.assertEqual(editor._messages[0].text, '$F2Hello$K')
 
 
 if __name__ == '__main__':
