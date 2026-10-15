@@ -17,6 +17,8 @@ source_path: "formats/face-data.md"
 
 *How each conversation portrait is assembled from its texture set, placed and layered*
 
+The table is the file `Face/facedata.bin`, a [labeled section](./labeled-section.md): a record count and the 32-byte records, then the strings (each once, sorted) and the pointer list. The game reads the copy inside `system.cmp`.
+
 Every portrait the game can show has one record in the face table, keyed by its `FID_` ID (for example `FID_IKE` for the small portrait, `FID_L_IKE` for the large one). The record names the texture set, says where the eyes and mouth go on the base image, and how far back the character stands. <span class="confidence confidence--confirmed">confirmed</span>
 
 ## Record
@@ -42,3 +44,12 @@ Texture 0 is the base picture. With both parts, textures 1&ndash;3 and 4&ndash;6
 ## Placement
 
 A portrait is anchored by the middle of its bottom edge at its seat and is never resized. Facing the other way mirrors the whole picture. In conversations, the depth byte decides the layering: Titania (depth 54) appears in front of Greil (108) whatever their seat order. In menus such as the status screen and item lists, the large portrait sits at the bottom of a clipped panel, and tall characters are lowered by field 0x1E so their face stays visible: 3 px for Titania, 39 for Gort, 47 for Dheginsea.
+
+## Small and large portraits
+
+A character's record names its small portrait (`FID_IKE`). Wherever the large one is needed (status screen, level-up window, background scenes), the game builds its ID from the `FID_L_` prefix and the rest of the small ID (`FID_L_IKE`), so every character portrait comes as a pair. <span class="confidence confidence--confirmed">engine</span>
+
+## Adding a portrait
+
+A new face needs a texture set in `Face/` and a record pointing at it; nothing in the executable lists the faces. Each set is a palette texture file: the body and its parts share one 256-colour palette, the menu face has its own, so a set made from new pictures can have colours of its own. The app's Portraits page builds both sizes from pictures, writes the records, and can give the new face to a character.
+

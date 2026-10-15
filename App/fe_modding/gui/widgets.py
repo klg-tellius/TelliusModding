@@ -480,6 +480,11 @@ class PortraitCache:
     def close(self) -> None:
         self._closed = True
 
+    def clear(self) -> None:
+        """Forget every drawn face (after a portrait or the face table is
+        saved); the conversation assets reload changed files themselves."""
+        self._photos.clear()
+
     def request(self, fid: Optional[str], size: int, callback: Callable) -> None:
         if not fid:
             return

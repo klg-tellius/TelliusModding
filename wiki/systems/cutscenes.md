@@ -56,7 +56,7 @@ The 43-script retail corpus makes the join rule explicit: native presentation ca
 
 <span id="fe9-sys-301"></span> Chapter scripts select movies in two confirmed forms. `MoviePlay` receives a literal path such as `Movie/s06_M.thp`; `ChapterMoviePlay` receives a numeric chapter-opening identity. The call transfers full-screen/audio/input ownership to the THP player and waits until completion or skip returns control.
 
-Literal-path selection has no music-style cue-table indirection. Numeric chapter playback does require an index-to-resource mapping. The [THP Video Playback](./video-system.md) page owns decoder/buffer/synchronization details; this system owns script selection, scene handoff, wait, skip, and continuation.
+Literal-path selection has no music-style cue-table indirection. `ChapterMoviePlay(N)` always plays the shared `movie/chapter.thp`; the number picks the title card drawn over it, `window/chapter/chapN.cms`. Every retail chapter script passes its own chapter number, so a chapter copied from another must be given its own number to show its own title card. The [THP Video Playback](./video-system.md) page owns decoder/buffer/synchronization details; this system owns script selection, scene handoff, wait, skip, and continuation.
 
 Retail scripts confirm both identities: `MoviePlay` embeds a path such as `Movie/s06_M.thp`, while `ChapterMoviePlay` passes a chapter number. The THP child owns full-screen video/audio/input until end or skip; either terminal path restores the caller and releases the same wait. Invalid media is a failed child presentation, not permission to advance chapter state independently.
 

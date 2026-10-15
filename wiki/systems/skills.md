@@ -182,6 +182,10 @@ Caller ownership is the priority rule: exchange-order skills run while the log i
 
   [Sol](./skill-sol.md) · [Luna](./skill-luna.md) · [Aether](./skill-aether.md) · [Counter](./skill-counter.md) · [Corrosion](./skill-corrosion.md) · [Cancel](./skill-cancel.md) · [Miracle / Pray](./skill-miracle.md) · [Wing Guard](./skill-wing-guard.md) · [Vantage](./skill-vantage.md) · [Steal](./skill-steal.md) · [Chant](./skill-chant.md) · [Canto](./skill-canto.md)
 
+## Why the skill table cannot grow
+
+The skill table holds exactly 98 records. Effects are tied to a skill's position: native code tests a raw table index in 466 places (37 of them compute the index, for example Chant's eight stat records after the base one), and the skill-capacity screens, learnable-skill lists and name lookups loop to a literal 98. An added record would be skipped by those loops and would have no effect anyway. Changing what a skill does, or adding a new effect, means changing the executable. <span class="confidence confidence--confirmed">engine</span>
+
 ## Interactions and review boundary
 
 All skill systems on this page are reviewed without a blocking research gap. Ownership sources, capacity/learning, caller-owned activation stages, RNG/suppression, action commands, AI desirability modifiers, phase-adjacent laguz support handlers, and consequence ordering define the lifecycle. Per-skill coefficients, ranges, amounts, cure masks, and presentation resources are data consumed by those owners and remain appropriate for the detailed skill references. No new primary article is required.

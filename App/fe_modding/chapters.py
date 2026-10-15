@@ -301,8 +301,9 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
 
 
 def _renumber_script(data: bytes, source_padded: str, new_padded: str) -> bytes:
-    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings renamed.
-    A same-length rename keeps every string offset, so the code is untouched."""
+    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings renamed,
+    and its ``ChapterMoviePlay(<source>)`` calls given the new number. A same-length rename
+    keeps every string offset, so the code is untouched apart from that one operand byte."""
     if len(source_padded) != len(new_padded):
         return data
     import struct
@@ -311,7 +312,30 @@ def _renumber_script(data: bytes, source_padded: str, new_padded: str) -> bytes:
     old, new = f"bmap{source_padded}".encode("ascii"), f"bmap{new_padded}".encode("ascii")
     entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else e
                for e in data[pool_start:table_start].split(b"\x00")]
-    return data[:pool_start] + b"\x00".join(entries) + data[table_start:]
+    data = data[:pool_start] + b"\x00".join(entries) + data[table_start:]
+    return _renumber_chapter_movie(data, int(source_padded), int(new_padded))
+
+
+def _renumber_chapter_movie(data: bytes, source: int, new: int) -> bytes:
+    """``ChapterMoviePlay(source)`` -> ``ChapterMoviePlay(new)``. The number picks the title
+    card drawn over ``movie/chapter.thp`` (``window/chapter/chap<N>.cms``); retail scripts pass
+    their own chapter number. Patched in place: ``push8 N`` then ``externCall`` with the name's
+    pool offset and one argument."""
+    import struct
+
+    if not (0 <= source <= 127 and 0 <= new <= 127):
+        return data
+    pool_start, table_start = struct.unpack_from("<II", data, 0x24)
+    name = data.find(b"ChapterMoviePlay\x00", pool_start, table_start)
+    if name == -1 or (name > pool_start and data[name - 1] != 0):
+        return data
+    call = bytes([0x19, source, 0x38]) + struct.pack(">h", name - pool_start) + b"\x01"
+    out = bytearray(data)
+    at = out.find(call, table_start)
+    while at != -1:
+        out[at + 1] = new
+        at = out.find(call, at + len(call))
+    return bytes(out)
 
 
 def _renumber_dispos(compressed: bytes, source_padded: str, new_padded: str) -> bytes:

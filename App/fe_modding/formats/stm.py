@@ -112,6 +112,33 @@ def read_stm_path(path: Path | str) -> StmAudio:
         return read_stm(stream)
 
 
+SAMPLES_PER_BLOCK = 56  # four 14-sample ADPCM frames = 32 bytes
+
+
+def _pad_to_whole_blocks(audio: StmAudio) -> StmAudio:
+    """Lengthen the audio to a multiple of 56 samples, so the channel data
+    size is a whole number of 32-byte blocks as on every retail track (the
+    streamer reads in block-sized chunks). A looping track continues with
+    the samples after its loop start, so the loop stays seamless; a one-shot
+    track gets silence."""
+    count = len(audio.channels[0])
+    extra = -count % SAMPLES_PER_BLOCK
+    if not extra:
+        return audio
+    channels = []
+    for pcm in audio.channels:
+        pcm = list(pcm)
+        if audio.loop_start is not None:
+            tail = []
+            while len(tail) < extra:
+                tail += pcm[audio.loop_start:audio.loop_start + extra - len(tail)] or [0] * (extra - len(tail))
+            pcm += tail
+        else:
+            pcm += [0] * extra
+        channels.append(pcm)
+    return StmAudio(sample_rate=audio.sample_rate, channels=channels, loop_start=audio.loop_start)
+
+
 def write_stm(audio: StmAudio) -> bytes:
     num_channels = len(audio.channels)
     if num_channels not in (1, 2):
@@ -119,6 +146,8 @@ def write_stm(audio: StmAudio) -> bytes:
     num_samples = len(audio.channels[0])
     if any(len(ch) != num_samples for ch in audio.channels):
         raise StmError("All channels must have the same number of samples.")
+    audio = _pad_to_whole_blocks(audio)
+    num_samples = len(audio.channels[0])
 
     channel_data_size = dsp_adpcm.bytes_for_adpcm_samples(num_samples)
     block = _interleave(channel_data_size)
