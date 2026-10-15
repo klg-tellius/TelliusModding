@@ -34,6 +34,14 @@ or assign their authors ownership of this project's code.
 The [full MIT copyright and permission notice](App/licenses/DspTool-MIT.txt)
 is included and must remain with that implementation.
 
+The Game Code tab's **Battle info window** is a port of FE7Dragon's
+[FE9 Battle Info Display Patch v2.0](https://feuniverse.us/t/fe9-battle-info-display-patch-v-2-0/37457)
+(which credits Jade, Vicious Sal, Donlot and TurtleMan64). Its two hook routines are
+FE7Dragon's code, taken from the patch for the US, PAL and JP builds
+(`App/fe_modding/game_code/battle_window_data.py`) and moved into unused MetroTRK space. The
+`battle.dbx` layout follows the patch. The patch's textures are not included: the app
+redraws them from the player's own disc files.
+
 ## Dependencies and external tools
 
 Python dependencies are listed in [App/requirements.txt](App/requirements.txt):

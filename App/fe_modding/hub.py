@@ -377,7 +377,7 @@ def prepare(project, setup: HubSetup) -> dict:
         normal_successor = current["normal_successor"]
     if editor.status(FLOW_PATCH).state == State.CONFLICT:
         raise ValueError("The executable's chapter-flow hook conflicts with another patch.")
-    scratch = Session(Dol(bytes(editor.dol.data)), editor.version)
+    scratch = Session(Dol(bytes(editor.dol.data)), editor.version, editor.session.retail)
     if scratch.patch_status(FLOW_PATCH).state == State.ORIGINAL:
         scratch.set_patch(FLOW_PATCH, True)
     hub_status = scratch.patch_status(HUB_PATCH)

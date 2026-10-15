@@ -21,7 +21,8 @@ def verify(dol: Dol) -> list[str]:
     if ident.version is None or not ident.pristine:
         return [f"Not a retail main.dol ({ident.note or 'unknown'})."]
     problems: list[str] = []
-    session = Session(dol, ident.version)
+    retail = Dol(bytes(dol.data))
+    session = Session(dol, ident.version, retail.read)
     before = dol.sha1()
     for entry in CATALOG.entries.values():
         if ident.version.code not in entry.versions:

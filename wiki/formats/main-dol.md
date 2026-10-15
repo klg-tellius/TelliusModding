@@ -27,6 +27,8 @@ source_path: "formats/main-dol.md"
 
   A DOL header lists several code and initialized-data sections. Each entry supplies a file offset, runtime address, and size. A separate BSS range is allocated as zero-filled memory when the program starts, so runtime tables stored there do not exist as initialized bytes in the file.
 
+  The main code section still links Metrowerks' MetroTRK debug monitor, about 23 KB from `TRKNubMainLoop` (US `0x80225E30`) to `0x8022B6A8`. The layout is the same in every build: PAL starts at `0x8022EB8C` and JP at `0x802205E4`. `__start` only calls `InitMetroTRK` when the boot info at `0x800030E8` reports a debugger (values 2 to 4). TRK's message handlers and single-step, interrupt and register-access code are reached only from TRK itself. So on a retail boot that code never runs, and mods can reuse it as space for new code. The Game Code tab's Battle info window puts its two hook routines at `trk_target_step_out_of_range` (US `0x80229040`). <span class="confidence confidence--confirmed">code</span>
+
 ## Addresses and references
 
   PowerPC instructions operate on 32-bit runtime addresses. Constants and globals are often reached by constructing a base address and then loading from a small offset. Small-data areas provide shorter access to frequently used globals. Function calls use branch-and-link instructions, while tables of function pointers support registries and callbacks.

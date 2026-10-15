@@ -13,8 +13,10 @@ site that is found nowhere makes the entry unavailable; nothing is ever written 
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from dataclasses import dataclass, field
+from typing import Callable
 from enum import Enum
 
 from .dol import Dol, DolError
@@ -49,20 +51,36 @@ class Signature:
 
 @dataclass(frozen=True)
 class Edit:
-    """One byte range of a patch."""
+    """One byte range of a patch.
+
+    A long range of retail code (more than a few instructions) is not copied into the catalog:
+    ``original`` is then empty and ``original_sha1`` identifies the retail bytes, which a revert
+    reads back from the retail executable (:class:`Session` ``retail``)."""
     address: int
     original: bytes
     patched: bytes
     signature: Signature | None = None
     wild: tuple[tuple[int, int], ...] = ()   # (offset, length) ranges a tunable may change after install
+    original_sha1: str = ""
 
     def __post_init__(self):
-        if len(self.original) != len(self.patched):
+        if self.original_sha1 and (self.original or self.wild or self.signature):
+            raise ValueError("A hashed edit has no original bytes, wild ranges or signature.")
+        if not self.original_sha1 and len(self.original) != len(self.patched):
             raise ValueError("A patch edit must not change length.")
 
     @property
+    def length(self) -> int:
+        return len(self.patched)
+
+    @property
     def all_wild(self) -> bool:
-        return sum(length for _, length in self.wild) >= len(self.original)
+        return sum(length for _, length in self.wild) >= self.length
+
+    def is_original(self, seen: bytes) -> bool:
+        if self.original_sha1:
+            return hashlib.sha1(seen).hexdigest() == self.original_sha1
+        return self.matches(seen, self.original)
 
     def matches(self, seen: bytes, reference: bytes) -> bool:
         if not self.wild:
@@ -117,6 +135,9 @@ class Patch:
     description: str
     versions: dict[str, tuple[Edit, ...]]
     internal: bool = False      # a hook that tunables depend on; never listed on its own
+    credit: str = ""            # the author of a third-party mod this ports, shown with it
+    # (install, remove) for the disc files the patch also needs; each takes a GameFiles
+    files: tuple[object, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -174,9 +195,12 @@ def make_signature(dol: Dol, address: int, before: int = 4, after: int = 4) -> S
 class Session:
     """A DOL, its identified version, and the operations on catalog entries."""
 
-    def __init__(self, dol: Dol, version: GameVersion | None):
+    def __init__(self, dol: Dol, version: GameVersion | None,
+                 retail: Callable[[int, int], bytes | None] | None = None):
+        """``retail(address, length)`` reads the retail executable, for reverting hashed edits."""
         self.dol = dol
         self.version = version
+        self.retail = retail
         self._index: _TextIndex | None = None
 
     # locating
@@ -218,18 +242,26 @@ class Session:
             self.dol.remove_section_at(CAVE_ADDRESS)
 
     def _locate_edit(self, edit: Edit, foreign: bool = False) -> int | None:
-        seen = None if foreign else self._try_read(edit.address, len(edit.original))
+        seen = None if foreign else self._try_read(edit.address, edit.length)
         if seen is not None and self._known(edit, seen):
             return edit.address
         if edit.signature is not None:
             found = self._search(edit.signature)
-            if found is not None and self._known(edit, self._try_read(found, len(edit.original))):
+            if found is not None and self._known(edit, self._try_read(found, edit.length)):
                 return found
         return edit.address if seen is not None else None
 
     @staticmethod
     def _known(edit: Edit, seen: bytes | None) -> bool:
-        return seen is not None and (edit.matches(seen, edit.original) or edit.matches(seen, edit.patched))
+        return seen is not None and (edit.is_original(seen) or edit.matches(seen, edit.patched))
+
+    def _original_bytes(self, edit: Edit, address: int) -> bytes:
+        if not edit.original_sha1:
+            return edit.original
+        data = self.retail(address, edit.length) if self.retail is not None else None
+        if data is None or not edit.is_original(data):
+            raise DolError(f"Reverting {address:08X} needs the retail main.dol, which is not available.")
+        return data
 
     def _locate_field(self, f: Field, foreign: bool = False) -> int | None:
         if not foreign and self._field_ok(f, f.address):
@@ -257,8 +289,8 @@ class Session:
         sites = [e for e in sites if not e.all_wild]        # a fully tunable edit says nothing on its own
         for edit in sites:
             address = self._locate_edit(edit, self._foreign(patch))
-            seen = self._try_read(address, len(edit.original)) if address is not None else None
-            if seen is not None and edit.matches(seen, edit.original):
+            seen = self._try_read(address, edit.length) if address is not None else None
+            if seen is not None and edit.is_original(seen):
                 original += 1
             elif seen is not None and edit.matches(seen, edit.patched):
                 applied += 1
@@ -277,9 +309,12 @@ class Session:
             raise DolError(f"{patch.name}: {status.detail}")
         if status.state == (State.APPLIED if enabled else State.ORIGINAL):
             return
-        for edit in self._sites(patch):
+        writes = []
+        for edit in self._sites(patch):           # every revert's bytes first: all edits or none
             address = self._locate_edit(edit, self._foreign(patch))
-            self._write(address, edit.patched if enabled else edit.original)
+            writes.append((address, edit.patched if enabled else self._original_bytes(edit, address)))
+        for address, data in writes:
+            self._write(address, data)
         self._prune_cave()
 
     # tunables
