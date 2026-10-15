@@ -47,6 +47,13 @@ class MusyxTests(unittest.TestCase):
             self.assertEqual(len(sfx.samples), 14)
             self.assertTrue(all(v > 0 for v in sfx.samples))
 
+    def test_random_key_plays_the_middle_of_its_range(self):
+        # random key 46..49 (bytes 1 and 3), then start sample 3
+        macro = _macro(1, [(0x17 | (46 << 8) | (49 << 24), 1), (0x10 | (3 << 8), 0), (0, 0)])
+        pool = struct.pack(">4I", 0x10, 0, 0, 0x10 + len(macro)) + macro
+        bank = musyx.Bank("b", pool, struct.pack(">H", 0xFFFF), Path("unused"))
+        self.assertEqual(bank.first_voice(1, 60), (3, 48))
+
     def test_unknown_sound_id(self):
         with tempfile.TemporaryDirectory() as tmp:
             _write_bank(Path(tmp), "gcfesnd")
