@@ -309,10 +309,12 @@ def render_song(banks: SoundBanks, data: bytes, index: int) -> tuple[int, np.nda
         page = pages.get(programs[note.channel])
         if page is None:
             continue
-        voice = banks.voice_for_macro(page.macro, note.key)
-        if voice is None:
-            continue
-        _mix_voice(banks, voice, note, start, tempo, gains[note.channel], out)
+        voices = banks.voices(page.macro, note.key)
+        for bank, sample_id, played, gain, delay in voices:
+            begin = start + int(delay * OUTPUT_RATE)
+            if begin < total:
+                _mix_voice(banks, (bank, sample_id, played), note, begin, tempo,
+                           gains[note.channel] * (gain / len(voices)), out)
 
     peak = float(np.max(np.abs(out))) if total else 0.0
     if peak > 1.0:
