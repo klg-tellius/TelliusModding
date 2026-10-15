@@ -17,7 +17,7 @@ source_path: "formats/sound-room.md"
 
 *The list of pictures the Sound Room cycles through behind its track menu*
 
-The Sound Room, the jukebox in the extras menu, plays the game's music over a full-screen illustration. `soundroom.bin` is the list of those illustrations. It does not hold the track list: the 64 playable tracks are a fixed table of `BGM_` names in the executable, and no picture belongs to a particular track. <span class="confidence confidence--confirmed">confirmed</span>
+The Sound Room, the jukebox in the extras menu, plays the game's music over a full-screen illustration. `soundroom.bin` is the list of those illustrations. It does not hold the track list: the 64 playable tracks are a fixed table of `BGM_` names in the executable (64 pointers to a block of name strings that nothing else reads; the count of 64 is fixed in the menu code), and no picture belongs to a particular track. <span class="confidence confidence--confirmed">confirmed</span>
 
 ## Layout
 

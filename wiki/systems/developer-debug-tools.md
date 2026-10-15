@@ -12,8 +12,17 @@ last_reviewed: "2026-10-14"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/developer-debug-tools.md"
+system_entries: ["FE9-SYS-014", "FE9-SYS-371", "FE9-SYS-372", "FE9-SYS-373", "FE9-SYS-374", "FE9-SYS-375", "FE9-SYS-376"]
+system_reviewed: ["FE9-SYS-371", "FE9-SYS-372", "FE9-SYS-373", "FE9-SYS-374", "FE9-SYS-376"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-14"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Developer & Debug Tools
+
+<span id="fe9-sys-014"></span> **FE9-SYS-014 — Crash, assertion, and debug output.** Retail code retains diagnostic strings, assertions, timestamps, author metadata, and console logging used to identify failed loads, invalid state, and development provenance. These diagnostics are evidence about the failing subsystem, not instructions to ignore validation: a missing resource, bad section, impossible script state, or failed platform operation should be traced back to its caller and inputs. Exact output destinations and which assertions remain active depend on build and runtime environment.
 
 *A full set of internal testing menus and helpers, built into the shipped disc but never reachable through normal play*
 
@@ -92,7 +101,7 @@ The shipped disc's executable retains a substantial internal testing and debuggi
 
   Two separate, dormant switches keep the menus out of normal play, and neither is a missing piece of code. The map pause menu walks a zero-terminated list of root menus; the list holds the ordinary pause menu first and then a zero, so the walk stops before it reaches the five developer roots stored behind it. Moving the roots in front of the zero shows all of them. Separately, the start-up process that launches the game controller runs the production title screen, while a complete development title screen (build information, memory-card import and export, the battle previewer, chapter and difficulty selection, and a "Production version" entry that continues to the normal file menu) sits in the executable with nothing pointing at it. <span class="confidence confidence--confirmed">engine</span>
 
-## Starting a chapter directly
+## Example — starting a chapter directly
 
   The development title's chapter select hands each of its rows to one routine, which is all it takes to start any chapter. The row is a small menu record whose byte `+4` is a position in the [chapter table](./chapters.md) (`ChapterData`), not a chapter number; a position below 0 or past the last record finds nothing. The routine then: <span class="confidence confidence--confirmed">engine + in game</span>
 
@@ -106,3 +115,27 @@ The shipped disc's executable retains a substantial internal testing and debuggi
 ## Overlay switches
 
   The Display category's overlays are plain flag bytes read by the main loop every frame: process tree, performance meter, GPU performance meter, in-game debug information, safe-frame guide, sound-test overlay, 2D-primitive overlay, battle-display off and skip-block visualisation. They start at zero and nothing but the menu sets them. <span class="confidence confidence--confirmed">engine</span>
+
+  None of the labels that resemble item, skill, weapon-rank, or status-condition list viewers lead to such a viewer in this build. The complete registered root/menu records instead route those fields through the shared per-unit editor, while `Glossary` and `Test` return an inert menu code. Unlabelled byte fields remain editor-data questions, not evidence of another resource-viewer system.
+
+## FE9-SYS-371 through FE9-SYS-376 — Review boundaries
+
+<span id="fe9-sys-371"></span> **Developer/debug menus.** The executable builds three root trees over shared record windows, complete callbacks, submenus, editors, toggles, and test dialogs. Dormant pause-menu and development-title routing—not missing implementations—keep them out of production play.
+
+<span id="fe9-sys-372"></span> **Internal battle tool.** The battle previewer constructs attacker, defender, support roles, actions, outcomes, skill/effect names, and full battle presentation outside campaign encounter flow. It is a presentation/test harness, not an alternate authoritative campaign combat system.
+
+<span id="fe9-sys-373"></span> **Chapter jump/test flow.** Development title selection indexes `ChapterData`, resets party state, preserves difficulty, assigns the chapter ID, and routes the ordinary controller to chapter start. Bounds and file-menu overwrite hazards are documented above.
+
+<span id="fe9-sys-374"></span> **Resource viewers and harnesses.** The three registered root trees plus standalone hooks cover map markers/overlays, portraits, battle presentation, text width, process/GPU performance, rosters, memory, safe-frame/console/guide views, and scene debug state. Apparent item/skill/rank/status list labels route to field editors or inert callbacks; they do not identify missing viewer implementations in the retail executable.
+
+<span id="fe9-sys-375"></span> **Logging and assertions.** Diagnostic strings and call sites prove logging/assertion infrastructure, but severity, sinks, retail activation, recovery, and representative failure paths are not catalogued. This remains revision-required together with FE9-SYS-014.
+
+<span id="fe9-sys-376"></span> **Build timestamps and author metadata.** Executable/resource provenance strings preserve build dates, tool/author names, and diagnostic context. They are evidence for distinguishing builds and pipelines, not runtime gameplay settings.
+
+## Rules and lifecycle — access and execution
+
+Boot registers menu records and callbacks. A dormant root or development-title path must be made reachable, after which the ordinary menu framework owns focus and invokes the selected helper. Helpers read or mutate live state directly, display results, and return to their parent; chapter jump instead resets and hands off to the production controller. Tools that change units, flags, convoy, or support rank can affect later saves, so testing must isolate state rather than treating every menu as read-only.
+
+## Interactions and limits
+
+FE9-SYS-371–374 and FE9-SYS-376 are reviewed without blocking gaps. The full registered-menu census and standalone hooks close FE9-SYS-374; absent or inert labels are explicitly classified rather than assumed to hide tools. FE9-SYS-375 remains reviewed with gaps in [Crash, Assertions & Diagnostic Output](./crash-assertions-diagnostics.md), its primary article. This page remains the owner of interactive tools.

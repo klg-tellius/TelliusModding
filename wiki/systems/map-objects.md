@@ -12,6 +12,13 @@ last_reviewed: "2026-10-13"
 sources: ["tellius-archive-research"]
 cms_collection: "systems"
 source_path: "systems/map-objects.md"
+system_entries: ["FE9-SYS-068", "FE9-SYS-069", "FE9-SYS-070", "FE9-SYS-071", "FE9-SYS-072", "FE9-SYS-073", "FE9-SYS-074", "FE9-SYS-075", "FE9-SYS-076", "FE9-SYS-081", "FE9-SYS-082"]
+system_reviewed: ["FE9-SYS-068", "FE9-SYS-069", "FE9-SYS-082"]
+system_reviewed_with_gaps: []
+system_reviewed_by: "Codex"
+system_reviewed_on: "2026-10-13"
+system_known_gaps: []
+system_gap_work: []
 ---
 # Map Objects & Placement
 
@@ -19,18 +26,22 @@ source_path: "systems/map-objects.md"
 
 A map object is reusable scenery or an invisible marker; an instance is one placement of that object in the chapter's 3D world. Keeping definition and placement separate lets one model appear many times with different positions and rotations.
 
-## How definition and placement cooperate
+## Mental model: definition, instance, and tile state
 
 Read the object description to learn model, footprint, and flags, then read each instance that refers to it to obtain position, angle, and height. Rendering combines those values with the map's terrain anchor and scale.
 
-## Objects — what can be placed
+Interactive scenery often has a third layer: a compact runtime tile-object record stores opened, visited, damaged, or remaining-use state. The model/instance says what can be drawn and where; the tile record says what changed during play. A decorative tree may need only the first two layers, while a door combines all three.
+
+## FE9-SYS-068 — How the map-object system loads
+
+<span id="fe9-sys-068"></span>
 
   Every distinct "thing" a chapter's map can contain is one `mapbuilddesc` record: a filename (or none, for an invisible marker), the model's bounding box (its minimum and maximum corners in world units — the second triple is the maximum corner, not a size), and a set of flag bits. Two of those flags are confirmed with zero exceptions across every real chapter map in the game:
 
 - **Is this the map's own base terrain or water plane?** — every object with this flag set is literally named after its own map (e.g. `bmap07`, `bmap07_water0`). A chapter typically has one or two of these.
 - **Is this object animated?** — when set, the map loader gives the object its `.ga` [animation file](../formats/model-formats.md) and plays it like a unit's animation (a moving water plane, a flickering candle, a collapsing house). <span class="confidence confidence--confirmed">engine + files</span>
 
-  A third flag field is a 3-bit **battle-goal type**, carried by invisible, non-rendering marker objects rather than visible scenery — see [Objectives](./objectives.md) for what those markers represent.
+  The remaining runtime classification is a bitfield, not one opaque object type. In the descriptor's presentation byte, bit `0x01` selects the alternate actor-update pass, `0x02` copies eligible roof corner heights into both elevation buffers, `0x08` requests the extended frustum test, `0x10` excludes footprint/tile-object tests, `0x40` suppresses drawing, and `0x80` excludes tile-object lookup. A separate flag byte initializes hidden state, can suppress drawing, and can exclude footprint testing. The goal bits are carried by invisible marker objects. Interaction still comes from the matching tile/action record: a visible model or familiar filename alone never grants Door, Visit, Break, or objective behavior.
 
 ## Instances — where they actually go
 
@@ -55,3 +66,31 @@ Read the object description to learn model, footprint, and flags, then read each
 ## Units under a roof
 
   On maps whose map data turns roofs on (most story maps, the tutorials and the trial maps), a unit whose tile lies inside a roof object's area is marked as under a roof every time the units are refreshed. The mark does not hide the unit; it makes the game treat the unit as out of play for a few checks: the `CheckAttackable` script function answers no for it, the AI leaves it out when it ranks targets, the next/previous-unit buttons skip it, and reinforcement and deployment checks pass over it, as they do for a rescued or fog-hidden unit. <span class="confidence confidence--confirmed">engine</span>
+
+At load, object descriptions become runtime actors and each instance supplies placement, footprint, initial visibility/state, animation, and draw/update classification. Doors, houses, roofs, rocks, water, and goal markers opt into different native tests through flags and companion tile records; merely giving a decorative model a familiar filename does not create an Unlock, Visit, or Break command.
+
+## FE9-SYS-069 — Persistent tile-object state
+
+<span id="fe9-sys-069"></span> The live map owns up to 64 compact `T  T` records. Types 4 and 7 hold breakable-wall HP and ballista item/uses; types 9 and 10 cover pits and rolling rocks; types `0x21`–`0x25` record opened doors, opened roofs, opened chests, visited villages, and destroyed buildings. Scripts and action executors create or update these records when the interaction commits.
+
+Checkpoint and map saves serialize the count and all 64 records after units, convoy, and forges. Reload reconstructs the chapter map, then restores this changed state so a door does not close, a chest refill, a wall heal, or a ballista regain ammunition. Visual animation and state mutation are distinct: during event skip an object can jump directly to its final appearance, but the same persistent record still must be written.
+
+The record coordinates use the tactical grid and must remain valid for the loaded map. Replacing map geometry without migrating live save records can attach old state to a different object or empty tile. Conversely, editing only a visual instance does not create persistence; the action or script must update the tile-object system.
+
+## FE9-SYS-082 — Water and animated environment
+
+<span id="fe9-sys-082"></span> Water and environmental animation belong to the scenery actor layer, not the tactical terrain grid. A chapter commonly defines its base terrain and a separate water plane as map objects, places both with instance transforms, and draws them from the same `texpack.tpl`. The tile panels still determine where units stand and what terrain rules apply; raising a wave mesh or changing its texture does not raise a unit or make a tile aquatic.
+
+Animated objects carry the animation flag and load a matching `.ga` resource when one exists. The loader creates runtime actors, the map update advances their timers, and the draw pass evaluates the resulting model pose or material state. Across the retail corpus, 96 props are animated, 50 use bone animation, and 86 have matching `.ga` resources. Waves and candles illustrate looping ambience; houses and thickets include one-shot state changes. Repeated instances can stagger their timers so a field of identical props does not move in lockstep.
+
+Water also exercises a special render path. `mapextra` bit `0x20` installs the water callbacks. The water material is evaluated in four callback invocations, and its animation footer's slots 3 and 4 are the U/V scale tracks; the same signed frame/value interpolation used by other material tracks returns these values at a scale of `0.001`. Effect actors do not consume those two slots. Wave geometry is submitted through the blended list, commonly with source-alpha/one additive blending, so black contributes nothing and pale foam brightens the surface beneath it instead of drawing a black rectangle. Terrain blending and water rendering share callback installation but have distinct texture-stage formulas; see [Terrain Texture Blending](./terrain-texture-rendering.md).
+
+For example, placing a new wave requires more than a textured model: the object description must select the appropriate animation and draw classification, its instance must use the scenery coordinate transform and suitable height, its animation resource must match, and the map flags must enable the required callback. None of that creates collision, movement cost, or save state. A destructible animated house separately needs the action/event and persistent tile record described in [Map Actions](./map-actions.md).
+
+The lifecycle ends when the map unloads; transient animation time is reconstructed on load rather than serialized like door or ballista state. Authored one-shot changes that must survive use the persistent object-state records and rebuild the proper endpoint. Unknown names for unused flag combinations do not change this contract: the executable-level consumers, update/draw selection, water-track ownership, tactical separation, and persistence boundary are established.
+
+## Interactions and limits
+
+FE9-SYS-068 and FE9-SYS-082 are reviewed without blocking gaps. Object construction, transforms, footprint gates, every operational descriptor bit, tile-action separation, animation loading, water callback selection, U/V track ownership, blend family, teardown, and saved-versus-transient state are established. Pixel-level appearance of unused combinations remains rendering experimentation rather than an unresolved system rule.
+
+FE9-SYS-070–075 are now reviewed in [Map Actions](./map-actions.md). FE9-SYS-076 remains revision-required there because the hidden-item declaration, chance, retry, transfer, collection, AI, and save rules have not been recovered.

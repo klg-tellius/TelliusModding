@@ -32,6 +32,17 @@ class Sample:
     velocity: tuple[float, float, float]
 
 
+def anchor_bone(name_path: str, bone_index: dict[str, int]):
+    """The bone an emitter follows: the deepest element of its ``|``-separated name path that
+    is a bone (``bone_index`` maps lower-case bone names to indices). The path usually ends in
+    the particle shape node, which is not a bone, so its parent transform is the anchor."""
+    for part in reversed(name_path.strip("|").split("|")):
+        index = bone_index.get(part.lower())
+        if index is not None:
+            return index
+    return None
+
+
 def read_stages(data: bytes) -> tuple[Stage, ...]:
     layout = animation.read_particle_table_layout(data)
     if layout is None:

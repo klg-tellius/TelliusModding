@@ -26,6 +26,12 @@ This is the editorial map for Tellius Archive. A subject can be a focused articl
 
 The [File Format Index](format-coverage.md) and [Open Questions](unexplored.md) hold the current detailed coverage. The lists below define the intended complete information architecture.
 
+For a single, system-by-system checklist spanning engine, gameplay, presentation, persistence, and postgame features, see the [Complete Game Systems Inventory](game-systems-inventory.md).
+
+The [Game System Documentation Review](system-review.md) maps those stable inventory IDs to explanatory articles, records human review, and tracks disclosed research gaps and proposals for missing systems.
+
+The [Uncovered Systems Writing Roadmap](uncovered-systems-roadmap.md) assigns every uncovered baseline entry to a dependency-ordered article package.
+
 ## Orientation and modding workflow
 
 - Tellius Archive overview; what Tellius modding can change

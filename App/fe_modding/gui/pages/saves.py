@@ -195,6 +195,8 @@ class SaveEditorPage(Page):
         self._save_as_button = ttk.Button(top, text="Save as…", command=self._save_as, state="disabled")
         self._save_as_button.pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Check", command=self._check).pack(side="left", padx=(6, 0))
+        self._play_button = ttk.Button(top, text="Play in Dolphin…", command=self._play, state="disabled")
+        self._play_button.pack(side="left", padx=(6, 0))
         self._file_label = ttk.Label(top, text="No save open.", style="Muted.TLabel")
         self._file_label.pack(side="left", padx=(12, 0))
         row = ttk.Frame(self, style="Page.TFrame", padding=(28, 8, 28, 0))
@@ -387,6 +389,33 @@ class SaveEditorPage(Page):
         if chosen:
             self._write(Path(chosen))
 
+    def _play(self) -> None:
+        """Test the selected file-save block in Dolphin, as saved or moved to a chapter start."""
+        block = self.block
+        if self._savefile is None or block is None:
+            return
+        if not block.decoded or block.header.save_kind != 2 or block.is_checkpoint:
+            messagebox.showinfo("Play in Dolphin", "Choose a file save block; checkpoints and consumed copies "
+                                "cannot be loaded from the file menu on their own.", parent=self)
+            return
+        from ... import chapters
+        index = self.shell.index
+        choices = {int(cid): (index.by_chapter[cid].title if index is not None and cid in index.by_chapter
+                              else f"Chapter {cid}")
+                   for cid in chapters.list_chapter_ids(self.shell.project)}
+        dialog = PlaySaveDialog(self, block, choices)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        blocks = self._savefile.blocks
+        dirty = tuple(i for i, b in enumerate(blocks) if id(b) in self._dirty_blocks)
+        try:
+            data = sf.play_copy(self._savefile, blocks.index(block), dialog.result or None, rebuild=dirty)
+        except ValueError as exc:
+            messagebox.showerror("Play in Dolphin", str(exc), parent=self)
+            return
+        self.shell.play_from_save(self._path.name if self._path else "save.gci", data)
+
     def _check(self) -> None:
         if self.block is None:
             return
@@ -404,6 +433,7 @@ class SaveEditorPage(Page):
     def _sync(self) -> None:
         has = self._savefile is not None
         self._save_as_button.configure(state="normal" if has else "disabled")
+        self._play_button.configure(state="normal" if has and self.shell.extracted else "disabled")
         self._save_button.configure(state="normal" if self._dirty_blocks else "disabled")
         if self.block is None:
             self._status.config(text="")
@@ -1100,3 +1130,61 @@ class SaveEditorPage(Page):
             lines = [f"{o:05X}  {data[o:o + 16].hex(' ')}" for o in range(0, min(end, len(data)), 16)]
             text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
+
+
+class PlaySaveDialog(tk.Toplevel):
+    """Where the tested save starts. ``result``: None (cancelled), 0 (load it as saved) or a
+    chapter id to start with the save's army."""
+
+    def __init__(self, parent: tk.Misc, block: sf.SaveBlock, choices: dict[int, str]):
+        super().__init__(parent)
+        self.title("Play in Dolphin")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.result: Optional[int] = None
+        self._choices = {f"{title}  ({cid:02d})": cid for cid, title in sorted(choices.items())}
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        h = block.header
+        ttk.Label(frame, justify="left", style="Muted.TLabel", text=(
+            "Starts Dolphin on the project's extracted files (no build) with a copy of this save alone on\n"
+            "memory card A; the original file is not changed, and the game's own saves during the run stay\n"
+            "in the copy. Pick the file in the game's file menu. Unsaved edits in this page are included.")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self._mode = tk.StringVar(value="as_is")
+        resume = sf.RESUME_POINTS.get(h.resume_point & 0x7F, f"resume point {h.resume_point}")
+        where = f"{choices[h.chapter]} ({h.chapter:02d})" if h.chapter in choices else f"chapter {h.chapter}"
+        ttk.Radiobutton(frame, text=f"Load it as saved ({where}, {resume})", value="as_is",
+                        variable=self._mode).grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Radiobutton(frame, text="Start a chapter with this army:", value="chapter",
+                        variable=self._mode).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        labels = list(self._choices)
+        current = next((k for k, v in self._choices.items() if v == h.chapter), labels[0] if labels else "")
+        self._chapter = tk.StringVar(value=current)
+        box = ttk.Combobox(frame, textvariable=self._chapter, values=labels, state="readonly", width=40)
+        box.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
+        box.bind("<<ComboboxSelected>>", lambda e: self._mode.set("chapter"))
+        ttk.Label(frame, justify="left", style="Muted.TLabel", text=(
+            "The chapter starts as after clearing the previous one: same units, items, gold, supports and\n"
+            "flags. Story scripts may expect units the save does not have.")
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 12))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Play", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 6))
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        top = parent.winfo_toplevel()
+        x = top.winfo_rootx() + (top.winfo_width() - self.winfo_reqwidth()) // 2
+        y = top.winfo_rooty() + (top.winfo_height() - self.winfo_reqheight()) // 3
+        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        self.grab_set()
+
+    def _ok(self) -> None:
+        if self._mode.get() == "as_is":
+            self.result = 0
+        elif self._chapter.get() in self._choices:
+            self.result = self._choices[self._chapter.get()]
+        else:
+            return
+        self.destroy()

@@ -2011,11 +2011,25 @@ DIFFICULTY_NAMES = ("Normal", "Hard", "Maniac", "Easy")  # current_difficulty_id
 
 
 def read_game_data(data: bytes) -> dict[str, tuple[int, int, int, int]]:
-    """``GameData``: seven rows of four difficulty bytes, no count word."""
+    """``GameData``: four difficulty bytes per row, with no count word.
+
+    US/PAL have all seven known rows. The Japanese retail section ends after
+    the fifth row; its executable has neither the later Laguz-growth nor class-
+    critical consumer. Bound the read by the next exported section so those
+    builds do not misinterpret the start of ``TerrainData`` as two extra rows.
+    """
     start = _section_start(data, "GameData")
     if start is None:
         return {}
-    return {name: tuple(data[start + 4 * i : start + 4 * i + 4]) for i, (name, _) in enumerate(GAME_DATA_ROWS)}
+    relative_start = start - HEADER_SIZE
+    following = [offset for offset in symbol_offsets(data).values() if offset > relative_start]
+    data_size = struct.unpack_from(">I", data, 4)[0]
+    end = HEADER_SIZE + (min(following) if following else data_size)
+    count = min(len(GAME_DATA_ROWS), (end - start) // 4)
+    return {
+        name: tuple(data[start + 4 * i : start + 4 * i + 4])
+        for i, (name, _) in enumerate(GAME_DATA_ROWS[:count])
+    }
 
 
 def read_group_names(data: bytes) -> list[Optional[str]]:
@@ -2167,6 +2181,8 @@ def patch_game_data(data: bytes, row: str, difficulty: int, value: int) -> bytes
     names = [name for name, _reader in GAME_DATA_ROWS]
     if row not in names:
         raise ValueError(f"Unknown GameData row {row!r}")
+    if row not in read_game_data(data):
+        raise ValueError(f"GameData row {row!r} is not present in this regional build.")
     if not 0 <= difficulty < len(DIFFICULTY_NAMES):
         raise ValueError(f"Difficulty {difficulty} is not 0-3.")
     out = bytearray(data)

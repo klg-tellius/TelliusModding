@@ -223,3 +223,30 @@ class DiscStageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(battle_stage is None, "needs tkinter and numpy")
+class ParticleTests(unittest.TestCase):
+    def test_anchor_is_the_deepest_bone_in_the_path(self):
+        from fe_modding.formats import particle_preview
+        bones = {"group": 0, "h2_particle1": 1}
+        self.assertEqual(particle_preview.anchor_bone("|group|h2_particle1|_h2_particleShape1_xl_", bones), 1)
+        self.assertEqual(particle_preview.anchor_bone("|group|other|", bones), 0)
+        self.assertIsNone(particle_preview.anchor_bone("|nothing|", bones))
+
+    @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES")
+    def test_fire_cards_are_placed_and_hidden(self):
+        from types import SimpleNamespace
+        effect = battle_stage.load_effect(Path(os.environ["FE9_EXTRACTED_FILES"]) / "yme" / "EID_FIRE.cmp")
+        cards = battle_stage.particle_cards(effect)
+        self.assertEqual(len(cards), 2 * len(effect.particles))
+        stage = battle_stage.BattleStage([])
+        cue = SimpleNamespace(frame=0.0, side=0, aim=None, height=0.0)
+        stage._add("particles", cards, side=0, item=(cue, effect))
+        stage.alphas = np.zeros(len(cards), dtype=np.float32)
+        positions, normals = np.zeros((len(cards), 3, 3)), np.zeros((len(cards), 3))
+        stage._particles(positions, normals, stage._parts[0], effect, cue, 15.0, 15.0)
+        shown = positions.any(axis=(1, 2))
+        self.assertTrue(shown.any())
+        self.assertTrue((stage.alphas[shown] < -1.0).all())      # unlit, two-sided effect alpha
+        self.assertFalse(positions[~shown].any())                  # inactive stages stay hidden

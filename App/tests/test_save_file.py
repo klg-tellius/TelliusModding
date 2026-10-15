@@ -203,3 +203,50 @@ class ForgePoolTests(unittest.TestCase):
         problems = sf.validate(block)
         self.assertEqual(len(problems), 1)
         self.assertIn("convoy slots 198-200", problems[0])
+
+class PlayCopyTests(unittest.TestCase):
+    """The run copy for Play in Dolphin: block 0 (slot 0, sequence 9), an older block of the
+    same slot at location 1, and a checkpoint of that slot at location 6."""
+
+    def setUp(self):
+        newest = build_block([unit_record(1, 2)])
+        older = bytearray(newest)
+        struct.pack_into(">I", older, 0x48, 3)
+        struct.pack_into(">I", older, 0x50, zlib.crc32(bytes(older[0x70:])))
+        checkpoint = bytearray(0x6000)
+        checkpoint[:0x4000] = newest
+        checkpoint[0x60], checkpoint[0x63], checkpoint[0x65] = 3, 0, 8
+        struct.pack_into(">I", checkpoint, 0x4C, 0x6000)
+        struct.pack_into(">I", checkpoint, 0x50, zlib.crc32(bytes(checkpoint[0x70:])))
+        gci = bytearray(build_gci(newest))
+        for (rel, _), data in ((sf.BLOCK_LOCATIONS[1], older), (sf.BLOCK_LOCATIONS[6], checkpoint)):
+            at = sf.GCI_HEADER_SIZE + rel
+            gci[at:at + len(data)] = data
+        self.save = sf.SaveFile.from_bytes(bytes(gci))
+
+    def test_chapter_start_with_the_saved_army(self):
+        data = sf.play_copy(self.save, 0, chapter=12)
+        copy = sf.SaveFile.from_bytes(data)
+        loaded = copy.loaded_blocks()
+        self.assertEqual([b.location for b in loaded], [0])           # older block and checkpoint gone
+        block = loaded[0]
+        self.assertTrue(block.crc_ok)
+        self.assertEqual((block.header.chapter, block.header.resume_point), (12, 4))
+        self.assertEqual((block.party.chapter, block.party.resume_point, block.party.turn), (12, 4, 1))
+        self.assertEqual(block.party.gold, 1234)
+        self.assertEqual(len(block.unit_slots()), 1)
+
+    def test_as_saved_keeps_the_block_and_leaves_the_editor_copy_alone(self):
+        before = self.save.blocks[0].header.chapter
+        copy = sf.SaveFile.from_bytes(sf.play_copy(self.save, 0))
+        self.assertEqual(copy.loaded_blocks()[0].header.chapter, before)
+        sf.play_copy(self.save, 0, chapter=20)
+        self.assertEqual(self.save.blocks[0].header.chapter, before)
+
+    def test_an_older_block_is_the_one_loaded_when_chosen(self):
+        copy = sf.SaveFile.from_bytes(sf.play_copy(self.save, 1, chapter=7))
+        self.assertEqual([(b.location, b.header.chapter) for b in copy.loaded_blocks()], [(1, 7)])
+
+    def test_checkpoints_are_refused(self):
+        with self.assertRaises(ValueError):
+            sf.play_copy(self.save, 2)

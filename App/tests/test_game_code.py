@@ -182,6 +182,14 @@ class TunableTests(unittest.TestCase):
         session.reset(t)
         self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00099, 0x3805967F))
 
+    def test_signed_byte(self):
+        dol = build_dol(data=bytes([0xF6, 0x0A]))                       # -10, +10
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.s8", "Test", "Signed", "", -10, -100, 0, {US: (Field(DATA_ADDR, "s8"),)})
+        self.assertEqual(session.tunable_status(t).state, State.ORIGINAL)
+        session.set_tunable(t, -25)
+        self.assertEqual((session.tunable_status(t).value, dol.read(DATA_ADDR, 1)), (-25, b"\xe7"))
+
     def test_range_is_enforced(self):
         t = self.tunable("u8", DATA_ADDR + 2, 9, 0, 100)
         with self.assertRaises(DolError):
@@ -360,3 +368,41 @@ class EditorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SoundRoomTrackTests(unittest.TestCase):
+    """The track table rewritten on a small fake layout: 64 pointers then a 4-name pool."""
+
+    def setUp(self):
+        from fe_modding.game_code import sound_room_tracks
+        self.tracks = sound_room_tracks
+        self.table, self.pool = DATA_ADDR, DATA_ADDR + 0x100
+        names = [b"BGM_A", b"BGM_BB", b"BGM_C", b"BGM_DD"]
+        pool, where = b"", []
+        for n in names:
+            where.append(self.pool + len(pool))
+            pool += n + b"\0"
+        self.end = self.pool + len(pool)
+        table = b"".join(where[i % 4].to_bytes(4, "big") for i in range(64))
+        self.dol = build_dol(data=table + pool + b"NEXT")
+        sound_room_tracks.LAYOUT["TEST01"] = (self.table, self.pool, self.end)
+        self.addCleanup(sound_room_tracks.LAYOUT.pop, "TEST01")
+
+    def test_read_write_round_trip(self):
+        before = bytes(self.dol.data)
+        names = self.tracks.read_tracks(self.dol, "TEST01")
+        self.assertEqual(names[:5], ["BGM_A", "BGM_BB", "BGM_C", "BGM_DD", "BGM_A"])
+        self.tracks.write_tracks(self.dol, "TEST01", names)
+        self.assertEqual(bytes(self.dol.data), before)
+
+    def test_repeated_names_are_stored_once_and_the_pool_end_is_kept(self):
+        names = ["BGM_LONGER1"] * 63 + ["BGM_A"]
+        self.tracks.write_tracks(self.dol, "TEST01", names)
+        self.assertEqual(self.tracks.read_tracks(self.dol, "TEST01"), names)
+        self.assertEqual(self.dol.read(self.end, 4), b"NEXT")
+
+    def test_too_long_or_wrong_count_is_refused(self):
+        with self.assertRaises(DolError):
+            self.tracks.write_tracks(self.dol, "TEST01", [f"BGM_{i:02d}" for i in range(64)])
+        with self.assertRaises(DolError):
+            self.tracks.write_tracks(self.dol, "TEST01", ["BGM_A"] * 63)

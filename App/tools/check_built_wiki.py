@@ -76,8 +76,9 @@ def main() -> int:
                 continue
             if not destination.exists():
                 errors.append(f"{relative}: broken generated URL: {reference}")
-    if article_pages != 91:
-        errors.append(f"generated {article_pages} article pages, expected 91")
+    expected = sum(1 for _ in (ROOT / "wiki").rglob("*.md"))
+    if article_pages != expected:
+        errors.append(f"generated {article_pages} article pages, expected {expected} (one per wiki/**/*.md)")
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

@@ -81,7 +81,7 @@ def in_cave(address: int, length: int = 1) -> bool:
     return CAVE_ADDRESS <= address and address + length <= CAVE_ADDRESS + CAVE_SIZE
 
 
-KINDS = {"imm16s": 2, "imm16u": 2, "u8": 1, "u16": 2, "u32": 4, "f32": 4, "lis_addi": 4}
+KINDS = {"imm16s": 2, "imm16u": 2, "u8": 1, "s8": 1, "u16": 2, "u32": 4, "f32": 4, "lis_addi": 4}
 
 
 @dataclass(frozen=True)
@@ -291,6 +291,8 @@ class Session:
             return struct.unpack(">H", raw[2:])[0]
         if f.kind == "u8":
             return raw[0]
+        if f.kind == "s8":
+            return struct.unpack(">b", raw)[0]
         if f.kind == "u16":
             return struct.unpack(">H", raw)[0]
         if f.kind == "u32":
@@ -305,6 +307,8 @@ class Session:
             return self.dol.read(address, 2) + struct.pack(fmt, int(value))
         if f.kind == "f32":
             return struct.pack(">f", value)
+        if f.kind == "s8":
+            return struct.pack(">b", int(value))
         if f.kind == "lis_addi":
             low = int(value) & 0xFFFF
             low -= 0x10000 if low & 0x8000 else 0
