@@ -55,6 +55,11 @@ class CodeEditor:
         old = self.status(tunable).value
         self.session.set_tunable(tunable, value)
         self._save()
+        if tunable.choices:
+            def _format_choice(v):
+                index = int(v - tunable.minimum) if isinstance(v, (int, float)) else -1
+                return tunable.choices[index] if 0 <= index < len(tunable.choices) else _format(v)
+            return f"{tunable.name}: {_format_choice(old)} -> {_format_choice(value)}"
         return f"{tunable.name}: {_format(old)} -> {_format(value)}"
 
     def reset(self, entry: Entry) -> str:

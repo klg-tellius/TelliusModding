@@ -1,0 +1,116 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap");
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1f5c78;
+  --md-primary-fg-color--dark: #123c50;
+  --md-accent-fg-color: #8a662c;
+  --md-default-bg-color: #f2f3ee;
+  --md-default-fg-color: #1a1f1c;
+  --md-code-bg-color: #e8e9e1;
+  --archive-surface: #ffffff;
+  --archive-rule: #d7d9cf;
+  --archive-muted: #5b6560;
+  --archive-petrol-soft: #e2edf1;
+  --archive-moss: #3f6b4a;
+  --archive-moss-soft: #e4ede4;
+  --archive-brass: #8a662c;
+  --archive-brass-soft: #f2e7d0;
+  --archive-rust: #8a4632;
+  --archive-rust-soft: #f3e3dd;
+}
+
+[data-md-color-scheme="slate"] {
+  color-scheme: dark;
+  --md-primary-fg-color: #1b333c;
+  --md-primary-fg-color--dark: #132830;
+  --md-accent-fg-color: #e0b46c;
+  --md-default-bg-color: #151a17;
+  --md-default-fg-color: #e7e9e0;
+  --md-default-fg-color--light: rgba(231, 233, 224, .72);
+  --md-default-fg-color--lighter: rgba(231, 233, 224, .46);
+  --md-default-fg-color--lightest: rgba(231, 233, 224, .12);
+  --md-code-bg-color: #232a23;
+  --md-typeset-a-color: #7fc0dd;
+  --archive-surface: #1c221d;
+  --archive-rule: #333a32;
+  --archive-muted: #a3ab9f;
+  --archive-petrol-soft: #1b333c;
+  --archive-moss: #9dc7a8;
+  --archive-moss-soft: #1e2f22;
+  --archive-brass: #e0b46c;
+  --archive-brass-soft: #3a2f18;
+  --archive-rust: #e2a08c;
+  --archive-rust-soft: #3a231c;
+}
+
+.md-header, .md-tabs { background: #123c50; }
+.md-main__inner { max-width: 1440px; }
+.md-content { min-width: 0; }
+.md-content__inner { max-width: 76ch; margin-inline: auto; }
+.md-typeset { font-size: .78rem; line-height: 1.65; }
+.md-typeset h1, .md-typeset h2, .md-typeset h3, .md-header__title {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+}
+.md-typeset h1 { border-bottom: 2px solid var(--archive-rule); padding-bottom: .35em; }
+.md-typeset h2 { border-bottom: 1px solid var(--archive-rule); padding-bottom: .25em; }
+.md-typeset a { text-decoration-thickness: .06em; text-underline-offset: .14em; }
+.md-typeset code { border: 1px solid var(--archive-rule); border-radius: .2rem; }
+
+.article-kicker {
+  color: var(--archive-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  font-size: .62rem;
+  letter-spacing: .08em;
+  margin-bottom: .4rem;
+  text-transform: uppercase;
+}
+.article-game { border-left: 1px solid var(--archive-rule); padding-left: .4rem; }
+
+.confidence, .status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: .68em;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin-inline: .2em;
+  padding: .14rem .45rem;
+  vertical-align: .08em;
+}
+.confidence--confirmed, .status--published { background: var(--archive-moss-soft); color: var(--archive-moss); }
+.confidence--strong { background: var(--archive-brass-soft); color: var(--archive-brass); }
+.confidence--plausible, .status--draft { background: var(--md-code-bg-color); color: var(--archive-muted); }
+.confidence--open, .status--stub, .status--research-needed { background: var(--archive-rust-soft); color: var(--archive-rust); }
+
+.table-wrap { border: 1px solid var(--archive-rule); border-radius: .45rem; margin-block: 1rem; overflow-x: auto; }
+.table-wrap table { border: 0; margin: 0; min-width: 100%; }
+
+.article-record {
+  background: var(--archive-surface);
+  border: 1px solid var(--archive-rule);
+  border-radius: .55rem;
+  color: var(--archive-muted);
+  font-size: .68rem;
+  margin-top: 2.5rem;
+  padding: .8rem 1rem;
+}
+.article-record > div, .article-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .55rem; }
+.article-actions { border-top: 1px solid var(--archive-rule); margin-top: .7rem; padding-top: .7rem; }
+.article-action { border: 1px solid var(--archive-rule); border-radius: .35rem; padding: .3rem .55rem; }
+.article-action--primary { background: var(--archive-petrol-soft); font-weight: 700; }
+
+.topic-state { white-space: nowrap; }
+.portal-grid { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.portal-card { background: var(--archive-surface); border: 1px solid var(--archive-rule); border-radius: .55rem; padding: .8rem 1rem; }
+.portal-card h3 { margin-top: 0; }
+
+@media (max-width: 600px) {
+  .md-typeset { font-size: .74rem; }
+  .article-action { flex: 1 1 45%; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}

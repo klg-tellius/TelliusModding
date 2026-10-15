@@ -46,6 +46,14 @@ class BattleSceneryViewer(BattleTableViewer):
     def parse(self, text):
         return bs.read_scenery(text)
 
+    def model_of(self, name):
+        from .battle_scene_editor import find_scene, scene_models
+
+        pack = find_scene(scene_models(self._project), name)
+        if pack is None:
+            return f"No model in zbg/{name}/ yet."
+        return f"zbg/{pack.parent.name}", pack
+
     def row(self, name, t):
         return (name, self._labels.get(name, ""), bs.ROOM_FLAGS.get(t.room_flag, "?"),
                 bs.FOOT_EFFECTS.get(t.foot_effect, "?"), bs.FOOT_SOUNDS.get(t.foot_sound, "?"))

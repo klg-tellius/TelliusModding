@@ -24,14 +24,15 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
-from ... import chapters, script_sources
+from ... import chapters, flag_excel, script_sources
 from ...exceptions import ProjectError
 from ...game_profile import SAVES, profile_of
 from ...formats import event_flags as ef
-from ...formats.cmb import CompileError
+from ...formats.cmb import CompileError, compile_source, read_cmb
 from ...formats.cmb.parser import ParseError, parse
 from .chapters import open_script
 from .. import theme
+from ..widgets import info
 
 TABS = {"campaign": "Campaign flags", "chapter": "Chapter flags", "save": "Save file"}
 ON, OFF = "☑", "☐"
@@ -47,20 +48,23 @@ class FlagsPanel(ttk.Frame):
         slots = self.table.slot_count
         head = ttk.Frame(self, style="Page.TFrame", padding=(8, 8, 8, 4))
         head.pack(fill="x")
-        ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
-                  text=f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
-                       "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. "
-                       f"A save stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags "
-                       "are always added after the existing ones.").pack(anchor="w", pady=(2, 8))
+        actions = ttk.Frame(head, style="Page.TFrame")
+        actions.pack(anchor="w", pady=(0, 6))
+        ttk.Button(actions, text="Export Excel…", command=self._export_excel).pack(side="left")
+        ttk.Button(actions, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
+        info(actions, f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
+                      "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. A save "
+                      f"stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags are "
+                      f"always added after the existing ones. The engine's table has {slots} slots, so there can "
+                      "be no more.\n\nGrey rows: slots the engine registers itself (0-7) or reserved and unused "
+                      "ones. The Excel workbook holds the campaign and chapter registrations; existing slots stay "
+                      "fixed. A save's flags are edited in Tools › Saves.").pack(side="left", padx=(10, 0))
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self._campaign = _CampaignTab(self._notebook, self)
         self._chapter = _ChapterTab(self._notebook, self)
         tabs = [("campaign", self._campaign), ("chapter", self._chapter)]
-        self._save = None
-        if profile_of(shell.project).supports(SAVES):
-            self._save = _SaveTab(self._notebook, self)
-            tabs.append(("save", self._save))
+        self._save = None  # a save's flags are edited in Tools › Saves
         self._tab_keys = [key for key, _tab in tabs]
         for key, tab in tabs:
             self._notebook.add(tab, text=TABS[key])
@@ -98,6 +102,83 @@ class FlagsPanel(ttk.Frame):
             return ef.global_flags(parse(script_sources.peek(self.project, path)), self.table)
         except (OSError, ValueError, ParseError, ProjectError):
             return ef.global_flags_vanilla(self.table)
+
+    def _registration_data(self) -> tuple[list[str], dict[str, list[str]]]:
+        startup = script_sources.startup_path(self.project)
+        campaign = ef.global_flags(parse(script_sources.peek(self.project, startup)), self.table)
+        chapter_flags = {}
+        for chapter_id in chapters.list_chapter_ids(self.project):
+            path = script_sources.chapter_script(self.project, chapter_id)
+            if path is not None:
+                chapter_flags[chapter_id] = ef.local_flags(parse(script_sources.peek(self.project, path)))
+        return campaign, chapter_flags
+
+    def _export_excel(self) -> None:
+        path = filedialog.asksaveasfilename(parent=self, title="Export flags", defaultextension=".xlsx",
+                                            filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            campaign, chapter_flags = self._registration_data()
+            flag_excel.export_flags(path, campaign, chapter_flags)
+        except (OSError, ValueError, ParseError, ProjectError) as exc:
+            messagebox.showerror("Could not export flags", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Import flags",
+                                          filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            campaign, chapter_flags = self._registration_data()
+            additions, errors = flag_excel.plan_flag_import(
+                path, campaign, chapter_flags, self.table.slot_count, ef.check_flag_name)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            changes = []
+            if additions["campaign"]:
+                changes.append((script_sources.startup_path(self.project), "RegistGlobalFlags",
+                                "global", additions["campaign"]))
+            for chapter_id in chapter_flags:
+                if additions[chapter_id]:
+                    changes.append((script_sources.chapter_script(self.project, chapter_id),
+                                    "Startup", "regist", additions[chapter_id]))
+            if not changes:
+                messagebox.showinfo("Import flags", "This workbook contains no new flags.", parent=self)
+                return
+            editor = self.script_editor()
+            if editor is not None and editor.dirty and any(editor.current_path == item[0] for item in changes):
+                messagebox.showwarning("Unsaved script", "Save or revert the open script before importing flags.",
+                                       parent=self)
+                return
+            # Compile every changed script before writing the first one.
+            imported_globals = campaign + additions["campaign"]
+            for script_path, entry, native, names in changes:
+                source = script_sources.peek(self.project, script_path)
+                for name in names:
+                    source = ef.append_registration(source, entry, native, name)
+                context = script_sources.CompileContext.for_script(self.project, script_path, source)
+                compile_source(source, base=read_cmb(script_path.read_bytes()),
+                               known_script_functions=context.helpers, global_flags=imported_globals)
+            changed = 0
+            for script_path, entry, native, names in changes:
+                def add_names(source, entry=entry, native=native, names=names):
+                    for name in names:
+                        source = ef.append_registration(source, entry, native, name)
+                    return source
+                if not self.edit_script(script_path, add_names, f"Imported {len(names)} flags from Excel"):
+                    messagebox.showwarning("Flag import stopped",
+                                           f"Updated {changed} script(s) before an error stopped the import.",
+                                           parent=self)
+                    return
+                changed += 1
+            messagebox.showinfo("Import flags", f"Imported flags into {changed} script(s).", parent=self)
+        except CompileError as exc:
+            errors = [str(d) for d in exc.diagnostics if d.severity == "error"]
+            messagebox.showerror("Could not import flags", "\n".join(errors[:8]), parent=self)
+        except (OSError, ValueError, ParseError, ProjectError) as exc:
+            messagebox.showerror("Could not import flags", str(exc), parent=self)
 
     def chapter_title(self, chapter_id: str) -> str:
         index = self.shell.index
@@ -219,12 +300,12 @@ class _CampaignTab(ttk.Frame):
     def __init__(self, parent: tk.Misc, page: FlagsPanel):
         super().__init__(parent, padding=12)
         self._page = page
-        ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
-                  text="Registered once at power-on: slots 0-7 by the engine, the rest by RegistGlobalFlags in "
-                       "startup.cmb. Any chapter can set, clear or test them with set(\"name\"), clr(\"name\"), "
-                       "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(anchor="w")
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x")
+        info(bar, "Registered once at power-on: slots 0-7 by the engine, the rest by RegistGlobalFlags in "
+                  "startup.cmb. Any chapter can set, clear or test them with set(\"name\"), clr(\"name\"), "
+                  "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(
+            side="right", padx=(6, 0))
         ttk.Button(bar, text="Add campaign flag…", command=self._add).pack(side="left")
         self._rename_button = ttk.Button(bar, text="Rename reserved slot…", command=self._rename, state="disabled")
         self._rename_button.pack(side="left", padx=(6, 0))
@@ -335,11 +416,9 @@ class _ChapterTab(ttk.Frame):
         self._combo.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self._summary = ttk.Label(top, style="Muted.TLabel")
         self._summary.pack(side="left")
-        ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
-                  text=f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, "
-                       "and cleared when the next "
-                       "chapter starts. Talk, battle and base-conversation events use a flag named by their "
-                       "label to run only once.").pack(anchor="w", pady=(8, 0))
+        info(top, f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, and "
+                  "cleared when the next chapter starts. Talk, battle and base-conversation events use a flag "
+                  "named by their label to run only once.").pack(side="left", padx=(8, 0))
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x")
         ttk.Button(bar, text="Add chapter flag…", command=self._add).pack(side="left")

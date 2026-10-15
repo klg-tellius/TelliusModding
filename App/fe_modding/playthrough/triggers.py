@@ -4,7 +4,7 @@
 The rules follow the archive's ``events-scripting`` and ``event-script``
 articles: goal events (types 1 and 2) run once their flag is set; phase
 events (3 before, 6 after the phase starts) match a turn range and a phase;
-zone events (4) match the tile a unit of the given side stops on; location
+zone events (4) match the tile where a unit of the given faction acts; location
 events (5) a tile and an action id; talk (8) and battle (9) events a pair of
 characters, either way round when their direction flag is 1, and are
 skipped while their one-time flag is set; death events (10, 11) a
@@ -20,7 +20,7 @@ from typing import Optional
 from ..formats.cmb.binary import _pool_layout
 from ..formats.cmb.catalog import TRIGGERS
 from ..formats.cmb.decompiler import _Names
-from .state import PLAYER, Frame, GameState, ScriptRun
+from .state import Frame, GameState, ScriptRun
 from .world import World
 
 ONCE = frozenset({1, 2, 5, 8, 9})
@@ -91,7 +91,19 @@ def _turn_match(params: dict, turn: int) -> bool:
     low, high = params.get("turn_from", 0), params.get("turn_to", 0)
     if not low:
         return True
-    return low <= turn <= max(low, high)
+    return low <= turn <= high
+
+
+def _zone_rect(params: dict, width: int, height: int) -> tuple:
+    """Resolve the engine's inclusive right/bottom endpoints against the map edges."""
+    right, bottom = params["x2"], params["y2"]
+    right = (right & 0xFF) - 0x100 if right & 0x80 else right & 0xFF
+    bottom = (bottom & 0xFF) - 0x100 if bottom & 0x80 else bottom & 0xFF
+    if right <= 0:
+        right = width - 1 - right
+    if bottom <= 0:
+        bottom = height - 1 - bottom
+    return params["x1"], params["y1"], right, bottom
 
 
 def _pair(params: dict, a: Optional[str], b: Optional[str]) -> bool:
@@ -108,22 +120,21 @@ def _blocked(state: GameState, t: TriggerFn) -> bool:
     return isinstance(flag, str) and state.get_flag(flag)
 
 
-def matches(world: World, state: GameState, kind: int, ctx: dict) -> list:
+def matches(world: World, state: GameState, kind: int, ctx: dict, start: int = 0) -> list:
     out = []
-    for t in index(world):
+    for t in index(world)[start:]:
         if t.type != kind or _blocked(state, t):
             continue
         p = t.params
         if kind in (1, 2):
             ok = isinstance(p.get("flag"), str) and state.get_flag(p["flag"])
         elif kind in (3, 6):
-            ok = p.get("phase") == ctx.get("phase") and _turn_match(p, state.turn)
+            ok = p.get("phase") in (ctx.get("phase"), 0xFFFF) and _turn_match(p, state.turn)
         elif kind == 4:
             tile = ctx.get("tile")
-            side = 0 if ctx.get("faction") == PLAYER else 1
-            ok = (tile is not None and p.get("side", 0) == side
-                  and min(p["x1"], p["x2"]) <= tile[0] <= max(p["x1"], p["x2"])
-                  and min(p["y1"], p["y2"]) <= tile[1] <= max(p["y1"], p["y2"]))
+            left, top, right, bottom = _zone_rect(p, world.width, world.height)
+            ok = (tile is not None and p.get("side", 0) in (ctx.get("faction"), 0xFFFF)
+                  and left <= tile[0] <= right and top <= tile[1] <= bottom)
         elif kind == 5:
             ok = (p.get("x"), p.get("y"), p.get("action")) == (ctx.get("x"), ctx.get("y"), ctx.get("action"))
         elif kind in (8, 9):
@@ -151,7 +162,7 @@ def zones(world: World) -> list:
     for t in index(world):
         if t.type == 4:
             p = t.params
-            out.append(((min(p["x1"], p["x2"]), min(p["y1"], p["y2"]), max(p["x1"], p["x2"]), max(p["y1"], p["y2"])),
+            out.append((_zone_rect(p, world.width, world.height),
                         p.get("side", 0), t.name))
         elif t.type == 5:
             p = t.params

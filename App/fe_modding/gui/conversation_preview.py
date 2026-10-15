@@ -10,7 +10,7 @@ from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
 from ..formats.fe9_message_scene import layout_from_label, layout_label
-from .scene_editor import layout_labels
+from .scene_editor import _Picker, _Thumbnails, background_names, layout_labels
 
 
 def ConversationPreview(parent, project):
@@ -82,8 +82,11 @@ class FE9ConversationPreview(ttk.Frame):
         ttk.Label(self._context, text="Layout").grid(row=1, column=0, sticky="w")
         self._layout_combo = ttk.Combobox(self._context, textvariable=self._layout, width=30)
         self._layout_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
-        ttk.Label(self._context, text="Background RID").grid(row=1, column=3, sticky="w")
-        ttk.Entry(self._context, textvariable=self._background, width=25).grid(row=1, column=4, columnspan=2, sticky="ew")
+        ttk.Label(self._context, text="Background").grid(row=1, column=3, sticky="w")
+        self._background_combo = ttk.Combobox(self._context, textvariable=self._background, width=25)
+        self._background_combo.grid(row=1, column=4, sticky="ew")
+        ttk.Button(self._context, text="Search…", command=self._search_background).grid(
+            row=1, column=5, sticky="w", padx=(4, 0))
         for i, var in enumerate(self._portraits):
             row, column = 2+i//3, (i%3)*2
             ttk.Label(self._context, text=f"Seat {i}").grid(row=row, column=column, sticky="w")
@@ -124,6 +127,18 @@ class FE9ConversationPreview(ttk.Frame):
     def seek_before(self, offset):
         """Show the scene after every command before source byte `offset`."""
         self._goto(max((e.index for e in self._timeline.events if e.source_offset < offset), default=0))
+
+    def _search_background(self):
+        if self._assets is None:
+            return
+        thumbs = _Thumbnails()
+        entries = [(name, "") for name in background_names(self._assets)]
+        chosen = _Picker(self, "Choose background", entries,
+                         lambda name: thumbs.background(self._assets, name),
+                         self._background.get().strip()).result
+        if chosen is not None:
+            self._background.set(chosen)
+            self._rebuild()
 
     def _get_context(self):
         return InitialContext(layout_from_label(self._layout.get()), self._background.get().strip(),
@@ -190,6 +205,7 @@ class FE9ConversationPreview(ttk.Frame):
             self._assets = ConversationAssets(self._project.extracted_dir)
             self._renderer = ConversationRenderer(self._assets)
             self._layout_combo.configure(values=layout_labels(self._assets))
+            self._background_combo.configure(values=background_names(self._assets))
         except Exception as error:
             self._assets = self._renderer = None
             self._set_diagnostics([str(error)])

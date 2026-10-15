@@ -20,7 +20,7 @@ Editable, per tab:
 - classes: ID (JID), name key (MJID), description key (MH_J), promotes-to,
   class model AID, innate weapon, weapon ranks (a new rank string is added to
   the pool, so classes that shared the old one keep it), the five innate
-  skills, build, weight, movement, skill capacity, vision, movement type,
+  skills, Occult-scroll mastery skill, build, weight, movement, skill capacity, vision, movement type,
   caps, base stats, growth rates, growth modifiers and the three category
   tokens (check boxes);
 - items: every field of the 96-byte record, decoded (``fe8data.ItemEntry``):
@@ -36,8 +36,8 @@ Editable, per tab:
 - terrain: name and display-name key, and the 24-byte stats block
   (``fe8data.patch_terrain_stats``), shared with the types using the same
   block unless the type is given its own;
-- chapters: every field of the ``ChapterData`` record (files, objectives per
-  difficulty, scenes, enemy levels, trial grades);
+- chapters (on each chapter's Chapter data tab): every field of the ``ChapterData``
+  record (files, objectives per difficulty, scenes, enemy levels, trial grades);
 - general: the ``GameData`` difficulty constants, the army groups
   (``GroupData``), the battle skies (``BattleSkyData``) and the build
   time/author (``DatabaseHead``).
@@ -45,10 +45,10 @@ Editable, per tab:
 The battle scenes (``BattleTerrData``) are edited on each chapter's page
 (``battle_scene_editor.py``).
 
-Classes, items and chapters have **New…** (empty or a
-copy) and **Remove** (refused while anything still names the record, see
-:mod:`.record_actions`). Skills and terrain types keep their count: the game
-refers to them by position.
+Classes and items have **New…** (empty or a copy) and **Remove**
+(refused while anything still names the record, see :mod:`.record_actions`).
+Chapters are added from the Chapters page. Skills and terrain types keep their
+count: the game refers to them by position.
 
 Items and skills show their icon from ``window/icon.tpl``
 (:mod:`fe_modding.formats.icons`); **Edit icon ›** opens that icon in
@@ -58,9 +58,7 @@ in ``zdbx.cmp`` names, and ``xwp/forge/<name>_b`` for the forged version.
 Links go through the ``navigate`` callback the page passes in (a workspace
 route).
 
-The class, skill and chapter forms also edit the whole record as hex, except
-its pointer words (``fe8data.patch_record_bytes`` refuses those: the loader
-relocates them, so they are edited through their own fields). A field naming
+A field naming
 another record (a class's promotion, a character's class, a skill) takes only
 labels already in the file; IDs, text keys, model and effect names are added
 to the string pool when new.
@@ -70,22 +68,25 @@ from __future__ import annotations
 
 import struct
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from PIL import Image, ImageTk
 
-from ..formats import fe8data, icons, zdbx
+from ..formats import fe8data, icons, item_rules, zdbx
 from .. import excel_io
 from ..formats.fe9_message_scene import to_display
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
+from ..game_code.dol import DolError
 from ..project import ModProject
 from . import record_actions, theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
-from .widgets import ScrollFrame, TileBrowser
+from . import message_reference
+from .widgets import ScrollFrame, TileBrowser, info, tip
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]
@@ -149,9 +150,7 @@ class _Field:
 
 
 class _Form:
-    """The fields of the record shown in one tab. A field is written to the
-    session when it is left; the raw hex box goes first so decoded fields
-    edited at the same time win over its old copy of them."""
+    """The fields of the record shown in one tab, applied when left."""
 
     def __init__(self, editor: "StatsEditor", kind: str, index: int):
         self.editor, self.kind, self.index = editor, kind, index
@@ -182,6 +181,98 @@ class _Form:
                 field.load()
 
 
+class _LabelList(ttk.Frame):
+    """A list of labels (a skill's PID_/JID_ restrictions) with Add… and
+    Remove; ``get``/``set`` use the comma-separated text the form stores."""
+
+    def __init__(self, parent, choices: Callable[[], list], on_change: Callable[[], None]):
+        super().__init__(parent)
+        self._choices, self._on_change = choices, on_change
+        self._labels: list[str] = []
+        self._list = tk.Listbox(self, height=4, width=46, exportselection=False)
+        self._list.pack(side="left")
+        buttons = ttk.Frame(self)
+        buttons.pack(side="left", anchor="n", padx=(6, 0))
+        self._add = ttk.Button(buttons, text="Add…", command=self._add_label)
+        self._add.pack(fill="x")
+        self._remove = ttk.Button(buttons, text="Remove", command=self._remove_label)
+        self._remove.pack(fill="x", pady=(4, 0))
+
+    def widgets(self) -> list:
+        return [self._list]
+
+    def get(self) -> str:
+        return ", ".join(self._labels)
+
+    def set(self, value: str) -> None:
+        self._labels = [t for t in value.replace(",", " ").split() if t]
+        self._list.delete(0, "end")
+        names = dict((label, shown) for shown, label in self._choices())
+        for label in self._labels:
+            self._list.insert("end", names.get(label, label))
+        if not self._labels:
+            self._list.insert("end", "(anyone)")
+
+    def _add_label(self) -> None:
+        dialog = _ChooseLabelDialog(self, "Add a character or class", self._choices())
+        self.wait_window(dialog)
+        if dialog.result and dialog.result not in self._labels:
+            self.set(", ".join(self._labels + [dialog.result]))
+            self._on_change()
+
+    def _remove_label(self) -> None:
+        picked = self._list.curselection()
+        if picked and self._labels and picked[0] < len(self._labels):
+            del self._labels[picked[0]]
+            self.set(", ".join(self._labels))
+            self._on_change()
+
+
+class _ChooseLabelDialog(tk.Toplevel):
+    """Search a list of (shown text, label) and pick one; ``result`` is the label."""
+
+    def __init__(self, parent, title: str, choices: list):
+        super().__init__(parent)
+        self.title(title)
+        self.transient(parent)
+        self.result: Optional[str] = None
+        self._choices = choices
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill="both", expand=True)
+        self._query = tk.StringVar()
+        entry = ttk.Entry(body, textvariable=self._query, width=50)
+        entry.pack(fill="x")
+        self._list = tk.Listbox(body, height=18, width=60)
+        self._list.pack(fill="both", expand=True, pady=(6, 0))
+        self._list.bind("<Double-Button-1>", lambda e: self._ok())
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Add", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 6))
+        self._shown: list = []
+        self._query.trace_add("write", lambda *_: self._filter())
+        self._filter()
+        entry.focus_set()
+        self.grab_set()
+
+    def _filter(self) -> None:
+        words = self._query.get().casefold().split()
+        self._shown = [c for c in self._choices if all(w in c[0].casefold() for w in words)]
+        self._list.delete(0, "end")
+        for shown, _label in self._shown:
+            self._list.insert("end", shown)
+        if self._shown:
+            self._list.selection_set(0)
+
+    def _ok(self) -> None:
+        picked = self._list.curselection()
+        if picked:
+            self.result = self._shown[picked[0]][1]
+        self.destroy()
+
+
 class StatsEditor(EditorPanel):
     display_name = "Game Data"
     shares_fe8_session = True  # its unsaved edits are the session's, listed once as FE8Data.bin
@@ -199,7 +290,6 @@ class StatsEditor(EditorPanel):
         self._session = session or Fe8DataSession(project, changelog)
         self._path = self._session.path
         self._texts: Optional[dict] = None
-        self._skill_descriptions: Optional[dict] = None
         self._forms: dict[str, Optional[_Form]] = {key: None for key in TAB_KEYS}
         self._pickers: dict[str, TileBrowser] = {}
         self._bodies: dict[str, ScrollFrame] = {}
@@ -258,7 +348,10 @@ class StatsEditor(EditorPanel):
         if self._texts is None:
             system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
             try:
-                self._texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None and system_cmp.exists() else {}
+                loose = message_reference.common_path(self._project)
+                self._texts = (message_reference.message_texts(self._project) if loose.is_file()
+                               else fe8data.read_message_texts(system_cmp)
+                               if system_cmp is not None and system_cmp.exists() else {})
             except Exception:  # noqa: BLE001 - names are a convenience
                 self._texts = {}
         text = self._texts.get(key, "").strip()
@@ -268,16 +361,6 @@ class StatsEditor(EditorPanel):
             except UnicodeError:
                 pass
         return text
-
-    def _descriptions(self) -> dict:
-        if self._skill_descriptions is None:
-            system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
-            try:
-                self._skill_descriptions = (
-                    fe8data.read_skill_descriptions(system_cmp) if system_cmp is not None and system_cmp.exists() else {})
-            except Exception:  # noqa: BLE001 - descriptions are a convenience
-                self._skill_descriptions = {}
-        return self._skill_descriptions
 
     def class_name(self, c) -> str:
         return self._text(c.mjid) or (c.jid or "")
@@ -327,7 +410,7 @@ class StatsEditor(EditorPanel):
         if self._navigate is not None:
             edit = ttk.Button(frame, text="Edit icon ›", command=lambda: self._navigate(("asset", "icons", target())))
             edit.pack(side="left", padx=(10, 0))
-        note = ttk.Label(frame, style="Muted.TLabel", wraplength=460, justify="left")
+        note = ttk.Label(frame, style="Warn.TLabel", wraplength=460, justify="left")
         note.pack(side="left", padx=(12, 0))
 
         def refresh() -> None:
@@ -390,10 +473,9 @@ class StatsEditor(EditorPanel):
         if forged is not None and self._navigate is not None:
             ttk.Button(frame, text="Forged model ›", command=lambda: self._navigate(
                 ("asset", "models", f"xwp/forge/{forged.stem}"))).pack(side="left", padx=(6, 0))
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "The battle looks the item ID without IID_ up in zdbx.cmp (xwp/<NAME>.dbx), whose Model block names "
-            "the folder and model: a new item ID needs its own table there.")
-        ).grid(row=row + 1, column=0, columnspan=columns, sticky="w")
+        info(frame, "The battle looks the item ID without IID_ up in zdbx.cmp (xwp/<NAME>.dbx), whose Model block "
+                    "names the folder and model: a new item ID needs its own table there.").pack(side="left",
+                                                                                                padx=(6, 0))
 
     # -- layout ---------------------------------------------------------------
     def _build_widgets(self) -> None:
@@ -404,16 +486,16 @@ class StatsEditor(EditorPanel):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
-        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
-        ttk.Button(top, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
+        self._excel_export_button = ttk.Button(top, text="Export Excel…", command=self._export_excel)
+        self._excel_import_button = ttk.Button(top, text="Import Excel…", command=self._import_excel)
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
-        ttk.Label(top, text="Fields apply when you leave them; the build copies the saved file into system.cmp.",
-                  style="Muted.TLabel").pack(side="right")
+        info(top, "Fields apply when you leave them; Save writes FE8Data.bin and the build copies it into "
+                  "system.cmp.").pack(side="right")
 
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=8)
-        self._notebook.bind("<<NotebookTabChanged>>", lambda e: self.flush(), add="+")
+        self._notebook.bind("<<NotebookTabChanged>>", lambda e: (self.flush(), self._sync_excel_buttons()), add="+")
         for key, title, noun in (("classes", "Classes", "classes"), ("items", "Items", "items"),
                                  ("skills", "Skills", "skills"), ("terrain", "Terrain", "terrain types"),
                                  ("chapters", "Chapters", "chapters"), ("general", "General", "")):
@@ -433,8 +515,7 @@ class StatsEditor(EditorPanel):
                 ttk.Button(picker.record_actions, text="Remove", command=lambda k=key: self._remove_record(k)).pack(
                     side="left", padx=(6, 0))
             elif key in FIXED_TABS:
-                ttk.Label(picker.actions, text=FIXED_TABS[key], style="Muted.TLabel", wraplength=420,
-                          justify="left").pack(side="left", padx=(14, 0))
+                info(picker.actions, FIXED_TABS[key]).pack(side="left", padx=(14, 0))
             body = ScrollFrame(picker.detail, padding=(16, 8, 16, 16))
             body.pack(fill="both", expand=True)
             self._bodies[key] = body
@@ -537,10 +618,10 @@ class StatsEditor(EditorPanel):
         self._status_label.config(text=f"Removed {label}: save FE8Data.bin to keep it", style="Muted.TLabel")
 
     # -- committing -------------------------------------------------------------
-    def _commit(self, form: Optional[_Form]) -> None:
+    def _commit(self, form: Optional[_Form]) -> bool:
         """Write the form's changed fields to the session."""
         if form is None or self._forms.get(self._form_key(form)) is not form:
-            return
+            return True
         data, errors, failed = self._data, [], set()
         for field in form.fields:
             value = field.var.get()
@@ -570,67 +651,163 @@ class StatsEditor(EditorPanel):
                 self._status_label.config(text="Unsaved changes", style="Muted.TLabel")
         except tk.TclError:
             pass
+        return not errors
 
     def _form_key(self, form: _Form) -> str:
         return {"class": "classes", "item": "items", "skill": "skills", "terrain": "terrain", "chapter": "chapters",
                 "general": "general"}[form.kind]
 
-    def flush(self) -> None:
+    def flush(self) -> bool:
         """Apply whatever field still has the focus (a picker button or a
         tab change doesn't take it, so its FocusOut may not have run)."""
+        valid = True
         for form in list(self._forms.values()):
-            self._commit(form)
+            valid = self._commit(form) and valid
+        return valid
 
     # -- form building helpers ---------------------------------------------------------
     @staticmethod
-    def _heading(parent, text: str, row: int, columns: int = 8) -> None:
-        ttk.Label(parent, text=text, style="Subtitle.TLabel").grid(
-            row=row, column=0, columnspan=columns, sticky="w", pady=(14, 4))
+    def _heading(parent, text: str, row: int, columns: int = 8, help_text: str = "") -> None:
+        head = ttk.Frame(parent, style="Page.TFrame")
+        head.grid(row=row, column=0, columnspan=columns, sticky="w", pady=(14, 4))
+        ttk.Label(head, text=text, style="Subtitle.TLabel").pack(side="left")
+        if help_text:
+            info(head, help_text).pack(side="left", padx=(6, 0), pady=(4, 0))
 
-    def _pointer_combo(self, parent, prefix: str, width: int = 30) -> tuple[ttk.Combobox, tk.StringVar]:
+    def _pointer_combo(self, parent, prefix: str, width: int = 30,
+                       name_hint: str = "NEW") -> tuple[ttk.Combobox, tk.StringVar]:
         var = tk.StringVar()
         options = sorted(self._labels_by_prefix.get(prefix, {}).keys())
-        return ttk.Combobox(parent, textvariable=var, values=[""] + options, width=width), var
+        if prefix not in {"MJID", "MIID", "MSID", "MH_J", "MH_I", "MH_SKILL", "MT_", "MG_", "MCT",
+                          "MW_", "ML_", "Mess_Help_skill_", "Mess_Help2_skill_"}:
+            return ttk.Combobox(parent, textvariable=var, values=[""] + options, width=width), var
+        self._texts = None  # another editor may have changed common.m
+        texts = self._message_texts()
+        labels = {f"{key} — {message_reference.preview(value)}": key
+                  for key, value in sorted(texts.items()) if key.startswith(prefix)}
+        box = ttk.Combobox(parent, textvariable=var, values=["", *labels, message_reference.CREATE_MESSAGE],
+                           width=max(width, 42))
+        last = [""]
+        id_prefix = prefix if prefix.endswith("_") else prefix + "_"
+        required_prefix = "MCT" if prefix == "MCT" else id_prefix
+        def remember(*_args):
+            value = var.get()
+            if value != message_reference.CREATE_MESSAGE:
+                last[0] = labels.get(value, value)
+        var.trace_add("write", remember)
+        def selected(_event):
+            value = var.get()
+            if value == message_reference.CREATE_MESSAGE:
+                var.set(last[0])
+                initial = message_reference.suggested_id(id_prefix, name_hint, set(texts))
+                dialog = message_reference.NewMessageDialog(self, initial)
+                if dialog.result is None:
+                    return "break"
+                name, new_text = dialog.result
+                if not name.startswith(required_prefix):
+                    messagebox.showerror("Create message", f"ID must start with {required_prefix}.", parent=self)
+                    return "break"
+                try:
+                    message_reference.create_message(self._project, name, new_text)
+                except (OSError, ValueError) as exc:
+                    messagebox.showerror("Create message", str(exc), parent=self)
+                    return "break"
+                self._texts = None
+                texts[name] = new_text
+                labels[f"{name} — {message_reference.preview(new_text)}"] = name
+                box.configure(values=["", *labels, message_reference.CREATE_MESSAGE])
+                self._changelog.append(message_reference.common_path(self._project).name,
+                                       f"Created message {name}")
+                var.set(name)
+                self.flush()
+                return "break"
+            var.set(labels.get(value, value))
+        box.bind("<<ComboboxSelected>>", selected)
+        return box, var
 
-    def _hex_box(self, parent, form: _Form, kind: str, index: int, row: int, columns: int) -> None:
-        size = fe8data.RECORD_TABLES[kind][1]
-        self._heading(parent, "Whole record (hex)", row, columns)
-        protected = sorted(fe8data.protected_record_words(self._data, kind, index))
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            f"{size} bytes, 16 per line. Everything here can be changed except the pointer words at "
-            + ", ".join(f"0x{o:02X}" for o in protected)
-            + " (edit those through their fields). Applied when you leave the box or press Ctrl+Enter."
-        )).grid(row=row + 1, column=0, columnspan=columns, sticky="w")
-        text = tk.Text(parent, width=52, height=(size + 15) // 16, wrap="none", font=("Consolas", 10))
-        text.grid(row=row + 2, column=0, columnspan=columns, sticky="w", pady=(4, 0))
-        offsets = ttk.Label(parent, style="Muted.TLabel", font=("Consolas", 10), justify="left",
-                            text="\n".join(f"+0x{o:02X}" for o in range(0, size, 16)))
-        offsets.grid(row=row + 2, column=columns, sticky="nw", padx=(6, 0), pady=(6, 0))
+    def _message_texts(self) -> dict[str, str]:
+        if self._texts is None:
+            self._text(" ")
+        return self._texts or {}
 
-        def read() -> str:
-            raw = fe8data.record_bytes(self._data, kind, index)
-            return "\n".join(raw[o:o + 16].hex(" ") for o in range(0, len(raw), 16))
-
-        def apply(data: bytes, value: str) -> bytes:
-            try:
-                new = bytes.fromhex(" ".join(value.split()))
-            except ValueError:
-                raise ValueError("not valid hex") from None
-            return fe8data.patch_record_bytes(data, kind, index, new)
-
-        form.add(text, "Record bytes", _TextVar(text), read, apply, first=True)
+    def _message_preview(self, parent, var: tk.StringVar, row: int, column: int,
+                         columns: int = 4) -> None:
+        shown = tk.StringVar()
+        def update(*_args):
+            key = var.get()
+            shown.set(self._text(key) or ("(message not found)" if key else ""))
+        var.trace_add("write", update)
+        update()
+        ttk.Label(parent, textvariable=shown, style="Muted.TLabel", wraplength=420,
+                  justify="left").grid(row=row, column=column, columnspan=columns,
+                                       sticky="w", padx=(8, 0))
 
     def _byte_row(self, parent, form: _Form, row: int, title: str, names: list[str],
                   read: Callable[[int], int], apply: Callable[[bytes, int, int], bytes],
-                  low: int = 0, high: int = 255) -> None:
-        ttk.Label(parent, text=title).grid(row=row + 1, column=0, sticky="w", padx=(0, 10))
+                  low: int = 0, high: int = 255, *, header: bool = True, help_text: str = "",
+                  name_help: Optional[dict] = None) -> None:
+        """A label and one entry per name; the names head the columns on ``row``
+        (``header=False``: no header, the entries are still on ``row + 1``)."""
+        tip(ttk.Label(parent, text=title), help_text).grid(row=row + 1, column=0, sticky="w", padx=(0, 10))
         for i, name in enumerate(names):
-            ttk.Label(parent, text=name, style="Muted.TLabel").grid(row=row, column=i + 1, sticky="w")
+            if header:
+                tip(ttk.Label(parent, text=name, style="Muted.TLabel"), (name_help or {}).get(name, "")).grid(
+                    row=row, column=i + 1, sticky="w")
             var = tk.StringVar()
             entry = ttk.Entry(parent, textvariable=var, width=6)
             entry.grid(row=row + 1, column=i + 1, sticky="w", padx=(0, 6), pady=1)
             form.add(entry, f"{title} {name}", var, lambda i=i: str(read(i)),
                      lambda data, v, i=i: apply(data, i, _number(v, low, high)))
+
+    def _open_map_model(self, aid: str) -> None:
+        """Open a class's map model (its AID's ymu/ folder) in Assets › 3D Models."""
+        from ..formats import anim_registry
+
+        try:
+            records = anim_registry.read_anim_registry_path(PATH_OF_RADIANCE_PROFILE.path(self._files_dir, "anim_data"))
+        except Exception:  # noqa: BLE001
+            records = []
+        folder = next((r.class_folder.rstrip("/") for r in records if r.base_aid == aid), None)
+        if folder is None:
+            messagebox.showinfo("Class model", f"No map model folder is registered for {aid or 'this AID'}.",
+                                parent=self)
+            return
+        self._navigate(("asset", "models", f"ymu/{folder}"))
+
+    def _choose_icon(self, kind: str, var: tk.StringVar, records: list, icon_of: Callable, name_of: Callable) -> None:
+        """Pick an item's or a skill's icon from a table of the icon sheet."""
+        from .icon_picker import IconPickerDialog
+
+        images = self._icons()
+        if not images:
+            messagebox.showinfo("Icon", "window/icon.tpl could not be read.", parent=self)
+            return
+        try:
+            current = int(var.get(), 0)
+        except ValueError:
+            current = None
+        by_icon: dict[int, list[str]] = {}
+        for record in records:
+            by_icon.setdefault(icon_of(record), []).append(name_of(record))
+        if kind == "item":
+            count = min(256, icons.cell_count(images, icons.ITEM_IMAGE, icons.ITEM_CELL) - icons.ITEM_FIRST_CELL)
+            dialog = IconPickerDialog(self, "Item icon", images, icons.ITEM_IMAGE, icons.ITEM_CELL, list(range(count)),
+                                      icons.item_cell, current, lambda v: by_icon.get(v, []))
+        else:
+            count = min(255, icons.cell_count(images, icons.SKILL_IMAGE, icons.SKILL_CELL))
+            dialog = IconPickerDialog(self, "Skill icon", images, icons.SKILL_IMAGE, icons.SKILL_CELL,
+                                      list(range(count + 1)), icons.skill_cell, current,
+                                      lambda v: by_icon.get(v, []) if v else ["no icon: left out of the learnable lists"])
+        self.wait_window(dialog)
+        if dialog.result is not None:
+            var.set(str(dialog.result))
+            self.flush()
+
+    def _restriction_choices(self) -> list[tuple[str, str]]:
+        """(shown text, label) of every character and class, for a skill's restriction list."""
+        characters = [(f"{self._text(c.mpid) or c.pid} ({c.pid})", c.pid) for c in self._fe8.characters if c.pid]
+        classes = [(f"{self.class_name(c)} ({c.jid})", c.jid) for c in self._fe8.classes if c.jid]
+        return sorted(characters, key=lambda p: p[0].casefold()) + sorted(classes, key=lambda p: p[0].casefold())
 
     # -- classes ------------------------------------------------------------------------
     def _show_class(self, index: int) -> None:
@@ -648,39 +825,37 @@ class StatsEditor(EditorPanel):
         def pointer_row(label: str, field: str, prefix: str, note: str = "", link=None) -> None:
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2)
-            box, var = self._pointer_combo(parent, prefix)
+            box, var = self._pointer_combo(parent, prefix, name_hint=f"{c.jid}_{field}")
             box.grid(row=row, column=1, columnspan=4, sticky="w")
             form.add(box, label, var, lambda: getattr(cls(), field) or "",
                      lambda data, v: patch(data, index, field, _label_or_none(v)))
             if link is not None:
                 ttk.Button(parent, text="Open ›", command=lambda: link(var.get().strip())).grid(
                     row=row, column=5, sticky="w", padx=(6, 0))
-            if note:
-                ttk.Label(parent, text=note, style="Muted.TLabel").grid(row=row, column=6, columnspan=4, sticky="w",
-                                                                        padx=(8, 0))
+            if prefix in {"MJID", "MH_J"}:
+                self._message_preview(parent, var, row, 6)
+            elif note:
+                info(parent, note).grid(row=row, column=6, sticky="w", padx=(8, 0))
             row += 1
 
-        ttk.Label(parent, text="Class ID (JID)").grid(row=row, column=0, sticky="w", pady=2)
+        tip(ttk.Label(parent, text="Class ID (JID)"), "Characters, deployments and scripts name the class by it.").grid(
+            row=row, column=0, sticky="w", pady=2)
         var = tk.StringVar()
         entry = ttk.Entry(parent, textvariable=var, width=32)
         entry.grid(row=row, column=1, columnspan=4, sticky="w")
         form.add(entry, "Class ID", var, lambda: cls().jid or "", lambda data, v: patch(data, index, "jid", v))
-        ttk.Label(parent, text="characters, deployments and scripts name the class by it", style="Muted.TLabel").grid(
-            row=row, column=6, columnspan=4, sticky="w", padx=(8, 0))
         row += 1
         pointer_row("Name key (MJID)", "mjid", "MJID", "the displayed class name")
         pointer_row("Description key", "hybrid_id", "MH_J")
         pointer_row("Promotes to / linked class", "promotes_to", "JID", link=self.select_class)
-        pointer_row("Class model (AID)", "aid", "AID", "used by units whose character has none")
-        pointer_row("Innate weapon", "innate_weapon", "IID", "laguz: the attack of the transformed unit",
+        pointer_row("Class model (AID)", "aid", "AID", "Map model of units whose character has none.",
+                    link=self._open_map_model if self._navigate is not None else None)
+        pointer_row("Innate weapon", "innate_weapon", "IID", "Laguz: the attack of the transformed unit.",
                     link=self.select_item)
 
-        self._heading(parent, "Weapon ranks", row)
-        row += 1
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "- cannot use, * usable without a fixed rank, else the rank letter. A rank string no other class "
-            "has is added to the file, so classes that shared the old one keep it.")).grid(
-            row=row, column=0, columnspan=10, sticky="w")
+        self._heading(parent, "Weapon ranks", row, help_text=(
+            "- cannot use, * usable without a fixed rank, else the starting rank letter. A rank string no other "
+            "class has is added to the file, so classes that shared the old one keep it."))
         row += 1
         rank_frame = ttk.Frame(parent, style="Page.TFrame")
         rank_frame.grid(row=row, column=0, columnspan=10, sticky="w")
@@ -708,10 +883,7 @@ class StatsEditor(EditorPanel):
                  lambda data, v: patch(data, index, "weapon_ranks", v))
         row += 1
 
-        self._heading(parent, "Innate skills", row)
-        row += 1
-        ttk.Label(parent, text="Every unit of this class has these.", style="Muted.TLabel").grid(
-            row=row, column=0, columnspan=10, sticky="w")
+        self._heading(parent, "Innate skills", row, help_text="Every unit of this class has these.")
         row += 1
         for i in range(5):
             ttk.Label(parent, text=f"Skill {i + 1}").grid(row=row, column=0, sticky="w", pady=1)
@@ -723,13 +895,35 @@ class StatsEditor(EditorPanel):
                 row=row, column=5, sticky="w", padx=(6, 0))
             row += 1
 
+        self._heading(parent, "Occult scroll", row)
+        row += 1
+        ttk.Label(parent, text="Mastery skill").grid(row=row, column=0, sticky="w", pady=2)
+        occult = fe8data.occult_skills(self._data)
+        occult_values = ["(none)"] + [f"{s.sid} · {self.skill_name(s)}" for s in occult]
+        occult_sid = {shown: s.sid for shown, s in zip(occult_values[1:], occult)}
+        shown_by_sid = {sid: shown for shown, sid in occult_sid.items()}
+        var = tk.StringVar()
+        box = ttk.Combobox(parent, textvariable=var, values=occult_values, state="readonly", width=38)
+        box.grid(row=row, column=1, columnspan=4, sticky="w")
+
+        def read_occult() -> str:
+            jid = cls().jid
+            matches = [s.sid for s in fe8data.occult_skills(self._data) if jid in s.restricted_to]
+            return shown_by_sid.get(matches[0], "(none)") if matches else "(none)"
+
+        form.add(box, "Occult skill", var, read_occult,
+                 lambda data, v: fe8data.assign_occult_skill(data, index, occult_sid.get(v)))
+        info(parent, "The skill an Occult scroll teaches this class. It edits the Occult skills' class "
+                     "restrictions; it is not an innate class skill.").grid(row=row, column=5, sticky="w", padx=(8, 0))
+        row += 1
+
         self._heading(parent, "Movement and build", row)
         row += 1
         for label, field, note in (("Movement", "movement", ""), ("Build (Con)", "build", ""),
                                    ("Weight", "weight", ""),
-                                   ("Skill capacity", "skill_capacity", "the capacity skills fill (0-255)"),
-                                   ("Vision", "vision", "fog-of-war sight range; a Torch adds to it")):
-            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1)
+                                   ("Skill capacity", "skill_capacity", "The capacity skills fill (0-255)."),
+                                   ("Vision", "vision", "Fog-of-war sight range in tiles; a Torch adds to it.")):
+            tip(ttk.Label(parent, text=label), note).grid(row=row, column=0, sticky="w", pady=1)
             var = tk.StringVar()
             entry = ttk.Entry(parent, textvariable=var, width=6)
             entry.grid(row=row, column=1, sticky="w")
@@ -737,11 +931,9 @@ class StatsEditor(EditorPanel):
             form.add(entry, label, var,
                      lambda o=offset: str(fe8data.record_bytes(self._data, "class", index)[o]),
                      lambda data, v, f=field: patch(data, index, f, _number(v, 0, 255)))
-            if note:
-                ttk.Label(parent, text=note, style="Muted.TLabel").grid(row=row, column=2, columnspan=6, sticky="w",
-                                                                        padx=(8, 0))
             row += 1
-        ttk.Label(parent, text="Movement type").grid(row=row, column=0, sticky="w", pady=1)
+        tip(ttk.Label(parent, text="Movement type"), "Picks the terrain cost column (Terrain tab).").grid(
+            row=row, column=0, sticky="w", pady=1)
         type_names = [f"{i}: {name}" for i, name in enumerate(fe8data.MOVEMENT_TYPE_NAMES)]
         var = tk.StringVar()
         box = ttk.Combobox(parent, textvariable=var, values=type_names, state="readonly", width=34)
@@ -750,35 +942,37 @@ class StatsEditor(EditorPanel):
                  lambda: type_names[cls().movement_type] if cls().movement_type < len(type_names)
                  else str(cls().movement_type),
                  lambda data, v: patch(data, index, "movement_type", int(v.split(":")[0])))
-        ttk.Label(parent, text="picks the terrain cost column (Terrain tab)", style="Muted.TLabel").grid(
-            row=row, column=6, columnspan=4, sticky="w", padx=(8, 0))
         row += 1
 
-        self._heading(parent, "Stats", row)
+        self._heading(parent, "Stats", row, help_text=(
+            "Base stats add to a character's personal stats. The game ignores the Luck base and the Luck cap: Luck is "
+            "capped at 40 for every class. Growth % is the class rate used "
+            "for automatic levelling; it is not added to a character's personal rate. Growth modifiers add signed "
+            "percentage points to the personal growth of characters in this class during level ups: 45% personal "
+            "growth with a +5 modifier becomes 50%."))
         row += 1
         stats = fe8data.STAT_NAMES
-        self._byte_row(parent, form, row, "Caps", stats, lambda i: cls().stat_caps[i],
+        stats_frame = ttk.Frame(parent)
+        stats_frame.grid(row=row, column=0, columnspan=10, sticky="w")
+        stats_frame.columnconfigure(0, minsize=132)
+        for column in range(1, len(stats) + 1):
+            stats_frame.columnconfigure(column, minsize=76)
+        self._byte_row(stats_frame, form, 0, "Caps", stats, lambda i: cls().stat_caps[i],
                        lambda d, i, v: patch(d, index, f"cap{i}", v))
-        self._byte_row(parent, form, row + 2, "Base stats", stats, lambda i: cls().base_stats[i],
+        self._byte_row(stats_frame, form, 2, "Base stats", stats, lambda i: cls().base_stats[i],
                        lambda d, i, v: patch(d, index, f"base_stat{i}", v))
-        self._byte_row(parent, form, row + 4, "Growth %", stats, lambda i: cls().growths[i],
+        self._byte_row(stats_frame, form, 4, "Growth %", stats, lambda i: cls().growths[i],
                        lambda d, i, v: patch(d, index, f"growth{i}", v))
-        self._byte_row(parent, form, row + 6, "Growth modifiers", stats, lambda i: cls().growth_modifiers[i],
+        self._byte_row(stats_frame, form, 6, "Growth modifiers", stats, lambda i: cls().growth_modifiers[i],
                        lambda d, i, v: patch(d, index, f"growth_modifier{i}", v), low=-128, high=127)
-        row += 8
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "Base stats are added to each character's personal bonus (Luck unused). Movement and the HP cap "
-            "are confirmed against every promotion pair; the other caps by thematic fit. Growth modifiers "
-            "are signed and added to the growth rates of the class's units.")).grid(
-            row=row, column=0, columnspan=10, sticky="w", pady=(4, 0))
         row += 1
+        # no vanilla class has final, boss or doorbreak (only the axes list doorbreak); bosses are marked by
+        # their character's SID_BOSS / SID_FINAL skill, so these get a box only on a class that has them
         row = self._token_checks(parent, form, row, 10, "Categories", "categories", fe8data.CLASS_CATEGORY_SLOTS,
-                                 fe8data.ITEM_CATEGORY_TOKENS, cls, index, fe8data.patch_class_field)
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "What the class is: weapons effective against a category hit it harder, and some skills and items "
-            "check it.")).grid(row=row, column=0, columnspan=10, sticky="w")
-        row += 1
-        self._hex_box(parent, form, "class", index, row, 9)
+                                 fe8data.ITEM_CATEGORY_TOKENS, cls, index, fe8data.patch_class_field,
+                                 help_text="What the class is: weapons effective against a category hit it harder, "
+                                           "and some skills and items check it.",
+                                 rare=("final", "boss", "doorbreak"))
 
     # -- items ------------------------------------------------------------------------
     def _show_item(self, index: int) -> None:
@@ -801,11 +995,8 @@ class StatsEditor(EditorPanel):
 
         def labelled(label: str, widget, field_note: str = "") -> None:
             nonlocal row
-            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 10))
+            tip(ttk.Label(parent, text=label), field_note).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 10))
             widget.grid(row=row, column=1, columnspan=4, sticky="w")
-            if field_note:
-                ttk.Label(parent, text=field_note, style="Muted.TLabel").grid(
-                    row=row, column=5, columnspan=columns - 5, sticky="w", padx=(8, 0))
             row += 1
 
         def number(label: str, field: str, low: int, high: int, field_note: str = "") -> None:
@@ -817,10 +1008,12 @@ class StatsEditor(EditorPanel):
             return var
 
         def pointer(label: str, field: str, prefix: str, field_note: str = "") -> None:
-            box, var = self._pointer_combo(parent, prefix)
+            box, var = self._pointer_combo(parent, prefix, name_hint=f"{it.iid}_{field}")
             form.add(box, label, var, lambda: getattr(item(), field) or "",
                      lambda data, v: patch(data, index, field, _label_or_none(v)))
-            labelled(label, box, field_note)
+            labelled(label, box, "" if prefix in {"MIID", "MH_I"} else field_note)
+            if prefix in {"MIID", "MH_I"}:
+                self._message_preview(parent, var, row - 1, 5, columns - 5)
 
         def choice(label: str, field: str, options: list, field_note: str = "") -> None:
             shown = {token: text for token, text in options}
@@ -841,7 +1034,7 @@ class StatsEditor(EditorPanel):
         var = tk.StringVar()
         entry = ttk.Entry(parent, textvariable=var, width=32)
         form.add(entry, "Item ID", var, lambda: item().iid or "", lambda data, v: patch(data, index, "iid", v))
-        labelled("Item ID (IID)", entry, "deployments, shops and scripts name the item by it")
+        labelled("Item ID (IID)", entry, "Deployments, shops and scripts name the item by it.")
         pointer("Name key (MIID)", "miid", "MIID", self._text(it.miid))
         pointer("Description key (MH_I)", "help_key", "MH_I")
         description = self._text(it.help_key)
@@ -851,15 +1044,22 @@ class StatsEditor(EditorPanel):
         self._heading(parent, "Type and rank", row, columns)
         row += 1
         types = [(token, f"{token} · {name}") for token, name in fe8data.ITEM_WEAPON_TYPES]
-        choice("Weapon type", "weapon_type", types, "the rank it trains and who can equip it")
-        choice("Attack type", "attack_type", types, "Fire, Thunder, Wind and Light/staff hit with Mag against Res")
+        choice("Weapon type", "weapon_type", types, "The rank it trains and who can equip it.")
+        choice("Attack type", "attack_type", types, "Fire, Thunder, Wind and Light/staff hit with Mag against Res.")
         choice("Rank needed", "rank", [(None, "(none)")] + [
             (token, f"{token} · {exp} weapon EXP" if exp else f"{token} · none") for token, exp in fe8data.ITEM_RANKS])
         number("Weapon EXP per use", "weapon_exp", 0, 255)
+        tip(parent.grid_slaves(row=row - 1, column=0)[0],
+            "A rod with Might is a Light spell; a rod with 0 Might is a staff. Light spells require "
+            "SID_EQUIPLIGHT. Item Properties below can require fixed skills (such as SID_EQ_A) or the Black "
+            "Knight class.")
 
         self._heading(parent, "Icon and model", row, columns)
         row += 1
-        icon_var = number("Icon", "icon", 0, 255, "cell icon + 96 of window/icon.tpl's first image")
+        icon_var = number("Icon", "icon", 0, 255, "Cell icon + 96 of window/icon.tpl's first image.")
+        ttk.Button(parent, text="Choose…", command=lambda: self._choose_icon(
+            "item", icon_var, [o for o in self._fe8.items], lambda o: o.icon, self.item_name)).grid(
+            row=row - 1, column=2, sticky="w", padx=(6, 0))
 
         def sharing() -> str:
             icon = item().icon
@@ -883,8 +1083,8 @@ class StatsEditor(EditorPanel):
                        lambda i: getattr(item(), combat[i][1]),
                        lambda d, i, v: patch(d, index, combat[i][1], v))
         row += 2
-        note("Max range 255 means Mag / 2 (the long-range staves).")
-        number("Cost per use", "cost", 0, 0xFFFF, f"shop price = cost × uses (now {it.cost * it.uses})")
+        tip(parent.grid_slaves(row=row - 1, column=0)[0], "Max range 255 means Mag / 2 (the long-range staves).")
+        number("Cost per use", "cost", 0, 0xFFFF, f"Shop price = cost × uses (now {it.cost * it.uses}).")
 
         properties = dict(fe8data.ITEM_PROPERTY_TOKENS)
         properties.update({t: "No effect: the game ignores it" for t in fe8data.ITEM_IGNORED_PROPERTY_TOKENS})
@@ -892,6 +1092,61 @@ class StatsEditor(EditorPanel):
                                  fe8data.ITEM_PROPERTY_SLOTS, properties, item, index)
         row = self._token_checks(parent, form, row, columns, "Effective against", "categories",
                                  fe8data.ITEM_CATEGORY_SLOTS, fe8data.ITEM_CATEGORY_TOKENS, item, index)
+
+        self._heading(parent, "Custom use restriction", row, columns)
+        row += 1
+        note("Allowed character (PID), current class (JID), and skill (SID) IDs. "
+             "Any: one listed ID matches. All: one ID from every populated group matches. "
+             "The game's existing locks and weapon ranks still apply.")
+
+        def current_rule():
+            iid = item().iid
+            return item_rules.read_item_rules(self._data).get(iid, item_rules.ItemRule(iid))
+
+        def patch_rule(data, field, value):
+            iid = fe8data._read_item(data, index).iid
+            rules = item_rules.read_item_rules(data)
+            rule = rules.get(iid, item_rules.ItemRule(iid))
+            if field == "mode":
+                updated = replace(rule, mode=value.lower())
+            else:
+                labels = tuple(dict.fromkeys(t.strip() for t in value.replace(";", ",").split(",") if t.strip()))
+                updated = replace(rule, **{field: labels})
+            rules[iid] = updated
+            return item_rules.write_item_rules(data, rules)
+
+        mode_var = tk.StringVar()
+        mode_box = ttk.Combobox(parent, textvariable=mode_var, values=("Any", "All"), state="readonly", width=12)
+        form.add(mode_box, "Restriction mode", mode_var, lambda: current_rule().mode.title(),
+                 lambda data, value: patch_rule(data, "mode", value))
+        labelled("Match", mode_box)
+
+        for field, prefix, label in (("pids", "PID", "Characters"), ("jids", "JID", "Classes"),
+                                     ("sids", "SID", "Skills")):
+            var = tk.StringVar()
+            entry = ttk.Entry(parent, textvariable=var, width=62)
+            browse = ttk.Button(parent, text="Browse…", command=lambda v=var, p=prefix: self._choose_rule_ids(v, p))
+            form.add((entry, browse), label, var, lambda f=field: ", ".join(getattr(current_rule(), f)),
+                     lambda data, value, f=field: patch_rule(data, f, value))
+            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2, padx=(0, 10))
+            entry.grid(row=row, column=1, columnspan=7, sticky="w")
+            browse.grid(row=row, column=8, sticky="w", padx=(8, 0))
+            row += 1
+
+        def clear_rule():
+            if not self.flush():
+                return
+            rules = item_rules.read_item_rules(self._data)
+            if rules.pop(item().iid, None) is None:
+                return
+            self._data = item_rules.write_item_rules(self._data, rules)
+            self._session.changed(self)
+            self._on_session_changed(self)
+            self._show_item(index)
+
+        ttk.Button(parent, text="Clear custom restriction", command=clear_rule).grid(
+            row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        row += 1
 
         self._heading(parent, "Effects", row, columns)
         row += 1
@@ -917,20 +1172,78 @@ class StatsEditor(EditorPanel):
         note("Growth modifiers are added to the unit's growth rates while the weapon is equipped. "
              "The record's last two bytes are alignment padding the game never reads.")
 
+    def _choose_rule_ids(self, var: tk.StringVar, prefix: str) -> None:
+        """Search the current table's IDs and place a multi-selection in a rule field."""
+        records = {"PID": self._fe8.characters, "JID": self._fe8.classes, "SID": self._fe8.skills}[prefix]
+        attr = {"PID": "pid", "JID": "jid", "SID": "sid"}[prefix]
+        options = sorted(getattr(record, attr) for record in records if getattr(record, attr))
+        chosen = set(t.strip() for t in var.get().split(",") if t.strip())
+        dialog = tk.Toplevel(self)
+        dialog.title(f"Choose {prefix} IDs")
+        dialog.transient(self)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        query = tk.StringVar()
+        search = ttk.Entry(body, textvariable=query, width=48)
+        search.pack(fill="x")
+        listing = tk.Listbox(body, selectmode="multiple", width=52, height=18, exportselection=False)
+        listing.pack(fill="both", expand=True, pady=8)
+        visible: list[str] = []
+        rebuilding = False
+
+        def refill(*_args):
+            nonlocal rebuilding
+            remember()
+            rebuilding = True
+            visible[:] = [label for label in options if query.get().casefold() in label.casefold()]
+            listing.delete(0, "end")
+            for i, label in enumerate(visible):
+                listing.insert("end", label)
+                if label in chosen:
+                    listing.selection_set(i)
+            rebuilding = False
+
+        def remember(*_args):
+            if rebuilding:
+                return
+            for label in visible:
+                chosen.discard(label)
+            chosen.update(visible[i] for i in listing.curselection())
+
+        def accept():
+            remember()
+            var.set(", ".join(sorted(chosen)))
+            dialog.destroy()
+
+        listing.bind("<<ListboxSelect>>", remember)
+        query.trace_add("write", refill)
+        refill()
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="Apply", command=accept).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=6)
+        search.focus_set()
+        dialog.grab_set()
+        self.wait_window(dialog)
+
     def _token_checks(self, parent, form: _Form, row: int, columns: int, title: str, field: str, slots: int,
-                      tokens: dict, item: Callable, index: int, patch: Callable = fe8data.patch_item_field) -> int:
+                      tokens: dict, item: Callable, index: int, patch: Callable = fe8data.patch_item_field,
+                      help_text: str = "", rare: tuple = ()) -> int:
         """One check box per token of a record's token slots (item properties
-        and categories, class categories); returns the next free grid row."""
-        self._heading(parent, f"{title} (up to {slots})", row, columns)
+        and categories, class categories); returns the next free grid row.
+        ``rare`` tokens get a box only when the record already has them."""
+        self._heading(parent, f"{title} (up to {slots})", row, columns, help_text)
         frame = ttk.Frame(parent, style="Page.TFrame")
         frame.grid(row=row + 1, column=0, columnspan=columns, sticky="w")
         order = list(tokens)
+        present = set(getattr(item(), field))
         checks: dict[str, tk.BooleanVar] = {}
         buttons = []
-        for i, (token, text) in enumerate(tokens.items()):
+        shown = [(token, text) for token, text in tokens.items() if token not in rare or token in present]
+        for i, (token, text) in enumerate(shown):
             var = tk.BooleanVar()
-            button = ttk.Checkbutton(frame, text=f"{token} - {text}", variable=var)
-            button.grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 18), pady=1)
+            button = tip(ttk.Checkbutton(frame, text=text, variable=var), token)
+            button.grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 18), pady=1)
             checks[token] = var
             buttons.append(button)
 
@@ -970,7 +1283,7 @@ class StatsEditor(EditorPanel):
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1)
             if prefix:
-                widget, var = self._pointer_combo(parent, prefix)
+                widget, var = self._pointer_combo(parent, prefix, name_hint=f"{s.sid}_{field}")
             else:
                 var = tk.StringVar()
                 widget = ttk.Entry(parent, textvariable=var, width=32)
@@ -978,38 +1291,29 @@ class StatsEditor(EditorPanel):
             form.add(widget, label, var, lambda: getattr(skill(), field) or "",
                      lambda data, v: fe8data.patch_skill_field(data, index, field, v.strip() if field == "sid"
                                                                else _label_or_none(v)))
-            if note:
-                ttk.Label(parent, text=note, style="Muted.TLabel").grid(row=row, column=5, sticky="w", padx=(8, 0))
+            if prefix in {"MSID", "Mess_Help_skill_", "Mess_Help2_skill_"}:
+                self._message_preview(parent, var, row, 5, 1)
+            elif note:
+                tip(parent.grid_slaves(row=row, column=0)[0], note)
             row += 1
 
-        text_row("Skill ID (SID)", "sid", "characters, classes and scripts name the skill by it")
-        text_row("Japanese name", "japanese_name", "internal name, never shown")
+        text_row("Skill ID (SID)", "sid", "Characters, classes and scripts name the skill by it.")
+        text_row("Japanese name", "japanese_name", "Internal name, never shown.")
         text_row("Menu name key (MSID)", "msid", prefix="MSID")
-        text_row("Help key", "help_key", "text key in common.m")
-        text_row("Second help key", "help2_key")
-        text_row("Effect (EID)", "effect", "played when the skill triggers", prefix="EID")
-        descriptions = self._descriptions()
-        text = "\n\n".join(t for t in (descriptions.get(s.help_key or ""), descriptions.get(s.help2_key or "")) if t)
-        ttk.Label(parent, text=text or "(no player-facing description)", wraplength=700, justify="left").grid(
-            row=row, column=0, columnspan=6, sticky="w", pady=(6, 0))
-        row += 1
-        ttk.Label(parent, style="Muted.TLabel", text=f"Text keys {s.help_key or '-'} / {s.help2_key or '-'} "
-                                                      "in system.cmp's common.m.").grid(
-            row=row, column=0, columnspan=6, sticky="w")
-        row += 1
+        text_row("Help key", "help_key", prefix="Mess_Help_skill_")
+        text_row("Second help key", "help2_key", prefix="Mess_Help2_skill_")
+        text_row("Effect (EID)", "effect", "Played when the skill triggers.", prefix="EID")
         chant = fe8data.chant_stat_name(self._fe8.skills, s)
         self._heading(parent, "Who can have it", row, 6)
         row += 1
-        ttk.Label(parent, text="Restricted to").grid(row=row, column=0, sticky="w", pady=1)
-        var = tk.StringVar()
-        entry = ttk.Entry(parent, textvariable=var, width=60)
-        entry.grid(row=row, column=1, columnspan=5, sticky="w")
-        form.add(entry, "Restricted to", var, lambda: ", ".join(skill().restricted_to),
+        tip(ttk.Label(parent, text="Restricted to"), "The characters and classes that can have the skill; an "
+                                                     "empty list: anyone can.").grid(row=row, column=0, sticky="nw",
+                                                                                     pady=1)
+        restricted = _LabelList(parent, self._restriction_choices, lambda: self._commit(form))
+        restricted.grid(row=row, column=1, columnspan=5, sticky="w")
+        form.add(restricted.widgets(), "Restricted to", restricted, lambda: ", ".join(skill().restricted_to),
                  lambda data, v: fe8data.patch_skill_field(data, index, "restricted_to",
                                                            [t for t in v.replace(",", " ").split() if t]))
-        row += 1
-        ttk.Label(parent, text="PID_ and JID_ labels, separated by commas; empty: anyone can have it.",
-                  style="Muted.TLabel").grid(row=row, column=1, columnspan=5, sticky="w")
         row += 1
         ttk.Label(parent, text="Taught by scroll").grid(row=row, column=0, sticky="w", pady=1)
         box, var = self._pointer_combo(parent, "IID")
@@ -1027,11 +1331,13 @@ class StatsEditor(EditorPanel):
         icon_var = tk.StringVar()
         entry = ttk.Entry(parent, textvariable=icon_var, width=6)
         entry.grid(row=row, column=1, sticky="w")
+        tip(entry, "Cell icon - 1 of window/icon.tpl's second image; 0: no icon, and the skill is left out of the "
+                   "lists of skills a unit can learn.")
         form.add(entry, "Icon", icon_var, lambda: str(skill().params[0]),
                  lambda data, v: fe8data.patch_skill_field(data, index, "param0", _number(v, 0, 255)))
-        ttk.Label(parent, style="Muted.TLabel", wraplength=560, justify="left", text=(
-            "cell icon - 1 of window/icon.tpl's second image; 0: no icon, and the skill is left out of the "
-            "lists of skills a unit can learn")).grid(row=row, column=2, columnspan=4, sticky="w", padx=(8, 0))
+        ttk.Button(parent, text="Choose…", command=lambda: self._choose_icon(
+            "skill", icon_var, [o for o in self._fe8.skills], lambda o: o.params[0], self.skill_name)).grid(
+            row=row, column=2, sticky="w", padx=(6, 0))
         row += 1
 
         def sharing() -> str:
@@ -1044,7 +1350,9 @@ class StatsEditor(EditorPanel):
                                  sharing)
         icon_var.trace_add("write", lambda *_: refresh())
         row += 1
-        self._heading(parent, "Parameters", row, 6)
+        self._heading(parent, "Parameters", row, 6, help_text=(
+            "Skill lists show the capacity cost and grey the skill out when the unit's class capacity, minus the "
+            "skills it already has, is lower." + (f" Triggering plays {s.effect}." if s.effect else "")))
         row += 1
         for i, label in enumerate(SKILL_PARAM_LABELS, start=1):
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=2)
@@ -1054,12 +1362,7 @@ class StatsEditor(EditorPanel):
             form.add(entry, label, var, lambda i=i: str(skill().params[i]),
                      lambda data, v, i=i: fe8data.patch_skill_field(data, index, f"param{i}", _number(v, 0, 255)))
             row += 1
-        ttk.Label(parent, style="Muted.TLabel", wraplength=700, justify="left", text=(
-            "Skill lists show the capacity cost and grey the skill out when the unit's class capacity, minus "
-            "the skills it already has, is lower." + (f" Triggering plays {s.effect}." if s.effect else ""))).grid(
-            row=row, column=0, columnspan=6, sticky="w")
         row += 1
-        self._hex_box(parent, form, "skill", index, row, 6)
 
     # -- terrain ------------------------------------------------------------------------
     def _show_terrain(self, index: int) -> None:
@@ -1086,20 +1389,19 @@ class StatsEditor(EditorPanel):
             ttk.Label(parent, text="Has its own stats block.", style="Muted.TLabel").grid(
                 row=2, column=0, columnspan=6, sticky="w", pady=(6, 0))
 
-        ttk.Label(parent, text="Name").grid(row=4, column=0, sticky="w", pady=(10, 1))
+        tip(ttk.Label(parent, text="Name"), "Map tiles name their terrain by this string: rename it in the maps "
+                                            "too.").grid(row=4, column=0, sticky="w", pady=(10, 1))
         name_var = tk.StringVar()
         name_entry = ttk.Entry(parent, textvariable=name_var, width=24)
         name_entry.grid(row=4, column=1, columnspan=3, sticky="w", pady=(10, 1))
         form.add(name_entry, "Terrain name", name_var, lambda: current().name,
                  lambda data, v: fe8data.patch_terrain_names(data, index, name=v))
-        ttk.Label(parent, text="map tiles name their terrain by this string: rename it in the maps too",
-                  style="Muted.TLabel").grid(row=4, column=4, columnspan=4, sticky="w", padx=(8, 0), pady=(10, 1))
         ttk.Label(parent, text="Display name key").grid(row=5, column=0, sticky="w", pady=1)
-        key_var = tk.StringVar()
-        key_entry = ttk.Entry(parent, textvariable=key_var, width=24)
-        key_entry.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
-        form.add(key_entry, "Terrain name key", key_var, lambda: current().name_key,
+        key_box, key_var = self._pointer_combo(parent, "MT_", name_hint=t.name)
+        key_box.grid(row=5, column=1, columnspan=3, sticky="w", pady=1)
+        form.add(key_box, "Terrain name key", key_var, lambda: current().name_key,
                  lambda data, v: fe8data.patch_terrain_names(data, index, name_key=v))
+        self._message_preview(parent, key_var, 5, 4)
 
         def byte_apply(position: int, low: int, high: int):
             def apply(data: bytes, value: str) -> bytes:
@@ -1109,27 +1411,47 @@ class StatsEditor(EditorPanel):
             return apply
 
         row = 6
-        self._heading(parent, "Bonuses", row, 6)
+        self._heading(parent, "Bonuses", row, 6, help_text=(
+            "What a unit standing on this terrain gets. Fliers (units with SID_FLY, the engine's flag 4) use "
+            "the second row instead of the first."))
         row += 1
         for r, (labels, reads, base) in enumerate((
                 (("Avoid", "Defense", "Resistance"),
                  (lambda: current().avoid, lambda: current().defense, lambda: current().resistance), 0),
-                (("Avoid (flag 4)", "Defense (flag 4)", "Res. (flag 4)"),
+                (("Flier avoid", "Flier defense", "Flier res."),
                  tuple(lambda k=k: current().alt_bonus[k] for k in range(3)), 3))):
             for k, (label, read) in enumerate(zip(labels, reads)):
-                ttk.Label(parent, text=label).grid(row=row + r, column=2 * k, sticky="w", padx=(0 if k == 0 else 12, 4))
+                tip(ttk.Label(parent, text=label), "Bonus for fliers (SID_FLY) on this terrain." if r else
+                    "Bonus for units that do not fly.").grid(row=row + r, column=2 * k, sticky="w",
+                                                             padx=(0 if k == 0 else 12, 4))
                 var = tk.StringVar()
                 entry = ttk.Entry(parent, textvariable=var, width=6)
                 entry.grid(row=row + r, column=2 * k + 1, sticky="w", pady=1)
                 form.add(entry, label, var, lambda read=read: str(read()), byte_apply(base + k, -128, 127))
         row += 2
-        for k, (label, read, position) in enumerate((("Heal % per turn", lambda: current().heal, 6),
-                                                     ("Object tile (0/1)", lambda: current().flag7, 7))):
-            ttk.Label(parent, text=label).grid(row=row, column=2 * k, sticky="w", padx=(0 if k == 0 else 12, 4))
-            var = tk.StringVar()
-            entry = ttk.Entry(parent, textvariable=var, width=6)
-            entry.grid(row=row, column=2 * k + 1, sticky="w", pady=1)
-            form.add(entry, label, var, lambda read=read: str(read()), byte_apply(position, 0, 255))
+        tip(ttk.Label(parent, text="Heal % per turn"), "HP healed at the start of the turn, in % of maximum HP.").grid(
+            row=row, column=0, sticky="w", padx=(0, 4))
+        var = tk.StringVar()
+        entry = ttk.Entry(parent, textvariable=var, width=6)
+        entry.grid(row=row, column=1, sticky="w", pady=1)
+        form.add(entry, "Heal % per turn", var, lambda: str(current().heal), byte_apply(6, 0, 255))
+        object_var = tk.StringVar()
+
+        class _Flag:
+            def get(self) -> str:
+                return object_var.get()
+
+            def set(self, value: str) -> None:
+                object_var.set(value)
+                check_var.set(value not in ("0", ""))
+
+        check_var = tk.BooleanVar()
+        check = tip(ttk.Checkbutton(parent, text="Object tile", variable=check_var,
+                                    command=lambda: object_var.set("1" if check_var.get() else "0")),
+                    "Ticked on objects (roofs, trees, fences, houses, holes, sandbags...): a unit placed or "
+                    "moved by the game never lands on such a tile.")
+        check.grid(row=row, column=2, columnspan=2, sticky="w", padx=(12, 4))
+        form.add(check, "Object tile", _Flag(), lambda: str(current().flag7), byte_apply(7, 0, 255))
         row += 1
         self._heading(parent, "Movement cost per movement type (255 = impassable)", row, 6)
         row += 1
@@ -1157,16 +1479,11 @@ class StatsEditor(EditorPanel):
         form, parent = self._new_form("chapters", "chapter", index)
         chapter = lambda: fe8data.read_chapter_data(self._data)[index]  # noqa: E731
         patch = fe8data.patch_chapter_field
-        c = chapter()
         columns = 8
-        ttk.Label(parent, text=self._text(c.title_key) or c.title_key or "(untitled)", style="Title.TLabel").grid(
-            row=0, column=0, columnspan=columns, sticky="w")
-        ttk.Label(parent, text=f"chapter id {c.chapter_id}  ·  chapter record {index}", style="Muted.TLabel").grid(
-            row=1, column=0, columnspan=columns, sticky="w")
-        row = 2
+        row = 0
 
         def text_row(label: str, field: str, read: Callable[[], Optional[str]], note: str = "",
-                     prefix: Optional[str] = None) -> None:
+                     prefix: Optional[str] = None, asset: Optional[str] = None) -> None:
             nonlocal row
             ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1, padx=(0, 10))
             if prefix:
@@ -1176,65 +1493,76 @@ class StatsEditor(EditorPanel):
                 widget = ttk.Entry(parent, textvariable=var, width=32)
             widget.grid(row=row, column=1, columnspan=3, sticky="w")
             form.add(widget, label, var, lambda: read() or "", lambda data, v: patch(data, index, field, v))
+            if prefix:
+                self._message_preview(parent, var, row, 4, columns - 4)
+            elif asset and self._navigate is not None:
+                link = ttk.Button(parent, text=f"Open in {asset.title()} ›",
+                                  command=lambda a=asset, v=var: self._navigate(("asset", a, v.get().strip())))
+                link.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+                var.trace_add("write", lambda *_: link.configure(state="normal" if var.get().strip() else "disabled"))
+                link.configure(state="normal" if var.get().strip() else "disabled")
             if note:
-                ttk.Label(parent, text=note, style="Muted.TLabel", wraplength=420, justify="left").grid(
-                    row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+                tip(parent.grid_slaves(row=row, column=0)[0], note)
             row += 1
 
         self._heading(parent, "Identity and files", row, columns)
         row += 1
-        text_row("Title key", "title_key", lambda: chapter().title_key, self._text(c.title_key) or "MCT_ text key")
-        ttk.Label(parent, text="Chapter id").grid(row=row, column=0, sticky="w", pady=1)
+        text_row("Title key", "title_key", lambda: chapter().title_key, prefix="MCT")
+        tip(ttk.Label(parent, text="Chapter id"), "Scripts change to a chapter by this id; 90 and up are the trial "
+                                                  "maps.").grid(row=row, column=0, sticky="w", pady=1)
         var = tk.StringVar()
         entry = ttk.Entry(parent, textvariable=var, width=6)
         entry.grid(row=row, column=1, sticky="w")
         form.add(entry, "Chapter id", var, lambda: str(chapter().chapter_id),
                  lambda data, v: patch(data, index, "chapter_id", _number(v, 0, 255)))
-        ttk.Label(parent, text="scripts change to a chapter by this id; 90 and up are the trial maps",
-                  style="Muted.TLabel").grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
         row += 1
-        text_row("Map", "map_name", lambda: chapter().map_name, "zmap/<name>/; its battle scenes: the chapter page")
-        text_row("Script", "script", lambda: chapter().script, "Scripts/<name>.cmb")
-        text_row("Message file", "message", lambda: chapter().message, "Mess/<name>.m; empty: none")
-        text_row("Map music", "bgm", lambda: chapter().bgm)
+        text_row("Map", "map_name", lambda: chapter().map_name, "The map folder: zmap/<name>/.")
+        text_row("Script", "script", lambda: chapter().script, "The event script: Scripts/<name>.cmb.")
+        text_row("Message file", "message", lambda: chapter().message, "The text file: Mess/<name>.m; empty: none.")
+        text_row("Map music", "bgm", lambda: chapter().bgm, asset="music")
 
         self._heading(parent, "Objectives (text keys)", row, columns)
         row += 1
-        slots = ("Goal", "Unused slot", "Defeat condition", "Goal, second line")
+        slots = ("Goal", "Goal second line", "Defeat condition", "Defeat second line")
         for k, label in enumerate(slots):
-            text_row(label, f"objective{k}", lambda k=k: chapter().objectives[k], self._text(c.objectives[k]))
+            text_row(label, f"objective{k}", lambda k=k: chapter().objectives[k],
+                     prefix="ML_" if k >= 2 else "MW_")
         for mode, field in (("Hard", "hard_objective"), ("Maniac", "maniac_objective")):
             for k, slot in enumerate((0, 1, 3)):
                 text_row(f"{mode}: {slots[slot].lower()}", f"{field}{k}",
-                         lambda k=k, a=f"{field}s": getattr(chapter(), a)[k], "empty: the Normal text")
+                         lambda k=k, a=f"{field}s": getattr(chapter(), a)[k],
+                         prefix="ML_" if slot == 3 else "MW_")
 
         self._heading(parent, "Scenes", row, columns)
         row += 1
-        text_row("Base background", "base_background", lambda: chapter().base_background, "RID_ of the base screen")
+        text_row("Base background", "base_background", lambda: chapter().base_background,
+                 asset="backgrounds")
         text_row("Conversation background", "talk_background", lambda: chapter().talk_background,
-                 "default background of the chapter's conversations")
+                 asset="backgrounds")
         text_row("Class-change scene map", "scene_map", lambda: chapter().scene_map)
-        text_row("Class-change scene sky", "scene_sky", lambda: chapter().scene_sky, "a Battle scenes sky name")
+        text_row("Class-change scene sky", "scene_sky", lambda: chapter().scene_sky, "A Battle scenes sky name.")
 
         self._heading(parent, "Enemy levels and trial grades", row, columns)
         row += 1
         self._byte_row(parent, form, row, "Enemy levels +", list(fe8data.DIFFICULTY_NAMES),
                        lambda i: chapter().enemy_bonus_levels[i],
-                       lambda d, i, v: patch(d, index, f"enemy_bonus_level{i}", v))
+                       lambda d, i, v: patch(d, index, f"enemy_bonus_level{i}", v),
+                       help_text="Levels added to auto-levelled enemies on each difficulty (capped at level 20).",
+                       name_help={"Easy": "Easy (the North American mode) has no deployment or shop files of its "
+                                          "own: it uses Normal's. Only this bonus differs."})
         row += 2
-        ttk.Label(parent, style="Muted.TLabel", wraplength=760, justify="left", text=(
-            "Levels added to auto-levelled enemies on each difficulty. The grades below only matter on the trial "
-            "maps: the most turns and units lost, and the fewest kills, for grades A to D.")).grid(
-            row=row, column=0, columnspan=columns, sticky="w")
-        row += 1
         grades = ["A", "B", "C", "D"]
-        for title, attr, field in (("Turns", "trial_turn_grades", "trial_turn_grade"),
-                                   ("Units lost", "trial_loss_grades", "trial_loss_grade"),
-                                   ("Kills", "trial_score_grades", "trial_score_grade")):
-            self._byte_row(parent, form, row, title, grades, lambda i, a=attr: getattr(chapter(), a)[i],
-                           lambda d, i, v, f=field: patch(d, index, f"{f}{i}", v))
-            row += 2
-        self._hex_box(parent, form, "chapter", index, row, columns)
+        grade_help = {"Turns": "Trial maps only: the most turns for each grade.",
+                      "Units lost": "Trial maps only: the most units lost for each grade.",
+                      "Kills": "Trial maps only: the fewest kills for each grade (fewer than D gives E)."}
+        for n, (title, attr, field) in enumerate((("Turns", "trial_turn_grades", "trial_turn_grade"),
+                                                  ("Units lost", "trial_loss_grades", "trial_loss_grade"),
+                                                  ("Kills", "trial_score_grades", "trial_score_grade"))):
+            # one A-D header over the three rows: row n's entries go on row + n + 1
+            self._byte_row(parent, form, row + n, title, grades, lambda i, a=attr: getattr(chapter(), a)[i],
+                           lambda d, i, v, f=field: patch(d, index, f"{f}{i}", v),
+                           header=n == 0, help_text=grade_help[title])
+        row += 4
 
     # -- general ------------------------------------------------------------------------------
     def _show_general(self) -> None:
@@ -1296,12 +1624,55 @@ class StatsEditor(EditorPanel):
             number()
             row += 3
 
-        keys = lambda: fe8data.read_group_names(self._data)  # noqa: E731
-        lines_box("Army groups", "One MG_ army-name key per line, from group 1 (group 0 has none; '-' for none). "
-                  "Deployments name groups by number: add new ones at the end. Applied when you leave the box "
-                  "or press Ctrl+Enter.", lambda: keys()[1:],
-                  lambda data, v: fe8data.write_group_names(data, [None] + v), 1,
-                  lambda key: fe8data.GROUP_KEY_NAMES.get(key, self._text(key)) if key else "(none)")
+        self._heading(parent, "Army groups", row, columns)
+        ttk.Label(parent, text=("Deployments name groups by number. Group 0 has no name; add new groups "
+                                "at the end."), style="Muted.TLabel", wraplength=760, justify="left").grid(
+            row=row + 1, column=0, columnspan=columns, sticky="w")
+        group_names = fe8data.read_group_names(self._data)
+
+        def write_group_name(data: bytes, index: int, value: str) -> bytes:
+            names = fe8data.read_group_names(data)
+            names[index] = value.strip() or None
+            return fe8data.write_group_names(data, names)
+
+        for index in range(1, len(group_names)):
+            group_row = row + 1 + index
+            ttk.Label(parent, text=f"Group {index}").grid(row=group_row, column=0, sticky="w", pady=1)
+            box, var = self._pointer_combo(parent, "MG_", name_hint=f"GROUP_{index}")
+            box.grid(row=group_row, column=1, columnspan=3, sticky="w")
+            form.add(box, f"Group {index}", var,
+                     lambda i=index: fe8data.read_group_names(self._data)[i] or "",
+                     lambda data, value, i=index: write_group_name(data, i, value))
+            self._message_preview(parent, var, group_row, 4, 2)
+
+        actions_row = row + 2 + max(0, len(group_names) - 1)
+        actions = ttk.Frame(parent, style="Page.TFrame")
+        actions.grid(row=actions_row, column=0, columnspan=columns, sticky="w", pady=(4, 0))
+
+        def change_group_count(add: bool) -> None:
+            self.flush()
+            names = fe8data.read_group_names(self._data)
+            if not names:
+                names = [None]
+            if add:
+                names.append(None)
+            elif len(names) > 1:
+                names.pop()
+            else:
+                return
+            try:
+                self._data = fe8data.write_group_names(self._data, names)
+            except (ValueError, struct.error) as exc:
+                messagebox.showerror("Army groups", str(exc), parent=self)
+                return
+            self._session.changed(self)
+            self._show_general()
+
+        ttk.Button(actions, text="Add group", command=lambda: change_group_count(True)).pack(side="left")
+        ttk.Button(actions, text="Remove last group", command=lambda: change_group_count(False),
+                   state="normal" if len(group_names) > 1 else "disabled").pack(side="left", padx=(6, 0))
+        row = actions_row + 1
+
         lines_box("Battle skies", "One sky name per map weather id, from id 0 ('-' for none). A map's weather id "
                   "picks the sky drawn behind its battles.", lambda: fe8data.read_battle_skies(self._data),
                   fe8data.write_battle_skies, 0)
@@ -1321,32 +1692,59 @@ class StatsEditor(EditorPanel):
         ttk.Label(parent, text="Printed to the debug console when the game loads the file; no effect in game.",
                   style="Muted.TLabel").grid(row=row, column=0, columnspan=columns, sticky="w")
 
+    def _excel_only(self) -> str | None:
+        tab = self._notebook.select()
+        if not tab:
+            return None
+        index = self._notebook.index(tab)
+        return {TAB_KEYS.index("items"): "Items", TAB_KEYS.index("terrain"): "Terrain"}.get(index)
+
+    def _sync_excel_buttons(self) -> None:
+        if self._excel_only() is None:
+            self._excel_export_button.pack_forget()
+            self._excel_import_button.pack_forget()
+        else:
+            if not self._excel_export_button.winfo_manager():
+                self._excel_export_button.pack(side="left", padx=(12, 0))
+                self._excel_import_button.pack(side="left", padx=(6, 0))
+
     # -- save/revert ---------------------------------------------------------
     def _save(self) -> None:
-        self.flush()
+        if not self.flush():
+            messagebox.showerror("Could not save", "Fix the invalid fields shown below the editor before saving.",
+                                 parent=self)
+            return
         try:
             self._session.save()
-        except OSError as exc:
+        except (OSError, ValueError, DolError) as exc:
             messagebox.showerror("Could not save", str(exc), parent=self)
             return
         self._status_label.config(text=f"Saved {self._path.name}", style="Muted.TLabel")
 
     def _export_excel(self) -> None:
-        path = filedialog.asksaveasfilename(parent=self, title="Export FE8 data", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        only = self._excel_only()
+        if only is None:
+            return
+        self.flush()
+        path = filedialog.asksaveasfilename(parent=self, title=f"Export {only.lower()}", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            excel_io.export_fe8(path, self._data)
+            excel_io.export_fe8(path, self._data, only=only)
             self._status_label.config(text=f"Exported {Path(path).name}")
         except Exception as exc:
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
 
     def _import_excel(self) -> None:
-        path = filedialog.askopenfilename(parent=self, title="Import FE8 data", filetypes=(("Excel workbook", "*.xlsx"),))
+        only = self._excel_only()
+        if only is None:
+            return
+        self.flush()
+        path = filedialog.askopenfilename(parent=self, title=f"Import {only.lower()}", filetypes=(("Excel workbook", "*.xlsx"),))
         if not path:
             return
         try:
-            data, _docs, errors = excel_io.import_fe8(path, self._data)
+            data, _docs, errors = excel_io.import_fe8(path, self._data, only=only)
             if errors:
                 messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
                 return
@@ -1416,15 +1814,14 @@ class _Body:
 
 
 class ChapterRecordPanel(StatsEditor):
-    """Game Data › Chapters' form, shown where a chapter's map is edited (the
-    Build tab's Map settings window): the ``ChapterData`` record whose map is
-    the open map folder, or a choice when several records use it (trial
-    maps). It edits the same FE8Data.bin session, so Game Data shows each
-    edit at once, and the file is saved with Save FE8Data.bin."""
+    """A chapter's ``ChapterData`` form in Chapters › Chapter data.
+
+    It edits the shared FE8Data.bin session and is saved with Save FE8Data.bin."""
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session: Fe8DataSession,
                  navigate: Optional[Callable[[tuple], None]] = None):
         self._map_name: Optional[str] = None
+        self._chapter_id: Optional[int] = None
         self._matches: list[int] = []
         self._record: Optional[int] = None
         super().__init__(parent, project, changelog, session, navigate)
@@ -1437,20 +1834,15 @@ class ChapterRecordPanel(StatsEditor):
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
-        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(12, 0))
+
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
-        if self._navigate is not None:
-            ttk.Button(top, text="Open in Game Data ›", command=self._open_in_game_data).pack(side="right")
         chooser = ttk.Frame(self)
         chooser.pack(fill="x", pady=(6, 0))
         self._record_label = ttk.Label(chooser, text="Record")
         self._record_var = tk.StringVar()
         self._record_combo = ttk.Combobox(chooser, textvariable=self._record_var, state="readonly", width=60)
         self._record_combo.bind("<<ComboboxSelected>>", lambda e: self._pick(self._record_combo.current()))
-        ttk.Label(self, style="Muted.TLabel", wraplength=720, justify="left", text=(
-            "The same record as Game Data › Chapters, stored in FE8Data.bin: fields apply when you leave them, and "
-            "Save FE8Data.bin (not Save Chapter) writes them.")).pack(anchor="w", pady=(4, 0))
         frame = ttk.Frame(self)
         frame.pack(fill="x")
         self._bodies["chapters"] = _Body(frame)
@@ -1462,7 +1854,10 @@ class ChapterRecordPanel(StatsEditor):
             chapters = fe8data.read_chapter_data(self._data)
         except (KeyError, ValueError, struct.error):
             chapters = []
-        self._matches = [c.index for c in chapters if self._map_name and c.map_name == self._map_name]
+        self._matches = [c.index for c in chapters if (c.chapter_id == self._chapter_id
+                         if self._chapter_id is not None else bool(self._map_name and c.map_name == self._map_name))]
+        if self._chapter_id is not None and self._map_name:
+            self._matches.sort(key=lambda i: chapters[i].map_name != self._map_name)
         labels = [f"{self._text(chapters[i].title_key) or chapters[i].title_key or '(untitled)'}  ·  "
                   f"{chapters[i].script or '-'}  ·  id {chapters[i].chapter_id}  ·  record {i}" for i in self._matches]
         try:
@@ -1484,14 +1879,16 @@ class ChapterRecordPanel(StatsEditor):
     def select_tab(self, name: str) -> None:
         pass
 
-    def show_map(self, map_name: Optional[str]) -> None:
-        """Show the record of map folder ``map_name`` (``bmap05_2``)."""
-        if map_name == self._map_name and self._forms["chapters"] is not None:
+    def show_chapter(self, chapter_id: Optional[int], map_name: Optional[str]) -> None:
+        """Show this chapter's record, preferring the selected phase's map."""
+        if ((chapter_id, map_name) == (self._chapter_id, self._map_name)
+                and self._forms["chapters"] is not None):
             return
         self.flush()
-        self._map_name = map_name
+        old_map = self._map_name
+        self._chapter_id, self._map_name = chapter_id, map_name
         self._refresh_pickers()
-        if self._record not in self._matches:
+        if self._record not in self._matches or old_map != map_name:
             self._record = self._matches[0] if self._matches else None
         self._pick(self._matches.index(self._record) if self._record is not None else -1)
 
@@ -1502,20 +1899,17 @@ class ChapterRecordPanel(StatsEditor):
             self._show_chapter(self._record)
             return
         self._record = None
-        form, parent = self._new_form("chapters", "chapter", -1)
+        _, parent = self._new_form("chapters", "chapter", -1)
         self._forms["chapters"] = None
         ttk.Label(parent, style="Muted.TLabel", wraplength=720, justify="left", text=(
-            f"No Game Data › Chapters record uses the map {self._map_name}." if self._map_name
-            else "Open a chapter with a map.")).grid(row=0, column=0, sticky="w", pady=(8, 0))
+            f"No chapter record exists for chapter {self._chapter_id}." if self._chapter_id is not None
+            else f"No chapter record uses the map {self._map_name}." if self._map_name
+            else "Open a chapter.")).grid(row=0, column=0, sticky="w", pady=(8, 0))
 
     def _revert(self) -> None:
         super()._revert()
         self._forms["chapters"] = None
-        self.show_map(self._map_name)
-
-    def _open_in_game_data(self) -> None:
-        self.flush()
-        self._navigate(("data", "chapters", str(self._record)) if self._record is not None else ("data", "chapters"))
+        self.show_chapter(self._chapter_id, self._map_name)
 
     def cleanup(self) -> None:
         self.flush()

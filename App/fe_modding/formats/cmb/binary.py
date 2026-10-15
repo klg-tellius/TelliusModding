@@ -79,7 +79,8 @@ def read_cmb(data: bytes, dialect: Optional[Dialect] = None) -> ScriptFile:
     while entries and entries[-1] == b"":
         entries.pop()
     raw = b"\x00".join(entries)
-    pool = [e.decode(ENCODING) for e in entries]
+    # surrogateescape keeps bytes that are not text (the JP C02 pool ends with stray bytes) lossless
+    pool = [e.decode(ENCODING, "surrogateescape") for e in entries]
     offset_to_text: dict[int, str] = {}
     offset = 0
     for text, entry in zip(pool, entries):
@@ -108,6 +109,18 @@ def read_cmb(data: bytes, dialect: Optional[Dialect] = None) -> ScriptFile:
         raw_pool_tail_entries=len(pool),
         dialect=dialect,
     )
+
+
+def count_functions(data: bytes) -> int:
+    """How many functions a ``.cmb`` holds, from its function table alone."""
+    if len(data) < HEADER_SIZE:
+        raise CmbError("File too small to be a .cmb script.")
+    (pos,) = struct.unpack_from("<I", data, 0x28)
+    count = 0
+    while pos + 4 <= len(data) and struct.unpack_from("<I", data, pos)[0]:
+        count += 1
+        pos += 4
+    return count
 
 
 def read_cmb_path(path: Path | str, dialect: Optional[Dialect] = None) -> ScriptFile:
@@ -251,7 +264,7 @@ def _decode_code(data: bytes, start: int, end: int, strings: dict[int, str], dia
 
 
 def _pool_layout(script: ScriptFile) -> tuple[bytes, dict[str, int]]:
-    encoded = [text.encode(ENCODING) for text in script.pool]
+    encoded = [text.encode(ENCODING, "surrogateescape") for text in script.pool]
     for e in encoded:
         if b"\x00" in e:
             raise CmbError("A pool string can't contain a NUL byte.")

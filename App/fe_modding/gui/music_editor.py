@@ -46,10 +46,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .. import tools
 from ..exceptions import ModdingError
-from ..formats import stm
+from ..formats import gcfesnd, stm
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import confirm_delete_added, list_buttons, tip
 
 try:
     import winsound
@@ -80,12 +81,15 @@ class MusicEditor(EditorPanel):
 
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
-        ttk.Label(left, text="Tracks").pack(anchor="w")
+        tip(ttk.Label(left, text="Tracks"), "The .stm streams of Sound/. A new track is written there, but "
+            "nothing in this page maps a track ID to it for the game to play: it needs wiring elsewhere "
+            "before it is heard in game.").pack(anchor="w")
 
         search_var = tk.StringVar()
         ttk.Entry(left, textvariable=search_var).pack(fill="x", pady=(4, 4))
         search_var.trace_add("write", lambda *_: self._apply_filter(search_var.get()))
 
+        self._delete_button = list_buttons(left, "New track…", self._add_new_track, self._delete_track)
         list_frame = ttk.Frame(left)
         list_frame.pack(fill="both", expand=True)
         self._file_list = tk.Listbox(list_frame, exportselection=False)
@@ -122,25 +126,13 @@ class MusicEditor(EditorPanel):
             io_row, text="Import Replacement Audio...", command=self._import_audio, state="disabled"
         )
         self._import_button.pack(side="left", padx=(6, 0))
-        self._add_track_button = ttk.Button(io_row, text="New Track...", command=self._add_new_track)
-        self._add_track_button.pack(side="left", padx=(6, 0))
 
         self._progress = ttk.Progressbar(right, mode="indeterminate")
         self._status_label = ttk.Label(right, text="", style="Muted.TLabel", wraplength=480)
         self._status_label.pack(anchor="w", fill="x", pady=(8, 0))
 
-        ttk.Label(
-            right,
-            text="Import accepts WAV, MP3, OGG, FLAC, and other common formats\n"
-            "(converted automatically via the bundled FFmpeg). Mono or\n"
-            "stereo only.\n\n"
-            "A new track is written to Sound/ but nothing here maps a track\n"
-            "ID to a filename for the game to actually play it - that lookup\n"
-            "hasn't been reverse-engineered, so a new track needs manual\n"
-            "wiring elsewhere before it's audible in-game.",
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", side="bottom", pady=(8, 0))
+        tip(self._import_button, "Accepts WAV, MP3, OGG, FLAC and other common formats, converted with FFmpeg. "
+                                 "Mono or stereo only.")
 
     # -- data loading ---------------------------------------------------------
     def _load_track_list(self) -> None:
@@ -162,12 +154,32 @@ class MusicEditor(EditorPanel):
         for path in self._filtered_files:
             self._file_list.insert("end", path.stem)
 
+    def select_cue(self, cue_name: str) -> bool:
+        """Open the Sound/*.stm file named by a BGM cue in gcfesnd.bin."""
+        catalog = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        try:
+            cue = gcfesnd.find_cue(gcfesnd.read_bgm_cues_path(catalog), cue_name)
+        except (OSError, gcfesnd.GcfesndError, ValueError):
+            return False
+        stem = cue.path.rsplit("/", 1)[-1].lower()
+        self._apply_filter("")
+        for index, path in enumerate(self._filtered_files):
+            if path.stem.lower() == stem:
+                self._file_list.selection_clear(0, "end")
+                self._file_list.selection_set(index)
+                self._file_list.activate(index)
+                self._file_list.see(index)
+                self._on_file_selected()
+                return True
+        return False
+
     def _on_file_selected(self) -> None:
         selection = self._file_list.curselection()
         if not selection:
             return
         self._stop()
         self._current_path = self._filtered_files[selection[0]]
+        self._delete_button.config(state="normal")
         self._track_label.config(text=self._current_path.stem)
         self._info_label.config(text="Loading...")
         self._play_button.config(state="disabled")
@@ -273,6 +285,28 @@ class MusicEditor(EditorPanel):
         if new_audio is None:
             return
         self._confirm_and_encode(new_audio, dest, verb="create", on_success=lambda audio: self._on_new_track_added(dest, audio))
+
+    def _delete_track(self) -> None:
+        path = self._current_path
+        if path is None:
+            return
+        catalog = path.parent / "gcfesnd.bin"
+        try:
+            users = [c.name for c in gcfesnd.read_bgm_cues_path(catalog)
+                     if c.path.rsplit("/", 1)[-1].lower() == path.stem.lower()]
+        except (OSError, gcfesnd.GcfesndError, ValueError):
+            users = []
+        if not confirm_delete_added(self, self._project, path, "track", users):
+            return
+        self._stop()
+        path.unlink()
+        self._changelog.append(path.stem, "Deleted track")
+        self._current_path = None
+        self._track_label.config(text="(no track selected)")
+        self._info_label.config(text="")
+        for button in (self._play_button, self._export_button, self._import_button, self._delete_button):
+            button.config(state="disabled")
+        self._load_track_list()
 
     def _on_new_track_added(self, dest: Path, new_audio: stm.StmAudio) -> None:
         self._load_track_list()

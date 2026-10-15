@@ -1,14 +1,16 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import cp_ai_lang, cp_data, dispo, fe8data  # noqa: E402
 from fe_modding.formats.cmb.compiler import compile_source  # noqa: E402
-from fe_modding.playthrough import actions, ai_vm, combat, fog, movement, setup  # noqa: E402
+from fe_modding.playthrough import actions, ai_vm, combat, engine, fog, movement, natives, setup, triggers  # noqa: E402
 from fe_modding.playthrough.simulation import LINE, MESSAGE, Simulation  # noqa: E402
-from fe_modding.playthrough.state import ENEMY, PLAYER, GameState, SimUnit  # noqa: E402
+from fe_modding.playthrough.state import ENEMY, PLAYER, GameState, ScriptRun, SimUnit, TriggerCheck  # noqa: E402
 from fe_modding.playthrough.world import World  # noqa: E402
 
 PLAIN, FOREST, WALL = "平地", "林", "壁"
@@ -620,6 +622,83 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(unit.items, [["IID_SWORD", 40, False]])
         self.assertEqual((unit.x, unit.y, unit.faction), (2, 3, 1))
 
+    def test_unit_add_item_respects_each_inventory_half(self):
+        world = _world()
+        world.items["IID_VULNERARY"] = _item("IID_VULNERARY", weapon_type="item")
+        state = GameState()
+        unit = _unit(state, "PID_A", 1, 1, items=("IID_SWORD",) * 4)
+        vm = SimpleNamespace(world=world, state=state)
+
+        self.assertEqual(natives._add_item(vm, [unit.uid, "IID_SWORD"]), 1)
+        self.assertEqual(len(unit.items), 4)
+        self.assertEqual(natives._add_item(vm, [unit.uid, "IID_VULNERARY"]), 1)
+        self.assertEqual([entry[0] for entry in unit.items], ["IID_SWORD"] * 4 + ["IID_VULNERARY"])
+
+        unit.items = [["IID_SWORD", 40, False], ["IID_VULNERARY", 40, False]]
+        self.assertEqual(natives._add_item(vm, [unit.uid, "IID_SWORD"]), 1)
+        self.assertEqual([entry[0] for entry in unit.items],
+                         ["IID_SWORD", "IID_SWORD", "IID_VULNERARY"])
+
+
+class TriggerContractTests(unittest.TestCase):
+    def test_battle_events_recheck_flags_after_each_script(self):
+        world = _world()
+        world._trigger_index = [
+            triggers.TriggerFn(0, 0, "general", 9,
+                               {"pid1": "PID_A", "pid2": None, "flag": 0, "name": None}),
+            triggers.TriggerFn(0, 1, "specific", 9,
+                               {"pid1": "PID_A", "pid2": "PID_B", "flag": 0, "name": "skip_specific"}),
+        ]
+        state = GameState()
+        state.register_flag("skip_specific", from_top=True)
+        task = TriggerCheck(9, {"pid1": "PID_A", "pid2": "PID_B"})
+        state.pending.append(task)
+        with patch.object(triggers, "start", side_effect=lambda _w, _s, _f, ctx: ScriptRun([], ctx, "event")):
+            engine._trigger(world, state, task)
+            self.assertIsInstance(state.pending[0], ScriptRun)
+            self.assertIs(state.pending[1], task)
+            state.pending.pop(0)  # the first script has finished and set the flag
+            state.set_flag("skip_specific")
+            result = engine._trigger(world, state, task)
+        self.assertTrue(result.task_done)
+        self.assertEqual(state.pending, [])
+
+    def test_wildcard_and_ally_trigger_names_compile_to_engine_values(self):
+        script = _script('@on_phase(turn_from=1, turn_to=2, phase="any")\ndef phase():\n    pass\n'
+                         '@on_area(x1=1, y1=1, x2=0, y2=0, side="ally", name=None)\ndef area():\n    pass\n')
+        self.assertEqual(script.functions[0].params[2], 0xFFFF)
+        self.assertEqual(script.functions[1].params[4], 2)
+
+    def test_phase_wildcard_and_inclusive_turns(self):
+        world = _world()
+        state = GameState()
+        world._trigger_index = [
+            triggers.TriggerFn(0, 0, "any", 6, {"turn_from": 2, "turn_to": 3, "phase": 0xFFFF}),
+            triggers.TriggerFn(0, 1, "partner", 6, {"turn_from": 0, "turn_to": 0, "phase": 3}),
+        ]
+        state.turn = 3
+        self.assertEqual([t.name for t in triggers.matches(world, state, 6, {"phase": 2})], ["any"])
+        self.assertEqual([t.name for t in triggers.matches(world, state, 6, {"phase": 3})], ["any", "partner"])
+        state.turn = 4
+        self.assertEqual([t.name for t in triggers.matches(world, state, 6, {"phase": 2})], [])
+
+    def test_zone_faction_and_edge_relative_bounds(self):
+        world = _world(width=8, height=6)
+        state = GameState()
+        world._trigger_index = [
+            triggers.TriggerFn(0, 0, "ally_edge", 4,
+                               {"x1": 3, "y1": 2, "x2": 0, "y2": 0, "side": 2, "name": None}),
+            triggers.TriggerFn(0, 1, "any", 4,
+                               {"x1": 3, "y1": 2, "x2": 5, "y2": 4, "side": 0xFFFF, "name": None}),
+            triggers.TriggerFn(0, 2, "backwards", 4,
+                               {"x1": 5, "y1": 4, "x2": 3, "y2": 2, "side": 0xFFFF, "name": None}),
+        ]
+        self.assertEqual([t.name for t in triggers.matches(world, state, 4, {"tile": (7, 5), "faction": 2})],
+                         ["ally_edge"])
+        self.assertEqual([t.name for t in triggers.matches(world, state, 4, {"tile": (4, 3), "faction": 3})],
+                         ["any"])
+        self.assertEqual(triggers.zones(world)[0][0], (3, 2, 7, 5))
+
 
 def _ai_world(scripts=None, steal=(), width=8, height=8):
     cp = _cp(scripts or {"SEQ_ATK": "end()\n"})
@@ -691,6 +770,51 @@ class AiActionTests(unittest.TestCase):
         self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], low.uid)
         low.stats[7] = high.stats[7] = 30  # (10 - 30) x 5 + 5 + 30 - 6 < 5
         self.assertIsNone(step.try_use_staff(step._predicate(), False))
+
+    def test_silence_staff_only_targets_mage_classes(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_SILENCE"] = _item("IID_SILENCE", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, faction=ENEMY, jid="JID_CLERIC", items=("IID_SILENCE",))
+        caster.stats[2] = 10
+        target = _unit(state, "PID_A", 3, 0, jid="JID_CLERIC", items=("IID_LIVE",))
+        step = _ai_step(world, state, caster)
+        target.categories = []  # a staff user, but not a mage class (category mask bit 0)
+        self.assertIsNone(step.try_use_staff(step._predicate(), False))
+        target.categories = ["mage"]
+        self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], target.uid)
+
+    def test_sleep_lasts_five_phases_and_berserk_does_nothing(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_BERSERK"] = _item("IID_BERSERK", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, jid="JID_CLERIC", items=("IID_SLEEP", "IID_BERSERK"))
+        target = _unit(state, "PID_A", 1, 0, faction=ENEMY)
+        state.rng = SimpleNamespace(roll_percent=lambda hit: (True, 0))
+        actions.use_staff(world, state, caster, target, 1)
+        self.assertEqual((target.status, target.status_turns), ("", 0))
+        target.skills.append("SID_BOSS")  # bosses resist status staves
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual(target.status, "")
+        target.skills.remove("SID_BOSS")
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual((target.status, target.status_turns), ("sleep", 5))
+
+    def test_stat_boosters_respect_the_caps_and_luck_caps_at_40(self):
+        world, state = _ai_world(), GameState()
+        luck = _item("IID_LUCKDROP", weapon_type="item", might=0, uses=1)
+        luck.stat_bonus = [0, 0, 0, 0, 0, 3, 0, 0, 0, 0]
+        boots = _item("IID_BOOTS", weapon_type="item", might=0, uses=1)
+        boots.stat_bonus = [0] * 8 + [2, 0]
+        world.items.update({"IID_LUCKDROP": luck, "IID_BOOTS": boots})
+        u = _unit(state, "PID_A", 0, 0, items=("IID_LUCKDROP", "IID_LUCKDROP", "IID_BOOTS"))
+        u.stats[5], u.move = 38, 19
+        for entry in u.items:
+            entry[1] = 1
+        actions.use_item(world, state, u, 0)
+        self.assertEqual(u.stats[5], 40)  # the class record's Luck cap is never loaded
+        actions.use_item(world, state, u, 0)  # nothing to raise: not used up
+        self.assertEqual([iid for iid, *_ in u.items], ["IID_LUCKDROP", "IID_BOOTS"])
+        actions.use_item(world, state, u, 1)
+        self.assertEqual(u.move, 20)
 
     def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
         world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])

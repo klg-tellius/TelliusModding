@@ -20,7 +20,7 @@ def _s16(value: int) -> int:
 
 
 class MiniPPC:
-    """Just enough of a PowerPC to run the two flow stubs: memory is a dict of bytes."""
+    """Just enough of a PowerPC to run the flow and chapter-part stubs: memory is a dict of bytes."""
 
     def __init__(self, code: dict[int, int], memory: dict[int, int]):
         self.code, self.memory = code, memory
@@ -34,7 +34,7 @@ class MiniPPC:
 
     def run(self, pc: int, until: set[int]) -> int:
         """Run from ``pc`` until it reaches an address of ``until`` (returned) or a ``blr`` (-1)."""
-        for _ in range(100):
+        for _ in range(1000):
             if pc in until:
                 return pc
             w = self.code[pc]
@@ -44,6 +44,16 @@ class MiniPPC:
             nxt = pc + 4
             if op == 34:                                    # lbz
                 self.r[rd] = self.memory.get((base + _s16(imm)) & 0xFFFFFFFF, 0)
+            elif op == 40:                                  # lhz
+                address = (base + _s16(imm)) & 0xFFFFFFFF
+                self.r[rd] = (self.memory.get(address, 0) << 8) | self.memory.get(address + 1, 0)
+            elif op == 38:                                  # stb
+                self.memory[(base + _s16(imm)) & 0xFFFFFFFF] = self.r[rd] & 0xFF
+            elif op == 36:                                  # stw
+                value = self.r[rd]
+                address = (base + _s16(imm)) & 0xFFFFFFFF
+                for i in range(4):
+                    self.memory[address + i] = (value >> (24 - i * 8)) & 0xFF
             elif op == 15:                                  # lis
                 self.r[rd] = (imm << 16) & 0xFFFFFFFF
             elif op == 14:                                  # addi / li
@@ -54,6 +64,10 @@ class MiniPPC:
                 self._compare(self.r[ra], imm, False)
             elif op == 31 and (w >> 1) & 0x3FF == 87:       # lbzx
                 self.r[rd] = self.memory.get((base + self.r[rb]) & 0xFFFFFFFF, 0)
+            elif op == 31 and (w >> 1) & 0x3FF == 215:      # stbx
+                self.memory[(base + self.r[rb]) & 0xFFFFFFFF] = self.r[rd] & 0xFF
+            elif op == 31 and (w >> 1) & 0x3FF == 28:       # and
+                self.r[ra] = self.r[rd] & self.r[rb]
             elif op == 31 and (w >> 1) & 0x3FF == 32:       # cmplw
                 self._compare(self.r[ra], self.r[rb], False)
             elif op == 31 and (w >> 1) & 0x3FF == 444:      # or (mr)
@@ -225,6 +239,9 @@ class AddStoryChapterTests(unittest.TestCase):
         from fe_modding.games import Game
         from fe_modding.project import ModProject
         source = Path(os.environ["FE9_EXTRACTED_FILES"])
+        from fe_modding.formats import fe8data
+        if fe8data.japanese_chapter_layout((source / "FE8Data.bin").read_bytes()):
+            self.skipTest("Japanese chapter records are read-only")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -246,7 +263,7 @@ class AddStoryChapterTests(unittest.TestCase):
         shutil.copy(source / "FE8Data.bin", files / "FE8Data.bin")
         sys_dir = self.project.extracted_dir / "sys"
         sys_dir.mkdir()
-        dol = RETAIL_DIR / "GFEE01.dol"
+        dol = RETAIL_DIR / ((source.parent / "sys" / "boot.bin").read_bytes()[:6].decode("ascii") + ".dol")
         shutil.copy(dol if dol.is_file() else source.parent / "sys" / "main.dol", sys_dir / "main.dol")
         shutil.copy(source.parent / "sys" / "boot.bin", sys_dir / "boot.bin")
         self.files = files

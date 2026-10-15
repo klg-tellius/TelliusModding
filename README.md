@@ -35,11 +35,23 @@ repository. Project setup, workspace features and known limitations are covered 
 
 - [Application architecture](app.md)
 
-The [interactive Tellius Archive](https://klg-tellius.github.io/TelliusModding/)
-is published with GitHub Pages. Its source is `docs/tellius_archive.html`. Download and open
-it in a browser, or enable GitHub Pages in **Settings > Pages > Deploy from a
-branch**, selecting **main** and **/docs**. GitHub's ordinary file viewer shows
-HTML source; Pages runs the interactive reference.
+The [Tellius Archive](https://klg-tellius.github.io/TelliusModding/) is a
+multi-page technical wiki published with GitHub Pages. Its Markdown sources are
+under `wiki/`; `mkdocs.yml` builds them with Material for MkDocs, and the
+`Tellius Archive` GitHub Actions workflow validates and deploys the result.
+
+To preview it locally:
+
+```powershell
+python -m pip install -r requirements-wiki.txt
+python App/tools/validate_wiki.py
+mkdocs serve
+```
+
+Each article links to the browser editor. Trusted GitHub collaborators may
+publish, while other GitHub users can propose a reviewed pull request through
+Decap Open Authoring. OAuth deployment instructions are in
+`infrastructure/oauth-worker/README.md`.
 
 Public documentation links to the corresponding Tellius Archive topics. Raw
 research workspaces and game-derived dumps are not included.

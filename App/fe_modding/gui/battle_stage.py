@@ -47,13 +47,14 @@ from ..battle_sim import camera as cam
 from ..battle_sim import scene_assets as sa
 from ..battle_sim import timeline as tlm
 from ..battle_sim.staging import FACING, BattleParams, UnitParams
-from ..formats import animation, battle_terrain, engine_pose
+from ..formats import animation, battle_terrain, engine_pose, particle_preview
 from .model_viewer import (
     _build_loaded_set,
     _LoadedSet,
     _load_model_set,
     _ModelCanvas,
     _set_contents,
+    _TextureLayer,
     _Triangle,
     posed_triangles,
 )
@@ -309,6 +310,7 @@ class EffectAsset:
     mesh: SkinnedMesh
     anim: Optional[animation.GaAnimation]
     length: float
+    particles: tuple = ()  # particle_preview.Stage of the animation's footer slot 8, in order
 
     def alphas(self, local: float) -> Optional[np.ndarray]:
         """Each triangle's alpha at ``local`` from the animation's material alpha tracks (footer
@@ -353,15 +355,39 @@ def load_effect(path: Path) -> Optional[EffectAsset]:
     if not path.is_file():
         return None
     loaded = _load_model_set(path.stem, path)
-    anim = None
+    anim, particles = None, ()
     for _name, data in loaded.animations:
         try:
             anim = animation.read_animation_bytes(data)
-            break
         except Exception:  # noqa: BLE001 - an unreadable clip leaves the effect static
             continue
+        try:
+            particles = particle_preview.read_stages(data)
+        except animation.AnimationError:
+            particles = ()
+        break
     length = float(anim.length_in_frames) if anim is not None and anim.length_in_frames else EFFECT_FRAMES
-    return EffectAsset(loaded, SkinnedMesh(loaded.triangles), anim, length)
+    return EffectAsset(loaded, SkinnedMesh(loaded.triangles), anim, length, particles)
+
+
+def particle_cards(effect: EffectAsset) -> list[_Triangle]:
+    """Two triangles per particle stage, textured and blended as the stage's emitter says
+    (``.gs`` material, ``draw_flags & 0x1000`` additive); placed each frame by
+    :meth:`BattleStage.arrays`. The material colour is baked in; colour curves are not applied."""
+    uv = ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0))
+    cards = []
+    for stage in effect.particles:
+        emitter = stage.emitter
+        texture, color, _alpha = effect.loaded.particle_materials.get(
+            emitter.material_index, (None, (255, 255, 255), 1.0))
+        blend = "additive" if emitter.draw_flags & 0x1000 else "normal"
+        for indices in ((0, 1, 2), (0, 2, 3)):
+            face_uv = tuple(uv[i] for i in indices)
+            layers = (_TextureLayer(face_uv, texture, "diffuse"),) if texture is not None else ()
+            cards.append(_Triangle((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0),
+                                   tuple(color), uv=face_uv if texture is not None else None, texture=texture,
+                                   texture_layers=layers, alpha=1.0, blend_mode=blend, cull="none"))
+    return cards
 
 
 def effect_alpha(alpha):
@@ -498,6 +524,8 @@ class BattleStage:
             if effect is not None:
                 self._add("effect", effect.loaded.triangles, effect.mesh.positions, effect.mesh.normals,
                           cue.side, (cue, effect))
+                if effect.particles:
+                    self._add("particles", particle_cards(effect), side=cue.side, item=(cue, effect))
         if self._rest_parts:
             self._rest = np.concatenate([p for p, _n in self._rest_parts])
             self._rest_normals = np.concatenate([n for _p, n in self._rest_parts])
@@ -576,7 +604,69 @@ class BattleStage:
                         faded if faded is not None else rest)
                 else:
                     self._hide(positions, part)
+            elif part.kind == "particles":
+                cue, effect = part.item
+                if cue.frame <= t < cue.frame + effect.length:
+                    self._particles(positions, normals, part, effect, cue, t - cue.frame, t)
+                else:
+                    self._hide(positions, part)
         return positions, normals
+
+    def _camera_axes(self, t: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Screen right, up and the view direction at ``t`` (particles face the camera)."""
+        view = self.view(t)
+        forward = np.array((0.0, 0.0, -1.0))
+        if view is not None:
+            eye, center = np.asarray(view[0], dtype=np.float64), np.asarray(view[1], dtype=np.float64)
+            if np.linalg.norm(center - eye) > 1e-6:
+                forward = (center - eye) / np.linalg.norm(center - eye)
+        right = np.cross(forward, (0.0, 1.0, 0.0))
+        right = right / np.linalg.norm(right) if np.linalg.norm(right) > 1e-6 else np.array((1.0, 0.0, 0.0))
+        return right, np.cross(right, forward), forward
+
+    def _particles(self, positions, normals, part: _Part, effect: EffectAsset, cue: tlm.Cue,
+                   local: float, t: float) -> None:
+        """Place one camera-facing card per active particle stage (``particle_preview``: stage
+        window, position integrated from the velocity curves, scale, rotation, alpha), anchored
+        to the emitter's bone and moved with the effect like its mesh."""
+        bones = effect.loaded.bones
+        world = engine_pose.pose(bones, effect.anim, local)[0] if bones and effect.anim is not None else []
+        by_name = {bone.name.lower(): i for i, bone in enumerate(bones)}
+        place = self._effect_matrix(effect, cue, local)
+        right, up, forward = self._camera_axes(t)
+        cards = np.zeros((part.count, 3, 3))
+        alphas = np.zeros(part.count, dtype=np.float32)
+        for index, stage in enumerate(effect.particles):
+            samples = particle_preview.sample((stage,), local)
+            if not samples:
+                continue
+            s = samples[0]
+            mat = effect.loaded.particle_materials.get(s.material_index, (None, (255, 255, 255), 1.0))
+            alpha = s.alpha * mat[2]
+            if alpha <= 0 or max(s.scale) <= 0:
+                continue
+            point = np.asarray(s.position, dtype=np.float64)
+            bone = particle_preview.anchor_bone(s.name_path, by_name)
+            if bone is not None and bone < len(world):
+                point = np.asarray(world[bone], dtype=np.float64) @ np.append(point, 1.0)
+            point = place[:, :3] @ point + place[:, 3]
+            width, height = s.scale
+            mode = s.draw_flags & 7
+            if mode == 1:  # point stage
+                width, height = width * 0.25, height * 0.25
+            elif mode == 2:  # line stage
+                width, height = width * 0.10, height * max(0.5, float(np.linalg.norm(s.velocity)))
+            angle = math.radians(s.rotation_degrees)
+            axis_x = right * math.cos(angle) + up * math.sin(angle)
+            axis_y = up * math.cos(angle) - right * math.sin(angle)
+            dx, dy = axis_x * width * 0.5, axis_y * height * 0.5
+            c = (point - dx - dy, point + dx - dy, point + dx + dy, point - dx + dy)
+            cards[2 * index] = (c[0], c[1], c[2])
+            cards[2 * index + 1] = (c[0], c[2], c[3])
+            alphas[2 * index:2 * index + 2] = alpha
+        positions[part.start:part.start + part.count] = cards
+        normals[part.start:part.start + part.count] = -forward
+        self.alphas[part.start:part.start + part.count] = effect_alpha(alphas)
 
     def _pose(self, side: int, unit: StageUnit, stem: Optional[str], frame: float):
         """``engine_pose.pose`` of a unit's clip frame, kept for replays and scrubbing."""
@@ -615,6 +705,9 @@ class BattleStage:
     def _projectile(self, part: _Part, u: float, t: float) -> tuple[np.ndarray, np.ndarray]:
         side = part.side
         unit, target = self.units[side], self.units[1 - side]
+        flight = part.item
+        if flight.returns:
+            return self._returning_axe(part, flight, t)
         start = self.point(side, unit.hand, t)
         end = self.point(1 - side, target.eye, t)
         matrix = np.zeros((3, 4))
@@ -624,9 +717,40 @@ class BattleStage:
             self._rest_normals[part.start:part.start + part.count]
         return _transform(matrix, rest_p, rest_n)
 
+    def _returning_axe(self, part: _Part, flight: tlm.Flight, t: float) -> tuple[np.ndarray, np.ndarray]:
+        """``update_projectile_motion_with_audio`` kinds 2/7: out from the hand where it was let go
+        and back (:meth:`Flight.offset`), its height ``-(target - start) * sin(phase)`` above the
+        release point with the phase going from 2 pi down by ``AxeWaveSpd * 56 / ticks`` a tick
+        (stopping at 0), spinning ``AxeRotSpeed`` degrees a tick."""
+        side, k = part.side, t - flight.start
+        start = self.point(side, self.units[side].hand, flight.start)
+        target = self.point(1 - side, self.units[1 - side].eye, flight.start)
+        across = np.array([target[0] - start[0], 0.0, target[2] - start[2]])
+        across /= max(np.linalg.norm(across), 1e-9)
+        ticks = max(flight.end - flight.start, 1.0)
+        phase = max(2 * math.pi + self.params.axe_wave_spd * (56.0 / ticks) * k, 0.0)
+        position = start + across * flight.offset(k)
+        position[1] = start[1] - (target[1] - start[1]) * math.sin(phase)
+        spin = math.radians(-self.params.axe_rot_speed * k)
+        side_axis = np.cross(np.array([0.0, 1.0, 0.0]), across)
+        c, s = math.cos(spin), math.sin(spin)
+        # turn about the axis across the flight, so the blade wheels end over end along it
+        x = side_axis
+        y = np.array([0.0, c, 0.0]) + across * s
+        z = np.cross(x, y)
+        matrix = np.zeros((3, 4))
+        matrix[:, :3] = np.stack([x, y, z], axis=1)
+        matrix[:, 3] = position
+        rest_p, rest_n = self._rest[part.start:part.start + part.count], \
+            self._rest_normals[part.start:part.start + part.count]
+        return _transform(matrix, rest_p, rest_n)
+
     def _effect(self, effect: EffectAsset, cue: tlm.Cue, local: float, t: float) -> tuple[np.ndarray, np.ndarray]:
         bones = effect.loaded.bones
         world, palette = engine_pose.pose(bones, effect.anim, local) if bones else ([], [])
+        return effect.mesh.pose(world, palette, self._effect_matrix(effect, cue, local))
+
+    def _effect_matrix(self, effect: EffectAsset, cue: tlm.Cue, local: float) -> np.ndarray:
         # spawn_effect_at_position: where the unit stands when the effect starts, on the ground
         # (cue.height up), turned as the unit is; it stays there while it plays
         matrix = self.placement(cue.side, cue.frame)
@@ -634,7 +758,7 @@ class BattleStage:
             x0, x1 = matrix[0, 3], self.timeline.x(cue.aim, cue.frame)
             matrix[0, 3] = x0 + (x1 - x0) * effect.travel(local)
         matrix[1, 3] = cue.height
-        return effect.mesh.pose(world, palette, matrix)
+        return matrix
 
     # -- camera -----------------------------------------------------------------------------------
     def view(self, t: float) -> Optional[tuple[tuple, tuple]]:

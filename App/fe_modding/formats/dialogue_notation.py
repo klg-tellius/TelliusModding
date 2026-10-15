@@ -11,6 +11,7 @@ import html
 import re
 
 from . import fe10_message as rd
+from . import game_text
 from .fe9_conversation import tokenize
 from .fe9_message_scene import to_raw
 
@@ -41,6 +42,60 @@ FE10_NAMES = {
 for _key, _info in rd.COMMANDS.items():
     FE10_NAMES.setdefault(_key, _info.label)
 FE10_NAMES['w#'] = 'Pause power'
+#: What each action does, shown when the pointer rests on it in the Actions window
+#: (research/CHAPTER_DATA_NOTES.md 5.4, the control-code table).
+ACTION_HELP = {
+    'Layout': 'How the scene is laid out: up-down conversation, background conversation, world-map narration...',
+    'Background': 'The picture behind the conversation (an s/ image).',
+    'Show speaker': 'Select a box and load the face of the character who talks in it.',
+    'Control': 'A raw control code.',
+    'Portrait': "Load a character's portrait into the selected seat.",
+    'Remove portrait': 'Hide the portrait of the selected seat.',
+    'Seat': 'Select a portrait seat (0-8); the next portrait actions apply to it.',
+    'Close eyes': 'The selected portrait closes its eyes.',
+    'Half-open eyes': 'The selected portrait half-closes its eyes.',
+    'Hold eyes open': 'The selected portrait keeps its eyes open (no blinking).',
+    'Normal eyes': 'The selected portrait blinks normally again.',
+    'Quick blinking': 'The selected portrait blinks quickly.',
+    'Normal blinking': 'The selected portrait blinks at the normal pace.',
+    'Mouth set 1': "Use the portrait's first set of mouth pictures.",
+    'Mouth set 2': "Use the portrait's second set of mouth pictures.",
+    'Box': 'Select text box 0-3; the text that follows goes in it.',
+    'Dismiss box': 'Close text box 0-3.',
+    'Pause power': 'Wait 2^n frames (n = 0-9) before the next character.',
+    'Small box': 'A small text box.',
+    'Typing sound': 'The sound of the text appearing: 0 silent, 1 dialogue, 2 ancient language, 3 world-map '
+                    'narration, 4 tutorial.',
+    'Transition ms': 'Length of the next screen transition, in milliseconds.',
+    'Stop mouth': 'The portrait stops moving its mouth while the text appears.',
+    'Resume mouth': 'The portrait moves its mouth again.',
+    'Release script': 'Let the event script go on while the conversation stays on screen.',
+    'Release script alias': 'Same as Release script.',
+    'Disable skipping': 'The player cannot skip the conversation from here.',
+    'Disable skipping alias': 'Same as Disable skipping.',
+    'Enable skipping': 'The player can skip the conversation again.',
+    'Toggle nameplate': "Show or hide the speaker's name plate.",
+    'Show windows': 'Show the text windows.',
+    'Hide windows': 'Hide the text windows.',
+    'Hide current window': 'Hide the current text window.',
+    'Wait': 'Wait for the player to press a button; the text stays.',
+    'Clear box': 'Start a new page in the box (clear its text).',
+    'New line': 'Go to the next line.',
+    'Yield to script': 'Hand control back to the event script; it can resume this message later.',
+    'Narration': 'Narration text (no speaker).',
+    'Continue': 'Continue without waiting.',
+    'Fade in': 'Fade the scene in (usually right after Background).',
+    'Fade out': 'Fade the scene out.',
+    'Markup': 'Text markup such as a font (#F) or colour (#C) change for the rest of the line.',
+    'Speaker': 'The character who talks in the selected box.',
+    'Show portrait': "Show a character's portrait.",
+    'Show portrait now': 'Show a portrait without its transition.',
+    'Remove portrait now': 'Hide a portrait without its transition.',
+    'Attach portrait': 'Attach a portrait to a seat.',
+    'New page': 'Start a new page in the box.',
+    'Cast': 'The characters of the scene and their seats.',
+    'Release script marked': 'Let the event script go on (marked form).',
+}
 TAG = re.compile(r'<([^<>]*)>')
 
 
@@ -154,6 +209,13 @@ def _tag_raw(inner, fe10):
     return raw
 
 
+def _encodes_to(text: str) -> str | None:
+    try:
+        return game_text.encode(text).decode('cp437')
+    except UnicodeError:
+        return None
+
+
 def parse(text: str, fe10: bool = False) -> Document:
     """Parse a draft strictly; an error never discards or repairs user text."""
     raw, spans = [], []
@@ -172,7 +234,7 @@ def parse(text: str, fe10: bool = False) -> Document:
                 if text[pos] == '>':
                     raise ValueError('Use <Bytes:3E> for a literal >')
                 pos += 1
-                chunk = text[start:pos].encode(rd.ENCODING if fe10 else 'shift_jis').decode('cp437')
+                chunk = (text[start:pos].encode(rd.ENCODING) if fe10 else game_text.encode(text[start:pos])).decode('cp437')
                 action = False
             if '\0' in chunk:
                 raise ValueError('A message cannot contain a zero byte')
@@ -219,7 +281,7 @@ def display(raw: str, fe10: bool = False) -> Document:
             source = raw[token.offset:tokens[i + 1].offset if i + 1 < len(tokens) else len(raw)]
             if token.code == 'text':
                 part = token.arg
-                if part in ('<', '>') or part.encode('shift_jis', errors='replace').decode('cp437') != source:
+                if part in ('<', '>') or _encodes_to(part) != source:
                     part = '<Bytes:' + source.encode('cp437').hex().upper() + '>'
             elif token.code in FE9_NAMES:
                 part = '<' + FE9_NAMES[token.code] + (':' + _escape(token.arg) if token.arg or token.code in ('R', 'B', 'c', 'C', 'FC') else '') + '>'

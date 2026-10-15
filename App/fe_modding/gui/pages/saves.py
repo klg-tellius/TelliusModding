@@ -20,7 +20,7 @@ from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
 from .. import theme
 from ..shell import Page
-from ..widgets import ScrollFrame, section_header
+from ..widgets import ScrollFrame, info, section_header
 
 ON, OFF = "☑", "☐"
 TICKS_PER_SECOND = 162_000_000 // 4  # OSGetTime runs at the bus clock / 4
@@ -181,12 +181,13 @@ class SaveEditorPage(Page):
         super().__init__(shell)
         head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
         head.pack(fill="x")
-        ttk.Label(head, text="Saves", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
-                  text="Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
-                       "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
-                       "(marked “loaded”). Keep the game closed while you overwrite a save it uses."
-                  ).pack(anchor="w", pady=(2, 8))
+        title = ttk.Frame(head, style="Page.TFrame")
+        title.pack(anchor="w", pady=(0, 8))
+        ttk.Label(title, text="Saves", style="Title.TLabel").pack(side="left")
+        info(title, "Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
+                    "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
+                    "(marked “loaded”). Keep the game closed while you overwrite a save it uses.").pack(
+            side="left", padx=(8, 0), pady=(8, 0))
         top = ttk.Frame(self, style="Page.TFrame", padding=(28, 0))
         top.pack(fill="x")
         ttk.Button(top, text="Open save file…", command=self._open).pack(side="left")
@@ -195,6 +196,8 @@ class SaveEditorPage(Page):
         self._save_as_button = ttk.Button(top, text="Save as…", command=self._save_as, state="disabled")
         self._save_as_button.pack(side="left", padx=(6, 0))
         ttk.Button(top, text="Check", command=self._check).pack(side="left", padx=(6, 0))
+        self._play_button = ttk.Button(top, text="Play in Dolphin…", command=self._play, state="disabled")
+        self._play_button.pack(side="left", padx=(6, 0))
         self._file_label = ttk.Label(top, text="No save open.", style="Muted.TLabel")
         self._file_label.pack(side="left", padx=(12, 0))
         row = ttk.Frame(self, style="Page.TFrame", padding=(28, 8, 28, 0))
@@ -228,6 +231,8 @@ class SaveEditorPage(Page):
         self._terrain: Optional[int] = None
         self._history: Optional[int] = None
         self._fields: list[_Fields] = []
+        self._option_vars: dict[int, tk.BooleanVar] = {}
+        self._option_checks: dict[int, ttk.Checkbutton] = {}
 
         self._build_overview()
         self._build_units()
@@ -385,6 +390,33 @@ class SaveEditorPage(Page):
         if chosen:
             self._write(Path(chosen))
 
+    def _play(self) -> None:
+        """Test the selected file-save block in Dolphin, as saved or moved to a chapter start."""
+        block = self.block
+        if self._savefile is None or block is None:
+            return
+        if not block.decoded or block.header.save_kind != 2 or block.is_checkpoint:
+            messagebox.showinfo("Play in Dolphin", "Choose a file save block; checkpoints and consumed copies "
+                                "cannot be loaded from the file menu on their own.", parent=self)
+            return
+        from ... import chapters
+        index = self.shell.index
+        choices = {int(cid): (index.by_chapter[cid].title if index is not None and cid in index.by_chapter
+                              else f"Chapter {cid}")
+                   for cid in chapters.list_chapter_ids(self.shell.project)}
+        dialog = PlaySaveDialog(self, block, choices)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        blocks = self._savefile.blocks
+        dirty = tuple(i for i, b in enumerate(blocks) if id(b) in self._dirty_blocks)
+        try:
+            data = sf.play_copy(self._savefile, blocks.index(block), dialog.result or None, rebuild=dirty)
+        except ValueError as exc:
+            messagebox.showerror("Play in Dolphin", str(exc), parent=self)
+            return
+        self.shell.play_from_save(self._path.name if self._path else "save.gci", data)
+
     def _check(self) -> None:
         if self.block is None:
             return
@@ -402,6 +434,7 @@ class SaveEditorPage(Page):
     def _sync(self) -> None:
         has = self._savefile is not None
         self._save_as_button.configure(state="normal" if has else "disabled")
+        self._play_button.configure(state="normal" if has and self.shell.extracted else "disabled")
         self._save_button.configure(state="normal" if self._dirty_blocks else "disabled")
         if self.block is None:
             self._status.config(text="")
@@ -422,6 +455,7 @@ class SaveEditorPage(Page):
             self._notebook.select(list(TABS).index("raw"))
 
     def _refresh_lists(self) -> None:
+        self._refresh_options()
         self._fill_units()
         self._fill_convoy()
         self._fill_forges()
@@ -484,28 +518,44 @@ class SaveEditorPage(Page):
         f.add("Base opening done", self._party, "base_opening_done")
         f.add("Report: gold gained", self._party, "report_profit", "u32")
         f.add("Report: gold spent", self._party, "report_loss", "u32")
-        f.add("Report: bonus EXP", self._party, "report_exp", "s16")
-        f.add("Report: score", self._party, "report_score", "s16")
-        f.add("Byte +0x50", self._party, "byte_50")
-        f.add("Byte +0x51", self._party, "byte_51")
+        f.add("Report: combat EXP", self._party, "report_exp", "s16")
+        f.add("Report: bonus EXP", self._party, "report_score", "s16")
+        f.add("Reinforcement uses this chapter", self._party, "reinforcement_uses")
+        f.add("Forged this chapter", self._party, "byte_51")
+
+        section_header(b, "Faction commands", "Order and Demand map commands; target 255 means unset").pack(anchor="w", pady=(12, 0))
+        f = self._fields_in(b, 4)
+        f.pack(anchor="w", pady=(4, 12))
+        for base, faction in ((0, "Player"), (4, "Other")):
+            for offset, label in enumerate(("Mode", "Faction ID", "Target X", "Target Y")):
+                f.add(f"{faction} {label}", self._party, ("faction_command_records", base + offset))
 
         section_header(b, "Options", "the Options menu, saved per file").pack(anchor="w")
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(4, 12))
+        self._option_fields = f
         for i, name in enumerate(sf.OPTION_BYTES):
             kind = dict(sf.DIFFICULTIES) if i == 10 else ("s8" if i in (6, 7) else "u8")
             f.add(name, self._party, ("options", i), kind,
                   on_set=(lambda v: setattr(self.block.header, "difficulty", v)) if i == 10 else None)
-        ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Known option bits: byte 0 - 0x02 unit window off, 0x04 terrain window off, 0x18 message "
-                       "speed; byte 2 - 0x0C sound output; byte 3 - 0x20 message sounds off, 0x40 show other "
-                       "units' moves, 0x80 fixed growths.").pack(anchor="w")
+        toggles = ttk.Frame(b, style="Page.TFrame")
+        toggles.pack(anchor="w", pady=(0, 8))
+        for mask, label in sf.OPTION_TOGGLES:
+            var = tk.BooleanVar(value=False)
+            check = ttk.Checkbutton(toggles, text=label, variable=var,
+                                    command=lambda m=mask: self._set_option(m))
+            check.pack(side="left", padx=(0, 18))
+            self._option_vars[mask] = var
+            self._option_checks[mask] = check
+        info(b, "Known option bits: " + "; ".join(
+            f"byte {i} - " + ", ".join(f"0x{m:02X} {n}" for b, m, n in sf.OPTION_FIELDS if b == i)
+            for i in range(4)) + ".").pack(anchor="w")
 
         section_header(b, "Map state", "MDST").pack(anchor="w", pady=(12, 0))
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(4, 12))
         for i, name in enumerate(sf.MAP_STATE_BYTES):
-            f.add(name, self._map_state, ("values", i))
+            f.add(name, self._map_state, ("values", i), "s8" if i in (4, 5, 9, 10) else "u8")
         f.add("Camera rotation", self._map_state, "camera_rotation")
         f.add("Camera X", self._map_state, "camera_x", "s16")
         f.add("Camera Y", self._map_state, "camera_y", "s16")
@@ -524,6 +574,20 @@ class SaveEditorPage(Page):
         f.add("Turns", rec, "turns", "u16")
         f.add("Seconds", rec, "seconds", "u32")
         self._history_fields = f
+
+    def _refresh_options(self) -> None:
+        party = self._party()
+        for mask, var in self._option_vars.items():
+            var.set(party.option_enabled(mask) if party else False)
+            self._option_checks[mask].configure(state="normal" if party else "disabled")
+
+    def _set_option(self, mask: int) -> None:
+        party = self._party()
+        if party is None:
+            return
+        party.set_option_enabled(mask, self._option_vars[mask].get())
+        self._option_fields.load()
+        self.mark_dirty()
 
     class _TimeView:
         """Play time ticks shown as whole seconds."""
@@ -655,10 +719,10 @@ class SaveEditorPage(Page):
         f.add("Kills", unit, "kills", "u16")
         f.add("Kills this map", unit, "map_kills", "u16")
         f.add("Tiles moved", unit, "tiles_moved", "u16")
-        f.add("Counter +0x230", unit, "counter_230", "u16")
-        f.add("Counter +0x232", unit, "counter_232", "u16")
+        f.add("Unused +0x230 (UnitGet 28)", unit, "unused_230", "u16")
+        f.add("Unused +0x232 (UnitGet 32)", unit, "unused_232", "u16")
         f.add("Last kill chapter", unit, "last_kill_chapter")
-        f.add("Byte +0x235", unit, "byte_235")
+        f.add("Unused +0x235 (UnitGet 34)", unit, "unused_235")
 
         section_header(b, "Advanced", "links are unit slots, 0 = none").pack(anchor="w")
         f = self._fields_in(b, 3)
@@ -669,7 +733,7 @@ class SaveEditorPage(Page):
         f.add("State flags", unit, "state_flags", "u32")
         for i in range(4):
             f.add(f"Status byte {i}", unit, ("status", i))
-        f.add("Byte +0x19D", unit, "byte_19d")
+        f.add("Unused +0x19D (debug editor only)", unit, "unused_19d")
         f.add("AI attack", unit, "ai_attack")
         f.add("AI move", unit, "ai_move")
         f.add("AI heal", unit, "ai_heal")
@@ -680,7 +744,7 @@ class SaveEditorPage(Page):
         f.add("AI +0x258", unit, "ai_258", "u16")
         f.add("AI +0x25A", unit, "ai_25a", "u16")
         f.add("AI turn order", unit, "ai_order")
-        f.add("Field +0x15C", unit, "field_15c", "u16")
+        f.add("Facing angle (degrees × 50)", unit, "facing_angle_x50", "s16")
 
     def _fill_units(self) -> None:
         tree = self._unit_tree
@@ -811,7 +875,7 @@ class SaveEditorPage(Page):
         f.add("Crit steps (x3)", rec, "crit", "s8", width=6)
         f.add("Weight steps", rec, "weight", "s8", width=6)
         for i in range(4):
-            f.add(f"Look byte {i}", rec, ("appearance", i), width=6)
+            f.add(f"Attack trail {('R', 'G', 'B', 'A')[i]}", rec, ("trail_color_rgba", i), width=6)
         self._forge_tree = _tree(tab, {"n": ("#", 40, False), "name": ("Name", 200, False),
                                        "stats": ("Mt / Hit / Crt / Wt", 200, False), "used": ("Used by", 300, True)},
                                  height=18)
@@ -846,9 +910,8 @@ class SaveEditorPage(Page):
 
     def _build_map(self) -> None:
         tab = self._tabs["map"]
-        ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Per-map tile records: opened doors, chests and roofs, visited villages, breakable walls, "
-                       "ballistae, pits and rocks. Only the first “count” records are live.").pack(anchor="w")
+        info(tab, "Per-map tile records: opened doors, chests and roofs, visited villages, breakable walls, "
+                  "ballistae, pits and rocks. Only the first “count” records are live.").pack(anchor="w")
         f = self._fields_in(tab, 4)
         f.pack(side="bottom", anchor="w", pady=(6, 0))
         tt = lambda: self.block.terrain if self.block and self.block.decoded else None  # noqa: E731
@@ -983,14 +1046,13 @@ class SaveEditorPage(Page):
         scroll = ScrollFrame(self._tabs["system"], padding=(4, 4))
         scroll.pack(fill="both", expand=True)
         b = scroll.body
-        ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Shared by every save on the card: at boot the game takes it from the newest block. Edit "
-                       "it in that block (the one with the highest sequence).").pack(anchor="w")
+        info(b, "Shared by every save on the card: at boot the game takes it from the newest block. Edit "
+                "it in that block (the one with the highest sequence).").pack(anchor="w")
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(6, 10))
         f.add("System id", self._system, "system_id", "u64", width=22)
         f.add("Unlock bits", self._system, "unlocks", "u16")
-        f.add("Byte +0x44 (console)", self._system, "region")
+        f.add("Console language code", self._system, "language_code")
         f.add("Screen X", self._system, "screen_x", "s8")
         f.add("Screen Y", self._system, "screen_y", "s8")
         f.add("Brightness", self._system, "brightness")
@@ -1066,3 +1128,61 @@ class SaveEditorPage(Page):
             lines = [f"{o:05X}  {data[o:o + 16].hex(' ')}" for o in range(0, min(end, len(data)), 16)]
             text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
+
+
+class PlaySaveDialog(tk.Toplevel):
+    """Where the tested save starts. ``result``: None (cancelled), 0 (load it as saved) or a
+    chapter id to start with the save's army."""
+
+    def __init__(self, parent: tk.Misc, block: sf.SaveBlock, choices: dict[int, str]):
+        super().__init__(parent)
+        self.title("Play in Dolphin")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.result: Optional[int] = None
+        self._choices = {f"{title}  ({cid:02d})": cid for cid, title in sorted(choices.items())}
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        h = block.header
+        ttk.Label(frame, justify="left", style="Muted.TLabel", text=(
+            "Starts Dolphin on the project's extracted files (no build) with a copy of this save alone on\n"
+            "memory card A; the original file is not changed, and the game's own saves during the run stay\n"
+            "in the copy. Pick the file in the game's file menu. Unsaved edits in this page are included.")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self._mode = tk.StringVar(value="as_is")
+        resume = sf.RESUME_POINTS.get(h.resume_point & 0x7F, f"resume point {h.resume_point}")
+        where = f"{choices[h.chapter]} ({h.chapter:02d})" if h.chapter in choices else f"chapter {h.chapter}"
+        ttk.Radiobutton(frame, text=f"Load it as saved ({where}, {resume})", value="as_is",
+                        variable=self._mode).grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Radiobutton(frame, text="Start a chapter with this army:", value="chapter",
+                        variable=self._mode).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        labels = list(self._choices)
+        current = next((k for k, v in self._choices.items() if v == h.chapter), labels[0] if labels else "")
+        self._chapter = tk.StringVar(value=current)
+        box = ttk.Combobox(frame, textvariable=self._chapter, values=labels, state="readonly", width=40)
+        box.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(4, 0))
+        box.bind("<<ComboboxSelected>>", lambda e: self._mode.set("chapter"))
+        ttk.Label(frame, justify="left", style="Muted.TLabel", text=(
+            "The chapter starts as after clearing the previous one: same units, items, gold, supports and\n"
+            "flags. Story scripts may expect units the save does not have.")
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 12))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Play", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 6))
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        top = parent.winfo_toplevel()
+        x = top.winfo_rootx() + (top.winfo_width() - self.winfo_reqwidth()) // 2
+        y = top.winfo_rooty() + (top.winfo_height() - self.winfo_reqheight()) // 3
+        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        self.grab_set()
+
+    def _ok(self) -> None:
+        if self._mode.get() == "as_is":
+            self.result = 0
+        elif self._chapter.get() in self._choices:
+            self.result = self._choices[self._chapter.get()]
+        else:
+            return
+        self.destroy()

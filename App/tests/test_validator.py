@@ -108,6 +108,19 @@ class ProjectChecks(unittest.TestCase):
         self.assertEqual([i.message for i in warnings], ["The script names PID_GHOST, which does not exist."])
         self.assertEqual(warnings[0].route, ("chapter", "01", "script"))
 
+    def test_script_globals_against_startup(self):
+        from fe_modding.formats.cmb import compile_source, write_cmb
+        self.write("FE8Data.bin", build())
+        self.write("Scripts/startup.cmb", write_cmb(compile_source(
+            "global s @ 2\n@export\ndef Startup():\n    s = 1\n").script))
+        self.write("Scripts/C01.cmb", write_cmb(compile_source(
+            "global a @ 2\nglobal b @ 30\n@export\ndef Startup():\n    a = 1\n    b = 2\n").script))
+        issues = [i for i in validator.validate_project(self.project).issues if i.where == "Scripts/C01.cmb"]
+        self.assertEqual([(i.severity, i.message.split(";")[0]) for i in issues], [
+            (validator.ERROR, "The script reserves 31 global slots and startup.cmb 3"),
+            (validator.WARNING, "Global slot(s) 2 are also used by startup.cmb"),
+        ])
+
     def test_unreachable_story_chapter_needs_the_flow(self):
         class Flow:
             available = True
@@ -118,6 +131,23 @@ class ProjectChecks(unittest.TestCase):
         warnings = [i for i in validator.validate_project(self.project, Flow()).warnings if i.area == "Chapter 33"]
         self.assertTrue(any("story flow" in i.message for i in warnings))
         self.assertFalse(any("story flow" in i.message for i in validator.validate_project(self.project).warnings))
+
+    def test_more_than_forty_clears_is_a_warning(self):
+        class Flow:  # 1..30, then ten added chapters 33..42, then 31 and the ending
+            available = True
+            def next_of(self, chapter):
+                return {30: 33, 42: 31}.get(chapter, chapter + 1)
+        class Retail:
+            available = True
+            def next_of(self, chapter):
+                return chapter + 1
+        self.write("FE8Data.bin", build())
+        def history(flow):
+            return [i.message for i in validator.validate_project(self.project, flow).warnings
+                    if "clear history" in i.message]
+        self.assertEqual(len(history(Flow())), 1)
+        self.assertIn("clears 41 chapters", history(Flow())[0])
+        self.assertEqual(history(Retail()), [])
 
     def test_retail_flow_stops_at_the_ending(self):
         class RetailFlow:  # no table entries: every chapter leads to the next id

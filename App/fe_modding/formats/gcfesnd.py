@@ -309,6 +309,39 @@ def _add_reloc(data: bytes, position: int) -> bytes:
     return bytes(header) + data[HEADER_SIZE:reloc_start] + struct.pack(f">{len(relocs)}I", *relocs) + tail
 
 
+def _delete_data(data: bytes, pos: int, length: int) -> bytes:
+    """Remove ``length`` bytes at data position ``pos``, the inverse of
+    :func:`_insert_data`; a pointer stored inside the removed bytes goes
+    with them, a pointer into them is an error."""
+    data_size, reloc_count, section_count, reloc_start = _read_container(data)
+    end = pos + length
+    if not 0 <= pos <= end <= data_size:
+        raise GcfesndError(f"Removed range {pos:#x}+{length:#x} is outside the data area.")
+    relocs = list(struct.unpack_from(f">{reloc_count}I", data, reloc_start))
+    sections_start = reloc_start + 4 * reloc_count
+    body = bytearray(data[HEADER_SIZE:HEADER_SIZE + data_size])
+    kept = []
+    for position in relocs:
+        if pos <= position < end:
+            continue
+        value = struct.unpack_from(">I", body, position)[0]
+        if pos < value < end:
+            raise GcfesndError(f"A pointer at {position:#x} points into the removed bytes.")
+        if value >= end:
+            struct.pack_into(">I", body, position, value - length)
+        kept.append(position - length if position >= end else position)
+    del body[pos:end]
+    sections = bytearray(data[sections_start:])
+    for i in range(section_count):
+        address = struct.unpack_from(">I", sections, 8 * i)[0]
+        if address > pos:
+            struct.pack_into(">I", sections, 8 * i, max(pos, address - length))
+    header = bytearray(data[:HEADER_SIZE])
+    removed = length + 4 * (reloc_count - len(kept))
+    struct.pack_into(">III", header, 0, len(data) - removed, data_size - length, len(kept))
+    return bytes(header) + bytes(body) + struct.pack(f">{len(kept)}I", *kept) + bytes(sections)
+
+
 def _end_of_records(data: bytes) -> int:
     """Data position (file offset - HEADER_SIZE) of the zero-length record that ends the array."""
     offset = HEADER_SIZE
@@ -353,6 +386,20 @@ def add_sfx_cue(data: bytes, name: str, *, flags: int, volume: int, pan: int, so
     encoded += bytes(-len(encoded) % 4)
     out = _insert_data(out, _read_container(out)[0], encoded, shift_pointers_at_pos=False)
     return out
+
+
+def remove_sfx_cue(data: bytes, name: str) -> bytes:
+    """Remove the ``SFX_*`` record ``name`` and its label (the inverse of
+    :func:`add_sfx_cue`); the sound it plays stays in the banks."""
+    cues = read_sfx_cues(data)
+    cue = next((c for c in cues if c.name == name), None)
+    if cue is None:
+        raise GcfesndError(f"No SFX cue named {name!r}.")
+    out = data
+    if not any(c.name_offset == cue.name_offset for c in cues if c is not cue):
+        size = len(name.encode("ascii")) + 1
+        out = _delete_data(out, cue.name_offset, size + (-size % 4))
+    return _delete_data(out, cue.offset - HEADER_SIZE, SFX_RECORD_SIZE)
 
 
 def set_sfx_sound_id(data: bytes, cue_name: str, sound_id: int) -> bytes:

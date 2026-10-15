@@ -8,7 +8,12 @@ from pathlib import Path
 from PIL import Image, ImageOps
 from . import lz10, pak, tpl, message
 from .fe9_portraits import FaceAsset, read_face_table
-from .fe9_font import GameFont
+from . import game_text
+from .fe9_font import GameFont, resolve_font_files
+
+
+#: ``text_rgba_palette`` in each build (the same 35 RGBA colours).
+_TEXT_PALETTE = {b'GFEE01': 0x80296088, b'GFEP01': 0x802A01B0, b'GFEJ01': 0x80290BB0}
 
 
 @dataclass(frozen=True)
@@ -155,8 +160,11 @@ class ConversationAssets:
 
     def font(self, name="talk") -> GameFont:
         if name not in self._fonts:
-            if name == "system":  # load_system_font reads the compressed .cms; system.gcf is unused
-                data = lz10.decompress(self.read("Fonts/system.cms"))
+            if name == "system":  # load_system_font: the LZ10 .cms (US, JP) or system.gcf (PAL)
+                relative = dict(resolve_font_files(self.files))["system"]
+                data = self.read(relative)
+                if relative.endswith(".cms"):
+                    data = lz10.decompress(data)
             else:
                 data = self.read(f"Fonts/{name}.gcf")
             self._fonts[name] = GameFont(data)
@@ -166,21 +174,27 @@ class ConversationAssets:
         face = self.faces.get(fid)
         if face is None or face.name_id not in self.names:
             raise ValueError(f"Missing portrait display name: {fid}")
-        return self.names[face.name_id]
+        name = self.names[face.name_id]
+        try:    # message text is kept byte for byte (cp437): show it as the game draws it
+            return game_text.from_raw(name)
+        except UnicodeError:
+            return name
 
     def text_color(self, index: int) -> tuple[int, int, int, int]:
-        """US main.dol's RGBA palette, used by #C in the glyph renderer."""
+        """main.dol's RGBA palette (``text_rgba_palette``), used by #C in the glyph renderer.
+        The 35 colours are identical in the US, PAL and JP builds."""
         if not 0 <= index <= 0x22 or index in (0x13, 0x14, 0x22):
             raise ValueError(f"Unsupported animated/unknown text color {index:02X}")
         if index in self._colors:
             return self._colors[index]
         boot = self.files.parent / 'sys/boot.bin'
-        if boot.is_file() and boot.read_bytes()[:6] != b'GFEE01':
-            raise ValueError("Text color palette lookup is currently verified only for US FE9")
+        game_id = boot.read_bytes()[:6] if boot.is_file() else b'GFEE01'
+        if game_id not in _TEXT_PALETTE:
+            raise ValueError(f"No text color palette address for {game_id.decode('ascii', 'replace')}")
         path = self.files.parent / 'sys/main.dol'
         self._signatures[path] = self._signature(path)
         data = path.read_bytes()
-        address = 0x80296088 + index*4
+        address = _TEXT_PALETTE[game_id] + index*4
         if len(data) < 0x100:
             raise ValueError("Truncated main.dol while resolving text colors")
         for section in range(18):
@@ -192,7 +206,7 @@ class ConversationAssets:
                 if len(colors)==4:
                     self._colors[index] = tuple(colors)
                     return self._colors[index]
-        raise ValueError("US FE9 text color table is unavailable")
+        raise ValueError("The FE9 text color table is unavailable")
 
     def layout(self, name: str) -> RectResource:
         key = name if name.startswith("RID_") else "RID_" + name

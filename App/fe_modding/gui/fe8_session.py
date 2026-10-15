@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..formats import fe8data
+from ..formats import fe8data, item_rules
 from ..game_profile import GAME_DATA
+from ..game_code.dol import Dol
+from ..game_code import item_restrictions as rule_code, versions
 from ..project import ModProject
 from .changelog import ChangeLog
 
@@ -76,7 +78,34 @@ class Fe8DataSession:
 
     def save(self) -> None:
         """Write the file (keeping the extracted one in ``originals/``). Raises OSError."""
-        self.project.write_logical("game_data", self.data)
+        rules = item_rules.read_item_rules(self.data)
+        item_rules.validate_item_rules(self.data, rules)
+        dol_path = self.project.extracted_dir / "sys" / "main.dol"
+        old_dol = dol_path.read_bytes() if dol_path.is_file() else None
+        patched_dol = None
+        if old_dol is not None:
+            dol = Dol(old_dol)
+            ident = versions.identify(dol, versions.read_boot_code(self.project.extracted_dir))
+            if ident.version is None:
+                if any(not rule.empty for rule in rules.values()):
+                    raise ValueError(ident.note or "Unsupported FE9 main.dol for item restrictions.")
+            else:
+                if any(not rule.empty for rule in rules.values()):
+                    rule_code.install(dol, ident.version.code)
+                else:
+                    rule_code.uninstall(dol, ident.version.code)
+                if bytes(dol.data) != old_dol:
+                    patched_dol = bytes(dol.data)
+        elif any(not rule.empty for rule in rules.values()):
+            raise ValueError("FE9 main.dol is needed to enforce custom item restrictions.")
+        if patched_dol is not None:
+            self.project.write_keeping_original(dol_path, patched_dol)
+        try:
+            self.project.write_logical("game_data", self.data)
+        except Exception:
+            if patched_dol is not None:
+                dol_path.write_bytes(old_dol)
+            raise
         self.dirty = False
         self.changelog.append(self.file_label, "Saved character/class/item/skill/terrain data")
         self._notify(None)

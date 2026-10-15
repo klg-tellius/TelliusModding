@@ -183,3 +183,183 @@ def balloon(position: int, text_width: int, no_portrait: bool = False) -> dict[s
     else:
         raise ValueError(f"position {position} has no balloon")
     return {"box": box, "width": width, "tiles": tiles, "text": text, "cursor": cursor, "anchor": anchor}
+
+@dataclass
+class EditableLayer:
+    """Raw FE10 layer with resolved relocated strings."""
+    raw: bytes
+    strings: dict[int, str] = field(default_factory=dict)
+
+    @property
+    def kind(self):
+        return self.raw[0]
+
+    @property
+    def file(self):
+        return self.strings.get(8, "") if self.kind in (1, 6) else ""
+
+    @file.setter
+    def file(self, value):
+        self.strings[8] = value
+
+    @property
+    def texture(self):
+        return self.raw[0x12]
+
+
+@dataclass
+class EditableResource:
+    name: str
+    descriptor: bytes
+    layers: list[EditableLayer]
+
+
+@dataclass
+class EditableRect:
+    resources: list[EditableResource]
+    address_order: list[str]
+    pool_order: list[str]
+    header_tail: bytes
+
+    def find(self, name):
+        return next((resource for resource in self.resources if resource.name == name), None)
+
+    def add(self, resource):
+        if self.find(resource.name) is not None:
+            raise ValueError(f"{resource.name} already exists")
+        if not 0 < len(resource.layers) <= 255:
+            raise ValueError("A rect resource needs 1-255 layers")
+        self.resources.append(resource)
+        self.resources.sort(key=lambda item: item.name.encode(ENCODING))
+        self.address_order.append(resource.name)
+
+    def build(self):
+        return build_editable_rect(self)
+
+
+def read_editable_rect(data: bytes) -> EditableRect:
+    """Read FE10 rects without discarding unknown layer fields."""
+    if len(data) < 0x20:
+        raise ValueError("Truncated rect file")
+    size, data_size, pointer_count, export_count, imports = struct.unpack_from(">5I", data)
+    if size != len(data) or imports:
+        raise ValueError("Invalid rect header or unsupported imports")
+    base = 0x20
+    reloc = base + data_size
+    exports = reloc + 4 * pointer_count
+    names = exports + 8 * export_count
+    if names > size:
+        raise ValueError("Rect tables exceed file size")
+    pointers = {struct.unpack_from(">I", data, reloc + 4 * i)[0] for i in range(pointer_count)}
+
+    def string(offset):
+        start = base + offset
+        if not base <= start < reloc:
+            raise ValueError("Invalid rect string pointer")
+        return data[start:data.index(b"\0", start, reloc)].decode(ENCODING)
+
+    blocks = []
+    resources = []
+    for index in range(export_count):
+        address, name_offset = struct.unpack_from(">II", data, exports + 8 * index)
+        name_start = names + name_offset
+        name = data[name_start:data.index(b"\0", name_start)].decode(ENCODING)
+        at = base + address
+        descriptor = data[at:at + 20]
+        if len(descriptor) != 20 or string(struct.unpack_from(">I", descriptor)[0]) != name:
+            raise ValueError(f"Invalid rect descriptor: {name}")
+        count = descriptor[4]
+        layers = []
+        end = at + 20 + count * 4
+        for layer_index in range(count):
+            layer_address = struct.unpack_from(">I", data, at + 20 + 4 * layer_index)[0]
+            layer_at = base + layer_address
+            kind = data[layer_at]
+            length = (10 + 8 * struct.unpack_from(">H", data, layer_at + 8)[0]
+                      if kind == 4 else _SIZES[kind])
+            raw = data[layer_at:layer_at + length]
+            if len(raw) != length:
+                raise ValueError(f"Truncated layer of {name}")
+            refs = {off: string(struct.unpack_from(">I", raw, off)[0])
+                    for off in range(0, length - 3, 4) if layer_address + off in pointers}
+            layers.append(EditableLayer(raw, refs))
+            end = max(end, layer_at + length)
+        resources.append(EditableResource(name, descriptor, layers))
+        blocks.append((at, end, name))
+    blocks.sort()
+    pool_start = max((end for _start, end, _name in blocks), default=base)
+    raw_pool = data[pool_start:reloc].rstrip(b"\0")
+    pool_order = [item.decode(ENCODING) for item in raw_pool.split(b"\0") if item]
+    return EditableRect(resources, [name for _start, _end, name in blocks], pool_order, data[0x14:0x20])
+
+
+def build_editable_rect(doc: EditableRect) -> bytes:
+    by_name = {resource.name: resource for resource in doc.resources}
+    if len(by_name) != len(doc.resources) or set(doc.address_order) != set(by_name):
+        raise ValueError("Rect resource names or address order are inconsistent")
+    names_used = []
+    for resource in doc.resources:
+        names_used.append(resource.name)
+        for layer in resource.layers:
+            names_used.extend(layer.strings.values())
+    pool_order = list(dict.fromkeys([s for s in doc.pool_order if s in names_used] + names_used))
+    body = bytearray()
+    addresses = {}
+    layer_addresses = {}
+    for name in doc.address_order:
+        resource = by_name[name]
+        body += bytes(-len(body) % 4)
+        addresses[name] = len(body)
+        layer_addresses[name] = []
+        body += bytes(20 + 4 * len(resource.layers))
+        for layer in resource.layers:
+            layer_addresses[name].append(len(body))
+            body += layer.raw
+    pool_start = len(body)
+    pool = bytearray()
+    offsets = {}
+    for value in pool_order:
+        offsets[value] = pool_start + len(pool)
+        pool += value.encode(ENCODING) + b"\0"
+    pool += bytes(-(0x20 + len(body) + len(pool)) % 4)
+    relocations = []
+    for name in doc.address_order:
+        resource = by_name[name]
+        at = addresses[name]
+        descriptor = bytearray(resource.descriptor)
+        struct.pack_into(">I", descriptor, 0, offsets[name])
+        descriptor[4] = len(resource.layers)
+        body[at:at + 20] = descriptor
+        relocations.append(at)
+        for index, layer in enumerate(resource.layers):
+            slot = at + 20 + index * 4
+            struct.pack_into(">I", body, slot, layer_addresses[name][index])
+            relocations.append(slot)
+            raw = bytearray(layer.raw)
+            for off, value in layer.strings.items():
+                struct.pack_into(">I", raw, off, offsets[value])
+                relocations.append(layer_addresses[name][index] + off)
+            body[layer_addresses[name][index]:layer_addresses[name][index] + len(raw)] = raw
+    relocations.sort()
+    exports = bytearray()
+    export_names = bytearray()
+    for resource in doc.resources:
+        exports += struct.pack(">II", addresses[resource.name], len(export_names))
+        export_names += resource.name.encode(ENCODING) + b"\0"
+    data_size = len(body) + len(pool)
+    tail = b"".join(struct.pack(">I", value) for value in relocations) + exports + export_names
+    size = 0x20 + data_size + len(tail)
+    header = struct.pack(">5I", size, data_size, len(relocations), len(doc.resources), 0)
+    return header + doc.header_tail + body + pool + tail
+
+
+def new_image_resource(name: str, file: str, width: int, height: int, images: int = 1) -> EditableResource:
+    if not 0 < images <= 255 or not 0 < width <= 1024 or not 0 < height <= 1024:
+        raise ValueError("Images must number 1-255 and fit within 1024 by 1024 pixels")
+    descriptor = struct.pack(">IBBHfBBB5s", 0, images, 2 if images > 1 else 0, 900, 1.0, 255, 255, 0, bytes(5))
+    layers = []
+    for index in range(images):
+        raw = struct.pack(">BBHIIIBBBBhhhhHHHH", 1, 0, 0, 0, 0, 0, 1, 0, index, 255,
+                          0, 0, 0, 0, 0, 0, width, height)
+        layers.append(EditableLayer(raw, {8: file}))
+    return EditableResource(name, descriptor, layers)

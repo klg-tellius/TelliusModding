@@ -21,6 +21,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 
 from .. import map_props
+from ..games import read_disc_id
 from ..formats import fe8data, lz10, map_file, pak
 from ..game_profile import GAME_DATA, profile_of
 from ..project import ModProject
@@ -32,6 +33,13 @@ from .model_viewer import ModelPreviewDialog, load_named_model_set
 
 class MapEditor(EditorPanel):
     display_name = "Map"
+
+    @property
+    def verified_us_map_layout(self) -> bool:
+        """Whether the open project's map flags match the traced build: GFEE01, and GFEP01/GFEJ01
+        whose load_map_data and apply_map_extra_flags read the same fields (and whose map files
+        are byte-identical to the US ones)."""
+        return read_disc_id(self._project.extracted_dir) in ("GFEE01", "GFEP01", "GFEJ01")
 
     def __init__(self, parent, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)

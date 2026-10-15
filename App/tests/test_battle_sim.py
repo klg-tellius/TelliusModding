@@ -263,8 +263,13 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(tl.hp(first.frame - 1), (30, 30))
         self.assertEqual(tl.hp(first.frame), (30, 20))
         self.assertEqual(len(tl.changes), 2)
+        # the blow pushes the defender back DamageBack (3) at DamageBackSpd (0.4 a tick)
+        knock = next(m for m in tl.moves if m.kind == "knockback")
+        self.assertEqual((knock.side, knock.start, knock.x0, knock.x1), (1, first.frame, 20, 23))
+        self.assertAlmostEqual(knock.end - knock.start, 3 / 0.4)
         # the counter waits WaitAtk2 and runs only to its range from the target
-        self.assertAlmostEqual(tl.moves[1].x1, 20 - (20 - tl.x(0, 200) - 10))
+        runs = [m for m in tl.moves if m.kind == "run"]
+        self.assertAlmostEqual(runs[1].x1, 23 - (23 - tl.x(0, 200) - 10))
         self.assertEqual([(c.script, c.slot, c.mirror) for c in tl.camera],
                          [("standby", 0, False), ("atk_l", 0, False), ("atk_l", 1, True)])
         self.assertEqual(tl.camera[1].frame, 163)
@@ -299,11 +304,21 @@ class TimelineTests(unittest.TestCase):
         crit = next(seg for seg in tl.segments if seg.role == sa.CRIT1)
         self.assertEqual(crit.clip.stem, "cr1_at1")  # the attacker's previous role was 攻撃1
 
+    def test_dodge_steps_back_to_range_times_avoid_scale(self):
+        from fe_modding.battle_sim.staging import UnitParams
+        log = simulate(unit("A"), unit("D", weapon=None), outcomes=FixedOutcomes({(1, "hit"): False}))
+        tl = timeline.build(log, self.lookup, units=[UnitParams(range=5.0, move_speed=1.5), UnitParams(range=10.0, knockback=0.1)])
+        self.assertFalse(any(m.kind == "dodge" for m in timeline.build(log, self.lookup).moves))  # 10 away: far enough
+        dodge = next(m for m in tl.moves if m.kind == "dodge")
+        attacker_x = tl.x(0, dodge.start)
+        self.assertAlmostEqual(dodge.x1, attacker_x + 10.0 * 0.8)   # range x AvoidScale
+        self.assertAlmostEqual(dodge.end - dodge.start, max(abs(dodge.x1 - dodge.x0) / 1.0, 1.0))
+
     def test_jump_attack_skips_the_run(self):
         from fe_modding.battle_sim.staging import UnitParams
         log = simulate(unit("A"), unit("D", weapon=None))
         tl = timeline.build(log, self.lookup, units=[UnitParams(jump_attack=True), UnitParams()])
-        self.assertEqual(tl.moves, [])
+        self.assertEqual([m for m in tl.moves if m.kind == "run"], [])
 
     def test_missing_clips(self):
         tl = timeline.build(simulate(unit("A"), unit("D")), lambda side, role: None)
@@ -485,7 +500,7 @@ class CueAndFlightTests(unittest.TestCase):
         self.assertEqual((flight.start, flight.end, flight.side), (start + 25, start + 25 + 7, 0))
         self.assertEqual([c.script for c in tl.camera[:3]], ["standby2", "mag_at_l", "bow_impact_l"])
         self.assertEqual(tl.changes[0].frame, flight.end)
-        self.assertEqual(tl.moves, [])
+        self.assertEqual([m for m in tl.moves if m.kind == "run"], [])
 
     def test_unarmed_side_only_reacts(self):
         log = simulate(unit("A"), unit("D", weapon=None))

@@ -98,6 +98,7 @@ class Material:
     color1: tuple[int, int, int, int]
     color2: tuple[int, int, int, int]
     textures: list[MaterialTexture]
+    flag1: int = 0  # .gs material byte +5; bit 0 changes the stage-0 TEV order
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,11 @@ class TriChunk:
     format2: int
     bone_subset: list[int]
     strips: list[list[StripVertex]]  # each inner list is one triangle strip
+    attr_mask: int = 0  # full GX descriptor; top three bits select billboard matrix path
+
+    @property
+    def billboard_mode(self) -> int:
+        return self.attr_mask & 0xE0000000
 
     @property
     def hidden(self) -> bool:
@@ -322,6 +328,7 @@ def _read_materials(stream, addr, count) -> list[Material]:
                 color1=color1,
                 color2=color2,
                 textures=textures,
+                flag1=rec[2],
             )
         )
     return materials
@@ -393,6 +400,7 @@ def _read_chunks(
     chunks = []
     for rec in raw:
         mesh_addr, _next_addr, fmt, mat_id, bone, _u1a, _u1b, _u1c, _u1d, fmt2, _u2, tri_addr, tri_size, bone_subset_addr = rec
+        attr_mask = (_u1c << 24) | (_u1d << 16) | (fmt2 << 8) | _u2
         mesh_addr = _rebase(mesh_addr)
         tri_addr = _rebase(tri_addr)
         bone_subset_addr = _rebase(bone_subset_addr)
@@ -440,6 +448,7 @@ def _read_chunks(
                 format2=fmt2,
                 bone_subset=bone_subset,
                 strips=strips,
+                attr_mask=attr_mask,
             )
         )
     return chunks

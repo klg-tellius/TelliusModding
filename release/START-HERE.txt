@@ -10,6 +10,11 @@ Python, Tkinter and the Python libraries are already included.
 No administrator access is required. Tool downloads need an internet connection.
 To retry setup later, use Settings > Disc and media tools.
 
+Sharing a mod: make a patch (.tpatch) on the Disc & Patch page and hand it out
+with TelliusPatcher.exe (in this folder, one file). Players put both in the same
+folder, open TelliusPatcher.exe, choose their own game disc image and get a
+playable disc. The patch contains only your changes, never the game.
+
 Do not run the EXE from inside the ZIP. Keep mod projects outside this app folder.
 To update, extract a new release into a new folder. Settings and downloaded tools
 are stored separately in your user profile.

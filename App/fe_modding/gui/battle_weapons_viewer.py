@@ -38,6 +38,13 @@ class BattleWeaponsViewer(BattleTableViewer):
     def parse(self, text):
         return bw.read_weapon(text)
 
+    def model_of(self, name):
+        folder = self._project.files_dir / "xwp" / name.lower()
+        pack = folder / f"{name.lower()}.cmp"
+        if pack.is_file():
+            return f"xwp/{name.lower()}", pack
+        return f"No model in xwp/{name.lower()}/."
+
     def row(self, name, t):
         return (name, choice_label(bw.KINDS, t.kind), bw.MISSILES.get(t.missile, str(t.missile)), t.effect_id or "")
 

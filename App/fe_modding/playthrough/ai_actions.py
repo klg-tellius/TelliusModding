@@ -46,7 +46,10 @@ STAFF_ROUTINES = {"IID_LIVE": "heal_adjacent", "IID_RELIVE": "heal_adjacent", "I
                   "IID_REBLOW": "heal_ranged", "IID_RESERVE": "fortify", "IID_REST": "restore",
                   "IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": "sleep", "IID_WARP": "warp",
                   "IID_RESCUE": "heal_ranged", "IID_MSHIELD": "ward"}
-STATUS_STAVES = {"IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": "berserk"}
+#: The status each status staff sets when it hits (the ``IID_*_UFX`` handlers at 0x802971B8/C8/D8). Berserk
+#: rolls its hit like the others but its handler writes no counter (the unit status block has no slot for
+#: "Confuse"), so a hit changes nothing.
+STATUS_STAVES = {"IID_SILENCE": "silence", "IID_SLEEP": "sleep", "IID_BERSERK": ""}
 #: 0x80273B78: the tiles next to a target, in the order the adjacent routines try them.
 ADJACENT = ((1, 0), (-1, 0), (0, 1), (0, -1))
 #: The order ``dispatch_adjacent_with_vtable_offset_8`` visits a tile's neighbours (link bits 8, 2, 4, 1).
@@ -56,8 +59,9 @@ COUNT_TABLE = tuple((dx, dy) for dy in range(-3, 4) for dx in range(-3, 4) if 0 
 #: Heal amounts the heal-item choice compares (``check_use_healing_item_action*``): others count 0.
 ITEM_HEAL = {"IID_VULNERARY": 10}
 EQUIPMENT_SLOTS = ITEM_SLOTS = 4
-#: Phases a status staff's effect lasts: not traced in this game (the status nibbles at unit +0x1A4 count
-#: down somewhere not decoded), the series' usual value.
+#: Phases a status staff's effect lasts: the Sleep and Silence handlers write 5 into the unit's counter
+#: (+0x1A4), and ``tick_phase_start_status_counters`` takes one off at the start of each of its side's
+#: phases, as the engine does here.
 STATUS_TURNS = 5
 NO_SCORE = -(1 << 31)
 
@@ -89,6 +93,9 @@ def magic_hit(caster: SimUnit, target: SimUnit, distance: Optional[int] = None) 
 
 
 def is_equipment(item) -> bool:
+    """Whether ``item`` belongs in slots 0-3: the game's flags B ``& 5``, which
+    ``derive_item_default_capability_flags`` (``0x8001E71C``) sets for every weapon type,
+    tome and staff, and clears for the ``item`` and ``acc`` types."""
     return item is not None and item.weapon_type not in (None, "item", "acc")
 
 
@@ -434,11 +441,12 @@ class ActionRoutines:
                                f"on {self.world.name(best[0].pid)} (hit {best_hit}, score {best_value})")
 
     def _staff_silence(self, index, item, pred, reach):
-        """Silence: a foe not silenced holding a usable tome or staff, hit over 4; the best hit + Mag."""
+        """Silence: a foe not silenced whose class is a mage class (category mask bit 0, ``mage``) holding a
+        usable tome or staff, hit over 4; the best hit + Mag."""
         world = self.world
 
         def magic_user(u):
-            return u.status != "silence" and any(
+            return u.status != "silence" and "mage" in u.categories and any(
                 world.can_wield(u, it) and (it.weapon_type in combat.MAGIC_TYPES) for _i, it in equipment(world, u))
 
         return self._status_staff(index, item, pred, reach, magic_user, lambda u: u.stats[2])

@@ -277,9 +277,37 @@ class FieldTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fe8data.patch_skill_field(self.data, 0, "sid", "SID_COUNTER")
 
+    def test_assign_occult_skill_from_the_class_side(self):
+        data = fe8data.patch_item_field(self.data, 0, "iid", "IID_ESOTERIC")
+        data = fe8data.patch_skill_field(data, 0, "skill_items", ["IID_ESOTERIC"])
+        data = fe8data.patch_skill_field(data, 1, "skill_items", ["IID_ESOTERIC"])
+        data = fe8data.patch_skill_field(data, 0, "restricted_to", ["JID_RANGER"])
+        data = fe8data.patch_skill_field(data, 1, "restricted_to", ["JID_CLERIC"])
+
+        data = fe8data.assign_occult_skill(data, 0, "SID_COUNTER")
+        by_sid = {s.sid: s for s in fe8data.read_fe8data(data).skills}
+        self.assertEqual(by_sid["SID_ELITE"].restricted_to, ["SID_ELITE"])
+        self.assertEqual(by_sid["SID_COUNTER"].restricted_to, ["JID_CLERIC", "JID_RANGER"])
+
+        data = fe8data.assign_occult_skill(data, 0, None)
+        by_sid = {s.sid: s for s in fe8data.read_fe8data(data).skills}
+        self.assertEqual(by_sid["SID_COUNTER"].restricted_to, ["JID_CLERIC"])
+
     def test_small_sections(self):
         data = fe8data.patch_game_data(self.data, "boss_exp_bonus", 2, 99)
         self.assertEqual(fe8data.read_game_data(data)["boss_exp_bonus"][2], 99)
+        # Japanese retail FE8Data ends GameData after five rows. Simulate that
+        # exported boundary and ensure the reader/writer cannot spill into the
+        # following TerrainData section.
+        short = bytearray(self.data)
+        game_start = fe8data.symbol_offsets(short)["GameData"]
+        terrain_symbol = next(position for position, _offset, name in fe8data._symbol_entries(short)
+                              if name == "TerrainData")
+        struct.pack_into(">I", short, terrain_symbol, game_start + 20)
+        self.assertEqual(len(fe8data.read_game_data(short)), 5)
+        self.assertNotIn("laguz_growth_bonus", fe8data.read_game_data(short))
+        with self.assertRaisesRegex(ValueError, "not present"):
+            fe8data.patch_game_data(short, "laguz_growth_bonus", 0, 10)
         data = fe8data.write_group_names(data, fe8data.read_group_names(data) + ["MG_新軍"])
         self.assertEqual(fe8data.read_group_names(data), [None, "MG_クリミア軍", "MG_新軍"])
         data = fe8data.write_battle_skies(data, ["cloudy_01", "sky_01", "night_01"])
@@ -307,12 +335,14 @@ class DiscTableTests(unittest.TestCase):
     def test_vanilla_tables_rewrite_identically_and_survive_add_remove(self):
         before = records(self.data)
         groups = fe8data.read_group_names(self.data)
-        for kind in ("character", "class", "item", "skill", "chapter"):
+        jp = fe8data.japanese_chapter_layout(self.data)     # its chapter records are read-only
+        for kind in ("character", "class", "item", "skill") + (() if jp else ("chapter",)):
             self.assertEqual(fe8data.write_table(self.data, kind, fe8data.read_table(self.data, kind)), self.data)
         self.assertEqual(fe8data.write_group_names(self.data, groups), self.data)
         self.assertEqual(fe8data.write_battle_skies(self.data, fe8data.read_battle_skies(self.data)), self.data)
         self.assertEqual(fe8data.write_battle_terrain(self.data, fe8data.read_battle_terrain(self.data)), self.data)
-        for kind, new_id in (("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"), ("chapter", None)):
+        for kind, new_id in ((("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"))
+                             + (() if jp else (("chapter", None),))):
             data, index = fe8data.add_record(self.data, kind, new_id, copy_from=0)
             self.assertEqual(len(supports.read_support_lists(data)), len(supports.read_support_lists(self.data)))
             self.assertEqual(records(fe8data.remove_record(data, kind, index)), before, kind)

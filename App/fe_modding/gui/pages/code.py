@@ -11,9 +11,11 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from ...exceptions import ModdingError
-from ...game_code.catalog import CATALOG, Patch, State, Tunable
+from ...game_code.catalog import CATALOG, Patch, Session, State, Tunable
+from ...game_code.dol import Dol
 from ...game_code.editor import CodeEditor
 from ...game_code.entries import G_GROWTH, G_PROCS, PROCS, SCALE_DENOMINATOR, STATS
+from ...game_code import three_tier_data
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
 
@@ -25,6 +27,9 @@ GROUP_NOTES = {
     G_GROWTH: "How many points a level-up gives. Random mode rolls each stat (+1 per 100% of growth and per "
               "success); fixed mode adds the growth rate to a hidden counter and pays out when it passes the "
               "threshold. The mode is chosen per save unless forced here.",
+    "Army phases": "Each army's phase can be played by you, by the computer, or skipped. The setting takes effect "
+                   "at the start of the next chapter. Not yet tried in game: whether every army's units can be "
+                   "moved by the player, and how the computer plays your own army.",
 }
 
 
@@ -63,6 +68,36 @@ class _Row:
         self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
 
 
+class _ChoiceRow:
+    """One value picked from a list: a read-only combobox bound to a tunable with ``choices``."""
+
+    def __init__(self, page: "CodePage", parent: tk.Misc, tunable: Tunable):
+        self.page, self.tunable = page, tunable
+        self.var = tk.StringVar()
+        self.box = ttk.Combobox(parent, textvariable=self.var, values=list(tunable.choices),
+                                state="readonly", width=max(len(c) for c in tunable.choices) + 2)
+        self.box.bind("<<ComboboxSelected>>", lambda e: self.apply())
+
+    def label(self, value: float) -> str:
+        index = int(value - self.tunable.minimum)
+        return self.tunable.choices[index] if 0 <= index < len(self.tunable.choices) else f"{value:g}"
+
+    def refresh(self) -> None:
+        status = self.page.editor.status(self.tunable)
+        available = status.state not in (State.UNAVAILABLE, State.CONFLICT)
+        self.box.configure(state="readonly" if available else "disabled")
+        self.var.set(self.label(status.value if status.value is not None else self.tunable.default))
+
+    def apply(self) -> None:
+        if self.var.get() not in self.tunable.choices:
+            self.refresh()
+            return
+        value = self.tunable.minimum + self.tunable.choices.index(self.var.get())
+        if value == self.page.editor.status(self.tunable).value:
+            return
+        self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
+
+
 class CodePage(Page):
     kind = "code"
 
@@ -96,7 +131,7 @@ class CodePage(Page):
     def run(self, action) -> None:
         try:
             description = action()
-        except ModdingError as exc:
+        except (ModdingError, OSError, ValueError) as exc:
             messagebox.showerror("Game Code", str(exc), parent=self)
         else:
             if description:
@@ -104,7 +139,60 @@ class CodePage(Page):
         self._refresh()
 
     def _toggle(self, patch: Patch, var: tk.BooleanVar) -> None:
-        self.run(lambda: self.editor.set_patch(patch, var.get()))
+        if patch.id == "promotion.three_tiers" and var.get():
+            self.run(lambda: self._enable_three_tiers(patch))
+        else:
+            self.run(lambda: self.editor.set_patch(patch, var.get()))
+
+    def _enable_three_tiers(self, patch: Patch) -> str:
+        """Provision game data and every regional message file with the DOL hook."""
+        session = self.shell.session
+        if not session.available:
+            raise ModdingError(session.unavailable_reason)
+        version = self.editor.version.code
+        old_data = session.data
+        old_dirty = session.dirty
+        new_data = three_tier_data.provision(old_data, version)
+        folder = self.project.extracted_dir / "files" / "Mess"
+        names = {"GFEE01": {"common.m": "en"},
+                 "GFEP01": {"common.m": "en", "d_common.m": "de",
+                            "f_common.m": "fr", "i_common.m": "it", "s_common.m": "es"},
+                 "GFEJ01": {"common.m": "ja"}}[version]
+        messages = {}
+        for filename, language in names.items():
+            path = folder / filename
+            if not path.is_file():
+                raise ModdingError(f"Missing {path}. Extract the message files first.")
+            original = path.read_bytes()
+            messages[path] = (original, three_tier_data.provision_messages(original, version, language))
+        old_dol = bytes(self.editor.dol.data)
+        written = []
+        try:
+            for path, (original, changed) in messages.items():
+                if changed != original:
+                    self.project.write_keeping_original(path, changed)
+                    written.append((path, original))
+            session.data = new_data
+            if new_data != old_data:
+                session.changed(self)
+            result = self.editor.set_patch(patch, True)
+        except Exception:
+            session.data = old_data
+            session.reparse()
+            session.dirty = old_dirty
+            session._notify(self)
+            self.editor.dol = Dol(old_dol)
+            self.editor.session = Session(self.editor.dol, self.editor.version)
+            if self.editor.path.read_bytes() != old_dol:
+                self.editor.path.write_bytes(old_dol)
+            for path, original in reversed(written):
+                path.write_bytes(original)
+            raise
+        if new_data != old_data:
+            self.shell.changelog.append(session.file_label, "Added SID_TIER3 and Master Crown records")
+        for path, _ in written:
+            self.shell.changelog.append(path.name, "Added Master Crown text")
+        return result
 
     def _reset_all(self) -> None:
         if not messagebox.askyesno("Game Code", "Put every game-code value back to vanilla?", parent=self):
@@ -208,9 +296,14 @@ class CodePage(Page):
         if isinstance(entry, Tunable):
             control = ttk.Frame(row, style="Surface.TFrame")
             control.pack(side="right")
-            value = _Row(self, control, entry)
+            if entry.choices:
+                value = _ChoiceRow(self, control, entry)
+                vanilla = value.label(entry.default)
+            else:
+                value = _Row(self, control, entry)
+                vanilla = f"{entry.default:g}"
             value.box.pack(side="left")
-            ttk.Label(control, text=f" {entry.unit}   vanilla {entry.default:g}",
+            ttk.Label(control, text=f" {entry.unit}   vanilla {vanilla}",
                       style="SurfaceCaption.TLabel").pack(side="left")
             ttk.Button(control, text="Reset", width=6,
                        command=lambda e=entry: self.run(lambda: self.editor.reset(e))).pack(side="left", padx=(8, 0))

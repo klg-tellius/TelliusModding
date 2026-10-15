@@ -117,7 +117,7 @@ from tkinter import filedialog, messagebox, ttk
 import numpy as np
 from PIL import Image, ImageTk
 
-from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, pak, skeleton, tpl
+from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, pak, particle_preview, skeleton, tpl
 from ..formats import model as model_fmt
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from ..formats import anim_registry, fe8data, zdbx
@@ -126,6 +126,7 @@ from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 
 @dataclass(frozen=True)
@@ -217,6 +218,7 @@ class _LoadedSet:
     triangles: list[_Triangle] = field(default_factory=list)
     bone_markers: dict[int, tuple[float, float, float]] = field(default_factory=dict)
     animations: list[tuple[str, bytes]] = field(default_factory=list)
+    particle_materials: dict[int, tuple["np.ndarray | None", tuple[int, int, int], float]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -826,6 +828,18 @@ def _skin_triangles(triangles: list[_Triangle], world, palette) -> list[_Triangl
     return skinned
 
 
+def _animate_material_alphas(triangles: list[_Triangle], anim: animation.GaAnimation,
+                             frame: float) -> list[_Triangle]:
+    """Apply footer slot 1, whose values replace the material's alpha."""
+    tracks = anim.material_alphas()
+    if not tracks:
+        return triangles
+    values = {index: max(0, min(track.value(frame), 255)) / 255.0
+              for index, track in tracks.items()}
+    return [replace(tri, alpha=values[tri.material]) if tri.material in values else tri
+            for tri in triangles]
+
+
 def _build_loaded_set(
     label: str,
     files: dict[str, bytes],
@@ -839,6 +853,7 @@ def _build_loaded_set(
     bones: list[skeleton.Bone] = []
     triangles: list[_Triangle] = []
     animations: list[tuple[str, bytes]] = list(loose_animations)
+    particle_materials: dict[int, tuple[np.ndarray | None, tuple[int, int, int], float]] = {}
 
     tpl_contents = {name: data for name, data in files.items() if Path(name).suffix.lower() == ".tpl"}
     textures_by_index = _load_textures(tpl_contents)
@@ -850,6 +865,15 @@ def _build_loaded_set(
         elif suffix == ".gs":
             gs_model = model_fmt.read_model_bytes(content)
             _accumulate_mesh(gs_model, triangles, textures_by_index, map_projection=map_projection)
+            for index, material in enumerate(gs_model.materials):
+                if index in particle_materials:
+                    continue
+                texture = textures_by_index.get(material.textures[0].tex_id) if material.textures else None
+                particle_materials[index] = (
+                    texture.array if texture is not None else None,
+                    tuple(min(255, int(channel * 1.25)) for channel in material.color0[:3]),
+                    material.color0[3] / 255.0,
+                )
         elif suffix == ".ga":
             animations.append((name, content))
 
@@ -857,7 +881,8 @@ def _build_loaded_set(
     # module's docstring for how this was cross-checked against the mesh.
     bone_markers = {i: bone.position for i, bone in enumerate(bones)}
 
-    return _LoadedSet(label=label, bones=bones, triangles=triangles, bone_markers=bone_markers, animations=animations)
+    return _LoadedSet(label=label, bones=bones, triangles=triangles, bone_markers=bone_markers,
+                      animations=animations, particle_materials=particle_materials)
 
 
 def _load_model_set(label: str, container_path: Path, pending: dict[Path, bytes] | None = None) -> _LoadedSet:
@@ -3137,6 +3162,59 @@ def posed_triangles(triangles: list[_Triangle], positions: "np.ndarray",
             for t, p, n in zip(triangles, positions.tolist(), normal_list)]
 
 
+def _particle_triangles(
+    samples: tuple[particle_preview.Sample, ...],
+    materials: dict[int, tuple["np.ndarray | None", tuple[int, int, int], float]],
+    rotation: "np.ndarray",
+) -> list[_Triangle]:
+    """Camera-facing preview cards for active particle stages."""
+    right, up, forward = rotation.T[:, 0], rotation.T[:, 1], rotation.T[:, 2]
+    triangles = []
+    for sample in samples:
+        texture, base_color, material_alpha = materials.get(sample.material_index,
+                                                             (None, (255, 255, 255), 1.0))
+        color = tuple(round(base_color[i] * sample.color[i]) for i in range(3))
+        alpha = sample.alpha * material_alpha
+        if alpha <= 0 or max(sample.scale) <= 0:
+            continue
+        mode = sample.draw_flags & 7
+        width, height = sample.scale
+        if mode == 1:  # point stage
+            width *= 0.25
+            height *= 0.25
+        elif mode == 2:  # line stage: follow projected velocity when available
+            width *= 0.10
+            height *= max(0.5, float(np.linalg.norm(sample.velocity)))
+        angle = math.radians(sample.rotation_degrees)
+        axis_x = right * math.cos(angle) + up * math.sin(angle)
+        axis_y = up * math.cos(angle) - right * math.sin(angle)
+        if mode == 2:
+            direction = np.asarray(sample.velocity, dtype=np.float64)
+            direction -= forward * np.dot(direction, forward)
+            norm = np.linalg.norm(direction)
+            if norm > 1e-6:
+                axis_y = direction / norm
+                axis_x = np.cross(axis_y, forward)
+        center = np.asarray(sample.position, dtype=np.float64)
+        dx, dy = axis_x * width * 0.5, axis_y * height * 0.5
+        corners = [tuple(p) for p in (center - dx - dy, center + dx - dy,
+                                      center + dx + dy, center - dx + dy)]
+        uv = ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0))
+        blend = "additive" if sample.draw_flags & 0x1000 else "normal"
+        normal = tuple(-forward)
+        for indices in ((0, 1, 2), (0, 2, 3)):
+            face_uv = tuple(uv[i] for i in indices)
+            layers = ()
+            if texture is not None:
+                layers = (_TextureLayer(face_uv, texture, "diffuse",
+                                        color_scale=tuple(color[i] / 255 for i in range(3))),)
+            triangles.append(_Triangle(*(corners[i] for i in indices), normal, color,
+                                       uv=face_uv if texture is not None else None,
+                                       texture=texture, texture_layers=layers,
+                                       alpha=alpha, blend_mode=blend, cull="none"))
+    return triangles
+
+
 class _ModelCanvas(tk.Canvas):
     """Orbiting orthographic renderer. Rasterizes the whole mesh into an
     off-screen numpy framebuffer + real per-pixel Z-buffer every frame -
@@ -3192,8 +3270,12 @@ class _ModelCanvas(tk.Canvas):
         self._bone_names: dict[int, str] = {}
         self._posed_positions: dict[int, tuple[float, float, float]] | None = None
         self._animated_triangles: list[_Triangle] | None = None
+        self._particle_samples: tuple[particle_preview.Sample, ...] = ()
+        self._particle_materials: dict[int, tuple[np.ndarray | None, tuple[int, int, int], float]] = {}
+        self._particle_fit_done = False
         self._highlighted_bone: int | None = None
         self._show_mesh = True
+        self._show_particles = True
         self._show_skeleton = True
         self._grid: "GridOverlay | None" = None
         self._show_grid = False
@@ -3250,6 +3332,8 @@ class _ModelCanvas(tk.Canvas):
         self._bone_names = bone_names
         self._posed_positions = None
         self._animated_triangles = None
+        self._particle_samples = ()
+        self._particle_fit_done = False
         self._pose_arrays = None
         self._highlighted_bone = None
         self._gpu_model = None
@@ -3267,6 +3351,19 @@ class _ModelCanvas(tk.Canvas):
         for both to revert to the static bind pose/mesh."""
         self._posed_positions = positions
         self._animated_triangles = triangles
+        self._schedule_redraw()
+
+    def set_particles(self, samples: tuple[particle_preview.Sample, ...],
+                      materials: dict[int, tuple["np.ndarray | None", tuple[int, int, int], float]]) -> None:
+        self._particle_samples = samples
+        self._particle_materials = materials
+        if samples and not self._triangles and not self._particle_fit_done:
+            centers = np.asarray([sample.position for sample in samples], dtype=np.float64)
+            radius = max(max(sample.scale) for sample in samples) * 0.5
+            lo, hi = centers.min(axis=0) - radius, centers.max(axis=0) + radius
+            self._center = self._home_center = tuple(((lo + hi) / 2).tolist())
+            self._extent = max(float((hi - lo).max()), 1.0)
+            self._particle_fit_done = True
         self._schedule_redraw()
 
     def set_view(self, center, yaw: float, pitch: float, zoom: float, perspective: float = 0.0) -> None:
@@ -3330,6 +3427,10 @@ class _ModelCanvas(tk.Canvas):
         """Toggle the mesh's visibility - the skeleton overlay (markers and
         connector lines) is controlled separately by `set_show_skeleton()`."""
         self._show_mesh = show
+        self._schedule_redraw()
+
+    def set_show_particles(self, show: bool) -> None:
+        self._show_particles = show
         self._schedule_redraw()
 
     def set_show_skeleton(self, show: bool) -> None:
@@ -3657,7 +3758,12 @@ class _ModelCanvas(tk.Canvas):
         if self._gpu is None:
             return None
         try:
-            if self._gpu_model is not self._triangles:
+            if self._show_particles and self._particle_samples:
+                # Stage cards change count, UVs, alpha, and colour each frame.
+                self._gpu.set_triangles(triangles)
+                self._gpu_model = None
+                self._gpu_uploaded = triangles
+            elif self._gpu_model is not self._triangles:
                 self._gpu.set_triangles(self._triangles)
                 self._gpu_model = self._triangles
                 self._gpu_uploaded = self._triangles
@@ -3711,17 +3817,21 @@ class _ModelCanvas(tk.Canvas):
         height = self.winfo_height() or 360
         cx, cy = width / 2, height / 2
         scale = self._scale(width, height)
-        if not self._show_mesh or (not self._triangles and not self._bone_markers):
+        draw_particles = self._show_particles and bool(self._particle_samples)
+        if (not self._show_mesh and not draw_particles) or (not self._triangles and not self._bone_markers and not draw_particles):
             if self._image_item is not None:
                 self.itemconfigure(self._image_item, state="hidden")
-        if not self._triangles and not self._bone_markers:
+        if not self._triangles and not self._bone_markers and not draw_particles:
             self.create_text(width / 2, height / 2, text="No mesh data for this model set", fill="#999999")
             return
 
         positions = self._posed_positions if self._posed_positions is not None else self._bone_markers
 
-        if self._show_mesh:
-            triangles = self._animated_triangles if self._animated_triangles is not None else self._triangles
+        if self._show_mesh or draw_particles:
+            triangles = (self._animated_triangles if self._animated_triangles is not None else self._triangles) if self._show_mesh else []
+            if draw_particles:
+                triangles = triangles + _particle_triangles(self._particle_samples, self._particle_materials,
+                                                             self._rotation_matrix())
             frame = self._gpu_frame(triangles, width, height, scale)
             if frame is None:
                 if self._pose_arrays is not None and triangles is self._triangles:
@@ -3859,6 +3969,7 @@ class _ModelPreview(ttk.Frame):
         self._mesh_only = mesh_only
         self._loaded: _LoadedSet | None = None
         self._current_animation: animation.GaAnimation | None = None
+        self._particle_stages: tuple[particle_preview.Stage, ...] = ()
         self._playing = False
         self._play_after_id: str | None = None
         self._build_widgets()
@@ -3876,20 +3987,25 @@ class _ModelPreview(ttk.Frame):
             paned.add(center, weight=3)
         canvas_header = ttk.Frame(center)
         canvas_header.pack(fill="x")
-        ttk.Label(canvas_header, text="Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan", style="Muted.TLabel").pack(side="left")
-        ttk.Button(canvas_header, text="Reset View", command=self._reset_view).pack(side="right")
-        ttk.Button(canvas_header, text="Top Down", command=self._top_down_view).pack(side="right", padx=(0, 8))
+        if not self._mesh_only:
+            ttk.Button(canvas_header, text="Reset View", command=self._reset_view).pack(side="right")
+            ttk.Button(canvas_header, text="Top Down", command=self._top_down_view).pack(side="right", padx=(0, 8))
         self._show_mesh_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header, text="Show mesh", variable=self._show_mesh_var, command=self._on_show_mesh_toggled
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="left", padx=(0, 8))
+        self._show_particles_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            canvas_header, text="Show particles", variable=self._show_particles_var,
+            command=lambda: self._canvas.set_show_particles(self._show_particles_var.get()),
+        ).pack(side="left", padx=(0, 8))
         self._show_skeleton_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header,
             text="Show skeleton",
             variable=self._show_skeleton_var,
             command=lambda: self._canvas.set_show_skeleton(self._show_skeleton_var.get()),
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="left", padx=(0, 8))
         # Only meaningful once a caller hands over a chapter's placement
         # grid via set_grid() (map_editor.py's "3D Terrain"/"Map View" tabs)
         # - stays disabled (not just unchecked) for an ordinary single-model
@@ -3905,7 +4021,7 @@ class _ModelPreview(ttk.Frame):
             command=self._on_show_grid_toggled,
             state="disabled",
         )
-        self._show_grid_check.pack(side="right", padx=(0, 8))
+        self._show_grid_check.pack(side="left", padx=(0, 8))
         # The *other* grid - MapCapacity.x_size/y_size, the in-game tactical
         # grid - strong evidence, not confirmed the way the placement grid
         # above is (see map_scene.compute_gameplay_grid_overlay()'s own
@@ -3921,13 +4037,16 @@ class _ModelPreview(ttk.Frame):
             command=self._on_show_gameplay_grid_toggled,
             state="disabled",
         )
-        self._show_gameplay_grid_check.pack(side="right", padx=(0, 8))
+        self._show_gameplay_grid_check.pack(side="left", padx=(0, 8))
         self._canvas = _ModelCanvas(center)
         if self._mesh_only:
             self._canvas.top_down_view()
         self._canvas.pack(fill="both", expand=True, pady=(4, 4))
-        self._mesh_info_label = ttk.Label(center, text="", style="Muted.TLabel")
-        self._mesh_info_label.pack(anchor="w")
+        info_row = ttk.Frame(center)
+        info_row.pack(fill="x")
+        self._mesh_info_label = ttk.Label(info_row, text="", style="Muted.TLabel")
+        self._mesh_info_label.pack(side="left")
+        info(info_row, "Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan.").pack(side="right")
 
         if self._mesh_only:
             # no Skeleton/Animations notebook - these widgets are created
@@ -3950,17 +4069,9 @@ class _ModelPreview(ttk.Frame):
 
         skel_tab = ttk.Frame(notebook, padding=6)
         notebook.add(skel_tab, text="Skeleton")
-        ttk.Label(
-            skel_tab,
-            text=(
-                "Bone hierarchy (name / parent). Select a bone to\n"
-                "highlight it; pick an animation to pose the model\n"
-                "the way the game does."
-            ),
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", pady=(0, 6))
         self._bone_tree = ttk.Treeview(skel_tab, show="tree")
+        tip(self._bone_tree, "Bone hierarchy (name / parent). Select a bone to highlight it; pick an animation to "
+                             "pose the model the way the game does.")
         self._bone_tree.pack(fill="both", expand=True)
         self._bone_tree.bind("<<TreeviewSelect>>", lambda e: self._on_bone_selected())
 
@@ -3989,17 +4100,8 @@ class _ModelPreview(ttk.Frame):
         self._frame_label = ttk.Label(playback_row, text="", style="Muted.TLabel", width=10)
         self._frame_label.pack(side="left")
 
-        ttk.Label(
-            anim_tab,
-            text=(
-                "Skeleton + mesh playback (see model_viewer.py's module\n"
-                "note) - forward kinematics/skinning built on skeleton.py's\n"
-                "confirmed/strong-evidence bind data, not itself confirmed\n"
-                "against the game."
-            ),
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+        tip(self._frame_label, "Skeleton and mesh playback: forward kinematics and skinning built on the decoded "
+                               "bind data, not itself checked against the game.")
         columns = ("bone", "channel", "end_frame", "keyframes", "peak")
         self._curve_tree = ttk.Treeview(anim_tab, columns=columns, show="headings", height=10)
         headings = (
@@ -4065,10 +4167,12 @@ class _ModelPreview(ttk.Frame):
         ``empty_message`` if ``None``)."""
         self._stop_playback()
         self._current_animation = None
+        self._particle_stages = ()
         self._loaded = loaded
 
         if loaded is None:
             self._canvas.set_model([], {}, {}, {})
+            self._canvas.set_particles((), {})
             self._mesh_info_label.config(text=empty_message)
             self._bone_tree.delete(*self._bone_tree.get_children())
             self._anim_list.delete(0, "end")
@@ -4082,6 +4186,7 @@ class _ModelPreview(ttk.Frame):
         bone_names = {i: b.name for i, b in enumerate(loaded.bones)}
         bone_parents = {i: b.parent_index for i, b in enumerate(loaded.bones) if b.parent_index >= 0}
         self._canvas.set_model(loaded.triangles, loaded.bone_markers, bone_parents, bone_names)
+        self._canvas.set_particles((), loaded.particle_materials)
         self._frame_scale.config(to=0, state="disabled")
         self._play_button.config(state="disabled")
         self._frame_label.config(text="")
@@ -4132,12 +4237,17 @@ class _ModelPreview(ttk.Frame):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not decode animation", str(exc), parent=self)
             return
+        try:
+            self._particle_stages = particle_preview.read_stages(raw)
+        except animation.AnimationError:
+            self._particle_stages = ()
 
         bone_count = len(anim.groups)
         self._anim_summary_label.config(
             text=(
                 f"{len(anim.curves)} curves, {bone_count} animated bones, "
-                f"{anim.length_in_frames} frames, events: {len(anim.events)}"
+                f"{anim.length_in_frames} frames, events: {len(anim.events)}, "
+                f"particle stages: {len(self._particle_stages)}"
             )
         )
 
@@ -4172,12 +4282,25 @@ class _ModelPreview(ttk.Frame):
         bones = self._loaded.bones
         world, palette = engine_pose.pose(bones, self._current_animation, frame)
         triangles = _skin_triangles(self._loaded.triangles, world, palette)
+        triangles = _animate_material_alphas(triangles, self._current_animation, frame)
+        samples = particle_preview.sample(self._particle_stages, frame)
+        if samples and bones:
+            by_name = {bone.name.lower(): i for i, bone in enumerate(bones)}
+            anchored = []
+            for sample in samples:
+                index = particle_preview.anchor_bone(sample.name_path, by_name)
+                if index is not None:
+                    anchored.append(replace(sample, position=engine_pose.apply(world[index], sample.position)))
+                else:
+                    anchored.append(sample)
+            samples = tuple(anchored)
         # a bone's marker is its rotate pivot, carried by its world matrix
         positions = {
             i: engine_pose.apply(world[i], engine_pose.bone_values(b)[engine_pose.SLOT_ROTATE_PIVOT : engine_pose.SLOT_ROTATE_PIVOT + 3])
             for i, b in enumerate(bones)
         }
         self._canvas.set_pose(positions, triangles)
+        self._canvas.set_particles(samples, self._loaded.particle_materials)
         self._frame_label.config(text=f"frame {frame:.0f}/{self._current_animation.length_in_frames}")
 
     def _on_frame_scrub(self, value_str: str) -> None:

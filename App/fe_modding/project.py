@@ -156,6 +156,18 @@ class ModProject:
             shutil.copy2(path, original)
         path.write_bytes(data)
 
+    def is_added_file(self, path: Path | str) -> Optional[bool]:
+        """Whether ``path`` (a file under ``files/``) is one the mod added, absent
+        from the source disc's file table (the extracted ``sys/fst.bin``, which a
+        build never rewrites); None when that table isn't there."""
+        fst = self.files_dir.parent / "sys" / "fst.bin"
+        try:
+            relative = Path(path).resolve().relative_to(self.files_dir.resolve()).as_posix()
+            disc = set(gcdisc.read_fst_paths(fst.read_bytes()))
+        except (OSError, ValueError):
+            return None
+        return relative not in disc if disc else None
+
     def originals_in(self, folder: Path | str) -> list[Path]:
         """The extracted files directly in ``folder`` that have a kept
         original (their paths under ``extracted/``)."""
@@ -347,6 +359,8 @@ class ModProject:
         except (KeyError, ValueError) as exc:
             raise ProjectError(f"Project file '{project_file}' has an invalid or missing game id.") from exc
 
+        from .formats import game_text
+        game_text.use_for_extraction(directory / "extracted")
         return cls(
             name=data.get("name", directory.name),
             game=game,

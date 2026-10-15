@@ -1,0 +1,216 @@
+backend:
+  name: github
+  repo: klg-tellius/TelliusModding
+  branch: main
+  base_url: https://tellius-archive-oauth.klgtellius.workers.dev
+  auth_endpoint: /auth
+  open_authoring: true
+  use_graphql: true
+  squash_merges: true
+
+# Decap requires editorial workflow when Open Authoring is enabled. Trusted
+# collaborators may approve and publish their own entry; outside contributors
+# can only submit their forked entry for review.
+publish_mode: editorial_workflow
+site_url: https://klg-tellius.github.io/TelliusModding/
+display_url: https://klg-tellius.github.io/TelliusModding/
+logo_url: https://klg-tellius.github.io/TelliusModding/assets/images/archive-mark.svg
+locale: en
+
+media_folder: wiki/assets/uploads
+public_folder: /TelliusModding/assets/uploads
+
+collections:
+  - name: formats
+    label: File formats
+    label_singular: Format article
+    folder: wiki/formats
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{status}}"
+    fields:
+      - &id_field { name: id, label: Stable ID, widget: string, pattern: ['^[a-z0-9][a-z0-9-]*$', 'Use lowercase letters, numbers, and hyphens.'], hint: "Do not change after publication." }
+      - &title_field { name: title, label: Title, widget: string }
+      - &description_field { name: description, label: Description, widget: text }
+      - &games_field
+        name: games
+        label: Games
+        widget: select
+        multiple: true
+        options:
+          - { label: Path of Radiance, value: path-of-radiance }
+          - { label: Radiant Dawn, value: radiant-dawn }
+      - { name: section, label: Section, widget: hidden, default: formats }
+      - &type_field
+        name: article_type
+        label: Article type
+        widget: select
+        options: [format-reference, system-reference, guide, learning-path, portal, policy, reference]
+      - &tags_field { name: tags, label: Tags, widget: list, default: [] }
+      - &aliases_field { name: aliases, label: Legacy aliases, widget: list, default: [] }
+      - &status_field
+        name: status
+        label: Status
+        widget: select
+        options: [published, draft, stub, research-needed]
+      - &reviewed_field { name: last_reviewed, label: Last reviewed, widget: datetime, date_format: YYYY-MM-DD, time_format: false, format: YYYY-MM-DD }
+      - &sources_field { name: sources, label: Source keys, widget: list, min: 1 }
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: formats }
+      - &source_path_field { name: source_path, label: Source path, widget: string, hint: "Repository path below wiki/. Keep synchronized with the filename." }
+      - &body_field { name: body, label: Article, widget: markdown }
+
+  - name: systems
+    label: Game systems
+    label_singular: System article
+    folder: wiki/systems
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: systems }
+      - *type_field
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: systems }
+      - *source_path_field
+      - { name: system_entries, label: Covered system IDs, widget: list, required: false, default: [], hint: "FE9-SYS-NNN entries this article intends to explain. Coverage is not review approval." }
+      - { name: system_reviewed, label: Reviewed system IDs, widget: list, required: false, default: [], hint: "Only add after a human applies the complete review rubric." }
+      - { name: system_reviewed_with_gaps, label: Reviewed IDs with gaps, widget: list, required: false, default: [] }
+      - { name: system_reviewed_by, label: System reviewer, widget: string, required: false }
+      - { name: system_reviewed_on, label: System review date, widget: datetime, required: false, date_format: YYYY-MM-DD, time_format: false, format: YYYY-MM-DD }
+      - { name: system_known_gaps, label: Known gaps, widget: list, required: false, default: [], hint: "Use FE9-SYS-NNN: precise gap description." }
+      - { name: system_gap_work, label: Gap investigation performed, widget: list, required: false, default: [], hint: "Use FE9-SYS-NNN: work attempted and result." }
+      - *body_field
+
+  - name: system_proposals
+    label: System proposals
+    label_singular: System proposal
+    folder: wiki/proposals
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{proposal_status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: proposals }
+      - { name: article_type, label: Article type, widget: hidden, default: system-proposal }
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: proposals }
+      - *source_path_field
+      - { name: proposed_system_name, label: Proposed system name, widget: string }
+      - { name: proposed_system_scope, label: Scope, widget: text, hint: "Define what belongs to this system and what does not." }
+      - { name: proposed_system_reason, label: Why it is missing, widget: text, hint: "Explain why existing inventory entries cannot absorb it." }
+      - { name: proposed_system_evidence, label: Evidence source keys, widget: list, min: 1 }
+      - { name: proposal_status, label: Proposal status, widget: select, options: [proposed, accepted, rejected, merged], default: proposed }
+      - { name: accepted_system_id, label: Accepted FE9 system ID, widget: string, required: false }
+      - name: body
+        label: Proposal documentation
+        widget: markdown
+        default: |
+          # Proposed system
+
+          ## Why this is a distinct system
+
+          ## Supporting documentation
+
+          ## Inputs, rules, and outputs
+
+          ## Relationship to the existing inventory
+
+          ## Known gaps
+
+  - name: guides
+    label: Guides and learning paths
+    label_singular: Guide
+    folder: wiki/guides
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: guides }
+      - *type_field
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: guides }
+      - *source_path_field
+      - *body_field
+
+  - name: meta
+    label: Portals and project pages
+    label_singular: Project page
+    folder: wiki/meta
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: meta }
+      - *type_field
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: meta }
+      - *source_path_field
+      - *body_field
+
+  - name: pages
+    label: Site pages
+    files:
+      - name: main
+        label: Main page
+        file: wiki/index.md
+        fields:
+          - *id_field
+          - *title_field
+          - *description_field
+          - *games_field
+          - { name: section, label: Section, widget: hidden, default: meta }
+          - *type_field
+          - *tags_field
+          - *aliases_field
+          - *status_field
+          - *reviewed_field
+          - *sources_field
+          - { name: cms_collection, label: CMS collection, widget: hidden, default: pages }
+          - *source_path_field
+          - *body_field

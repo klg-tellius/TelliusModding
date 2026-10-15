@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import chapters
-from .formats import anim_registry, dispo, fe8data, lz10, message, pak, zdbx
+from .formats import anim_registry, dispo, fe8data, game_text, lz10, message, pak, zdbx
 from .formats.fe9_portraits import read_face_table
 from .game_profile import CHAPTERS, GAME_DATA, profile_of
 from .project import ModProject
@@ -120,6 +120,7 @@ class ChapterInfo:
     has_script: bool = False
     has_map: bool = False
     has_deployment: bool = False
+    function_count: int = 0
 
 
 class ProjectIndex:
@@ -130,6 +131,7 @@ class ProjectIndex:
     def __init__(self, project: ModProject):
         self.project = project
         self.files = project.extracted_dir / "files"
+        game_text.use_for_extraction(project.extracted_dir)
         self.profile = profile_of(project)
         self._lock = threading.Lock()
         self.ready = False
@@ -182,7 +184,12 @@ class ProjectIndex:
             return {}
 
     def text(self, key: Optional[str]) -> str:
-        return (self.texts.get(key) or "").strip() if key else ""
+        if not key:
+            return ""
+        try:
+            return game_text.from_raw(self.texts.get(key) or "").strip()
+        except UnicodeError:
+            return (self.texts.get(key) or "").strip()
 
     def _read_deployments(self) -> list[Deployment]:
         out = []
@@ -243,8 +250,18 @@ class ProjectIndex:
                 has_script=paths.script is not None,
                 has_map=paths.map is not None,
                 has_deployment=paths.deployment is not None,
+                function_count=self._function_count(paths.script),
             ))
         self.by_chapter = {c.id: c for c in self.chapters}
+
+    @staticmethod
+    def _function_count(path) -> int:
+        from .formats.cmb.binary import count_functions
+
+        try:
+            return count_functions(path.read_bytes()) if path is not None else 0
+        except Exception:  # noqa: BLE001
+            return 0
 
     def _build_characters(self) -> None:
         data = self.profile.path(self.files, "game_data").read_bytes()

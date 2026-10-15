@@ -64,12 +64,14 @@ class DecompileTests(unittest.TestCase):
         self.assertIn("window/icon.tpl", ms.describe_inline("#P027"))
 
     def test_layouts_have_english_names_that_round_trip(self):
-        self.assertEqual(ms.layout_label("上下会話"), "Two-box talk (上下会話)")
-        self.assertEqual(ms.summary(ms.decompile(raw("$R背景会話|"))[0]), "Background scene (背景会話)")
+        self.assertEqual(ms.layout_label("上下会話"), "Two-box talk")
+        self.assertEqual(ms.summary(ms.decompile(raw("$R背景会話|"))[0]), "Background scene")
         for name in ms.LAYOUT_NAMES:
             self.assertEqual(ms.layout_from_label(ms.layout_label(name)), name)
         self.assertEqual(ms.layout_from_label(" BASES_FSHOP_MESS "), "BASES_FSHOP_MESS")  # unnamed ID typed raw
         self.assertEqual(ms.layout_from_label("上下会話"), "上下会話")
+        self.assertEqual(ms.layout_from_label("two-box talk"), "上下会話")
+        self.assertEqual(ms.layout_from_label("Two-box talk (上下会話)"), "上下会話")
 
     def test_editing_regenerates_only_that_step(self):
         text = raw("$R背景会話|$F1$FCL_IKE|$F1$PHello.$K")

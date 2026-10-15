@@ -38,19 +38,23 @@ def verify(dol: Dol) -> list[str]:
         if isinstance(entry, Patch):
             session.set_patch(entry, True)
         else:
-            session.set_tunable(entry, entry.maximum)
+            session.set_tunable(entry, entry.maximum if entry.maximum != entry.default else entry.minimum)
         return True
 
     def revert_all() -> None:
         pending = [e for e in CATALOG.entries.values() if session.status(e).state != State.UNAVAILABLE]
         for _ in range(len(pending) + 1):       # an option can only be undone once its rival is
             left = []
-            for entry in pending:               # values first, then the patches (hooks) they needed
+            # Reverse patch registration: an extension that hooks another patch
+            # must release its branch before the underlying hook is removed.
+            ordered = [e for e in pending if isinstance(e, Tunable)] + [
+                e for e in reversed(pending) if isinstance(e, Patch)]
+            for entry in ordered:               # values first, then dependent patches
                 try:
                     session.reset(entry)
                 except DolError:
                     left.append(entry)
-            for entry in pending:
+            for entry in ordered:
                 if isinstance(entry, Patch):
                     try:
                         session.set_patch(entry, False)

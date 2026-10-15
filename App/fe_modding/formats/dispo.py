@@ -128,18 +128,25 @@ FLAG_BITS = (
     (FLAG_AUTOLEVEL, "Autolevel", "Grows the unit from its base stats to its level with the class growths."),
     (FLAG_HOLD_POSITION, "Hold position", "The AI never moves the unit; it still attacks, heals and acts from its tile."),
     (FLAG_COMMANDER, "Group commander", "Leader of its army: the army list shows it and its Charisma helps its army."),
-    (FLAG_SPAWN_WHEN_ABSENT, "Spawn if absent", "A reinforcement appears even when the character is not already in play."),
+    (FLAG_SPAWN_WHEN_ABSENT, "Create if not recruited",
+     "Player sections only. Each record is a starting slot: when its character is not in your army, the slot "
+     "normally goes to another unit of your reserve. With this flag the character is created from this record "
+     "instead (how new recruits join)."),
     (FLAG_AI_DOOR_KEY, "AI uses Door Key", "The AI may use a Door Key: the unit walks to the nearest door and opens it."),
     (FLAG_AI_CHEST_KEY, "AI uses Chest Key", "The AI may use a Chest Key on chests. Thieves with Lockpick (SID_KEY0) can do both without these bits."),
-    (FLAG_BRIDGE_BARRIER, "Blocked by bridge cover", "Terrain 55 (bridge cover) costs 48 to enter. Cleared on fliers."),
+    (FLAG_BRIDGE_BARRIER, "Can't enter bridge cover",
+     "Tiles of terrain 55 (bridge cover) become impassable for this unit. Vanilla sets it on every unit "
+     "except fliers."),
     (0x80, "Bit 0x80", "Not read by the game."),
 )
 ITEM_FLAG_DROP = 0x01
 ITEM_FLAG_RING = 0x02
 #: Every used bit of fields 40-47.
 ITEM_FLAG_BITS = (
-    (ITEM_FLAG_DROP, "drop", "Dropped when the unit is defeated (one item per unit; cleared if it changes side)."),
-    (ITEM_FLAG_RING, "ring", "Class ring: withheld in one game mode; with drop set it becomes the unit's only drop."),
+    (ITEM_FLAG_DROP, "Drops", "Dropped when the unit is defeated (one item per unit; cleared if it changes side)."),
+    (ITEM_FLAG_RING, "Ignore in first playthrough",
+     "The item is not given on a first playthrough, only from the second one on (vanilla: the class rings). "
+     "With Drops also set it becomes the unit's only drop."),
 )
 #: One-line help for every field, shown by the editors.
 FIELD_HELP = {
@@ -746,6 +753,24 @@ def labels_by_prefix(docs) -> dict[str, list[str]]:
             grouped.setdefault(label.split("_", 1)[0], set()).add(label)
     return {prefix: sorted(labels) for prefix, labels in grouped.items()}
 
+
+def rename_section_prefix(doc: DispoDocument, old: str, new: str) -> None:
+    """Rename a cloned map's deployment sections, rebuilding the name table.
+
+    Unlike rename_chapter_sections, the two folder names may have different
+    lengths (bmap18 -> bmap18_2).
+    """
+    changed = False
+    for section in doc.sections:
+        if section.name == old or section.name.startswith(old + "_"):
+            section.name = new + section.name[len(old):]
+            changed = True
+    if not changed:
+        return
+    names = [section.name for section in doc.sections]
+    if len(names) != len(set(names)):
+        raise ValueError("Cloning this phase would create duplicate deployment sections.")
+    _set_section_table(doc, [doc.sections[i] for i in doc.table_order])
 
 def rename_chapter_sections(data: bytes, old_number: str, new_number: str) -> bytes:
     """Return a copy of one dispo variant's bytes (e.g. a dispos_n.bin

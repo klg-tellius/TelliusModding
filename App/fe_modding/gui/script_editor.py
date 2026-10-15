@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 from .. import script_sources
@@ -34,6 +34,7 @@ from .changelog import ChangeLog
 from . import theme
 from .code_editor import CodeEditor
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 SOURCES_DIR = script_sources.SOURCES_DIR
 _BUILTINS = ["printf", "streq", "strne", "lit", "strofs", "extern"]
@@ -86,6 +87,12 @@ class ScriptEditor(EditorPanel):
         ttk.Button(toolbar, text="Check", command=self._check).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Insert call…", command=self._insert_call).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Revert to file", command=self._revert).pack(side="left", padx=(6, 0))
+        tip(ttk.Button(toolbar, text="Export…", command=self._export_source),
+            "Save the whole script as a source file (.fe9s / .fe10s) to edit it elsewhere.").pack(
+            side="left", padx=(12, 0))
+        tip(ttk.Button(toolbar, text="Import…", command=self._import_source),
+            "Replace the whole script with a source file. It stays unsaved until Save, and Check lists any "
+            "error first.").pack(side="left", padx=(6, 0))
         self._file_var = tk.StringVar()
         self._file_box = ttk.Combobox(toolbar, textvariable=self._file_var, state="readonly", width=44)
         self._file_box.pack(side="right")
@@ -95,23 +102,29 @@ class ScriptEditor(EditorPanel):
         self._status = ttk.Label(toolbar, text="Select a chapter.", style="Muted.TLabel")
         self._status.pack(side="left", padx=(12, 0))
 
-        right_frame = ttk.Frame(self, padding=(8, 0, 8, 8))
-        right_frame.pack(fill="both", expand=True)
+        columns = ttk.PanedWindow(self, orient="horizontal")
+        columns.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        right_frame = ttk.Frame(columns)
+        columns.add(right_frame, weight=3)
+        side = ttk.Frame(columns, padding=(10, 0, 0, 0))
+        columns.add(side, weight=1)
 
-        fn_row = ttk.Frame(right_frame)
+        fn_row = ttk.Frame(side)
         fn_row.pack(fill="x", pady=(0, 6))
-        ttk.Label(fn_row, text="Function").pack(side="left")
+        ttk.Label(fn_row, text="Function", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         self._fn_var = tk.StringVar()
-        self._fn_box = ttk.Combobox(fn_row, textvariable=self._fn_var, state="readonly", width=60, height=30)
-        self._fn_box.pack(side="left", padx=(6, 0))
+        self._fn_box = ttk.Combobox(fn_row, textvariable=self._fn_var, state="readonly", width=40, height=30)
+        self._fn_box.pack(fill="x", pady=(2, 4))
         self._fn_box.bind("<<ComboboxSelected>>", lambda e: self._on_function_selected())
         self._fn_index: Optional[int] = None  # index into self._spans of the chosen function
-        ttk.Button(fn_row, text="New", command=self._new_function).pack(side="left", padx=(12, 0))
-        ttk.Button(fn_row, text="Duplicate", command=self._duplicate_function).pack(side="left", padx=(4, 0))
-        ttk.Button(fn_row, text="Delete", command=self._delete_function).pack(side="left", padx=(4, 0))
+        buttons = ttk.Frame(fn_row)
+        buttons.pack(anchor="w")
+        ttk.Button(buttons, text="New", command=self._new_function).pack(side="left")
+        ttk.Button(buttons, text="Duplicate", command=self._duplicate_function).pack(side="left", padx=(4, 0))
+        ttk.Button(buttons, text="Delete", command=self._delete_function).pack(side="left", padx=(4, 0))
 
-        self._form = TriggerForm(right_frame, self._apply_form, self._name_values, self._dialect)
-        self._form.pack(fill="x")
+        self._form = TriggerForm(side, self._apply_form, self._name_values, self._dialect)
+        self._form.pack(fill="both", expand=True)
         right = ttk.PanedWindow(right_frame, orient="vertical")
         right.pack(fill="both", expand=True, pady=(4, 0))
 
@@ -127,6 +140,12 @@ class ScriptEditor(EditorPanel):
         )
         self._tabs.add(self._editor, text="Code")
         self._editor.text.bind("<ButtonRelease-1>", lambda e: self.after_idle(self._sync_selection_to_cursor), add="+")
+        self._editor.text.bind("<Control-f>", self._focus_search)
+        self._editor.text.bind("<F3>", self._find_next)
+        self._editor.text.bind("<Shift-F3>", self._find_previous)
+        self._editor.text.tag_configure("search_match", background=theme.color("highlight"))
+        theme.on_change(self, lambda: self._editor.text.tag_configure(
+            "search_match", background=theme.color("highlight")))
         bytecode_frame = ttk.Frame(self._tabs)
         self._bytecode = tk.Text(bytecode_frame, wrap="none", font=self._editor._font)
         scroll = ttk.Scrollbar(bytecode_frame, command=self._bytecode.yview)
@@ -136,6 +155,21 @@ class ScriptEditor(EditorPanel):
         self._tabs.add(bytecode_frame, text="Bytecode")
         self._tabs.bind("<<NotebookTabChanged>>", lambda e: self._refresh_bytecode())
 
+        search_row = ttk.Frame(right_frame)
+        # Reserve the search controls' height before the expanding editor pane.
+        search_row.pack(side="bottom", fill="x", before=right, pady=(4, 0))
+        ttk.Label(search_row, text="Search code").pack(side="left")
+        self._search_var = tk.StringVar()
+        self._search_entry = ttk.Entry(search_row, textvariable=self._search_var, width=16)
+        self._search_entry.pack(side="left", fill="x", expand=True, padx=(6, 4))
+        self._search_entry.bind("<Return>", self._find_next)
+        self._search_entry.bind("<Shift-Return>", self._find_previous)
+        self._search_var.trace_add("write", lambda *_: self._clear_search_match())
+        ttk.Button(search_row, text="Previous", command=self._find_previous).pack(side="left")
+        ttk.Button(search_row, text="Next", command=self._find_next).pack(side="left", padx=(4, 0))
+        self._search_status = ttk.Label(search_row, style="Muted.TLabel")
+        self._search_status.pack(side="left", padx=(8, 0))
+
         bottom = ttk.Frame(right)
         right.add(bottom, weight=1)
         self._hint = ttk.Label(bottom, text="", style="Ok.TLabel")
@@ -144,6 +178,48 @@ class ScriptEditor(EditorPanel):
         self._problems.pack(fill="both", expand=True)
         self._problems.bind("<<ListboxSelect>>", lambda e: self._goto_problem())
         self._problem_lines: list[int] = []
+
+    def _focus_search(self, _event=None):
+        self._tabs.select(self._editor)
+        self._search_entry.focus_set()
+        self._search_entry.select_range(0, "end")
+        return "break"
+
+    def _clear_search_match(self) -> None:
+        self._editor.text.tag_remove("search_match", "1.0", "end")
+        self._search_status.config(text="")
+
+    def _find_next(self, _event=None):
+        return self._find_code(backwards=False)
+
+    def _find_previous(self, _event=None):
+        return self._find_code(backwards=True)
+
+    def _find_code(self, *, backwards: bool):
+        needle = self._search_var.get()
+        if not needle:
+            self._focus_search()
+            return "break"
+        widget = self._editor.text
+        selected = widget.tag_ranges("search_match")
+        start = str(selected[0] if backwards else selected[1]) if selected else widget.index("insert")
+        options = {"exact": True, "nocase": True, "backwards": backwards}
+        found = widget.search(needle, start, stopindex="1.0" if backwards else "end", **options)
+        if not found:
+            found = widget.search(needle, "end" if backwards else "1.0",
+                                  stopindex="1.0" if backwards else "end", **options)
+        self._clear_search_match()
+        if found:
+            end = widget.index(f"{found}+{len(needle)}c")
+            widget.tag_add("search_match", found, end)
+            widget.mark_set("insert", found)
+            widget.see(found)
+            self._tabs.select(self._editor)
+            self._sync_selection_to_cursor()
+            self._search_status.config(text=f"Line {found.split('.')[0]}")
+        else:
+            self._search_status.config(text="No matches")
+        return "break"
 
     # -- loading ------------------------------------------------------------
     def refresh_chapter_list(self) -> None:
@@ -277,6 +353,7 @@ class ScriptEditor(EditorPanel):
         source, note = loaded.source, loaded.note
         self._fill_file_choices()
         self._editor.set(source)
+        self._clear_search_match()
         self._dirty = False
         self._selected = None
         self._save_button.config(state="normal")
@@ -458,13 +535,15 @@ class ScriptEditor(EditorPanel):
         sig = self._externs.get(name)
         if sig is None:
             return None
-        where = {"native": "game function", "script": "defined in startup.cmb"}.get(sig.source, sig.source)
-        text = f"{sig.signature()}  - {where}, used {sig.uses}× in vanilla"
-        kinds = [f"{i + 1}: {KIND_TITLES[k]}" for i in range(sig.argc)
-                 if (k := resolve_kind(name, i, self._externs)) and k not in (sig.arg_kind(i),)]
-        if kinds:
-            text += f"  [args {', '.join(kinds)}]"
-        return text + (f"  ({sig.note})" if sig.note else "")
+        names = [(a.get("name") if i < len(sig.args) else "") or f"arg{i + 1}" for i, a in
+                 enumerate(sig.args[:sig.argc] + [{}] * (sig.argc - len(sig.args)))]
+        text = f"{name}({', '.join(names)})"
+        note = sig.note.split("):", 1)[1].strip() if sig.note.startswith("(") and "):" in sig.note else sig.note
+        if note:
+            text += f"  — {note}"
+        if getattr(sig, "returns", ""):
+            text += f"  Returns {sig.returns[0].lower() + sig.returns[1:]}"
+        return text
 
     def _is_known_call(self, name: str) -> bool:
         return name in self._externs or name in self._local_defs() or name in _BUILTINS
@@ -487,6 +566,7 @@ class ScriptEditor(EditorPanel):
     def _set_source(self, source: str, select: Optional[str] = None) -> None:
         view = self._editor.text.yview()[0]
         self._editor.set(source)
+        self._clear_search_match()
         self._editor.text.yview_moveto(view)
         self._on_text_changed()
         if select:
@@ -542,6 +622,49 @@ class ScriptEditor(EditorPanel):
         if dialog.result:
             self._editor.insert_at_cursor(dialog.result)
 
+    def _source_suffix(self) -> str:
+        return ".fe10s" if self._dialect == "fe10" else ".fe9s"
+
+    def _export_source(self) -> None:
+        if self._current_path is None:
+            return
+        suffix = self._source_suffix()
+        path = filedialog.asksaveasfilename(parent=self, title="Export script source", defaultextension=suffix,
+                                            initialfile=self._current_path.stem + suffix,
+                                            filetypes=[("Script source", f"*{suffix}"), ("Text files", "*.txt")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(self._editor.get())
+        except OSError as exc:
+            messagebox.showerror("Could not export", str(exc), parent=self)
+            return
+        self._status.config(text=f"Exported {Path(path).name}")
+
+    def _import_source(self) -> None:
+        if self._current_path is None:
+            return
+        suffix = self._source_suffix()
+        path = filedialog.askopenfilename(parent=self, title="Import script source",
+                                          filetypes=[("Script source", f"*{suffix}"), ("Text files", "*.txt"),
+                                                     ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            source = Path(path).read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError) as exc:
+            messagebox.showerror("Could not import", str(exc), parent=self)
+            return
+        if not messagebox.askyesno("Import script source",
+                                   f"Replace the whole of {self._current_path.name} with {Path(path).name}?\n\n"
+                                   "Nothing is written until you save.", parent=self):
+            return
+        self._selected = None
+        self._set_source(source.replace("\r\n", "\n"))
+        self._check()
+        self._changelog.append(self._current_path.name, f"Imported source from {Path(path).name} (unsaved)")
+
     def _revert(self) -> None:
         if self._current_path is None:
             return
@@ -586,6 +709,20 @@ class ScriptEditor(EditorPanel):
         )
 
 
+class _TextVar:
+    """StringVar-like access to a Text widget (the multi-line description)."""
+
+    def __init__(self, widget: tk.Text):
+        self._widget = widget
+
+    def get(self) -> str:
+        return self._widget.get("1.0", "end-1c")
+
+    def set(self, value: str) -> None:
+        self._widget.delete("1.0", "end")
+        self._widget.insert("1.0", value)
+
+
 class _Problem:
     def __init__(self, severity: str, line: int, message: str):
         self.severity, self.line, self.message = severity, line, message
@@ -595,44 +732,43 @@ class TriggerForm(ttk.LabelFrame):
     """Name/export/trigger fields for the selected function."""
 
     def __init__(self, parent: tk.Misc, on_apply, name_values, dialect="fe9"):
-        super().__init__(parent, text="Function", padding=8)
+        super().__init__(parent, text="Trigger and description", padding=8)
         self._on_apply = on_apply
         self._name_values = name_values
         self._triggers = triggers(dialect)
         self._choices = [f"{t.type} - {t.title}" for t in self._triggers.values()]
         self._span: Optional[st.FunctionSpan] = None
 
-        row = ttk.Frame(self)
-        row.pack(fill="x")
-        ttk.Label(row, text="Name").pack(side="left")
+        ttk.Label(self, text="Name").pack(anchor="w")
         self._name_var = tk.StringVar()
-        ttk.Entry(row, textvariable=self._name_var, width=24).pack(side="left", padx=(4, 12))
+        ttk.Entry(self, textvariable=self._name_var).pack(fill="x", pady=(2, 6))
+        export_row = ttk.Frame(self)
+        export_row.pack(fill="x", pady=(0, 6))
         self._export = tk.BooleanVar()
-        ttk.Checkbutton(row, text="Exported as", variable=self._export,
-                        command=self._sync_export).pack(side="left")
+        tip(ttk.Checkbutton(export_row, text="Exported as", variable=self._export, command=self._sync_export),
+            "An exported function can be called by name from the engine or other scripts.").pack(side="left")
         self._export_id = tk.StringVar()
-        self._export_entry = ttk.Entry(row, textvariable=self._export_id, width=20)
-        self._export_entry.pack(side="left", padx=(4, 12))
-        ttk.Label(row, text="Trigger").pack(side="left")
+        self._export_entry = ttk.Entry(export_row, textvariable=self._export_id, width=18)
+        self._export_entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        tip(ttk.Label(self, text="Trigger"), "When the game runs the function (a turn, a unit entering an area, "
+                                             "a talk...). Its settings appear below.").pack(anchor="w")
         self._type = tk.StringVar()
-        self._type_box = ttk.Combobox(row, textvariable=self._type, values=self._choices, state="readonly", width=36)
-        self._type_box.pack(side="left", padx=(4, 0))
+        self._type_box = ttk.Combobox(self, textvariable=self._type, values=self._choices, state="readonly")
+        self._type_box.pack(fill="x", pady=(2, 6))
         self._type_box.bind("<<ComboboxSelected>>", lambda e: self._build_params({}))
 
-        desc_row = ttk.Frame(self)
-        desc_row.pack(fill="x", pady=(6, 0))
-        ttk.Label(desc_row, text="Description").pack(side="left")
-        self._description = tk.StringVar()
-        ttk.Entry(desc_row, textvariable=self._description).pack(side="left", fill="x", expand=True, padx=(4, 0))
-
         self._params = ttk.Frame(self)
-        self._params.pack(fill="x", pady=(6, 0))
+        self._params.pack(fill="x", pady=(0, 6))
+        ttk.Label(self, text="Description").pack(anchor="w")
+        self._description_text = tk.Text(self, height=5, wrap="word", font=("Segoe UI", 9))
+        self._description_text.pack(fill="x", pady=(2, 6))
+        self._description = _TextVar(self._description_text)
         bottom = ttk.Frame(self)
-        bottom.pack(fill="x", pady=(6, 0))
+        bottom.pack(fill="x")
         self._apply_button = ttk.Button(bottom, text="Apply to code", command=self._apply, state="disabled")
         self._apply_button.pack(side="left")
-        self._note = ttk.Label(bottom, text="", style="Muted.TLabel")
-        self._note.pack(side="left", padx=(8, 0))
+        self._note = ttk.Label(self, text="", style="Muted.TLabel", wraplength=300, justify="left")
+        self._note.pack(anchor="w", pady=(6, 0))
         self._vars: dict = {}
         self._raw_var: Optional[tk.StringVar] = None
 
@@ -644,7 +780,7 @@ class TriggerForm(ttk.LabelFrame):
     def show(self, span: st.FunctionSpan) -> None:
         self._span = span
         self._name_var.set(span.name)
-        self._description.set(" ".join(span.description.splitlines()))
+        self._description.set(span.description)
         self._export.set(span.export_id is not None)
         self._export_id.set(span.export_id or "")
         self._sync_export()
@@ -672,9 +808,8 @@ class TriggerForm(ttk.LabelFrame):
             ttk.Entry(self._params, textvariable=self._raw_var, width=40).grid(row=0, column=1, sticky="w", padx=(4, 0))
             return
         for i, spec in enumerate(kind.params):
-            col = (i % 3) * 2
-            r = i // 3
-            ttk.Label(self._params, text=spec.description).grid(row=r, column=col, sticky="w", padx=(0 if col == 0 else 12, 4), pady=2)
+            col, r = 0, i
+            ttk.Label(self._params, text=spec.description).grid(row=r, column=col, sticky="w", padx=(0, 6), pady=2)
             value = values.get(spec.name)
             if spec.enum:
                 text = value if isinstance(value, str) else spec.enum.get(value, "" if value is None else str(value))
@@ -754,15 +889,11 @@ class InsertCallDialog(tk.Toplevel):
 
         body = ttk.PanedWindow(top, orient="horizontal")
         body.pack(fill="both", expand=True, pady=(6, 0))
-        self._tree = ttk.Treeview(body, columns=("args", "where", "uses"), show="tree headings", selectmode="browse")
+        self._tree = ttk.Treeview(body, columns=("what",), show="tree headings", selectmode="browse")
         self._tree.heading("#0", text="Function")
-        self._tree.heading("args", text="Args")
-        self._tree.heading("where", text="Group")
-        self._tree.heading("uses", text="Vanilla uses")
-        self._tree.column("#0", width=200)
-        self._tree.column("args", width=40, anchor="center")
-        self._tree.column("where", width=130)
-        self._tree.column("uses", width=80, anchor="e")
+        self._tree.heading("what", text="What it does")
+        self._tree.column("#0", width=190)
+        self._tree.column("what", width=330)
         self._tree.bind("<<TreeviewSelect>>", lambda e: self._on_select())
         self._tree.bind("<Double-Button-1>", lambda e: self._insert())
         body.add(self._tree, weight=3)
@@ -799,10 +930,11 @@ class InsertCallDialog(tk.Toplevel):
     def _filter(self) -> None:
         q = self._query.get().lower()
         self._tree.delete(*self._tree.get_children())
-        rows = [e for e in self._entries if q in e[0].lower()]
+        rows = [e for e in self._entries if q in e[0].lower() or q in e[5].lower()]
         rows.sort(key=lambda e: (e[3] >= 0, -e[3], e[0]))
-        for i, (name, argc, group, uses, _, _) in enumerate(rows[:400]):
-            self._tree.insert("", "end", iid=name, text=name, values=(argc, group, "" if uses < 0 else uses))
+        for i, (name, argc, group, uses, _, note) in enumerate(rows[:400]):
+            short = note.split("):", 1)[1].strip() if note.startswith("(") and "):" in note else note
+            self._tree.insert("", "end", iid=name, text=name, values=(short or group,))
         self._rows = {e[0]: e for e in rows}
 
     def _on_select(self) -> None:
@@ -813,24 +945,27 @@ class InsertCallDialog(tk.Toplevel):
             return
         name, argc, group, uses, args, note = self._rows[sel[0]]
         ttk.Label(self._detail, text=name, font=("TkDefaultFont", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        info = f"{group}" + ("" if uses < 0 else f" · used {uses}× in vanilla scripts")
-        ttk.Label(self._detail, text=info, style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w")
-        if note:
-            ttk.Label(self._detail, text=note, wraplength=260, style="Warn.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
+        sig = self._externs.get(name)
+        if note.startswith("(") and "):" in note:
+            note = note.split("):", 1)[1].strip()
+        if sig is not None and getattr(sig, "returns", ""):
+            note = (note + " " if note else "") + "Returns " + sig.returns[0].lower() + sig.returns[1:]
+        ttk.Label(self._detail, text=note or group, wraplength=300, justify="left").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
         self._arg_vars = []
         for i, (kind, label) in enumerate(args):
-            ttk.Label(self._detail, text=f"{i + 1}. {label}").grid(row=3 + i, column=0, sticky="w", pady=2)
+            arg_help = (sig.args[i].get("help", "") if sig is not None and i < len(sig.args) else "")
+            tip(ttk.Label(self._detail, text=f"{i + 1}. {label}"), arg_help).grid(row=3 + i, column=0, sticky="w",
+                                                                                  pady=2)
             var = tk.StringVar(value="" if kind in self.STRING_KINDS else "0")
             values = self._name_values(kind) if kind in self.STRING_KINDS or kind == "chapter" else []
             widget = ttk.Combobox(self._detail, textvariable=var, values=values, width=26) if values \
                 else ttk.Entry(self._detail, textvariable=var, width=28)
             widget.grid(row=3 + i, column=1, sticky="w", padx=(6, 0), pady=2)
             self._arg_vars.append((kind, var))
-        ttk.Label(
-            self._detail, wraplength=260, style="Muted.TLabel",
-            text="Argument kinds are inferred from how vanilla scripts call this function. Text values are "
-                 "quoted for you; type a variable name or an expression wrapped in ( ) to pass it as-is.",
-        ).grid(row=4 + len(args), column=0, columnspan=2, sticky="w", pady=(10, 0))
+        info(self._detail, "Hover an argument for what it means. Text values are quoted for you; type a variable "
+                           "name or an expression wrapped in ( ) to pass it as-is.").grid(
+            row=4 + len(args), column=0, sticky="w", pady=(10, 0))
 
     def _insert(self) -> None:
         sel = self._tree.selection()

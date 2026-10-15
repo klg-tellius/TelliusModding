@@ -81,13 +81,12 @@ Thunder/Wind, one D each, no ambiguity). Letters follow the standard FE
 E/D/C/B/A/S order (confirmed by JID_BKNIGHT - the Black Knight, a known
 elite swordsman - resolving to "SC-------", the only class sampled with
 an S rank); a few classes (JID_PALADIN_S, JID_SAGE) show `*` instead of a
-letter at one or more positions, read as "usable without a fixed rank
-requirement" rather than a specific grade. Position 7 ("Staff" here) is
-the one weaker link in this chain: Priest/Bishop/Valkyrie all carry a
-rank there, consistent with Tellius's staff-healer archetype, but nothing
-pins it down as confidently as positions 0-6; position 8 ("Light") was
-never seen as anything but the `*` wildcard, so it's the single
-lowest-confidence entry in WEAPON_TYPE_NAMES. Checked against
+letter at one or more positions. The promotion sequence scans the
+promoted class's rank string for `*` and offers those positions as new
+weapon choices. Position 7 is Staff and position 8 is Knife, confirmed by
+the executable's MCA_RD/MCA_KN menu keys and selection-result switch
+(PROMOTION_CHOICES.md). `*` is a selectable promotion option,
+not a fixed rank. Checked against
 ItemEntry.rank on the chance the two were the same small enum - they are
 NOT: real sword items span 0 (Iron) to 17 (Alondite, Ike's legendary
 personal sword), far more granular than the letter grade's 6 values, so
@@ -97,13 +96,10 @@ pointers) are class-innate skills, granted automatically to every unit of
 that class - confirmed the same way the Chant investigation above ruled
 things out: JID_HERON/JID_BIRD_HE and their promotions resolve to
 `SID_ANIMALIZE`/`SID_LYCANTHROPE`/`SID_FLY`/`SID_HIGHER` here, all
-laguz-transformation traits, not player-visible "learned" skills. Neither
-field has write support yet: weapon_ranks' pointer is shared across
-multiple classes with an identical rank curve (JID_SWORDER and
-JID_SWORDER/F both point at the exact same string), so patching it
-in-place would silently change every class sharing that pointer - a real
-footgun that needs its own guard before this is safe to expose as
-editable.
+laguz-transformation traits, not player-visible "learned" skills. Both
+fields can now be edited. Rank-string pointers can be shared across
+classes (JID_SWORDER and JID_SWORDER/F share one), so the writer appends
+a new string and repoints only the edited class.
 
 **Character skills and weapon ranks**: ``build_person_data_table`` reads
 the record word by word. 0x18 goes through ``map_byte_values_from_table``
@@ -378,6 +374,13 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
     pair = [cls] + ([linked] if linked is not None else [])
     if any(LAGUZ_CLASS_TOKENS.intersection(c.categories or ()) or c.innate_weapon for c in pair):
         return "Laguz"
+    # The two-tier retail data uses reciprocal links.  A configured middle
+    # tier instead points forward, so use its explicit class skill before
+    # comparing caps against the (stronger) third tier.
+    if "SID_HIGHER" in (cls.skills or ()) or "SID_TIER3" in (cls.skills or ()):
+        return "Promoted"
+    if linked is not None and "SID_HIGHER" in (linked.skills or ()):
+        return "Unpromoted"
     hp_cap = cls.stat_caps[0] if cls.stat_caps else 0
     if linked is not None:
         linked_cap = linked.stat_caps[0] if linked.stat_caps else 0
@@ -386,6 +389,17 @@ def class_category(cls: "ClassEntry", classes: list) -> str:
         if cls.movement != linked.movement:
             return "Promoted" if cls.movement > linked.movement else "Unpromoted"
     return "Promoted" if hp_cap > 40 else "Unpromoted"
+
+
+def class_tier(cls: "ClassEntry", classes: list) -> int:
+    """Human promotion tier (1–3), or 0 for a Laguz class."""
+    if class_category(cls, classes) == "Laguz":
+        return 0
+    if "SID_TIER3" in (cls.skills or ()):
+        return 3
+    if "SID_HIGHER" in (cls.skills or ()):
+        return 2
+    return 1
 
 
 #: Rank tokens (item 0x14) and the minimum weapon EXP each one becomes; "N" means none, like null.
@@ -405,7 +419,7 @@ ITEM_PROPERTY_TOKENS = {
     "magsw": "Magic sword - attacks with magic, not strength (Runesword, Sonic Sword)",
     "stormsw": "Vanilla: Alondite, Ragnell, Gurgurant",
     "longfar": "Siege weapon (siege tomes, ballistae)",
-    "sh": "Vanilla: the ballistae and the Onager",
+    "sh": "Siege machine (the ballistae and the Onager): its attacks play on the map, not in a battle scene",
     "revatr": "Not used in vanilla",
     "breath": "Vanilla: the dragon breaths",
     "fang": "Laguz natural weapon",
@@ -419,18 +433,18 @@ ITEM_PROPERTY_TOKENS = {
     "beastsamul": "Keeps a laguz transformed (Demi Band, Laguz Band)",
     "JH": "Vanilla: Demi Band",
     "noneart": "Vanilla: Boots",
-    "heroonly": "Only Ike can use it (Regal Sword, Ragnell)",
-    "blackonly": "Only the Black Knight can use it (Alondite)",
-    "finalonly": "Only Ashnard can use it (Gurgurant)",
+    "heroonly": "Requires SID_HERO (Ike has it; Regal Sword, Ragnell)",
+    "blackonly": "Requires class JID_BKNIGHT (Alondite)",
+    "finalonly": "Requires SID_FINAL (Ashnard has it; Gurgurant)",
     "humanonly": "Only beorc can use it",
     "beastonly": "Only laguz can use it",
     "knightonly": "Only knights can use it (not used in vanilla)",
     "shootonly": "Vanilla: Double Bow, Longbow",
-    "eqA": "User lock A (Rolf's Bow: Rolf only)",
-    "eqB": "User lock B (Amiti: Elincia only)",
-    "eqC": "User lock C (Laguz Band)",
-    "eqD": "User lock D (Knight Ward: soldiers, knights, paladins)",
-    "eqrevA": "Everyone except lock A (Demi Band)",
+    "eqA": "Requires SID_EQ_A (Rolf's Bow)",
+    "eqB": "Requires SID_EQ_B (Amiti)",
+    "eqC": "Requires SID_EQ_C (Laguz Band)",
+    "eqD": "Requires SID_EQ_D (Knight Ward)",
+    "eqrevA": "Blocked by SID_EQREV_A (Demi Band)",
 }
 #: Tokens vanilla items carry that the engine never matches (no effect).
 ITEM_IGNORED_PROPERTY_TOKENS = ("areaattack", "absolutehit")
@@ -452,6 +466,12 @@ ITEM_TRAIL_COLORS = (
 SKILL_TABLE_OFFSET = 0xE398  # first record (SID_HERO); the count word sits just before it
 SKILL_RECORD_SIZE = 0x28
 CHAPTER_RECORD_SIZE = 0x60
+#: The Japanese release (GFEJ01) has no Easy mode: its chapter records drop the fourth bonus
+#: level and its padding (0x5C bytes), and the first field is the title itself (or a message
+#: key for the trial maps) instead of a ``MCTnn`` key.
+JP_CHAPTER_RECORD_SIZE = 0x5C
+JP_CHAPTER_LAYOUT_ERROR = ("This FE8Data.bin uses the Japanese chapter record layout (no Easy mode, "
+                           "literal chapter titles); chapter records can be read but not edited.")
 
 # HP, Str, Mag, Skl, Spd, Lck, Def, Res - standard Fire Emblem stat order,
 # not independently confirmed field-by-field but consistent with every
@@ -462,15 +482,12 @@ STAT_NAMES = ["HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res"]
 # ClassEntry.weapon_ranks / module docstring). Positions 0-6 confirmed by
 # real single-weapon-type classes (Fighter -> only position 2 set, Archer
 # -> only position 3, Mage_F/Mage_T/Mage_W -> only position 4/5/6
-# respectively, ...). Position 7 (here "Staff") is the weaker of the two
-# magic-adjacent guesses: Priest/Bishop/Valkyrie all carry a rank there,
-# consistent with Tellius's staff-healer archetype, but no class was found
-# with a *letter* rank at position 8 to independently confirm "Light" - it
-# was only ever seen as the '*' wildcard marker (ClassEntry.weapon_ranks'
-# own docstring), so position 8 is the single lowest-confidence entry here.
-WEAPON_TYPE_NAMES = ["Sword", "Lance", "Axe", "Bow", "Fire", "Thunder", "Wind", "Staff", "Light"]
-#: The characters of a weapon rank string: '-' unusable, '*' usable without a
-#: fixed rank, else the rank letter.
+# respectively, ...). The promotion menu confirms positions 7 and 8 as
+# Staff and Knife: MCA_RD/MCA_KN labels and the result-to-skill switch.
+# A '*' in the promoted class string offers that choice.
+WEAPON_TYPE_NAMES = ["Sword", "Lance", "Axe", "Bow", "Fire", "Thunder", "Wind", "Staff", "Knife"]
+#: The characters of a weapon rank string: '-' unavailable, '*' a selectable
+#: promotion weapon on a target class, else the starting rank letter.
 WEAPON_RANK_CHARS = "-*EDCBAS"
 
 
@@ -719,6 +736,7 @@ class Fe8Data:
     classes: list
     items: list
     skills: list
+    item_rules: dict = dataclass_field(default_factory=dict)
 
 
 def _read_character(data: bytes, index: int, base: Optional[int] = None) -> CharacterEntry:
@@ -918,7 +936,9 @@ def read_fe8data(data: bytes) -> Fe8Data:
     skill_count = count(bases["skill"], SKILL_RECORD_SIZE, b"SID_", 300)
     skills = [_read_skill(data, i, bases["skill"]) for i in range(skill_count)]
 
-    return Fe8Data(characters=characters, classes=classes, items=items, skills=skills)
+    from . import item_rules
+    return Fe8Data(characters=characters, classes=classes, items=items, skills=skills,
+                   item_rules=item_rules.read_item_rules(data))
 
 
 def read_fe8data_path(path: Path | str) -> Fe8Data:
@@ -1059,7 +1079,7 @@ def terrain_stats_block(t: "TerrainType") -> bytes:
 
 
 def read_message_texts(system_cmp_path: Path | str) -> dict:
-    """Every ``mess/common.m`` message of ``system.cmp`` by key. Keys are
+    """Every ``mess/common.m`` message of ``system.cmp`` (PAL: the loose ``Mess/common.m``) by key. Keys are
     Shift-JIS (``MT_平地``); the message reader decodes them as cp437, so
     they are re-decoded here."""
     import io
@@ -1068,8 +1088,13 @@ def read_message_texts(system_cmp_path: Path | str) -> dict:
 
     decompressed = lz10.decompress(Path(system_cmp_path).read_bytes())
     entries = pak.read_pak_entries(decompressed)
-    common_entry = next(e for e in entries if e.name == "mess/common.m")
-    messages = message.read_messages(io.BytesIO(pak.read_pak_file_content(decompressed, common_entry)))
+    common_entry = next((e for e in entries if e.name == "mess/common.m"), None)
+    if common_entry is None:
+        # The PAL system.cmp carries no messages: it loads the loose Mess/common.m (English;
+        # d_/f_/i_/s_common.m are German, French, Italian and Spanish).
+        messages = message.read_messages_path(Path(system_cmp_path).parent / "Mess" / "common.m")
+    else:
+        messages = message.read_messages(io.BytesIO(pak.read_pak_file_content(decompressed, common_entry)))
     texts = {}
     for m in messages:
         try:
@@ -1413,6 +1438,7 @@ def patch_item_field(data: bytes, index: int, field: str, value) -> bytes:
         return _patch_item_pointer(data, off + 0x14, _item_token(value, [r for r, _ in ITEM_RANKS], "rank"),
                                    append=True)
     if field == "iid":
+        old_iid = _read_item(data, index).iid
         iid = (value or "").strip()
         if not iid:
             raise ValueError("An item needs an ID.")
@@ -1421,7 +1447,15 @@ def patch_item_field(data: bytes, index: int, field: str, value) -> bytes:
         others = [it for it in read_fe8data(data).items if it.iid == iid and it.index != index]
         if others:
             raise ValueError(f"item {others[0].index} already has the ID {iid}.")
-        return _patch_item_pointer(data, off, iid, append=True)
+        data = _patch_item_pointer(data, off, iid, append=True)
+        if old_iid and old_iid != iid:
+            from . import item_rules
+            rules = item_rules.read_item_rules(data)
+            if old_iid in rules:
+                from dataclasses import replace
+                rules[iid] = replace(rules.pop(old_iid), iid=iid)
+                data = item_rules.write_item_rules(data, rules)
+        return data
     pointer_offsets = {"miid": 0x04, "help_key": 0x08, "effect": 0x38, "weapon_effect": 0x3C}
     if field not in pointer_offsets:
         raise ValueError(f"Unknown item field {field!r}")
@@ -1435,6 +1469,46 @@ def _patch_item_pointer(data: bytes, offset: int, label: Optional[str], *, appen
 #: Skill pointer fields naming a string resolved elsewhere (added when new).
 SKILL_KEY_FIELDS = {"japanese_name": 0x04, "msid": 0x08, "help_key": 0x0C, "help2_key": 0x10, "effect": 0x14}
 SKILL_BYTE_FIELDS = {"param0": 0x19, "param1": 0x1A, "param2": 0x1B}
+OCCULT_SCROLL = "IID_ESOTERIC"
+
+
+def occult_skills(data: bytes) -> list[SkillEntry]:
+    """Return the skills the Occult scroll can teach.
+
+    The relationship belongs to SkillData rather than JobData: an Occult
+    skill names ``IID_ESOTERIC`` at +0x20, while its restriction list names
+    the classes that may learn it.
+    """
+    return [skill for skill in read_fe8data(data).skills
+            if skill.params[0] and OCCULT_SCROLL in skill.skill_items]
+
+
+def assign_occult_skill(data: bytes, class_index: int, skill_sid: Optional[str]) -> bytes:
+    """Make one class eligible for exactly one Occult skill (or none).
+
+    A zero-length restriction list means "anyone", so a skill losing its last
+    eligible class is restricted to its own SID.  Runtime eligibility compares
+    these entries only with the unit's PID and JID, making that existing SID a
+    safe no-unit sentinel without adding a fake class label.
+    """
+    fe8 = read_fe8data(data)
+    try:
+        jid = fe8.classes[class_index].jid
+    except IndexError:
+        raise ValueError(f"Class index {class_index} does not exist.") from None
+    if not jid:
+        raise ValueError("The class needs a JID before an Occult skill can be assigned.")
+    candidates = [skill for skill in fe8.skills if skill.params[0] and OCCULT_SCROLL in skill.skill_items]
+    if skill_sid is not None and skill_sid not in {skill.sid for skill in candidates}:
+        raise ValueError(f"{skill_sid} is not taught by the Occult scroll.")
+    for skill in candidates:
+        labels = [label for label in skill.restricted_to if label not in {jid, skill.sid}]
+        if skill.sid == skill_sid:
+            labels.append(jid)
+        elif not labels:
+            labels = [skill.sid]
+        data = patch_skill_field(data, skill.index, "restricted_to", labels)
+    return data
 
 
 def patch_skill_field(data: bytes, index: int, field: str, value) -> bytes:
@@ -1770,6 +1844,8 @@ class RawRecord:
 
 
 def read_table(data: bytes, kind: str) -> list[RawRecord]:
+    if kind == "chapter":
+        require_editable_chapters(data)
     size = TABLES[kind][1]
     start = table_start(data, kind)
     listed = listed_pointer_fields(data)
@@ -1783,6 +1859,8 @@ def read_table(data: bytes, kind: str) -> list[RawRecord]:
 def write_table(data: bytes, kind: str, rows: list[RawRecord]) -> bytes:
     """Rebuild a table from ``rows`` (count word + records). The table stays
     in place when it fits, else moves to the end of the data section."""
+    if kind == "chapter":
+        require_editable_chapters(data)
     count = table_count(data, kind)
     if kind in FIXED_TABLES and len(rows) != count:
         raise ValueError(f"The game is bound to the {count} {kind} records: "
@@ -1834,6 +1912,15 @@ def add_record(data: bytes, kind: str, new_id: Optional[str] = None,
     data = write_table(data, kind, rows + [row])
     if kind in RECORD_ID_FIELDS:
         data = _patch_id(data, kind, index, new_id)
+    if kind == "item" and copy_from is not None:
+        from . import item_rules
+        from dataclasses import replace
+        rules = item_rules.read_item_rules(data)
+        source = rows[copy_from]
+        source_iid = _resolve(data, struct.unpack_from(">I", source.raw, 0)[0])
+        if source_iid in rules:
+            rules[new_id] = replace(rules[source_iid], iid=new_id)
+            data = item_rules.write_item_rules(data, rules)
     return data, index
 
 
@@ -1844,6 +1931,13 @@ def remove_record(data: bytes, kind: str, index: int) -> bytes:
         raise ValueError(f"No {kind} record {index}.")
     if kind in FIXED_TABLES:
         raise ValueError(f"The game is bound to the {len(rows)} {kind} records: they cannot be removed.")
+    if kind == "item":
+        from . import item_rules
+        iid = _resolve(data, struct.unpack_from(">I", rows[index].raw, 0)[0])
+        rules = item_rules.read_item_rules(data)
+        if iid in rules:
+            rules.pop(iid)
+            data = item_rules.write_item_rules(data, rules)
     return write_table(data, kind, rows[:index] + rows[index + 1:])
 
 
@@ -1917,11 +2011,25 @@ DIFFICULTY_NAMES = ("Normal", "Hard", "Maniac", "Easy")  # current_difficulty_id
 
 
 def read_game_data(data: bytes) -> dict[str, tuple[int, int, int, int]]:
-    """``GameData``: seven rows of four difficulty bytes, no count word."""
+    """``GameData``: four difficulty bytes per row, with no count word.
+
+    US/PAL have all seven known rows. The Japanese retail section ends after
+    the fifth row; its executable has neither the later Laguz-growth nor class-
+    critical consumer. Bound the read by the next exported section so those
+    builds do not misinterpret the start of ``TerrainData`` as two extra rows.
+    """
     start = _section_start(data, "GameData")
     if start is None:
         return {}
-    return {name: tuple(data[start + 4 * i : start + 4 * i + 4]) for i, (name, _) in enumerate(GAME_DATA_ROWS)}
+    relative_start = start - HEADER_SIZE
+    following = [offset for offset in symbol_offsets(data).values() if offset > relative_start]
+    data_size = struct.unpack_from(">I", data, 4)[0]
+    end = HEADER_SIZE + (min(following) if following else data_size)
+    count = min(len(GAME_DATA_ROWS), (end - start) // 4)
+    return {
+        name: tuple(data[start + 4 * i : start + 4 * i + 4])
+        for i, (name, _) in enumerate(GAME_DATA_ROWS[:count])
+    }
 
 
 def read_group_names(data: bytes) -> list[Optional[str]]:
@@ -1948,14 +2056,14 @@ def read_battle_skies(data: bytes) -> list[Optional[str]]:
 @dataclass
 class BattleTerrainRow:
     map_name: Optional[str]  # the map this row applies to ("bmap01"); row 0 is the default
-    scenes: list  # one battle-scene map name per terrain type (77), None = use row 0's
+    scenes: list  # one battle-scene name per terrain type (77); None uses this row's first entry
 
 
 def read_battle_terrain(data: bytes) -> list[BattleTerrainRow]:
     """``BattleTerrData``: u16 column count (the 77 terrain types), u16 row
     count, then per row a map name and one battle-scene name per terrain
     type. ``get_battle_terrain_scene_name`` finds the row by the current map's
-    name and falls back to row 0's entry for a null one."""
+    name (or row 0 if absent); a null terrain entry uses that row's first entry."""
     start = _section_start(data, "BattleTerrData")
     if start is None:
         return []
@@ -1980,9 +2088,9 @@ class ChapterRecord:
     script: Optional[str]  # 0x08, "C01" - Scripts/<name>.cmb
     message: Optional[str]  # 0x0C, "C01" - mess/<name>.m; None = no chapter message file
     bgm: Optional[str]  # 0x10, map music
-    objectives: list  # 0x14-0x20, four text slots: goal, (unused), loss ("ML_共通"), second goal line
-    hard_objectives: list  # 0x24-0x2C, Hard overrides of slots 0, 1 and 3 (None = keep Normal)
-    maniac_objectives: list  # 0x30-0x38, Maniac overrides of slots 0, 1 and 3
+    objectives: list  # 0x14-0x20: goal, goal second line, defeat, defeat second line
+    hard_objectives: list  # 0x24-0x2C: Hard overrides of slots 0, 1 and 3 (None = keep Normal)
+    maniac_objectives: list  # 0x30-0x38: Maniac overrides of slots 0, 1 and 3
     chapter_id: int  # 0x3C, the id find_chapter_record_by_id matches (>= 90: trial maps)
     enemy_bonus_levels: tuple  # 0x3D-0x40, levels added to auto-levelled enemies, by current_difficulty_id (0-3); 0x41-0x43 pad
     base_background: Optional[str]  # 0x44, preparation/base screen background (RID_)
@@ -1992,6 +2100,24 @@ class ChapterRecord:
     trial_turn_grades: tuple  # 0x54-0x57, trial maps: most turns for grade A, B, C, D
     trial_loss_grades: tuple  # 0x58-0x5B, trial maps: most units lost for grade A, B, C, D
     trial_score_grades: tuple  # 0x5C-0x5F, trial maps: fewest player kills on the map (unit +0x22C) for A, B, C, D
+    title_text: Optional[str] = None  # Japanese layout only (+0x00): the title text, or a message key (trial maps)
+
+
+def japanese_chapter_layout(data: bytes) -> bool:
+    """True for the Japanese ``ChapterData`` layout: records 1-3 start every 0x5C bytes with a
+    listed title pointer, where the 0x60-byte US/PAL records hold unlisted trial grades."""
+    start = _section_start(data, "ChapterData")
+    if start is None:
+        return False
+    (count,) = struct.unpack_from(">I", data, start)
+    listed = listed_pointer_fields(data)
+    probes = [start + 4 + i * JP_CHAPTER_RECORD_SIZE for i in range(1, min(count, 4))]
+    return bool(probes) and all(p in listed for p in probes)
+
+
+def require_editable_chapters(data: bytes) -> None:
+    if japanese_chapter_layout(data):
+        raise ValueError(JP_CHAPTER_LAYOUT_ERROR)
 
 
 def read_chapter_data(data: bytes) -> list[ChapterRecord]:
@@ -2002,6 +2128,24 @@ def read_chapter_data(data: bytes) -> list[ChapterRecord]:
     (count,) = struct.unpack_from(">I", data, start)
     listed = listed_pointer_fields(data)
     result = []
+    if japanese_chapter_layout(data):
+        for i in range(count):
+            off = start + 4 + i * JP_CHAPTER_RECORD_SIZE
+            label = lambda o: _listed_label(data, off + o, listed)  # noqa: E731
+            rec = data[off : off + JP_CHAPTER_RECORD_SIZE]
+            result.append(ChapterRecord(
+                index=i, offset=off, title_key=None, map_name=label(0x04), script=label(0x08),
+                message=label(0x0C), bgm=label(0x10),
+                objectives=[label(0x14 + 4 * k) for k in range(4)],
+                hard_objectives=[label(o) for o in (0x24, 0x28, 0x2C)],
+                maniac_objectives=[label(o) for o in (0x30, 0x34, 0x38)],
+                chapter_id=rec[0x3C], enemy_bonus_levels=tuple(rec[0x3D:0x40]),
+                base_background=label(0x40), scene_map=label(0x44), scene_sky=label(0x48),
+                talk_background=label(0x4C),
+                trial_turn_grades=tuple(rec[0x50:0x54]), trial_loss_grades=tuple(rec[0x54:0x58]),
+                trial_score_grades=tuple(rec[0x58:0x5C]), title_text=label(0x00),
+            ))
+        return result
     for i in range(count):
         off = start + 4 + i * CHAPTER_RECORD_SIZE
         label = lambda o: _listed_label(data, off + o, listed)  # noqa: E731
@@ -2037,6 +2181,8 @@ def patch_game_data(data: bytes, row: str, difficulty: int, value: int) -> bytes
     names = [name for name, _reader in GAME_DATA_ROWS]
     if row not in names:
         raise ValueError(f"Unknown GameData row {row!r}")
+    if row not in read_game_data(data):
+        raise ValueError(f"GameData row {row!r} is not present in this regional build.")
     if not 0 <= difficulty < len(DIFFICULTY_NAMES):
         raise ValueError(f"Difficulty {difficulty} is not 0-3.")
     out = bytearray(data)
@@ -2079,8 +2225,8 @@ def write_battle_skies(data: bytes, names: list[Optional[str]]) -> bytes:
 
 
 def write_battle_terrain(data: bytes, rows: list[BattleTerrainRow]) -> bytes:
-    """Rebuild ``BattleTerrData``. Row 0 is the default the others fall back
-    to; the rest are found by map name, so any row can be added or removed."""
+    """Rebuild ``BattleTerrData``. Row 0 is used for maps without a row;
+    the rest are found by map name, so any row can be added or removed."""
     start = section_start(data, "BattleTerrData")
     columns, old_rows = struct.unpack_from(">HH", data, start)
     old_end = start + 4 + old_rows * (columns + 1) * 4
@@ -2114,6 +2260,7 @@ def patch_chapter_field(data: bytes, index: int, field: str, value) -> bytes:
     the string pool when new, or None), a :data:`CHAPTER_BYTE_FIELDS` name
     (0-255), or ``chapter_id`` (0-255, unique: ``find_chapter_record_by_id``
     matches it)."""
+    require_editable_chapters(data)
     off = table_start(data, "chapter") + index * CHAPTER_RECORD_SIZE
     if field in CHAPTER_POINTER_FIELDS:
         return _patch_label_field(data, off + CHAPTER_POINTER_FIELDS[field], (value or "").strip() or None,

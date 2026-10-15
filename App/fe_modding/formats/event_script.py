@@ -372,7 +372,7 @@ def _read_label_map(stream: BinaryIO, label_map_start: int, function_table_start
     labels = {}
     offset = 0
     for label in label_map_bytes.split(b"\x00"):
-        labels[offset] = label.decode("shift-jis")
+        labels[offset] = label.decode("shift-jis", "replace")  # the JP C02 pool ends with stray bytes
         offset += len(label) + 1
     return labels
 

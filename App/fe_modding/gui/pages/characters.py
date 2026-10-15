@@ -12,15 +12,17 @@ included.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from ...game_profile import GAME_DATA
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
+from ... import excel_io
 from .. import record_actions
 from ..character_form import CharacterForm
 from ..shell import Page, plain_text
 from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header
+from ..widgets import info as help_mark
 
 CATEGORY_CHIPS = {PLAYABLE: "chip_playable", NAMED: "chip_named", GENERIC: "chip_generic"}
 TABS = ["stats", "supports", "look", "appearances", "scripts"]
@@ -37,6 +39,8 @@ class CharactersHub(Page):
         top.pack(fill="x")
         ttk.Label(top, text="Characters", style="Title.TLabel").pack(side="left")
         ttk.Button(top, text="New character…", command=self._new_character).pack(side="left", padx=(16, 0))
+        ttk.Button(top, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         self._query = tk.StringVar()
         ttk.Entry(top, textvariable=self._query, width=30).pack(side="right")
         ttk.Label(top, text="Search name or PID", style="Muted.TLabel").pack(side="right", padx=(0, 8))
@@ -62,6 +66,36 @@ class CharactersHub(Page):
     def crumbs(self, route):
         return [("Characters", None)]
 
+    def _export_excel(self) -> None:
+        session = self.shell.session
+        if not session.available:
+            return
+        path = filedialog.asksaveasfilename(parent=self, title="Export characters", defaultextension=".xlsx", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe8(path, session.data, only="Characters")
+        except Exception as exc:
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        session = self.shell.session
+        if not session.available:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Import characters", filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            data, _docs, errors = excel_io.import_fe8(path, session.data, only="Characters")
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            session.data = data
+            session.changed(self)
+            self._built_for = None
+            self._build()
+        except Exception as exc:
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
     def _new_character(self) -> None:
         session = self.shell.session
         if session.fe8 is None:
@@ -157,7 +191,8 @@ class CharacterPage(Page):
         stats = ScrollFrame(self._notebook, padding=(16, 12))
         self._form = CharacterForm(stats.body, shell.session,
                                    on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
-                                   on_open_character=self._open_character, project=shell.project)
+                                   on_open_character=self._open_character, project=shell.project,
+                                   navigate=shell.navigate)
         self._form.pack(fill="both", expand=True)
         support_scroll = ScrollFrame(self._notebook, padding=(16, 12))
         self._build_supports(support_scroll.body)
@@ -381,10 +416,9 @@ class CharacterPage(Page):
             if model:
                 ttk.Button(models, text="Open in 3D Models", command=lambda m=model: self.shell.navigate(
                     ("asset", "models", m))).grid(row=r, column=3, sticky="w")
-        ttk.Label(models, style="SurfaceCaption.TLabel", wraplength=720, justify="left",
-                  text="Models are shared by every unit that resolves to them. To give this character a model of "
-                       "their own, open the model and use New slot…; Model tables… shows the lines that pick it.").grid(
-            row=len(rows), column=0, columnspan=4, sticky="w", pady=(10, 0))
+        help_mark(models, "Models are shared by every unit that resolves to them. To give this character a model "
+                          "of their own, open the model and use New slot…; Model tables… shows the lines that "
+                          "pick it.", bg_token="surface").grid(row=len(rows), column=0, sticky="w", pady=(10, 0))
         ttk.Button(body, text="Simulate a battle…", command=lambda: self.shell.navigate(
             ("asset", "battle_sim", info.pid))).pack(anchor="w", pady=(16, 0))
 

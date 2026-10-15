@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.game_code import versions
 from fe_modding.game_code import entries, ppc, verify
+from fe_modding.game_code import promotion
 from fe_modding.game_code.catalog import (CATALOG, CAVE_ADDRESS, CAVE_SIZE, Edit, Field, Patch, Session,
                                           State, Tunable, make_signature)
 from fe_modding.game_code.dol import Dol, DolError
@@ -168,6 +169,27 @@ class TunableTests(unittest.TestCase):
             self.session.set_tunable(t, new)
             self.assertEqual(self.session.tunable_status(t).value, new)
 
+    def test_lis_addi_constant(self):
+        dol = build_dol(word(0x3CA00099) + word(0x3805967F))          # lis r5,0x99; addi r0,r5,-0x6981
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.gold", "Test", "Gold", "", 9999999, 0, 9999999,
+                    {US: (Field(TEXT_ADDR, "lis_addi", bytes.fromhex("3ca03805")),)})
+        self.assertEqual(session.tunable_status(t).state, State.ORIGINAL)
+        for value, hi, lo in ((50000, 0x0001, 0x3805C350 & 0xFFFF), (32767, 0x0000, 0x7FFF), (0, 0, 0)):
+            session.set_tunable(t, value)
+            self.assertEqual(session.tunable_status(t).value, value)
+            self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00000 | hi, 0x38050000 | lo))
+        session.reset(t)
+        self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00099, 0x3805967F))
+
+    def test_signed_byte(self):
+        dol = build_dol(data=bytes([0xF6, 0x0A]))                       # -10, +10
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.s8", "Test", "Signed", "", -10, -100, 0, {US: (Field(DATA_ADDR, "s8"),)})
+        self.assertEqual(session.tunable_status(t).state, State.ORIGINAL)
+        session.set_tunable(t, -25)
+        self.assertEqual((session.tunable_status(t).value, dol.read(DATA_ADDR, 1)), (-25, b"\xe7"))
+
     def test_range_is_enforced(self):
         t = self.tunable("u8", DATA_ADDR + 2, 9, 0, 100)
         with self.assertRaises(DolError):
@@ -271,6 +293,33 @@ class RetailCatalogTests(unittest.TestCase):
         if not found:
             self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
 
+    def test_promotion_magic_choices_gain_separate_rank_handlers(self):
+        patch = CATALOG.entries["promotion.anima_weapon_choice"]
+        found = 0
+        for code in entries.ALL:
+            path = RETAIL_DIR / f"{code}.dol"
+            if not path.is_file():
+                continue
+            found += 1
+            with self.subTest(code):
+                dol = Dol.open(path)
+                before = dol.sha1()
+                session = Session(dol, versions.VERSIONS[code])
+                table, resume = promotion._SITES[code]
+                for index in range(3):
+                    self.assertEqual(dol.u32(table + (index + 4) * 4), resume)
+                session.set_patch(patch, True)
+                self.assertEqual(session.status(patch).state, State.APPLIED)
+                for index, rank_offset in enumerate(promotion.RANK_OFFSETS):
+                    stub = promotion.MAGIC_STUB + index * promotion.STUB_SIZE
+                    self.assertEqual(dol.u32(table + (index + 4) * 4), stub)
+                    self.assertEqual(dol.read(stub, promotion.STUB_SIZE),
+                                     promotion._stub(stub, rank_offset, resume))
+                session.set_patch(patch, False)
+                self.assertEqual(dol.sha1(), before)
+        if not found:
+            self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
+
 
 class EditorTests(unittest.TestCase):
     """CodeEditor on a scratch copy of a retail extraction (skipped without the retail DOLs)."""
@@ -319,3 +368,41 @@ class EditorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SoundRoomTrackTests(unittest.TestCase):
+    """The track table rewritten on a small fake layout: 64 pointers then a 4-name pool."""
+
+    def setUp(self):
+        from fe_modding.game_code import sound_room_tracks
+        self.tracks = sound_room_tracks
+        self.table, self.pool = DATA_ADDR, DATA_ADDR + 0x100
+        names = [b"BGM_A", b"BGM_BB", b"BGM_C", b"BGM_DD"]
+        pool, where = b"", []
+        for n in names:
+            where.append(self.pool + len(pool))
+            pool += n + b"\0"
+        self.end = self.pool + len(pool)
+        table = b"".join(where[i % 4].to_bytes(4, "big") for i in range(64))
+        self.dol = build_dol(data=table + pool + b"NEXT")
+        sound_room_tracks.LAYOUT["TEST01"] = (self.table, self.pool, self.end)
+        self.addCleanup(sound_room_tracks.LAYOUT.pop, "TEST01")
+
+    def test_read_write_round_trip(self):
+        before = bytes(self.dol.data)
+        names = self.tracks.read_tracks(self.dol, "TEST01")
+        self.assertEqual(names[:5], ["BGM_A", "BGM_BB", "BGM_C", "BGM_DD", "BGM_A"])
+        self.tracks.write_tracks(self.dol, "TEST01", names)
+        self.assertEqual(bytes(self.dol.data), before)
+
+    def test_repeated_names_are_stored_once_and_the_pool_end_is_kept(self):
+        names = ["BGM_LONGER1"] * 63 + ["BGM_A"]
+        self.tracks.write_tracks(self.dol, "TEST01", names)
+        self.assertEqual(self.tracks.read_tracks(self.dol, "TEST01"), names)
+        self.assertEqual(self.dol.read(self.end, 4), b"NEXT")
+
+    def test_too_long_or_wrong_count_is_refused(self):
+        with self.assertRaises(DolError):
+            self.tracks.write_tracks(self.dol, "TEST01", [f"BGM_{i:02d}" for i in range(64)])
+        with self.assertRaises(DolError):
+            self.tracks.write_tracks(self.dol, "TEST01", ["BGM_A"] * 63)

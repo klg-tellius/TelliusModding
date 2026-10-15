@@ -213,6 +213,16 @@ class ScriptFile:
         """Header +0x22: how many global slots this script reserves."""
         return int.from_bytes(self.header[0x22:0x24], "little")
 
+    def global_slots(self) -> set[int]:
+        """Global-table slots the code names (base slot of array accesses)."""
+        slots = set()
+        for fn in self.functions:
+            for ins in fn.instructions():
+                info = var_op_info(ins.op)
+                if info and info[1]:
+                    slots.add(ins.operands[0])
+        return slots
+
     def function_by_name(self, name: str) -> Optional[Function]:
         for fn in self.functions:
             if fn.id_string == name:

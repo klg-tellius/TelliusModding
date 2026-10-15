@@ -101,6 +101,7 @@ class ImportedMaterial:
     shape_flags: int = 0  # blend bits (0x40 additive...) glTF cannot express
     color1: Optional[tuple[int, int, int, int]] = None
     color2: Optional[tuple[int, int, int, int]] = None
+    material_flag1: int = 0  # .gs byte +5, preserved by glTF extras
 
     @property
     def pass_flag(self) -> int:
@@ -415,6 +416,7 @@ def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedSce
                 int(extras.get("fe9_shape_flags", 0) or 0),
                 colour("fe9_color1"),
                 colour("fe9_color2"),
+                int(extras.get("fe9_material_flag1", 0) or 0) & 0xFF,
             )
         )
     default_material: Optional[int] = None
@@ -621,10 +623,19 @@ def _invert_3x4(m: skeleton.Mat3x4) -> tuple[list[list[float]], Vec3]:
 
 
 def _chunk_lists(chunks: list[gs_file.GsChunk]) -> tuple[list, list, list]:
-    """Chunks split into the three draw lists by their flag bits ``0x6000``."""
+    """Chunks split into the three draw lists by their flag bits ``0x6000``, multi-matrix chunks
+    first in each list.
+
+    ``build_and_cache_gs_shape_bone_matrices`` fills the position-matrix slots for the next (up to
+    ten) single-matrix and composite chunks of the list at once, and those chunks later draw from
+    their slot without reloading it; a multi-matrix chunk between them reloads slots 0..n with its
+    own bones (``build_gs_shape_compound_bone_matrices``), so every chunk after it would be drawn
+    with another bone's matrix. Drawing the multi-matrix chunks first avoids that."""
     lists: tuple[list, list, list] = ([], [], [])
     for chunk in chunks:
         lists[(chunk.flags >> 13 & 3) - 1].append(chunk)
+    for items in lists:
+        items.sort(key=lambda chunk: not chunk.flags & FLAG_MULTI_MATRIX)
     return lists
 
 
@@ -665,7 +676,7 @@ def _material_record(
     color0 = tuple(max(0, min(255, round(c * 255 / COLOR_LOAD_SCALE))) for c in (r, g, b)) + (max(0, min(255, round(a * 255))),)
     return gs_file.GsMaterial(
         name=src.name,
-        unk0=(0, 0),
+        unk0=(0, src.material_flag1),
         unk1=0,
         color0=color0,
         color1=src.color1 or (0, 0, 0, 255),

@@ -10,19 +10,22 @@ effects are not decoded."""
 from __future__ import annotations
 
 import io
+import struct
+from dataclasses import replace
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageTk
 
-from ..formats import effects, tpl
+from ..formats import animation, effect_registry, effects, gs_file, skeleton, tpl
 from ..exceptions import ProjectError
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .effect_add_dialog import EffectAddDialog
-from .model_viewer import _load_model_set, _ModelPreview
+from .model_viewer import _build_loaded_set, _load_model_set, _ModelPreview
+from .particle_editor import ParticleEditor
 
 TEXTURE_THUMB = 112
 FILTERS = ("All", "Registered", "Unregistered", "Chained")
@@ -44,6 +47,8 @@ class EffectsViewer(EditorPanel):
         self._files = project.extracted_dir / "files"
         self._entries: list[effects.EffectEntry] = []
         self._by_iid: dict[str, effects.EffectEntry] = {}
+        self._particle_layout: animation.ParticleTableLayout | None = None
+        self._particle_data: bytes | None = None
         self._build_widgets()
         self._load()
 
@@ -74,29 +79,38 @@ class EffectsViewer(EditorPanel):
             self._tree.column(key, width=width, anchor=anchor, stretch=key == "name")
         scroll = ttk.Scrollbar(left, command=self._tree.yview)
         self._tree.config(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")  # first: a wide list would push it out of view
         self._tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         self._tree.bind("<<TreeviewSelect>>", lambda _e: self._show_selected())
 
         right = ttk.Frame(body, padding=(12, 0, 0, 0))
         body.add(right, weight=5)
         self._title = ttk.Label(right, text="(no effect selected)", font=("Segoe UI", 12, "bold"))
         self._title.pack(anchor="w")
-        self._detail = ttk.Label(right, text="", justify="left", style="Muted.TLabel")
+        self._detail = ttk.Label(right, text="", justify="left", style="Muted.TLabel", wraplength=520)
         self._detail.pack(anchor="w", pady=(2, 6))
         actions = ttk.Frame(right)
-        actions.pack(anchor="w", pady=(0, 6))
-        ttk.Button(actions, text="Add effect...", command=self._add).pack(side="left")
+        actions.pack(fill="x", pady=(0, 6))
+        ttk.Button(actions, text="Add effect...", command=self._add).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
         self._replace_btn = ttk.Button(actions, text="Replace pack...", command=self._replace_pack, state="disabled")
-        self._replace_btn.pack(side="left", padx=(6, 0))
+        self._replace_btn.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
+        self._part_btn = ttk.Button(actions, text="Replace part...", command=self._replace_part, state="disabled")
+        self._part_btn.grid(row=0, column=2, sticky="ew", padx=2, pady=2)
         self._texture_btn = ttk.Button(actions, text="Replace texture...", command=self._replace_texture, state="disabled")
-        self._texture_btn.pack(side="left", padx=(6, 0))
+        self._texture_btn.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
         self._register_btn = ttk.Button(actions, text="Register...", command=self._register_effect, state="disabled")
-        self._register_btn.pack(side="left", padx=(6, 0))
+        self._register_btn.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
+        self._registry_btn = ttk.Button(actions, text="Edit registry...", command=self._edit_registry, state="disabled")
+        self._registry_btn.grid(row=1, column=2, sticky="ew", padx=2, pady=2)
         self._restore_btn = ttk.Button(actions, text="Restore original", command=self._restore, state="disabled")
-        self._restore_btn.pack(side="left", padx=(6, 0))
+        self._restore_btn.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        for column in range(3):
+            actions.columnconfigure(column, weight=1)
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=520, justify="left")
         self._status.pack(anchor="w", pady=(0, 4))
+        self._particle_btn = ttk.Button(right, text="Edit particles...",
+                                        command=self._show_particle_details, state="disabled")
+        self._particle_btn.pack(anchor="w", pady=(0, 6))
         self._textures = ttk.Label(right)
         self._textures.pack(anchor="w", pady=(0, 6))
         self._texture_photos: list[ImageTk.PhotoImage] = []
@@ -152,9 +166,14 @@ class EffectsViewer(EditorPanel):
             return
         path = self._pack_file(entry)
         self._title.config(text=entry.name)
+        self._particle_layout = None
+        self._particle_data = None
+        self._particle_btn.config(state="disabled")
         self._replace_btn.config(state="normal")
+        self._part_btn.config(state="normal" if entry.has_pack else "disabled")
         self._texture_btn.config(state="normal" if entry.has_pack else "disabled")
         self._register_btn.config(state="disabled" if entry.registered else "normal")
+        self._registry_btn.config(state="normal" if entry.registered else "disabled")
         self._restore_btn.config(state="normal" if self._has_original(entry) else "disabled")
         lines = [f"Registry flags: {entry.flags:#010x}" if entry.registered else "Not in FE8Effect.bin"]
         if entry.next_in_chain:
@@ -173,14 +192,82 @@ class EffectsViewer(EditorPanel):
             self._preview.show(None, "Unreadable pack.")
             return
         lines.append("Pack: " + ", ".join(f"{n.rsplit('.', 1)[-1]} {len(b):,} B" for n, b in parts.items()))
+        ga_data = next((blob for name, blob in parts.items() if name.endswith(".ga")), None)
+        if ga_data is not None:
+            try:
+                particles = animation.read_particle_table_layout(ga_data)
+            except animation.AnimationError as exc:
+                lines.append(f"Particle table unreadable: {exc}")
+            else:
+                if particles is not None:
+                    self._particle_layout = particles
+                    self._particle_data = ga_data
+                    self._particle_btn.config(state="normal")
+                    count = len(particles.emitters)
+                    stages = sum(emitter.stage_count for emitter in particles.emitters)
+                    lines.append(f"Particle emitters: {count} ({stages} stages)")
+                    names = [emitter.name_path for emitter in particles.emitters[:4]]
+                    if names:
+                        lines.append("Paths: " + ", ".join(names) + ("..." if count > 4 else ""))
         self._detail.config(text="\n".join(lines))
-        self._status.config(text="")
+        self._status.config(text=("Particle stages render during animation playback (preview geometry)."
+                                  if self._particle_layout is not None else ""))
         self._show_textures(parts)
         try:
-            self._preview.show(_load_model_set(entry.name, path), "No model data.")
+            loaded = _load_model_set(entry.name, path)
+            self._preview.show(loaded, "No model data.")
+            if loaded.animations:
+                self._preview.select_animation(loaded.animations[0][0])
         except Exception as exc:  # noqa: BLE001 - effect nodes use flags the rig viewer may not pose
             self._preview.show(None, "No preview.")
             self._status.config(text=f"Preview failed: {exc}")
+
+    def _show_particle_details(self) -> None:
+        layout = self._particle_layout
+        data = self._particle_data
+        if layout is None or data is None:
+            return
+        entry = self._selected()
+        if entry is None:
+            return
+        expected_ga = data
+
+        def save_particle(new_ga: bytes) -> None:
+            nonlocal expected_ga
+            parts = effects.read_effect_pack(self._pack_file(entry).read_bytes())
+            current_ga = next((blob for name, blob in parts.items() if name.endswith(".ga")), None)
+            if current_ga != expected_ga:
+                raise effects.EffectError("This effect changed since the particle editor opened. Reopen it before saving.")
+            gs_data = next((blob for name, blob in parts.items() if name.endswith(".gs")), None)
+            if gs_data is not None:
+                material_count = len(gs_file.read_gs(gs_data).materials)
+                layout = animation.read_particle_table_layout(new_ga)
+                previous_layout = animation.read_particle_table_layout(expected_ga)
+                for index, emitter in enumerate(layout.emitters if layout else ()):
+                    previous = (previous_layout.emitters[index].material_index
+                                if previous_layout and index < len(previous_layout.emitters) else None)
+                    if (emitter.material_index != previous and emitter.material_index != -1
+                            and not 0 <= emitter.material_index < material_count):
+                        raise effects.EffectError(
+                            f"Emitter {index} uses material {emitter.material_index}; this effect has {material_count} materials.")
+            new_pack = effects.build_effect_pack(effects.replace_part(parts, "ga", new_ga))
+            self._write_pack(entry, new_pack, f"Edited particles of {entry.name}")
+            expected_ga = new_ga
+
+        try:
+            current_parts = effects.read_effect_pack(self._pack_file(entry).read_bytes())
+            gs_data = next((blob for name, blob in current_parts.items() if name.endswith(".gs")), None)
+            material_count = len(gs_file.read_gs(gs_data).materials) if gs_data else 0
+        except (effects.EffectError, gs_file.GsFileError, OSError) as exc:
+            messagebox.showerror("Particle editor", str(exc), parent=self)
+            return
+        animation_name = next((name for name in current_parts if name.endswith(".ga")), None)
+        try:
+            preview_loaded = _build_loaded_set(entry.name, current_parts, [])
+        except Exception:  # noqa: BLE001 - the inspector remains usable when preview decoding fails
+            preview_loaded = None
+        ParticleEditor(self, entry.name, data, save_particle, material_count,
+                       preview_loaded, animation_name)
 
     def _show_textures(self, parts: dict[str, bytes]) -> None:
         """Thumbnails of the pack's texture images: an effect's look lives there,
@@ -228,6 +315,39 @@ class EffectsViewer(EditorPanel):
             EffectAddDialog(self, self._project, self._changelog, self._entries,
                             lambda name: self._after_edit(name, f"Registered {name}."), preset=entry)
 
+    def _edit_registry(self) -> None:
+        entry = self._selected()
+        if entry is None or not entry.registered:
+            return
+        flags_text = simpledialog.askstring("Effect registry", "Raw flags (hex or decimal):",
+                                            initialvalue=f"0x{entry.flags:08X}", parent=self)
+        if flags_text is None:
+            return
+        chain_text = simpledialog.askstring("Effect registry", "Next effect in chain (blank for none):",
+                                            initialvalue=entry.next_in_chain or "", parent=self)
+        if chain_text is None:
+            return
+        try:
+            flags = int(flags_text.strip(), 0)
+            if not 0 <= flags <= 0xFFFFFFFF:
+                raise ValueError("Flags must be a 32-bit unsigned number.")
+            chain = chain_text.strip() or None
+            path = effects.registry_path(self._files)
+            records = effect_registry.read_effect_registry(path.read_bytes())
+            names = {record.eid_name for record in records}
+            if chain is not None and chain not in names:
+                raise ValueError(f"Unknown chain target: {chain}")
+            index = next(i for i, record in enumerate(records) if record.eid_name == entry.name)
+            records[index] = replace(records[index], flags=flags, next_in_chain=chain)
+            if chain is not None and entry.name in effect_registry.chain(records, chain):
+                raise ValueError("The chain would contain a cycle.")
+            self._project.write_keeping_original(path, effect_registry.build_effect_registry(records))
+        except (OSError, ValueError, StopIteration, IndexError) as exc:
+            messagebox.showerror("Effect registry", str(exc), parent=self)
+            return
+        self._changelog.append("Visual effects", f"Edited registry entry {entry.name}")
+        self._after_edit(entry.name, f"Edited registry entry {entry.name}.")
+
     def _replace_pack(self) -> None:
         entry = self._selected()
         if entry is None:
@@ -244,6 +364,38 @@ class EffectsViewer(EditorPanel):
             messagebox.showerror("Visual effects", str(exc), parent=self)
             return
         self._write_pack(entry, data, f"Replaced the pack of {entry.name}")
+
+    def _replace_part(self) -> None:
+        entry = self._selected()
+        if entry is None or not entry.has_pack:
+            return
+        source = filedialog.askopenfilename(parent=self, title=f"Replace a part of {entry.name}",
+                                            filetypes=[("Effect members", "*.g *.gs *.ga *.tpl"),
+                                                       ("All files", "*.*")])
+        if not source:
+            return
+        try:
+            source_path = Path(source)
+            ext = source_path.suffix.lower().lstrip(".")
+            if ext not in effects.PART_EXTENSIONS:
+                raise effects.EffectError("Choose a .g, .gs, .ga, or .tpl file.")
+            blob = source_path.read_bytes()
+            if ext == "g":
+                skeleton.read_skeleton_file(blob)
+            elif ext == "gs":
+                gs_file.read_gs(blob)
+            elif ext == "ga":
+                animation.read_animation_bytes(blob)
+                animation.read_particle_table_layout(blob)
+            else:
+                tpl.read_tpl_image_info(io.BytesIO(blob))
+            parts = effects.read_effect_pack(self._pack_file(entry).read_bytes())
+            data = effects.build_effect_pack(effects.replace_part(parts, ext, blob))
+        except (OSError, ValueError, IndexError, struct.error, effects.EffectError,
+                animation.AnimationError, gs_file.GsFileError, tpl.TplError) as exc:
+            messagebox.showerror("Visual effects", str(exc), parent=self)
+            return
+        self._write_pack(entry, data, f"Replaced {entry.name}.{ext}")
 
     def _replace_texture(self) -> None:
         entry = self._selected()

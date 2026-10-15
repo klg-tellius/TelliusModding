@@ -34,6 +34,9 @@ SEVERITIES = (ERROR, WARNING)
 FIRST_SPECIAL_CHAPTER = 90
 #: The chapter number that plays the ending; the story flow stops there.
 GAME_CLEARED = 32
+#: Slots of the clear history (party_data+0x3C4). append_chapter_clear_history_entry writes a 41st
+#: entry to slot -1 (over the event-flag bits for slots 64-95), so it is never kept.
+CLEAR_HISTORY_SLOTS = 40
 #: Retail ``ChapterData`` records between the story and the trial maps: 51, 52 and 58 name
 #: scripts that are not on the disc (leftovers), 80-82 are the tutorials. Their files and titles
 #: are only checked when the story flow leads to them.
@@ -286,6 +289,45 @@ def _check_scripts(project: ModProject, known: set, issues: list) -> None:
                                 f"Scripts/{path.name}", f"The script names {label}, which does not exist.", route))
 
 
+def _check_script_globals(project: ModProject, issues: list) -> None:
+    """``startup.cmb`` stays loaded under every other script, and global opcodes address the
+    engine's one 32-slot table absolutely: the two reservations must fit together (else the
+    later script's functions are never registered) and must not share a slot."""
+    from .formats.cmb import read_cmb_path
+    from .formats.cmb.compiler import GLOBAL_TABLE_SLOTS
+
+    scripts = project.extracted_dir / "files" / "Scripts"
+    startup_path = scripts / "startup.cmb"
+    if not startup_path.is_file():
+        return
+    try:
+        startup = read_cmb_path(startup_path)
+    except Exception:  # noqa: BLE001 - the file check reports unreadable scripts
+        return
+    startup_slots = startup.global_slots()
+    for path in sorted(scripts.glob("*.cmb")):
+        if path.name.lower() == "startup.cmb":
+            continue
+        try:
+            script = read_cmb_path(path)
+        except Exception:  # noqa: BLE001
+            continue
+        match = re.fullmatch(r"[Cc](\d+)", path.stem)
+        area = f"Chapter {match.group(1).zfill(2)}" if match else "Scripts"
+        route = ("chapter", match.group(1).zfill(2), "script") if match else ()
+        total = startup.global_count + script.global_count
+        if total > GLOBAL_TABLE_SLOTS:
+            issues.append(Issue(ERROR, area, f"Scripts/{path.name}",
+                                f"The script reserves {script.global_count} global slots and startup.cmb "
+                                f"{startup.global_count}; above {GLOBAL_TABLE_SLOTS} the game refuses to "
+                                "register the script's functions.", route))
+        shared = sorted(startup_slots & script.global_slots())
+        if shared:
+            issues.append(Issue(WARNING, area, f"Scripts/{path.name}",
+                                f"Global slot(s) {', '.join(map(str, shared))} are also used by startup.cmb; "
+                                "both scripts read and write the same word.", route))
+
+
 def _check_shops(project: ModProject, iids: set, issues: list) -> None:
     folder = profile_of(project).shop_folder(project.extracted_dir / "files")
     for path in sorted(folder.glob("*.bin")) if folder.is_dir() else []:
@@ -335,9 +377,16 @@ def validate_project(project: ModProject, flow=None) -> Report:
             if current == GAME_CLEARED:
                 break
             current = flow.next_of(current)
+        clears = len(reachable - {0, GAME_CLEARED})
+        if clears > CLEAR_HISTORY_SLOTS:
+            issues.append(Issue(WARNING, "Chapters", "story flow",
+                                f"The story flow clears {clears} chapters, but the save's clear history (the "
+                                f"ending's war record) holds {CLEAR_HISTORY_SLOTS}: clears after the "
+                                f"{CLEAR_HISTORY_SLOTS}th are not recorded."))
     titles = chapters.chapter_titles(project)
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
+    _check_script_globals(project, issues)
     _check_shops(project, iids, issues)
     return Report(sorted(issues, key=lambda i: (SEVERITIES.index(i.severity), i.area, i.where, i.message)))

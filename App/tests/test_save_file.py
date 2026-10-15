@@ -69,6 +69,18 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(b.header.resume_point, 4)
         self.assertTrue(b.flags_stale)
 
+    def test_pal_block_magic_is_read_and_kept(self):
+        raw = bytearray(self.raw)
+        raw[0x40:0x44] = b"FE8X"                      # PAL: "FE8X", version 0x20050801
+        struct.pack_into(">I", raw, 0x44, 0x20050801)
+        struct.pack_into(">I", raw, 0x50, zlib.crc32(bytes(raw[0x70:])))
+        gci = build_gci(bytes(raw))
+        save = sf.SaveFile.from_bytes(gci)
+        block = save.blocks[0]
+        self.assertTrue(block.decoded, block.error)
+        self.assertEqual((block.header.magic, block.header.version), (b"FE8X", 0x20050801))
+        self.assertEqual(save.to_bytes(), gci)
+
     def test_round_trip_is_byte_exact(self):
         self.assertEqual(self.block.build(), self.raw)
         self.assertEqual(self.save.to_bytes(), self.save.data)
@@ -79,6 +91,41 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from(">I", out, 0x50)[0], zlib.crc32(out[0x70:0x4000]))
         again = sf.SaveBlock.parse(out, 0, 0x4000)
         self.assertEqual(again.party.gold, 99)
+
+    def test_named_options_preserve_other_bits_and_round_trip(self):
+        party = self.block.party
+        options = bytearray(party.options)
+        options[2] = 0x15
+        party.options = bytes(options)
+        self.assertFalse(party.option_enabled(0x01))
+        self.assertFalse(party.option_enabled(0x10))
+        party.set_option_enabled(0x10, True)
+        self.assertEqual(party.options[2], 0x05)
+        party.set_option_enabled(0x01, True)
+        self.assertEqual(party.options[2], 0x04)
+        party.set_option_enabled(0x10, False)
+        self.assertEqual(party.options[2], 0x14)
+        again = sf.SaveBlock.parse(self.block.build(), 0, 0x4000)
+        self.assertTrue(again.crc_ok)
+        self.assertEqual(again.party.options[2], 0x14)
+
+    def test_named_party_and_unused_unit_fields_round_trip(self):
+        party = self.block.party
+        party.reinforcement_uses = 2
+        party.faction_command_records = bytes((1, 2, 8, 9, 3, 4, 255, 255))
+        party.set_bm_value(4, -123)
+        unit = self.block.units[0]
+        unit.unused_19d = 27
+        unit.unused_230 = 1234
+        unit.unused_232 = 5678
+        unit.unused_235 = 7
+        again = sf.SaveBlock.parse(self.block.build(), 0, 0x4000)
+        self.assertTrue(again.crc_ok)
+        self.assertEqual(again.party.reinforcement_uses, 2)
+        self.assertEqual(again.party.faction_command_records, party.faction_command_records)
+        self.assertEqual(again.party.bm_value(4), -123)
+        self.assertEqual((again.units[0].unused_19d, again.units[0].unused_230,
+                          again.units[0].unused_232, again.units[0].unused_235), (27, 1234, 5678, 7))
 
     def test_adding_a_unit_moves_the_later_chunks(self):
         clone = sf.SaveBlock.parse(self.raw, 0, 0x4000).units[1]
@@ -144,3 +191,62 @@ class RealSaveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForgePoolTests(unittest.TestCase):
+    def test_a_full_forge_pool_is_reported(self):
+        save = sf.SaveFile.from_bytes(build_gci(build_block([unit_record(1, 2)])))
+        block = save.blocks[0]
+        self.assertEqual(sf.validate(block), [])
+        for record in block.forges:
+            record.allocated = 1
+        problems = sf.validate(block)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("convoy slots 198-200", problems[0])
+
+class PlayCopyTests(unittest.TestCase):
+    """The run copy for Play in Dolphin: block 0 (slot 0, sequence 9), an older block of the
+    same slot at location 1, and a checkpoint of that slot at location 6."""
+
+    def setUp(self):
+        newest = build_block([unit_record(1, 2)])
+        older = bytearray(newest)
+        struct.pack_into(">I", older, 0x48, 3)
+        struct.pack_into(">I", older, 0x50, zlib.crc32(bytes(older[0x70:])))
+        checkpoint = bytearray(0x6000)
+        checkpoint[:0x4000] = newest
+        checkpoint[0x60], checkpoint[0x63], checkpoint[0x65] = 3, 0, 8
+        struct.pack_into(">I", checkpoint, 0x4C, 0x6000)
+        struct.pack_into(">I", checkpoint, 0x50, zlib.crc32(bytes(checkpoint[0x70:])))
+        gci = bytearray(build_gci(newest))
+        for (rel, _), data in ((sf.BLOCK_LOCATIONS[1], older), (sf.BLOCK_LOCATIONS[6], checkpoint)):
+            at = sf.GCI_HEADER_SIZE + rel
+            gci[at:at + len(data)] = data
+        self.save = sf.SaveFile.from_bytes(bytes(gci))
+
+    def test_chapter_start_with_the_saved_army(self):
+        data = sf.play_copy(self.save, 0, chapter=12)
+        copy = sf.SaveFile.from_bytes(data)
+        loaded = copy.loaded_blocks()
+        self.assertEqual([b.location for b in loaded], [0])           # older block and checkpoint gone
+        block = loaded[0]
+        self.assertTrue(block.crc_ok)
+        self.assertEqual((block.header.chapter, block.header.resume_point), (12, 4))
+        self.assertEqual((block.party.chapter, block.party.resume_point, block.party.turn), (12, 4, 1))
+        self.assertEqual(block.party.gold, 1234)
+        self.assertEqual(len(block.unit_slots()), 1)
+
+    def test_as_saved_keeps_the_block_and_leaves_the_editor_copy_alone(self):
+        before = self.save.blocks[0].header.chapter
+        copy = sf.SaveFile.from_bytes(sf.play_copy(self.save, 0))
+        self.assertEqual(copy.loaded_blocks()[0].header.chapter, before)
+        sf.play_copy(self.save, 0, chapter=20)
+        self.assertEqual(self.save.blocks[0].header.chapter, before)
+
+    def test_an_older_block_is_the_one_loaded_when_chosen(self):
+        copy = sf.SaveFile.from_bytes(sf.play_copy(self.save, 1, chapter=7))
+        self.assertEqual([(b.location, b.header.chapter) for b in copy.loaded_blocks()], [(1, 7)])
+
+    def test_checkpoints_are_refused(self):
+        with self.assertRaises(ValueError):
+            sf.play_copy(self.save, 2)

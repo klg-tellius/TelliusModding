@@ -115,18 +115,18 @@ class DeploymentEditor(EditorPanel):
 
         button_row = ttk.Frame(right)
         button_row.pack(fill="x", pady=(8, 0))
-        self._save_button = ttk.Button(button_row, text="Save Chapter", command=self._save, state="disabled")
+        self._save_button = ttk.Button(button_row, text="↥  Save", width=8, command=self._save, state="disabled")
         self._save_button.pack(side="left")
-        ttk.Button(button_row, text="Export Excel…", command=self._export_excel).pack(side="left", padx=(8, 0))
-        ttk.Button(button_row, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
+        ttk.Button(button_row, text="⇩  Export", width=9, command=self._export_excel).pack(side="left", padx=(4, 0))
+        ttk.Button(button_row, text="⇧  Import", width=9, command=self._import_excel).pack(side="left", padx=(4, 0))
         self._add_unit_button = ttk.Button(
-            button_row, text="Add Unit (duplicate selected)", command=self._add_unit, state="disabled"
+            button_row, text="＋  Unit", width=8, command=self._add_unit, state="disabled"
         )
-        self._add_unit_button.pack(side="left", padx=(6, 0))
-        self._delete_unit_button = ttk.Button(button_row, text="Delete Unit", command=self._delete_unit, state="disabled")
-        self._delete_unit_button.pack(side="left", padx=(6, 0))
+        self._add_unit_button.pack(side="left", padx=(4, 0))
+        self._delete_unit_button = ttk.Button(button_row, text="−  Unit", width=8, command=self._delete_unit, state="disabled")
+        self._delete_unit_button.pack(side="left", padx=(4, 0))
         self._status_label = ttk.Label(button_row, text="", style="Muted.TLabel")
-        self._status_label.pack(side="left", padx=(8, 0))
+        self._status_label.pack(side="left", padx=(4, 0))
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:

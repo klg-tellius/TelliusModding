@@ -93,7 +93,8 @@ class BattleTablesProjectTests(unittest.TestCase):
         self.project = ModProject.create(Path(tmp.name), "Tables", Game.PATH_OF_RADIANCE)
         files = self.project.extracted_dir / "files"
         files.mkdir(parents=True, exist_ok=True)
-        entries = [("xwp/ALONDITE.dbx", zdbx.encode_dbx(SWORD)), ("zdbx/skill.dbx", b"{}")]
+        entries = [("xwp/ALONDITE.dbx", zdbx.encode_dbx(SWORD)),
+                   ("ztex/sample.tpl", b"\x00\xfftexture"), ("zdbx/skill.dbx", b"{}")]
         (files / "zdbx.cmp").write_bytes(zdbx.build_zdbx_archive(entries))
 
     def test_edit_restore_add_remove(self):
@@ -118,6 +119,39 @@ class BattleTablesProjectTests(unittest.TestCase):
     def test_unencodable_text(self):
         with self.assertRaises(ProjectError):
             battle_tables.write_entry(self.project, "xwp/ALONDITE.dbx", chr(0x1F600))
+
+    def test_inventory_and_restore_deleted_original(self):
+        name = "xwp/ALONDITE.dbx"
+        self.assertEqual(battle_tables.inventory(self.project)[name], "original")
+        battle_tables.remove_entry(self.project, name)
+        self.assertEqual(battle_tables.inventory(self.project)[name], "deleted")
+        self.assertTrue(battle_tables.is_modified(self.project, name))
+        battle_tables.restore_entry(self.project, name)
+        self.assertEqual(battle_tables.read_entry(self.project, name), SWORD)
+        self.assertEqual(battle_tables.inventory(self.project)[name], "original")
+
+    def test_add_edit_delete_preserves_unrelated_entries(self):
+        path = "xcam/new_script.dbx"
+        before = zdbx.read_zdbx_files((self.project.extracted_dir / "files" / "zdbx.cmp").read_bytes())
+        battle_tables.add_entry(self.project, path, "{\r\n\tclass\tCameraAnime\r\n}\r\n")
+        self.assertEqual(battle_tables.inventory(self.project)[path], "added")
+        battle_tables.write_entry(self.project, path, "# edited\r\n")
+        self.assertEqual(battle_tables.read_entry(self.project, path), "# edited\r\n")
+        battle_tables.remove_entry(self.project, path)
+        self.assertNotIn(path, battle_tables.inventory(self.project))
+        after = zdbx.read_zdbx_files((self.project.extracted_dir / "files" / "zdbx.cmp").read_bytes())
+        self.assertEqual(after, before)
+
+    def test_add_rejects_unsafe_duplicate_or_unencodable(self):
+        for path in ("../escape.dbx", "/x.dbx", "xwp\\bad.dbx", "xwp/file.tpl", "xwp/../bad.dbx"):
+            with self.subTest(path=path), self.assertRaises(ProjectError):
+                battle_tables.add_entry(self.project, path, "text")
+        with self.assertRaises(ProjectError):
+            battle_tables.add_entry(self.project, "xwp/alondite.dbx", "text")
+        with self.assertRaises(ProjectError):
+            battle_tables.add_entry(self.project, "xwp/NEW.dbx", chr(0x1F600))
+        with self.assertRaises(ProjectError):
+            battle_tables.add_entry(self.project, "xwp/NEW.dbx", " ")
 
 
 if __name__ == "__main__":

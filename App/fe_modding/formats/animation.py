@@ -82,11 +82,13 @@ none) with one track per ``.gs`` material, each a ``u16`` key count, a
 value (0-255) replaces the material's alpha, which is how effects fade in
 and out. Slot 2 is laid out the same with RGB565 colours
 (``interpolate_keyframe_color``; no vanilla effect uses it), slots 3/4 are
-the U/V scroll tracks (``interpolate_animation_channel_uv_scale_u``/``_v``)
-and slot 8 the particle emitters (``update_actor_material_runtime``). The
-other slots appear on effect (``yme/``) and scenery (``zbg/``, ``zmap/``)
-animations and are kept as raw bytes. A footer whose nine slots are all
-zero is a valid empty footer.
+the U/V scroll tracks (``interpolate_animation_channel_uv_scale_u``/``_v``), read only by
+the map water shader ``setup_map_texture_material_multi_pass`` as scroll speeds (never by effects)
+and slot 8 the particle emitters (``update_actor_material_runtime``).
+:func:`read_particle_table_layout` exposes its confirmed header, emitter,
+stage and curve/key ranges; the unresolved controls and original block remain
+raw. Other slots on effect (``yme/``) and scenery (``zbg/``, ``zmap/``)
+animations remain raw. A footer whose nine slots are all zero is valid.
 """
 
 from __future__ import annotations
@@ -248,7 +250,8 @@ class GaAnimation:
 
     @property
     def length_in_frames(self) -> int:
-        return max((c.end_frame for c in self.curves), default=0)
+        """The engine's playback end frame, including footer-only effects."""
+        return self.header.end_frame
 
 
 MATERIAL_ALPHA_SLOT = 1
@@ -299,6 +302,191 @@ def read_material_tracks(block: bytes) -> dict[int, MaterialTrack]:
         values = struct.unpack(f">{2 * keys}h", block[offset + 4:offset + 4 + 4 * keys])
         tracks[index] = MaterialTrack(mode, tuple(zip(values[0::2], values[1::2])))
     return tracks
+
+
+@dataclass(frozen=True)
+class ParticleEmitterLayout:
+    """Confirmed offsets in one slot-8 particle emitter (GParticle.cpp reader)."""
+
+    record_offset: int
+    name_path: str
+    local_index: int  # record +4; equals emitter position in tested effect packs
+    first_stage_index: int  # record +8; cumulative stages in preceding emitters
+    material_index: int
+    draw_flags: int
+    unresolved_control: int  # emitter +0x0C; no runtime reader identified
+    initial_scale_st: tuple[float, float]
+    initial_rotation_degrees: float
+    stage_count: int
+    stages_offset: int
+    stage_curves_offset: int
+    curves_offset: int
+    keys_offset: int
+    curve_count: int
+
+
+@dataclass(frozen=True)
+class ParticleTableLayout:
+    """Structural view of the particle table; the original bytes remain untouched."""
+
+    block_offset: int
+    emitters: tuple[ParticleEmitterLayout, ...]
+
+
+@dataclass(frozen=True)
+class ParticleStageLayout:
+    """One emitter stage's frame window, initial position and curve range."""
+
+    local_index: int  # source stage +0; equals stage position on every tested effect
+    global_index: int  # curve-range table +0; checked against runtime counter
+    start_frame: int
+    end_frame: int
+    initial_position: tuple[float, float, float]
+    first_curve: int
+    curve_count: int
+
+
+PARTICLE_CURVE_CHANNELS = (
+    "velocity X", "velocity Y", "velocity Z", "scale S+T", "alpha",
+    "red", "green", "blue", "scale S", "scale T", "rotation Z",
+)
+
+
+@dataclass(frozen=True)
+class ParticleCurveLayout:
+    """Runtime-read curve channel, scale and key range."""
+
+    channel: int
+    channel_name: str
+    scale_shift: int
+    last_key_frame: int  # descriptor +4; equals the final key's frame in tested packs
+    key_count: int
+    first_key: int
+
+
+def read_particle_curve_keys(data: bytes, emitter: ParticleEmitterLayout,
+                             curve: ParticleCurveLayout) -> tuple[tuple[int, float], ...]:
+    """Return the curve's frame/value keys in the units used by the runtime."""
+    offset = emitter.keys_offset + curve.first_key * 4
+    end = offset + curve.key_count * 4
+    if end > len(data):
+        raise AnimationError("Particle curve key range exceeds the animation file.")
+    divisor = 1 << curve.scale_shift
+    return tuple((frame, value / divisor)
+                 for frame, value in struct.iter_unpack(">Hh", data[offset:end]))
+
+
+def sample_particle_curve(keys: tuple[tuple[int, float], ...], frame: float) -> float:
+    """Clamp or linearly interpolate a particle channel at its local stage frame."""
+    if not keys:
+        return 0.0
+    if frame <= keys[0][0]:
+        return keys[0][1]
+    for (left_frame, left_value), (right_frame, right_value) in zip(keys, keys[1:]):
+        if frame < right_frame:
+            span = right_frame - left_frame
+            return left_value + (right_value - left_value) * (frame - left_frame) / span if span else right_value
+    return keys[-1][1]
+
+
+def read_particle_curve(data: bytes, emitter: ParticleEmitterLayout, index: int) -> ParticleCurveLayout:
+    """Read one curve descriptor; uninterpreted descriptor bits stay in the source."""
+    if not 0 <= index < emitter.curve_count:
+        raise IndexError(index)
+    channel, flags, _padding, last_key_frame, key_count, first_key = struct.unpack_from(
+        ">HBBHHI", data, emitter.curves_offset + index * 12)
+    name = PARTICLE_CURVE_CHANNELS[channel] if channel < len(PARTICLE_CURVE_CHANNELS) else f"channel {channel}"
+    return ParticleCurveLayout(channel, name, flags & 0x3F, last_key_frame, key_count, first_key)
+
+
+def read_particle_stage(data: bytes, emitter: ParticleEmitterLayout, index: int) -> ParticleStageLayout:
+    """Read one validated emitter stage without allocating the entire stage table."""
+    if not 0 <= index < emitter.stage_count:
+        raise IndexError(index)
+    at = emitter.stages_offset + index * 12
+    range_at = emitter.stage_curves_offset + index * 8
+    local_index, start, end, x, y, z = struct.unpack_from(">Hhhhhh", data, at)
+    global_index, _reserved, first_curve, curve_count = struct.unpack_from(">HHHH", data, range_at)
+    return ParticleStageLayout(local_index, global_index, start, end, (x / 64, y / 64, z / 64),
+                               first_curve, curve_count)
+
+
+def read_particle_table_layout(data: bytes) -> ParticleTableLayout | None:
+    """Read the confirmed portion of footer slot 8 from a whole ``.ga`` file.
+
+    Offsets in this table refer to the start of the ``.ga``, rather than the
+    slot-8 block. Each emitter has 0x34 bytes, one 0x0C-byte stage per count,
+    one 8-byte curve range per stage, 0x0C-byte curve descriptors, and 4-byte
+    ``(frame: u16, value: s16)`` keys. The emitter's less understood settings
+    stay in the original bytes; this reader never rewrites them.
+    """
+    if len(data) < HEADER_SIZE:
+        raise AnimationError("Animation header is truncated.")
+    footer = struct.unpack_from(">I", data)[0]
+    if not footer:
+        return None
+    if footer + FOOTER_LEAD_IN_SIZE > len(data):
+        raise AnimationError("Animation footer is truncated.")
+    block = struct.unpack_from(">I", data, footer + 8 * 4)[0]
+    if not block:
+        return None
+    if block + 8 > len(data) or data[block:block + 4] != b"\x12\x34\x56\x78":
+        raise AnimationError("Particle table has no 0x12345678 header.")
+    count = struct.unpack_from(">H", data, block + 6)[0]
+    table_end = block + 8 + count * 0x34
+    if table_end > len(data):
+        raise AnimationError("Particle emitter table is truncated.")
+    emitters = []
+    for index in range(count):
+        rec = block + 8 + index * 0x34
+        name_ptr = struct.unpack_from(">I", data, rec)[0]
+        local_index = struct.unpack_from(">H", data, rec + 4)[0]
+        first_stage_index = struct.unpack_from(">H", data, rec + 8)[0]
+        material_index = struct.unpack_from(">h", data, rec + 0x0A)[0]
+        draw_flags = struct.unpack_from(">H", data, rec + 6)[0]
+        unresolved_control = struct.unpack_from(">H", data, rec + 0x0C)[0]
+        mode = draw_flags & 7
+        if mode == 4:
+            initial_scale_st = tuple(value / 64.0 for value in struct.unpack_from(">2h", data, rec + 0x16))
+        elif mode == 2:
+            scale = struct.unpack_from(">h", data, rec + 0x12)[0] / 64.0
+            initial_scale_st = (scale, scale)
+        elif mode == 1:
+            scale = struct.unpack_from(">h", data, rec + 0x0E)[0] / 64.0
+            initial_scale_st = (scale, scale)
+        else:
+            initial_scale_st = (1.0, 1.0)
+        initial_rotation_degrees = struct.unpack_from(">h", data, rec + 0x1A)[0] / 64.0
+        stages = struct.unpack_from(">H", data, rec + 0x1E)[0]
+        stages_ptr, stage_curves_ptr, curves_ptr, keys_ptr = struct.unpack_from(">4I", data, rec + 0x20)
+        if any(ptr < table_end or ptr > len(data) for ptr in (stages_ptr, stage_curves_ptr, curves_ptr, keys_ptr)):
+            raise AnimationError(f"Particle emitter {index} has an out-of-range table pointer.")
+        if stages_ptr + stages * 12 > len(data) or stage_curves_ptr + stages * 8 > len(data):
+            raise AnimationError(f"Particle emitter {index} has truncated stage tables.")
+        if curves_ptr > keys_ptr or (keys_ptr - curves_ptr) % 12:
+            raise AnimationError(f"Particle emitter {index} has an invalid curve table.")
+        curve_count = (keys_ptr - curves_ptr) // 12
+        for stage in range(stages):
+            first, length = struct.unpack_from(">HH", data, stage_curves_ptr + stage * 8 + 4)
+            if first + length > curve_count:
+                raise AnimationError(f"Particle emitter {index} has an invalid stage curve range.")
+        for curve in range(curve_count):
+            curve_at = curves_ptr + curve * 12
+            key_count = struct.unpack_from(">H", data, curve_at + 6)[0]
+            first_key = struct.unpack_from(">I", data, curve_at + 8)[0]
+            if keys_ptr + (first_key + key_count) * 4 > len(data):
+                raise AnimationError(f"Particle emitter {index} has an invalid key range.")
+        if not table_end <= name_ptr < len(data):
+            raise AnimationError(f"Particle emitter {index} has an invalid name pointer.")
+        end_name = data.find(b"\0", name_ptr)
+        if end_name < 0:
+            raise AnimationError(f"Particle emitter {index} has an unterminated name path.")
+        name_path = data[name_ptr:end_name].decode("shift_jis", errors="replace")
+        emitters.append(ParticleEmitterLayout(rec, name_path, local_index, first_stage_index,
+                                              material_index, draw_flags, unresolved_control, initial_scale_st,
+                                              initial_rotation_degrees, stages,
+                                              stages_ptr, stage_curves_ptr, curves_ptr, keys_ptr, curve_count))
+    return ParticleTableLayout(block, tuple(emitters))
 
 
 def read_event_block(block: bytes) -> list[EventKey]:

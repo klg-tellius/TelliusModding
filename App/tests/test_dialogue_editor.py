@@ -4,10 +4,33 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from PIL import Image
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fe_modding.formats import dialogue_notation as n, fe10_message as rd
 from fe_modding.formats import fe9_message_scene as ms
 from fe_modding.formats.message import Message
+
+
+class LayoutExampleTests(unittest.TestCase):
+    def test_sample_faces_are_visually_distinct(self):
+        from fe_modding.gui.layout_examples import distinct_sample_faces
+
+        class Face:
+            def __init__(self, color):
+                self.color = color
+
+            def compose(self, **_kwargs):
+                return Image.new("RGBA", (2, 2), self.color)
+
+        class Assets:
+            faces = {"FID_ASHNARD": None, "FID_ASHNARD_ALT": None,
+                     "FID_IKE": None, "NOT_A_FACE": None}
+
+            def face(self, fid):
+                return Face("red" if "ASHNARD" in fid else "blue")
+
+        self.assertEqual(distinct_sample_faces(Assets()), ["FID_ASHNARD", "FID_IKE"])
 
 
 class NotationTests(unittest.TestCase):
@@ -145,6 +168,52 @@ class EditorTests(unittest.TestCase):
         editor._flush_edit()
         self.assertTrue(editor._messages[0].text.endswith('$F2'))
 
+    def test_scene_dropdowns_add_at_start_update_existing_and_search_backgrounds(self):
+        editor = self.editor
+        editor._scene_layout_choice.set("Two-box talk")
+        editor._scene_layout_box.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(editor._messages[0].text.startswith(ms.to_raw("$R上下会話|")))
+        with patch.object(editor._scene, "_pick_background", return_value="村-崖") as picker:
+            editor._search_scene_background()
+        picker.assert_called_once_with("")
+        self.assertEqual(editor._scene_background_choice.get(), "村-崖")
+        self.assertTrue(editor._messages[0].text.startswith(ms.to_raw("$R上下会話|$B村-崖|")))
+
+        editor._scene_layout_choice.set("Background scene")
+        editor._scene_layout_box.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(editor._messages[0].text.startswith(ms.to_raw("$R背景会話|$B村-崖|")))
+        self.assertEqual(editor._text_widget.get("1.0", "end-1c").count("<Layout:"), 1)
+        self.assertEqual(editor._text_widget.get("1.0", "end-1c").count("<Background:"), 1)
+
+        editor._select_index(1)
+        self.assertEqual(editor._scene_layout_choice.get(), "")
+        self.assertEqual(editor._scene_background_choice.get(), "")
+        editor._select_index(0)
+        self.assertEqual(editor._scene_layout_choice.get(), "Background scene")
+        self.assertEqual(editor._scene_background_choice.get(), "村-崖")
+
+    def test_background_dropdown_updates_and_clears_its_action(self):
+        editor = self.editor
+        editor._scene_background_choice.set("Village")
+        editor._scene_background_box.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(editor._messages[0].text.startswith(ms.to_raw("$BVillage|")))
+        editor._scene_background_choice.set("Castle")
+        editor._scene_background_box.event_generate("<<ComboboxSelected>>")
+        self.assertTrue(editor._messages[0].text.startswith(ms.to_raw("$BCastle|")))
+        self.assertEqual(editor._text_widget.get("1.0", "end-1c").count("<Background:"), 1)
+        editor._scene_background_choice.set("")
+        editor._scene_background_box.event_generate("<<ComboboxSelected>>")
+        self.assertNotIn("<Background:", editor._text_widget.get("1.0", "end-1c"))
+
+    def test_scene_dropdown_updates_existing_action_in_place(self):
+        editor = self.editor
+        editor._replace_selection("Before <Layout:上下会話> after", whole=True)
+        self.assertEqual(editor._scene_layout_choice.get(), "Two-box talk")
+        editor._scene_layout_choice.set("Background scene")
+        editor._set_scene_action("Layout")
+        self.assertEqual(editor._text_widget.get("1.0", "end-1c"),
+                         "Before <Layout:背景会話> after")
+
     def test_invalid_draft_survives_switch_and_blocks_save(self):
         editor = self.editor
         original = editor._messages[0].text
@@ -192,21 +261,20 @@ class EditorTests(unittest.TestCase):
             span = doc.at_byte(positions[-1])
             self.assertEqual(doc.text[span.start:span.end], '<Wait>')
 
-    def test_import_export_and_undo(self):
+    def test_chapter_export_and_import(self):
         editor = self.editor
-        source = Path(self.temp.name) / 'source.txt'
         target = Path(self.temp.name) / 'export.txt'
-        source.write_text('<Seat:2>Hello<Wait>', encoding='utf-8')
-        before = editor._text_widget.get('1.0', 'end-1c')
-        with patch('fe_modding.gui.dialogue_editor.filedialog.askopenfilename', return_value=str(source)), patch('fe_modding.gui.dialogue_editor.messagebox.askyesnocancel', return_value=True):
-            editor._import_text()
-        self.assertEqual(editor._messages[0].text, '$F2Hello$K')
         with patch('fe_modding.gui.dialogue_editor.filedialog.asksaveasfilename', return_value=str(target)):
-            editor._export_text()
-        self.assertEqual(target.read_text(encoding='utf-8'), source.read_text(encoding='utf-8'))
-        editor._text_widget.edit_undo()
-        editor._flush_edit()
-        self.assertEqual(editor._text_widget.get('1.0', 'end-1c'), before)
+            editor._export_chapter()
+        blocks = editor.parse_chapter_export(target.read_text(encoding='utf-8'))
+        self.assertEqual(len(blocks), len(editor._messages))
+        first_id = blocks[0][0]
+        edited = target.read_text(encoding='utf-8').replace(
+            f'=== {first_id} ===\n{blocks[0][1]}', f'=== {first_id} ===\n<Seat:2>Hello<Wait>', 1)
+        target.write_text(edited, encoding='utf-8')
+        with patch('fe_modding.gui.dialogue_editor.filedialog.askopenfilename', return_value=str(target)):
+            editor._import_chapter()
+        self.assertEqual(editor._messages[0].text, '$F2Hello$K')
 
 
 if __name__ == '__main__':

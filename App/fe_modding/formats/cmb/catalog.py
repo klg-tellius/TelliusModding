@@ -27,8 +27,8 @@ from typing import Optional
 
 # -- triggers ---------------------------------------------------------------
 
-PHASES = {0: "player", 1: "enemy", 3: "partner"}
-SIDES = {0: "player", 1: "enemy"}
+PHASES = {0: "player", 1: "enemy", 2: "ally", 3: "partner", 0xFFFF: "any"}
+SIDES = {0: "player", 1: "enemy", 2: "ally", 3: "partner", 0xFFFF: "any"}
 ACTIONS = {9: "visit", 11: "door", 12: "chest", 13: "seize", 14: "escape", 37: "destroy_house", 41: "arrive", 44: "other"}
 PHASES_FE10 = {0: "player", 1: "enemy", 2: "other"}
 SIDES_FE10 = {0: "player", 1: "enemy", 2: "other"}
@@ -73,10 +73,11 @@ TRIGGERS: dict[int, TriggerKind] = {t.type: t for t in [
         _p("turn_to", "int", "Last turn"),
         _p("phase", "phase", "Phase"),
     )),
-    TriggerKind(4, "on_area", "A unit enters a zone", (
+    TriggerKind(4, "on_area", "A unit acts inside a zone", (
         _p("x1", "int", "Zone left X"), _p("y1", "int", "Zone top Y"),
-        _p("x2", "int", "Zone right X"), _p("y2", "int", "Zone bottom Y"),
-        _p("side", "side", "Which side triggers it"),
+        _p("x2", "int", "Zone right X (0 counts from the right edge)"),
+        _p("y2", "int", "Zone bottom Y (0 counts from the bottom edge)"),
+        _p("side", "side", "Which army triggers it (any = all armies)"),
         _p("name", "label", "Event name (debug label)"),
     )),
     TriggerKind(5, "on_location", "A unit acts at a map location", (
@@ -216,7 +217,8 @@ class ExternSig:
     group: str = ""  # registration hub / defining script
     args: list = field(default_factory=list)  # [{"name":..., "kind":...}]
     uses: int = 0
-    note: str = ""
+    note: str = ""  # what the function does
+    returns: str = ""  # what it returns, when that is worth testing
 
     def arg_kind(self, i: int) -> str:
         return self.args[i]["kind"] if i < len(self.args) else "int"

@@ -8,6 +8,7 @@ subclass names the folder, parses an entry and says which fields exist."""
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .. import battle_tables
@@ -72,6 +73,11 @@ class BattleTableViewer(EditorPanel):
     def note(self) -> str:
         return ""
 
+    def model_of(self, name: str) -> tuple[str, Path] | str | None:
+        """The 3D model to preview for entry ``name``: (label, pack), or a
+        sentence saying why there is none; None: the page has no preview."""
+        return None
+
     def entry_path(self, name: str) -> str:
         return self._paths.get(name) or f"{self.folder}/{name}{self.entry_suffix}"
 
@@ -132,6 +138,10 @@ class BattleTableViewer(EditorPanel):
             ttk.Button(actions, text=f"Add {self.noun}...", command=self._add).pack(side="left", padx=(6, 0))
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=360, justify="left")
         self._status.pack(anchor="w", pady=(8, 0))
+        self._preview = None  # the 3D preview, made when an entry first has a model
+        self._preview_parent = right
+        self._preview_cache: dict[str, object] = {}
+        self._preview_pending: str | None = None
 
     # -- list -----------------------------------------------------------------
     def _load(self) -> None:
@@ -181,6 +191,49 @@ class BattleTableViewer(EditorPanel):
         self._apply_btn.config(state="normal")
         self._restore_btn.config(state="normal")
         self._status.config(text="")
+        if self._preview_pending is None:
+            self.after(150, self._render_preview)
+        self._preview_pending = name
+
+    def _render_preview(self) -> None:
+        """Show the selected entry's model (the latest selection, once the arrow keys rest)."""
+        name, self._preview_pending = self._preview_pending, None
+        if name is None or not self.winfo_exists():
+            return
+        target = self.model_of(name)
+        if target is None:
+            return
+        if self._preview is None:
+            from .model_viewer import _ModelPreview  # heavy: loaded when first needed
+
+            self._preview = _ModelPreview(self._preview_parent, mesh_only=True)
+            self._preview.pack(fill="both", expand=True, pady=(10, 0))
+        if isinstance(target, str):
+            self._preview.show(None, target)
+            return
+        label, pack = target
+        loaded = self._preview_cache.get(label)
+        if loaded is None:
+            from .model_viewer import _load_model_set
+
+            self.configure(cursor="watch")
+            self.update_idletasks()
+            try:
+                loaded = _load_model_set(label, pack)
+            except Exception as exc:  # noqa: BLE001 - one unreadable model must not break the page
+                self._preview.show(None, f"Could not read {label}: {exc}")
+                return
+            finally:
+                self.configure(cursor="")
+            self._preview_cache[label] = loaded
+            while len(self._preview_cache) > 8:
+                self._preview_cache.pop(next(iter(self._preview_cache)))
+        self._preview.show(loaded)
+
+    def cleanup(self) -> None:
+        if self._preview is not None:
+            self._preview.cleanup()
+        super().cleanup()
 
     # -- edits ------------------------------------------------------------------
     def _apply(self) -> None:

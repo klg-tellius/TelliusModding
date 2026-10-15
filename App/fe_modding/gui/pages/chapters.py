@@ -6,10 +6,10 @@ overview of who is in it, what is said and which script events it has.
 Chapter IDs are disc file numbers (the Prologue is ``01``); titles come from
 the game's own text (``MCTnn``). A chapter with a mid-chapter map change has
 several map folders (``bmap06``, ``bmap06_2``): the **Phase** selector picks
-which one the Build, Settings and Battle scenes tabs show.
+which one the Build, Map settings, Chapter data and Battle scenes tabs show.
 
-The **Settings** tab (``chapter_settings.py``) edits the phase map's lighting,
-fog, grid colour and grid border, and the chapter's Game Data › Chapters record.
+The **Map settings** tab edits the phase map's lighting, fog, grid colour and
+grid border. The **Chapter data** tab edits the chapter's data record.
 
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
@@ -26,15 +26,15 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from ... import chapters, script_sources
+from ... import chapter_phase_ops, chapters, hub, hub_creation, script_sources
 from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
-from ...game_code import chapter_flow, chapter_jump
+from ...game_code import chapter_flow, chapter_jump, chapter_parts
 from ...formats.cmb.catalog import TRIGGERS
 from ...game_profile import CHAPTERS, profile_of
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
-from ..chapter_settings import ChapterSettingsPanel
+from ..chapter_settings import ChapterDataPanel, MapSettingsPanel
 from ..deployment_editor import DeploymentEditor
 from ..dialogue_editor import DialogueEditor
 from ..map_builder import MapBuilder
@@ -42,12 +42,13 @@ from ..map_editor import MapEditor
 from ..script_editor import ScriptEditor
 from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
-from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
+from ..widgets import Card, CardGrid, Link, ScrollFrame, info, section_header
 
-TABS = ["overview", "build", "settings", "dialogue", "script", "shops", "battle"]
+TABS = ["overview", "build", "map_settings", "chapter_data", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
-TAB_ALIASES = {"map": "build", "deployment": "build"}
-TAB_LABELS = {"overview": "Overview", "build": "Build", "settings": "Settings", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
+TAB_ALIASES = {"map": "build", "deployment": "build", "settings": "map_settings"}
+TAB_LABELS = {"overview": "Overview", "build": "Build", "map_settings": "Map settings",
+              "chapter_data": "Chapter data", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
               "battle": "Battle scenes"}
 
 
@@ -67,6 +68,18 @@ def _flow_label(chapter: int, titles: dict) -> str:
     return f"{chapter:02d} · {chapters.chapter_display_title(f'{chapter:02d}', titles)}"
 
 
+def _part_folders(project, chapter_id: str, phases, source: str | None = None) -> dict[str, int]:
+    if len(phases) < 2:
+        return {}
+    try:
+        if source is None:
+            path = script_sources.chapter_script(project, chapter_id)
+            source = script_sources.peek(project, path) if path else ""
+        return chapter_phase_ops.playable_part_folders(source, phases)
+    except (OSError, ModdingError, ValueError):
+        return {}
+
+
 class ChaptersHub(Page):
     kind = "chapters"
 
@@ -75,6 +88,9 @@ class ChaptersHub(Page):
         top = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 8))
         top.pack(fill="x")
         ttk.Label(top, text="Chapters", style="Title.TLabel").pack(side="left")
+        info(top, "The number in a card's corner is the chapter's place in the story. An added chapter starts "
+                  "as a copy of another one; each chapter's Overview sets what comes next.").pack(
+            side="left", padx=(8, 0), pady=(8, 0))
         self._query = tk.StringVar()
         search = ttk.Entry(top, textvariable=self._query, width=30)
         search.pack(side="right")
@@ -83,23 +99,18 @@ class ChaptersHub(Page):
         self._scroll = ScrollFrame(self, padding=(28, 4, 28, 28))
         self._scroll.pack(fill="both", expand=True)
         body = self._scroll.body
-        self._actions = CardGrid(body, card_width=260)
+        self._actions = CardGrid(body, card_width=285)
         self._actions.pack(fill="x")
         self._story_header = section_header(body, "Story", "in the order a new game plays them")
         self._story_header.pack(anchor="w", pady=(20, 8), fill="x")
-        self._story = CardGrid(body, card_width=260)
+        self._story = CardGrid(body, card_width=285)
         self._story.pack(fill="x")
         self._other_header = section_header(body, "Other chapters",
                                             "not played in the story: trial maps, tutorials, unused records "
                                             "and added chapters no chapter leads to")
         self._other_header.pack(anchor="w", pady=(20, 8), fill="x")
-        self._other = CardGrid(body, card_width=260)
+        self._other = CardGrid(body, card_width=285)
         self._other.pack(fill="x")
-        self._note = ttk.Label(body, style="Muted.TLabel", wraplength=900, justify="left",
-                               text="Disc numbers are the game's chapter numbers (the Prologue is 01). An added "
-                                    "chapter starts as a copy of another one; each chapter's Overview sets what "
-                                    "comes next.")
-        self._note.pack(anchor="w", pady=(16, 0))
         self._built_for = None
         self._keys: dict = {}
 
@@ -131,8 +142,12 @@ class ChaptersHub(Page):
                  self._add_chapter),
                 (("+", "new campaign"), "New campaign…", "Several chapters and characters at once", "+",
                  self._new_campaign),
-                (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order)):
-            self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=260,
+                (("+", "story order"), "Story order…", "Reorder the chapters you added", "↕", self._story_order),
+                (("+", "hub setup"), *(("Edit hub…", "Open the hub chapter: its map, events and links")
+                                        if hub.hub_chapter(self.project) is not None else
+                                        ("Create hub…", "A hub chapter from a template, with links to chapters")),
+                 "◎", self._hub_setup)):
+            self._actions.add(key, Card(self._actions, title=title, subtitle=subtitle, icon=icon, width=285,
                                         on_click=command))
         self._actions.done()
 
@@ -147,22 +162,26 @@ class ChaptersHub(Page):
         other = [c for c in index.chapters if c.id not in position]
         for grid, rows in ((self._story, story), (self._other, other)):
             for c in rows:
-                chips = []
-                if c.id in position:
-                    chips.append((f"#{position[c.id]}", "accent_bg"))
+                counts = []
                 if c.message_count:
-                    chips.append(f"{c.message_count} messages")
+                    counts.append(f"{c.message_count} messages")
                 if c.units_by_difficulty:
-                    chips.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
-                if len(c.phases) > 1:
-                    chips.append((f"+{len(c.phases) - 1} phase{'s' if len(c.phases) > 2 else ''}", "accent_bg"))
+                    counts.append(f"{c.units_by_difficulty.get('n', max(c.units_by_difficulty.values()))} units")
+                if c.function_count:
+                    counts.append(f"{c.function_count} functions")
+                structure = []
+                if c.phases:
+                    structure.append(f"{len(c.phases)} map phase{'s' if len(c.phases) > 1 else ''}")
+                    parts = _part_folders(self.project, c.id, c.phases) if len(c.phases) > 1 else c.phases
+                    if len(parts) > 1:
+                        structure.append((f"{len(parts)} parts", "accent_bg"))
                 if not c.has_map:
-                    chips.append(("no map", "chip_named"))
+                    structure.append(("no map", "chip_named"))
                 key = (c.id, c.title)
                 self._keys[key] = True
                 grid.add(key, Card(grid, title=c.title,
-                                   subtitle=f"Disc {c.id}  ·  " + ", ".join(c.phases or ("no map folder",)),
-                                   chips=tuple(chips), width=260,
+                                   badge=f"#{position[c.id]}" if c.id in position else "",
+                                   chip_rows=(tuple(counts), tuple(structure)), width=285,
                                    on_click=lambda cid=c.id: self.shell.navigate(("chapter", cid))))
             grid.done()
         if other:
@@ -175,6 +194,110 @@ class ChaptersHub(Page):
         words = self._query.get().casefold().split()
         for grid in (self._actions, self._story, self._other):
             grid.filter(lambda key: key is None or all(w in f"{key[0]} {key[1]}".casefold() for w in words))
+
+    def _hub_setup(self) -> None:
+        """Edit hub: open the hub chapter's Build tab. Create hub: copy a template chapter
+        as the hub (the avatar alone in it), then open it there."""
+        current = hub.hub_chapter(self.project)
+        if current is not None and f"{current:02d}" in chapters.list_chapter_ids(self.project):
+            self.shell.navigate(("chapter", f"{current:02d}", "build", "hub"))
+            return
+        if profile_of(self.project).script_dialect != "fe9":
+            messagebox.showerror("Create hub", "Hubs currently support Path of Radiance.", parent=self)
+            return
+        from ...formats import dispo, fe8data, lz10, map_file, pak
+        from ..hub_dialog import CreateHubDialog
+
+        session = self.shell.session
+        if not session.available:
+            messagebox.showerror("Create hub", "This project has no FE8Data.bin.", parent=self)
+            return
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Create hub", f"Story flow is unavailable: {why}", parent=self)
+            return
+        ids = chapters.list_chapter_ids(self.project)
+        record_ids = {record.chapter_id for record in fe8data.read_chapter_data(session.data)}
+        playable = [cid for cid in ids if cid.isdigit() and int(cid) in record_ids]
+        free = chapters.free_chapter_ids(self.project, record_ids)
+        if not free:
+            messagebox.showerror("Create hub", "No free chapter number from 33 to 89.", parent=self)
+            return
+        titles = chapters.chapter_titles(self.project)
+        names = {pid: info.name for pid, info in getattr(self.shell.index, "by_pid", {}).items() if info.name}
+        used = set()
+        for cid in ids:
+            for folder in chapters.chapter_phases(self.project, cid):
+                deployment, _map = chapters.phase_paths(self.project, folder)
+                if deployment is not None:
+                    used.update(hub._deployment_pids(deployment)[0])
+        avatars = {f"{names.get(c.pid, c.pid)} ({c.pid})": c.pid
+                   for c in fe8data.read_fe8data(session.data).characters
+                   if c.pid and c.pid.startswith("PID_") and c.pid not in used}
+        if not avatars:
+            messagebox.showerror("Create hub", "No character is free for the hub's avatar. Create a character "
+                                 "that no chapter deploys first (Game Data › Characters).", parent=self)
+            return
+
+        def has_assets(cid):
+            paths = chapters.chapter_paths(self.project, cid)
+            return paths.map is not None and paths.deployment is not None and paths.script is not None
+
+        templates = {f"{chapters.chapter_display_title(cid, titles)} ({cid})": cid for cid in playable
+                     if len(chapters.chapter_phases(self.project, cid)) == 1 and has_assets(cid)}
+        if not templates:
+            messagebox.showerror("Create hub", "No single-phase chapter has map, deployment and script files.",
+                                 parent=self)
+            return
+        activations = {f"{chapters.chapter_display_title(cid, titles)} ({cid})": int(cid) for cid in playable
+                       if int(cid) not in (28, chapter_flow.GAME_CLEARED)}
+        dialog = CreateHubDialog(self, free=free, templates=templates, avatars=avatars, activations=activations)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        chapter, title, source_id, keep_map, size, avatar_pid, activation = dialog.result
+        start = None
+        if keep_map:  # the template's size, the avatar on its first player unit's tile
+            source = chapters.chapter_paths(self.project, source_id)
+            try:
+                packed = lz10.decompress(source.map.read_bytes())
+                entry = next(e for e in pak.read_pak_entries(packed) if e.name == "map.bin")
+                capacity = map_file.read_map_bytes(pak.read_pak_file_content(packed, entry)).capacity
+                size = capacity.x_size, capacity.y_size
+                units = lz10.decompress(source.deployment.read_bytes())
+                for entry in pak.read_pak_entries(units):
+                    if start is None and entry.name.startswith("dispos_"):
+                        doc = dispo.parse_dispo(pak.read_pak_file_content(units, entry))
+                        start = next(((u[dispo.FIELD["pos_x"]], u[dispo.FIELD["pos_y"]])
+                                      for section in doc.sections if "mikata" in section.name
+                                      for u in section.units), None)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Create hub", f"Could not read the template's map: {exc}", parent=self)
+                return
+        if start is None or not (0 <= start[0] < size[0] and 0 <= start[1] < size[1]):
+            start = size[0] // 2, size[1] // 2
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?", "Creating a hub saves FE8Data.bin, including its unsaved edits. Continue?",
+                parent=self):
+            return
+        try:
+            plan = hub_creation.create_chapter(self.project, session.data, source_id, chapter, title, *size,
+                                               avatar_pid, start, keep_map=keep_map)
+            session.data = plan.fe8data
+            session.changed(self)
+            session.save()
+            hub.save_draft(self.project, {"chapter": chapter, "activation_chapter": activation,
+                                          "avatar_pid": avatar_pid, "destinations": []})
+        except Exception as exc:  # noqa: BLE001 - show validation and codec failures together
+            messagebox.showerror("Could not create hub", str(exc), parent=self)
+            return
+        self.shell.changelog.append(f"Chapter {chapter:02d}", f"Created hub chapter from {source_id}")
+        self.shell.rebuild_index()
+        self._build()
+        page = self.shell.existing_page("chapter")
+        if page is not None:
+            page.refresh_chapter_lists()
+        self.shell.navigate(("chapter", f"{chapter:02d}", "build", "hub"))
 
     def _add_chapter(self) -> None:
         ids = chapters.list_chapter_ids(self.project)
@@ -316,6 +439,10 @@ class ChapterPage(Page):
         super().__init__(shell)
         self._chapter: str | None = None
         self._phase: str | None = None
+        self._phase_folders: list[str] = []
+        self._phase_navigation: list[str] = []
+        self._phase_labels: dict[str, str] = {}
+        self._phase_by_label: dict[str, str] = {}
         self._difficulty = "n"
         self._ids: list[str] = []
 
@@ -325,14 +452,20 @@ class ChapterPage(Page):
         left.pack(side="left", fill="x", expand=True)
         self._title = ttk.Label(left, text="", style="Title.TLabel")
         self._title.pack(anchor="w")
-        self._subtitle = ttk.Label(left, text="", style="Muted.TLabel")
-        self._subtitle.pack(anchor="w")
+        self._phase_status = ttk.Label(left, text="", style="Muted.TLabel")
+        self._phase_status.pack(anchor="w")
+
         right = ttk.Frame(header, style="Page.TFrame")
         right.pack(side="right")
         self._phase_var = tk.StringVar()
         self._phase_label = ttk.Label(right, text="Phase", style="Muted.TLabel")
-        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=12)
-        self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(self._phase_var.get()))
+        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=24)
+        self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(
+            self._phase_by_label.get(self._phase_var.get(), self._phase_var.get())))
+        self._previous_phase = ttk.Button(right, text="‹ Part", command=lambda: self._step_phase(-1))
+        self._next_phase = ttk.Button(right, text="Part ›", command=lambda: self._step_phase(1))
+        self._add_phase_button = ttk.Button(right, text="+ Phase…", command=self._add_phase)
+        self._remove_phase_button = ttk.Button(right, text="Remove phase…", command=self._remove_phase)
         self._prev = ttk.Button(right, text="‹ Previous", command=lambda: self._step(-1))
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
@@ -351,6 +484,7 @@ class ChapterPage(Page):
                                             on_navigate_to_character=lambda pid: shell.navigate(("character", pid)))
         self._dialogue = DialogueEditor(self._notebook, project, log)
         self._script = ScriptEditor(self._notebook, project, log)
+        self._script.add_listener(self._update_phase_status)
         self._shops = ShopEditor(self._notebook, project, log, index_provider=lambda: shell.index,
                                  session_provider=lambda: shell.session)
         # The Build tab edits the Map, Deployment and Script editors' data; it has none of its own,
@@ -361,14 +495,17 @@ class ChapterPage(Page):
                                  on_navigate_to_character=lambda pid: shell.navigate(("character", pid)),
                                  navigate=shell.navigate, script_editor=self._script,
                                  on_open_function=lambda name: shell.navigate(("chapter", self._chapter, "script", name)))
+        self._build.on_install_hub = self._install_hub
         # FE8Data.bin's battle-scene rows: edits go to the shared session (saved with every other
         # FE8Data.bin edit), so it isn't one of panels() either.
         self._battle = BattleScenePanel(self._notebook, project, log, session_provider=lambda: shell.session,
                                         map_editor=self._map)
-        # The phase map's settings (through the Build tab) and the chapter's FE8Data.bin record.
-        self._settings = ChapterSettingsPanel(self._notebook, self._build,
-                                              session_provider=lambda: shell.session, navigate=shell.navigate)
-        for key, panel in (("build", self._build), ("settings", self._settings), ("dialogue", self._dialogue),
+        # Map settings use Build's data; chapter data edits the shared FE8Data.bin session.
+        self._map_settings = MapSettingsPanel(self._notebook, self._build)
+        self._chapter_data = ChapterDataPanel(self._notebook, self._build,
+                                              session_provider=lambda: shell.session)
+        for key, panel in (("build", self._build), ("map_settings", self._map_settings),
+                           ("chapter_data", self._chapter_data), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops), ("battle", self._battle)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
@@ -380,7 +517,12 @@ class ChapterPage(Page):
 
     def flush(self) -> None:
         self._battle.flush()
-        self._settings.flush()
+        self._chapter_data.flush()
+
+    def cleanup(self) -> None:
+        self._map_settings.cleanup()
+        self._chapter_data.cleanup()
+        super().cleanup()
 
     def refresh_chapter_lists(self) -> None:
         for panel in self.panels():
@@ -445,39 +587,263 @@ class ChapterPage(Page):
         self._dialogue.select_chapter(paths.dialogue)
         self._script.select_chapter(paths.script)
         self._shops.select_chapter(chapter_id)
-        self._phase_combo.configure(values=phases)
-        if len(phases) > 1:
+        self._configure_phases(phases)
+        if profile_of(self.project).message_dialect != "fe10" and phases:
+            self._phase_label.pack(side="left", padx=(0, 6))
+            self._phase_combo.pack(side="left", padx=(0, 6))
+            self._previous_phase.pack(side="left", padx=(0, 3))
+            self._next_phase.pack(side="left", padx=(0, 10))
+            self._add_phase_button.pack(side="left", padx=(0, 4))
+            self._remove_phase_button.pack(side="left", padx=(0, 18))
+        elif len(phases) > 1:
             self._phase_label.pack(side="left", padx=(0, 6))
             self._phase_combo.pack(side="left", padx=(0, 18))
+            self._previous_phase.pack(side="left", padx=(0, 3))
+            self._next_phase.pack(side="left", padx=(0, 10))
+            self._add_phase_button.pack_forget()
+            self._remove_phase_button.pack_forget()
         else:
             self._phase_label.pack_forget()
             self._phase_combo.pack_forget()
+            self._previous_phase.pack_forget()
+            self._next_phase.pack_forget()
+            self._add_phase_button.pack_forget()
+            self._remove_phase_button.pack_forget()
         self._phase = None
         self._set_phase(phases[0] if phases else None)
+        self._build.set_chapter(chapter_id)
+        self._chapter_data.show_chapter(chapter_id, self._phase)
         self._update_header()
         self._render_overview()
         return True
 
-    def _set_phase(self, folder: str | None) -> None:
-        if folder == self._phase:
+    def _configure_phases(self, phases) -> None:
+        self._phase_folders = list(phases)
+        source = self._script.chapter_source() if self._script.showing_chapter_script else None
+        parts = _part_folders(self.project, self._chapter, phases, source)
+        self._phase_navigation = ([folder for folder, _part in sorted(parts.items(), key=lambda item: item[1])]
+                                  if len(parts) > 1 else list(phases))
+        self._phase_labels = {}
+        for number, folder in enumerate(phases, 1):
+            label = f"Part {parts[folder]}" if folder in parts else f"Map phase {number}"
+            self._phase_labels[folder] = f"{label} · {folder}"
+        self._phase_by_label = {label: folder for folder, label in self._phase_labels.items()}
+        self._phase_combo.configure(values=list(self._phase_by_label))
+        self._phase_label.configure(text="Parts" if len(parts) > 1 else "Map phase")
+        self._previous_phase.configure(text="‹ Part" if len(parts) > 1 else "‹ Phase")
+        self._next_phase.configure(text="Part ›" if len(parts) > 1 else "Phase ›")
+        self._update_phase_steps()
+
+    def _update_phase_steps(self) -> None:
+        position = self._phase_navigation.index(self._phase) if self._phase in self._phase_navigation else -1
+        self._previous_phase.configure(state="normal" if position > 0 else "disabled")
+        self._next_phase.configure(state="normal" if 0 <= position < len(self._phase_navigation) - 1 else "disabled")
+
+    def _step_phase(self, step: int) -> None:
+        if self._phase not in self._phase_navigation:
             return
-        self._phase = folder
-        self._phase_var.set(folder or "")
+        position = self._phase_navigation.index(self._phase) + step
+        if 0 <= position < len(self._phase_navigation):
+            self._set_phase(self._phase_navigation[position])
+
+    def _update_phase_status(self) -> None:
+        if (self._chapter is None or self._phase is None
+                or profile_of(self.project).message_dialect == "fe10"):
+            self._phase_status.configure(text="")
+            return
+        try:
+            source = self._script.chapter_source()
+            if source is None:
+                path = script_sources.chapter_script(self.project, self._chapter)
+                source = script_sources.peek(self.project, path) if path is not None else ""
+            status = chapter_phase_ops.part_setup_issues(source, self._phase)
+        except Exception:  # noqa: BLE001 - an invalid script has its own editor diagnostics
+            self._phase_status.configure(text="Could not inspect chapter part setup")
+            return
+        if status is None:
+            self._phase_status.configure(text="")
+        else:
+            part, issues = status
+            detail = "script links found" if not issues else "needs " + " and ".join(issues)
+            self._phase_status.configure(text=f"Part {part}: {detail}")
+
+    def _set_phase(self, folder: str | None) -> bool:
+        if folder == self._phase:
+            return True
+        previous = self._phase
+        if previous is not None:
+            dirty = [panel for panel in (self._map, self._deployment) if panel.dirty]
+            if dirty:
+                names = ", ".join(panel.display_name for panel in dirty)
+                if not messagebox.askyesno(
+                        "Discard phase changes?",
+                        f"{names} has unsaved changes. Discard them and switch phases?",
+                        icon="warning", parent=self):
+                    self._phase_var.set(getattr(self, "_phase_labels", {}).get(previous, previous))
+                    return False
+                for panel in dirty:
+                    panel._dirty = False
+        self._battle.flush()
+        self._chapter_data.flush()
         deployment, map_cmp = chapters.phase_paths(self.project, folder) if folder else (None, None)
-        self._deployment.select_chapter(deployment)
-        self._map.select_chapter(map_cmp)
+        old_deployment = self._deployment._current_path
+        old_map = self._map._current_path
+        if deployment is not None:
+            self._deployment.select_chapter(deployment)
+        if map_cmp is not None:
+            self._map.select_chapter(map_cmp)
+        if ((deployment is not None and self._deployment._current_path != deployment)
+                or (map_cmp is not None and self._map._current_path != map_cmp)):
+            if old_deployment is not None and old_deployment.exists():
+                self._deployment.select_chapter(old_deployment)
+            if old_map is not None and old_map.exists():
+                self._map.select_chapter(old_map)
+            self._phase_var.set(getattr(self, "_phase_labels", {}).get(previous, previous or ""))
+            return False
+        self._phase = folder
+        self._phase_var.set(self._phase_labels.get(folder, folder or ""))
+        self._update_phase_steps()
+        self._update_phase_status()
+        self._remove_phase_button.configure(
+            state="normal" if folder and folder != f"bmap{int(self._chapter):02d}" else "disabled")
         self._battle.select_map(folder)
         if self._chapter is not None:
+            self._chapter_data.show_chapter(self._chapter, folder)
             self._render_overview()
+        return True
+
+    def _add_phase(self) -> None:
+        if self._chapter is None or self._phase is None:
+            return
+        dialog = AddPhaseDialog(self, self._phase)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        playable = dialog.result == "part"
+        if any(panel.dirty for panel in (self._map, self._deployment)):
+            if not messagebox.askyesno(
+                    "Save phase first?",
+                    "Save the current map and deployment edits before cloning this phase?",
+                    parent=self):
+                return
+            for panel in (self._map, self._deployment):
+                if panel.dirty and not panel.save():
+                    return
+        self._battle.flush()
+        self._chapter_data.flush()
+        source_folder = self._phase
+        source = new_source = None
+        part = None
+        try:
+            if playable:
+                if not self._script.show_chapter_script():
+                    raise ValueError("Open this chapter's script before adding a playable part.")
+                source = self._script.chapter_source()
+                if source is None:
+                    raise ValueError("This chapter has no script to hold a playable part.")
+                part = chapter_phase_ops.next_part(source)
+            session = self.shell.session
+            game_data = session.data if session.available else None
+            clone = chapter_phase_ops.plan_clone(
+                self.project, self._chapter, self._phase, game_data)
+            if playable:
+                new_source = chapter_phase_ops.add_part_opening(source, part, clone.folder)
+                self._script._compile(new_source)
+            chapter_phase_ops.create_phase(clone)
+            if game_data is not None and clone.fe8data != game_data:
+                session.data = clone.fe8data
+                session.changed(self)
+            if new_source is not None:
+                self._script.edit_chapter_source(new_source, select=f"Opening18_{part}")
+        except Exception as exc:  # noqa: BLE001 - report codec and filesystem errors in the UI
+            messagebox.showerror("Could not add phase", str(exc), parent=self)
+            return
+        self.refresh_chapter_lists()
+        phases = chapters.chapter_phases(self.project, self._chapter)
+        self._configure_phases(phases)
+        self._set_phase(clone.folder)
+        self.shell.changelog.append(clone.folder, f"Cloned phase from {source_folder}")
+        self.shell.rebuild_index()
+        if playable:
+            supports = self._count_supports_once()
+            self._select_tab("script")
+            messagebox.showinfo(
+                "Playable part needs setup",
+                f"Opening18_{part} now loads {clone.folder}. In the Script tab, add deployment "
+                f"calls for its copied sections and change the preceding battle's victory path "
+                f"to Complete18({part - 1}). Save the script when it compiles." + supports,
+                parent=self)
+
+    def _count_supports_once(self) -> str:
+        """Chapters other than 18 count support points again at each Complete18 part; turn on the
+        Game Code fix that makes them count once. Returns a note for the message."""
+        if self._chapter == "18":
+            return ""
+        from ...game_code.chapter_parts import PART_SUPPORTS_PATCH
+        from ...game_code.catalog import State
+        from ...game_code.editor import CodeEditor
+        try:
+            editor = CodeEditor(self.project.extracted_dir, self.project.write_keeping_original)
+            if editor.status(PART_SUPPORTS_PATCH).state != State.ORIGINAL:
+                return ""
+            editor.set_patch(PART_SUPPORTS_PATCH, True)
+        except (OSError, ModdingError, ValueError):
+            return ("\n\nSupport points will be counted again at the start of each part; the Game Code entry "
+                    "\"Count supports once in split chapters\" fixes that, but main.dol could not be changed.")
+        self.shell.changelog.append("main.dol", f"Game Code: {PART_SUPPORTS_PATCH.name}")
+        return ("\n\nGame Code \"Count supports once in split chapters\" is now on, so support points are "
+                "counted once for the whole chapter.")
+
+    def _remove_phase(self) -> None:
+        if self._chapter is None or self._phase is None:
+            return
+        folder = self._phase
+        self._battle.flush()
+        self._chapter_data.flush()
+        session = self.shell.session
+        game_data = session.data if session.available else None
+        try:
+            source = self._script.chapter_source()
+            path, updated = chapter_phase_ops.plan_remove(
+                self.project, self._chapter, folder, source, game_data)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not remove phase", str(exc), parent=self)
+            return
+        if not messagebox.askyesno(
+                "Remove phase?",
+                f"Delete zmap/{folder} and its map and deployment files?"
+                + ("\nIts Battle scenes row will also be removed." if updated != game_data else "")
+                + "\n\nThis cannot be undone from the chapter editor.",
+                icon="warning", parent=self):
+            return
+        dirty = [panel for panel in (self._map, self._deployment) if panel.dirty]
+        if dirty and not messagebox.askyesno(
+                "Discard phase changes?",
+                "Removing this phase discards its unsaved map and deployment edits. Continue?",
+                icon="warning", parent=self):
+            return
+        for panel in dirty:
+            panel._dirty = False
+        try:
+            chapter_phase_ops.remove_phase(self.project, path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Could not remove phase", str(exc), parent=self)
+            return
+        if game_data is not None and updated != game_data:
+            session.data = updated
+            session.changed(self)
+        self.refresh_chapter_lists()
+        phases = chapters.chapter_phases(self.project, self._chapter)
+        self._configure_phases(phases)
+        self._phase = None
+        self._set_phase(phases[0] if phases else None)
+        self.shell.changelog.append(folder, "Removed phase")
+        self.shell.rebuild_index()
 
     def _update_header(self) -> None:
         cid = self._chapter
         self._title.configure(text=self._title_of(cid))
-        paths = chapters.chapter_paths(self.project, cid)
-        files = [p.name for p in (paths.dialogue, paths.script) if p is not None]
-        phases = chapters.chapter_phases(self.project, cid)
-        self._subtitle.configure(text="  ·  ".join([f"Disc {cid}"] + files + [", ".join(phases)] if phases else
-                                                   [f"Disc {cid}"] + files))
+
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
@@ -515,7 +881,7 @@ class ChapterPage(Page):
 
     def _on_tab_changed(self) -> None:
         self._battle.flush()
-        self._settings.flush()
+        self._chapter_data.flush()
         self._tab = TABS[self._notebook.index("current")]
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):
@@ -529,11 +895,41 @@ class ChapterPage(Page):
         elif tab == "script":
             if self._script.show_chapter_script():
                 self.after_idle(lambda: self._script.select_function(args[0]))
+        elif tab == "build" and args[0] == "hub":
+            self._build.choose_hub_tool()
         elif tab == "build" and len(args) >= 4:
             folder, difficulty, section, unit = args[:4]
             if folder != self._phase:
                 self._set_phase(folder)
             self._build.select_unit(difficulty, section, int(unit))
+
+    def _install_hub(self, setup) -> bool:
+        """Install the hub (Build tab › Hub tool): its events, texts, flags and chapter routing."""
+        dirty = [p for p in (self._map, self._deployment, self._script, self._dialogue) if p.dirty]
+        if dirty:
+            names = ", ".join(p.display_name for p in dirty)
+            if not messagebox.askyesno("Save first?", f"Installing the hub rewrites this chapter's script and "
+                                       f"messages. Save the unsaved changes ({names}) first?", parent=self):
+                return False
+            for panel in dirty:
+                if not panel.save():
+                    return False
+        try:
+            hub.install(self.project, setup)
+        except Exception as exc:  # noqa: BLE001 - validation and codec failures alike
+            messagebox.showerror("Could not install the hub", str(exc), parent=self)
+            return False
+        self.shell.changelog.append(f"Chapter {setup.chapter:02d}",
+                                    f"Installed hub ({len(setup.destinations)} chapter links)")
+        paths = chapters.chapter_paths(self.project, self._chapter)
+        self._script.reload_if_open(paths.script)
+        self._script.reload_if_open(script_sources.startup_path(self.project))
+        self._dialogue.select_chapter(paths.dialogue)
+        self.shell.rebuild_index()
+        messagebox.showinfo("Hub installed", "The hub's events and chapter routing are installed. To leave hub "
+                            "mode later, clear HUB_ACTIVE in a story event before that chapter's victory.",
+                            parent=self)
+        return True
 
     # -- overview --------------------------------------------------------------------------------
     def _render_overview(self) -> None:
@@ -563,6 +959,12 @@ class ChapterPage(Page):
         if not chapter_flow.can_have_successor(chapter):
             ttk.Label(body, text="Trial maps are played from the trial menu, not in the story.",
                       style="Muted.TLabel").pack(anchor="w")
+            ttk.Frame(body, style="Page.TFrame", height=20).pack()
+            return
+        configured_hub = hub.saved_setup(self.project)
+        if configured_hub and chapter == configured_hub.get("chapter"):
+            ttk.Label(body, text="This chapter is the campaign hub. Hub setup controls its destination tiles "
+                      "and conditional return flow.", style="Muted.TLabel", wraplength=800).pack(anchor="w")
             ttk.Frame(body, style="Page.TFrame", height=20).pack()
             return
         titles = chapters.chapter_titles(self.project)
@@ -599,6 +1001,16 @@ class ChapterPage(Page):
         if chapter == chapter_flow.CONTINUED_PART or chapter - 1 == chapter_flow.CONTINUED_PART:
             notes.append("Chapters 28 and 29 are the two halves of Ch.27: the game skips the save menu and the "
                          "army cleanup between them, whatever the flow says.")
+        parts = chapter_parts.ChapterParts(flow.editor)
+        if chapter != chapter_flow.CONTINUED_PART and parts.available:
+            continued = tk.BooleanVar(value=chapter in parts.continued())
+            check = ttk.Checkbutton(box, text="The next chapter is this chapter's second part", variable=continued,
+                                    command=lambda: self._set_continued(chapter, continued.get()))
+            check.pack(anchor="w", pady=(6, 0))
+            if continued.get():
+                notes.append("Like chapters 28 and 29: no save menu before the next chapter, the army isn't sorted "
+                             "out (units that joined keep their army), support points aren't counted again, and the "
+                             "war record lists the two as separate rows.")
         if chapter > chapter_flow.LAST_RETAIL_STORY and not in_story:
             notes.append("Not reached from the Prologue: pick it as the next chapter of a story chapter.")
         for note in notes:
@@ -613,6 +1025,18 @@ class ChapterPage(Page):
             if nxt == flow.next_of(chapter):
                 return
             description = flow.set_next(chapter, nxt)
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not change the story flow", str(exc), parent=self)
+        else:
+            self.shell.changelog.append("main.dol", f"Story flow: {description}")
+        self._render_overview()
+
+    def _set_continued(self, chapter: int, on: bool) -> None:
+        flow, why = open_flow(self.project)
+        try:
+            if flow is None:
+                raise ValueError(why)
+            description = chapter_parts.ChapterParts(flow.editor).set_continued(chapter, on)
         except (ValueError, OSError, ModdingError) as exc:
             messagebox.showerror("Could not change the story flow", str(exc), parent=self)
         else:
@@ -771,6 +1195,38 @@ def _message_group(message_id: str) -> str:
     if parts[0] == "MS" and len(parts) > 2:
         return parts[2]
     return parts[0]
+
+
+class AddPhaseDialog(tk.Toplevel):
+    """Choose whether the cloned folder is only a map or the next battle part."""
+
+    def __init__(self, parent, source: str):
+        super().__init__(parent)
+        self.title("Add phase")
+        self.transient(parent.winfo_toplevel())
+        self.resizable(False, False)
+        self.result = None
+        choice = tk.StringVar(value="map")
+        body = ttk.Frame(self, padding=16)
+        body.pack(fill="both")
+        ttk.Label(body, text=f"Clone {source} into a new map phase.").pack(anchor="w", pady=(0, 10))
+        ttk.Radiobutton(body, text="Map phase only", variable=choice, value="map").pack(anchor="w")
+        ttk.Radiobutton(body, text="Next playable chapter part", variable=choice, value="part").pack(
+            anchor="w", pady=(4, 0))
+        ttk.Label(body, text="A playable part also adds an opening to the chapter script.\n"
+                            "Its deployment and victory event still need setup.").pack(
+            anchor="w", pady=(10, 0))
+        buttons = ttk.Frame(body)
+        buttons.pack(anchor="e", pady=(14, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Create", command=lambda: self._finish(choice.get())).pack(
+            side="right", padx=(0, 6))
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _finish(self, choice: str) -> None:
+        self.result = choice
+        self.destroy()
 
 
 class AddChapterDialog(tk.Toplevel):

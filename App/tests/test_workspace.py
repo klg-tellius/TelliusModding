@@ -16,8 +16,12 @@ from fe_modding.project_index import ProjectIndex
 
 
 def _fake_project(extracted: Path):
+    def read_logical(key):
+        if key != "game_data":
+            raise KeyError(key)
+        return (extracted / "files" / "FE8Data.bin").read_bytes()
     return SimpleNamespace(extracted_dir=extracted, game=Game.PATH_OF_RADIANCE, has_extracted_files=True,
-                           name="Test", directory=extracted.parent,
+                           name="Test", directory=extracted.parent, read_logical=read_logical,
                            game_info=SimpleNamespace(short_code="PoR"))
 
 

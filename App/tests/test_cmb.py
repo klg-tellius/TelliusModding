@@ -164,6 +164,16 @@ class GlobalReservationTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(grown[0x22:0x24], "little"), 6)
 
 
+    def test_global_read_but_never_assigned_warns(self):
+        warnings = [d.message for d in compile_source(self.SOURCE).warnings]
+        self.assertEqual(len(warnings), 1)
+        self.assertTrue(warnings[0].startswith("global b is read but this script never assigns it"))
+
+    def test_assigned_or_address_taken_global_does_not_warn(self):
+        source = "global a @ 1\nglobal b @ 5\ndef f():\n    GetPos(&b)\n    a = b\n"
+        self.assertFalse([d for d in compile_source(source).warnings if "global" in d.message])
+
+
 class BinaryRoundTripTests(unittest.TestCase):
     SOURCE = (
         '@export\ndef Startup():\n    regist("flag")\n\n'
@@ -297,6 +307,12 @@ class SourceToolsTests(unittest.TestCase):
 
 
 class ScriptZonesTests(unittest.TestCase):
+    def test_edge_relative_zone_with_map_dimensions(self):
+        from fe_modding.formats.cmb import script_zones as z
+
+        source = '@on_area(x1=3, y1=2, x2=0, y2=0, side="ally", name=None)\ndef edge():\n    pass\n'
+        self.assertEqual(z.zones(source, 8, 6)[0].rect, (3, 2, 7, 5))
+
     SOURCE = (
         "# function 0\n@export\ndef Startup():\n    regist(\"x\")\n\n"
         "# function 1\n@on_area(x1=6, y1=7, x2=4, y2=5, side=\"player\", name=\"mod_zone\")\ndef enter():\n    pass\n\n"

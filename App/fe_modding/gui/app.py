@@ -35,6 +35,7 @@ class MainWindow(tk.Tk):
         super().__init__()
         self.title("Tellius Modding")
         self.geometry("1360x860")
+        self.state("zoomed")
         self.minsize(960, 600)
         theme.setup(self)
         disable_wheel_value_changes(self)

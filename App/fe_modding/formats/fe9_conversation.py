@@ -11,6 +11,8 @@ from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
+from . import game_text
+
 
 @dataclass(frozen=True)
 class Diagnostic:
@@ -68,8 +70,8 @@ def tokenize(text: str) -> tuple[Token, ...]:
             length = 4 if code in "ABCGIRYFSX" else 5 if code == "P" else 2
             result.append(Token(i, "markup", data[i:i+length].decode("ascii", errors="replace"))); i += length
         else:
-            size = 2 if (0x81 <= data[i] <= 0x9f or 0xe0 <= data[i] <= 0xfc) and i + 1 < len(data) else 1
-            result.append(Token(i, "text", data[i:i+size].decode("shift_jis", errors="replace"))); i += size
+            size = 2 if game_text.is_lead_byte(data[i]) and i + 1 < len(data) else 1
+            result.append(Token(i, "text", game_text.decode(data[i:i+size]))); i += size
     return tuple(result)
 
 

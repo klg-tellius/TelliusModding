@@ -27,7 +27,10 @@ ticks while ``cam1`` plays ``standby`` (``standby2`` at range) between them. The
 - **blow**: a hit lands on the clip's combat event 0 (the target plays
   ダメージ, or 死亡 on a kill, and the camera shakes by ``QuakeAttack`` /
   ``QuakeCrit`` / ``QuakeSkill`` / ``QuakeShoot`` / ``QuakeMagic`` when
-  damage is dealt); a miss makes the target dodge (回避) on event 1. Bows
+  damage is dealt) and the struck unit slides back its ``ダメージ後退``
+  (``DamageBack`` when 0) at ``DamageBackSpd``; a miss makes the target dodge (回避) on event 1,
+  stepping back to its range x ``AvoidScale`` from the striker at ``AvoidSpeed`` when closer. No
+  unit leaves ``WallDist`` of the centre. Bows
   and thrown weapons release their missile on event 2, which flies at
   ``ArrowSpeed`` / ``SpearSpeed`` / ``AxeSpeed`` / ``KnifeSpeed`` and lands
   ``ShootDamageDist`` from the target; ``bow_impact_l`` follows the arrow
@@ -81,6 +84,7 @@ HIT_EFFECT, SPECIAL_HIT_EFFECT = "EID_K_ATTACK", "EID_K_SP_ATTACK"
 MISS_EFFECT, NO_DAMAGE_EFFECTS, DEATH_EFFECT = "EID_MISS", ("EID_NODAMAGE", "EID_K_SPARK_ND"), "EID_K_DEATH"
 MARK_HEIGHT = 6.0  # the miss and no-damage marks float this far above the unit
 DEATH_FADE = 0x38  # death clip code where the body fades
+CATCH = 0x0E  # throw clip code where a hand axe is back in the hand
 CLIP_CAMERA_CHARS = 11  # a clip's camera script is named by its first 11 characters
 #: Clip codes that raise dust, and the effects per backdrop footEffect (1 dust, 2 water, 3 snow).
 DUST_CODES = {0x2B: 0, 0x2C: 1, 0x2D: 2, 0x2E: 3, 0x3C: 4}
@@ -188,6 +192,19 @@ class Flight:
     start: float
     end: float
     side: int
+    speed: float = 0.0  # a returning hand axe: initial speed, units a tick (0 = straight flight)
+
+    @property
+    def returns(self) -> bool:
+        return self.speed > 0
+
+    def offset(self, t: float) -> float:
+        """A returning axe's distance from the hand ``t`` ticks after the throw
+        (``update_projectile_motion_with_audio``): it starts at ``speed`` and is pulled back by
+        ``2 * speed / ticks`` each tick (``update_secondary_item_transform``), so it is back at the
+        catch."""
+        ticks = max(self.end - self.start, 1.0)
+        return self.speed * t - (self.speed / ticks) * t * (t - 1)
 
     def progress(self, t: float) -> Optional[float]:
         if self.start <= t < self.end:
@@ -204,6 +221,7 @@ class Move:
     end: float
     x0: float
     x1: float
+    kind: str = "run"  # "run", "knockback" or "dodge"
 
 
 @dataclass
@@ -426,8 +444,19 @@ class _Builder:
             speed = {BOW: p.arrow_speed, SPEAR: p.spear_speed, KNIFE: p.knife_speed}.get(
                 kind, p.arrow_speed if path == "bow" else p.axe_speed)
             gap = abs(self.x[other] - self.x[side])
-            contact = dodge = release + max(math.ceil(max(gap - p.shoot_damage_dist, 0.0) / max(speed, 1e-6)), 1)
-            tl.flights.append(Flight(release, contact, side))
+            catch = next((f for f, code in clip.events if code == CATCH), None) if clip is not None else None
+            if path == "throw" and kind not in (SPEAR, KNIFE) and catch is not None and start + catch > release + 1:
+                # a hand axe flies out and back: the blow lands when it first gets ShootDamageDist from the target
+                flight = Flight(release, start + catch, side, speed)
+                reach = max(gap - p.shoot_damage_dist, 0.0)
+                ticks = int(flight.end - flight.start)
+                k = next((k for k in range(1, ticks + 1) if flight.offset(k) >= reach),
+                         max(ticks // 2, 1))
+                contact = dodge = release + k
+                tl.flights.append(flight)
+            else:
+                contact = dodge = release + max(math.ceil(max(gap - p.shoot_damage_dist, 0.0) / max(speed, 1e-6)), 1)
+                tl.flights.append(Flight(release, contact, side))
             if path == "bow" or kind == SPEAR:
                 tl.camera.append(cam.Cue(int(release), "bow_impact_l", slot, mirror))
 
@@ -441,6 +470,8 @@ class _Builder:
                 tl.camera.append(cam.Cue(int(contact), f"{name}_at1", slot, mirror))
         if s.hit:
             reaction = self.play(other, contact, sa.DEATH if s.kill else sa.DAMAGE, hold=s.kill)
+            if s.damage > 0 and not s.kill:
+                self.knock_back(other, side, contact)
             if s.damage > 0:
                 tl.quakes.append(cam.Quake(int(contact), quake))
                 if path != "magic":
@@ -458,6 +489,7 @@ class _Builder:
         else:
             contact = dodge
             reaction = self.play(other, contact, sa.DODGE)
+            self.step_back(other, side, contact)
             self.effect(contact, other, MISS_EFFECT, MARK_HEIGHT)
             text = "Miss"
         if s.kill:
@@ -480,6 +512,33 @@ class _Builder:
             death_end = contact + (reaction.length if reaction else 60.0)
             t = max(t + 2, death_end) + 1 + p.wait_die1
         return t
+
+    def slide(self, side: int, t: float, x1: float, speed: float, kind: str) -> None:
+        """Move ``side`` to ``x1`` at ``speed`` units a tick, kept within ``WallDist`` of the centre."""
+        wall = self.params.wall_dist
+        x1 = max(-wall, min(wall, x1))
+        steps = abs(x1 - self.x[side]) / max(speed, 1e-6)
+        if steps > 0:
+            self.tl.moves.append(Move(side, float(t), float(t + max(steps, 1.0)), self.x[side], x1, kind))
+            self.x[side] = x1
+
+    def knock_back(self, side: int, striker: int, t: float) -> None:
+        """``battle_preview_state_damage_reaction``: a blow pushes the unit back by its ``ダメージ後退``
+        (``DamageBack`` when that is 0) at ``DamageBackSpd``."""
+        unit = self.units[side] if side < len(self.units) else UnitParams()
+        distance = unit.knockback or self.params.damage_back
+        away = -1.0 if self.x[striker] > self.x[side] else 1.0
+        self.slide(side, t, self.x[side] + away * distance, self.params.damage_back_spd, "knockback")
+
+    def step_back(self, side: int, striker: int, t: float) -> None:
+        """``battle_preview_state_miss_evade``: a unit closer to the striker than its range x
+        ``AvoidScale`` steps back to that distance at ``AvoidSpeed``."""
+        unit = self.units[side] if side < len(self.units) else UnitParams()
+        keep = unit.range * self.params.avoid_scale
+        if abs(self.x[striker] - self.x[side]) >= keep:
+            return
+        away = -1.0 if self.x[striker] > self.x[side] else 1.0
+        self.slide(side, t, self.x[striker] + away * keep, self.params.avoid_speed, "dodge")
 
     def approach(self, side: int, other: int, t: float, mode: str, second: bool) -> float:
         """``battle_preview_process_actor_approach_state``: run in when out of range."""
