@@ -115,6 +115,7 @@ FORMAT_RGBA8 = 6
 FORMAT_C4 = 8
 FORMAT_C8 = 9
 FORMAT_CMPR = 14
+PALETTE_RGB5A3 = 2  # palette entry format (0 IA8, 1 RGB565, 2 RGB5A3)
 CMPR_BLOCK = 8  # CMPR is tiled in 8x8 blocks, 32 bytes each (4 4x4 sub-blocks x 8 bytes)
 C8_BLOCK_W, C8_BLOCK_H = 8, 4  # C8 is tiled in 8x4 blocks, 32 bytes each (1 byte/pixel)
 I4_BLOCK = 8  # I4 is tiled in 8x8 blocks, 32 bytes each (4 bits/pixel)
@@ -685,11 +686,13 @@ def _from_rgb5a3(rgba: tuple[int, int, int, int]) -> int:
     mirroring the decoder's own bit-15 split."""
     r, g, b, a = rgba
     if a >= 255:
-        r5 = round(r / 255 * 31)
-        g5 = round(g / 255 * 31)
-        b5 = round(b / 255 * 31)
+        # Steps of 8 and 32, as _rgb5a3() decodes them, so re-encoding a
+        # decoded image gives back the same values.
+        r5 = min(31, round(r / 8))
+        g5 = min(31, round(g / 8))
+        b5 = min(31, round(b / 8))
         return 0x8000 | (r5 << 10) | (g5 << 5) | b5
-    a3 = round(a / 255 * 7)
+    a3 = min(7, round(a / 32))
     r4 = round(r / 255 * 15)
     g4 = round(g / 255 * 15)
     b4 = round(b / 255 * 15)
@@ -1251,6 +1254,81 @@ def build_tpl(images: list[tuple["Image.Image", int]], wrap: int = WRAP_REPEAT, 
         blobs += data
         out += struct.pack(">II", headers_at + 0x24 * i, 0)
         headers += _image_header(image, fmt, data_addr, wrap, mip_count)
+    return bytes(out + headers + blobs)
+
+
+def _quantize_shared(images: list["Image.Image"]) -> tuple[list[int], list["np.ndarray"]]:
+    """One 256-colour RGB5A3 palette for ``images`` and each image's indices.
+    Pixels under alpha 8 become fully transparent first, so the cut-outs of a
+    portrait share one transparent entry."""
+    width = max(i.width for i in images)
+    sheet = Image.new("RGBA", (width, sum(i.height for i in images)), (0, 0, 0, 0))
+    y = 0
+    for image in images:
+        array = np.array(image.convert("RGBA"))
+        array[array[..., 3] < 8] = 0
+        sheet.paste(Image.fromarray(array, "RGBA"), (0, y))
+        y += image.height
+    pixels = np.array(sheet)
+    colours, inverse = np.unique(pixels.reshape(-1, 4), axis=0, return_inverse=True)
+    if len(colours) <= 256:  # exact: the octree drifts even on few colours
+        palette = [_from_rgb5a3(tuple(int(v) for v in c)) for c in colours]
+        all_indices = inverse.reshape(pixels.shape[:2])
+    else:
+        quantized = sheet.quantize(256, method=Image.FASTOCTREE, dither=Image.Dither.NONE)
+        flat = quantized.getpalette("RGBA") or []
+        palette = [_from_rgb5a3(tuple(flat[i:i + 4])) for i in range(0, len(flat), 4)][:256]
+        all_indices = np.array(quantized)
+    palette += [0] * (256 - len(palette))
+    indices, y = [], 0
+    for image in images:
+        indices.append(all_indices[y:y + image.height, :image.width])
+        y += image.height
+    return palette, indices
+
+
+def _tile_c8(indices: "np.ndarray") -> bytes:
+    height, width = indices.shape
+    padded = np.pad(indices, ((0, -height % C8_BLOCK_H), (0, -width % C8_BLOCK_W)), mode="edge")
+    rows, cols = padded.shape[0] // C8_BLOCK_H, padded.shape[1] // C8_BLOCK_W
+    tiles = padded.reshape(rows, C8_BLOCK_H, cols, C8_BLOCK_W).transpose(0, 2, 1, 3)
+    return tiles.astype(np.uint8).tobytes()
+
+
+def build_c8_tpl(groups: list[tuple[list["Image.Image"], list[int]]]) -> bytes:
+    """Build a C8 TPL in which each group of images shares one 256-colour
+    RGB5A3 palette made for it; ``groups`` is ``[(images, wrap modes)]``.
+
+    Same layout as the retail portrait sets (``Face/IKE.cms``): the 12-byte
+    header, the image table (header offset, palette offset), the 12-byte
+    palette headers, the 512-byte palettes from a 32-byte boundary, the
+    36-byte image headers, then each image's data on a 32-byte boundary.
+    Filtering is nearest, LOD zero, as in those files."""
+    palettes, items = [], []
+    for images, wraps in groups:
+        palette, indices = _quantize_shared(images)
+        palettes.append(palette)
+        items += [(len(palettes) - 1, image, index, wrap) for image, index, wrap in zip(images, indices, wraps)]
+    count = len(items)
+    palette_headers_at = 12 + 8 * count
+    palette_data_at = palette_headers_at + 12 * len(palettes)
+    palette_data_at += -palette_data_at % 32
+    headers_at = palette_data_at + 512 * len(palettes)
+    data_at = headers_at + 0x24 * count
+    out = bytearray(struct.pack(">III", MAGIC, count, 12))
+    for i, (group, _image, _index, _wrap) in enumerate(items):
+        out += struct.pack(">II", headers_at + 0x24 * i, palette_headers_at + 12 * group)
+    for g in range(len(palettes)):
+        out += struct.pack(">HBBII", 256, 0, 0, PALETTE_RGB5A3, palette_data_at + 512 * g)
+    out += bytes(palette_data_at - len(out))
+    for palette in palettes:
+        out += struct.pack(">256H", *palette)
+    headers, blobs = bytearray(), bytearray()
+    for _group, image, index, wrap in items:
+        blobs += bytes(-(data_at + len(blobs)) % 32)
+        headers += struct.pack(">HHIIIIIIf4B", image.height, image.width, FORMAT_C8, data_at + len(blobs),
+                               wrap, wrap, 0, 0, 0.0, 0, 0, 0, 0)
+        blobs += _tile_c8(index)
     return bytes(out + headers + blobs)
 
 

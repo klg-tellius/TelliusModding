@@ -41,4 +41,6 @@ source_path: "formats/gcfesnd.md"
 
   The SFX portion contains an ascending numeric-ID/string-offset table. BGM playback instead passes a symbolic name into a generic native lookup. That lookup computes two polynomial hashes (multipliers 37 and 31); the first selects one of 509 buckets, while the second helps reject collisions in the bucket's linked list.
 
+  At boot the loader walks the record array by each record's length byte and registers every record under its name, wherever it sits. BGM playback reads only the record the name resolves to: its type byte selects the voice (every music record is a streamed voice) and its path names the `.stm` file. A music record added after the sound effects therefore plays like a retail one. <span class="confidence confidence--confirmed">engine</span>
+
   The bucket table is populated in zero-initialized runtime memory. Consequently the executable proves how names are resolved, while a static copy of the DOL cannot by itself show the final cue-to-loaded-track mapping for every BGM name.

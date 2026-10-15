@@ -289,6 +289,11 @@ class AddStoryChapterTests(unittest.TestCase):
         self.assertIn("bmap33_5", pool)
         self.assertIn("bmap08", pool)
         self.assertFalse([s for s in pool if s.startswith("bmap09")])
+        # the chapter-start title card is the new chapter's (window/chapter/chap33.cms)
+        from fe_modding.formats.cmb import decompile
+        source = decompile(binary.read_cmb((self.files / "Scripts" / "C33.cmb").read_bytes()))[0]
+        self.assertIn("ChapterMoviePlay(33)", source)
+        self.assertNotIn("ChapterMoviePlay(9)", source)
         for folder in ("bmap33", "bmap33_2", "bmap33_3", "bmap33_4", "bmap33_5"):
             self.assertTrue((self.files / "zmap" / folder / "map.cmp").is_file(), folder)
         packed = lz10.decompress((self.files / "zmap" / "bmap33" / "dispos.cmp").read_bytes())

@@ -156,6 +156,16 @@ class ModProject:
             shutil.copy2(path, original)
         path.write_bytes(data)
 
+    def extracted_bytes(self, path: Path | str) -> Optional[bytes]:
+        """``path`` (under ``extracted/``) as extracted: its kept original when an edit replaced
+        it, else the file itself; None when neither exists."""
+        path = Path(path)
+        original = self._original_of(path)
+        for candidate in (original, path):
+            if candidate is not None and candidate.is_file():
+                return candidate.read_bytes()
+        return None
+
     def is_added_file(self, path: Path | str) -> Optional[bool]:
         """Whether ``path`` (a file under ``files/``) is one the mod added, absent
         from the source disc's file table (the extracted ``sys/fst.bin``, which a

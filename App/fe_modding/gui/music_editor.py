@@ -20,14 +20,14 @@ Runs on a background thread with a progress bar, same pattern as disc
 extract/build in app.py, just implemented locally here rather than shared -
 see CLAUDE.md for why that duplication is deliberate.
 
-"New Track..." writes a brand-new .stm file into Sound/ - straightforward
-since stm.write_stm() already produces a fully self-contained file, no
-format-layer change needed. It's honestly labeled as *unwired*, though:
-nothing reverse-engineered anywhere in this app's formats package maps a
-track ID/name to a Sound/*.stm filename for the game to actually play one,
-so a new track sits on disc and is visible/playable in this editor but isn't
-audible in-game until that lookup is found and patched separately - see the
-in-app note next to the button, and don't claim otherwise. Shares
+"New Track..." writes a brand-new .stm file into Sound/ and adds a music
+cue for it: a ``BGM_*`` record in ``Sound/gcfesnd.bin`` naming the file
+(``gcfesnd.add_bgm_cue``). The game plays music by cue name (``play_bgm``
+looks the name up in the table every record is registered in at boot), so
+the new cue works wherever a retail one does: a chapter's map music
+(Game Data > Chapters), ``BGMPlay`` in a script. The **Music cues** row lists
+the cues that play the selected track; **New cue...** adds another and
+**Remove cue** removes an added one. Shares
 _prompt_for_audio()/_confirm_and_encode() with _import_audio() (the WAV
 pick/loop-prompt/decode step, and the confirm-with-time-estimate/background-
 encode step) - genuine duplication between the two flows added in the same
@@ -58,6 +58,14 @@ except ImportError:
     winsound = None
 
 
+def _cue_name_for(path: Path) -> str:
+    """``my_theme_32k.stm`` -> ``BGM_MY_THEME``."""
+    stem = path.stem.upper()
+    for suffix in ("_32K", "_LP"):
+        stem = stem.removesuffix(suffix)
+    return "BGM_" + stem.removeprefix("GCFE_BGM_").removeprefix("BGM_")
+
+
 class MusicEditor(EditorPanel):
     display_name = "Music"
 
@@ -81,9 +89,9 @@ class MusicEditor(EditorPanel):
 
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
-        tip(ttk.Label(left, text="Tracks"), "The .stm streams of Sound/. A new track is written there, but "
-            "nothing in this page maps a track ID to it for the game to play: it needs wiring elsewhere "
-            "before it is heard in game.").pack(anchor="w")
+        tip(ttk.Label(left, text="Tracks"), "The .stm streams of Sound/. The game plays them through music "
+            "cues (BGM_ names in Sound/gcfesnd.bin): a new track gets a cue, which chapters (map music) and "
+            "scripts (BGMPlay) then name.").pack(anchor="w")
 
         search_var = tk.StringVar()
         ttk.Entry(left, textvariable=search_var).pack(fill="x", pady=(4, 4))
@@ -126,6 +134,17 @@ class MusicEditor(EditorPanel):
             io_row, text="Import Replacement Audio...", command=self._import_audio, state="disabled"
         )
         self._import_button.pack(side="left", padx=(6, 0))
+
+        cue_row = ttk.Frame(right)
+        cue_row.pack(fill="x", pady=(4, 8))
+        tip(ttk.Label(cue_row, text="Music cues:"), "The BGM_ names that play this track. Name one as a "
+            "chapter's map music or in a script's BGMPlay.").pack(side="left")
+        self._cue_label = ttk.Label(cue_row, text="", style="Muted.TLabel", wraplength=360)
+        self._cue_label.pack(side="left", padx=(6, 0))
+        self._new_cue_button = ttk.Button(cue_row, text="New cue…", command=self._new_cue, state="disabled")
+        self._new_cue_button.pack(side="left", padx=(8, 0))
+        self._remove_cue_button = ttk.Button(cue_row, text="Remove cue", command=self._remove_cue, state="disabled")
+        self._remove_cue_button.pack(side="left", padx=(6, 0))
 
         self._progress = ttk.Progressbar(right, mode="indeterminate")
         self._status_label = ttk.Label(right, text="", style="Muted.TLabel", wraplength=480)
@@ -205,6 +224,72 @@ class MusicEditor(EditorPanel):
         self._export_button.config(state="normal")
         self._import_button.config(state="normal")
         self._playback_wav = None
+        self._show_cues()
+
+    # -- music cues ------------------------------------------------------------
+    def _catalog(self) -> Path:
+        return self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+
+    def _cues_of(self, path: Path) -> list[gcfesnd.BgmCue]:
+        try:
+            cues = gcfesnd.read_bgm_cues_path(self._catalog())
+        except (OSError, gcfesnd.GcfesndError, ValueError):
+            return []
+        return [c for c in cues if c.path.rsplit("/", 1)[-1].lower() == path.stem.lower()]
+
+    def _added_cues(self, cues: list[gcfesnd.BgmCue]) -> list[gcfesnd.BgmCue]:
+        original = self._project.extracted_bytes(self._catalog())
+        try:
+            retail = {c.name for c in gcfesnd.read_bgm_cues(original)} if original else set()
+        except (gcfesnd.GcfesndError, ValueError):
+            retail = set()
+        return [c for c in cues if c.name not in retail]
+
+    def _show_cues(self) -> None:
+        if self._current_path is None:
+            return
+        cues = self._cues_of(self._current_path)
+        self._cue_label.config(text=", ".join(c.name for c in cues) or "none: the game cannot play this track yet")
+        self._new_cue_button.config(state="normal" if self._catalog().is_file() else "disabled")
+        self._remove_cue_button.config(state="normal" if self._added_cues(cues) else "disabled")
+
+    def _add_cue(self, path: Path, name: str) -> bool:
+        try:
+            data = self._catalog().read_bytes()
+            data = gcfesnd.add_bgm_cue(data, name, f"sound/{path.stem}")
+            self._project.write_keeping_original(self._catalog(), data)
+        except (OSError, gcfesnd.GcfesndError, ValueError) as exc:
+            messagebox.showerror("Could not add the music cue", str(exc), parent=self)
+            return False
+        self._changelog.append(name, f"Added music cue for {path.name}")
+        return True
+
+    def _new_cue(self) -> None:
+        if self._current_path is None:
+            return
+        name = simpledialog.askstring("New music cue", "Cue name (BGM_ and capitals):",
+                                      initialvalue=_cue_name_for(self._current_path), parent=self)
+        if name and self._add_cue(self._current_path, name.strip()):
+            self._show_cues()
+
+    def _remove_cue(self) -> None:
+        if self._current_path is None:
+            return
+        added = self._added_cues(self._cues_of(self._current_path))
+        if not added:
+            return
+        cue = added[-1]
+        if not messagebox.askyesno("Remove cue", f"Remove {cue.name}? Chapters and scripts naming it will play "
+                                   "nothing.", parent=self):
+            return
+        try:
+            data = gcfesnd.remove_bgm_cue(self._catalog().read_bytes(), cue.name)
+            self._project.write_keeping_original(self._catalog(), data)
+        except (OSError, gcfesnd.GcfesndError, ValueError) as exc:
+            messagebox.showerror("Could not remove the cue", str(exc), parent=self)
+            return
+        self._changelog.append(cue.name, "Removed music cue")
+        self._show_cues()
 
     # -- playback -----------------------------------------------------------
     def _play(self) -> None:
@@ -266,14 +351,14 @@ class MusicEditor(EditorPanel):
 
         name = simpledialog.askstring(
             "New track name",
-            "Internal filename (no extension) - match the game's existing naming, e.g. C01_M:",
+            "File name (no extension; lowercase letters, digits and _), e.g. my_theme_32k:",
             parent=self,
         )
         if not name:
             return
-        name = name.strip()
-        if not name or name != Path(name).name:
-            messagebox.showerror("Invalid name", "Enter a plain filename with no path separators.", parent=self)
+        name = name.strip().lower()
+        if not name or not all(c.isascii() and (c.isalnum() or c == "_") for c in name):
+            messagebox.showerror("Invalid name", "Use lowercase letters, digits and _ only.", parent=self)
             return
 
         dest = sound_dir / f"{name}.stm"
@@ -299,6 +384,16 @@ class MusicEditor(EditorPanel):
         if not confirm_delete_added(self, self._project, path, "track", users):
             return
         self._stop()
+        added = self._added_cues(self._cues_of(path))
+        if added:
+            try:
+                data = self._catalog().read_bytes()
+                for cue in added:
+                    data = gcfesnd.remove_bgm_cue(data, cue.name)
+                self._project.write_keeping_original(self._catalog(), data)
+            except (OSError, gcfesnd.GcfesndError, ValueError) as exc:
+                messagebox.showerror("Could not remove the track's cues", str(exc), parent=self)
+                return
         path.unlink()
         self._changelog.append(path.stem, "Deleted track")
         self._current_path = None
@@ -318,8 +413,14 @@ class MusicEditor(EditorPanel):
         self._current_path = dest
         self._track_label.config(text=dest.stem)
         self._on_track_loaded(new_audio)
-        self._status_label.config(text=f"Added {dest.name} - not wired to any in-game trigger yet.")
-        self._changelog.append(dest.stem, "Added new (unwired) track")
+        self._changelog.append(dest.stem, "Added new track")
+        cue = _cue_name_for(dest)
+        if self._catalog().is_file() and not self._cues_of(dest) and self._add_cue(dest, cue):
+            self._status_label.config(text=f"Added {dest.name}, played by the music cue {cue}: name it as a "
+                                           "chapter's map music or in a script's BGMPlay.")
+        else:
+            self._status_label.config(text=f"Added {dest.name}.")
+        self._show_cues()
 
     # -- shared import/add-track plumbing --------------------------------
     def _prompt_for_audio(self, should_ask_loop: bool, already_loops: bool) -> "stm.StmAudio | None":

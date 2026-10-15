@@ -214,6 +214,13 @@ class CharacterForm(ttk.Frame):
 
         ttk.Label(parent, text=label, style="Surface.TLabel").grid(row=row, column=0, sticky="w", pady=2, padx=(0, 8))
         options = sorted(self._session.labels_by_prefix.get(prefix, {}).keys())
+        if prefix == "FID":  # every small portrait of the face table, new ones included
+            from .. import portraits
+            try:
+                faces = portraits.load_faces(self._session.project)
+            except (OSError, ValueError):
+                faces = []
+            options = sorted(set(options) | {f.fid for f in faces if not f.fid.startswith("FID_L_")})
         if value and value not in options:
             options.append(value)
         box = _LabelPicker(parent, width=26)

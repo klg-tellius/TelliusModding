@@ -112,35 +112,30 @@ def _read_cstring_at(data: bytes, file_offset: int, max_len: int = 128) -> str:
 
 
 def read_bgm_cues(data: bytes) -> list[BgmCue]:
-    """Parse the flat, self-terminating BGM record array starting right
-    after the header, stopping at the first record whose own length byte
-    isn't 12 (the retail file's SFX records start with length 20 right
-    after the last BGM one - this is the same boundary the game's own
-    ``init_sound_scenes`` loop stops effectively re-deriving), or - since a
-    handful of trailing "BGM_ENV_*" ambient-loop records also use length 12
-    but repurpose the third field for something that isn't a label-pool
-    string at all (not decoded by this module) - the first record whose
-    name/path can't be read as a clean ASCII string."""
+    """Every file-backed BGM record: the 12-byte records of the array (walked
+    by their own length bytes, as ``init_sound_scenes`` does) whose name and
+    path read as clean strings and whose path starts with ``sound/``. The
+    retail ones come first; cues added by :func:`add_bgm_cue` sit after the
+    SFX records. A handful of trailing ``BGM_ENV_*`` records also use length
+    12 but hold something else in their third field (not decoded here) and
+    are left out by the path check."""
     cues = []
     offset = HEADER_SIZE
-    while offset + BGM_RECORD_SIZE <= len(data):
-        name_raw, control_word, path_raw = struct.unpack_from(">III", data, offset)
-        record_len = (control_word >> 24) & 0xFF
-        if record_len != BGM_RECORD_SIZE:
+    while offset + 5 <= len(data):
+        record_len = data[offset + 4]
+        if record_len == 0:
             break
-        try:
-            name = _read_cstring_at(data, name_raw + HEADER_SIZE)
-            path = _read_cstring_at(data, path_raw + HEADER_SIZE)
-        except (GcfesndError, UnicodeDecodeError):
-            break
-        if not path.startswith("sound/"):
-            # A handful of trailing "BGM_ENV_*" records also happen to
-            # decode as valid ASCII here by coincidence (see docstring) -
-            # every genuine BGM record's path starts with "sound/", so this
-            # is the reliable boundary, not just the length/decode checks.
-            break
-        cues.append(BgmCue(offset=offset, name=name, name_offset=name_raw, path=path, path_offset=path_raw, control_word=control_word))
-        offset += BGM_RECORD_SIZE
+        if record_len == BGM_RECORD_SIZE and offset + BGM_RECORD_SIZE <= len(data):
+            name_raw, control_word, path_raw = struct.unpack_from(">III", data, offset)
+            try:
+                name = _read_cstring_at(data, name_raw + HEADER_SIZE)
+                path = _read_cstring_at(data, path_raw + HEADER_SIZE)
+            except (GcfesndError, UnicodeDecodeError):
+                name = path = ""
+            if name and path.startswith("sound/"):
+                cues.append(BgmCue(offset=offset, name=name, name_offset=name_raw, path=path,
+                                   path_offset=path_raw, control_word=control_word))
+        offset += record_len
     return cues
 
 
@@ -158,24 +153,23 @@ def find_cue(cues: list[BgmCue], name: str) -> BgmCue:
 def repoint_bgm_cue(data: bytes, cue: BgmCue, new_path: str, control_word: int = DEFAULT_CONTROL_WORD) -> bytes:
     """Return a copy of data with `cue`'s target path repointed at
     `new_path` (no extension, matching the format's own convention - e.g.
-    "sound/ex_32k" for "Sound/ex_32k.stm"), appending a fresh string rather
-    than reusing whatever `cue` pointed at before, so cues that used to
-    share one string (e.g. the 24 unused cues all sharing
-    "sound/fe_dummy_32k") aren't affected by repointing just one of them.
-    Also updates the header's filesize field, which is an exact byte count
-    on this file (confirmed - no "+1" convention like other labeled-section
-    files use)."""
+    "sound/ex_32k" for "Sound/ex_32k.stm"), adding a fresh string at the end
+    of the label pool rather than reusing whatever `cue` pointed at before,
+    so cues that used to share one string (e.g. the 24 unused cues all
+    sharing "sound/fe_dummy_32k") aren't affected by repointing just one of
+    them. (Earlier versions appended the string past the file's tables,
+    which the loader accepts too; :func:`adopt_outside_strings` moves such
+    strings into the pool.)"""
     if "\x00" in new_path:
         raise GcfesndError("A path can't contain a NUL byte.")
-
-    out = bytearray(data)
-    new_string_offset = len(out)
-    out += new_path.encode("ascii") + b"\x00"
-
-    new_raw = new_string_offset - HEADER_SIZE
+    data = adopt_outside_strings(data)
+    cue = next(c for c in read_bgm_cues(data) if c.offset == cue.offset)
+    encoded = new_path.encode("ascii") + b"\x00"
+    encoded += bytes(-len(encoded) % 4)
+    end = _read_container(data)[0]
+    out = bytearray(_insert_data(data, end, encoded, shift_pointers_at_pos=False))
     struct.pack_into(">I", out, cue.offset + 4, control_word)
-    struct.pack_into(">I", out, cue.offset + 8, new_raw)
-    struct.pack_into(">I", out, 0x00, len(out))
+    struct.pack_into(">I", out, cue.offset + 8, end)
     return bytes(out)
 
 
@@ -342,6 +336,30 @@ def _delete_data(data: bytes, pos: int, length: int) -> bytes:
     return bytes(header) + bytes(body) + struct.pack(f">{len(kept)}I", *kept) + bytes(sections)
 
 
+def adopt_outside_strings(data: bytes) -> bytes:
+    """Move every string a record points at beyond the data area (where
+    earlier app versions appended repointed paths, after the relocation and
+    section tables) to the end of the label pool, so later inserts keep the
+    pointers right. The old bytes stay at the end of the file, unused."""
+    while True:
+        data_size, reloc_count, _sections, reloc_start = _read_container(data)
+        relocs = struct.unpack_from(f">{reloc_count}I", data, reloc_start)
+        outside = next((p for p in relocs if struct.unpack_from(">I", data, HEADER_SIZE + p)[0] >= data_size), None)
+        if outside is None:
+            return data
+        value = struct.unpack_from(">I", data, HEADER_SIZE + outside)[0]
+        text = _read_cstring_at(data, HEADER_SIZE + value).encode("ascii") + b"\x00"
+        text += bytes(-len(text) % 4)
+        out = bytearray(_insert_data(data, data_size, text, shift_pointers_at_pos=False))
+        # _insert_data moved every pointer past the insert; the ones that named
+        # the old string now name the copy
+        new_count, new_start = _read_container(bytes(out))[1], _read_container(bytes(out))[3]
+        for p in struct.unpack_from(f">{new_count}I", out, new_start):
+            if struct.unpack_from(">I", out, HEADER_SIZE + p)[0] == value + len(text):
+                struct.pack_into(">I", out, HEADER_SIZE + p, data_size)
+        data = bytes(out)
+
+
 def _end_of_records(data: bytes) -> int:
     """Data position (file offset - HEADER_SIZE) of the zero-length record that ends the array."""
     offset = HEADER_SIZE
@@ -364,6 +382,7 @@ def add_sfx_cue(data: bytes, name: str, *, flags: int, volume: int, pan: int, so
                 extra: bytes, range_value: int) -> bytes:
     """Append a new ``SFX_*`` record (and its name in the label pool)."""
     validate_sfx_name(name)
+    data = adopt_outside_strings(data)
     if name in {c.name for c in read_sfx_cues(data)}:
         raise GcfesndError(f"A cue named {name} already exists.")
     if len(extra) != 4 or not (0 <= volume <= 127 and 0 <= pan <= 127 and 0 <= sound_id <= 0xFFFF):
@@ -412,3 +431,70 @@ def set_sfx_sound_id(data: bytes, cue_name: str, sound_id: int) -> bytes:
     out = bytearray(data)
     struct.pack_into(">I", out, cue.offset + 8, sound_id)
     return bytes(out)
+
+
+BGM_NAME_MAX = 60
+
+
+def validate_bgm_name(name: str) -> None:
+    if not name.startswith("BGM_") or len(name) <= 4:
+        raise GcfesndError("A music cue name must start with BGM_.")
+    if len(name) > BGM_NAME_MAX or not all(c.isascii() and (c.isalnum() or c == "_") and not c.islower() for c in name):
+        raise GcfesndError(f"Use capital letters, digits and _ only (at most {BGM_NAME_MAX} characters).")
+
+
+def add_bgm_cue(data: bytes, name: str, path: str, volume: int = 127) -> bytes:
+    """Append a new ``BGM_*`` record playing ``path`` (``sound/<file>``
+    without ``.stm``), with its name and path in the label pool.
+
+    ``init_sound_scenes`` registers every record of the array by name,
+    wherever it sits, and ``play_bgm`` reads only the record the name
+    resolves to (type byte ``& 3`` = 2: streamed voice; bit 2 set: no
+    ``+0x0C`` fields), so a record after the SFX ones plays like a retail
+    one. Same insertion as :func:`add_sfx_cue`, which plays in Dolphin."""
+    validate_bgm_name(name)
+    if not path.startswith("sound/") or "\0" in path or not path.isascii() or path.endswith(".stm"):
+        raise GcfesndError("The path is sound/<file name> without .stm.")
+    if not 0 <= volume <= 127:
+        raise GcfesndError("The volume must be 0-127.")
+    data = adopt_outside_strings(data)
+    taken = {c.name for c in read_bgm_cues(data)} | {c.name for c in read_sfx_cues(data)}
+    if name in taken:
+        raise GcfesndError(f"A cue named {name} already exists.")
+
+    record_pos = _end_of_records(data)
+    data_size = _read_container(data)[0]
+    name_bytes = name.encode("ascii") + b"\0"
+    name_bytes += bytes(-len(name_bytes) % 4)
+    path_bytes = path.encode("ascii") + b"\0"
+    path_bytes += bytes(-len(path_bytes) % 4)
+    # both strings land at the end of the label pool, which has moved by one record by then;
+    # the path word starts on that end too (left alone by the insert) and is set afterwards
+    name_pos = data_size + BGM_RECORD_SIZE
+    record = struct.pack(">III", name_pos, (BGM_RECORD_SIZE << 24) | (BGM_TYPE_REAL << 16) | (volume << 8) | 0x40,
+                         name_pos)
+    out = _insert_data(data, record_pos, record)
+    out = _add_reloc(out, record_pos)
+    out = _add_reloc(out, record_pos + 8)
+    out = bytearray(_insert_data(out, name_pos, name_bytes + path_bytes, shift_pointers_at_pos=False))
+    struct.pack_into(">I", out, HEADER_SIZE + record_pos + 8, name_pos + len(name_bytes))
+    return bytes(out)
+
+
+def remove_bgm_cue(data: bytes, name: str) -> bytes:
+    """Remove the ``BGM_*`` record ``name`` and the strings only it uses
+    (the inverse of :func:`add_bgm_cue`)."""
+    cues = read_bgm_cues(data)
+    cue = next((c for c in cues if c.name == name), None)
+    if cue is None:
+        raise GcfesndError(f"No BGM cue named {name!r}.")
+    others = [c for c in cues if c is not cue]
+    shared = {c.name_offset for c in others} | {c.path_offset for c in others}
+    out = data
+    strings = sorted({(cue.name_offset, cue.name), (cue.path_offset, cue.path)}, reverse=True)
+    for offset, text in strings:  # last string first, so the first offset stays right
+        if offset in shared or offset < _end_of_records(out):
+            continue
+        size = len(text.encode("ascii")) + 1
+        out = _delete_data(out, offset, size + (-size % 4))
+    return _delete_data(out, cue.offset - HEADER_SIZE, BGM_RECORD_SIZE)
