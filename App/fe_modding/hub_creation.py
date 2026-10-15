@@ -149,8 +149,10 @@ def clean_script(project, chapter: int, player_section: str) -> None:
 
 
 def create_chapter(project, fe8: bytes, source_id: str, chapter: int, title: str,
-                   width: int, height: int, avatar_pid: str, start: tuple[int, int]):
-    """Create the chapter's data, flat map, single avatar and clean script."""
+                   width: int, height: int, avatar_pid: str, start: tuple[int, int], keep_map: bool = False):
+    """Create the chapter's data, map, single avatar and clean script. The map is
+    a copy of the source chapter's with ``keep_map``, else a flat one of
+    ``width`` × ``height`` tiles."""
     if not 0 <= start[0] < width or not 0 <= start[1] < height:
         raise ValueError("The avatar start must be inside the map.")
     source = chapters.chapter_paths(project, source_id)
@@ -158,7 +160,7 @@ def create_chapter(project, fe8: bytes, source_id: str, chapter: int, title: str
         raise ValueError("The starter chapter needs a map, deployment and script.")
     if len(chapters.chapter_phases(project, source_id)) != 1:
         raise ValueError("Choose a chapter with one map phase as the starter.")
-    map_bytes = blank_map(source.map.read_bytes(), width, height)
+    map_bytes = source.map.read_bytes() if keep_map else blank_map(source.map.read_bytes(), width, height)
     renumbered_deployment = chapters._renumber_dispos(source.deployment.read_bytes(),
                                                       source_id.zfill(2), f"{chapter:02d}")
     deployment_bytes = avatar_deployment(renumbered_deployment, avatar_pid, *start)

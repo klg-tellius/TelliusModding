@@ -33,7 +33,7 @@ from typing import Callable, Optional
 from ..formats import fe8data
 from ..project import ModProject
 from .changelog import ChangeLog
-from .widgets import ScrollFrame, section_header
+from .widgets import ScrollFrame, section_header, tip
 
 #: How many decoded scenes the browser keeps, so stepping back and forth is instant.
 PREVIEW_CACHE_SIZE = 6
@@ -307,8 +307,11 @@ class BattleScenePanel(ttk.Frame):
         self._revert_button.pack(side="left", padx=(6, 0))
         self._status = ttk.Label(top, text="", style="Muted.TLabel")
         self._status.pack(side="left", padx=(10, 0))
-        ttk.Checkbutton(top, text="Only terrain types on this map", variable=self._only_map,
-                        command=self._render).pack(side="right")
+        tip(ttk.Checkbutton(top, text="Only terrain types on this map", variable=self._only_map,
+                            command=self._render),
+            "List only the terrain types with tiles on this map (and the first one, the default). Each terrain "
+            "type is fought on its scene; an empty cell uses the default. Maps without a row of their own use "
+            "the shared first row.").pack(side="right")
         self._scroll = ScrollFrame(self, padding=(16, 8, 16, 16))
         self._scroll.pack(fill="both", expand=True)
         if map_editor is not None:
@@ -412,44 +415,37 @@ class BattleScenePanel(ttk.Frame):
         shown = rows[editing if editing is not None else 0]
         default = rows[0]
 
-        section_header(body, f"Battle scenes of {self._map}",
-                       "Each terrain uses its scene; an empty cell uses the first scene in that map's row. "
-                       "Maps without a row use the shared first row.").pack(fill="x")
         state = ttk.Frame(body, style="Page.TFrame")
-        state.pack(fill="x", pady=(6, 10))
+        state.pack(fill="x", pady=(0, 10))
         default_name = default.map_name or "unnamed"
-        fallback = f"shared first row (row 0, named {default_name})"
+        fallback = f"shared first row ({default_name})"
         if own == 0:
-            text = (f"This map is the {fallback}. Empty cells use its first terrain scene. "
-                    "Editing it also changes maps without their own row.")
+            text = f"This map is the {fallback}: editing it also changes maps without their own row."
         elif own is not None:
-            text = "This map has its own scenery row. Empty cells use this row's first terrain scene."
+            text = ""
         elif self._edit_default:
-            text = (f"Editing the {fallback}. Empty cells use its first terrain scene. "
-                    "Changes also affect maps without their own row.")
+            text = f"Editing the {fallback}: changes also affect maps without their own row."
             ttk.Button(state, text="Stop editing shared default",
                        command=lambda: self._set_edit_default(False)).pack(side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
         else:
-            text = (f"This map has no scenery row. Every terrain type uses the {fallback}; "
-                    "empty cells use that row's first terrain scene.")
+            text = f"This map has no scenery row: it uses the {fallback}."
             ttk.Button(state, text="Edit shared default", command=lambda: self._set_edit_default(True)).pack(
                 side="right")
             ttk.Button(state, text=f"Give {self._map} its own row", command=self._add_row).pack(
                 side="right", padx=(0, 6))
         state_style = "Strong.TLabel" if own == 0 or self._edit_default else "Muted.TLabel"
-        ttk.Label(state, text=text, style=state_style, wraplength=640, justify="left").pack(side="left")
+        if text:
+            ttk.Label(state, text=text, style=state_style, wraplength=640, justify="left").pack(side="left")
 
         labels, keys = self._terrain_names(session)
         counts = self._tile_counts()
         self._counts_key = (self._map, frozenset(counts) if counts is not None else None)
         columns = range(len(shown.scenes))
         if self._only_map.get() and counts is not None:
-            columns = [k for k in columns if k < len(keys) and counts.get(keys[k])]
-            ttk.Label(body, style="Faint.TLabel", text=(
-                f"{len(columns)} of the {len(shown.scenes)} terrain types are on this map; clear "
-                "\"Only terrain types on this map\" to see them all.")).pack(anchor="w", pady=(0, 6))
+            # the first terrain type stays: its scene is the one every empty cell uses
+            columns = [k for k in columns if k == 0 or (k < len(keys) and counts.get(keys[k]))]
         elif self._only_map.get():
             ttk.Label(body, style="Faint.TLabel", text=(
                 "The map could not be read, so every terrain type is listed.")).pack(anchor="w", pady=(0, 6))
@@ -462,8 +458,12 @@ class BattleScenePanel(ttk.Frame):
         for line, k in enumerate(columns, start=1):
             label = labels[k] if k < len(labels) else str(k)
             key = keys[k] if k < len(keys) else ""
-            ttk.Label(grid, text=f"{k}: {label}" + (f"  [{key}]" if key and key != label else "")).grid(
-                row=line, column=0, sticky="w", padx=(0, 10), pady=1)
+            caption = ttk.Label(grid, text=f"{k}: {label}" + (f"  [{key}]" if key and key != label else "")
+                                + ("  (default)" if k == 0 else ""))
+            if k == 0:
+                tip(caption, "The first terrain type's scene is also used by every terrain type whose cell is "
+                             "empty, so it is listed even when the map has none of its tiles.")
+            caption.grid(row=line, column=0, sticky="w", padx=(0, 10), pady=1)
             ttk.Label(grid, text=str(counts.get(key, 0)) if counts is not None else "",
                       style="Muted.TLabel").grid(row=line, column=1, sticky="e", padx=(0, 10))
             var = tk.StringVar(value=shown.scenes[k] or "")
@@ -493,7 +493,7 @@ class BattleScenePanel(ttk.Frame):
             source = "first terrain scene: " if not value else ""
             text = f"{source}{chosen} (no zbg folder of that name)"
         elif not value:
-            text = f"first terrain scene: {chosen or 'none'}"
+            text = f"default: {chosen or 'none'}"
         else:
             text = ""
         note.configure(text=text, style="Danger.TLabel" if missing else "Muted.TLabel")

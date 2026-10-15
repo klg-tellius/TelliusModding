@@ -126,6 +126,7 @@ from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 
 @dataclass(frozen=True)
@@ -4045,8 +4046,7 @@ class _ModelPreview(ttk.Frame):
         info_row.pack(fill="x")
         self._mesh_info_label = ttk.Label(info_row, text="", style="Muted.TLabel")
         self._mesh_info_label.pack(side="left")
-        ttk.Label(info_row, text="Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan",
-                  style="Muted.TLabel").pack(side="right")
+        info(info_row, "Drag to orbit, scroll to zoom, right-drag or Shift+drag to pan.").pack(side="right")
 
         if self._mesh_only:
             # no Skeleton/Animations notebook - these widgets are created
@@ -4069,17 +4069,9 @@ class _ModelPreview(ttk.Frame):
 
         skel_tab = ttk.Frame(notebook, padding=6)
         notebook.add(skel_tab, text="Skeleton")
-        ttk.Label(
-            skel_tab,
-            text=(
-                "Bone hierarchy (name / parent). Select a bone to\n"
-                "highlight it; pick an animation to pose the model\n"
-                "the way the game does."
-            ),
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", pady=(0, 6))
         self._bone_tree = ttk.Treeview(skel_tab, show="tree")
+        tip(self._bone_tree, "Bone hierarchy (name / parent). Select a bone to highlight it; pick an animation to "
+                             "pose the model the way the game does.")
         self._bone_tree.pack(fill="both", expand=True)
         self._bone_tree.bind("<<TreeviewSelect>>", lambda e: self._on_bone_selected())
 
@@ -4108,17 +4100,8 @@ class _ModelPreview(ttk.Frame):
         self._frame_label = ttk.Label(playback_row, text="", style="Muted.TLabel", width=10)
         self._frame_label.pack(side="left")
 
-        ttk.Label(
-            anim_tab,
-            text=(
-                "Skeleton + mesh playback (see model_viewer.py's module\n"
-                "note) - forward kinematics/skinning built on skeleton.py's\n"
-                "confirmed/strong-evidence bind data, not itself confirmed\n"
-                "against the game."
-            ),
-            style="Muted.TLabel",
-            justify="left",
-        ).pack(anchor="w", pady=(0, 4))
+        tip(self._frame_label, "Skeleton and mesh playback: forward kinematics and skinning built on the decoded "
+                               "bind data, not itself checked against the game.")
         columns = ("bone", "channel", "end_frame", "keyframes", "peak")
         self._curve_tree = ttk.Treeview(anim_tab, columns=columns, show="headings", height=10)
         headings = (

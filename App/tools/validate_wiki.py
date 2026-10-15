@@ -124,8 +124,8 @@ def main() -> int:
         shell_match = re.search(r"const routes = (\{.*?\});", legacy_shell, re.S)
         if not shell_match or set(json.loads(shell_match.group(1))) != set(routes):
             errors.append("docs/tellius_archive.html does not cover every legacy article id")
-    if migrated != 97:
-        errors.append(f"found {migrated} migrated format/system references, expected 97")
+    if migrated != 98:
+        errors.append(f"found {migrated} migrated format/system references, expected 98")
 
     cms = (WIKI / "admin" / "config.yml").read_text(encoding="utf-8")
     for required in ("open_authoring: true", "publish_mode: editorial_workflow", "auth_endpoint: /auth"):

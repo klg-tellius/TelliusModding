@@ -111,6 +111,18 @@ def read_cmb(data: bytes, dialect: Optional[Dialect] = None) -> ScriptFile:
     )
 
 
+def count_functions(data: bytes) -> int:
+    """How many functions a ``.cmb`` holds, from its function table alone."""
+    if len(data) < HEADER_SIZE:
+        raise CmbError("File too small to be a .cmb script.")
+    (pos,) = struct.unpack_from("<I", data, 0x28)
+    count = 0
+    while pos + 4 <= len(data) and struct.unpack_from("<I", data, pos)[0]:
+        count += 1
+        pos += 4
+    return count
+
+
 def read_cmb_path(path: Path | str, dialect: Optional[Dialect] = None) -> ScriptFile:
     return read_cmb(Path(path).read_bytes(), dialect)
 

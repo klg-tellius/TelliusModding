@@ -53,6 +53,16 @@ FORGE_ROW_NAMES = ("Swords", "Lances", "Axes", "Bows", "Tomes")  # what each row
 FORGE_BASE_NAMES = {"MDV_IRN": "Iron", "MDV_SLM": "Slim", "MDV_STL": "Steel", "MDV_SLV": "Silver",
                     "MDV_HND": "Thrown", "MDV_FI": "Fire", "MDV_TH": "Thunder", "MDV_WD": "Wind",
                     "MDV_LIT": "Light"}
+#: The forge's built-in grid (``default_forge_shop_items``, 0x80276354), used when a chapter has
+#: no forge section: the weapon each row offers for each base, or None. These 19 are the
+#: weapons the forge menu is built for.
+FORGE_DEFAULT_ITEMS = (
+    "IID_IRONSWORD", "IID_SLIMSWORD", "IID_STEELSWORD", "IID_SILVERSWORD", None, None, None, None, None,
+    "IID_IRONLANCE", "IID_SLIMLANCE", "IID_STEELLANCE", "IID_SILVERLANCE", "IID_HANDSPEAR", None, None, None, None,
+    "IID_IRONAXE", None, "IID_STEELAXE", "IID_SILVERAXE", "IID_HANDAXE", None, None, None, None,
+    "IID_IRONBOW", None, "IID_STEELBOW", "IID_SILVERBOW", None, None, None, None, None,
+    None, None, None, None, None, "IID_FIRE", "IID_THUNDER", "IID_WIND", "IID_LIGHTNING",
+)
 
 
 def section_name(kind: str, chapter: int) -> str:

@@ -240,7 +240,7 @@ def apply_patch(patch_path: Path | str, target_dir: Path | str) -> PatchInfo:
         if not path.is_file() or _sha1(path) != entry.get("base_sha1"):
             mismatched.append(rel)
     if mismatched:
-        listed = "\n  ".join(mismatched[:10]) + ("\n  â€¦" if len(mismatched) > 10 else "")
+        listed = "\n  ".join(mismatched[:10]) + ("\n  …" if len(mismatched) > 10 else "")
         raise PatchError("The base disc doesn't match the one the patch was made from "
                          f"(a different version, or an already modified disc). Differing files:\n  {listed}")
     with zipfile.ZipFile(patch_path) as archive:

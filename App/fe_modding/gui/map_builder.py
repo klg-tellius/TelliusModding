@@ -75,7 +75,7 @@ from ..formats.cmb.parser import ParseError
 from . import dispo_widgets, gpu_renderer, map_scene
 from ..project_index import difficulty_name
 from .editor_panel import EditorPanel
-from .widgets import ScrollFrame
+from .widgets import ScrollFrame, info, tip
 
 F = dispo.FIELD
 BACKDROP_PX_PER_TILE = 32
@@ -84,7 +84,19 @@ RENDER_DELAY_MS = 800
 FACTION_COLORS = {0: "#3d7bd9", 1: "#d9473b", 2: "#34a853", 3: "#1e8f7a"}
 ANGLES = {"0°": 0, "90°": 192, "180°": 128, "270°": 64}
 AI_FIELDS = (("seq_attack", "Attack AI", "SEQ"), ("seq_move", "Move AI", "SEQ"), ("seq_heal", "Heal AI", "SEQ"),
-             ("mtype", "Movement AI", "MTYPE"))
+             ("mtype", "Target priority", "MTYPE"))
+AI_HELP = {
+    "seq_attack": "Attack script (SEQ_): when the unit attacks and which foes it may go after "
+                  "(anyone in range, only when approached, a given character...).",
+    "seq_move": "Move script (SEQ_): where the unit goes on a turn it does not attack: stay, advance "
+                "on the player, walk to a tile, follow a leader, flee...",
+    "seq_heal": "Heal behaviour (SEQ_*HEAL): the HP % under which the unit retreats to heal and the "
+                "HP % at which it comes back.",
+    "mtype": "Target priority (MTYPE_): weights that score every foe and tile the unit could attack "
+             "from: damage dealt and taken, kill chance, and class bonuses (MTYPE_ARMORKILLER prefers "
+             "armoured units...).",
+    "ai_order": "Enemy-phase order: units with a lower value move first.",
+}
 PER_VARIANT_FIELDS = {F["level"], *(F[f"bonus_{s}"] for s in dispo.STAT_NAMES)}
 TOOL_HELP = {
     "select": "Click a unit or a prop to edit it; drag it to move it. Click any other tile to edit its heights.\n"
@@ -110,6 +122,17 @@ def _terrain_color(name: str) -> tuple[int, int, int]:
     hue = (sum(name.encode("utf-8")) * 0.61803398875) % 1.0
     r, g, b = colorsys.hls_to_rgb(hue, 0.45, 0.55)
     return int(r * 255), int(g * 255), int(b * 255)
+
+
+def _steps_text(elevation: int) -> str:
+    """A map.bin elevation as steps: 400 units per step, higher is positive."""
+    text = f"{elevation / map_heights.ELEVATION_PER_UNIT:.4f}".rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
+
+
+def _steps_value(text: str) -> int:
+    """Steps typed by the user back to a map.bin elevation."""
+    return round(float(text.replace(",", ".")) * map_heights.ELEVATION_PER_UNIT)
 
 
 def _ordered(a, b) -> tuple[int, int, int, int]:
@@ -186,6 +209,7 @@ class _BuildCanvas(tk.Canvas):
         self.units: list[dict] = []
         self.highlighting = False  # a section's units are highlighted (the others are drawn dimmed)
         self.zones: list[dict] = []
+        self.hub_marks: list[dict] = []  # a hub's chapter links (hub_tool.HubTool.marks)
         self.heights = None  # [x][y] mean combined elevation, for the heights layer
         self.selected_tiles: set = set()
         self.show = {"image": True, "terrain": False, "heights": False, "grid": True, "props": True, "zones": True,
@@ -306,6 +330,8 @@ class _BuildCanvas(tk.Canvas):
         if self.show["zones"]:
             for zone in self.zones:
                 self._draw_zone(zone)
+        for mark in self.hub_marks:
+            self._draw_hub_mark(mark)
         if self.show["units"]:
             self.highlighting = any(unit["highlight"] for unit in self.units)
             # the highlighted section's units on top, the selected unit above them
@@ -342,6 +368,34 @@ class _BuildCanvas(tk.Canvas):
         if self.cell >= 16:
             self.create_text(x0 + pad + 2, y0 + pad + 1, anchor="nw", text=zone["text"], fill=color,
                              font=("Segoe UI", max(7, min(10, int(self.cell / 3))), "bold"))
+
+    def _draw_hub_mark(self, mark: dict) -> None:
+        from .hub_tool import LINK_COLOR, RETURN_COLOR
+
+        selected = mark["selected"]
+        font = ("Segoe UI", max(7, min(10, int(self.cell / 3))), "bold")
+        centers = {}
+        for which in ("action", "return"):
+            if mark[which] is not None:
+                x0, y0, x1, y1 = self.box(*mark[which])
+                centers[which] = ((x0 + x1) / 2, (y0 + y1) / 2)
+        if len(centers) == 2 and centers["action"] != centers["return"]:
+            self.create_line(*centers["action"], *centers["return"], fill=RETURN_COLOR, width=2, dash=(4, 3),
+                             arrow="last")
+        if "action" in centers:
+            x0, y0, x1, y1 = self.box(*mark["action"])
+            self.create_rectangle(x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill=LINK_COLOR, stipple="gray50",
+                                  outline="#ffe14d" if selected else LINK_COLOR, width=3 if selected else 2)
+            if self.cell >= 16:
+                self.create_text(*centers["action"], text=f"{mark['chapter']:02d}", fill="#ffffff", font=font)
+        if "return" in centers:
+            x0, y0, x1, y1 = self.box(*mark["return"])
+            pad = max(3, self.cell * 0.2)
+            self.create_oval(x0 + pad, y0 + pad, x1 - pad, y1 - pad, outline="#ffe14d" if selected else RETURN_COLOR,
+                             width=3 if selected else 2)
+            if self.cell >= 22 and centers.get("action") != centers["return"]:
+                self.create_text(x1 - 2, y0 + 1, anchor="ne", text=f"{mark['chapter']:02d}", fill=RETURN_COLOR,
+                                 font=("Segoe UI", 7, "bold"))
 
     def preview_tiles(self, tiles, color: str) -> None:
         self.delete("preview")
@@ -483,6 +537,8 @@ class MapBuilder(EditorPanel):
         self._form_vars: dict = {}
         self._windows: dict[str, tk.Toplevel] = {}
         self._highlight: tuple[str, str] | None = None  # (variant, section) highlighted on the canvas
+        self._chapter_id: str | None = None
+        self.on_install_hub: Optional[Callable[[object], bool]] = None  # the chapter page installs a hub
 
         self._build_widgets()
         map_editor.add_listener(self._on_map_changed)
@@ -589,7 +645,12 @@ class MapBuilder(EditorPanel):
             button.pack(fill="x", pady=(0, 2))
             self._tool_buttons[key] = button
             self._bind_toolbar_tooltip(button, label)
-        ttk.Separator(toolbar, orient="horizontal").pack(fill="x", pady=(4, 5))
+        self._hub_button = ttk.Button(toolbar, text="◎", style="BuildToolbar.TButton",
+                                      command=lambda: self._choose_tool("hub"))
+        self._tool_buttons["hub"] = self._hub_button
+        self._bind_toolbar_tooltip(self._hub_button, "Hub: chapter links")
+        self._toolbar_separator = ttk.Separator(toolbar, orient="horizontal")
+        self._toolbar_separator.pack(fill="x", pady=(4, 5))
         for label, icon, command in (("Objects list", "▤", self.open_objects),
                                      ("Units list", "☷", self.open_disposition)):
             button = ttk.Button(toolbar, text=icon, style="BuildToolbarAction.TButton",
@@ -659,8 +720,8 @@ class MapBuilder(EditorPanel):
         self._tool_frames["prop"] = frame
 
         frame = ttk.Frame(parent)
-        ttk.Label(frame, text="Units stand on the combined layer. Show the Heights layer to see it shaded (red is high).",
-                  style="Muted.TLabel", wraplength=210, justify="left").pack(anchor="w")
+        ttk.Label(frame, text="Click a tile, or drag a rectangle. Tick Heights below the map to shade them "
+                              "(red is high).", style="Muted.TLabel", wraplength=260, justify="left").pack(anchor="w")
         self._tool_frames["heights"] = frame
 
         frame = ttk.Frame(parent)
@@ -668,12 +729,16 @@ class MapBuilder(EditorPanel):
         self._section_var = tk.StringVar()
         self._section_combo = ttk.Combobox(frame, textvariable=self._section_var, state="readonly", width=30)
         self._section_combo.pack(anchor="w", fill="x")
-        ttk.Label(frame, text="New units copy the AI, faction and flags of the section's first unit.",
-                  style="Muted.TLabel", wraplength=210, justify="left").pack(anchor="w", pady=(4, 0))
-        ttk.Label(frame, text="Add to").pack(anchor="w", pady=(8, 0))
+        tip(self._section_combo, "New units copy the AI, faction and flags of the section's first unit.")
+        tip(ttk.Label(frame, text="Add to"),
+            "Common: one record used on every difficulty (the common file). Difficulty files: a copy of the "
+            "unit in each ticked difficulty, each with its own level and bonuses.").pack(anchor="w", pady=(8, 0))
+        self._add_to_kind = tk.StringVar(value="difficulty")
+        self._add_to_kind.trace_add("write", lambda *_: self._update_add_to())
         self._add_to_frame = ttk.Frame(frame)
         self._add_to_frame.pack(anchor="w")
         self._add_to_vars: dict[str, tk.BooleanVar] = {}
+        self._add_to_checks: dict[str, ttk.Checkbutton] = {}
         self._tool_frames["unit"] = frame
 
         frame = ttk.Frame(parent)
@@ -691,14 +756,18 @@ class MapBuilder(EditorPanel):
         self._zone_function = tk.StringVar(value=NEW_FUNCTION)
         self._zone_function_box = ttk.Combobox(frame, textvariable=self._zone_function, state="readonly", width=30)
         self._zone_function_box.pack(anchor="w", fill="x")
-        ttk.Label(frame, text="A new zone runs a new, empty function, or an existing function without a trigger "
-                              "(the ones marked UNUSED come first): it gets the zone's trigger.",
-                  style="Muted.TLabel", wraplength=210, justify="left").pack(anchor="w", pady=(4, 0))
+        tip(self._zone_function_box, "A new zone runs a new, empty function, or an existing function without a "
+                                     "trigger (the ones marked UNUSED come first): it gets the zone's trigger.")
         self._zone_note = ttk.Label(frame, text="", style="Muted.TLabel", wraplength=210, justify="left")
         self._zone_note.pack(anchor="w", pady=(8, 0))
         self._zone_open_script = ttk.Button(frame, text="Open this chapter's script", command=self._open_chapter_script)
         self._tool_frames["zone"] = frame
         self._zone_kind_changed()
+
+        from .hub_tool import HubTool
+
+        self._hub = HubTool(parent, self)
+        self._tool_frames["hub"] = self._hub
 
         self._tool_changed()
 
@@ -733,15 +802,43 @@ class MapBuilder(EditorPanel):
         for child in self._add_to_frame.winfo_children():
             child.destroy()
         old = {v: var.get() for v, var in self._add_to_vars.items()}
-        self._add_to_vars = {}
-        for v in variants:
-            var = tk.BooleanVar(value=old.get(v, True))
-            self._add_to_vars[v] = var
-            ttk.Checkbutton(self._add_to_frame, text=self._variant_name(v), variable=var).pack(anchor="w")
+        self._add_to_vars, self._add_to_checks = {}, {}
+        common = [v for v in variants if v.endswith("_c.bin")]
+        levels = [v for v in variants if not v.endswith("_c.bin")]
+        if common:
+            ttk.Radiobutton(self._add_to_frame, text="Common file (every difficulty)", value="common",
+                            variable=self._add_to_kind).pack(anchor="w")
+        if levels:
+            ttk.Radiobutton(self._add_to_frame, text="Difficulty files", value="difficulty",
+                            variable=self._add_to_kind).pack(anchor="w")
+            row = ttk.Frame(self._add_to_frame)
+            row.pack(anchor="w", padx=(22, 0))
+            for v in levels:
+                var = tk.BooleanVar(value=old.get(v, True))
+                self._add_to_vars[v] = var
+                self._add_to_checks[v] = ttk.Checkbutton(row, text=self._variant_name(v), variable=var)
+                self._add_to_checks[v].pack(side="left", padx=(0, 6))
+        if not levels:
+            self._add_to_kind.set("common")
+        elif not common:
+            self._add_to_kind.set("difficulty")
+        self._update_add_to()
         self._refresh_sections()
         self._refresh_canvas()
         self._update_buttons()
         self._notify_disposition()
+
+    def _update_add_to(self) -> None:
+        state = ["!disabled"] if self._add_to_kind.get() == "difficulty" else ["disabled"]
+        for check in self._add_to_checks.values():
+            check.state(state)
+
+    def _add_to_variants(self, current: str) -> list[str]:
+        """The deployment files a placed unit goes to: the common file, or the ticked difficulties."""
+        variants = self._deploy.variants()
+        if self._add_to_kind.get() == "common":
+            return [v for v in variants if v.endswith("_c.bin")] or [current]
+        return [v for v, var in self._add_to_vars.items() if var.get()] or [current]
 
     @staticmethod
     def _variant_name(variant: str) -> str:
@@ -1004,6 +1101,9 @@ class MapBuilder(EditorPanel):
         zones, _problem = self._zone_state()
         selected_zone = self._selection[1] if self._selection and self._selection[0] == "zone" else None
         canvas.zones = []
+        canvas.hub_marks = self._hub.marks()
+        if canvas.hub_marks:
+            zones = [z for z in zones if not z.function.startswith(("HubGoTo", "HubDescribe"))]
         for zone in zones:
             x1, y1, x2, y2 = zone.rect
             if x2 < 0 or y2 < 0 or x1 >= cap.x_size or y1 >= cap.y_size:
@@ -1563,7 +1663,7 @@ class MapBuilder(EditorPanel):
         template[F["pid"]], template[F["jid"]], template[F["level"]] = pid, jid, level
         template[F["pos_x"]], template[F["pos_y"]] = tile
         template[F["pos2_x"]], template[F["pos2_y"]] = tile
-        chosen = [v for v, var in self._add_to_vars.items() if var.get()] or [current]
+        chosen = self._add_to_variants(current)
         added = {}
 
         def edit(docs):
@@ -1573,8 +1673,14 @@ class MapBuilder(EditorPanel):
                     continue
                 added[variant] = (target.name, dispo.add_unit(docs[variant], target.name, template))
 
-        if self._edit_units(edit, f"Added {pid} on {tile} to {section}") and current in added:
+        if not self._edit_units(edit, f"Added {pid} on {tile} to {section}"):
+            return
+        if current in added:
             self._select(("unit", *added[current]))
+        elif not added:
+            messagebox.showinfo("Place unit", f"None of the chosen files has a section matching {section}. Show the "
+                                              "file you want in the picker at the top and choose one of its sections.",
+                                parent=self)
 
     # -- script zones ------------------------------------------------------------------------
     def _zone_state(self) -> tuple[list, Optional[str]]:
@@ -1756,7 +1862,8 @@ class MapBuilder(EditorPanel):
             widget.grid(row=row, column=1, sticky="w", pady=2, padx=(8, 0))
             row += 1
 
-        add("Function", ttk.Entry(form, textvariable=v["name"], width=26))
+        add("Function", tip(ttk.Entry(form, textvariable=v["name"], width=26),
+                            "The script function the zone runs. Its code is edited in the Script tab."))
         add("Description", ttk.Entry(form, textvariable=v["description"], width=26))
         kind_box = ttk.Combobox(form, textvariable=v["kind"], values=list(ZONE_KINDS), state="readonly", width=26)
         add("Kind", kind_box)
@@ -1773,7 +1880,8 @@ class MapBuilder(EditorPanel):
                 ttk.Label(tiles, text="XY"[i]).pack(side="left", padx=(0 if i == 0 else 8, 2))
                 spins[key] = ttk.Spinbox(tiles, from_=0, to=255, textvariable=v[key], width=4)
                 spins[key].pack(side="left")
-        add("Event name", ttk.Entry(form, textvariable=v["label"], width=26))
+        add("Event name", tip(ttk.Entry(form, textvariable=v["label"], width=26),
+                              "The trigger's name label (a debug label for a zone; empty for none)."))
 
         def kind_changed(_event=None) -> None:
             kind = ZONE_KINDS[v["kind"].get()]
@@ -1792,7 +1900,8 @@ class MapBuilder(EditorPanel):
         buttons = ttk.Frame(body)
         buttons.pack(anchor="w", pady=(10, 0))
         ttk.Button(buttons, text="Apply", command=lambda: self._apply_zone(function)).pack(side="left")
-        ttk.Button(buttons, text="Delete zone", command=lambda: self._delete_zone(function)).pack(side="left", padx=(6, 0))
+        delete_button = ttk.Button(buttons, text="Delete zone", command=lambda: self._delete_zone(function))
+        delete_button.pack(side="left", padx=(6, 0))
         if self._on_open_function is not None:
             ttk.Button(buttons, text="Open in Script tab", command=lambda: self._on_open_function(function)).pack(side="left", padx=(6, 0))
         try:
@@ -1803,11 +1912,7 @@ class MapBuilder(EditorPanel):
             fate = "The function is empty: deleting the zone deletes it."
         else:
             fate = "Deleting the zone keeps the function (it has code, or is exported or called), without its trigger and marked UNUSED."
-        ttk.Label(body, text=fate, style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(10, 0))
-        ttk.Label(body, text="Event name: the trigger's name label (a debug label for a zone; empty for none). "
-                             "Area sides and location actions: see the script tutorial, lessons 7 and 11. Changing "
-                             "the code the zone runs is done in the Script tab.",
-                  style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+        tip(delete_button, fate)
 
     def _apply_zone(self, function: str) -> None:
         v = self._form_vars
@@ -1882,6 +1987,9 @@ class MapBuilder(EditorPanel):
             self._place_prop(tile)
         elif tool == "unit":
             self._place_unit(tile)
+        elif tool == "hub":
+            self._press_state = self._hub.press(tile)
+            self._refresh_canvas()
         elif tool == "zone":
             zone = None if event is not None and event.state & 0x0001 else self._zone_at(tile)  # Shift: draw anyway
             if zone is not None:
@@ -1955,6 +2063,8 @@ class MapBuilder(EditorPanel):
             return
         if state["kind"] == "zone":
             self._move_zone(state["function"], target[0] - state["start"][0], target[1] - state["start"][1])
+        elif state["kind"] == "hub":
+            self._hub.place(state["index"], state["which"], target)
         elif state["kind"] == "unit":
             self._move_unit(state["key"], target)
         elif state["kind"] == "prop":
@@ -2011,7 +2121,7 @@ class MapBuilder(EditorPanel):
         data = self._map.map_data
         corners = map_heights.tile_corners(data, tile).get("combined") if data is not None else None
         if corners is not None:
-            parts.append("height " + " ".join(f"{-c / 400:g}" for c in corners))
+            parts.append("height " + " ".join(_steps_text(c) for c in corners) + " steps")
         prop = self._prop_at(tile)
         if prop is not None:
             parts.append(next(p["name"] for p in self._canvas.props if p["index"] == prop))
@@ -2108,9 +2218,8 @@ class MapBuilder(EditorPanel):
         selection = self._selection
         if selection is None:
             ttk.Label(body, text="Nothing selected", font=("Segoe UI", 11, "bold")).pack(anchor="w")
-            ttk.Label(body, text="Pick a tool on the left. With Select / move, click a unit or a prop to edit it here; "
-                                 "with Script zones, a zone.\n\n"
-                                 "Middle-drag pans, Ctrl+wheel zooms. Ctrl+Z / Ctrl+Y undo and redo.",
+            ttk.Label(body, text="Click a unit, a prop or a tile to edit it here.\n"
+                                 "Middle-drag pans, Ctrl+wheel zooms.",
                       style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
             return
         if selection[0] == "prop":
@@ -2132,7 +2241,9 @@ class MapBuilder(EditorPanel):
             return
         inst = data.build_inst[index]
         obj = data.build_desc[inst.desc_index]
-        ttk.Label(body, text=obj.filename, font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        tip(ttk.Label(body, text=obj.filename, font=("Segoe UI", 11, "bold")),
+            "A prop doesn't block movement by itself: paint its tiles' terrain type (for example Obstacle) "
+            "with Paint terrain.").pack(anchor="w")
         ttk.Label(body, text=f"Instance {index} on tile ({inst.x}, {inst.y}), covering ({inst.x2}, {inst.y2})–"
                              f"({inst.end_x2}, {inst.end_y2}), height {inst.height():g}",
                   style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(2, 8))
@@ -2149,9 +2260,6 @@ class MapBuilder(EditorPanel):
         ttk.Button(buttons, text="Turn 90°", command=self._rotate_selected).pack(side="left")
         ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
         ttk.Button(buttons, text="View model...", command=lambda: self._map.view_model(self, obj.filename)).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text="A prop doesn't block movement by itself: paint its tiles' terrain type (for example "
-                             "Obstacle) with Paint terrain.", style="Muted.TLabel", wraplength=300,
-                  justify="left").pack(anchor="w", pady=(10, 0))
         if "rock" in obj.filename.lower():
             self._rock_inspector(body, inst.x, inst.y)
 
@@ -2184,10 +2292,9 @@ class MapBuilder(EditorPanel):
         ttk.Label(row, text="Initial direction").pack(side="left")
         ttk.Combobox(row, textvariable=direction, values=list(directions), state="readonly", width=7).pack(
             side="left", padx=(6, 0))
-        ttk.Label(body, text="Path steps: 4 left, 6 right, 2 down, 8 up", style="Muted.TLabel",
-                  wraplength=300).pack(anchor="w", pady=(6, 0))
+        ttk.Label(body, text="Path").pack(anchor="w", pady=(6, 0))
         path = tk.StringVar(value=route.path or "" if route else "")
-        entry = ttk.Entry(body, textvariable=path, width=32)
+        entry = tip(ttk.Entry(body, textvariable=path, width=32), "One digit per step: 4 left, 6 right, 2 down, 8 up.")
         entry.pack(anchor="w", pady=(3, 0))
         if route is not None and not route.editable:
             ttk.Label(body, text="This call needs editing in the Script tab.", style="Muted.TLabel").pack(anchor="w")
@@ -2211,10 +2318,16 @@ class MapBuilder(EditorPanel):
         if route is not None:
             ttk.Label(body, text=f"Script: {route.function}, line {route.set_line}", style="Muted.TLabel").pack(anchor="w")
 
-    LAYER_TEXT = {"combined": "Combined", "ground": "Ground", "roof": "Roof"}
-    HEIGHTS_HELP = ("Elevations are the game's values: -400 is one unit higher (a tile is 5 units wide). "
-                    "Units and the cursor stand on the combined layer; ground is the land under objects; roof is "
-                    "used on buildings. Two neighbouring corners 400 or more apart close the way between the tiles.")
+    LAYER_TEXT = {"combined": "Units", "ground": "Ground", "roof": "Roof"}
+    LAYER_HELP = {"combined": "Where units and the cursor stand: the ground, or the top of a bridge, wall or roof.",
+                  "ground": "The land under the props.",
+                  "roof": "The top of buildings (used when a unit is on a roof)."}
+    HEIGHTS_HELP = ("Heights are in steps: 1 step = 400 in the file, about a fifth of a tile's width; higher "
+                    "numbers are higher ground. Two neighbouring corners 1 step or more apart close the way "
+                    "between the tiles.")
+    DIRECTIONS_HELP = ("Which sides of this tile a unit can walk out of. Untick a side to put a wall there "
+                       "(a cliff, a fence, a door frame). By default every side is open unless the corner "
+                       "heights differ by a step or more.")
 
     def _tile_inspector(self, body, tile) -> None:
         data = self._map.map_data
@@ -2224,6 +2337,34 @@ class MapBuilder(EditorPanel):
         if grid is not None:
             name = grid[tile[0]][tile[1]]
             ttk.Label(body, text=f"{self._map.terrain_label(name)} [{name}]", style="Muted.TLabel").pack(anchor="w")
+        if corners:
+            title = ttk.Frame(body)
+            title.pack(anchor="w", pady=(10, 2))
+            ttk.Label(title, text="Corner heights (steps)", font=("Segoe UI", 10, "bold")).pack(side="left")
+            info(title, self.HEIGHTS_HELP).pack(side="left", padx=(4, 0))
+            table = ttk.Frame(body)
+            table.pack(anchor="w")
+            for col, text in enumerate(("", "Top left", "Top right", "Bottom left", "Bottom right")):
+                ttk.Label(table, text=text, style="Muted.TLabel").grid(row=0, column=col, sticky="w", padx=(0, 4))
+            self._form_vars = {}
+            for row, (layer, values) in enumerate(corners.items(), start=1):
+                tip(ttk.Label(table, text=self.LAYER_TEXT[layer]), self.LAYER_HELP[layer]).grid(
+                    row=row, column=0, sticky="w", padx=(0, 6), pady=2)
+                for k, value in enumerate(values):
+                    var = tk.StringVar(value=_steps_text(value))
+                    entry = ttk.Entry(table, textvariable=var, width=6, justify="center")
+                    entry.grid(row=row, column=k + 1, sticky="w", padx=(0, 4))
+                    entry.bind("<Return>", lambda e: self._apply_tile(tile))
+                    self._form_vars[layer, k] = var
+            buttons = ttk.Frame(body)
+            buttons.pack(anchor="w", pady=(6, 0))
+            ttk.Button(buttons, text="Apply", command=lambda: self._apply_tile(tile)).pack(side="left")
+            tip(ttk.Button(buttons, text="Deduce from terrain and props", command=lambda: self._deduce([tile])),
+                "Estimate the heights: the ground follows the terrain (or a bridge deck over it); the unit "
+                "and roof layers rise to the height vanilla gives the props on the tile. Check the result "
+                "in game.").pack(side="left", padx=(6, 0))
+        elif data is not None:
+            ttk.Label(body, text="This map has no height layers.", style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
         if data is not None and data.capacity is not None and self._map.verified_us_map_layout:
             x, y = tile
             raw_link = data.link[x][y] if data.link is not None else -1
@@ -2231,54 +2372,31 @@ class MapBuilder(EditorPanel):
             status = map_file.compose_link_status_grid(data)[x][y]
             effective = status & 0x0F
             openings = effective if raw_link == -1 else raw_link & 0x0F
-            ttk.Label(body, text="Directional openings", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10, 2))
+            title = ttk.Frame(body)
+            title.pack(anchor="w", pady=(14, 2))
+            ttk.Label(title, text="Exits", font=("Segoe UI", 10, "bold")).pack(side="left")
+            threat = ", ".join(
+                f"{name} {'blocked' if cost is None else cost}"
+                for name, cost in ((name, map_file.link_threat_edge_base_cost(status, bit))
+                                   for name, bit in map_file.LINK_PASS_DIRECTIONS))
+            edges = ", ".join(name for name, bit in map_file.LINK_PASS_DIRECTIONS if status & (bit << 4)) or "none"
+            info(title, self.DIRECTIONS_HELP + f"\n\nMap edge (closed to fliers too): {edges}.\n"
+                        f"Cost of each side in the enemy-range display: {threat}." +
+                 ("\n\nA maplinkAbs record fixes this tile's exits; they cannot be edited here." if override else "")
+                 ).pack(side="left", padx=(4, 0))
             self._link_vars = {}
+            compass = ttk.Frame(body)
+            compass.pack(anchor="w")
+            spots = {"north": (0, 1), "west": (1, 0), "east": (1, 2), "south": (2, 1)}
             for name, bit in map_file.LINK_PASS_DIRECTIONS:
                 var = tk.BooleanVar(value=bool(openings & bit))
                 self._link_vars[bit] = var
-                ttk.Checkbutton(body, text=name.capitalize(), variable=var,
-                                state="disabled" if override else "normal").pack(anchor="w")
-            shown = ", ".join(map_file.link_passable_directions(effective)) or "none"
-            ttk.Label(body, text=f"Effective openings: {shown}." +
-                      (" maplinkAbs overrides this tile." if override else ""),
-                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
-            edge_flags = ", ".join(name for name, bit in map_file.LINK_PASS_DIRECTIONS
-                                    if status & (bit << 4)) or "none"
-            ttk.Label(body, text=f"Flying movement blocks: {edge_flags}.",
-                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
-            threat_costs = [(name, map_file.link_threat_edge_base_cost(status, bit))
-                            for name, bit in map_file.LINK_PASS_DIRECTIONS]
-            threat_edges = ", ".join(f"{name} {'blocked' if cost is None else cost}"
-                                      for name, cost in threat_costs)
-            ttk.Label(body, text=f"Threat-range edge cost: {threat_edges}. Terrain can raise cost 1 to 3.",
-                      style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w")
+                r, c = spots[name]
+                ttk.Checkbutton(compass, text=name.capitalize(), variable=var,
+                                state="disabled" if override else "normal").grid(row=r, column=c, sticky="w", padx=2)
+            ttk.Label(compass, text="\u25a1", style="Muted.TLabel").grid(row=1, column=1)
             if not override:
-                ttk.Button(body, text="Apply openings", command=lambda: self._apply_tile_link(tile)).pack(anchor="w", pady=(4, 0))
-        if not corners:
-            ttk.Label(body, text="This map has no panel layers.", style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
-            return
-        table = ttk.Frame(body)
-        table.pack(anchor="w", pady=(10, 0))
-        for col, text in enumerate(("", "Top left", "Top right", "Bottom left", "Bottom right")):
-            ttk.Label(table, text=text, style="Muted.TLabel").grid(row=0, column=col, sticky="w", padx=(0, 4))
-        self._form_vars = {}
-        for row, (layer, values) in enumerate(corners.items(), start=1):
-            ttk.Label(table, text=self.LAYER_TEXT[layer]).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=2)
-            for k, value in enumerate(values):
-                var = tk.StringVar(value=str(value))
-                entry = ttk.Entry(table, textvariable=var, width=7)
-                entry.grid(row=row, column=k + 1, sticky="w", padx=(0, 4))
-                entry.bind("<Return>", lambda e: self._apply_tile(tile))
-                self._form_vars[layer, k] = var
-        buttons = ttk.Frame(body)
-        buttons.pack(anchor="w", pady=(8, 0))
-        ttk.Button(buttons, text="Apply", command=lambda: self._apply_tile(tile)).pack(side="left")
-        ttk.Button(buttons, text="Deduce from terrain and props", command=lambda: self._deduce([tile])).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text=self.HEIGHTS_HELP, style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(10, 0))
-        ttk.Label(body, text="Deduce: the ground is the terrain (or a bridge deck over it); the combined and roof layers "
-                             "rise to the height vanilla gives the props covering the tile (trees, walls, houses). "
-                             "An estimate: check the result in game.",
-                  style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(6, 0))
+                ttk.Button(body, text="Apply exits", command=lambda: self._apply_tile_link(tile)).pack(anchor="w", pady=(4, 0))
 
     def _apply_tile_link(self, tile) -> None:
         openings = sum(bit for bit, var in self._link_vars.items() if var.get())
@@ -2293,9 +2411,9 @@ class MapBuilder(EditorPanel):
         data = self._map.map_data
         current = map_heights.tile_corners(data, tile)
         try:
-            values = {layer: tuple(int(self._form_vars[layer, k].get()) for k in range(4)) for layer in current}
+            values = {layer: tuple(_steps_value(self._form_vars[layer, k].get()) for k in range(4)) for layer in current}
         except ValueError:
-            messagebox.showerror("Tile heights", "An elevation is a whole number.", parent=self)
+            messagebox.showerror("Tile heights", "A height is a number of steps (1.5, -2...).", parent=self)
             return
         changed = {layer: v for layer, v in values.items() if v != current[layer]}
         if changed:
@@ -2323,16 +2441,17 @@ class MapBuilder(EditorPanel):
                      width=12).pack(side="left")
         data = self._map.map_data
         first = map_heights.tile_corners(data, tiles[0]).get("combined", (0, 0, 0, 0)) if data is not None else (0, 0, 0, 0)
-        value = tk.StringVar(value=str(first[0]))
+        value = tk.StringVar(value=_steps_text(first[0]))
         ttk.Entry(row, textvariable=value, width=8).pack(side="left", padx=(6, 0))
+        ttk.Label(row, text="steps").pack(side="left", padx=(4, 0))
         ttk.Button(row, text="Apply", command=lambda: self._flatten(tiles, layer.get(), value.get())).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text=self.HEIGHTS_HELP, style="Muted.TLabel", wraplength=300, justify="left").pack(anchor="w", pady=(10, 0))
+        info(row, self.HEIGHTS_HELP).pack(side="left", padx=(4, 0))
 
     def _flatten(self, tiles, layer_text: str, text: str) -> None:
         try:
-            value = int(text)
+            value = _steps_value(text)
         except ValueError:
-            messagebox.showerror("Tile heights", "An elevation is a whole number.", parent=self)
+            messagebox.showerror("Tile heights", "A height is a number of steps (1.5, -2...).", parent=self)
             return
         data = self._map.map_data
         layers = [k for k, v in self.LAYER_TEXT.items() if layer_text in ("All layers", v)]
@@ -2341,7 +2460,7 @@ class MapBuilder(EditorPanel):
             present = map_heights.tile_corners(data, tile)
             changes[tile] = {layer: (value,) * 4 for layer in layers if layer in present}
         self._edit_map(lambda files: files.__setitem__("map.bin", map_heights.set_tile_corners(files["map.bin"], changes)),
-                       f"Set {len(tiles)} tiles to elevation {value} ({layer_text.lower()})")
+                       f"Set {len(tiles)} tiles to height {_steps_text(value)} ({layer_text.lower()})")
 
     def _unit_inspector(self, body, section_name: str, index: int) -> None:
         doc = self._doc()
@@ -2362,15 +2481,15 @@ class MapBuilder(EditorPanel):
         # the buttons first, so they are in view without scrolling down the long form
         buttons = ttk.Frame(body)
         buttons.pack(anchor="w", pady=(8, 0))
-        ttk.Button(buttons, text="Apply", style="Accent.TButton",
-                   command=lambda: self._apply_unit(section_name, index)).pack(side="left")
+        tip(ttk.Button(buttons, text="Apply", style="Accent.TButton",
+                       command=lambda: self._apply_unit(section_name, index)),
+            "Write the form to this unit. Level and stat bonuses stay per difficulty (table at the bottom).").pack(
+            side="left")
         ttk.Button(buttons, text="Delete", command=self._delete_selection).pack(side="left", padx=(6, 0))
-        ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)).pack(
-            side="left", padx=(6, 0))
+        tip(ttk.Button(buttons, text="All fields...", command=lambda: self._open_raw_fields(section_name, index)),
+            "Every raw field of the record, in this difficulty file only.").pack(side="left", padx=(6, 0))
         if isinstance(pid, str) and self._on_navigate_to_character is not None:
             ttk.Button(buttons, text="View Stats...", command=lambda: self._on_navigate_to_character(pid)).pack(side="left", padx=(6, 0))
-        ttk.Label(body, text="Apply writes the form to this unit; per-difficulty values stay in their own rows.",
-                  style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w", pady=(4, 0))
 
         form = ttk.Frame(body)
         form.pack(anchor="w", fill="x", pady=(8, 0))
@@ -2378,13 +2497,19 @@ class MapBuilder(EditorPanel):
 
         groups: dict[str, list] = {"gauge": [], "ai": [], "ai_toggle": []}
 
-        def add(label, widget, group=None):
+        def add(label, widget, group=None, help_text=""):
             nonlocal row
-            caption = ttk.Label(form, text=label)
-            caption.grid(row=row, column=0, sticky="w", pady=2, padx=(0, 6))
+            caption = tip(ttk.Label(form, text=label), help_text)
+            caption.grid(row=row, column=0, sticky="nw", pady=2, padx=(0, 6))
             widget.grid(row=row, column=1, sticky="w", pady=2)
             if group:
                 groups[group].append((caption, widget))
+            row += 1
+
+        def heading(text, help_text=""):
+            nonlocal row
+            tip(ttk.Label(form, text=text, font=("Segoe UI", 10, "bold")), help_text).grid(
+                row=row, column=0, columnspan=2, sticky="w", pady=(10, 2))
             row += 1
 
         def picker(field, pairs, width=30):
@@ -2400,43 +2525,61 @@ class MapBuilder(EditorPanel):
             return ttk.Spinbox(form, from_=low, to=high, textvariable=var, width=width)
 
         add("Character", picker("pid", characters))
-        add("Class", picker("jid", classes))
+        add("Class", picker("jid", classes), help_text="Empty: the character's own class.")
         faction = tk.StringVar(value=dispo.FACTION_NAMES.get(unit[F["faction"]], str(unit[F["faction"]])))
         self._form_vars["faction"] = faction
-        add("Faction", ttk.Combobox(form, textvariable=faction, values=list(dispo.FACTION_NAMES.values()), width=10))
+        add("Faction", ttk.Combobox(form, textvariable=faction, values=list(dispo.FACTION_NAMES.values()), width=10),
+            help_text="The army the unit joins. Partner: the green AI allies of a partner phase.")
         flags = dispo_widgets.FlagChecks(form, unit[F["flags"]], dispo_rules.unit_flag_bits(unit[F["flags"]]))
         self._form_vars["flags"] = flags
-        add("Flags", flags)
+        add("Flags", flags, help_text="Hover a flag for what it does.")
         position = ttk.Frame(form)
         for field in ("pos_x", "pos_y", "pos2_x", "pos2_y"):
             var = tk.StringVar(value=str(unit[F[field]]))
             self._form_vars[field] = var
-        ttk.Spinbox(position, from_=-128, to=127, textvariable=self._form_vars["pos_x"], width=4).pack(side="left")
-        ttk.Spinbox(position, from_=-128, to=127, textvariable=self._form_vars["pos_y"], width=4).pack(side="left", padx=(2, 0))
-        ttk.Label(position, text="  moves to").pack(side="left")
-        ttk.Spinbox(position, from_=-128, to=127, textvariable=self._form_vars["pos2_x"], width=4).pack(side="left", padx=(4, 0))
-        ttk.Spinbox(position, from_=-128, to=127, textvariable=self._form_vars["pos2_y"], width=4).pack(side="left", padx=(2, 0))
-        add("Tile", position)
+        for field, before in (("pos_x", ""), ("pos_y", ","), ("pos2_x", "  →"), ("pos2_y", ",")):
+            if before:
+                ttk.Label(position, text=before).pack(side="left", padx=(2, 2))
+            ttk.Entry(position, textvariable=self._form_vars[field], width=3, justify="center").pack(side="left")
+        add("Tile", position, help_text="Spawn tile (x, y), then the tile the unit walks to after appearing. "
+                                       "Use the same tile twice for a unit that stays where it appears.")
+
+        is_weapon = dispo_rules.weapon_lookup(getattr(self._session_provider(), "fe8", None))
+        weapon_items = [pair for pair in items if is_weapon(pair[1]) is not False]
+        other_items = [pair for pair in items if is_weapon(pair[1]) is not True]
         for slot in range(8):
+            if slot == 0:
+                heading("Weapons and staves", "Slots 1-4. The game puts every weapon and staff in these "
+                                              "inventory slots, whatever record slot names it.")
+            elif slot == 4:
+                heading("Items", "Slots 5-8: vulneraries, keys, stat boosters, rings and other items.")
             cell = ttk.Frame(form)
             p = _LabelPicker(cell, width=26)
-            p.set_choices(items)
-            p.set_label(unit[F[f"item{slot}"]])
-            p.pack(anchor="w")
+            choices = weapon_items if slot < 4 else other_items
+            current = unit[F[f"item{slot}"]]
+            if isinstance(current, str) and all(c[1] != current for c in choices):
+                choices = choices + [pair for pair in items if pair[1] == current]
+            p.set_choices(choices)
+            p.set_label(current)
+            p.pack(side="left")
             self._form_vars[f"item{slot}"] = p
             item_flags = dispo_widgets.FlagChecks(cell, unit[F[f"item{slot}_flag"]], dispo.ITEM_FLAG_BITS, columns=2)
             self._form_vars[f"item{slot}_flag"] = item_flags
-            item_flags.pack(anchor="w")
-            add(f"Item {slot + 1}", cell)
+            item_flags.pack(side="left", padx=(6, 0))
+            add(f"{slot + 1}", cell)
+        heading("Skills", "Added on top of the character's and class's own skills.")
         for slot in range(5):
-            add(f"Skill {slot + 1}", picker(f"skill{slot}", skills, 26))
+            add(f"{slot + 1}", picker(f"skill{slot}", skills, 26))
+        heading("AI", "Game Data › AI edits these scripts.")
         ai_on = tk.BooleanVar(value=False)
         self._form_vars["ai_on"] = ai_on
-        add("AI", ttk.Checkbutton(form, text="AI-controlled unit", variable=ai_on), "ai_toggle")
+        add("", ttk.Checkbutton(form, text="AI-controlled unit", variable=ai_on), "ai_toggle",
+            "Player units are moved by the player unless they get an AI here (escorts, units to rescue).")
         for field, label, prefix in AI_FIELDS:
-            add(label, picker(field, [(l, l) for l in ai.get(prefix, [])], 26), "ai")
-        add("AI turn order (lower first)", number("ai_order", -128, 127, 6), "ai")
-        add("Laguz gauge", number("laguz_gauge", 0, 19), "gauge")
+            add(label, picker(field, [(l, l) for l in ai.get(prefix, [])], 26), "ai", AI_HELP[field])
+        add("Turn order", number("ai_order", -128, 127, 6), "ai", AI_HELP["ai_order"])
+        add("Laguz gauge", number("laguz_gauge", 0, 19), "gauge",
+            "Starting transformation gauge (0 keeps the character's own; 1-19).")
 
         is_laguz = self._is_laguz()
         original_ai = (unit[F["seq_attack"]], unit[F["seq_move"]], unit[F["seq_heal"]], unit[F["ai_order"]])
@@ -2458,15 +2601,6 @@ class MapBuilder(EditorPanel):
             show("ai_toggle", not default_ai)
             show("ai", default_ai or ai_on.get())
             show("gauge", dispo_rules.show_laguz_gauge(laguz_now, original_gauge))
-            for slot in range(8):
-                iid = self._form_vars[f"item{slot}"]
-                try:
-                    label = iid.label()
-                except ValueError:
-                    continue
-                item_flags = self._form_vars[f"item{slot}_flag"]
-                item_flags.set_visible(dispo.ITEM_FLAG_RING,
-                                       dispo_rules.show_ring_flag(label, unit[F[f"item{slot}_flag"]]))
 
         for widget in (faction, ai_on):
             widget.trace_add("write", refresh_rules)
@@ -2476,22 +2610,27 @@ class MapBuilder(EditorPanel):
                 picker_widget.bind(sequence, refresh_rules, add="+")
         refresh_rules()
 
-        ttk.Label(body, text="Section", font=("Segoe UI", 10)).pack(anchor="w", pady=(12, 2))
+        tip(ttk.Label(body, text="Section", font=("Segoe UI", 10, "bold")),
+            f"{section_name}: these settings apply to every unit of the section.").pack(anchor="w", pady=(12, 2))
         header_form = dispo_widgets.SectionHeaderFrame(body, dispo.section_header(section), self._deploy.group_keys())
         header_form.pack(anchor="w")
         ttk.Button(body, text="Apply to section", command=lambda: self._apply_section(section_name, header_form)).pack(
             anchor="w", pady=(4, 0))
 
-        ttk.Label(body, text="Difficulties", font=("Segoe UI", 10)).pack(anchor="w", pady=(12, 2))
-        ttk.Label(body, text="Tick where the unit exists; level and stat bonuses are per difficulty.",
-                  style="Muted.TLabel", wraplength=320, justify="left").pack(anchor="w")
+        tip(ttk.Label(body, text="Difficulties", font=("Segoe UI", 10, "bold")),
+            "Tick the difficulties where the unit exists. Level and stat bonuses are set per difficulty; "
+            "the rest of the form is shared.").pack(anchor="w", pady=(12, 2))
         table = ttk.Frame(body)
         table.pack(anchor="w", pady=(4, 0))
         headers = ["", "Lv"] + [s.upper() if s != "hp" else "HP" for s in dispo.STAT_NAMES]
         for c, text in enumerate(headers):
             ttk.Label(table, text=text, style="Muted.TLabel").grid(row=0, column=c, padx=1)
-        docs = {v: self._deploy.document(v) for v in self._deploy.variants()}
         self._variant_rows = {}
+        common = variant is not None and variant.endswith("_c.bin")
+        if common:
+            docs = {variant: self._deploy.document(variant)}
+        else:  # the common file is not a difficulty: its units are on every one
+            docs = {v: self._deploy.document(v) for v in self._deploy.variants() if not v.endswith("_c.bin")}
         for r, (v, other) in enumerate(docs.items(), 1):
             if v == variant:
                 found = (section_name, index)
@@ -2501,16 +2640,15 @@ class MapBuilder(EditorPanel):
             source = other.section(found[0]).units[found[1]] if found else unit
             present = tk.BooleanVar(value=found is not None)
             has_section = v == variant or dispo.counterpart_section(other, section_name) is not None
-            check = ttk.Checkbutton(table, text=v.removeprefix("dispos_").removesuffix(".bin"), variable=present)
-            if not has_section:
+            check = ttk.Checkbutton(table, text=self._variant_name(v), variable=present)
+            if not has_section or common:
                 check.state(["disabled"])
-            check.grid(row=r, column=0, sticky="w")
+            check.grid(row=r, column=0, sticky="w", padx=(0, 4))
             values = {}
             for c, field in enumerate(["level"] + [f"bonus_{s}" for s in dispo.STAT_NAMES], 1):
                 var = tk.StringVar(value=str(source[F[field]]))
                 values[field] = var
-                ttk.Spinbox(table, from_=-128 if field != "level" else 1, to=127 if field != "level" else 40,
-                            textvariable=var, width=4 if field == "level" else 3).grid(row=r, column=c, padx=1)
+                ttk.Entry(table, textvariable=var, width=3, justify="center").grid(row=r, column=c, padx=1)
             self._variant_rows[v] = {"present": present, "found": found, "values": values}
 
     def _is_laguz(self):
@@ -2564,7 +2702,8 @@ class MapBuilder(EditorPanel):
             shared[F["ai_order"]] = 0
         problems = dispo_rules.warnings(
             shared[F["faction"]], self._is_laguz()(shared[F["jid"]], shared[F["pid"]]), shared[F["laguz_gauge"]],
-            [(shared[F[f"item{i}"]], shared[F[f"item{i}_flag"]]) for i in range(8)])
+            [(shared[F[f"item{i}"]], shared[F[f"item{i}_flag"]]) for i in range(8)],
+            dispo_rules.weapon_lookup(getattr(self._session_provider(), "fe8", None)))
         if problems and not messagebox.askokcancel(
                 "Unit", "\n".join(problems) + "\n\nApply anyway?", parent=self):
             return
@@ -2815,6 +2954,30 @@ class MapBuilder(EditorPanel):
             self._on_open_function(name)
 
     # -- workspace --------------------------------------------------------------------------
+    def set_chapter(self, chapter_id: str | None) -> None:
+        """The chapter page's chapter: on the hub chapter the Hub tool is shown."""
+        self._chapter_id = chapter_id
+        if self._hub.load(chapter_id):
+            self._hub_button.pack(fill="x", pady=(0, 2), before=self._toolbar_separator)
+        else:
+            self._hub_button.pack_forget()
+            if self._tool.get() == "hub":
+                self._choose_tool("select")
+        self._refresh_canvas()
+
+    def choose_hub_tool(self) -> None:
+        if self._hub.data is not None:
+            self._choose_tool("hub")
+
+    def hub_changed(self) -> None:
+        self._refresh_canvas()
+
+    def map_size(self) -> tuple[int, int] | None:
+        return self._canvas.size
+
+    def install_hub(self, setup) -> bool:
+        return bool(self.on_install_hub(setup)) if self.on_install_hub is not None else False
+
     def refresh_chapter_list(self) -> None:
         pass
 

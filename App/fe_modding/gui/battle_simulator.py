@@ -468,7 +468,11 @@ class BattleSimulator(EditorPanel):
         self.distance = tk.IntVar(value=1)
         self.scenery = tk.StringVar(value=NO_SCENERY)
 
-        ttk.Label(self, text="Battle Simulator", style="Title.TLabel").pack(anchor="w")
+        head = ttk.Frame(self)
+        head.pack(fill="x")
+        ttk.Label(head, text="Battle Simulator", style="Title.TLabel").pack(side="left")
+        self._render_button = ttk.Button(head, text="Render fight", style="Accent.TButton", command=self._render)
+        self._render_button.pack(side="right")
         ttk.Label(self, text="Path of Radiance rules. Changes here stay in the simulator; nothing is written "
                              "to the game.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         body = ttk.Frame(self)
@@ -518,8 +522,6 @@ class BattleSimulator(EditorPanel):
         self._scenery_box = ttk.Combobox(bar, textvariable=self.scenery, state="readonly", width=20, height=24)
         self._scenery_box.pack(side="left", padx=(4, 12))
         ttk.Button(bar, text="Swap sides", command=self._swap).pack(side="left")
-        self._render_button = ttk.Button(bar, text="Render fight", style="Accent.TButton", command=self._render)
-        self._render_button.pack(side="right")
 
     def _build_results(self, parent: tk.Misc) -> None:
         forecast = ttk.LabelFrame(parent, text="Forecast", padding=(10, 6))

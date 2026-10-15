@@ -44,6 +44,10 @@ Trigger priority is therefore caller/focus ownership, not a global topic schedul
 
 The browser filters by persistent availability rather than chapter scripts currently loaded. During new-game party initialization, each topic's byte for the selected difficulty seeds two independent masks: bit 1 grants its topic ID in the unlocked mask at party offset `+0x74`, while bit 0 grants it in the learned mask at `+0x84`. Runtime state then groups visible records, owns category/topic cursor and scroll state, and invokes the selected record's content pointers. A topic record is therefore content plus grouping/default metadata, not by itself a guarantee of visibility.
 
+The three grouping modes line up with the label sections: mode 0 groups by **chapter** (`+2` indexes `TUT_CHAPTER`, so the Prologue's tutorials carry key 1, `MT_C00`), mode 1 by **category** (`+1` indexes `TUT_CATEGORY`) and mode 2 by **initial** (`+4` indexes `TUT_INITIAL`: letters in the English file, nine kana rows in the Japanese one). Because the group builders count keys from 1, entries whose key is 0 (the three opening tutorials have chapter and category 0) never form a group of their own. Bytes `+0x09..+0x0B` are zero; the title pointer names a message key such as `MT_C01_s移動`, the script pointer a file such as `Scripts/C80.cmb`, and the function pointer a script function such as `tut_01_Idou`.
+
+On Hard and Maniac every tutorial starts unlocked and learned, so no tutorial interrupts play; on Normal and Easy only the three opening ones start unlocked and the rest are unlocked by the chapters' scripts as they come up. `TutDataHead` holds a zero word, the file's build time and its author's name. The US game reads `tut_data_en.bin`; `tut_data.bin` is the Japanese list.
+
 ## Rules and lifecycle
 
 For popups:

@@ -642,24 +642,15 @@ def rect_file(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("tut_data", lambda name, data: _base(name).startswith("tut_data"))
 def tut_data(cov: FileCoverage, walker: Walker) -> None:
-    """Tutorial data (UNEXPLORED_SYSTEMS §10): TutDataHead (build time, author),
-    three label tables, and TUT_DATA: a count then 24-byte rows whose bytes
-    +1/+2/+4 key the browser's three groupings."""
-    data = cov.data
-    for name, start, end in labeled_sections(cov):
-        if name == "TUT_DATA":
-            count = _u32(data, start)
-            cov.mark(start, 4, DECODED)
-            for i in range(count):
-                r = start + 4 + 24 * i
-                cov.mark(r, 24, UNDECODED, "TUT_DATA row")
-                for k in (1, 2, 4):
-                    cov.mark(r + k, 1, PLAUSIBLE, f"TUT_DATA row +{k} (grouping key)")
-        elif name in ("TutDataHead", "TUT_CHAPTER", "TUT_CATEGORY", "TUT_INITIAL"):
-            cov.mark(start, end - start, DECODED)
-        else:
-            cov.mark(start, end - start, UNDECODED, f"section {name}")
-    strings_and_padding(cov, HEADER_SIZE, HEADER_SIZE + _u32(data, 4))
+    """Tutorial list (``tut_data.py``): head, three label tables and the 24-byte ``TUT_DATA``
+    rows (id, category/chapter/initial keys, display order, per-difficulty start flags,
+    title key, script and function), all read by the tutorial browser or ``reinit_party_struct``."""
+    from . import tut_data as td
+
+    _roundtrip(cov, td.build_tut_data(td.read_tut_data(cov.data)))
+    cov.fill(DECODED)
+    head = HEADER_SIZE + td._symbols(cov.data, _u32(cov.data, 4), _u32(cov.data, 8), 5)["TutDataHead"]
+    cov.zero(head, 4, "TutDataHead +0")
 
 
 @handles("client.bin", lambda name, data: _base(name) == "client.bin")
@@ -674,9 +665,12 @@ def client_bin(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("staffroll", lambda name, data: _base(name).startswith("staffroll"))
 def staffroll(cov: FileCoverage, walker: Walker) -> None:
-    for name, start, end in labeled_sections(cov):
-        cov.mark(start, end - start, UNDECODED, f"section {name}")
-    cov.fill(UNDECODED, "staffroll (never parsed)")
+    """Staff credits (``staffroll.py``): build time, author, line count, 12-byte rows of three
+    string pointers, the sorted string pool; read by ``draw_staffroll_ui``."""
+    from . import staffroll as sr
+
+    _roundtrip(cov, sr.build_staffroll(sr.read_staffroll(cov.data)))
+    cov.fill(DECODED)
 
 
 # ------------------------------------------------------------------ text and scripts

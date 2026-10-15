@@ -239,5 +239,24 @@ class RealAssetIntegrationTests(unittest.TestCase):
             self.assertEqual((capacity.x_size, capacity.y_size), (16, 12))
 
 
+class HubDraftTests(unittest.TestCase):
+    def test_draft_round_trip_and_precedence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = type("P", (), {"directory": Path(tmp)})()
+            self.assertIsNone(hub.working_setup(project))
+            draft = {"chapter": 40, "activation_chapter": 5, "avatar_pid": "PID_X",
+                     "destinations": [{"chapter": 8, "x": 1, "y": 2, "return_x": 1, "return_y": 3}]}
+            hub.save_draft(project, draft)
+            self.assertNotIn(b"\r\n", hub.draft_path(project).read_bytes())
+            self.assertEqual(hub.hub_chapter(project), 40)
+            setup = hub.setup_from(hub.working_setup(project))
+            self.assertEqual(setup.destinations, (hub.Destination(8, 1, 2, 1, 3, ""),))
+            self.assertIsNone(setup.start_x)
+            hub.config_path(project).write_text('{"chapter": 41}', encoding="utf-8")
+            self.assertEqual(hub.hub_chapter(project), 40)  # the draft is what is being edited
+            hub.draft_path(project).unlink()
+            self.assertEqual(hub.hub_chapter(project), 41)
+
+
 if __name__ == "__main__":
     unittest.main()

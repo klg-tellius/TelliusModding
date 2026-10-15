@@ -20,7 +20,7 @@ from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
 from .. import theme
 from ..shell import Page
-from ..widgets import ScrollFrame, section_header
+from ..widgets import ScrollFrame, info, section_header
 
 ON, OFF = "☑", "☐"
 TICKS_PER_SECOND = 162_000_000 // 4  # OSGetTime runs at the bus clock / 4
@@ -181,12 +181,13 @@ class SaveEditorPage(Page):
         super().__init__(shell)
         head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
         head.pack(fill="x")
-        ttk.Label(head, text="Saves", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(head, style="Muted.TLabel", wraplength=1000, justify="left",
-                  text="Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
-                       "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
-                       "(marked “loaded”). Keep the game closed while you overwrite a save it uses."
-                  ).pack(anchor="w", pady=(2, 8))
+        title = ttk.Frame(head, style="Page.TFrame")
+        title.pack(anchor="w", pady=(0, 8))
+        ttk.Label(title, text="Saves", style="Title.TLabel").pack(side="left")
+        info(title, "Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
+                    "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
+                    "(marked “loaded”). Keep the game closed while you overwrite a save it uses.").pack(
+            side="left", padx=(8, 0), pady=(8, 0))
         top = ttk.Frame(self, style="Page.TFrame", padding=(28, 0))
         top.pack(fill="x")
         ttk.Button(top, text="Open save file…", command=self._open).pack(side="left")
@@ -546,10 +547,9 @@ class SaveEditorPage(Page):
             check.pack(side="left", padx=(0, 18))
             self._option_vars[mask] = var
             self._option_checks[mask] = check
-        ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Option bits: " + "; ".join(
-                      f"byte {i} " + ", ".join(f"0x{m:02X} {n}" for b, m, n in sf.OPTION_FIELDS if b == i)
-                      for i in range(4)) + ".").pack(anchor="w")
+        info(b, "Known option bits: " + "; ".join(
+            f"byte {i} - " + ", ".join(f"0x{m:02X} {n}" for b, m, n in sf.OPTION_FIELDS if b == i)
+            for i in range(4)) + ".").pack(anchor="w")
 
         section_header(b, "Map state", "MDST").pack(anchor="w", pady=(12, 0))
         f = self._fields_in(b, 3)
@@ -910,9 +910,8 @@ class SaveEditorPage(Page):
 
     def _build_map(self) -> None:
         tab = self._tabs["map"]
-        ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Per-map tile records: opened doors, chests and roofs, visited villages, breakable walls, "
-                       "ballistae, pits and rocks. Only the first “count” records are live.").pack(anchor="w")
+        info(tab, "Per-map tile records: opened doors, chests and roofs, visited villages, breakable walls, "
+                  "ballistae, pits and rocks. Only the first “count” records are live.").pack(anchor="w")
         f = self._fields_in(tab, 4)
         f.pack(side="bottom", anchor="w", pady=(6, 0))
         tt = lambda: self.block.terrain if self.block and self.block.decoded else None  # noqa: E731
@@ -1047,9 +1046,8 @@ class SaveEditorPage(Page):
         scroll = ScrollFrame(self._tabs["system"], padding=(4, 4))
         scroll.pack(fill="both", expand=True)
         b = scroll.body
-        ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left",
-                  text="Shared by every save on the card: at boot the game takes it from the newest block. Edit "
-                       "it in that block (the one with the highest sequence).").pack(anchor="w")
+        info(b, "Shared by every save on the card: at boot the game takes it from the newest block. Edit "
+                "it in that block (the one with the highest sequence).").pack(anchor="w")
         f = self._fields_in(b, 3)
         f.pack(anchor="w", pady=(6, 10))
         f.add("System id", self._system, "system_id", "u64", width=22)

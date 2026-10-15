@@ -24,6 +24,7 @@ from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .widgets import info, tip
 
 FILE_NAME = "soundroom.bin"
 PREVIEW_SIZE = (560, 420)
@@ -62,11 +63,11 @@ class SoundRoomEditor(EditorPanel):
         ttk.Button(bar, text="Revert", command=self._revert).pack(side="left", padx=(6, 0))
         self._status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._status.pack(side="left", padx=(10, 0))
-        ttk.Label(self, style="Muted.TLabel", wraplength=1000, justify="left", padding=(8, 2), text=(
-            "The pictures behind the Sound Room's track menu, shown as a slideshow: playing a track (A) shows "
-            "the next one; with the menu hidden (X), A/Right shows the next and Left the previous. Each picture "
-            "is an s/rect.bin resource (add new ones on the Backgrounds page) placed at an X/Y screen offset. "
-            "The track list is in the game code; edit it on the Soundroom Tracks page.")).pack(fill="x")
+        info(bar, "The pictures behind the Sound Room's track menu, shown as a slideshow: playing a track (A) shows "
+                  "the next one; with the menu hidden (X), A/Right shows the next and Left the previous. Each "
+                  "picture is an s/rect.bin resource (add new ones on the Backgrounds page) placed at an X/Y "
+                  "screen offset. The track list is in the game code; edit it on the Soundroom Tracks "
+                  "page.").pack(side="right")
 
         body = ttk.Frame(self, padding=8)
         body.pack(fill="both", expand=True)
@@ -120,9 +121,8 @@ class SoundRoomEditor(EditorPanel):
         self._canvas.bind("<ButtonPress-1>", self._drag_start)
         self._canvas.bind("<B1-Motion>", self._drag_move)
         self._canvas.bind("<ButtonRelease-1>", lambda e: setattr(self, "_drag", None))
-        ttk.Label(right, style="Muted.TLabel", text=(
-            "The outlined box is the 608x448 screen; the dimmed part of the picture is off screen. "
-            "Drag the picture to move it.")).pack(anchor="w", pady=(4, 0))
+        tip(self._canvas, "The outlined box is the 608x448 screen; the dimmed part of the picture is off screen. "
+                          "Drag the picture to move it.")
 
     # -- data -----------------------------------------------------------------------------
     def _load(self) -> None:

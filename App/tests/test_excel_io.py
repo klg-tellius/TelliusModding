@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fe_modding import excel_io, flag_excel
 from fe_modding.formats import event_flags, fe8data
+from dispo_fixture import build_minimal_dispo_bytes
+from fe_modding.formats import dispo
 from test_fe8data_tables import _Builder, build
 
 
@@ -23,6 +25,32 @@ def terrain_data():
 
 
 class AssetExcelTests(unittest.TestCase):
+    def test_deployment_export_uses_named_flag_columns(self):
+        doc = dispo.parse_dispo(build_minimal_dispo_bytes())
+        unit = doc.sections[1].units[0]
+        unit[dispo.FIELD["flags"]] = dispo.FLAG_AUTOLEVEL | dispo.FLAG_BRIDGE_BARRIER
+        unit[dispo.FIELD["item4_flag"]] = dispo.ITEM_FLAG_RING
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "units.xlsx"
+            excel_io.export_fe8(path, b"", {"dispos_n.bin": doc})
+            rows = excel_io.read_workbook(path)["Dispo n"]
+            header = rows[0]
+            self.assertNotIn("flags", header)
+            self.assertNotIn("field2", header)
+            row = next(r for r in rows[1:] if r[1] == 0 and r[0] == doc.sections[1].name)
+            self.assertEqual(row[header.index("autolevel")], "yes")
+            self.assertEqual(row[header.index("no_bridge_cover")], "yes")
+            self.assertEqual(row[header.index("item1_ignore_first_playthrough")], "yes")
+            row[header.index("hold_position")] = "yes"
+            row[header.index("autolevel")] = None
+            excel_io.write_workbook(path, {"Dispo n": rows})
+            _data, docs, errors = excel_io.import_fe8(path, b"", {"dispos_n.bin": doc})
+            self.assertEqual(errors, [])
+            edited = docs["dispos_n.bin"].sections[1].units[0]
+            self.assertEqual(edited[dispo.FIELD["flags"]], dispo.FLAG_HOLD_POSITION | dispo.FLAG_BRIDGE_BARRIER)
+            self.assertEqual(edited[dispo.FIELD["item0"]], 0)
+            self.assertEqual(edited[dispo.FIELD["pid"]], "PID_TEST")
+
     def test_character_and_item_exports_are_separate(self):
         data = build()
         with tempfile.TemporaryDirectory() as temp:

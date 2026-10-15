@@ -12,7 +12,7 @@ from typing import Callable
 
 from .map_windows import MapSettingsForm
 from .stats_editor import ChapterRecordPanel
-from .widgets import ScrollFrame
+from .widgets import ScrollFrame, info
 
 
 class MapSettingsPanel(ttk.Frame):
@@ -29,9 +29,8 @@ class MapSettingsPanel(ttk.Frame):
         ttk.Button(top, text="Save Chapter", command=builder.save_chapter).pack(side="left", padx=(12, 0))
         self._map_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._map_label.pack(side="left", padx=(10, 0))
-        ttk.Label(body, style="Muted.TLabel", wraplength=720, justify="left", text=(
-            "Lighting, fog, grid and water of the phase picked at the top of the page. Apply puts the changes on the "
-            "Build tab's Undo/Redo; Save Chapter writes them.")).pack(anchor="w", pady=(2, 8))
+        info(top, "Settings of the map phase picked at the top of the page. Apply puts the changes on the Build "
+                  "tab's Undo/Redo; Save Chapter writes them.").pack(side="left", padx=(6, 0))
         MapSettingsForm(body, builder).pack(fill="x", anchor="w")
 
         self._map.add_listener(self._on_map_changed)
