@@ -14,11 +14,11 @@ cms_collection: "systems"
 source_path: "systems/runtime-engine-architecture.md"
 system_entries: ["FE9-SYS-009", "FE9-SYS-010", "FE9-SYS-011", "FE9-SYS-012", "FE9-SYS-377", "FE9-SYS-378", "FE9-SYS-379", "FE9-SYS-380", "FE9-SYS-382", "FE9-SYS-383", "FE9-SYS-384"]
 system_reviewed: ["FE9-SYS-009", "FE9-SYS-010", "FE9-SYS-011", "FE9-SYS-012", "FE9-SYS-377", "FE9-SYS-378", "FE9-SYS-379", "FE9-SYS-380", "FE9-SYS-382", "FE9-SYS-383", "FE9-SYS-384"]
-system_reviewed_with_gaps: ["FE9-SYS-009", "FE9-SYS-012"]
-system_reviewed_by: "Codex"
+system_reviewed_with_gaps: []
+system_reviewed_by: "Claude Opus 5.5"
 system_reviewed_on: "2026-10-14"
-system_known_gaps: ["FE9-SYS-009: Heap selection and ownership are not mapped for every allocation family or scene transition.", "FE9-SYS-012: The complete global-service inventory and mutation ownership map have not been reconstructed."]
-system_gap_work: ["FE9-SYS-009: Traced the process pool, recursive process teardown, MSL allocation, one-shot actor allocation, and representative menu/map resource cleanup; allocator/free ownership is not complete for every family.", "FE9-SYS-012: Surveyed boot initialization, party globals, chapter state, registries, audio, resources, and save reconstruction; remaining writable globals lack a complete writer/lifetime census."]
+system_known_gaps: []
+system_gap_work: []
 ---
 # Runtime Engine Architecture
 
@@ -33,6 +33,40 @@ The US executable provides a concrete backbone for that model. Its main game flo
 Other objects use their own allocation patterns. For example, `load_and_apply_combat_animation_temp` (`0x8013B064`) allocates a `GActor`, loads and applies one combat animation, rebuilds its buffers, and destroys the actor before returning. File-menu chapter-name textures are queued for the menu and explicitly released by its cleanup routines. Master database records, by contrast, are built during boot and retained in global tables for later lookup. These examples establish at least three lifetimes: one-call temporaries, scene/process-owned resources, and application- or playthrough-lived state.
 
 Destroying a scene must release its temporary objects without erasing party state. A leaked object wastes scarce console memory; a prematurely released shared resource leaves later users holding an invalid reference. A mod should therefore identify an object's owner and teardown path before retaining a pointer or injecting new allocations.
+
+#### Named heaps: where every allocation lands
+
+All dynamic memory comes from one game-specific allocator, not from the Metrowerks runtime heap. The `msl_operator_new`/`msl_operator_delete` names are historical: both forward to the game's own heap code at `0x800C4xxx`–`0x800C5xxx`. The model is a **stack of named heaps** carved out of the console arena:
+
+- `init_gx_render_system` reserves the two external framebuffers from `OSArenaLo`, then `os_arena_initialize` (`0x800C5300`) records the remaining arena bounds (`0x80367860`/`0x80367864`) and clears a 16-slot heap table at `0x80320B88`.
+- `create_named_heap_block(name, size)` (`0x800C50FC`) places a heap on the **low stack** (it grows upward from the arena bottom; the newest heap is at `0x80367868`). `0x800C4F30` does the same on the **high stack** (it grows downward from the arena top; the newest heap is at `0x8036786C`). A heap header carries the magic `HEAP`, an 11-character name, a link to the previous heap on the same stack, a used list, a free list and its size. The space left between the two stacks is unowned; `calculate_allocated_space_size` returns it.
+- Creating a heap makes it **current** in two ways: `0x80367870` is the heap used by `new` and the other one-argument allocators, and the byte at `0x803672E8` is the index used for file and module loads. `select_named_heap_block(name)` changes only the first. That split is deliberate: a chapter allocates objects in one heap and loads files into another.
+- Allocation (`0x800C5A48`) is best-fit over the heap's free list, rounding the request up to 32 bytes plus a 32-byte header that records the owning heap. A **negative** size takes the block from the high end of the heap instead (`0x800C55B0`). Free (`0x800C53B0`) puts the block back in address order and merges it with free neighbours.
+- **Popping** a heap (`0x800C4B8C` low, `0x800C47E8` high) frees everything in it at once. It clears any of the eight script-memory pointers that point into it, force-releases every module registered to that heap index (`0x8005CF6C`), empties the table slot and, if the popped heap was current, makes the new top of that stack current. No object destructors run. Anything still holding a pointer into a popped heap holds a dangling pointer.
+
+The executable creates exactly these heaps. `python App/tools/census_runtime_state.py heaps` lists the process-script ones from the US DOL: they are opcode table 1, slot 5 (create) and slot 6 (pop).
+
+| Heap | Stack | Size | Opened by | Closed by | What lives there |
+|---|---|---|---|---|---|
+| `Base` | low | `0x533333` (5.2 MiB) | `init_gx_render_system`, at boot | never | GX FIFO (512 KiB), `system.cmp`, `FE8Data.bin`, AI data, faces, fonts, window templates, common messages, sound banks and every other boot-lifetime object |
+| `LOGO` | high | `0xC0000` | `E_OpeningLogo` start (`0x800C78D0`) | its end handler (`0x800C7884`), after purging its modules | Opening logo resources; the previous current heap is restored |
+| `TITLE` | low | `0x300000`, then `0x800000` | `GameController` labels 3 and 2 | pop right after the title child ends | Attract mode, then the title screen |
+| `FILEMENU` | low | `0x200000` | controller labels 5, 6, 19, 20 | pop when the file-menu child ends | File select, save and resume selection |
+| `TrialMenu` | low | `0x600000` | controller labels 30, 32 | pop after the trial menu/result | Extras trial maps |
+| `JOYBOOT` | low | `0x600000` | controller label 37 | pop after the GBA link | GBA link program |
+| `SoundRoom`, `MovieRoom`, `IllustRoom` | low | `0x600000` each | their Extras process scripts | pop when the room closes | Extras viewers |
+| `BMAP_MEM` | low | `0x180000` | `load_chapter_map_and_battle_stage_resources` | second pop in `unload_bmap_common_resources` | Chapter-lifetime objects: map state, chapter script and messages, battle-stage actors, cameras. It is selected for `new` for the whole chapter |
+| `BMAP_FILE` | low | all remaining free space | same loader, after `BMAP_MEM` | first pop in `unload_bmap_common_resources`, and before each full battle or class change | Map-time file loads: unit battle animations and faces queued for the map |
+| `BATTLE_FILE` | low | all remaining free space | `load_and_write_battle_file`, when a full battle starts | `0x80028674`, when it ends; `BMAP_FILE` is then rebuilt and the map's animations and faces are queued again | Full-battle resources |
+| `CC` | low | `0x800000` | class-change sequence | pop before `BMAP_FILE` is rebuilt | Class-change presentation |
+| `BATTLE_FILE` (debug) | low | `0xB00000` | `load_battle_file`, controller label 4 | `0x80005EB4` | Battle-animation preview tool |
+| `ENDING_MEM`, `ENDING_FILE` | low | `0x180000`, then the rest | `init_ending_sequence` | two pops in `unload_ending_resources` | Ending scripts, finale data, `zmap_common` actors |
+
+Two allocations deliberately bypass the current heap. The memory-card buffer is `0x26000` bytes taken from the high end of `Base` (heap index 0, negative size) and freed when the card is closed. During boot, `init_core_game_systems` and the sound loader temporarily lend unowned arena space to the newest low heap with `resize_last_heap_block`, then take it back once `system.cmp` or the sound projects are loaded.
+
+The table answers "which heap is current" for every transition. On the tactical map, `new` goes to `BMAP_MEM` and file loads go to `BMAP_FILE`. A full battle pops `BMAP_FILE` and creates `BATTLE_FILE` in the space it freed; `BMAP_MEM` and everything allocated in it survives the battle. Process slots are not heap memory: they come from the fixed 256-slot pool above, so a process can outlive the heap its objects were allocated in.
+
+**Exhaustion.** When no free block is large enough, the allocator prints the memory report (through the disabled debug printer), purges cached modules in that heap (`0x8005C8D8`, which releases only loaded modules with a zero reference count that are not locked or still in use), and retries. If the retry also fails, it does not return an error: it dereferences a null block header, which faults. The module loader checks the free size first and returns 0 when even a purge cannot make room. Callers of `new` do not check for null. In practice, a mod that grows a fixed-size heap such as `BMAP_MEM` past `0x180000` bytes crashes. Content loaded into the `*_FILE` heaps can only use the space left after the fixed heaps.
 
 <span id="fe9-sys-010"></span> **FE9-SYS-010 — Frame scheduler and game loop.** The process system is the confirmed cooperative scheduler for game-flow work. A process record stores its script base at `+0x00`, program counter at `+0x04`, per-frame wait routine at `+0x10`, name at `+0x14`, and an owner-available field at `+0x60`. Its word-coded instructions include sleep until a later frame, call a routine, repeat a routine each frame, wait until another named process ends, start a child and block the parent, and jump to a label. `get_frame_counter` (`0x800067B4`) exposes a free-running tick count.
 
@@ -85,7 +119,38 @@ Generic process destruction supplies the final invariant: ending a node recursiv
 
 “Global” does not mean immutable or ownerless. Party gold, BEXP, current chapter, resume point, and event flags are mutated during play and serialized. Audio and loaded-resource services hold runtime state but are reconstructed rather than copied verbatim into a save. Boot-built definition tables are read broadly but should be changed through their data-loading path if every consumer must see the change. Treating all three categories as interchangeable is a common source of mods that work only until reload or scene transition.
 
-Global services are classified by lifetime and writer contract rather than by an exhaustive address list: boot definitions are loader-owned and broadly read; party/chapter/unit state has named mutation and serialization owners; runtime registries expose processes/resources/audio/input/RNG; and individual process trees own transient presentation/control objects. An unidentified writable address must be traced before editing, but it does not create another service-lifetime category.
+Global services are classified by lifetime and writer contract: boot definitions are loader-owned and broadly read; party/chapter/unit state has named mutation and serialization owners; runtime registries expose processes/resources/audio/input/RNG; and individual process trees own transient presentation/control objects.
+
+#### Global-state census
+
+The classification is backed by a census of every writable global the code touches. `CensusDump.java` exports every code reference into the writable sections of the US executable, and `python App/tools/census_runtime_state.py globals EXPORT --tsv OUT.tsv` groups those references by the data item that contains them. Each function gets a service from its name. Unnamed functions in the contiguous MusyX/AX audio library range (`0x80240000`–`0x8025FFFF`) are assigned to audio. The other unnamed or generically named functions take the majority service of their call-graph neighbours, in rounds, which leaves 514 of 9,119 functions without a service. Ties are broken deterministically, so the same export always gives the same table. Each global is owned by the service whose functions use it most, with writes counting double. The TSV gives one row per global: address, symbol, section, type, owner and owner share, counts of writers, readers and address-taking functions, storage class, re-initializers, save-linked users and up to eight writer functions.
+
+| Census result (US) | Count |
+|---|---:|
+| Writable data items referenced by code | 15,744 |
+| Mutable globals (written directly, or address taken in `.bss`/`.sbss`) | 5,241 |
+| Written directly by at least one function | 4,321 |
+| Reset by a named re-initializer (init/reset/clear/load/construct/start) | 2,399 |
+| Touched by a save or load routine | 100 |
+| Owned by a single service (share 1.0) | 3,924 |
+| Contested (no service has half the weighted uses) | 316 |
+| No service could be assigned | 34 |
+
+Ownership by service: audio 1,693 (the MusyX/AX sequencer, voice and DSP state); OS and runtime 543; developer debug tools 429; rendering 394; map 346; UI 325; resources and modules 248; effects and actors 218; camera 163; process system 150; combat 149; units and party 91; input 87; text 74; script VM 72; campaign flow 63; memory 57; AI 54; save 51. The gameplay services own a small share of mutable globals. Most unit, party and map state lives in a few large arrays, such as the 159-slot unit array, the party block at `0x80330708` and the map grids, rather than in thousands of separate variables.
+
+Lifetimes follow from storage and writers. Everything in `.bss`/`.sbss` starts as zero at boot. Items in `.data`/`.sdata` start with the value stored in the DOL. A global with a named re-initializer is reset when that function runs, and the function's owner defines the reset boundary: boot, scene, chapter or playthrough. Save-linked globals cross the card only through the record fields listed in the serialization matrix below. Being touched by a save routine is not the same as being stored: many such globals are scratch state used while a save is written.
+
+The globals written by the most services are where cross-system coupling is concentrated:
+
+| Global | Writers (services) | Role |
+|---|---:|---|
+| `pending_action_type` (`0x802EF4D0`) and its target/parameter fields (`0x802EF4CC`–`0x802EF4DC`) | 107 functions (14) | The pending map action: menus, AI, scripts, tutorials and the executor all stage a command here before `execute_pending_map_action` consumes it |
+| `script_state_flags` (`0x80367110`) | 43 (13) | Engine-wide mode bits read by 253 functions; for example, bit `0x10` selects the virtual memory-card image and bit `0x100` keeps the assertion handler from resetting |
+| `dialogue_flags` (`0x80367A58`) | 20 (9) | Dialogue window mode shared by the text engine, event natives and transitions |
+| `memory_card_result` and neighbours (`0x8032AC24`–`0x8032AC3A`) | 22 (4) | Memory-card job status written by the save menus, the card process and the loaders that open the card |
+| `cp_script_registers` (`0x8032B3C8`) | 11 (2) | AI script working registers, written by AI evaluation and by its map queries |
+
+The census closes the inventory question. All 4,321 directly written globals have a writer list, readers, storage lifetime and owner. The other 920 are `.bss`/`.sbss` arrays and structures that code only writes through a pointer, so their row lists the functions that take their address, and those functions are the writer trace. Contested and unassigned rows are not unknown memory. They are globals shared by several services, or used only by unnamed leaf code with no named neighbour. Before you change one, regenerate the TSV and read its writer list. The owner column is an attribution from names and the call graph, not a field the executable stores.
 
 ## Lifecycle and ownership rules
 
@@ -98,7 +163,7 @@ The following sequence is the practical ownership model supported by the executa
 5. Authoritative gameplay changes are written to unit, party, chapter, flag, or tile state; presentation objects display those results.
 6. On exit, cleanup releases the process subtree and scene resources. The next scene is built from surviving runtime state or, after loading, from serialized data.
 
-This is a rule of evidence, not a guarantee that every allocation follows one allocator. Fixed pools, MSL allocation, resource handles, and subsystem-specific object factories coexist. The relevant question is always “who releases this object, and which state is expected to survive after that release?”
+Every dynamic allocation goes through the named-heap allocator; fixed pools (processes, units, convoy, forge results, module records) are static arrays beside it. The relevant question is always “which heap or pool holds this object, who releases it, and which state is expected to survive after that release?”
 
 ## Cross-cutting rule ownership
 
@@ -186,14 +251,11 @@ At the scheduling boundary, `execute_pending_map_action` builds the battle conte
 
 ## Known gaps and required evidence
 
-The architecture model is useful, but two systems remain **reviewed with gaps**. Close them only after collecting the following evidence:
-
-- **FE9-SYS-009:** census allocation and release sites across representative scene transitions. For each allocation family, identify the allocator or pool, owning object/process, destructor or free path, and exhaustion behavior.
-- **FE9-SYS-012:** build a writable-global census recording initializer, writers, readers, reset boundary, serialization behavior, and owning service. Addresses without a writer/lifetime trace remain unresolved.
-
-These results belong in this article and its executable/save evidence pages. No new primary article is currently required; an allocation or global-address appendix should be added only after the underlying census exists.
+No known gap remains for these systems. FE9-SYS-009 is closed by the named-heap model and the complete list of heap scopes above, including allocation, release, pop and exhaustion behaviour. FE9-SYS-012 is closed by the global-state census: every mutable global has a writer list, readers, storage lifetime and owner, or is explicitly marked as contested or unassigned. Rerun both census commands after renaming functions in Ghidra, because service attribution follows function names.
 
 ## Evidence trail
 
 The primary executable trace is recorded in [Main DOL](../formats/main-dol.md) and the repository's `research/MAIN_DOL_NOTES.md`, especially “Scene tree architecture,” “Game flow process scripts,” the process/handle-table framework, and boot/master-data loading. Save reconstruction is detailed in [Save System](save-system.md), chapter flow in [Campaign Flow](campaign-flow.md) and [Chapters](chapters.md), resource lifetime in [Engine and Resource Loading](engine-resource-loading.md), and script scheduling in [Events and Scripting](events-scripting.md).
 
+
+The heap and global-state censuses are reproducible with `App/tools/census_runtime_state.py`: the `heaps` command needs only the US DOL, and the `globals` command reads the Ghidra export written by `research/main_dol/scripts/export/CensusDump.java`.
