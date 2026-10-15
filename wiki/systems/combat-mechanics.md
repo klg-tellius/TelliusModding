@@ -123,13 +123,28 @@ Saves preserve remaining uses and equip flags. Editing the shared item definitio
 
 ## Hit, miss, and critical — the "True Hit" system
 
-  A strike's outcome is decided by two separate rolls of the same random-number generator (a three-word chained shift-register generator, XORed against the requested percentage): the **Hit** roll advances the generator *twice* and averages the two results before comparing against the attacker's Hit-rate forecast stat, while the **Critical** roll uses a single roll compared against the Crit-rate forecast stat. Averaging two rolls for Hit but using one for Crit is exactly the series' well-known "True Hit" design — hit rates cluster more tightly around their displayed value than a flat single roll would, while crit rates stay a flat percentage. A confirmed critical hit applies a flat **×3** damage multiplier.
+  A strike's outcome is decided by two separate rolls of the same random-number generator (a three-word chained shift-register generator, XORed against the requested percentage): the **Hit** roll advances the generator *twice* and averages the two results before comparing against the attacker's Hit-rate forecast stat, while the **Critical** roll uses a single roll compared against the Crit-rate forecast stat. The generator is seeded once when the game boots, from the console's running timer, so resetting gives a different sequence of rolls. Averaging two rolls for Hit but using one for Crit is exactly the series' well-known "True Hit" design — hit rates cluster more tightly around their displayed value than a flat single roll would, while crit rates stay a flat percentage. A confirmed critical hit applies a flat **×3** damage multiplier.
 
   The Japanese release has no class-level critical bonus at all; in the other releases crit rate can also receive a flat class-level bonus: a specific class trait adds a flat **+15** to Crit in the same forecast step that applies the ordinary Skill-based term, on top of any other active bonus. Separately, an unrelated weapon-side flag can force Crit to **0** outright for that weapon, overriding every other bonus in play.
 
 ## Proc skills — the actual check
 
   See [Skills](./skills.md) for the mechanism (a per-actor bitmask checked by raw table position, rolled against the same shared RNG) and for which specific skills have a confirmed real effect once they trigger.
+
+## Weapon triangle and magic trinity
+
+  Before a strike is forecast, the game looks up the two combatants' weapon types in one small table of 4-byte rows: attacker type, defender type, Hit bonus, Atk bonus. The table holds both triangles <span class="confidence confidence--confirmed">confirmed</span>:
+
+<table><thead><tr><th>Attacker</th><th>Beats</th><th>Loses to</th></tr></thead><tbody>
+<tr><td>Sword</td><td>Axe</td><td>Lance</td></tr>
+<tr><td>Lance</td><td>Sword</td><td>Axe</td></tr>
+<tr><td>Axe</td><td>Lance</td><td>Sword</td></tr>
+<tr><td>Fire</td><td>Wind</td><td>Thunder</td></tr>
+<tr><td>Thunder</td><td>Fire</td><td>Wind</td></tr>
+<tr><td>Wind</td><td>Thunder</td><td>Fire</td></tr>
+</tbody></table>
+
+  Advantage gives **+10 Hit and +1 Atk**, disadvantage **−10 Hit and −1 Atk**; the opponent gets the mirrored row. Bows, staves, light magic, knives and laguz strikes have no rows, so they are never in a triangle. A weapon with the reaver flag negates both units' triangle bonuses, which turns an advantage into a disadvantage. The bonus is stored on each combatant and added to Atk and Hit in the forecast.
 
 ## Weapon effectiveness — bonus damage against certain enemy types
 
