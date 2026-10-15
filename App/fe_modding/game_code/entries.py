@@ -950,6 +950,8 @@ for _key, _name, _what, _default, _minimum, _maximum, _unit, _at, _kind in (
 
 from . import chapter_flow  # noqa: E402,F401  (registers the story-flow hook)
 from . import hub_flow  # noqa: E402,F401  (registers the hub routing extension)
+from . import chapter_parts  # noqa: E402,F401  (registers the two-part chapter hooks)
 from . import chapter_jump  # noqa: E402,F401  (registers the boot-into-a-chapter patch)
 from . import promotion  # noqa: E402,F401  (registers the promotion weapon-rank patch)
+from . import phase_control  # noqa: E402,F401  (registers the army phase controllers)
 from . import three_tier_code  # noqa: E402,F401  (registers three-tier promotion hooks)

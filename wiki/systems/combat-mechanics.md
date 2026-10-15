@@ -131,6 +131,24 @@ Saves preserve remaining uses and equip flags. Editing the shared item definitio
 
   See [Skills](./skills.md) for the mechanism (a per-actor bitmask checked by raw table position, rolled against the same shared RNG) and for which specific skills have a confirmed real effect once they trigger.
 
+## Status effects and how long they last
+
+  Each status is a small counter of phases on the unit, shown as a number on its status panel. At the start of a side's phase every counter of that side's units drops by one; when one would reach zero the unit first plays the "status cured" animation. 
+
+| Status | Set by | Starting value | Effect |
+|---|---|---|---|
+| Poison | a poisoned weapon | 5 | damage at the start of each own phase |
+| Sleep | the Sleep staff, Deadeye | 5 | cannot act |
+| Silence | the Silence staff | 5 | cannot use tomes or staves |
+| Shock | Stun | 2 | Move is 0 |
+| Ward | the Ward staff | 7 | Resistance + the counter: +7, then +6, +5... as it runs down |
+| Torch | the Torch staff (on the user) | 4 | vision in fog + the counter |
+| Paralyse | falling into a pit, being shoved | 1 | cannot act; runs out at the end of the unit's own phase |
+
+A status staff cast on the enemy's phase therefore costs the target four of its own phases: the counter reaches zero at the start of the fifth and the unit acts normally. Sleep, Silence and the combat procs fail against bosses and the final boss. <span class="confidence confidence--confirmed">confirmed</span>
+
+The Berserk staff rolls its hit chance and plays its animation, but the unit has no counter for a Berserk ("Confuse") status, so a hit changes nothing. It has no effect in this game. <span class="confidence confidence--confirmed">confirmed</span>
+
 ## Weapon triangle and magic trinity
 
   Before a strike is forecast, the game looks up the two combatants' weapon types in one small table of 4-byte rows: attacker type, defender type, Hit bonus, Atk bonus. The table holds both triangles <span class="confidence confidence--confirmed">confirmed</span>:
@@ -144,7 +162,7 @@ Saves preserve remaining uses and equip flags. Editing the shared item definitio
 <tr><td>Wind</td><td>Thunder</td><td>Fire</td></tr>
 </tbody></table>
 
-  Advantage gives **+10 Hit and +1 Atk**, disadvantage **−10 Hit and −1 Atk**; the opponent gets the mirrored row. Bows, staves, light magic, knives and laguz strikes have no rows, so they are never in a triangle. A weapon with the reaver flag negates both units' triangle bonuses, which turns an advantage into a disadvantage. The bonus is stored on each combatant and added to Atk and Hit in the forecast.
+  Advantage gives **+10 Hit and +1 Atk**, disadvantage **−10 Hit and −1 Atk**; the opponent gets the mirrored row. Bows, staves, light magic, knives and laguz strikes have no rows, so they are never in a triangle. A weapon with the reaver flag negates both units' triangle bonuses, which turns an advantage into a disadvantage; the flag is the `revatr` item property, and no retail weapon carries it. The bonus is stored on each combatant and added to Atk and Hit in the forecast.
 
 ## Weapon effectiveness — bonus damage against certain enemy types
 

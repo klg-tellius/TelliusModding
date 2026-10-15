@@ -63,6 +63,10 @@ Interactive scenery often has a third layer: a compact runtime tile-object recor
 
   This placement math is independent of, and should not be confused with, the tactical grid a player actually moves units on — see [Coordinate Systems & Grids](./map-grid.md).
 
+## Units under a roof
+
+  On maps whose map data turns roofs on (most story maps, the tutorials and the trial maps), a unit whose tile lies inside a roof object's area is marked as under a roof every time the units are refreshed. The mark does not hide the unit; it makes the game treat the unit as out of play for a few checks: the `CheckAttackable` script function answers no for it, the AI leaves it out when it ranks targets, the next/previous-unit buttons skip it, and reinforcement and deployment checks pass over it, as they do for a rescued or fog-hidden unit. <span class="confidence confidence--confirmed">engine</span>
+
 At load, object descriptions become runtime actors and each instance supplies placement, footprint, initial visibility/state, animation, and draw/update classification. Doors, houses, roofs, rocks, water, and goal markers opt into different native tests through flags and companion tile records; merely giving a decorative model a familiar filename does not create an Unlock, Visit, or Break command.
 
 ## FE9-SYS-069 — Persistent tile-object state

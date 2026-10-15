@@ -58,7 +58,11 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   The attack clip follows the strike: `攻撃1` (attack), `攻撃2` for a unit's second blow, `必殺1` (critical), `必殺2` for a critical that kills, `奥義` when an attack skill triggers, and `投げ` / `必殺投げ` / `奥義投げ` for thrown weapons; a missing clip falls back to the plain attack or critical. When a model has a variant named after its previous action — `必殺1_攻撃1`, a critical that flows out of an attack, or `回避_回避`, a second dodge — that variant plays instead.
 
-  Bows and thrown weapons let go of their missile on the clip's release marker. Arrows travel 6 units a tick, thrown spears 5, hand axes 4.5 and knives 2.8, and they strike 2.8 units short of the target. A shot is followed by a 20-tick pause (`WaitShoot1`).
+  A blow that deals damage pushes the struck unit back, away from the striker: 3 units by default at 0.4 a tick, but each model can set its own distance (`ダメージ後退`), 0.1 for armoured, mounted and dragon models and 1.0 for birds. A unit that dodges while the striker stands closer than 0.8 × its own reach steps back to that distance, 1 unit a tick. No unit ever stands more than 90 units from the centre of the scene. <span class="confidence confidence--confirmed">engine</span>
+
+  A swing leaves a glowing trail. It is drawn on the weapon model, between two marker bones at the base and tip (`_sw1_`/`_sw2_` on swords, `_sp_` on lances, `_ax_` on axes, `_ar_` along a bow's string, `_ex_` on arrows), from the clip's start marker for the weapon kind to its end marker, in the weapon's trail colour (blue by default); it keeps the last 10 ticks of the weapon's path, smoothed, and fades out over 20 ticks once the swing ends. A dark colour (every channel under 128) darkens the picture instead of brightening it. A custom weapon model needs these two marker bones to have a trail. A bow's string is made of seven bones named `BW001`–`BW007` that follow the archer's bones of the same names, so the archer's animation draws the string; the weapon itself sits on the archer's `_l_hand_` marker (`_r_hand_` for other weapons), and a rig without that marker puts the weapon in an undefined place. <span class="confidence confidence--confirmed">engine</span>
+
+  Bows and thrown weapons let go of their missile on the clip's release marker. Arrows travel 6 units a tick, thrown spears 5, hand axes 4.5 and knives 2.8, and they strike 2.8 units short of the target. A shot is followed by a 20-tick pause (`WaitShoot1`). A hand axe comes back: it leaves at 4.5 units a tick and is slowed and pulled back so that it returns to the thrower's hand on the throw clip's catch marker, rising and falling once on the way and spinning 70° a tick. <span class="confidence confidence--confirmed">engine</span>
 
 ## The camera
 
@@ -70,7 +74,7 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
 
   A blow that deals damage shakes every camera sideways. The shake's strength is 1.8 × the strike's quake value (0.5 for an attack, 1.8 for a critical or skill, 0.5 for a shot, 1.2 for magic). It swings once per tick and fades by 0.06 × the quake value each tick, for 60 ticks.
 
-  The fight opens on the free camera `cam1`, pointed at the midpoint between the two units 9 units up, playing `standby`: a zoom from 170 down to 70 units. At range it plays `standby2` instead. The picture is a 30° vertical field of view at 4:3.
+  The fight opens on the free camera `cam1`, pointed at the midpoint between the two units 9 units up, playing `standby`: a zoom from 170 down to 70 units. At range it plays `standby2` instead. The picture is a 30° vertical field of view at 4:3. When the Combat Camera option is set to "Fixed", the whole fight is filmed this way from the side: `cam1` plays `sideview` and keeps looking at the midpoint between the units, backing off to 1.4 × their distance plus `SideCamLen` (clamped by `SideCamMin`/`SideCamMax`). <span class="confidence confidence--confirmed">engine</span>
 
 ## Effects
 
@@ -90,6 +94,8 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
   A tome's spell is the `effectId` of its `xwp/` table (Wind is `EID_K_WIND`). It appears on the cast clip's release marker, at the caster for missile weapons (tomes, magic swords) and on the target otherwise, aimed at the target. The effect's own markers carry it across: code 0x11 jumps to the target, codes 0x12 to 0x13 move it there over the frames between them (Wind: frames 44–45). The blow lands on the effect's marker 0 (Wind: frame 90), and a miss on its marker 1, so a spell's timing comes from its effect, not the caster. Each tome has two cameras in `xcam/magic/cam.cmp`, named after the item: `<NAME>_at0` (`WIND_at0`) starts as the spell leaves the caster, and `<NAME>_at1` cuts to the target as the blow lands, filming it take the hit. A miss stays on `_at0`. Magic swords play `mag_impact_l` instead. The disc's `xcam/magic/magic.cmp` holds older variants (`_cr0`, `_sk0`…) that the game never loads.
 
   Effect materials rest fully transparent; the effect's animation fades each one in and out with one alpha track per material (see [.g / .gs / .ga](../formats/model-formats.md)).
+
+  <span class="confidence confidence--open">Open</span> How a model attaches its weapon and why some multi-part shapes and dragon rigs look wrong in the app's preview are not decoded yet.
 
   Opening-camera targets and damage/dodge pushback distances are parameters of the selected scene/script resource. They are cosmetic consumers of the precomputed result and do not alter combat state.
 

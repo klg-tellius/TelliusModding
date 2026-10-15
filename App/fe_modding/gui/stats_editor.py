@@ -945,7 +945,8 @@ class StatsEditor(EditorPanel):
         row += 1
 
         self._heading(parent, "Stats", row, help_text=(
-            "Base stats add to a character's personal stats (Luck base is unused). Growth % is the class rate used "
+            "Base stats add to a character's personal stats. The game ignores the Luck base and the Luck cap: Luck is "
+            "capped at 40 for every class. Growth % is the class rate used "
             "for automatic levelling; it is not added to a character's personal rate. Growth modifiers add signed "
             "percentage points to the personal growth of characters in this class during level ups: 45% personal "
             "growth with a +5 modifier becomes 50%."))

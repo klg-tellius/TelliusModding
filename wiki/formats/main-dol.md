@@ -57,8 +57,6 @@ source_path: "formats/main-dol.md"
   </tbody></table>
 </div>
 
-  A separate readability pass over 1,404 gameplay functions rates 1,078 as good, 316 as usable, 9 as noisy, none as hard to read, and one as a decompile failure. The noisiest known gameplay functions are concentrated in the script interpreter, map loading, movement/search helpers, save construction, and combat-exchange execution.
-
 ## Example: named runtime configuration
 
   The executable does not embed every balance constant directly in its instruction stream. Seven small native accessors resolve a runtime resource named `GameData`, map the current difficulty to one of four columns, and read rows controlling battle EXP, promotion effective level, boss and thief bonuses, transformed-unit growth, and a class critical bonus. This pattern separates native formulas from named configuration loaded at runtime.
@@ -67,11 +65,11 @@ source_path: "formats/main-dol.md"
 
   Function addresses identify one regional build only; the durable documentation is the function's behavior, inputs, and relationships rather than a bare address.
 
-## PAL cross-reference and library boundaries
+## Lining up the regional executables
 
-  The PAL `GFEP01` executable can be lined up with the US `GFEE01` executable by matching each function's machine-code body after masking operands that naturally differ between regional builds. This is not a fixed-offset conversion: the address drift grows through the file because the PAL build carries extra language support. The current cross-reference places 8,746 PAL functions in the US executable with call-graph agreement across 32,204 relationships and identifies 5,046 corresponding data addresses.
+  The European (`GFEP01`) and Japanese (`GFEJ01`) executables can be lined up with the North American one (`GFEE01`) function by function. This is not a fixed-offset conversion: the distance between corresponding functions grows through the file, because each build carries different language support. Two passes do it. The first matches each function's machine code after masking the operands that naturally differ between builds (branch targets and data addresses). The second aligns each remaining function against the functions lying between its two matched neighbours, by instruction sequence, and checks every match by its calls: the functions it calls must be the counterparts of the functions the US version calls. <span class="confidence confidence--confirmed">engine</span>
 
-  That mapping imported many verified SDK, MSL, and MetroTRK names, corrected earlier disc-drive-versus-audio-chip mislabels, created hundreds of previously missing function entries reached only through pointers, and repaired several bad function extents. It is still only an identity map and boundary aid: a matching decompilation proves byte-level correspondence, not the gameplay meaning of a function.
+  Of the 9,060 US functions, all but 452 have a European counterpart and all but 546 a Japanese one. What remains is code that differs by release: text and language handling (message-file names per language, date formats, glyph drawing), the European 50/60 Hz video-mode screens, and small graphics helpers too alike to tell apart. A matched pair shows that two functions are the same code; what the code does in the game is established separately. See [Regional Releases](../systems/regional-releases.md) for what differs.
 
   Library code is not safely described as one broad contiguous block per library. MSL string/vector code, for example, appears in several islands with ordinary game code between them. Candidate library regions should therefore be treated as candidate provenance until code patterns, diagnostic strings, SDK state/register access, or source-level matches confirm an exact identity.
 

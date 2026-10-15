@@ -41,7 +41,7 @@ The [Uncovered Systems Writing Roadmap](uncovered-systems-roadmap.md) assigns ev
 - First safe edit; backup, restore, and recovery
 - Building an ISO; creating and distributing patches
 - Testing in the app and Dolphin
-- Compatibility, game regions, and revisions
+- Compatibility, game regions, and revisions: [Regional Releases](../systems/regional-releases.md)
 - Troubleshooting and known limitations
 - Contributing, article style, citations, and confidence conventions
 

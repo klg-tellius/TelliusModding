@@ -166,7 +166,8 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
     # Prefer the key selected in its ChapterData record when available.
     try:
         for record in fe8data.read_chapter_data(project.read_logical("game_data")):
-            title = texts.get(record.title_key or "", "").strip()
+            title = (texts.get(record.title_key or "", "") or texts.get(record.title_text or "", "")
+                     or record.title_text or "").strip()
             if title:
                 titles[f"{record.chapter_id:02d}"] = title
     except Exception:  # noqa: BLE001 - titles are presentation only

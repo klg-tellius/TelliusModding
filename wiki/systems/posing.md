@@ -54,6 +54,8 @@ A moving battle model combines three data sets: a `.g` skeleton holding each bon
 
   Blending happens on the CPU and uses the same matrices as the hardware path: a vertex weighted to bones *b*<sub>i</sub> is drawn at `Σ wi · world[bi] × skin_matrix[bi] × vertex`, with at most four bones and weights in 256ths. The result is stored at the fixed-point scale of the mesh's blended-vertex buffer, so an animation that carries a model far from its origin (battle clips with root motion move vertices up to about five times the body's rest size) needs a coarser scale. <span class="confidence confidence--confirmed">confirmed</span>
 
+  A bone's stored scale is a cheap way to vary a model: Ashnard's second form (`dragon_2as2`) is the first form's rig with its root bone scaled to 1.2, so the whole model is a fifth larger, and Rajaion on his own (`dragon_2as3`) keeps Ashnard in the rig but scales his hip bone to 0, so the rider shrinks to a point and disappears. <span class="confidence confidence--confirmed">data</span>
+
   Character rigs mostly use identity skinning matrices and store body vertices in model space, with bone pivots placed at the joints. Static models are different: a single-bone shape stores vertices in that bone's local space, so its apparent world placement comes from the bone chain. Multi-matrix shapes draw through `world[bone] × skin_matrix[bone] × vertex`; on nearly all character classes this keeps triangles rigid under animation, with a few dragon variants as the known exceptions.
 
 ## Worked example

@@ -166,6 +166,9 @@ class RealAssetIntegrationTests(unittest.TestCase):
         from fe_modding.project import ModProject
 
         source = Path(os.environ["FE9_EXTRACTED_FILES"])
+        from fe_modding.formats import fe8data
+        if fe8data.japanese_chapter_layout((source / "FE8Data.bin").read_bytes()):
+            self.skipTest("Japanese chapter records are read-only")
         with tempfile.TemporaryDirectory() as tmp:
             project = ModProject.create(Path(tmp), "hub test", Game.PATH_OF_RADIANCE)
             files = project.extracted_dir / "files"

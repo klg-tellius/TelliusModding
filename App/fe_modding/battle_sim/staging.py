@@ -64,9 +64,16 @@ class BattleParams:
     quake_shoot: float = 0.5
     quake_magic: float = 1.2
     attack_dist_scale: float = 1.0
+    wall_dist: float = 90.0  # a unit never stands farther than this from the scene centre
+    avoid_scale: float = 0.8  # a dodging unit steps back to its range x this from the striker
+    avoid_speed: float = 1.0  # units per tick of that step
+    damage_back: float = 3.0  # knock-back of a hit unit whose model sets none (ダメージ後退 0)
+    damage_back_spd: float = 0.4  # units per tick of the knock-back
     knife_speed: float = 2.8
     spear_speed: float = 5.0
     axe_speed: float = 4.5
+    axe_rot_speed: float = 70.0  # degrees a tick a hand axe spins
+    axe_wave_spd: float = -0.12  # hand axe height wave step (x 56 / ticks to the catch)
     arrow_speed: float = 6.0
     shoot_damage_dist: float = 2.8
     death_eff_time: int = 30  # EID_K_DEATH starts this long before the death clip's fade (code 0x38)
@@ -79,8 +86,10 @@ class BattleParams:
         "WaitSkill0": "wait_skill0", "WaitShoot1": "wait_shoot1", "WaitMagic1": "wait_magic1",
         "WaitDie1": "wait_die1", "QuakeAttack": "quake_attack", "QuakeCrit": "quake_crit",
         "QuakeSkill": "quake_skill", "QuakeShoot": "quake_shoot", "QuakeMagic": "quake_magic",
-        "AttackDistScale": "attack_dist_scale", "KnifeSpeed": "knife_speed", "SpearSpeed": "spear_speed",
-        "AxeSpeed": "axe_speed", "ArrowSpeed": "arrow_speed", "ShootDamageDist": "shoot_damage_dist",
+        "AttackDistScale": "attack_dist_scale", "WallDist": "wall_dist", "AvoidScale": "avoid_scale",
+        "AvoidSpeed": "avoid_speed", "DamageBack": "damage_back", "DamageBackSpd": "damage_back_spd",
+        "KnifeSpeed": "knife_speed", "SpearSpeed": "spear_speed",
+        "AxeSpeed": "axe_speed", "AxeRotSpeed": "axe_rot_speed", "AxeWaveSpd": "axe_wave_spd", "ArrowSpeed": "arrow_speed", "ShootDamageDist": "shoot_damage_dist",
         "DeathEffTime": "death_eff_time", "DamageEffWait": "damage_eff_wait", "FootEffScale": "foot_eff_scale",
     }
 
@@ -121,6 +130,7 @@ class UnitParams:
     jump_crit: bool = False  # ジャンプ必殺
     jump_finish: bool = False  # ジャンプ止め
     jump_skill: bool = False  # ジャンプ奥義
+    knockback: float = 0.0  # ダメージ後退: how far a blow pushes the unit back (0 = param.dbx DamageBack)
 
     @classmethod
     def from_values(cls, values: Optional[dict]) -> "UnitParams":
@@ -141,6 +151,7 @@ class UnitParams:
         p.jump_crit = bool(get("ジャンプ必殺"))
         p.jump_finish = bool(get("ジャンプ止め"))
         p.jump_skill = bool(get("ジャンプ奥義"))
+        p.knockback = get("ダメージ後退") or 0.0
         return p
 
     def jumps(self, mode: str, second: bool = False) -> bool:

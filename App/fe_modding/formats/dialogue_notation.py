@@ -11,6 +11,7 @@ import html
 import re
 
 from . import fe10_message as rd
+from . import game_text
 from .fe9_conversation import tokenize
 from .fe9_message_scene import to_raw
 
@@ -208,6 +209,13 @@ def _tag_raw(inner, fe10):
     return raw
 
 
+def _encodes_to(text: str) -> str | None:
+    try:
+        return game_text.encode(text).decode('cp437')
+    except UnicodeError:
+        return None
+
+
 def parse(text: str, fe10: bool = False) -> Document:
     """Parse a draft strictly; an error never discards or repairs user text."""
     raw, spans = [], []
@@ -226,7 +234,7 @@ def parse(text: str, fe10: bool = False) -> Document:
                 if text[pos] == '>':
                     raise ValueError('Use <Bytes:3E> for a literal >')
                 pos += 1
-                chunk = text[start:pos].encode(rd.ENCODING if fe10 else 'shift_jis').decode('cp437')
+                chunk = (text[start:pos].encode(rd.ENCODING) if fe10 else game_text.encode(text[start:pos])).decode('cp437')
                 action = False
             if '\0' in chunk:
                 raise ValueError('A message cannot contain a zero byte')
@@ -273,7 +281,7 @@ def display(raw: str, fe10: bool = False) -> Document:
             source = raw[token.offset:tokens[i + 1].offset if i + 1 < len(tokens) else len(raw)]
             if token.code == 'text':
                 part = token.arg
-                if part in ('<', '>') or part.encode('shift_jis', errors='replace').decode('cp437') != source:
+                if part in ('<', '>') or _encodes_to(part) != source:
                     part = '<Bytes:' + source.encode('cp437').hex().upper() + '>'
             elif token.code in FE9_NAMES:
                 part = '<' + FE9_NAMES[token.code] + (':' + _escape(token.arg) if token.arg or token.code in ('R', 'B', 'c', 'C', 'FC') else '') + '>'

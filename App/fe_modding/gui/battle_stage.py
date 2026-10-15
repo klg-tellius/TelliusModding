@@ -705,11 +705,42 @@ class BattleStage:
     def _projectile(self, part: _Part, u: float, t: float) -> tuple[np.ndarray, np.ndarray]:
         side = part.side
         unit, target = self.units[side], self.units[1 - side]
+        flight = part.item
+        if flight.returns:
+            return self._returning_axe(part, flight, t)
         start = self.point(side, unit.hand, t)
         end = self.point(1 - side, target.eye, t)
         matrix = np.zeros((3, 4))
         matrix[:, :3] = _look_rotation(end - start)
         matrix[:, 3] = start + (end - start) * u
+        rest_p, rest_n = self._rest[part.start:part.start + part.count], \
+            self._rest_normals[part.start:part.start + part.count]
+        return _transform(matrix, rest_p, rest_n)
+
+    def _returning_axe(self, part: _Part, flight: tlm.Flight, t: float) -> tuple[np.ndarray, np.ndarray]:
+        """``update_projectile_motion_with_audio`` kinds 2/7: out from the hand where it was let go
+        and back (:meth:`Flight.offset`), its height ``-(target - start) * sin(phase)`` above the
+        release point with the phase going from 2 pi down by ``AxeWaveSpd * 56 / ticks`` a tick
+        (stopping at 0), spinning ``AxeRotSpeed`` degrees a tick."""
+        side, k = part.side, t - flight.start
+        start = self.point(side, self.units[side].hand, flight.start)
+        target = self.point(1 - side, self.units[1 - side].eye, flight.start)
+        across = np.array([target[0] - start[0], 0.0, target[2] - start[2]])
+        across /= max(np.linalg.norm(across), 1e-9)
+        ticks = max(flight.end - flight.start, 1.0)
+        phase = max(2 * math.pi + self.params.axe_wave_spd * (56.0 / ticks) * k, 0.0)
+        position = start + across * flight.offset(k)
+        position[1] = start[1] - (target[1] - start[1]) * math.sin(phase)
+        spin = math.radians(-self.params.axe_rot_speed * k)
+        side_axis = np.cross(np.array([0.0, 1.0, 0.0]), across)
+        c, s = math.cos(spin), math.sin(spin)
+        # turn about the axis across the flight, so the blade wheels end over end along it
+        x = side_axis
+        y = np.array([0.0, c, 0.0]) + across * s
+        z = np.cross(x, y)
+        matrix = np.zeros((3, 4))
+        matrix[:, :3] = np.stack([x, y, z], axis=1)
+        matrix[:, 3] = position
         rest_p, rest_n = self._rest[part.start:part.start + part.count], \
             self._rest_normals[part.start:part.start + part.count]
         return _transform(matrix, rest_p, rest_n)

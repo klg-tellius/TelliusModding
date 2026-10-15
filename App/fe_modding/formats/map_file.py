@@ -267,11 +267,12 @@ class MapBuildInstance:
 
         i.e. the object rotates around the center of its own 5x5-unit tile
         cell, not around its raw placement origin. ``map_scale`` is the
-        per-map scale factor (plausibly, but not independently confirmed to
-        be, `MapCapacity.scale_unit` - see the Twentieth finding's own "what's
-        still open" note). ``parent_matrix``, if given, must be a 4x4
-        row-major matrix (defaults to identity); its own real source
-        (map-state struct offset +0x70) was not traced to a writer.
+        map-state `+0x6C`: `load_map_data` sets 0.2 for chapter maps and 3.0 for
+        battle backdrops (not `MapCapacity.scale_unit`). ``parent_matrix``, if
+        given, must be a 4x4 row-major matrix (defaults to identity); the engine's
+        is map-state `+0x70`, a 270-degree rotation about X for chapter maps
+        (identity for backdrops). The app draws chapter maps at scale 1.0 with no
+        rotation, the same picture up to one global transform.
 
         Confirmed constants: tile scale = 5.0 world units/tile, pivot = 2.5
         (half the tile scale).

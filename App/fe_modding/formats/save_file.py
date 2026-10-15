@@ -40,9 +40,14 @@ import zlib
 from dataclasses import dataclass, field, fields
 from typing import Optional
 
+from . import game_text
+
 GCI_HEADER_SIZE = 0x40
 SAVE_MAGIC = b"FE8J"
 SAVE_VERSION = 0x20050201
+#: Block magic -> version: US and JP write "FE8J"/0x20050201, PAL "FE8X"/0x20050801 (the PAL
+#: loader rejects the other pair, so a save does not move between releases).
+SAVE_MAGICS = {b"FE8J": 0x20050201, b"FE8X": 0x20050801}
 SYSF_MAGIC = b"SYSF"
 CRC_START = 0x70
 CRC_EXEMPT = 0x12345678
@@ -114,11 +119,11 @@ class _Reader:
 
 
 def _text(raw: bytes) -> str:
-    return raw.split(b"\0")[0].decode("shift_jis", "replace")
+    return game_text.decode(raw.split(b"\0")[0])     # CP932, or the PAL hybrid (accented letters)
 
 
 def _put_text(text: str, size: int) -> bytes:
-    raw = text.encode("shift_jis")
+    raw = game_text.encode(text)
     if len(raw) >= size:
         raise ValueError(f"{text!r} is longer than {size - 1} bytes")
     return raw.ljust(size, b"\0")
@@ -332,13 +337,13 @@ class PartyState:
 
     def option_enabled(self, off_mask: int) -> bool:
         """Whether an inverted on/off option in byte 2 is enabled."""
-        if off_mask not in (0x01, 0x10):
+        if off_mask not in dict(OPTION_TOGGLES):
             raise ValueError(off_mask)
         return not bool(self.options[2] & off_mask)
 
     def set_option_enabled(self, off_mask: int, enabled: bool) -> None:
         """Change one named option without altering the other saved bits."""
-        if off_mask not in (0x01, 0x10):
+        if off_mask not in dict(OPTION_TOGGLES):
             raise ValueError(off_mask)
         options = bytearray(self.options)
         options[2] = options[2] & ~off_mask if enabled else options[2] | off_mask
@@ -357,20 +362,25 @@ class PartyState:
         self.options = self.options[:10] + bytes((value,)) + self.options[11:]
 
 
-# (byte, mask, name). Bits marked "off" are 1 when the option is turned off.
+# (byte, mask, name), from the Options menu (``unpack_config_menu_to_globals``; row names
+# MCFG_* in Mess/common.m). Bits marked "off" are 1 when the option is turned off.
 OPTION_FIELDS = (
-    (0, 0x01, "Option bit 0 (off)"), (0, 0x02, "Unit window (off)"), (0, 0x04, "Terrain window (off)"),
-    (0, 0x18, "Message speed (0 slow - 3 max)"), (0, 0x20, "Option byte 0 bit 5"), (0, 0xC0, "Option byte 0 bits 6-7"),
-    (1, 0x01, "Option byte 1 bit 0 (off)"), (1, 0x02, "Option byte 1 bit 1 (off)"), (1, 0x0C, "Option byte 1 bits 2-3"),
-    (1, 0x10, "Option byte 1 bit 4 (off)"), (1, 0x20, "Option byte 1 bit 5 (off)"), (1, 0xC0, "Option byte 1 bits 6-7"),
-    (2, 0x01, "Bonus Exp Display (off)"), (2, 0x02, "Option byte 2 bit 1 (off)"), (2, 0x0C, "Sound output (stereo 1)"),
-    (2, 0x10, "Unit Facing (off)"), (2, 0x20, "Option byte 2 bit 5 (off)"), (2, 0x40, "Option byte 2 bit 6 (off)"),
-    (2, 0x80, "Option byte 2 bit 7 (off)"),
-    (3, 0x10, "Option byte 3 bit 4 (off)"), (3, 0x20, "Message sounds (off)"), (3, 0x40, "Show other units' moves"),
-    (3, 0x80, "Fixed growths"),
+    (0, 0x01, "No menu row (menu flag 0x4)"), (0, 0x02, "Unit Window (off)"), (0, 0x04, "Terrain / Goal (off)"),
+    (0, 0x18, "Message Speed (0 slow, 1 normal, 2 fast, 3 max)"), (0, 0x20, "Game Speed fast"),
+    (0, 0xC0, "Animation (0 on, 1 off, 2 individual)"),
+    (1, 0x01, "C Stick X-axis reversed"), (1, 0x02, "Guide Window (off)"),
+    (1, 0x0C, "Help Window (0 window, 1 captions, 2 off)"), (1, 0x10, "No menu row (menu flag 0x10)"),
+    (1, 0x20, "No menu row (menu flag 0x8)"), (1, 0xC0, "Combat Window (0 simple, 1 detailed, 2 off)"),
+    (2, 0x01, "Bonus Exp Display (off)"), (2, 0x02, "Rumble Feature (off)"),
+    (2, 0x0C, "Sound Output (0 mono, 1 stereo, 2 surround)"), (2, 0x10, "Unit Facing (off)"),
+    (2, 0x20, "Autoend Turns (off)"), (2, 0x40, "Autocursor (off)"), (2, 0x80, "C Stick Y-axis reversed"),
+    (3, 0x08, "Trial map"), (3, 0x10, "Combat Camera fixed (side view)"), (3, 0x20, "Message Sounds (off)"),
+    (3, 0x40, "Show other units' moves"), (3, 0x80, "Fixed growths"),
 )
-OPTION_TOGGLES = ((0x10, "Unit Facing"), (0x01, "Bonus Exp Display"))
-OPTION_BYTES = ("Bits 0", "Bits 1", "Bits 2", "Bits 3", "Unit speed", "Brightness", "Screen X", "Screen Y",
+#: The on/off rows of byte 2 (bit set = off), shown as check boxes.
+OPTION_TOGGLES = ((0x40, "Autocursor"), (0x20, "Autoend Turns"), (0x10, "Unit Facing"), (0x02, "Rumble Feature"),
+                  (0x01, "Bonus Exp Display"))
+OPTION_BYTES = ("Bits 0", "Bits 1", "Bits 2", "Bits 3", "Grid thickness", "Brightness", "Screen X", "Screen Y",
                 "Music volume", "Sound effect volume", "Difficulty", "Byte 11")
 
 
@@ -639,7 +649,7 @@ class SaveBlock:
     @classmethod
     def parse(cls, gci: bytes, offset: int, size: int) -> Optional["SaveBlock"]:
         raw = bytes(gci[offset:offset + size])
-        if len(raw) < STREAM_START or raw[0x40:0x44] != SAVE_MAGIC:
+        if len(raw) < STREAM_START or raw[0x40:0x44] not in SAVE_MAGICS:
             return None
         header = BlockHeader.parse(raw[:BlockHeader.SIZE])
         block = cls(offset, size, header, raw)
@@ -869,6 +879,11 @@ def validate(block: SaveBlock, fe8=None) -> list:
         item_ok(it, f"convoy slot {i + 1}")
     if block.terrain and block.terrain.count > TERRAIN_ENTRIES:
         out.append(f"terrain table count {block.terrain.count} > {TERRAIN_ENTRIES}")
+    if block.forges and all(f.allocated for f in block.forges):
+        # allocate_free_forge_result_slot returns 0 when full and the setters then write
+        # pool[-1]: the 24 bytes before the pool, which are convoy slots 198-200.
+        out.append(f"all {FORGE_RECORDS} forge records are used: the next forge would overwrite convoy "
+                   f"slots {CONVOY_SLOTS - 2}-{CONVOY_SLOTS} and the weapon would stay unforged")
     return out
 
 

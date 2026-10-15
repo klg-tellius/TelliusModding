@@ -771,6 +771,51 @@ class AiActionTests(unittest.TestCase):
         low.stats[7] = high.stats[7] = 30  # (10 - 30) x 5 + 5 + 30 - 6 < 5
         self.assertIsNone(step.try_use_staff(step._predicate(), False))
 
+    def test_silence_staff_only_targets_mage_classes(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_SILENCE"] = _item("IID_SILENCE", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, faction=ENEMY, jid="JID_CLERIC", items=("IID_SILENCE",))
+        caster.stats[2] = 10
+        target = _unit(state, "PID_A", 3, 0, jid="JID_CLERIC", items=("IID_LIVE",))
+        step = _ai_step(world, state, caster)
+        target.categories = []  # a staff user, but not a mage class (category mask bit 0)
+        self.assertIsNone(step.try_use_staff(step._predicate(), False))
+        target.categories = ["mage"]
+        self.assertEqual(step.try_use_staff(step._predicate(), False)["target"], target.uid)
+
+    def test_sleep_lasts_five_phases_and_berserk_does_nothing(self):
+        world, state = _ai_world(), GameState()
+        world.items["IID_BERSERK"] = _item("IID_BERSERK", weapon_type="rod", might=0, attack_type="rod", rng=(1, 255))
+        caster = _unit(state, "PID_HEALER", 0, 0, jid="JID_CLERIC", items=("IID_SLEEP", "IID_BERSERK"))
+        target = _unit(state, "PID_A", 1, 0, faction=ENEMY)
+        state.rng = SimpleNamespace(roll_percent=lambda hit: (True, 0))
+        actions.use_staff(world, state, caster, target, 1)
+        self.assertEqual((target.status, target.status_turns), ("", 0))
+        target.skills.append("SID_BOSS")  # bosses resist status staves
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual(target.status, "")
+        target.skills.remove("SID_BOSS")
+        actions.use_staff(world, state, caster, target, 0)
+        self.assertEqual((target.status, target.status_turns), ("sleep", 5))
+
+    def test_stat_boosters_respect_the_caps_and_luck_caps_at_40(self):
+        world, state = _ai_world(), GameState()
+        luck = _item("IID_LUCKDROP", weapon_type="item", might=0, uses=1)
+        luck.stat_bonus = [0, 0, 0, 0, 0, 3, 0, 0, 0, 0]
+        boots = _item("IID_BOOTS", weapon_type="item", might=0, uses=1)
+        boots.stat_bonus = [0] * 8 + [2, 0]
+        world.items.update({"IID_LUCKDROP": luck, "IID_BOOTS": boots})
+        u = _unit(state, "PID_A", 0, 0, items=("IID_LUCKDROP", "IID_LUCKDROP", "IID_BOOTS"))
+        u.stats[5], u.move = 38, 19
+        for entry in u.items:
+            entry[1] = 1
+        actions.use_item(world, state, u, 0)
+        self.assertEqual(u.stats[5], 40)  # the class record's Luck cap is never loaded
+        actions.use_item(world, state, u, 0)  # nothing to raise: not used up
+        self.assertEqual([iid for iid, *_ in u.items], ["IID_LUCKDROP", "IID_BOOTS"])
+        actions.use_item(world, state, u, 1)
+        self.assertEqual(u.move, 20)
+
     def test_steal_takes_the_earliest_listed_item_of_a_slower_unit(self):
         world = _ai_world(steal=["IID_SPEEDDROP", "IID_POWERDROP"])
         state = GameState()

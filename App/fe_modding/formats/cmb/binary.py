@@ -79,7 +79,8 @@ def read_cmb(data: bytes, dialect: Optional[Dialect] = None) -> ScriptFile:
     while entries and entries[-1] == b"":
         entries.pop()
     raw = b"\x00".join(entries)
-    pool = [e.decode(ENCODING) for e in entries]
+    # surrogateescape keeps bytes that are not text (the JP C02 pool ends with stray bytes) lossless
+    pool = [e.decode(ENCODING, "surrogateescape") for e in entries]
     offset_to_text: dict[int, str] = {}
     offset = 0
     for text, entry in zip(pool, entries):
@@ -263,7 +264,7 @@ def _decode_code(data: bytes, start: int, end: int, strings: dict[int, str], dia
 
 
 def _pool_layout(script: ScriptFile) -> tuple[bytes, dict[str, int]]:
-    encoded = [text.encode(ENCODING) for text in script.pool]
+    encoded = [text.encode(ENCODING, "surrogateescape") for text in script.pool]
     for e in encoded:
         if b"\x00" in e:
             raise CmbError("A pool string can't contain a NUL byte.")

@@ -50,6 +50,6 @@ For `Face/IKE.cms`, first remove LZ10, then parse the resulting TPL, then apply 
     <tr><td><a class="wl" href="../../formats/save-format/">GameCube Save (.gci)</a></td><td>Memory-card <code>.gci</code></td><td>CRC-checked save blocks and tagged state chunks</td><td><span class="badge confirmed">every chunk decoded</span></td></tr>
     <tr><td><a class="wl" href="../../formats/sound-room/">soundroom.bin</a></td><td>Filesystem root</td><td>Sound Room slideshow: picture names and screen offsets</td><td><span class="badge confirmed">complete</span></td></tr>
     <tr><td><code>tut_data*.bin</code></td><td>Filesystem root</td><td>Tutorial trigger/topic tables</td><td><span class="badge plausible">identified, partial</span></td></tr>
-    <tr><td><code>client.bin</code></td><td>Filesystem root</td><td>Region/save-related metadata</td><td><span class="badge open">unidentified payload</span></td></tr>
+    <tr><td><code>client.bin</code></td><td>Filesystem root</td><td>The GBA link program (Game Boy Advance code)</td><td><span class="badge confirmed">identified</span> (GBA code not disassembled)</td></tr>
   </tbody></table>
 </div>

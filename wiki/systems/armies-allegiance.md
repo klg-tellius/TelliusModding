@@ -39,6 +39,10 @@ Every unit slot in the game belongs, at any moment, to exactly one of eight runt
   </tbody></table>
 </div>
 
+## Who plays each phase
+
+  Each of the four armies has one byte in the party data saying who plays its phase: 0 no phase, 1 the player, 2 the computer. Chapter start writes 1 for the player army and 2 for the other three; no retail script changes them. Only the developer menu edits them (see [Developer & Debug Tools](./developer-debug-tools.md)). <span class="confidence confidence--confirmed">engine</span>
+
 ## Rules and lifecycle — four more list states
 
   Four further list ids exist purely as bookkeeping states rather than battlefield sides: a shared pool holding every currently-unused unit slot, the player's reserve/deployment-select pool before a chapter starts, an inactive/flagged state, and a further hidden/removed state. A unit sitting in one of these is not on the map as any army — it is waiting, benched, or cleared.

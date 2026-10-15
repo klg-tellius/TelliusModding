@@ -145,13 +145,15 @@ Victory grades turns, losses, and total player kills against the record's A–D 
 
 <div class="table-wrap">
 <table class="tight"><thead><tr><th>Special case</th><th>What happens</th></tr></thead><tbody>
-    <tr><td>Chapter 27</td><td>Two numbers (slots 28 and 29) for one chapter on two maps. No save menu between them, and the second half's script only has an intro.</td></tr>
-    <tr><td>Chapter 17</td><td>One number, four battles. The script ends each of the first three with <code>Complete18(part)</code> instead of a victory: the number stays the same, the save menu opens, and <code>Opening18_2</code>, <code>_3</code> or <code>_4</code> sets up the next battle, loading another map when needed.</td></tr>
+    <tr><td>Chapter 27</td><td>Two numbers (slots 28 and 29) for one chapter on two maps. Clearing 28 is a continued part: the army isn't sorted out (units that joined keep their army), the war record entry is flagged as carrying on and is merged with 29's, there is no save menu, and support points are not counted again at the start of 29. The second half's script only has an intro.</td></tr>
+    <tr><td>Chapter 17</td><td>One number, four battles. The script ends each of the first three with <code>Complete18(part)</code> instead of a victory: the number stays the same, the save menu opens, and <code>Opening18_2</code>, <code>_3</code> or <code>_4</code> sets up the next battle, loading another map when needed. <code>Complete18</code> works in any chapter, but only chapter 18's later parts skip the support pass: elsewhere support points are counted again at the start of each part.</td></tr>
     <tr><td>After the Endgame</td><td>Number 32 means the game is cleared: the Endgame map is reloaded for the final scene, the ending plays, the clear is recorded per difficulty in the system data, and the title screen returns.</td></tr>
     <tr><td>Starting directly</td><td>The development chapter select starts any chapter record with an empty army, keeping the difficulty (see <a class="wl" href="../developer-debug-tools/">Developer &amp; Debug Tools</a>).</td></tr>
     <tr><td>Saves</td><td>A save stores the chapter number and a resume point: the base, preparations, the start of the chapter (the save made after a victory), part 2&amp;ndash;4 of Chapter 17, or a suspended battle (see <a class="wl" href="../../formats/save-format/">GameCube Save (.gci)</a>).</td></tr>
   </tbody></table>
 </div>
+
+Support points are added once per battle map, at its start; the two exceptions above (29, and the parts of chapter 18) are the engine's only ways of keeping a chapter's later maps from counting again. <span class="confidence confidence--confirmed">engine</span>
 
 ## Adding chapters
 
@@ -159,6 +161,7 @@ Victory grades turns, losses, and total player kills against the record's A–D 
 
 - **Replacing** a chapter needs data only: point its record at other files, or edit the files it names.
 - **Adding battles inside a chapter** can reuse the Chapter 17 mechanism in any chapter's script, up to three extra battles per number. A Prologue whose script ends its battle this way opens the save menu and plays a second battle on the Chapter 1 map before Chapter 1 begins, and a save made in that menu reloads into the second battle. Likewise, giving the Prologue an `Opening2` function makes its preparations screen appear. <span class="confidence confidence--confirmed">in game</span>
+- **Chapter name pictures.** A chapter's name appears twice as a picture, never as text: the title card when the chapter starts (`window/chapter/chap<N>.cms`, 480&times;160) and the strip in each save slot of the file menu (`window/chapter2/chap<N>.cms`, 312&times;32). The file menu finds its strip through a fixed 40-entry table in the executable that pairs a chapter number with a file name: chapters 1&ndash;31 (29, the second half of Chapter 27, shows Chapter 28's picture), "no data" (99), the tutorial (999), the epilogue (32) and the six trial maps (91&ndash;96). A chapter number missing from the table shows an empty box, so a chapter added on a free number needs a table entry as well as its two pictures. <span class="confidence confidence--confirmed">engine</span>
 - **Inserting a new number** means renumbering every later record and changing the executable wherever it tests a chapter number: the Chapter 27 pair, the ending, the save limit, the report from Chapter 9 on, the convoy unlock, the phase music and the per-chapter shops.
 - **Using a free number** avoids the renumbering. Numbers 33&ndash;89 are tested by nothing in the executable except the save limit, so a chapter can take one with its own record, files, shop sections and title, and be reached by changing two things: the &ldquo;add 1 after a victory&rdquo; step, made to read the next number from a small per-chapter table (both of its call sites), and the save limit, made to accept a number that is in that table. Everything else (the Chapter 27 pair, the ending at 32, the trial maps at 90 and up) keeps its own handling. <span class="confidence confidence--strong">static</span>
 

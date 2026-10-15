@@ -70,6 +70,7 @@ A map action is identified by a small number, the *action id*. Two different fro
 - **Drop** next to an enemy hidden in fog becomes an ambush: the "!" encounter mark and sound play instead.
 - **Door and Chest** use the chosen key item; a thief opening a lock without one runs the Chest Key's effect.
 - **Break** runs a combat preview against the breakable terrain's own HP.
+- **Ballista** shots never open a battle scene. When the attacker's weapon carries the `sh` property (the ballistae and the Onager), the attack plays on the map instead: the shot flies to the target, which shows a miss, no damage, a hit, or a finishing hit with its sound and a camera shake. This is also why the ballistae have no 3D weapon model. <span class="confidence confidence--confirmed">engine</span>
 
 ## Mental model and action lifecycle
 

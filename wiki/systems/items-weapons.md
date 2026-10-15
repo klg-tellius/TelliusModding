@@ -34,6 +34,8 @@ system_gap_work: []
 
 An item definition describes what a weapon or usable object is. A deployment or save places an instance of that item in a unit's inventory, and runtime state tracks mutable values such as remaining durability and whether the item is equipped. Combat then combines the equipped weapon's properties with the unit's effective stats.
 
+Every weapon, by type: [Swords](./weapons-swords.md), [Lances](./weapons-lances.md), [Axes](./weapons-axes.md), [Bows](./weapons-bows.md), [Knives](./weapons-knives.md), [Tomes](./weapons-tomes.md), [Staves](./weapons-staves.md), [Laguz natural weapons](./weapons-laguz.md); and [Ragnell and Alondite](./ragnell-and-alondite.md).
+
 ## FE9-SYS-190 through FE9-SYS-196 — Ownership boundaries
 
 <span id="fe9-sys-190"></span> **Item definitions.** The 0x60-byte `FE8Data.bin` record is immutable shared data: identity and text keys, weapon and attack types, rank, properties, effectiveness categories, effects, price, uses, combat values, range, icon, WEXP, stat/growth modifiers, and trail color. The complete field table below is the primary implementation trail. Editing it changes how every instance of that IID is interpreted; it does not locate or mutate an individual carried copy.
@@ -98,6 +100,10 @@ An item definition describes what a weapon or usable object is. A deployment or 
   </tbody></table>
 </div>
 
+## Which half of the inventory an item goes to
+
+  A unit carries eight items: slots 0–3 hold weapons, tomes and staves, slots 4–7 everything else. When an item is loaded the game derives a few capability bits from its weapon type: physical weapons (sword, lance, axe, bow, knife and laguz strikes) are marked as weapons, fire, thunder and wind as magic weapons, a `rod` item with might as a light tome and one without might as a staff, `item` as a consumable and `acc` as an accessory. Giving an item (in a script, or as a reward) puts weapons, tomes and staves in the first free slot of the first half and the rest in the second half; when that half is full the item is not added. <span class="confidence confidence--confirmed">confirmed</span>
+
 ## How weapon properties enter combat
 
 - **Might** contributes to Attack before defense is subtracted.
@@ -112,7 +118,7 @@ An item definition describes what a weapon or usable object is. A deployment or 
 
 ## Forged weapon instances
 
-  A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and the weapon's own attack-trail colour (four RGBA bytes, grey `80 80 80 FF` by default, picked by the player in the forge menu) used instead of the item's trail colour. While the player edits a forge, the game works on a temporary record; confirming copies it into a free slot and frees the temporary one. A free record has allocation marker 0; an allocated record has marker 1.
+  A forged weapon is an ordinary item instance plus a 1-based index into the runtime forge-record pool. The pool has 48 slots, each 0x18 bytes. The record stores a custom name, signed stat-adjustment steps, and the weapon's own attack-trail colour (four RGBA bytes, grey `80 80 80 FF` by default, picked by the player in the forge menu) used instead of the item's trail colour. While the player edits a forge, the game works on a temporary record; confirming copies it into a free slot and frees the temporary one. A free record has allocation marker 0; an allocated record has marker 1. The name has room for 15 bytes. The North American keyboard offers 12 one-byte characters (letters, digits, punctuation) and the European one adds accented letters, also one byte each; the Japanese keyboard offers kana, two bytes each, but stops at 7 characters, so no name typed in the game can overflow the field. <span class="confidence confidence--confirmed">engine</span>
 
 <div class="table-wrap">
 <table><thead><tr><th>Forge field</th><th>Combat interpretation</th></tr></thead><tbody>
@@ -139,6 +145,27 @@ An item definition describes what a weapon or usable object is. A deployment or 
 <div class="table-wrap">
 <table><thead><tr><th>Information</th><th>Location</th></tr></thead><tbody><tr><td>Definition and combat properties</td><td><a class="wl" href="../../formats/fe8data/">FE8Data.bin</a> item table</td></tr><tr><td>Chapter inventory</td><td><a class="wl" href="../../formats/dispo-format/">dispos.cmp</a> item slots</td></tr><tr><td>Shop availability</td><td><a class="wl" href="../../formats/shop-format/">shop inventory sections</a></td></tr><tr><td>Item icon</td><td><code>window/icon.tpl</code>, first image, cell 96 + icon (see <a class="wl" href="../graphics-system/">Graphics &amp; Images</a>)</td></tr><tr><td>Battle model</td><td><a class="wl" href="../../formats/zdbx/"><code>xwp/&lt;NAME&gt;.dbx</code></a> in <code>zdbx.cmp</code>, which names the pack <code>xwp/&lt;folder&gt;/&lt;model&gt;.cmp</code></td></tr><tr><td>Current durability</td><td>Runtime/save inventory instance</td></tr></tbody></table>
 </div>
+
+## What each usable item does
+
+Using an item runs the handler registered under its ID: the game looks up `IID_<name>_UFX`, so the effect belongs to the item ID, not to the item's fields. Each handler has a test that greys the item out in the menu when it would do nothing.
+
+<div class="table-wrap">
+<table><thead><tr><th>Items</th><th>Usable when</th><th>Effect</th></tr></thead><tbody>
+    <tr><td>Vulnerary</td><td>HP below maximum</td><td>+10 HP</td></tr>
+    <tr><td>Elixir</td><td>HP below maximum</td><td>+127 HP (full)</td></tr>
+    <tr><td>Antitoxin</td><td>poisoned</td><td>clears poison</td></tr>
+    <tr><td>Pure Water</td><td>the Ward counter is not already 7</td><td>sets the Ward counter to 7: Resistance +7, one less each phase</td></tr>
+    <tr><td>Torch (item)</td><td>fog of war, and no Torch counter already at 4</td><td>sets the Torch counter to 4: vision + the counter</td></tr>
+    <tr><td>Laguz Stone</td><td>a laguz unit</td><td>transforms the unit</td></tr>
+    <tr><td>Stat boosters (Seraph Robe, Energy Ring, Spirit Dust, Secret Book, Speedwing, Ashera Icon, Dracoshield, Talisman)</td><td>at least one stat would rise</td><td>adds the item's eight stat bonuses for good, each clamped to the class cap (Luck to 40); the Seraph Robe raises maximum HP, not current HP</td></tr>
+    <tr><td>Boots, Body Ring</td><td>Move or Con would rise</td><td>adds the item's Mov and Con bonuses; total Move stops at 20 and Con at 99</td></tr>
+    <tr><td>Arms Scroll</td><td>the equipped weapon is a sword, lance, axe, bow, tome or staff and its rank is below the class's limit</td><td>raises that weapon type's rank one step</td></tr>
+    <tr><td>Master Seal</td><td>the unit can promote (see <a class="wl" href="../classes/">Classes</a>)</td><td>promotes the unit</td></tr>
+  </tbody></table>
+</div>
+
+A new item with a stat booster's fields but a different ID has no use effect: the handler list is fixed in the executable. <span class="confidence confidence--confirmed">confirmed</span>
 
 ## Special properties
 

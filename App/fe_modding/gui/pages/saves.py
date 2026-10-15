@@ -547,10 +547,9 @@ class SaveEditorPage(Page):
             check.pack(side="left", padx=(0, 18))
             self._option_vars[mask] = var
             self._option_checks[mask] = check
-        info(b, "Known option bits: byte 0 - 0x02 unit window off, 0x04 terrain window off, 0x18 message "
-                "speed; byte 2 - 0x01 Bonus Exp Display off, 0x10 Unit Facing off, 0x0C sound output; "
-                "byte 3 - 0x20 message sounds off, 0x40 show other units' moves, 0x80 fixed growths.").pack(
-            anchor="w")
+        info(b, "Known option bits: " + "; ".join(
+            f"byte {i} - " + ", ".join(f"0x{m:02X} {n}" for b, m, n in sf.OPTION_FIELDS if b == i)
+            for i in range(4)) + ".").pack(anchor="w")
 
         section_header(b, "Map state", "MDST").pack(anchor="w", pady=(12, 0))
         f = self._fields_in(b, 3)

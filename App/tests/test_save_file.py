@@ -69,6 +69,18 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(b.header.resume_point, 4)
         self.assertTrue(b.flags_stale)
 
+    def test_pal_block_magic_is_read_and_kept(self):
+        raw = bytearray(self.raw)
+        raw[0x40:0x44] = b"FE8X"                      # PAL: "FE8X", version 0x20050801
+        struct.pack_into(">I", raw, 0x44, 0x20050801)
+        struct.pack_into(">I", raw, 0x50, zlib.crc32(bytes(raw[0x70:])))
+        gci = build_gci(bytes(raw))
+        save = sf.SaveFile.from_bytes(gci)
+        block = save.blocks[0]
+        self.assertTrue(block.decoded, block.error)
+        self.assertEqual((block.header.magic, block.header.version), (b"FE8X", 0x20050801))
+        self.assertEqual(save.to_bytes(), gci)
+
     def test_round_trip_is_byte_exact(self):
         self.assertEqual(self.block.build(), self.raw)
         self.assertEqual(self.save.to_bytes(), self.save.data)
@@ -180,6 +192,17 @@ class RealSaveTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+class ForgePoolTests(unittest.TestCase):
+    def test_a_full_forge_pool_is_reported(self):
+        save = sf.SaveFile.from_bytes(build_gci(build_block([unit_record(1, 2)])))
+        block = save.blocks[0]
+        self.assertEqual(sf.validate(block), [])
+        for record in block.forges:
+            record.allocated = 1
+        problems = sf.validate(block)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("convoy slots 198-200", problems[0])
 
 class PlayCopyTests(unittest.TestCase):
     """The run copy for Play in Dolphin: block 0 (slot 0, sequence 9), an older block of the

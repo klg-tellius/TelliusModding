@@ -335,12 +335,14 @@ class DiscTableTests(unittest.TestCase):
     def test_vanilla_tables_rewrite_identically_and_survive_add_remove(self):
         before = records(self.data)
         groups = fe8data.read_group_names(self.data)
-        for kind in ("character", "class", "item", "skill", "chapter"):
+        jp = fe8data.japanese_chapter_layout(self.data)     # its chapter records are read-only
+        for kind in ("character", "class", "item", "skill") + (() if jp else ("chapter",)):
             self.assertEqual(fe8data.write_table(self.data, kind, fe8data.read_table(self.data, kind)), self.data)
         self.assertEqual(fe8data.write_group_names(self.data, groups), self.data)
         self.assertEqual(fe8data.write_battle_skies(self.data, fe8data.read_battle_skies(self.data)), self.data)
         self.assertEqual(fe8data.write_battle_terrain(self.data, fe8data.read_battle_terrain(self.data)), self.data)
-        for kind, new_id in (("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"), ("chapter", None)):
+        for kind, new_id in ((("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"))
+                             + (() if jp else (("chapter", None),))):
             data, index = fe8data.add_record(self.data, kind, new_id, copy_from=0)
             self.assertEqual(len(supports.read_support_lists(data)), len(supports.read_support_lists(self.data)))
             self.assertEqual(records(fe8data.remove_record(data, kind, index)), before, kind)

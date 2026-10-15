@@ -395,7 +395,8 @@ def capacity_problem(global_count: int, local_count: int, slot_count: int = SLOT
 
 GCI_HEADER_SIZE = 0x40
 BLOCK_OFFSETS = (0x2000, 0x6000, 0xA000, 0xE000, 0x12000, 0x16000, 0x1A000, 0x20000)
-SAVE_MAGIC = 0x4645384A  # "FE8J"
+SAVE_MAGIC = 0x4645384A  # "FE8J" (US, JP)
+SAVE_MAGICS = (0x4645384A, 0x46453858)  # and "FE8X" (PAL)
 FLAGS_OFFSET = 0x164  # block + 0xB8 (payload, "BMST" tag) + 4 + 0xA8
 CRC_START = 0x70
 CRC_EXEMPT = 0x12345678
@@ -421,7 +422,7 @@ def _block_at(data: bytes, offset: int) -> Optional[SaveBlock]:
     if len(b) < 0x200:
         return None
     magic, _version, seq, size, crc = struct.unpack(">5I", b[0x40:0x54])
-    if magic != SAVE_MAGIC or b[0xB8:0xBC] != b"BMST" or not 0x200 <= size <= len(b):
+    if magic not in SAVE_MAGICS or b[0xB8:0xBC] != b"BMST" or not 0x200 <= size <= len(b):
         return None
     ok = crc == CRC_EXEMPT or b[0x60] == 1 or zlib.crc32(b[CRC_START:size]) == crc
     # current_chapter_name_buffer (party_data+0x504) is the 0x18 bytes before the 8 pad bytes

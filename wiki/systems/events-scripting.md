@@ -110,6 +110,8 @@ The safe sequence is start → wait → consume the result or mutate dependent s
 
   The seen/flag set is used in two ways. For goal events, the dispatcher starts the chapter-complete or game-over event only after the relevant `gf_complete` or `gf_gameover` flag is already set. For talk, location, battle, and base-conversation style events, the same set suppresses events that have already fired.
 
+  When a moment comes (a phase starts, a unit finishes an action, and so on), the engine walks the loaded scripts in load order, each one's functions in file order, and runs each one of that trigger kind whose condition holds, one at a time: the next condition is only tested after the previous event has finished. Functions of a script put to sleep are skipped. Pressing Start while an event runs skips it (a fade-out cancels the rest). <span class="confidence confidence--confirmed">engine</span>
+
 ## FE9-SYS-047–050 — Area, phase, talk, and death events
 
 <span id="fe9-sys-047"></span> **Area events (FE9-SYS-047)** use type 4 zone bounds and a triggering side. The dispatcher tests a unit's completed movement against the rectangle, then starts the associated function when its other conditions and seen-state permit it. The function can deploy reinforcements, change objectives, manipulate the map, or play dialogue; the rectangle itself owns only eligibility.
