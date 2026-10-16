@@ -138,6 +138,30 @@ class TplTruncateTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
 class DiscMapTexturingTests(unittest.TestCase):
+    def test_bmap16_export_is_only_map_gs_and_embeds_all_its_textures(self):
+        import json
+        import struct
+
+        source = Path(os.environ["FE9_EXTRACTED_FILES"]) / "zmap" / "bmap16" / "map.cmp"
+        _entries, files = mv._read_container(source)
+        source_model = mv.model_fmt.read_model_bytes(files["bmap16.gs"])
+        glb = mv.export_map_terrain_glb(source)
+        json_length = struct.unpack_from("<I", glb, 12)[0]
+        doc = json.loads(glb[20 : 20 + json_length])
+        mesh_names = {mesh["name"] for mesh in doc["meshes"]}
+        image_names = {image.get("name") for image in doc.get("images", [])}
+        exported_indices = sum(
+            doc["accessors"][primitive["indices"]]["count"]
+            for mesh in doc["meshes"] for primitive in mesh["primitives"]
+        )
+        source_triangles = sum(
+            len(strip) - 2 for chunk in source_model.chunks if not chunk.hidden for strip in chunk.strips
+        )
+        self.assertEqual(mesh_names, {"bmap16"})
+        self.assertNotIn("castle_desart_01", mesh_names)
+        self.assertEqual(image_names, {"tex_0", "tex_1", "tex_6"})
+        self.assertEqual(exported_indices, source_triangles * 3)
+
     def test_prologue_terrain_round_trip_keeps_map_texturing(self):
         import shutil
         import tempfile
