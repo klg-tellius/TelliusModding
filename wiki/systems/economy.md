@@ -32,11 +32,11 @@ The party's current gold lives as a single field on the game's central party-dat
 
   If the party gains 1,000 gold, current gold and the report's Earned counter rise by 1,000 unless the current balance hits the cap first. Spending 300 then lowers current gold and raises the report's Spent counter by 300; it does not erase Earned.
 
-## FE9-SYS-197 — Gold accounting rules
+## Gold accounting rules
 
 <span id="fe9-sys-197"></span> Gold is persistent party state with a saturating upper limit, not an unsigned field that callers may wrap. The setter measures the actual accepted delta after clamping: accepted positive movement increases the earned counter, accepted negative movement increases the spent counter. A request to add 1,000 while only 100 below the cap therefore records 100 earned, not the rejected 900. Purchases must validate affordability before committing the negative delta; failed transactions must leave balance and report counters unchanged.
 
-## FE9-SYS-193 — Convoy and warehouse
+## Convoy and warehouse
 
 <span id="fe9-sys-193"></span> The convoy is a party-owned array of 200 item instances, separate from every unit's eight slots. Deposits and withdrawals transfer instance identity, remaining uses, flags, and forge references rather than creating a fresh definition. Purchases and completed forges can deliver directly when access is enabled. Early chapters gate the facility, while base and preparation contexts later expose it. The shared transfer transaction validates capacity before commit, uses the caller's prompt/failure route when full, and compacts removals in deterministic slot order; individual chapter access gates are authored policy.
 
@@ -44,7 +44,7 @@ The party's current gold lives as a single field on the game's central party-dat
 
   Gold is spent through [per-chapter shop inventories](../formats/shop-format.md): an armory, a vendor, and a forge. The forge is a genuine weapon-upgrading mechanic — its stock is a grid of weapon families by base weapon (see [Items & Weapons](./items-weapons.md) for how a forged weapon's stats are adjusted). Only one weapon can be forged per chapter: a flag in the party data is set when the forged weapon is delivered, the base menu's Forge entry is unavailable while it is set, and it clears when the chapter ends. The flag is saved. <span class="confidence confidence--confirmed">confirmed</span>
 
-## FE9-SYS-198 through FE9-SYS-201 — Shop transaction families
+## Shop transaction families
 
 <span id="fe9-sys-198"></span> **Armory.** The chapter-selected armory list supplies weapon stock. Selection validates stock and affordability, confirmation creates an item instance and routes it to a legal unit/convoy destination, then the gold setter records the accepted debit and report spending. Cancellation and failed delivery leave both inventory and gold unchanged. Quantities and row order come from the authored catalog, while a full destination uses the shared delivery prompt/failure policy.
 
@@ -54,7 +54,7 @@ The party's current gold lives as a single field on the game's central party-dat
 
 <span id="fe9-sys-201"></span> **Per-chapter stock.** [Shop data](../formats/shop-format.md) separates Normal/Easy, Hard, and Maniac sections. Campaign chapter and difficulty select the facility section before the shop scene enumerates its authored rows; reload reproduces that selection. A missing section takes the facility's explicit fallback or unavailable path instead of borrowing arbitrary stock.
 
-## FE9-SYS-202 through FE9-SYS-206 — Forge lifecycle
+## Forge lifecycle
 
 <span id="fe9-sys-202"></span> **Availability.** The base menu first requires forge stock and an unused chapter flag. Editing takes place in a temporary record; successful delivery commits the forge and sets the saved used flag. Missing chapter forge data can fall back to default stock. Cancellation must not set the flag. Campaign chapter initialization resets the per-chapter flag; individual stock and fallback rows are authored data.
 
@@ -66,11 +66,11 @@ The party's current gold lives as a single field on the game's central party-dat
 
 <span id="fe9-sys-206"></span> **Record pool.** The party owns 48 persistent 0x18-byte forge records. Allocation marker 0 is free and 1 is occupied; the inventory instance carries a one-based six-bit link. Editing uses a temporary record and confirmation copies it into a free persistent slot. Pool exhaustion rejects confirmation before item delivery or charging; records retain stable indices rather than compacting behind live links, and orphaned edited references are validation errors.
 
-## FE9-SYS-207 — Reward routing
+## Reward routing
 
 <span id="fe9-sys-207"></span> Rewards originate from scripts, chests, drops, visits, shops/forge, and chapter clear, then delegate by reward type to item delivery, gold accounting, BEXP, or another explicit owner. Item rewards preserve instance fields and first use the caller's eligible active-unit destination, then its personal-inventory/convoy/prompt/failure policy. The source marker commits only after accepted delivery; gold and BEXP use their clamped persistent setters and reporting counters. This connects Economy, Map Actions, Combat Resolution, and Events without needing a separate primary page.
 
-## FE9-SYS-214 and FE9-SYS-215 — Report counters
+## Report counters
 
 <span id="fe9-sys-214"></span> Soren's Battle Report presents four signed counters for the reporting period: gold earned, gold spent, combat EXP, and Bonus EXP. It reads summaries rather than recomputing them from current balances. Current gold and BEXP can therefore be high while the report displays only changes from the just-finished period.
 

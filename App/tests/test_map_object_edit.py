@@ -11,6 +11,14 @@ from fe_modding import map_props
 
 
 class PakNameTests(unittest.TestCase):
+    def test_every_map_object_flag_bit_has_one_named_control(self):
+        groups = map_props.PROP_FLAG_GROUPS
+        self.assertEqual([g[0] for g in groups], ["flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type"])
+        for _field, _title, controls in groups:
+            self.assertEqual([mask for mask, _label in controls], [1 << bit for bit in range(8)])
+            self.assertTrue(all(label and "bit " not in label.lower() for _mask, label in controls))
+            self.assertTrue(all("unknown" not in label.lower() for _mask, label in controls))
+
     def test_full_width_name_round_trips(self):
         from fe_modding.formats import pak
         files = [("ｆlowerpot_01.g", b"abc"), ("map.bin", b"x")]

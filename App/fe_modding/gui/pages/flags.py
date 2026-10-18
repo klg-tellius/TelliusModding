@@ -28,6 +28,7 @@ from ... import chapters, flag_excel, script_sources
 from ...exceptions import ProjectError
 from ...game_profile import SAVES, profile_of
 from ...formats import event_flags as ef
+from ...formats.extended_flags import HUB_ALIASES, MANIFEST_NAME
 from ...formats.cmb import CompileError, compile_source, read_cmb
 from ...formats.cmb.parser import ParseError, parse
 from .chapters import open_script
@@ -54,9 +55,11 @@ class FlagsPanel(ttk.Frame):
         ttk.Button(actions, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
         info(actions, f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
                       "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. A save "
-                      f"stores only the {slots} bits, so a flag's meaning in a save is its slot: new flags are "
+                      "stores flags by slot, so a flag's meaning in a save is its slot: new flags are "
                       f"always added after the existing ones. The engine's table has {slots} slots, so there can "
-                      "be no more.\n\nGrey rows: slots the engine registers itself (0-7) or reserved and unused "
+                      "be no more in the vanilla bank. Verified extended projects have separate campaign and "
+                      "chapter banks; new flags default to Extended. Extended renames keep their slot, and "
+                      "deleting an unused flag reserves its slot permanently.\n\nGrey rows: slots the engine registers itself (0-7) or reserved and unused "
                       "ones. The Excel workbook holds the campaign and chapter registrations; existing slots stay "
                       "fixed. A save's flags are edited in Tools › Saves.").pack(side="left", padx=(10, 0))
         self._notebook = ttk.Notebook(self)
@@ -72,6 +75,7 @@ class FlagsPanel(ttk.Frame):
         self._budget: Optional[dict] = None  # chapter id -> chapter flag count, from a background scan
         self._scan_running = False
         self._titles: Optional[dict] = None
+        self._layout = None
 
     @property
     def project(self):
@@ -87,6 +91,15 @@ class FlagsPanel(ttk.Frame):
         self.refresh()
 
     def refresh(self) -> None:
+        from ...game_code.extended_flag_installation import inspect_project, RuntimeState
+        previous = self._layout
+        self._layout = None
+        if (self.project.directory / MANIFEST_NAME).exists():
+            status = inspect_project(self.project)
+            if status.state == RuntimeState.MATCHING:
+                self._layout = status.layout
+        if previous != self._layout:
+            self._budget = None
         self._campaign.refresh()
         self._chapter.refresh()
         self._scan_budget()
@@ -95,6 +108,52 @@ class FlagsPanel(ttk.Frame):
         self._chapter.fill_chapters()
 
     # -- shared services ------------------------------------------------------------------
+    def edit_extended_flag(self, name, chapter=None, *, delete=False):
+        if self._layout is None or self._layout.find(name, chapter) is None:
+            messagebox.showinfo("Extended flag", "Select an extended flag to rename or delete.", parent=self)
+            return
+        editor = self.script_editor()
+        if editor is not None and editor.dirty:
+            messagebox.showwarning("Unsaved script", "Save or revert the open script before editing flags.", parent=self)
+            return
+        new_name = None
+        if not delete:
+            new_name = _ask_name(self, "Rename extended flag", "New name (the saved slot stays the same):", [name])
+            if new_name is None:
+                return
+        try:
+            from ...extended_project import prepare_flag_edit
+            from ...extended_hub import commit_project_update
+            update = prepare_flag_edit(self.project, name, chapter=chapter, new_name=new_name)
+            commit_project_update(self.project, update)
+            if editor is not None:
+                for change in update.changes:
+                    editor.reload_if_open(change.path)
+            self.shell.changelog.append("Flags", f"Retired {name}" if delete else f"Renamed {name} to {new_name}")
+            self._budget = None
+            self.refresh()
+        except (OSError, ValueError, ProjectError, CompileError, ParseError) as exc:
+            messagebox.showerror("Could not edit flag", str(exc), parent=self)
+
+    def add_banked_flag(self, name, scope, chapter, storage):
+        editor = self.script_editor()
+        if editor is not None and editor.dirty:
+            messagebox.showwarning("Unsaved script", "Save or revert the open script before adding flags.", parent=self)
+            return
+        try:
+            from ...extended_project import prepare_flag_add
+            from ...extended_hub import commit_project_update
+            update = prepare_flag_add(self.project, name, scope, chapter=chapter, storage=storage.lower())
+            commit_project_update(self.project, update)
+            for change in update.changes:
+                if editor is not None:
+                    editor.reload_if_open(change.path)
+            self.shell.changelog.append("Flags", f"Added {storage.lower()} {scope} flag {name}")
+            self._budget = None
+            self.refresh()
+        except (OSError, ValueError, ProjectError, CompileError) as exc:
+            messagebox.showerror("Could not add flag", str(exc), parent=self)
+
     def global_flags(self) -> list[str]:
         """The project's global flags (engine flags first), from its startup.cmb."""
         path = script_sources.startup_path(self.project)
@@ -120,7 +179,7 @@ class FlagsPanel(ttk.Frame):
             return
         try:
             campaign, chapter_flags = self._registration_data()
-            flag_excel.export_flags(path, campaign, chapter_flags)
+            flag_excel.export_flags(path, campaign, chapter_flags, layout=self._layout)
         except (OSError, ValueError, ParseError, ProjectError) as exc:
             messagebox.showerror("Could not export flags", str(exc), parent=self)
 
@@ -131,6 +190,37 @@ class FlagsPanel(ttk.Frame):
             return
         try:
             campaign, chapter_flags = self._registration_data()
+            if self._layout is not None:
+                layout, additions = flag_excel.plan_banked_import(path, campaign, chapter_flags, self._layout)
+                editor = self.script_editor()
+                if editor is not None and editor.dirty:
+                    messagebox.showwarning("Unsaved script", "Save or revert the open script before importing flags.", parent=self)
+                    return
+                sources = {}
+                for group, names in additions.items():
+                    if not names:
+                        continue
+                    script_path = (script_sources.startup_path(self.project) if group == "campaign" else
+                                   script_sources.chapter_script(self.project, group))
+                    source = script_sources.peek(self.project, script_path)
+                    for name in names:
+                        source = ef.append_registration(source, "RegistGlobalFlags" if group == "campaign" else "Startup",
+                                                        "global" if group == "campaign" else "regist", name)
+                    sources[script_path] = source
+                if not sources:
+                    messagebox.showinfo("Import flags", "This workbook contains no new flags.", parent=self)
+                    return
+                from ...extended_project import prepare_runtime_update
+                from ...extended_hub import commit_project_update
+                update = prepare_runtime_update(self.project, layout, sources)
+                commit_project_update(self.project, update)
+                if editor is not None:
+                    for script_path in sources:
+                        editor.reload_if_open(script_path)
+                self.shell.changelog.append("Flags", f"Imported flags into {len(sources)} scripts")
+                self._budget = None
+                self.refresh()
+                return
             additions, errors = flag_excel.plan_flag_import(
                 path, campaign, chapter_flags, self.table.slot_count, ef.check_flag_name)
             if errors:
@@ -247,6 +337,7 @@ class FlagsPanel(ttk.Frame):
         self._scan_running = True
         project = self.project
         ids = chapters.list_chapter_ids(project)
+        layout = self._layout
         result: dict = {}
 
         def work():
@@ -255,12 +346,17 @@ class FlagsPanel(ttk.Frame):
                 if path is None:
                     continue
                 try:
-                    result[chapter_id] = len(ef.local_flags(parse(script_sources.peek(project, path))))
+                    names = ef.local_flags(parse(script_sources.peek(project, path)))
+                    result[chapter_id] = len(layout.vanilla_names(names, "chapter", int(chapter_id)) if layout else names)
                 except Exception:  # noqa: BLE001 - one broken script shouldn't stop the scan
                     continue
 
         def done():
             self._scan_running = False
+            if layout != self._layout:
+                self._budget = None
+                self._scan_budget()
+                return
             self._budget = result
             self._campaign.refresh_budget()
 
@@ -307,13 +403,18 @@ class _CampaignTab(ttk.Frame):
                   "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(
             side="right", padx=(6, 0))
         ttk.Button(bar, text="Add campaign flag…", command=self._add).pack(side="left")
+        self._storage = tk.StringVar(value="Extended")
+        self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
+        self._bank.pack(side="left", padx=(6, 0))
         self._rename_button = ttk.Button(bar, text="Rename reserved slot…", command=self._rename, state="disabled")
         self._rename_button.pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="Open startup.cmb in the Script editor",
                    command=self._open_startup).pack(side="left", padx=(6, 0))
         self._budget = ttk.Label(bar, style="Muted.TLabel")
         self._budget.pack(side="right")
-        self._tree = _tree(self, {"slot": ("Slot", 60, False), "name": ("Name", 280, False),
+        self._tree = _tree(self, {"bank": ("Storage", 80, False), "slot": ("Slot", 60, False), "name": ("Name", 280, False),
                                   "meaning": ("Meaning", 360, True), "source": ("Registered by", 150, False)})
         self._tree.bind("<<TreeviewSelect>>", lambda e: self._sync_buttons())
         self._tree.bind("<Double-1>", lambda e: self._rename() if self._rename_button.instate(["!disabled"]) else None)
@@ -332,7 +433,14 @@ class _CampaignTab(ttk.Frame):
         engine = table.engine_flags
         self._flags = list(engine) + [s.name for s in self._sites]
         self._tree.delete(*self._tree.get_children())
+        layout = self._page._layout
+        if layout and str(self._bank.cget("state")) != "readonly":
+            self._storage.set("Extended")
+        elif layout is None:
+            self._storage.set("Vanilla")
+        self._bank.configure(state="readonly" if layout else "disabled")
         seen = set()
+        vanilla_slot = 0
         for slot, name in enumerate(self._flags):
             if slot < len(engine):
                 meaning, source = table.glosses.get(name, ""), "engine"
@@ -343,26 +451,38 @@ class _CampaignTab(ttk.Frame):
                 source = "startup.cmb"
             seen.add(name)
             tags = ("muted",) if name == table.reserved_global or slot < len(engine) else ()
-            self._tree.insert("", "end", iid=str(slot), values=(slot, name, meaning, source), tags=tags)
+            assigned = layout.find(name) if layout else None
+            bank = "Hub" if layout and name in HUB_ALIASES else "Extended" if assigned else "Vanilla"
+            actual_slot = assigned.slot if assigned else ".".join(map(str, HUB_ALIASES[name])) if bank == "Hub" else vanilla_slot
+            if bank == "Vanilla":
+                vanilla_slot += 1
+            self._tree.insert("", "end", iid=str(slot), values=(bank, actual_slot, name, meaning, source), tags=tags)
         self.refresh_budget()
         self._sync_buttons()
 
     def refresh_budget(self) -> None:
         budget = self._page.budget()
-        used = len(self._flags)
+        layout = self._page._layout
+        used = len(layout.vanilla_names(self._flags, "campaign") if layout else self._flags)
+        extended = f" · Extended: {layout.remaining('campaign')} free" if layout else ""
         slots = self._page.table.slot_count
         if not budget:
-            self._budget.config(text=f"{used} of {slots} slots · counting chapter flags…")
+            self._budget.config(text=f"{used} of {slots} vanilla slots{extended} · counting chapter flags…")
             return
         chapter_id, most = max(budget.items(), key=lambda kv: kv[1])
         free = slots - used - most - 1
         self._budget.config(
             text=f"{used} of {slots} slots · busiest chapter: {self._page.chapter_title(chapter_id)} with {most} "
-                 f"chapter flags · {free} slot(s) to spare", style="Muted.TLabel" if free > 0 else "Warn.TLabel")
+                 f"chapter flags · {free} slot(s) to spare{extended}", style="Muted.TLabel" if free > 0 else "Warn.TLabel")
 
     def _selected_slot(self) -> Optional[int]:
         sel = self._tree.selection()
         return int(sel[0]) if sel else None
+
+    def _edit_extended(self, *, delete=False):
+        slot = self._selected_slot()
+        if slot is not None:
+            self._page.edit_extended_flag(self._flags[slot], delete=delete)
 
     def _sync_buttons(self) -> None:
         slot = self._selected_slot()
@@ -375,6 +495,9 @@ class _CampaignTab(ttk.Frame):
         name = _ask_name(self, "Add campaign flag",
                          "Name of the new campaign flag (it is added at the end of RegistGlobalFlags):", self._flags)
         if name is None:
+            return
+        if self._page._layout is not None:
+            self._page.add_banked_flag(name, "campaign", None, self._storage.get())
             return
         budget = self._page.budget() or {}
         most = max(budget.values(), default=0)
@@ -422,8 +545,13 @@ class _ChapterTab(ttk.Frame):
         bar = ttk.Frame(self)
         bar.pack(side="bottom", fill="x")
         ttk.Button(bar, text="Add chapter flag…", command=self._add).pack(side="left")
+        self._storage = tk.StringVar(value="Extended")
+        self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
+        self._bank.pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="Open in the Script editor", command=self._open).pack(side="left", padx=(6, 0))
-        self._tree = _tree(self, {"slot": ("Slot", 60, False), "name": ("Name", 260, False),
+        ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(side="left", padx=(6, 0))
+        self._tree = _tree(self, {"bank": ("Storage", 80, False), "slot": ("Slot", 60, False), "name": ("Name", 260, False),
                                   "where": ("Registered in", 170, False), "uses": ("Used by", 420, True)})
         self._tree.bind("<Double-1>", lambda e: self._open())
         self._choices: list[tuple[str, str]] = []  # (label, chapter id)
@@ -444,6 +572,12 @@ class _ChapterTab(ttk.Frame):
         self.fill_chapters()
 
     def refresh(self) -> None:
+        layout = self._page._layout
+        if layout and str(self._bank.cget("state")) != "readonly":
+            self._storage.set("Extended")
+        elif layout is None:
+            self._storage.set("Vanilla")
+        self._bank.configure(state="readonly" if layout else "disabled")
         if not self._choices:
             self.fill_chapters()
         picked = dict(self._choices).get(self._chapter_var.get())
@@ -464,16 +598,27 @@ class _ChapterTab(ttk.Frame):
         uses = ef.flag_uses(module)
         globals_ = self._page.global_flags()
         count = self._page.table.slot_count
-        slots = ef.slot_names(globals_, [s.name for s in self._sites], count)
+        local_names = [s.name for s in self._sites]
+        if layout:
+            globals_ = layout.vanilla_names(globals_, "campaign")
+            local_names = layout.vanilla_names(local_names, "chapter", int(self._chapter_id))
+        slots = ef.slot_names(globals_, local_names, count)
         # Registration i lands in the i-th filled slot counting down from the top (none if the table is full).
         positions = [n for n in range(count - 1, len(globals_) - 1, -1) if slots[n] is not None]
+        vanilla_index = 0
         for i, site in enumerate(self._sites):
             users = sorted({f"{fn} ({kind})" for fn, kind in uses.get(site.name, [])
                             if not (fn == site.function and kind == "regist")})
-            slot = positions[i] if i < len(positions) else "none"
-            self._tree.insert("", "end", iid=str(i), values=(slot, site.name, site.function, ", ".join(users) or "—"),
+            assigned = layout.find(site.name, int(self._chapter_id)) if layout else None
+            slot = assigned.slot if assigned else positions[vanilla_index] if vanilla_index < len(positions) else "none"
+            if not assigned:
+                vanilla_index += 1
+            self._tree.insert("", "end", iid=str(i), values=("Extended" if assigned else "Vanilla", slot, site.name, site.function, ", ".join(users) or "—"),
                               tags=() if users else ("muted",))
-        self._summary.config(text=self._capacity_text(len(globals_), len(self._sites)))
+        summary = self._capacity_text(len(globals_), len(local_names))
+        if layout:
+            summary += f" · Extended: {layout.remaining('chapter', int(self._chapter_id))} free"
+        self._summary.config(text=summary)
 
     def _capacity_text(self, global_count: int, local_count: int) -> str:
         count = self._page.table.slot_count
@@ -482,6 +627,12 @@ class _ChapterTab(ttk.Frame):
         if problem:
             return problem
         return f"{local_count} chapter flags · {global_count} campaign flags · {free} slot(s) free"
+
+    def _edit_extended(self, *, delete=False):
+        selection = self._tree.selection()
+        if selection and self._chapter_id:
+            self._page.edit_extended_flag(self._sites[int(selection[0])].name,
+                                          int(self._chapter_id), delete=delete)
 
     def _add(self) -> None:
         if not self._chapter_id:
@@ -494,6 +645,9 @@ class _ChapterTab(ttk.Frame):
                          f"Name of the new flag for chapter {self._chapter_id} (added after the last "
                          "registration in Startup):", taken)
         if name is None:
+            return
+        if self._page._layout is not None:
+            self._page.add_banked_flag(name, "chapter", int(self._chapter_id), self._storage.get())
             return
         problem = ef.capacity_problem(len(self._page.global_flags()), len(self._sites) + 1,
                                       self._page.table.slot_count)

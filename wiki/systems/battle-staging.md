@@ -26,15 +26,15 @@ system_gap_work: []
 
 Once [combat resolution](./combat-mechanics.md) has decided every strike, the battle scene stages them one at a time. Everything runs on a 60-per-second clock: battle clips advance one frame per tick, and the waits and camera moves are counted in the same ticks. The timing values come from `zdbx/param.dbx`; each battle model adds its own speed, range and jump flags from its `zu/<code>_prm.dbx` table (see [ZDBX & DBX](../formats/zdbx.md)).
 
-## Mental model and example — FE9-SYS-156 battle staging
+## Mental model and example — battle staging
 
 <span id="fe9-sys-156"></span> Staging converts an authoritative sequence of strikes into positions, clips, missiles, reactions, and pauses. It initializes both actors, establishes range, consumes each strike in order, waits for its presentation objects, and ends only after death or recovery work has completed. It does not recalculate the combat result. The worked timeline below is the lifecycle and the clearest debugging model: if a strike looks late, first determine whether the delay comes from a global wait, the model's run/range parameters, the action clip, or a projectile.
 
-## FE9-SYS-157 — Battle scenery selection
+## Battle scenery selection
 
 <span id="fe9-sys-157"></span> A full battle loads a compact `zbg/<name>/bf.cmp` environment rather than drawing the tactical map directly. Selection is table-driven, not a hard-coded chapter switch: `get_battle_terrain_scene_name` reads `BattleTerrData` as a matrix whose row is the active tactical-map name and whose 77 columns are terrain ids. The selected cell is the battle-scene name. A null cell repeats the lookup in row 0, `Map6`, which is the retail fallback. `set_battle_scene_background_and_sky` stores that result beside the separately selected sky and weather id before presentation begins. The chosen backdrop's `map.bin` then places scenery, while `param.dbx` supplies `footEffect`, `footSound`, and room flags. Modding a terrain encounter therefore means editing the table cell or its fallback, not renaming a tactical terrain model.
 
-## FE9-SYS-162 — Battle camera scripting
+## Battle camera scripting
 
 <span id="fe9-sys-162"></span> Camera selection is layered. A model-specific script named for the active clip takes priority when available; otherwise a strike-family script supplies the view. Projectile impact, spell, and death cameras can take over at their defined stages. Right-side attacks reuse left-side data through mirroring. Each script then animates a named camera rig around a followed unit, and hit reactions add a fading shake without changing the underlying keyframes. Missing scripts must fall back safely rather than blocking strike completion.
 

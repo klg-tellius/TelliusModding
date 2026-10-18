@@ -18,6 +18,8 @@ class Num:
 @dataclass
 class Str:
     value: str
+    # Source coordinates are editor metadata, not part of AST equality.
+    source_span: tuple[int, int, int] | None = field(default=None, compare=False, kw_only=True)
 
 
 @dataclass

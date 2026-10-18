@@ -30,7 +30,7 @@ A chapter map can carry ambient weather, implemented as one small parent process
 
 Weather and lighting describe how the battlefield is presented. Weather selects a long-lived effect process and battle-sky family; `maplight` colors ordinary models; `mapfog` controls camera-distance haze. They do not change movement costs or gameplay visibility by themselves. A rain texture cannot make a tile harder to cross unless an event separately changes terrain, and visual fog cannot reveal or conceal a tactical enemy—the [Maps](./maps-system.md#fe9-sys-077) sight grid owns that rule.
 
-## FE9-SYS-079 — Weather lifecycle
+## Weather lifecycle
 
 <span id="fe9-sys-079"></span> The weather id occupies five bits of `mapextra`'s flag word, allowing values 0–17; an invalid value is normalized to 0. Map load creates a controller, reads the active id, and dispatches the matching child effect. `SetWeather(weather)` replaces the byte at runtime, refreshes weather, lighting, and visibility rendering, and yields so scripts do not race the transition. Map changes and save reconstruction re-enter the same setup path.
 
@@ -58,7 +58,7 @@ Weather is state, while the child particles are presentation. On unload or id ch
 
   The shared moving-overlay effect is the same visual resource as the optional third overlay step described in [Terrain Texture Blending](./terrain-texture-rendering.md) — weather and terrain rendering share this one moving-cloud-shadow texture rather than each maintaining its own copy.
 
-## FE9-SYS-080 — Lighting, ambience, and visual fog
+## Lighting, ambience, and visual fog
 
 <span id="fe9-sys-080"></span> Each map's 12-byte `maplight` record is a compact lighting recipe: signed Y and Z direction angles at `+1/+2`, ambient RGB at `+3..+5`, and directional/diffuse RGB at `+6..+8`. The loader copies those bytes to live map state. Camera-light setup converts both angles to radians, applies the Z rotation directly, and applies the negated Y rotation; this is the exact vector convention. Ordinary static materials bind their first texture and modulate it by the resulting raster/material color, so edits affect terrain and props without rewriting their textures. The record's enabled byte is always 1 in the retail corpus; unused tail bytes remain raw data rather than inputs to the system.
 

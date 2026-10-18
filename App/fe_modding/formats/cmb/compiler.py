@@ -466,11 +466,13 @@ class _FunctionCompiler:
 
 class _ModuleCompiler:
     def __init__(self, module: A.Module, base: Optional[ScriptFile], known_script_functions: dict,
-                 global_flags: Optional[list] = None, dialect: Optional[Dialect] = None):
+                 global_flags: Optional[list] = None, dialect: Optional[Dialect] = None,
+                 flag_context=None):
         self.module = module
         self.base = base
         self.dialect = dialect or (base.dialect if base is not None else FE9)
         self.global_flags = global_flags
+        self.flag_context = flag_context
         self.flag_uses: list[tuple[str, str, int]] = []  # (native, flag name, line)
         self.diagnostics: list[Diagnostic] = []
         self.pool = _Pool(base.pool if base else [])
@@ -579,13 +581,18 @@ class _ModuleCompiler:
         from .. import event_flags
 
         table = event_flags.flag_table(self.dialect)
+        if self.flag_context is not None and self.dialect.name != "fe9":
+            self.diag("error", 1, "Extended flag storage is only available for FE9")
+            return
         lines = {fd.name: fd.line for fd in self.module.functions}
         registered = {flag for native, flag, _ in self.flag_uses if native in ("regist", "global")}
         if "RegistGlobalFlags" in lines:
             globals_ = event_flags.global_flags(self.module, table)
             vanilla = event_flags.global_flags_vanilla(table)
+            compared = (self.flag_context.layout.vanilla_names(globals_, "campaign")
+                        if self.flag_context is not None else globals_)
             for slot, old in enumerate(vanilla):
-                new = globals_[slot] if slot < len(globals_) else None
+                new = compared[slot] if slot < len(compared) else None
                 if new != old and old != table.reserved_global:
                     self.diag("warning", lines["RegistGlobalFlags"],
                               f"global flag slot {slot} was {old!r} and is now {new!r}: saves made with the "
@@ -604,17 +611,28 @@ class _ModuleCompiler:
                 effect = "always returns 0" if native == "get" else "does nothing"
                 self.diag("warning", line, f'{native}("{flag}") {effect}: no regist("{flag}") in this script '
                           "and no global flag has that name")
+        locals_ = event_flags.local_flags(self.module) if "Startup" in lines else []
+        counts = (len(globals_), len(locals_))
+        if self.flag_context is not None:
+            try:
+                if "RegistGlobalFlags" in lines and self.flag_context.chapter is not None:
+                    raise ValueError("startup flags require a startup compilation context")
+                if "Startup" in lines and self.flag_context.chapter is None:
+                    raise ValueError("chapter flags require a chapter compilation context")
+                counts = self.flag_context.vanilla_counts(globals_, locals_)
+            except ValueError as exc:
+                self.diag("error", lines.get("Startup", 1), str(exc))
         if "Startup" in lines:
-            locals_ = event_flags.local_flags(self.module)
             seen: set[str] = set()
             for flag in locals_:
                 if flag in seen:
                     self.diag("warning", lines["Startup"], f'regist("{flag}") runs twice: the second '
                               "copy uses up a slot nothing can reach")
                 seen.add(flag)
-            problem = event_flags.capacity_problem(len(globals_), len(locals_), table.slot_count)
+        if "Startup" in lines or self.flag_context is not None:
+            problem = event_flags.capacity_problem(*counts, table.slot_count)
             if problem:
-                self.diag("warning", lines["Startup"], problem)
+                self.diag("error" if self.flag_context is not None else "warning", lines.get("Startup", 1), problem)
 
     def run(self) -> ScriptFile:
         seen = set()
@@ -696,9 +714,10 @@ def default_header(file_name: str, global_count: int = 0, dialect: Dialect = FE9
 
 def compile_module(module: A.Module, base: Optional[ScriptFile] = None,
                    known_script_functions: Optional[dict] = None,
-                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None) -> CompileResult:
+                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None,
+                   *, flag_context=None) -> CompileResult:
     """``dialect``: the bytecode to emit (default: ``base``'s, else Path of Radiance's)."""
-    mc = _ModuleCompiler(module, base, known_script_functions or {}, global_flags, dialect)
+    mc = _ModuleCompiler(module, base, known_script_functions or {}, global_flags, dialect, flag_context)
     script = mc.run()
     if any(d.severity == "error" for d in mc.diagnostics):
         raise CompileError(mc.diagnostics)
@@ -707,11 +726,12 @@ def compile_module(module: A.Module, base: Optional[ScriptFile] = None,
 
 def compile_source(source: str, base: Optional[ScriptFile] = None,
                    known_script_functions: Optional[dict] = None,
-                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None) -> CompileResult:
+                   global_flags: Optional[list] = None, dialect: Optional[Dialect] = None,
+                   *, flag_context=None) -> CompileResult:
     """``global_flags``: the project's global flag names in slot order (see
     ``event_flags.global_flags``); vanilla's when omitted."""
     try:
         module = parse(source)
     except ParseError as e:
         raise CompileError([Diagnostic("error", e.line, e.message)]) from None
-    return compile_module(module, base, known_script_functions, global_flags, dialect)
+    return compile_module(module, base, known_script_functions, global_flags, dialect, flag_context=flag_context)

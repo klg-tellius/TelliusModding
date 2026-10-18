@@ -260,6 +260,8 @@ class ModProject:
 
     def build(self, *, overwrite: bool = True) -> Path:
         """Rebuild a disc image from the project's extracted/ folder."""
+        from .game_code.extended_flags import require_project_runtime
+        require_project_runtime(self)
         if not self.has_extracted_files:
             raise ProjectError("Nothing extracted yet - extract the source disc image first.")
         dest = self.build_dir / f"{sanitize_folder_name(self.name)}{self.game_info.build_extension}"

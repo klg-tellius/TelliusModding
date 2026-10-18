@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">Separate shared rules from local assignments</title>
+<desc id="desc">1 · DEFINITION. Game Data: class / item / terrain. Copy supported records or edit a slot. Inspect shared users and fixed-table limits.. 2 · ASSIGNMENT. Character or chapter placement. Reference JID / IID / terrain type. Save both the definition and its owner.. 3 · COMPARISON. Same test, one changed variable. Before → after → unrelated control. Check another user of any shared record.. Renaming a record does not replace an effect implemented in game code.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">Separate shared rules from local assignments</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · DEFINITION</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">Game Data: class / item / terrain</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Copy supported records or edit a slot</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">Inspect shared users and fixed-table limits.</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · ASSIGNMENT</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">Character or chapter placement</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Reference JID / IID / terrain type</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Save both the definition and its owner.</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · COMPARISON</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">Same test, one changed variable</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Before → after → unrelated control</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Check another user of any shared record.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">Renaming a record does not replace an effect implemented in game code.</text>
+</g></svg>

@@ -106,6 +106,36 @@
 .portal-card { background: var(--archive-surface); border: 1px solid var(--archive-rule); border-radius: .55rem; padding: .8rem 1rem; }
 .portal-card h3 { margin-top: 0; }
 
+/* Tutorial figures stay legible in either theme and open at full resolution. */
+.md-typeset .tutorial-figure {
+  max-width: 100%;
+  margin: 1.4rem 0;
+  padding: .65rem;
+  border: 1px solid var(--archive-rule);
+  border-radius: .65rem;
+  background: var(--archive-surface);
+}
+.md-typeset .tutorial-figure p { margin: 0; }
+.md-typeset .tutorial-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: .35rem;
+}
+.md-typeset .tutorial-figure figcaption {
+  max-width: none;
+  margin: .6rem .2rem .1rem;
+  color: var(--archive-muted);
+  font-size: .67rem;
+  font-style: normal;
+  text-align: left;
+}
+.md-typeset .tutorial-figure a:focus-visible {
+  display: block;
+  outline: 3px solid var(--md-typeset-a-color);
+  outline-offset: 4px;
+}
+
 @media (max-width: 600px) {
   .md-typeset { font-size: .74rem; }
   .article-action { flex: 1 1 45%; text-align: center; }

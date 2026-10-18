@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">Three checks answer three different questions</title>
+<desc id="desc">1 · CHECK PROJECT. Are references and files valid?. Save editors → Tools → Check → Run check. Compare warnings against your untouched baseline.. 2 · SIMULATE. Does the scenario behave as intended?. Play / Battle Simulator / Render fight. Inspect logs, flags, decisions, and timing.. 3 · BUILT GAME. Does it work in the game engine?. Build → Dolphin → controlled save state. Exercise the edited feature and its boundaries.. Passing an earlier check does not replace the next one.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">Three checks answer three different questions</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · CHECK PROJECT</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">Are references and files valid?</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Save editors → Tools → Check → Run check</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">Compare warnings against your untouched baseline.</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · SIMULATE</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">Does the scenario behave as intended?</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Play / Battle Simulator / Render fight</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Inspect logs, flags, decisions, and timing.</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · BUILT GAME</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">Does it work in the game engine?</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Build → Dolphin → controlled save state</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Exercise the edited feature and its boundaries.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">Passing an earlier check does not replace the next one.</text>
+</g></svg>

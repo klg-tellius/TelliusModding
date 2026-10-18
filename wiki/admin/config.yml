@@ -167,6 +167,37 @@ collections:
       - *source_path_field
       - *body_field
 
+  - name: modding
+    label: Modding tutorials
+    label_singular: Modding tutorial
+    folder: wiki/modding
+    create: true
+    extension: md
+    format: frontmatter
+    identifier_field: id
+    slug: "{{fields.id}}"
+    summary: "{{title}} — {{status}}"
+    fields:
+      - *id_field
+      - *title_field
+      - *description_field
+      - *games_field
+      - { name: section, label: Section, widget: hidden, default: modding }
+      - *type_field
+      - *tags_field
+      - *aliases_field
+      - *status_field
+      - *reviewed_field
+      - *sources_field
+      - { name: cms_collection, label: CMS collection, widget: hidden, default: modding }
+      - *source_path_field
+      - { name: tutorial_kind, label: Tutorial page kind, widget: select, required: false, options: [task, reference], hint: "Numbered curriculum pages are tasks; companion field pages are references." }
+      - { name: tutorial_track, label: Curriculum track, widget: select, required: false, options: [start-safely, campaign-foundations, characters-and-game-data, maps, units-and-events, dialogue-and-text, ai-economy-and-media, models-and-battle-presentation, test-and-release] }
+      - { name: tutorial_stage, label: Deep tutorial stage, widget: select, required: false, options: [legacy, inventory, draft, verified, published], hint: "Omitted pages are treated as legacy during migration." }
+      - { name: prerequisites, label: Prerequisite tutorial IDs, widget: list, required: false, default: [] }
+      - { name: verification, label: Verification levels, widget: select, multiple: true, required: false, options: [source-reviewed, app-tested, simulator-tested, dolphin-tested, inferred, unknown] }
+      - *body_field
+
   - name: meta
     label: Portals and project pages
     label_singular: Project page

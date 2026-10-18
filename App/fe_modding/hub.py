@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import chapters, script_sources
+from . import chapters, script_sources, map_props
 from .formats import dispo, event_flags as ef, fe8data, fe9_message_scene, lz10, map_file, message, pak
 from .formats.cmb import compile_source, read_cmb, write_cmb
 from .formats.cmb.parser import parse
@@ -25,6 +25,44 @@ from .game_profile import profile_of
 CONFIG_NAME = "hub.json"
 START_MARK = "# BEGIN TELLIUS HUB SETUP"
 END_MARK = "# END TELLIUS HUB SETUP"
+ENTRANCE_OBJECT = "tellius_hub_entrance"
+
+
+def entrance_markers(project, map_path: Path, setup) -> bytes:
+    """Replace app-owned entrance placements with native Arrive indicators."""
+    entries, files = map_props.read_map_container(map_path)
+    data = map_file.read_map_bytes(files["map.bin"])
+    index = next((i for i, obj in enumerate(data.build_desc)
+                  if obj.filename == ENTRANCE_OBJECT), None)
+    if index is None:
+        # Prefer the retail Arrive marker; use Seize if the project only has
+        # early chapters. Copy all resources and remap shared texture indices.
+        candidates = sorted((project.files_dir / "zmap").glob("*/map.cmp"))
+        preferred = project.files_dir / "zmap/bmap18/map.cmp"
+        if preferred in candidates:
+            candidates.remove(preferred)
+            candidates.insert(0, preferred)
+        donor = None
+        for path in candidates:
+            _, source = map_props.read_map_container(path)
+            objects = map_file.read_map_bytes(source["map.bin"]).build_desc
+            name = next((name for name in ("attainment_01", "ascendancy_01")
+                         if any(o.filename == name for o in objects) and f"{name}.gs" in source), None)
+            if name:
+                donor = source, name
+                break
+        if donor is None:
+            raise ValueError("Hub entrances need a native Arrive or Seize marker from an extracted chapter map.")
+        map_props.copy_prop(*donor, entries, files, name=ENTRANCE_OBJECT)
+        data = map_file.read_map_bytes(files["map.bin"])
+        index = next(i for i, obj in enumerate(data.build_desc) if obj.filename == ENTRANCE_OBJECT)
+    records = map_file.instance_records(files["map.bin"])
+    files["map.bin"] = map_file.set_build_instances(files["map.bin"],
+        [record for record, inst in zip(records, data.build_inst) if inst.desc_index != index])
+    for destination in setup.destinations:
+        map_props.place_prop(files, ENTRANCE_OBJECT, destination.x, destination.y)
+    return lz10.compress(pak.pack_pak([(e.name, files[e.name]) for e in entries],
+                                    [e.reserved for e in entries]))
 ACTIVE = "HUB_ACTIVE"
 STARTED = "HUB_STARTED"
 DEST = tuple(f"HUB_DEST_{i}" for i in range(8))
@@ -87,6 +125,8 @@ def hub_chapter(project) -> int | None:
 def save_draft(project, setup: dict) -> None:
     keys = ("chapter", "activation_chapter", "avatar_pid", "destinations", "start_x", "start_y")
     data = {key: setup.get(key) for key in keys}
+    if setup.get("storage") in ("vanilla", "extended"):
+        data["storage"] = setup["storage"]
     with open(draft_path(project), "w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(data, indent=2) + "\n")
 
@@ -268,7 +308,7 @@ def _deployment_pids(path: Path) -> tuple[set[str], set[str]]:
             if not section.is_link:
                 names = {unit[dispo.FIELD["pid"]] for unit in section.units if unit[dispo.FIELD["pid"]]}
                 pids.update(names)
-                if "mikata" in section.name:
+                if "mikata" in section.name or "_avatar_" in section.name:
                     player_pids.update(names)
     return pids, player_pids
 
@@ -297,24 +337,58 @@ def _avatar_position_bytes(path: Path, pid: str, x: int, y: int) -> bytes:
 
 def prepare(project, setup: HubSetup) -> dict:
     """Validate and compile all source changes without writing project files."""
+    from .game_code.extended_flags import require_project_runtime
+    require_project_runtime(project)
+    return _prepare(project, setup)
+
+
+def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) -> dict:
+    """Shared read-only preparation; extended callers must use the gated commit."""
     current = saved_setup(project)
+    if migration is not None:
+        current = migration.configuration
+    elif extended_layout is not None and current is not None:
+        from .game_code.extended_flag_installation import inspect_project, RuntimeState
+        status = inspect_project(project)
+        if status.state != RuntimeState.MATCHING or current.get("storage") != "extended":
+            raise ValueError("Reconfiguration requires a verified extended hub")
+        extended_layout.require_compatible(status.layout)
     editor = CodeEditor(project.extracted_dir, project.write_keeping_original)
     flow = ChapterFlow(editor)
     _validate_setup(project, setup, current, flow)
     deployment_path, _map = chapters.phase_paths(project, chapters.chapter_phases(project, f"{setup.chapter:02d}")[0])
+    marked_map = entrance_markers(project, _map, setup)
     deployment_data = (_avatar_position_bytes(deployment_path, setup.avatar_pid, setup.start_x, setup.start_y)
                        if setup.start_x is not None else None)
+    from .hub_creation import repair_avatar_deployment, avatar_class
+    deployment_data = repair_avatar_deployment(deployment_data if deployment_data is not None
+                                      else deployment_path.read_bytes(), setup.avatar_pid,
+                                      avatar_class(project.read_logical("game_data"), setup.avatar_pid))
     startup = script_sources.startup_path(project)
     hub_path = script_sources.chapter_script(project, f"{setup.chapter:02d}")
     activation_path = script_sources.chapter_script(project, f"{setup.activation_chapter:02d}")
     scripts = {p: script_sources.peek(project, p) for p in (startup, hub_path, activation_path)}
+    if migration is not None:
+        scripts[startup] = migration.startup_source
     hub_base = _remove_generated(scripts[hub_path]) if current else scripts[hub_path]
     if any(decorator.name == "on_complete" for function in parse(hub_base).functions
            for decorator in function.decorators):
         raise ValueError("The prepared hub script still has a chapter-completion event. Remove its old victory "
                          "event before installing hub destinations.")
     original_globals = ef.global_flags(parse(scripts[startup]))
-    if current:
+    if extended_layout is not None:
+        from .formats.extended_flags import HUB_ALIASES
+        if current:
+            if ([name for name in original_globals if name.startswith("HUB_")] != list(HUB_ALIASES)):
+                raise ValueError("Installed hub aliases differ from the generated registrations")
+        elif any(name.startswith("HUB_") for name in original_globals):
+            raise ValueError("A hub flag name already exists in startup.cmb.")
+        slots = None
+        expected = list(HUB_ALIASES)
+        if current is None:
+            for name in expected:
+                scripts[startup] = ef.append_registration(scripts[startup], "RegistGlobalFlags", "global", name)
+    elif current:
         slots = current["slots"]
         expected = current["flags"]
         if original_globals[slots["active"]:slots["active"] + len(expected)] != expected:
@@ -328,21 +402,38 @@ def prepare(project, setup: HubSetup) -> dict:
         for name in names:
             scripts[startup] = ef.append_registration(scripts[startup], "RegistGlobalFlags", "global", name)
         expected = names
-    router_config = validate_slots(setup.chapter, slots["active"], slots["destination"], slots["pending"])
-    if current and HubFlow(editor).config() != router_config:
+    router_config = (bytes((setup.chapter, 0, 1, 1, 2)) if extended_layout is not None else
+                     validate_slots(setup.chapter, slots["active"], slots["destination"], slots["pending"]))
+    if current and extended_layout is None and HubFlow(editor).config() != router_config:
         raise ValueError("The executable's hub routing differs from the saved hub setup.")
     new_globals = ef.global_flags(parse(scripts[startup]))
-    if len(new_globals) >= 96:
+    global_count = (len(extended_layout.vanilla_names(new_globals, "campaign"))
+                    if extended_layout is not None else len(new_globals))
+    if global_count >= 96:
         raise ValueError("The hub flags leave no room for chapter-local flags.")
+    local_registrations, script_chapters = {}, {}
     for cid in chapters.list_chapter_ids(project):
         path = script_sources.chapter_script(project, cid)
         if path is None:
             continue
         source = scripts[path] if path in scripts else script_sources.peek(project, path)
         locals_ = ef.local_flags(parse(source))
-        problem = ef.capacity_problem(len(new_globals), len(locals_))
+        local_registrations[int(cid)] = locals_
+        script_chapters[path] = int(cid)
+        local_count = (len(extended_layout.vanilla_names(locals_, "chapter", int(cid)))
+                       if extended_layout is not None else len(locals_))
+        problem = ef.capacity_problem(global_count, local_count)
         if problem:
             raise ValueError(f"Chapter {cid}: {problem}")
+    if extended_layout is not None:
+        extended_layout.validate_registrations(new_globals, local_registrations)
+        from .formats.extended_flags import FlagCompileContext
+        for cid in chapters.list_chapter_ids(project):
+            path = script_sources.chapter_script(project, cid)
+            if path is not None:
+                source = scripts[path] if path in scripts else script_sources.peek(project, path)
+                FlagCompileContext(extended_layout, int(cid)).vanilla_counts(
+                    new_globals, ef.local_flags(parse(source)))
     if current and current["activation_chapter"] != setup.activation_chapter:
         old_path = script_sources.chapter_script(project, f'{current["activation_chapter"]:02d}')
         scripts[old_path] = _remove_generated(script_sources.peek(project, old_path))
@@ -367,9 +458,11 @@ def prepare(project, setup: HubSetup) -> dict:
     compiled = {}
     for path, source in scripts.items():
         base = read_cmb(path.read_bytes())
+        context = (FlagCompileContext(extended_layout, None if path == startup else script_chapters[path])
+                   if extended_layout is not None else None)
         result = compile_source(source, base=base,
                                 known_script_functions={} if path == startup else helpers,
-                                global_flags=new_globals)
+                                global_flags=new_globals, flag_context=context)
         compiled[path] = (source, write_cmb(result.script))
     if current is None:
         normal_successor = flow.next_of(setup.chapter)
@@ -377,7 +470,11 @@ def prepare(project, setup: HubSetup) -> dict:
         normal_successor = current["normal_successor"]
     if editor.status(FLOW_PATCH).state == State.CONFLICT:
         raise ValueError("The executable's chapter-flow hook conflicts with another patch.")
-    scratch = Session(Dol(bytes(editor.dol.data)), editor.version, editor.session.retail)
+    scratch_dol = Dol(bytes(editor.dol.data))
+    if current and extended_layout is not None and migration is None:
+        from .game_code.extended_flag_installation import _restore, RECEIPT_NAME
+        scratch_dol = _restore(scratch_dol, json.loads((project.directory / RECEIPT_NAME).read_text(encoding="utf-8")))
+    scratch = Session(scratch_dol, editor.version, editor.session.retail)
     if scratch.patch_status(FLOW_PATCH).state == State.ORIGINAL:
         scratch.set_patch(FLOW_PATCH, True)
     hub_status = scratch.patch_status(HUB_PATCH)
@@ -392,6 +489,7 @@ def prepare(project, setup: HubSetup) -> dict:
     return {"editor": editor, "flow": flow, "compiled": compiled, "slots": slots,
             "flags": expected, "normal_successor": normal_successor,
             "message": (dialogue, message_data),
+            "map": (_map, marked_map),
             "deployment": (deployment_path, deployment_data) if deployment_data is not None else None}
 
 
@@ -404,6 +502,7 @@ def install(project, setup: HubSetup) -> dict:
         sidecar.parent.mkdir(parents=True, exist_ok=True)
         sidecar.write_text(source, encoding="utf-8")
     project.write_keeping_original(*prepared["message"])
+    project.write_keeping_original(*prepared["map"])
     if prepared["deployment"] is not None:
         project.write_keeping_original(*prepared["deployment"])
     flow = prepared["flow"]

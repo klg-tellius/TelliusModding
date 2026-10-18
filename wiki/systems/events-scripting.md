@@ -29,13 +29,13 @@ A chapter's [compiled script](../formats/event-script.md) is not a single linear
 !!! info "Mental model: trigger → function → engine call → changed game state"
     A trigger answers *when*. Its bytecode function answers *what sequence to perform*. Native engine calls perform operations outside the bytecode machine, such as starting music or a movie. The resulting flags, spawned units, dialogue, or chapter state can make later triggers eligible.
 
-## FE9-SYS-038 — VM rules and lifecycle
+## VM rules and lifecycle
 
 <span id="fe9-sys-038"></span> A loaded CMB module supplies a string pool, function table, trigger records, and stack-machine instructions. Starting a function creates a frame whose first slots are arguments and whose remaining locals are cleared. Opcodes push constants or addresses, read and write locals or the 32 shared global words, perform arithmetic and comparisons, branch, call script or native functions, yield, and return one value. Every call leaves one value on the stack and compiler-generated functions implicitly return zero when they reach the end.
 
 The VM owns script execution state, not the tactical state it edits. A unit handle, flag name, dialogue key, or music identity is resolved by another subsystem. Long-running native work yields through engine processes and later resumes the script. Invalid registered-call lookup is deliberately nonfatal: an unknown `externCall` contributes zero and execution continues, which can turn a misspelling into a silent branch error rather than a crash.
 
-## FE9-SYS-039 — FE9 script source and compilation
+## FE9 script source and compilation
 
 <span id="fe9-sys-039"></span> The editable `.fe9s` language is a readable, Python-style reconstruction of the original C-minor structures. The decompiler recovers structured conditionals and loops where it can prove them, retains `goto` or assembly-like forms when required for fidelity, and emits source that recompiles losslessly. The compiler rebuilds the string pool, trigger parameters, function frames, calls, branches, and mixed-endian CMB layout.
 
@@ -51,7 +51,7 @@ Source is a project sidecar, not data the game loads. The editor reuses a sideca
 - **Zone/position** — some trigger types resolve their parameter to an auto-generated debug name encoding the trigger's own map-zone coordinates, rather than a fixed label — evidence the trigger fires when a unit enters a specific map area.
 - **Chapter start/end** — the two trigger types covered on [Objectives](./objectives.md), whose parameter is always the literal flag `gf_complete` or `gf_gameover`.
 
-## FE9-SYS-041 — Native script-call bridge
+## Native script-call bridge
 
 <span id="fe9-sys-041"></span>
 
@@ -70,7 +70,7 @@ Source is a project sidecar, not data the game loads. The editor reuses a sideca
 
   Scripts remember state through named on/off flags — a table of 96 shared by every script, some lasting one chapter and some the whole playthrough, all written into save files. See [Event Flags](./event-flags.md).
 
-## FE9-SYS-040 — Script entry-point registry
+## Script entry-point registry
 
 <span id="fe9-sys-040"></span>
 
@@ -86,7 +86,7 @@ Source is a project sidecar, not data the game loads. The editor reuses a sideca
 
   A function with a turn/phase trigger becomes eligible at the requested turn boundary. Its bytecode can fade the screen, invoke `BGMPlay` with a symbolic cue, request dialogue from the chapter's message data, and update a flag. A second function can use that flag or a later unit interaction as its own condition. The functions are related through game state, not because one follows the other physically in the file.
 
-## FE9-SYS-042 — Blocking and asynchronous execution
+## Blocking and asynchronous execution
 
 <span id="fe9-sys-042"></span> A native call may finish immediately, start work and return, or suspend the calling script until an engine process signals completion. The contract is per function. Dialogue, movies, some movements, and staged battles block internally; other calls start camera paths, arrows, effects, fades, or movement that require a matching wait before dependent work. `WaitF` and `WaitM` yield for authored time, while process- or subsystem-specific waits synchronize to actual completion.
 
@@ -102,7 +102,7 @@ The safe sequence is start → wait → consume the result or mutate dependent s
 
   Looking up an event by name searches the current script's own function list first, then — if not found there — falls through to the next script in the global chain. This is very likely the actual mechanism behind content that has to stay reachable no matter which chapter is currently active (a shared base/system dialogue pool, for instance): it's simply another script sitting in the same chain, not a special case. <span class="confidence confidence--confirmed">confirmed</span>
 
-## FE9-SYS-043 — Event trigger evaluation
+## Event trigger evaluation
 
 <span id="fe9-sys-043"></span>
 
@@ -112,7 +112,7 @@ The safe sequence is start → wait → consume the result or mutate dependent s
 
   When a moment comes (a phase starts, a unit finishes an action, and so on), the engine walks the loaded scripts in load order, each one's functions in file order, and runs each one of that trigger kind whose condition holds, one at a time: the next condition is only tested after the previous event has finished. Functions of a script put to sleep are skipped. Pressing Start while an event runs skips it (a fade-out cancels the rest). <span class="confidence confidence--confirmed">engine</span>
 
-## FE9-SYS-047–050 — Area, phase, talk, and death events
+## Area, phase, talk, and death events
 
 <span id="fe9-sys-047"></span> **Area events (FE9-SYS-047)** use type 4 zone bounds and a triggering side. The dispatcher tests a unit's completed movement against the rectangle, then starts the associated function when its other conditions and seen-state permit it. The function can deploy reinforcements, change objectives, manipulate the map, or play dialogue; the rectangle itself owns only eligibility.
 
@@ -122,7 +122,7 @@ The safe sequence is start → wait → consume the result or mutate dependent s
 
 <span id="fe9-sys-050"></span> **Death and retreat events (FE9-SYS-050)** prefer a matching type 11 in-battle death event, then a type 10 return-to-map death event when allowed, and finally the default death-talk handler. Matching uses the active unit's character identity. The selected function can replace death with retreat presentation, set durable story flags, alter objectives, transfer the unit to an inactive/reserve force, or arrange later removal. Those character-specific consequences are authored function bodies; the dispatcher owns only identity match, type priority, fallback, and continuation.
 
-## FE9-SYS-051–054 — Scripted action, timing, and skipping
+## Scripted action, timing, and skipping
 
 <span id="fe9-sys-051"></span> **Scripted battles (FE9-SYS-051)** clear and fill up to 32 strike-override slots with `NetuzoInit` and `NetuzoSet`, then `NetuzoBattle` resolves real combat between valid actors and suspends the event for the battle process. Overrides can force hit/critical/miss ordering and selected damage/effect rules. They are gameplay mutations, not visual previews, and stale slots or invalid actors can corrupt the intended exchange.
 

@@ -1105,12 +1105,13 @@ def surface_heights(triangles: list[_Triangle], points: list[tuple[float, float]
 def export_map_terrain_glb(container_path: Path) -> bytes:
     """A chapter's land terrain as ``.glb``, in the mesh's own coordinates
     (5 units per tile, tile 0 at ``panel_offset * 5``), with each material's
-    first texture. Props and water are left out."""
+    referenced textures embedded. Props and water stored in separate ``.gs``
+    files are left out."""
     _entries, files = _read_container(container_path)
     map_data = map_file.read_map_bytes(files["map.bin"])
     name = map_terrain_name(files, map_data, container_path.parent.name)
     gs_model = model_fmt.read_model_bytes(files[f"{name}.gs"])
-    used = {m.textures[0].tex_id for m in gs_model.materials if m.textures}
+    used = {texture.tex_id for material in gs_model.materials for texture in material.textures}
     all_textures = _load_textures({n: d for n, d in files.items() if Path(n).suffix.lower() == ".tpl"})
     textures = {i: t.image for i, t in all_textures.items() if i in used}
     # The terrain's one bone is the identity: exported without a skeleton,

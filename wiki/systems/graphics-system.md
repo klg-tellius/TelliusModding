@@ -57,15 +57,15 @@ A portrait request selects a file under `Face/`; LZ10 expands its `.cms` to a mu
 
   `window/icon.tpl` holds every item and skill icon, cut into grids 32 cells wide. Its first image (768×216) has 24×24 cells: menu glyphs and buttons, then from cell 96 the item icons, one per item icon number. Its second image (1024×96) has 32×32 cells: 46 skill icons, blank frames, then status and unit-type badges; a skill's icon number *n* is cell *n* − 1. Each image has one palette shared by all its cells, so a new icon has to fit colours left in it. The game reads the copy bundled in `system.cmp`. <span class="confidence confidence--confirmed">confirmed</span>
 
-## FE9-SYS-305 — Texture system
+## Texture system
 
 <span id="fe9-sys-305"></span> TPL resources own encoded image data, dimensions, format, sampler state, optional palettes, and contiguous mip chains; LZ10 is only an outer transport wrapper. The native loader forwards wrap S/T, min/mag filters, LOD bias, edge LOD, and min/max LOD into the GX texture object. Every shipped mipmapped map/battle-scenery image uses trilinear minification, linear magnification, zero bias, and one half-size level, while ordinary non-mipmapped images use their own stored sampler values. Consumers resolve loaded archives before disc files, so the copies inside `system.cmp` take precedence over identical loose resources. Portrait siblings sharing one palette and icon sheets sharing one image palette remain critical replacement constraints.
 
-## FE9-SYS-309 — Icon atlas system
+## Icon atlas system
 
 <span id="fe9-sys-309"></span> Icon identity is an index into one of two fixed grids in `window/icon.tpl`, not a separate image filename. Image 0 is 768×216 with 24×24 cells: menu glyphs occupy the prefix and item icon number *n* is cell `96 + n` (the renderer passes glyph `n + 0x61`). Image 1 is 1024×96 with 32×32 cells: visible skill icon number *n* is cell `n - 1`, zero draws none, and the later cells hold status, affinity-style, and unit-type badges addressed directly by their UI consumers. Each sheet has one shared palette, and the game reads the bundled `system.cmp` copy.
 
-## FE9-SYS-314 and FE9-SYS-315 — Map models and overrides
+## Map models and overrides
 
 <span id="fe9-sys-314"></span> **Map-model registry.** `FE8Anim.bin` maps all 508 animation records from identity to `ymu/` folder, supported weapon category, action clips, and army texture context without exceptions in the decoded registry. The class/character supplies the animation identity; the registry supplies resources and roles. See [Combat & Battle Animation](./combat-animation.md) for the presentation consumer.
 

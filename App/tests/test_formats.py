@@ -2669,7 +2669,7 @@ class DiscFe8DataTests(unittest.TestCase):
         self.assertEqual(sum(sum(c.values()) for c in summary.values()), len(self.data))
         self.assertEqual(sum(c["undecoded"] for c in summary.values()), 0)
 
-    def test_japanese_chapter_records_read_and_refuse_edits(self):
+    def test_japanese_chapter_records_read_and_edit(self):
         if not fe8data.japanese_chapter_layout(self.data):
             self.skipTest("not the Japanese release")
         chapters = fe8data.read_chapter_data(self.data)
@@ -2678,10 +2678,15 @@ class DiscFe8DataTests(unittest.TestCase):
         self.assertEqual((first.map_name, first.script, first.title_key), ("bmap01", "C01", None))
         self.assertEqual(len(first.enemy_bonus_levels), 3)              # no Easy mode
         self.assertTrue(first.title_text.startswith("序章"))   # literal title: Prologue
-        with self.assertRaises(ValueError):
-            fe8data.patch_chapter_field(self.data, 1, "bgm", "BGM_MAP01")
-        with self.assertRaises(ValueError):
-            fe8data.add_record(self.data, "chapter", copy_from=1)
+        edited = fe8data.patch_chapter_field(self.data, first.index, "bgm", "BGM_MAP01")
+        self.assertEqual(fe8data.read_chapter_data(edited)[first.index].bgm, "BGM_MAP01")
+        added, index = fe8data.add_record(edited, "chapter", copy_from=first.index)
+        self.assertEqual(fe8data.read_chapter_data(added)[index].chapter_id, 33)
+        restored = fe8data.remove_record(added, "chapter", index)
+        self.assertEqual([(c.chapter_id, c.title_text, c.map_name, c.bgm)
+                          for c in fe8data.read_chapter_data(restored)],
+                         [(c.chapter_id, c.title_text, c.map_name, c.bgm)
+                          for c in fe8data.read_chapter_data(edited)])
 
     def test_roster_order_gauge_and_chapter_bonus_levels(self):
         if fe8data.japanese_chapter_layout(self.data):

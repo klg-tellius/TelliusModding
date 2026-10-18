@@ -8,7 +8,7 @@ article_type: "portal"
 tags: ["Guide", "Portal"]
 aliases: []
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-15"
 sources: ["telliusmodding-source"]
 cms_collection: "guides"
 source_path: "guides/learning-paths.md"
@@ -18,6 +18,10 @@ source_path: "guides/learning-paths.md"
 Tellius data is interconnected. These paths order the relevant articles around a concrete goal while letting the reference pages remain precise.
 
 <div class="portal-grid" markdown>
+<div class="portal-card" markdown>
+### [Modding Path of Radiance](../modding/index.md)
+Follow task-first app tutorials from project setup through a complete three-chapter campaign.
+</div>
 <div class="portal-card" markdown>
 ### [Make your first mod](first-mod.md)
 Set up a project, change one value safely, build, and test it.

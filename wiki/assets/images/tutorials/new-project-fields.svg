@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 600" role="img" aria-labelledby="title desc">
+  <title id="title">What to enter when creating a practice project</title>
+  <desc id="desc">An explanatory schematic of the New Project fields. One: select Path of Radiance. Two: enter Tutorial Practice as the Project name. Three: choose a parent folder under Create in and read the resulting Project folder preview. Four: click Create Project, then choose a disc image and Extract on Disc and Patch. This is not an app screenshot.</desc>
+  <rect width="920" height="600" rx="18" fill="#f4f3ec"/>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#123c50">
+    <text x="30" y="34" font-size="14" font-weight="700">FIELD GUIDE · SCHEMATIC, NOT A SCREENSHOT</text>
+    <text x="30" y="77" font-size="29" font-weight="700">Create your practice project</text>
+    <rect x="30" y="115" width="440" height="432" rx="12" fill="white" stroke="#c7d3ce"/>
+    <text x="50" y="151" font-size="23" font-weight="600">New Project</text>
+    <text x="50" y="191" font-size="17">Game</text>
+    <circle cx="65" cy="222" r="9" fill="white" stroke="#26728a" stroke-width="2"/><circle cx="65" cy="222" r="5" fill="#26728a"/>
+    <text x="86" y="228" font-size="20">Path of Radiance</text>
+    <text x="50" y="274" font-size="17">Project name:</text>
+    <rect x="50" y="286" width="360" height="42" rx="4" fill="#edf5f7" stroke="#26728a"/>
+    <text x="64" y="314" font-size="20">Tutorial Practice</text>
+    <text x="50" y="363" font-size="17">Create in:</text>
+    <rect x="50" y="375" width="266" height="42" rx="4" fill="#edf5f7" stroke="#26728a"/>
+    <text x="64" y="403" font-size="18">Your projects folder</text>
+    <rect x="325" y="375" width="94" height="42" rx="4" fill="#f4f3ec" stroke="#c7d3ce"/>
+    <text x="334" y="402" font-size="17">Browse...</text>
+    <text x="50" y="450" font-size="16">Project folder: [read the generated path]</text>
+    <rect x="230" y="477" width="190" height="46" rx="5" fill="#123c50"/>
+    <text x="250" y="506" font-size="19" fill="white">Create Project</text>
+    <g fill="#26728a"><circle cx="496" cy="220" r="16"/><circle cx="496" cy="307" r="16"/><circle cx="496" cy="396" r="16"/><circle cx="496" cy="500" r="16"/></g>
+    <g fill="white" font-size="18" font-weight="700" text-anchor="middle"><text x="496" y="226">1</text><text x="496" y="313">2</text><text x="496" y="402">3</text><text x="496" y="506">4</text></g>
+    <g font-size="19"><text x="526" y="215">Choose the game these</text><text x="526" y="241">tutorials are written for.</text>
+      <text x="526" y="301">Give the practice project</text><text x="526" y="327">a recognizable name.</text>
+      <text x="526" y="389">Choose the parent folder.</text><text x="526" y="415">Check the path preview below.</text>
+      <text x="526" y="491">Create the project, then open</text><text x="526" y="517">Disc &amp; Patch to extract.</text></g>
+    <text x="30" y="578" font-size="18">Next: Choose disc image… → confirm Source disc → Extract → open Chapters.</text>
+  </g>
+</svg>

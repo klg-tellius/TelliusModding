@@ -26,7 +26,7 @@ system_gap_work: []
 
 A class supplies the abilities shared by a kind of unit. Two characters in the same class may have different personal growths and skills, but they inherit the same movement rules, weapon access, stat caps, class traits, and model family. Changing class therefore changes what a character can do without changing who that character is.
 
-## FE9-SYS-017 — Class definition system
+## Class definition system
 
 <span id="fe9-sys-017"></span>
 
@@ -54,7 +54,7 @@ A class supplies the abilities shared by a kind of unit. Two characters in the s
 
   Both routes ask the same question <span class="confidence confidence--confirmed">confirmed</span>: the unit is not promoted yet, is not a laguz, is at least level 10, its class has a promoted class, and its class does **not** carry the hidden skill `SID_EVENTCC` ("event class change"). Two classes carry it: **Ranger** (Ike) and **Thief** (Volke and Sothe). That is why Ike and Volke stop at level 20 with 0 EXP and cannot use a Master Seal. Ike promotes only through the story: the script function `UnitClassChange` promotes a unit only when it *does* have `SID_EVENTCC`. Because the skill belongs to the class and not to the character, any unit placed in those classes behaves the same way.
 
-## FE9-SYS-173 through FE9-SYS-177 — Derived stats and promotion
+## Derived stats and promotion
 
 <span id="fe9-sys-173"></span> **Derived-stat system.** Effective getters begin from definition/class base plus serialized personal and permanent gains, then apply the consumer's form, equipment, status, and skill modifiers before the documented cap/clamp layer. Movement, combat, rescue, growth, fog vision, AI, and UI call those getters rather than reading a second stored “final stat.” This ordering prevents a temporary bonus from being saved as permanent growth; individual modifier values remain owned by their source definitions.
 

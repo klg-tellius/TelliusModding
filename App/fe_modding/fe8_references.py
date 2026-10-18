@@ -54,7 +54,7 @@ _FIELD_NAMES = {
 
 
 def _record_id(data: bytes, kind: str, start: int, index: int) -> str:
-    size = fe8data.TABLES[kind][1]
+    size = fe8data.chapter_record_size(data) if kind == "chapter" else fe8data.TABLES[kind][1]
     if kind == "chapter":
         return f"chapter id {data[start + index * size + 0x3C]}"
     ptr = struct.unpack_from(">I", data, start + index * size)[0]
@@ -83,7 +83,7 @@ def fe8data_references(data: bytes, label: str, *, skip: Optional[tuple[str, int
     for field in sorted(fields):
         detail = None
         for kind, (start, count) in tables.items():
-            size = fe8data.TABLES[kind][1]
+            size = fe8data.chapter_record_size(data) if kind == "chapter" else fe8data.TABLES[kind][1]
             if start <= field < start + count * size:
                 index, offset = divmod(field - start, size)
                 if skip == (kind, index):

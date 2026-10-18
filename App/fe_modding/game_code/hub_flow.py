@@ -23,9 +23,14 @@ def _word(value: int) -> bytes:
     return value.to_bytes(4, "big")
 
 
-def _router(set_chapter: int) -> bytes:
-    """r3=party, r4=normal successor; tail-call set_current_chapter."""
-    program = [
+def _router(set_chapter: int, *, hub_state_address: int | None = None) -> bytes:
+    """r3=party, r4=normal successor; tail-call set_current_chapter.
+
+    The optional address is the separately reserved four-byte extended hub state.
+    Only code generation is supported for that variant until the full runtime's
+    release gate passes; the retail installer below continues to use legacy flags.
+    """
+    prefix = [
         ppc.lis(8, 0x8000), ppc.addi(8, 8, HUB_CONFIG & 0xFFFF),
         ppc.lbz(9, 0, 8),       # hub chapter
         ppc.lbz(10, 1, 8),      # control-byte index
@@ -35,6 +40,20 @@ def _router(set_chapter: int) -> bytes:
         ppc.addi(7, 3, FLAG_BITS_OFFSET),
         ppc.lbzx(5, 7, 10), ppc.and_(5, 5, 11),
         ppc.lbzx(10, 7, 0), ppc.lbzx(11, 7, 6),
+    ]
+    if hub_state_address is not None:
+        if type(hub_state_address) is not int or not 0x80000000 <= hub_state_address <= 0x817FFFFC:
+            raise ValueError("Extended hub state must be inside reserved GameCube main RAM.")
+        prefix = [
+            ppc.lis(8, 0x8000), ppc.addi(8, 8, HUB_CONFIG & 0xFFFF),
+            ppc.lbz(9, 0, 8),
+            ppc.lis(7, ((hub_state_address + 0x8000) >> 16) & 0xFFFF),
+            ppc.addi(7, 7, hub_state_address & 0xFFFF),
+            ppc.li(0, 1), ppc.li(6, 2), ppc.li(11, 1),
+            ppc.lbz(5, 0, 7), ppc.and_(5, 5, 11),
+            ppc.lbz(10, 1, 7), ppc.lbz(11, 2, 7),
+        ]
+    program = prefix + [
         ppc.lbz(12, 0x10, 3),
         ppc.cmpwi(12, CONTINUED_PART), ("eq", "done"),
         ppc.cmplw(12, 9), ("eq", "hub"),
@@ -126,7 +145,22 @@ class HubFlow:
 
     @property
     def installed(self) -> bool:
-        return self.editor.status(HUB_PATCH).state == State.APPLIED
+        if self.editor.status(HUB_PATCH).state == State.APPLIED:
+            return True
+        from .extended_flag_runtime import BASE
+        if not self.editor.dol.has_section_at(BASE):
+            return False
+        from .extended_flag_installation import inspect_runtime, RuntimeState, RECEIPT_NAME
+        from ..formats.extended_flags import FlagLayout, MANIFEST_NAME
+        root = self.editor.extracted_dir.parent
+        try:
+            layout = FlagLayout.from_json((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+            receipt = (root / RECEIPT_NAME).read_text(encoding="utf-8")
+            status = inspect_runtime(self.editor.dol, self.editor.version.code, layout, receipt)
+            import json
+            return status.state == RuntimeState.MATCHING and json.loads(receipt)["hub_chapter"] is not None
+        except (OSError, ValueError, KeyError, AttributeError):
+            return False
 
     def config(self) -> bytes | None:
         return self.editor.dol.read(HUB_CONFIG, CONFIG_SIZE) if self.installed else None
@@ -148,6 +182,9 @@ class HubFlow:
         self.editor.save()
 
     def remove(self) -> None:
+        from .extended_flag_runtime import BASE
+        if self.editor.dol.has_section_at(BASE):
+            raise ValueError("Removing hub routing from an extended runtime is not supported.")
         if self.installed:
             self.editor.session.set_patch(HUB_PATCH, False)
             self.editor.save()

@@ -4,15 +4,53 @@ from __future__ import annotations
 
 import math
 import struct
+from PIL import Image
 
 from . import chapters, map_props, script_sources
-from .formats import dispo, gltf_import, gs_file, lz10, map_file, message, pak
+from .formats import dispo, fe8data, gltf_import, gs_file, lz10, map_file, message, pak, tpl
 from .formats.cmb import compile_source, read_cmb, write_cmb
 
 
 MIN_SIZE = 4
 MAX_SIZE = 63  # hub script positions and the map instance format are byte-sized
 GRASS = "平地"
+AVATAR_AI = {"seq_attack": "SEQ_NOATTACK", "seq_move": "SEQ_NOMOVE",
+             "seq_heal": "SEQ_NOHEAL", "mtype": "MTYPE_NORMAL"}
+
+
+def avatar_class(data: bytes, avatar_pid: str) -> str:
+    character = next((c for c in fe8data.read_fe8data(data).characters if c.pid == avatar_pid), None)
+    if character is None or not character.jid:
+        raise ValueError("The hub avatar needs a valid default class.")
+    return character.jid
+
+
+def repair_avatar_deployment(compressed: bytes, avatar_pid: str, avatar_jid: str) -> bytes:
+    """Fill required class/AI names without replacing custom assignments."""
+    if not avatar_jid:
+        raise ValueError("The hub avatar needs a class in its deployment record.")
+    packed = lz10.decompress(compressed)
+    changes = {}
+    found = False
+    for entry in pak.read_pak_entries(packed):
+        if not entry.name.startswith("dispos_"):
+            continue
+        document = dispo.parse_dispo(pak.read_pak_file_content(packed, entry))
+        changed = False
+        for section in document.sections:
+            for unit in section.units:
+                if unit[dispo.FIELD["pid"]] != avatar_pid:
+                    continue
+                found = True
+                for field, value in {"jid": avatar_jid, **AVATAR_AI}.items():
+                    if not unit[dispo.FIELD[field]]:
+                        unit[dispo.FIELD[field]] = value
+                        changed = True
+        if changed:
+            changes[entry.name] = dispo.build_dispo(document)
+    if not found:
+        raise ValueError("The hub deployment has no dedicated avatar to repair.")
+    return _pack_entries(packed, changes) if changes else compressed
 
 
 def _pack_entries(packed: bytes, changes: dict[str, bytes]) -> bytes:
@@ -22,18 +60,25 @@ def _pack_entries(packed: bytes, changes: dict[str, bytes]) -> bytes:
         [entry.reserved for entry in entries]))
 
 
-def _flat_model(width: int, height: int) -> bytes:
-    """Make an untextured, two-triangle ground plane in the game's .gs format."""
+def _flat_model(width: int, height: int, white_id: int) -> bytes:
+    """Make a ground plane with valid base and projected-overlay textures."""
     x, z = width * map_file.TILE_UNITS, height * map_file.TILE_UNITS
     points = ((0.0, 0.0, 0.0), (x, 0.0, 0.0), (x, 0.0, z), (0.0, 0.0, z))
     normal = ((0.0, 1.0, 0.0),) * 3
     uv = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
     triangle = gltf_import.ImportedTriangle
     scene = gltf_import.ImportedScene(
-        materials=[gltf_import.ImportedMaterial("map_base", (0.35, 0.55, 0.26, 1.0), double_sided=True)],
+        materials=[gltf_import.ImportedMaterial("hub_ground", (0.35, 0.55, 0.26, 1.0),
+                   image=Image.new("RGBA", (8, 8), "white"), double_sided=True)],
         triangles={0: [triangle((points[0], points[1], points[2]), normal, (uv[0], uv[1], uv[2])),
                        triangle((points[0], points[2], points[3]), normal, (uv[0], uv[2], uv[3]))]})
-    return gs_file.write_gs(gltf_import.build_static_gs(scene, name="tellius_hub_ground").gs)
+    # map_base installs a dual-texture callback even on an untextured material
+    # (US PC 0x800F010C dereferences its null texture table). A neutral name
+    # avoids that route, but ALL terrain materials still need the last-record
+    # projected overlay. White preserves the ground's solid colour.
+    overlay = gs_file.GsTexture((1, 0), white_id, (257, 0, 0, 0, 0), 1.0, 1.0, 0)
+    return gs_file.write_gs(gltf_import.build_static_gs(
+        scene, name="tellius_hub_ground", tex_id_base=white_id, extra_textures=(overlay,)).gs)
 
 
 def blank_map(compressed: bytes, width: int, height: int) -> bytes:
@@ -96,11 +141,18 @@ def blank_map(compressed: bytes, width: int, height: int) -> bytes:
                              ("unknown_tail", parsed.extra.unknown_tail & ~map_props.MAP_FLAG_WATER)):
             data = map_file.patch_extra_field(data, parsed.extra, field, value)
     content["map.bin"] = data
-    content[f"{ground.filename}.gs"] = _flat_model(width, height)
+    white = tpl.build_tpl([(Image.new("RGBA", (8, 8), "white"), tpl.FORMAT_I4)], wrap=tpl.WRAP_CLAMP)
+    if "texpack.tpl" in content:
+        content["texpack.tpl"], white_id = tpl.copy_images(content["texpack.tpl"], white, [0])
+    else:
+        content["texpack.tpl"], white_id = white, 0
+    content[f"{ground.filename}.gs"] = _flat_model(width, height, white_id)
+    if not any(entry.name == "texpack.tpl" for entry in entries):
+        return lz10.compress(pak.pack_pak(list(content.items())))
     return _pack_entries(packed, content)
 
 
-def avatar_deployment(compressed: bytes, avatar_pid: str, x: int, y: int) -> bytes:
+def avatar_deployment(compressed: bytes, avatar_pid: str, x: int, y: int, avatar_jid: str) -> bytes:
     packed = lz10.decompress(compressed)
     entries = pak.read_pak_entries(packed)
     changed = {}
@@ -119,9 +171,15 @@ def avatar_deployment(compressed: bytes, avatar_pid: str, x: int, y: int) -> byt
                 raise ValueError("The starter deployment has no common player section.")
             unit = dispo.new_unit_values()
             unit[dispo.FIELD["pid"]] = avatar_pid
+            unit[dispo.FIELD["jid"]] = avatar_jid
+            for field, value in AVATAR_AI.items():
+                unit[dispo.FIELD[field]] = value
             for field, value in (("pos_x", x), ("pos_y", y), ("pos2_x", x), ("pos2_y", y)):
                 unit[dispo.FIELD[field]] = value
             player.units.append(unit)
+            # "_mikata_" invokes reserve-army selection, including a special
+            # case for Ike. A dedicated avatar must use direct PID deployment.
+            dispo.rename_section_prefix(document, player.name, player.name.replace("mikata", "avatar"))
             found = True
         changed[entry.name] = dispo.build_dispo(document)
     if not found:
@@ -129,7 +187,22 @@ def avatar_deployment(compressed: bytes, avatar_pid: str, x: int, y: int) -> byt
     return _pack_entries(packed, changed)
 
 
-def clean_script(project, chapter: int, player_section: str) -> None:
+def opening_source(chapter: int, player_section: str, avatar_pid: str) -> str:
+    """Direct avatar deployment and a complete visible tactical-map opening."""
+    return ("@export\n"
+            "def Opening0():\n"
+            "    Comeback()\n"
+            "    Fade(1, 0)\n"
+            f'    MapLoad("bmap{chapter:02d}")\n'
+            f'    InstantDisposFirst("{player_section}")\n'
+            f'    InstantUnitFocusByPID("{avatar_pid}")\n'
+            "    InstantSetMapCamera(0, 40, 14)\n"
+            "    SetOutLink(1)\n"
+            "    Fade(2, 500)\n"
+            "    FadeWait()\n")
+
+
+def clean_script(project, chapter: int, player_section: str, avatar_pid: str) -> None:
     """Remove copied story events while retaining a script file the compiler can build on."""
     path = script_sources.chapter_script(project, f"{chapter:02d}")
     if path is None:
@@ -137,10 +210,7 @@ def clean_script(project, chapter: int, player_section: str) -> None:
     base = read_cmb(path.read_bytes())
     padded = f"{chapter:02d}"
     source = (f"# Generated hub chapter {padded}; Hub setup owns the destination events.\n\n"
-              "@export\n"
-              "def Opening0():\n"
-              f'    MapLoad("bmap{padded}")\n'
-              f'    InstantDisposFirst("{player_section}")\n')
+              + opening_source(chapter, player_section, avatar_pid))
     compiled = compile_source(source, base=base)
     project.write_keeping_original(path, write_cmb(compiled.script))
     sidecar = script_sources.sidecar_path(project, path)
@@ -163,13 +233,14 @@ def create_chapter(project, fe8: bytes, source_id: str, chapter: int, title: str
     map_bytes = source.map.read_bytes() if keep_map else blank_map(source.map.read_bytes(), width, height)
     renumbered_deployment = chapters._renumber_dispos(source.deployment.read_bytes(),
                                                       source_id.zfill(2), f"{chapter:02d}")
-    deployment_bytes = avatar_deployment(renumbered_deployment, avatar_pid, *start)
+    deployment_bytes = avatar_deployment(renumbered_deployment, avatar_pid, *start,
+                                        avatar_class(fe8, avatar_pid))
     packed_deployment = lz10.decompress(deployment_bytes)
     common = next((entry for entry in pak.read_pak_entries(packed_deployment)
                    if entry.name == "dispos_c.bin"), None)
     player_section = next((section.name for section in dispo.parse_dispo(
         pak.read_pak_file_content(packed_deployment, common)).sections
-        if "mikata" in section.name and not section.is_link), None) if common else None
+        if "_avatar_" in section.name and not section.is_link), None) if common else None
     if player_section is None:
         raise ValueError("The prepared deployment has no player section.")
     plan = chapters.add_story_chapter(project, fe8, source_id, chapter, title, after=None)
@@ -177,5 +248,5 @@ def create_chapter(project, fe8: bytes, source_id: str, chapter: int, title: str
     project.write_keeping_original(paths.map, map_bytes)
     project.write_keeping_original(paths.deployment, deployment_bytes)
     project.write_keeping_original(paths.dialogue, message.write_messages([]))
-    clean_script(project, chapter, player_section)
+    clean_script(project, chapter, player_section, avatar_pid)
     return plan

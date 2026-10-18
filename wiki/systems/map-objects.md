@@ -32,7 +32,7 @@ Read the object description to learn model, footprint, and flags, then read each
 
 Interactive scenery often has a third layer: a compact runtime tile-object record stores opened, visited, damaged, or remaining-use state. The model/instance says what can be drawn and where; the tile record says what changed during play. A decorative tree may need only the first two layers, while a door combines all three.
 
-## FE9-SYS-068 — How the map-object system loads
+## How the map-object system loads
 
 <span id="fe9-sys-068"></span>
 
@@ -69,7 +69,7 @@ Interactive scenery often has a third layer: a compact runtime tile-object recor
 
 At load, object descriptions become runtime actors and each instance supplies placement, footprint, initial visibility/state, animation, and draw/update classification. Doors, houses, roofs, rocks, water, and goal markers opt into different native tests through flags and companion tile records; merely giving a decorative model a familiar filename does not create an Unlock, Visit, or Break command.
 
-## FE9-SYS-069 — Persistent tile-object state
+## Persistent tile-object state
 
 <span id="fe9-sys-069"></span> The live map owns up to 64 compact `T  T` records. Types 4 and 7 hold breakable-wall HP and ballista item/uses; types 9 and 10 cover pits and rolling rocks; types `0x21`–`0x25` record opened doors, opened roofs, opened chests, visited villages, and destroyed buildings. Scripts and action executors create or update these records when the interaction commits.
 
@@ -77,7 +77,7 @@ Checkpoint and map saves serialize the count and all 64 records after units, con
 
 The record coordinates use the tactical grid and must remain valid for the loaded map. Replacing map geometry without migrating live save records can attach old state to a different object or empty tile. Conversely, editing only a visual instance does not create persistence; the action or script must update the tile-object system.
 
-## FE9-SYS-082 — Water and animated environment
+## Water and animated environment
 
 <span id="fe9-sys-082"></span> Water and environmental animation belong to the scenery actor layer, not the tactical terrain grid. A chapter commonly defines its base terrain and a separate water plane as map objects, places both with instance transforms, and draws them from the same `texpack.tpl`. The tile panels still determine where units stand and what terrain rules apply; raising a wave mesh or changing its texture does not raise a unit or make a tile aquatic.
 

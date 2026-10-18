@@ -28,6 +28,10 @@ class CodeEditor:
         self.extracted_dir = Path(extracted_dir)
         self.path = self.extracted_dir / "sys" / "main.dol"
         self.dol = Dol.open(self.path)
+        from .extended_flag_runtime import BASE
+        from .extended_flag_installation import RECEIPT_NAME
+        self._extended_owned = (self.dol.has_section_at(BASE) or
+                                (self.extracted_dir.parent / RECEIPT_NAME).exists())
         self.identification: Identification = identify(self.dol, read_boot_code(self.extracted_dir))
         self.session = Session(self.dol, self.identification.version, self._retail_reader())
 
@@ -139,6 +143,15 @@ class CodeEditor:
 
     def _save(self) -> None:
         self._drop_idle_hooks()
+        if self._extended_owned:
+            from .extended_flag_installation import inspect_runtime, RECEIPT_NAME, RuntimeState
+            from ..formats.extended_flags import FlagLayout, MANIFEST_NAME
+            root = self.extracted_dir.parent
+            layout = FlagLayout.from_json((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+            receipt = (root / RECEIPT_NAME).read_text(encoding="utf-8")
+            status = inspect_runtime(self.dol, self.version.code if self.version else None, layout, receipt)
+            if status.state != RuntimeState.MATCHING:
+                raise ValueError(f"This edit would invalidate the extended flag runtime: {status.detail}")
         if self._writer is not None:
             self._writer(self.path, bytes(self.dol.data))
             return

@@ -58,19 +58,19 @@ A skill is an ability or trait attached to a unit. Some skills add a command to 
 
   Every visible mastery costs 20 capacity. The Game Data editor's **Classes → Occult scroll** selector changes these skill restriction lists, so it changes what that class learns without incorrectly adding the mastery as an innate class skill. The Skills tab exposes the same underlying teaching-item and restriction fields for advanced editing.
 
-## FE9-SYS-179 — Skill capacity
+## Skill capacity
 
 <span id="fe9-sys-179"></span> The current class supplies a capacity ceiling and each visible learned skill supplies a cost in `param1`. The Skills screen totals the unit's applicable learned costs, compares the candidate against the remaining space, and rejects a teaching action that would exceed the ceiling. Changing class therefore changes available space without changing the cost stored on each skill. Internal traits and class-granted behavior must not be assumed to behave like removable learned skills merely because they share the skill table and runtime bitset.
 
 For example, a promoted class with capacity 25 can hold Paragon (15) and Counter (10) exactly, but cannot add Nihil (5) until capacity is freed. The calculation is integer accounting, not an activation rule: a skill consumes its assigned capacity whether or not its battle condition triggers.
 
-## FE9-SYS-180 — Scroll learning and removal
+## Scroll learning and removal
 
 <span id="fe9-sys-180"></span> A learnable scroll points indirectly to its skill: the skill record names the teaching item, carries an icon so it can appear in the learning UI, and can restrict legal recipients by character or class. Selection checks that relationship, recipient restrictions, duplicate ownership, and remaining capacity before committing the skill to mutable unit state and consuming the item. The Occult scroll uses the same search but can match several mastery records, so the current class selects the result.
 
 Removal operates only on mutable learned entries exposed by the Skills UI. Personal, class-innate, deployment, form, and hidden engine-trait sources remain because they are recomputed ownership rather than removable list entries. Removing a learned skill clears and compacts that entry, immediately releases its capacity, and does not recreate the consumed teaching item. Invalid edited ownership is filtered through the same source checks instead of turning an innate trait into a refundable scroll.
 
-## FE9-SYS-181 — Occult and mastery assignment
+## Occult and mastery assignment
 
 <span id="fe9-sys-181"></span> Occult assignment is data-driven. The scroll is `IID_ESOTERIC`; each mastery skill names that item and lists the character or class IDs allowed to receive it. The selection code scans visible candidates and accepts the record whose restriction contains the unit's current identity. Capacity and duplicate checks then apply normally. This explains both the common mapping—Hero to Aether, Swordmaster to Astra, Paladin to Sol—and the correct way to mod it: edit the mastery restriction list, not the class's innate-skill slots.
 
@@ -98,29 +98,29 @@ Removal operates only on mutable learned entries exposed by the Skills UI. Perso
 
   Twenty-three skills also name the visual effect played when they trigger: Sol plays `EID_SP_SUN`, Counter `EID_COUNTER`, Vantage `EID_MACHIBUSE` (“ambush”), and the triangle attack `EID_TRIATTACK`. <span class="confidence confidence--confirmed">confirmed</span>
 
-## FE9-SYS-144 — Activation pipeline
+## Activation pipeline
 
 <span id="fe9-sys-144"></span> Ownership is consolidated from character, class, deployment, and runtime sources into a bitset indexed by raw skill-table position. A subsystem asks for one bit at the stage it owns. Passive traits proceed immediately; chance-bearing effects consume the shared RNG; successful checks append or alter combat-log work and may request an `EID_` presentation. The caller—not the skill record—defines whether the check occurs during forecast adjustment, exchange construction, strike damage, post-hit consequences, or map command building.
 
 Caller ownership is the priority rule: exchange-order skills run while the log is built, strike modifiers when that strike resolves, lethal protection before death commits, and post-damage healing/reflection after final damage exists. Suppression is tested at the relevant caller before its roll. There is no global activation pass whose missing total order must be reconstructed.
 
-## FE9-SYS-145 — Offensive proc skills
+## Offensive proc skills
 
 <span id="fe9-sys-145"></span> Offensive procs modify different layers: Astra/Continue-style paths add strike work, Luna halves effective defense, Sol heals from final damage, Aether combines Luna and Sol, Lethality replaces the lethal outcome, and Stun/Roar/Vortex paths add status or map-action behavior. Each caller checks ownership, suppression/immunity, and its own chance before mutating that layer. Simultaneous effects therefore follow exchange construction → strike formula → damage → status/post-hit rather than a generic competing-proc priority.
 
-## FE9-SYS-146 — Defensive and reactive skills
+## Defensive and reactive skills
 
 <span id="fe9-sys-146"></span> Reactive skills operate at ordered checkpoints. Vantage reverses the opening exchange; Cancel marks the defender's counter step to be skipped; Counter can append a retaliation exchange; Wing Guard/Goddess Blessing can replace incoming damage with zero; Miracle clamps an otherwise lethal result to survival before death. Later checkpoints observe the work left by earlier ones, so a removed counter cannot trigger its strike and zero/nonlethal damage reaches post-hit handling without premature death.
 
-## FE9-SYS-147 — Conditional passive skills
+## Conditional passive skills
 
 <span id="fe9-sys-147"></span> Passive checks alter the getter/consumer that owns their formula: Gamble halves Hit and doubles Critical, Deadeye doubles Hit, Insight adds Hit, Parity suppresses exchange modifiers, and Resolve/Wrath read current HP at their stat/critical sites. Shade/Provoke alter AI desirability after legality. The owning getter recomputes on demand, so HP/status changes invalidate no separate cached passive state.
 
-## FE9-SYS-148 — Post-hit healing and reflection
+## Post-hit healing and reflection
 
 <span id="fe9-sys-148"></span> These effects require ordered resolved work. Protection first produces final damage; Miracle handles its lethal boundary; HP is applied; then Sol/Aether heal the attacker by final damage dealt up to maximum HP, while Counter's separately scheduled exchange resolves through the ordinary strike path. Weapon drain/property handlers consume finalized damage at their registered consequence stage. Death is committed after survival/protection for that hit, while healing cannot revive a target already resolved dead.
 
-## FE9-SYS-236 through FE9-SYS-250 — Runtime skill systems
+## Runtime skill systems
 
 <span id="fe9-sys-236"></span> **Ownership bitset.** Runtime skill state is indexed by raw position in the 98-record skill table and fits within a 128-bit field. Character, class, deployment, learned, and engine-trait sources consolidate into that queryable representation. Native callers test a numeric bit; renumbering table records therefore changes behavior even if their `SID_` labels remain readable.
 

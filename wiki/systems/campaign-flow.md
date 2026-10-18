@@ -24,7 +24,7 @@ system_gap_work: []
 
 The campaign controller answers two deceptively large questions: “what state exists before the Prologue?” and “where does the game go after this scene or map?” It is useful to picture the campaign as a route through scene types rather than a simple numbered chapter list. A normal chapter may pass through story, base, more story, preparation, tactical battle, clear processing, report, save, and transition; multi-part chapters and the ending alter that route.
 
-## FE9-SYS-026 — New-game initialization
+## New-game initialization
 
 <span id="fe9-sys-026"></span> Starting New Game creates a playthrough inside an existing console-wide save file. System data—screen calibration, clear unlocks, completed-run identifiers, and last-used slot—belongs to the save as a whole. The new block receives party/chapter state, difficulty, options, playthrough number, time counters, flags, empty or initial unit slots, convoy/forge state, and the first resume destination.
 
@@ -36,7 +36,7 @@ Initialization then chooses a resume point and enters the first campaign scene. 
 
 The new-playthrough constructor owns the empty persistent containers, selected difficulty/options/growth mode, counters, and initial resume identity. The first chapter's `Startup` and difficulty-selected deployment data own creation of the first live roster. This is why roster membership is not a second hard-coded New Game table and why changing difficulty can change deployed actors without changing the save-block constructor.
 
-## FE9-SYS-027 — Campaign ordering
+## Campaign ordering
 
 <span id="fe9-sys-027"></span> Campaign ordering is a state transition, not “current chapter + 1.” Chapter records and native routing identify map resources, while scripts and flags decide which scenes run and which continuation follows. The controller must handle:
 

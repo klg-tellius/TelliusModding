@@ -277,23 +277,22 @@ class MapObjectsPanel(EditorPanel):
             for k, key in enumerate(keys):
                 self._vars[key] = tk.StringVar()
                 ttk.Entry(frame, textvariable=self._vars[key], width=9).grid(row=column, column=1 + k, sticky="w", padx=2)
-        ttk.Label(frame, text="Raw flags (A, B, C, effect)").grid(row=2, column=0, sticky="w")
-        for k, key in enumerate(("flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")):
-            self._vars[key] = tk.StringVar()
-            ttk.Entry(frame, textvariable=self._vars[key], width=9).grid(row=2, column=1 + k, sticky="w", padx=2)
-        checks = ttk.Frame(frame)
-        checks.grid(row=0, column=5, rowspan=4, sticky="nw", padx=(18, 0))
         self._toggles = []
-        for k, (field, mask, label) in enumerate(map_props.PROP_FLAG_TOGGLES):
-            var = tk.BooleanVar()
-            ttk.Checkbutton(checks, text=label, variable=var).grid(row=k % 7, column=k // 7, sticky="w", padx=(0, 12))
-            self._toggles.append((field, mask, var))
+        flags = ttk.Frame(frame)
+        flags.grid(row=0, column=5, rowspan=5, sticky="nw", padx=(18, 0))
+        for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+            group = ttk.LabelFrame(flags, text=title, padding=5)
+            group.grid(row=0, column=column, sticky="nw", padx=(0, 6))
+            for row, (mask, label) in enumerate(controls):
+                var = tk.BooleanVar()
+                ttk.Checkbutton(group, text=label, variable=var).grid(row=row, column=0, sticky="w")
+                self._toggles.append((field, mask, var))
         self._everywhere = tk.BooleanVar(value=False)
         self._everywhere_check = ttk.Checkbutton(frame, text="Also in the other maps with the same prop",
                                                  variable=self._everywhere)
-        self._everywhere_check.grid(row=3, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        self._everywhere_check.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
         buttons = ttk.Frame(frame)
-        buttons.grid(row=4, column=0, columnspan=6, sticky="w", pady=(6, 0))
+        buttons.grid(row=3, column=0, columnspan=6, sticky="w", pady=(6, 0))
         self._apply_button = ttk.Button(buttons, text="Apply", command=self._apply, state="disabled")
         self._apply_button.pack(side="left")
         self._form_status = ttk.Label(buttons, text="", style="Muted.TLabel")
@@ -309,9 +308,9 @@ class MapObjectsPanel(EditorPanel):
         if prop is None:
             return
         obj = prop.obj
-        for key in map_props.PROP_FIELDS:
+        for key in map_props.PROP_FIELDS[:6]:
             value = getattr(obj, key)
-            self._vars[key].set(f"0x{value:02X}" if isinstance(value, int) else f"{value:g}")
+            self._vars[key].set(f"{value:g}")
         for field, mask, var in self._toggles:
             var.set(bool(getattr(obj, field) & mask))
         self._form_status.configure(text=f"{prop.map_name}/{prop.name}")
@@ -319,12 +318,14 @@ class MapObjectsPanel(EditorPanel):
     def _changes(self) -> dict:
         obj = self._info.obj
         values = {}
-        for key in map_props.PROP_FIELDS:
+        for key in map_props.PROP_FIELDS[:6]:
             text = self._vars[key].get().strip()
-            values[key] = int(text, 0) if key.startswith(("flag", "effect")) else float(text)
+            values[key] = float(text)
+        for field, _title, _controls in map_props.PROP_FLAG_GROUPS:
+            values[field] = 0
         for field, mask, var in self._toggles:
-            if var.get() != bool(getattr(obj, field) & mask):
-                values[field] = (values[field] | mask) if var.get() else (values[field] & ~mask)
+            if var.get():
+                values[field] |= mask
         return {k: v for k, v in values.items() if v != getattr(obj, k)}
 
     def _apply(self) -> None:

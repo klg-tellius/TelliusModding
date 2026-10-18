@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">A three-chapter exercise with observable checkpoints</title>
+<desc id="desc">1 · RECRUIT. Chapter 1: talk → Join. Guard locally; record persistent state. Win, save, reload: is the recruit retained?. 2 · REINFORCE. Chapter 2: phase → wave. Load the named section only once. Win, save, reload: does state still agree?. 3 · RESOLVE. Chapter 3: objective → ending. Test boss, defeat, and finale branches. Repeat the complete route in Dolphin.. Test every chapter independently, then every transition in sequence.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">A three-chapter exercise with observable checkpoints</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · RECRUIT</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">Chapter 1: talk → Join</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Guard locally; record persistent state</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">Win, save, reload: is the recruit retained?</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · REINFORCE</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">Chapter 2: phase → wave</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Load the named section only once</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Win, save, reload: does state still agree?</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · RESOLVE</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">Chapter 3: objective → ending</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Test boss, defeat, and finale branches</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Repeat the complete route in Dolphin.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">Test every chapter independently, then every transition in sequence.</text>
+</g></svg>

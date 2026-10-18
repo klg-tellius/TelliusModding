@@ -34,17 +34,17 @@ This registry drives the **map models** (`ymu/`): the units seen on the map and 
 
 Class chooses the model family, weapon context chooses a compatible animation category, character tags may select an override, the `.ga` clip poses the model, and `EID_` chains add spell or skill visuals. Combat mechanics separately decide hits and damage.
 
-## FE9-SYS-155 — Map versus full-battle presentation
+## Map versus full-battle presentation
 
 <span id="fe9-sys-155"></span> The presentation choice is resolved before playback from the saved animation option plus caller-imposed scene restrictions. Map presentation keeps tactical models/camera; full battle presentation constructs `zbg/` scenery, detailed `zu/` actors, weapon assets, scripted cameras, HUD, and effects. Both receive the same completed strike log. An encounter override replaces presentation policy only—it cannot change Hit, damage, durability, EXP, or strike order—and an unavailable full-scene path safely uses the map presenter.
 
-## FE9-SYS-158 and FE9-SYS-159 — Model selection
+## Model selection
 
 <span id="fe9-sys-158"></span> **Class and character model selection.** Map presentation begins with the animation ID on the character when one exists and otherwise uses the class default. `FE8Anim.bin` resolves that ID to a model folder and compatible weapon categories. Full battle presentation performs the parallel lookup through `jobList.dbx`, where class and character keys can select a detailed `zu/` model. A character override changes appearance without changing the class record that supplies stats and weapon permissions.
 
 <span id="fe9-sys-159"></span> **Weapon-model selection.** The equipped `IID_` is reduced to its item label and opens `xwp/<item>.dbx` from `zdbx.cmp`; its Model block names the pack attached to the chosen rig. `r_hand`, `l_hand`, and weapon-family anchors supply the parent matrices, while authored model-local transforms supply the remaining offset. A missing optional weapon visual leaves the combat actor usable without changing item mechanics; a missing required actor/model rejects full-scene construction and falls back to the map presentation path.
 
-## FE9-SYS-160 and FE9-SYS-161 — Animation lifecycle and events
+## Animation lifecycle and events
 
 <span id="fe9-sys-160"></span> **Battle animation state machine.** The scene enters idle, chooses an action role from the resolved strike, optionally runs into range, plays wind-up and attack, reacts with dodge or damage, then returns or advances to death and teardown. Normal, second, critical, killing-critical, skill, and thrown attacks have distinct role names. A role can fall back to a simpler attack or critical clip, and a previous-action variant can preserve visual continuity across consecutive actions. The authoritative strike log remains the input; animation completion and markers control presentation timing, not whether the strike exists.
 
@@ -54,13 +54,13 @@ Actor parameters provide approach range/speed, jump and knockback tuning, and th
 
 The marker contract is role-based rather than a global numeric effect table: the active actor/effect controller interprets only marker families it owns and ignores or diagnoses unsupported callbacks. This bounds custom-animation safety without requiring every unused code combination to be assigned a speculative meaning.
 
-## FE9-SYS-163 — Spells and particle effects
+## Spells and particle effects
 
 <span id="fe9-sys-163"></span> A weapon or skill selects an `EID_`, [FE8Effect.bin](../formats/fe8effect.md) resolves it to a `yme/` pack, and that pack supplies its model, animation, and any chained stages. Placement depends on the effect: a cast can begin at the user, an impact at the target, and ordinary hit/death effects at the affected unit. Spell animation markers own travel and impact timing, while material alpha tracks make otherwise transparent effect geometry appear and fade. This gives modders three separate failure points to check: registry lookup, pack contents, and the markers expected by the battle scene.
 
 The retail registry has 263 resolved names and finite chains of at most three links before a terminal stage. Emitter curves and material tracks remain presentation parameters inside the selected pack; changing them cannot change the already-resolved magical hit or damage. A broken chain terminates visual construction rather than recursing or altering combat state.
 
-## FE9-SYS-164 through FE9-SYS-168 — Output layers and alternate path
+## Output layers and alternate path
 
 <span id="fe9-sys-164"></span> **Battle HUD.** Full battle constructs named left/right widgets including `NumAtk`, `NumHit`, `NumCrit`, `HpWindow`, and `NameWin`. They read the prepared combatant/result records, interpolate displayed HP at result boundaries, and release with the battle scene. Map presentation uses its own compact UI but consumes the same values; neither HUD writes the combat result or decides whether a displayed strike lands.
 

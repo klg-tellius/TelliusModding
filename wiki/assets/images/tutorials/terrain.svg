@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">Visible scenery and walking rules are separate</title>
+<desc id="desc">1 · WHAT YOU SEE. A house prop on the map. Place / rotate the visible model. The model alone does not block movement.. 2 · WHERE YOU WALK. Terrain tiles under the house. Paint the intended blocked footprint. Movement costs depend on unit movement type.. 3 · WHERE YOU STAND. Tile corner heights. Match playable panels to the surface. Walk across edges in both directions.. Test the same footprint with more than one movement type.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">Visible scenery and walking rules are separate</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · WHAT YOU SEE</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">A house prop on the map</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Place / rotate the visible model</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">The model alone does not block movement.</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · WHERE YOU WALK</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">Terrain tiles under the house</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Paint the intended blocked footprint</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Movement costs depend on unit movement type.</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · WHERE YOU STAND</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">Tile corner heights</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Match playable panels to the surface</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Walk across edges in both directions.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">Test the same footprint with more than one movement type.</text>
+</g></svg>

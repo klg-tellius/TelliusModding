@@ -2975,8 +2975,8 @@ class MapBuilder(EditorPanel):
     def map_size(self) -> tuple[int, int] | None:
         return self._canvas.size
 
-    def install_hub(self, setup) -> bool:
-        return bool(self.on_install_hub(setup)) if self.on_install_hub is not None else False
+    def install_hub(self, setup, *, storage="vanilla") -> bool:
+        return bool(self.on_install_hub(setup, storage=storage)) if self.on_install_hub is not None else False
 
     def refresh_chapter_list(self) -> None:
         pass

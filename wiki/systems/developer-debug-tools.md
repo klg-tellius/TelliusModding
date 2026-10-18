@@ -118,7 +118,7 @@ The shipped disc's executable retains a substantial internal testing and debuggi
 
   None of the labels that resemble item, skill, weapon-rank, or status-condition list viewers lead to such a viewer in this build. The complete registered root/menu records instead route those fields through the shared per-unit editor, while `Glossary` and `Test` return an inert menu code. Unlabelled byte fields remain editor-data questions, not evidence of another resource-viewer system.
 
-## FE9-SYS-371 through FE9-SYS-376 — Review boundaries
+## Review boundaries
 
 <span id="fe9-sys-371"></span> **Developer/debug menus.** The executable builds three root trees over shared record windows, complete callbacks, submenus, editors, toggles, and test dialogs. Dormant pause-menu and development-title routing—not missing implementations—keep them out of production play.
 

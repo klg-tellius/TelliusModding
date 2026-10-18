@@ -41,6 +41,7 @@ from dataclasses import dataclass, field, fields
 from typing import Optional
 
 from . import game_text
+from . import extended_flags as xf
 
 GCI_HEADER_SIZE = 0x40
 SAVE_MAGIC = b"FE8J"
@@ -621,6 +622,7 @@ class SaveBlock:
     terrain: Optional[TerrainTable] = None
     trailing: bytes = b""  # after the stream (zeros)
     error: Optional[str] = None  # why the stream could not be decoded
+    extended_flags: Optional[xf.ExtendedState] = None
 
     @property
     def decoded(self) -> bool:
@@ -658,6 +660,10 @@ class SaveBlock:
             block.error = "consumed copy (only partly written; the game discards it)"
             return block
         try:
+            if header.version not in (SAVE_MAGICS[header.magic], xf.SAVE_VERSIONS[header.magic]):
+                raise ValueError("unsupported save-format version")
+            if header.version == xf.SAVE_VERSIONS[header.magic] and (header.size != size or len(raw) != size):
+                raise ValueError("extended save block size does not match its container")
             r = _Reader(raw, STREAM_START)
             r.tag(b"BMST")
             block.party = PartyState.parse(r)
@@ -678,6 +684,10 @@ class SaveBlock:
             block.forges = [ForgeRecord.parse(r) for _ in range(FORGE_RECORDS)]
             r.tag(b"T  T")
             block.terrain = TerrainTable.parse(r)
+            if header.version == xf.SAVE_VERSIONS.get(header.magic):
+                block.extended_flags = xf.ExtendedState.parse(r.take(xf.RECORD_SIZE))
+            elif raw[r.pos:r.pos + 4] == xf.TAG:
+                raise ValueError("extended flags require the extended save-format version")
             block.trailing = raw[r.pos:]
         except (ValueError, struct.error) as exc:
             block.party = None
@@ -685,12 +695,17 @@ class SaveBlock:
         return block
 
     def build_stream(self) -> bytes:
+        extended = self.header.version == xf.SAVE_VERSIONS.get(self.header.magic)
+        if extended != (self.extended_flags is not None):
+            raise ValueError("extended save version and flag payload must agree")
         out = bytearray(b"BMST" + self.party.build() + b"MDST" + self.map_state.build() + b"UNIP")
         for u in self.units:
             out += u.build() if u is not None else b"\0\0"
         out += b"SOKO" + b"".join(s.build() for s in self.convoy)
         out += b"FWEP" + b"".join(f.build() for f in self.forges)
         out += b"T  T" + self.terrain.build()
+        if self.extended_flags is not None:
+            out += self.extended_flags.build()
         return bytes(out)
 
     def build(self) -> bytes:
@@ -803,6 +818,8 @@ def retarget_to_chapter_start(block: SaveBlock, chapter: int) -> None:
     block.header.resume_point = party.resume_point = CHAPTER_START_RESUME
     party.phase, party.turn, party.phase_states = 0, 1, bytes((1, 2, 2, 2))
     party.base_opening_done = party.byte_51 = party.reinforcement_uses = 0
+    if block.extended_flags is not None:
+        block.extended_flags.clear_chapter()
 
 
 def without_checkpoints_of(save: SaveFile, file_slot: int, data: Optional[bytes] = None) -> bytes:
