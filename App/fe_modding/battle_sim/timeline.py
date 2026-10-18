@@ -428,6 +428,7 @@ class _Builder:
         dodge = start + (clip.dodge if clip else length / 2)
         fx = self.weapons[side]
         spell = (fx.effect or (w.effect if w is not None else None)) if path == "magic" else None
+        spell_end = None
         name = w.iid[4:] if w is not None and w.iid.startswith("IID_") else ""
         cast = start + (clip.release if clip and clip.release is not None else length)
         if path == "magic" and name:
@@ -439,6 +440,11 @@ class _Builder:
             if eff is not None:
                 contact = cast + (eff.impact if eff.impact is not None else eff.contact)
                 dodge = cast + (eff.swing if eff.swing is not None else eff.dodge)
+                # The effect actor remains the active battle record through the end of its
+                # animation.  Long spells (notably Rexbolt's 400-tick EID_K_THUNDER4) keep
+                # playing well after their damage event, so the next combatant must not start
+                # a counterattack over the spell's closing animation.
+                spell_end = cast + eff.length
         if path in ("bow", "throw"):
             release = start + (clip.release if clip and clip.release is not None else (clip.contact if clip else length / 2))
             speed = {BOW: p.arrow_speed, SPEAR: p.spear_speed, KNIFE: p.knife_speed}.get(
@@ -504,7 +510,8 @@ class _Builder:
         if path in ("bow", "throw"):
             t = max(end, contact + 1) + p.wait_shoot1
         elif path == "magic":
-            t = max(end, contact + (reaction.length if reaction else 20.0)) + p.wait_magic1
+            t = max(end, spell_end or 0.0,
+                    contact + (reaction.length if reaction else 20.0)) + p.wait_magic1
         else:
             t = end + max(p.wait_atk1, 1)
         if s.kill:

@@ -26,8 +26,9 @@ by its ``_ModelCanvas`` (GPU when available, else the numpy rasterizer).
   which the canvas takes without building triangle objects. Hidden parts
   (an effect not playing, a missile not flying) collapse to a point.
 
-:class:`StageView` plays it in real time: the frame shown is the one the
-wall clock has reached, so a slow frame is skipped over, not slowed down.
+:class:`StageView` plays one game tick per rendered frame.  It targets real
+time, but a slow frame briefly slows playback instead of skipping animation
+and camera poses.
 """
 
 from __future__ import annotations
@@ -469,6 +470,8 @@ class BattleStage:
         self.alphas: Optional[np.ndarray] = None
         self._rest: Optional[np.ndarray] = None
         self._rest_normals: Optional[np.ndarray] = None
+        self._effect_pose_key = None
+        self._effect_pose_value = ([], [])
 
     def lookup(self, side: int, role: str) -> Optional[tlm.Clip]:
         return self.units[side].clip(role)
@@ -635,17 +638,16 @@ class BattleStage:
         window, position integrated from the velocity curves, scale, rotation, alpha), anchored
         to the emitter's bone and moved with the effect like its mesh."""
         bones = effect.loaded.bones
-        world = engine_pose.pose(bones, effect.anim, local)[0] if bones and effect.anim is not None else []
+        world = self._effect_pose(effect, local)[0]
         by_name = {bone.name.lower(): i for i, bone in enumerate(bones)}
         place = self._effect_matrix(effect, cue, local)
         right, up, forward = self._camera_axes(t)
         cards = np.zeros((part.count, 3, 3))
         alphas = np.zeros(part.count, dtype=np.float32)
-        for index, stage in enumerate(effect.particles):
-            samples = particle_preview.sample((stage,), local)
-            if not samples:
-                continue
-            s = samples[0]
+        active = [(index, stage) for index, stage in enumerate(effect.particles)
+                  if stage.layout.start_frame <= local <= stage.layout.end_frame]
+        samples = particle_preview.sample(tuple(stage for _index, stage in active), local)
+        for (index, stage), s in zip(active, samples):
             mat = effect.loaded.particle_materials.get(s.material_index, (None, (255, 255, 255), 1.0))
             alpha = s.alpha * mat[2]
             if alpha <= 0 or max(s.scale) <= 0:
@@ -703,7 +705,7 @@ class BattleStage:
     def frame(self, t: float) -> list[_Triangle]:
         """The visible triangles at frame ``t`` (hidden parts left out)."""
         positions, normals = self.arrays(t)
-        posed = posed_triangles(self._triangles, positions, normals)
+        posed = posed_triangles(self._triangles, positions, normals, self.alphas)
         hidden = set()
         for part in self._parts:
             if not positions[part.start:part.start + part.count].any():
@@ -766,9 +768,17 @@ class BattleStage:
         return _transform(matrix, rest_p, rest_n)
 
     def _effect(self, effect: EffectAsset, cue: tlm.Cue, local: float, t: float) -> tuple[np.ndarray, np.ndarray]:
-        bones = effect.loaded.bones
-        world, palette = engine_pose.pose(bones, effect.anim, local) if bones else ([], [])
+        world, palette = self._effect_pose(effect, local)
         return effect.mesh.pose(world, palette, self._effect_matrix(effect, cue, local))
+
+    def _effect_pose(self, effect: EffectAsset, local: float):
+        """Pose an effect once per frame even when both its mesh and particles use its bones."""
+        key = id(effect), round(float(local), 3)
+        if key != self._effect_pose_key:
+            bones = effect.loaded.bones
+            self._effect_pose_value = engine_pose.pose(bones, effect.anim, local) if bones else ([], [])
+            self._effect_pose_key = key
+        return self._effect_pose_value
 
     def _effect_matrix(self, effect: EffectAsset, cue: tlm.Cue, local: float) -> np.ndarray:
         # spawn_effect_at_position: where the unit stands when the effect starts, on the ground
@@ -795,15 +805,11 @@ class BattleStage:
         return shot.eye_center(target)
 
 
-#: Ticks playback may skip to keep up with the clock; a longer stall pauses the clock instead.
-MAX_CATCH_UP = 6
-
-
 class StageView(ttk.Frame):
     """Canvas, HP bars and playback controls for a :class:`BattleStage`.
 
-    The canvas keeps the game's 4:3 picture; playback follows the wall clock
-    (:data:`~fe_modding.battle_sim.timeline.FPS` frames a second)."""
+    The canvas keeps the game's 4:3 picture; playback targets
+    :data:`~fe_modding.battle_sim.timeline.FPS` without skipping game ticks."""
 
     def __init__(self, parent: tk.Misc):
         super().__init__(parent)
@@ -811,7 +817,6 @@ class StageView(ttk.Frame):
         self._t = 0.0
         self._playing = False
         self._after = None
-        self._clock: Optional[tuple[float, float]] = None  # (wall time, frame) playback started from
         self._max_hp = (1, 1)
         self._names = SIDE_NAMES
         self.on_finished = None  # called when playback reaches the end of the fight
@@ -927,7 +932,6 @@ class StageView(ttk.Frame):
             # draw the first frame before the clock starts (the first draw also sets up the GPU)
             self._show(self._t, now=True)
             self._playing = True
-            self._clock = (time.perf_counter(), self._t)
             self._play_button.configure(text="Pause")
             self._tick()
 
@@ -948,15 +952,11 @@ class StageView(ttk.Frame):
         self._after = None
         if not self._playing or self.stage is None or self.stage.timeline is None:
             return
-        started, frame0 = self._clock
-        # the game shows whole ticks: show the last one the clock has reached
-        shown = self._t
-        self._t = float(math.floor(frame0 + (time.perf_counter() - started) * tlm.FPS))
-        if self._t - shown > MAX_CATCH_UP:
-            # a stall (a first draw, a clip loading, the window being moved): carry on from the
-            # next tick instead of jumping ahead, and follow the clock again from there
-            self._t = shown + 1
-            self._clock = started, frame0 = time.perf_counter(), self._t
+        started = time.perf_counter()
+        # Effects such as EID_BREATHRED are expensive even on otherwise capable systems.  Advance
+        # exactly one game tick per draw: if a frame is slow the playback slows briefly instead of
+        # skipping several animation/camera poses and visibly jumping around.
+        self._t += 1.0
         length = self.stage.timeline.length
         if self._t >= length:
             self._t = length
@@ -972,10 +972,12 @@ class StageView(ttk.Frame):
         # Tk puts the new image and labels on screen only when idle, and the next tick's timer is
         # usually already due: flush the display now or the picture freezes until a stall
         self.update_idletasks()
-        # the next frame is due one tick after this one; never queue behind a slow frame
-        due = self._t + 1
-        wait = (due - frame0) / tlm.FPS - (time.perf_counter() - started)
+        # Never queue ticks behind a slow draw.  One callback owns playback and schedules its
+        # successor only after this frame is fully on screen.
+        wait = 1.0 / tlm.FPS - (time.perf_counter() - started)
         self._after = self.after(max(1, int(wait * 1000)), self._tick)
 
     def cleanup(self) -> None:
         self.stop()
+        self.stage = None
+        self.canvas.set_model([], {}, {}, {})

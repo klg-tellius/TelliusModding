@@ -146,6 +146,10 @@ class StageExtrasTests(unittest.TestCase):
         self.stage.arrays(25)
         # unlit, two-sided effect alpha: half of the track's 0 -> 255 by frame 5
         self.assertAlmostEqual(float(self.stage.alphas[3]), float(battle_stage.effect_alpha(127 / 255)), places=5)
+        # The object-based/CPU rendering route keeps the same animated alpha sentinel as the
+        # array/GPU route; otherwise large spells render fully opaque on machines without wgpu.
+        self.assertAlmostEqual(self.stage.frame(25)[3].alpha,
+                               float(battle_stage.effect_alpha(127 / 255)), places=5)
 
     def test_game_camera_view(self):
         from fe_modding.battle_sim import camera
@@ -195,6 +199,29 @@ class PerspectiveTests(unittest.TestCase):
             canvas.set_camera((0.0, 2.0, 20.0), (0.0, 4.0, 0.0), 30.0)
             self.assertGreater(int((canvas._rasterize([ground], 200, 150) != 43).any(axis=-1).sum()), 0)
             canvas.clear_camera()
+        finally:
+            root.destroy()
+
+    def test_overlapping_additive_effects_accumulate(self):
+        import tkinter as tk
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            self.skipTest("no display")
+        try:
+            from fe_modding.gui.model_viewer import _ModelCanvas
+            canvas = _ModelCanvas(root)
+            canvas._center, canvas._extent = (0.0, 0.0, 0.0), 2.0
+            canvas._yaw = canvas._pitch = 0.0
+            # The nearer card is intentionally first.  If additive cards write depth, it hides
+            # the second one and the center remains roughly one card's intensity.
+            cards = [
+                _Triangle((-1, -1, z), (1, -1, z), (0, 1, z), (0, 0, -1), (40, 0, 0),
+                          alpha=1.0, blend_mode="additive", cull="none")
+                for z in (-0.1, 0.1)
+            ]
+            image = canvas._rasterize(cards, 100, 100)
+            self.assertGreater(int(image[50, 50, 0]), 100)  # background 43 + 40 + 40
         finally:
             root.destroy()
 

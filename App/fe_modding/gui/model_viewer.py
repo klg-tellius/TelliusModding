@@ -3156,11 +3156,14 @@ FIT_FRACTION = 0.55
 
 
 def posed_triangles(triangles: list[_Triangle], positions: "np.ndarray",
-                    normals: "np.ndarray | None" = None) -> list[_Triangle]:
-    """``triangles`` moved to ``positions`` (n, 3, 3) / ``normals`` (n, 3)."""
+                    normals: "np.ndarray | None" = None,
+                    alphas: "np.ndarray | None" = None) -> list[_Triangle]:
+    """``triangles`` moved to ``positions`` (n, 3, 3) / ``normals`` (n, 3),
+    with optional per-frame ``alphas`` (used by animated battle effects)."""
     normal_list = normals.tolist() if normals is not None else [t.normal for t in triangles]
-    return [replace(t, a=tuple(p[0]), b=tuple(p[1]), c=tuple(p[2]), normal=tuple(n))
-            for t, p, n in zip(triangles, positions.tolist(), normal_list)]
+    alpha_list = alphas.tolist() if alphas is not None else [t.alpha for t in triangles]
+    return [replace(t, a=tuple(p[0]), b=tuple(p[1]), c=tuple(p[2]), normal=tuple(n), alpha=float(a))
+            for t, p, n, a in zip(triangles, positions.tolist(), normal_list, alpha_list)]
 
 
 def _particle_triangles(
@@ -3294,6 +3297,7 @@ class _ModelCanvas(tk.Canvas):
         # the fitted center; panning moves _center away from it
         self._home_center = (0.0, 0.0, 0.0)
         self._redraw_pending = False
+        self._redraw_after: str | None = None
         # Keeps the live PhotoImage alive - Tkinter doesn't hold its own
         # reference, so without this the image gets garbage-collected and
         # the canvas silently goes blank.
@@ -3415,6 +3419,12 @@ class _ModelCanvas(tk.Canvas):
 
     def render_now(self) -> None:
         """Draw the pending frame at once (playback that paces itself)."""
+        if self._redraw_after is not None:
+            try:
+                self.after_cancel(self._redraw_after)
+            except tk.TclError:
+                pass
+            self._redraw_after = None
         self._redraw_pending = False
         self._redraw()
 
@@ -3561,9 +3571,10 @@ class _ModelCanvas(tk.Canvas):
         self._redraw_pending = True
         # the GPU path renders in a few ms, so don't cap it at the timer;
         # input events arriving during a frame still coalesce into one redraw
-        self.after(1 if self._gpu is not None else 16, self._scheduled_redraw)
+        self._redraw_after = self.after(1 if self._gpu is not None else 16, self._scheduled_redraw)
 
     def _scheduled_redraw(self) -> None:
+        self._redraw_after = None
         # render_now may already have drawn this frame
         if self._redraw_pending:
             self._redraw()
@@ -3655,11 +3666,16 @@ class _ModelCanvas(tk.Canvas):
             rays = (tri_a - center) @ rot.T * perspective + np.array([0.0, 0.0, 1.0])
             facing = (rotated_normals * rays).sum(axis=1)
         culls = np.array([t.cull for t in triangles])
+        encoded_alpha = np.array([t.alpha for t in triangles], dtype=np.float64)
+        effects = encoded_alpha < -0.5
+        real_alpha = np.where(effects, -1.0 - encoded_alpha, encoded_alpha)
         visible = np.where(culls == "none", True, np.where(culls == "front", facing > 0.0, facing < 0.0))
+        visible = np.where(effects, True, visible)
         if perspective:
             # behind the eye: dropped, like the GPU path
             visible &= (1.0 + np.stack([az, bz, cz]) * perspective > PERSPECTIVE_NEAR).all(axis=0)
         brightness = 0.35 + 0.65 * np.maximum(-nz, 0.0)
+        brightness = np.where(effects, 1.0, brightness)
 
         full_gx, full_gy = np.meshgrid(np.arange(width) + 0.5, np.arange(height) + 0.5)
 
@@ -3715,18 +3731,19 @@ class _ModelCanvas(tk.Canvas):
             if tri.texture_layers:
                 sampled_rgba = _sample_texture_layers(tri.texture_layers, w0, w1, w2)
                 sampled = sampled_rgba[..., :3] * brightness[i]
-                alpha = (sampled_rgba[..., 3] / 255.0) * tri.alpha
+                alpha = (sampled_rgba[..., 3] / 255.0) * real_alpha[i]
             elif tri.texture is not None and tri.uv is not None:
                 uv0, uv1, uv2 = tri.uv
                 u = w0 * uv0[0] + w1 * uv1[0] + w2 * uv2[0]
                 v = w0 * uv0[1] + w1 * uv1[1] + w2 * uv2[1]
                 sampled_rgba = _sample_texture_batch(tri.texture, u, v)
                 sampled = sampled_rgba[..., :3] * brightness[i]
-                alpha = (sampled_rgba[..., 3] / 255.0) * tri.alpha if sampled_rgba.shape[2] >= 4 else tri.alpha
+                alpha = ((sampled_rgba[..., 3] / 255.0) * real_alpha[i]
+                         if sampled_rgba.shape[2] >= 4 else real_alpha[i])
             else:
                 sampled = np.array(tri.color, dtype=np.float64) * brightness[i]
                 sampled = np.broadcast_to(sampled, px.shape + (3,))
-                alpha = np.full(px.shape, tri.alpha, dtype=np.float64)
+                alpha = np.full(px.shape, real_alpha[i], dtype=np.float64)
             pixel_colors = np.minimum(np.maximum(sampled, 0), 255).astype(np.uint8)
 
             fb_region = framebuffer[miny : maxy + 1, minx : maxx + 1]
@@ -3736,7 +3753,8 @@ class _ModelCanvas(tk.Canvas):
                     src_alpha = alpha[..., None]
                     blended = fb_region.astype(np.float64) + pixel_colors.astype(np.float64) * src_alpha
                     fb_region[add_mask] = np.minimum(np.maximum(blended, 0), 255).astype(np.uint8)[add_mask]
-                    zbuf_region[add_mask] = depth[add_mask]
+                    # Additive particles test against opaque geometry but do not own depth:
+                    # overlapping sparks/lightning must accumulate instead of hiding one another.
                 continue
 
             opaque = closer & (alpha >= 0.995)
@@ -3836,7 +3854,8 @@ class _ModelCanvas(tk.Canvas):
             frame = self._gpu_frame(triangles, width, height, scale)
             if frame is None:
                 if self._pose_arrays is not None and triangles is self._triangles:
-                    triangles = posed_triangles(self._triangles, *self._pose_arrays[:2])
+                    triangles = posed_triangles(self._triangles, self._pose_arrays[0],
+                                                self._pose_arrays[1], self._pose_arrays[3])
                 frame = Image.fromarray(self._rasterize(triangles, width, height), mode="RGB")
             self._show_frame(frame)
 

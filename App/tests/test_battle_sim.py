@@ -435,6 +435,16 @@ class CueAndFlightTests(unittest.TestCase):
         tl = timeline.build(log, self.lookup, weapons=(timeline.WeaponEffects(0, "EID_K_FIRE"),))
         self.assertEqual(next(c.side for c in tl.cues if c.key == "EID_K_FIRE"), 1)
 
+    def test_long_spell_finishes_before_counterattack(self):
+        rexbolt = Weapon(**{**FIRE.__dict__, "iid": "IID_THUNDER4", "effect": "EID_K_THUNDER4"})
+        spell = Clip("EID_K_THUNDER4", 400, impact=195, swing=190)
+        log = simulate(unit("Soren", weapon=rexbolt), unit("Titania"))
+        tl = timeline.build(log, self.lookup, weapons=(timeline.WeaponEffects(1, "EID_K_THUNDER4"),),
+                            effect_clip=lambda eid: spell if eid == "EID_K_THUNDER4" else None)
+        cue = next(c for c in tl.cues if c.key == "EID_K_THUNDER4")
+        counter = next(seg for seg in tl.segments if seg.side == 1 and seg.role in (sa.ATTACK1, sa.ATTACK2))
+        self.assertGreaterEqual(counter.start, cue.frame + spell.length)
+
     def test_clip_cameras(self):
         log = simulate(unit("A"), unit("D"))
         plain = timeline.build(log, self.lookup)

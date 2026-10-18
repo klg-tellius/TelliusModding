@@ -321,7 +321,7 @@ class _Device:
             ],
         }
 
-        def pipeline(entry_point: str, blend: dict | None):
+        def pipeline(entry_point: str, blend: dict | None, *, depth_write: bool = True):
             target = {"format": wgpu.TextureFormat.rgba8unorm}
             if blend is not None:
                 target["blend"] = blend
@@ -334,7 +334,9 @@ class _Device:
                 },
                 depth_stencil={
                     "format": wgpu.TextureFormat.depth32float,
-                    "depth_write_enabled": True,
+                    # Additive effect planes still test against solid scene geometry, but must
+                    # not hide one another.  Rexbolt alone has 748 overlapping particle stages.
+                    "depth_write_enabled": depth_write,
                     "depth_compare": wgpu.CompareFunction.less,
                 },
                 multisample={"count": MSAA_SAMPLES},
@@ -353,6 +355,7 @@ class _Device:
         self.additive = pipeline(
             "fs_additive",
             {"color": {"operation": "add", "src_factor": "src-alpha", "dst_factor": "one"}, "alpha": alpha_keep},
+            depth_write=False,
         )
 
         self._samplers: dict[tuple[int, int], object] = {}
