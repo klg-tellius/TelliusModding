@@ -23,6 +23,7 @@ from . import theme
 # -- tooltips -------------------------------------------------------------------
 
 TIP_DELAY_MS = 450
+TIP_CURSOR_OFFSET = (12, 20)
 
 
 class _Tooltip:
@@ -68,8 +69,13 @@ class _Tooltip:
                  relief="solid", background=theme.color("surface_hover"), foreground=theme.color("fg"),
                  font=theme.font("caption")).pack()
         window.update_idletasks()
-        x = self._widget.winfo_rootx() + 8
-        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        # Anchor the tip to the pointer rather than the widget.  Help marks can
+        # live inside padded, scrolling, or reflowing containers, so using the
+        # widget's lower-left corner made the tip appear noticeably detached
+        # from the cursor on many pages.
+        pointer_x, pointer_y = self._widget.winfo_pointerxy()
+        x = pointer_x + TIP_CURSOR_OFFSET[0]
+        y = pointer_y + TIP_CURSOR_OFFSET[1]
         screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
         x = min(x, screen_w - window.winfo_width() - 8)
         if y + window.winfo_height() > screen_h:
