@@ -40,7 +40,7 @@ class TransactionTests(unittest.TestCase):
     def test_second_write_failure_restores_first_file(self):
         replace = tx.os.replace
         def fail_second(src, dst):
-            if Path(dst) == self.b:
+            if Path(dst).resolve() == self.b.resolve():
                 raise OSError("injected write failure")
             return replace(src, dst)
         with patch.object(tx.os, "replace", side_effect=fail_second), self.assertRaises(OSError):
@@ -54,11 +54,11 @@ class TransactionTests(unittest.TestCase):
         written = False
         def fail_write_and_rollback(src, dst):
             nonlocal written
-            if Path(dst) == self.a:
+            if Path(dst).resolve() == self.a.resolve():
                 if written:
                     raise OSError("injected rollback failure")
                 written = True
-            if Path(dst) == self.b:
+            if Path(dst).resolve() == self.b.resolve():
                 raise OSError("injected write failure")
             return replace(src, dst)
         with patch.object(tx.os, "replace", side_effect=fail_write_and_rollback), self.assertRaises(RuntimeError):
@@ -72,7 +72,7 @@ class TransactionTests(unittest.TestCase):
     def test_interruption_and_external_edits_are_not_overwritten(self):
         replace = tx.os.replace
         def interrupt(src, dst):
-            if Path(dst) == self.b:
+            if Path(dst).resolve() == self.b.resolve():
                 raise KeyboardInterrupt()
             return replace(src, dst)
         with patch.object(tx.os, "replace", side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
@@ -100,7 +100,7 @@ class TransactionTests(unittest.TestCase):
     def test_corrupt_recovery_payload_is_refused(self):
         replace = tx.os.replace
         def interrupt(src, dst):
-            if Path(dst) == self.b:
+            if Path(dst).resolve() == self.b.resolve():
                 raise KeyboardInterrupt()
             return replace(src, dst)
         with patch.object(tx.os, "replace", side_effect=interrupt), self.assertRaises(KeyboardInterrupt):
