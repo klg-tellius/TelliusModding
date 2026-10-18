@@ -51,10 +51,9 @@ and structural counts (`MapCapacity.x_size`/`y_size`/`build_desc_count`/
 `build_inst_count`, which every other section's array lengths and grid
 dimensions are derived from at read time - changing one after the fact
 would desync it from data that's already been sized against the old value).
-Grid-shaped sections (`panel_index*`, `link`/`link_at`/`link_abs`) aren't
-patchable at all yet - unlike every record-array section above, they don't
-carry a saved per-cell address, and the three link grids are stored sparse
-(count + entries) rather than dense, which patch-in-place doesn't suit.
+Grid-shaped sections (`panel_index*`, `link`/`link_at`/`link_abs`) are
+rewritten together by :func:`resize_grid`; unlike ordinary field edits,
+changing the dimensions is a structural operation.
 
 Applying this caught one real bug: `MapCapacity`'s fifth field was being read
 as a plain uint32 and treated as "unknown" - the source material's map.bin
@@ -487,6 +486,12 @@ def patch_extra_mode(data: bytes, record: MapExtra, field: str, value: int) -> b
 
 
 Grid = list[list[int]]  # indexed [x][y]
+
+#: Conservative per-axis gameplay limit. Native terrain, movement and link
+#: buffers use a fixed 0x40 row stride; the largest shipped chapter map is
+#: bmap31 at 63 x 63. Although the on-disk capacity fields are u16 and sparse
+#: link coordinates are u8, those encodings are not the runtime capacity.
+MAX_GRID_SIZE = 63
 
 LINK_PASS_WEST = 0x01
 LINK_PASS_EAST = 0x02
@@ -1184,6 +1189,83 @@ def write_panel_layer(
     payload = b"".join(struct.pack(">hhhhI", *p) for p in panels)
     fields = [12 * i + 8 for i, p in enumerate(panels) if p[4]]
     return replace_section(bytes(out), panel_section, payload, fields)
+
+
+def _resized_grid(grid: Grid, width: int, height: int) -> Grid:
+    """Resize a dense grid, copying the overlap and extending edge cells.
+
+    Edge extension gives newly added terrain the same terrain and corner
+    elevations as its nearest old tile instead of silently turning it into
+    panel record zero, which is not necessarily a map's ground panel.
+    """
+    old_width = len(grid)
+    old_height = len(grid[0]) if old_width else 0
+    if not old_width or not old_height:
+        raise MapFileError("A map grid cannot be resized because it is empty.")
+    return [[grid[min(x, old_width - 1)][min(y, old_height - 1)] for y in range(height)]
+            for x in range(width)]
+
+
+def _grid_u16_payload(grid: Grid) -> bytes:
+    width, height = len(grid), len(grid[0]) if grid else 0
+    payload = bytearray(2 * width * height)
+    for y in range(height):
+        for x in range(width):
+            struct.pack_into(">H", payload, 2 * (y * width + x), grid[x][y])
+    payload += bytes(-len(payload) % 4)
+    return bytes(payload)
+
+
+def _link_payload(grid: Grid, width: int, height: int) -> bytes:
+    records = [(x, y, grid[x][y]) for x in range(min(width, len(grid)))
+               for y in range(min(height, len(grid[x]))) if grid[x][y] != -1]
+    if len(records) > 0xFFFF:
+        raise MapFileError("A link grid has too many explicit records.")
+    payload = bytearray(struct.pack(">H", len(records)))
+    for x, y, value in records:
+        payload += struct.pack(">BBB", x, y, value)
+    payload += bytes(-len(payload) % 4)
+    return bytes(payload)
+
+
+def resize_grid(data: bytes, width: int, height: int) -> bytes:
+    """Change a chapter map's tile-grid dimensions.
+
+    All present panel-index layers are resized from their top-left origin;
+    newly added rows or columns repeat the nearest edge tile. Sparse link
+    entries in the retained area are preserved and entries outside a
+    shrunken grid are dropped. Placed objects are deliberately untouched,
+    so shrinking may leave objects off-grid for the user to move or delete.
+    """
+    if (not isinstance(width, int) or not isinstance(height, int)
+            or not (1 <= width <= MAX_GRID_SIZE and 1 <= height <= MAX_GRID_SIZE)):
+        raise MapFileError(f"Map width and height must be whole numbers from 1 to {MAX_GRID_SIZE} tiles.")
+    parsed = read_map_bytes(data)
+    if parsed.capacity is None:
+        raise MapFileError("This map has no mapcapacity section.")
+    if (width, height) == (parsed.capacity.x_size, parsed.capacity.y_size):
+        return data
+
+    for section, grid in (("panelindex", parsed.panel_index),
+                          ("panelindexRoof", parsed.panel_index_roof),
+                          ("panelindexBase", parsed.panel_index_base)):
+        if grid is not None:
+            data = replace_section(data, section, _grid_u16_payload(_resized_grid(grid, width, height)))
+    for section, grid in (("maplink", parsed.link), ("maplinkAt", parsed.link_at),
+                          ("maplinkAbs", parsed.link_abs)):
+        if grid is not None:
+            data = replace_section(data, section, _link_payload(grid, width, height))
+
+    capacity_at, _length = section_bytes(data, "mapcapacity")
+    out = bytearray(data)
+    struct.pack_into(">HH", out, capacity_at, width, height)
+    data = bytes(out)
+    current = read_map_bytes(data)
+    if current.extra is not None:
+        data = patch_extra_field(data, current.extra, "half_x_size", (width + 1) // 2)
+        current = read_map_bytes(data)
+        data = patch_extra_field(data, current.extra, "half_y_size", (height + 1) // 2)
+    return data
 
 
 def patch_build_inst_height(data: bytes, record: "MapBuildInstance", height: float) -> bytes:
