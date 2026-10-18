@@ -14,6 +14,8 @@ grid border. The **Chapter data** tab edits the chapter's data record.
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
 chapter comes next (``game_code.chapter_flow``, a table patched into ``main.dol``).
+Deletable story chapters have a **Delete chapter** action that removes their
+records, assets and story-flow entry. The fixed Prologue and Ending stay protected.
 
 **Play in Dolphin** boots the extracted files straight into the chapter, with a fresh army, on
 the chosen difficulty (``emulator.prepare_chapter_run``, ``game_code.chapter_jump``).
@@ -470,6 +472,7 @@ class ChapterPage(Page):
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
         self._prev.pack(side="right", padx=(0, 6))
+        self._delete_chapter_button = ttk.Button(right, text="Delete chapter…", command=self._delete_chapter)
         ttk.Button(right, text="▶ Play in Dolphin…", command=self._play_in_dolphin).pack(side="right", padx=(0, 18))
 
         self._notebook = ttk.Notebook(self)
@@ -847,6 +850,74 @@ class ChapterPage(Page):
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
+        if cid is not None and cid.isdigit() and int(cid) in chapters.DELETABLE_CHAPTER_IDS:
+            self._delete_chapter_button.pack(side="right", padx=(0, 6), before=self._prev)
+        else:
+            self._delete_chapter_button.pack_forget()
+
+    def _delete_chapter(self) -> None:
+        """Delete a chapter and its chapter-scoped assets."""
+        if self._chapter is None:
+            return
+        chapter_id = self._chapter
+        chapter = int(chapter_id)
+        if chapter not in chapters.DELETABLE_CHAPTER_IDS:
+            messagebox.showerror(
+                "Could not delete chapter",
+                "The Prologue starts every new game and the Ending completes it, so those chapters cannot be deleted.",
+                parent=self)
+            return
+        if hub.hub_chapter(self.project) == chapter:
+            messagebox.showerror("Could not delete chapter", "Remove this chapter's hub setup first.", parent=self)
+            return
+        dirty = [panel for panel in self.panels() if panel.dirty]
+        if dirty:
+            names = ", ".join(panel.display_name for panel in dirty)
+            if not messagebox.askyesno(
+                    "Discard chapter changes?",
+                    f"Deleting this chapter discards its unsaved changes in: {names}. Continue?",
+                    icon="warning", parent=self):
+                return
+        session = self.shell.session
+        if not session.available:
+            messagebox.showerror("Could not delete chapter", "This project has no FE8Data.bin.", parent=self)
+            return
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Could not delete chapter", f"Story flow is unavailable: {why}", parent=self)
+            return
+        phases = chapters.chapter_phases(self.project, chapter_id)
+        details = ["its ChapterData and battle-scene records", "its dialogue and script",
+                   f"its {len(phases)} map phase{'s' if len(phases) != 1 else ''}",
+                   "its shops, title text and chapter-name pictures"]
+        if not messagebox.askyesno(
+                "Delete chapter?",
+                f"Permanently delete {self._title_of(chapter_id)} ({chapter_id}) and:\n\n"
+                + "\n".join(f"• {detail}" for detail in details)
+                + "\n\nChapters leading here will lead to this chapter's successor. This cannot be undone "
+                  "from the chapter editor.",
+                icon="warning", parent=self):
+            return
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?",
+                "Deleting the chapter saves FE8Data.bin, including its other unsaved edits. Continue?",
+                parent=self):
+            return
+        for panel in dirty:
+            panel._dirty = False
+        try:
+            plan = chapters.remove_story_chapter(self.project, session.data, chapter_id, flow)
+            session.data = plan.fe8data
+            session.changed(self)
+            session.save()
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not delete chapter", str(exc), parent=self)
+            return
+        self.shell.changelog.append(f"Chapter {chapter_id}", "Deleted chapter and its assets")
+        self._chapter = None
+        self.refresh_chapter_lists()
+        self.shell.rebuild_index()
+        self.shell.navigate(("chapters",))
 
     def play_in_dolphin(self) -> bool:
         """Open the Play in Dolphin dialog for the open chapter (False: none is open)."""

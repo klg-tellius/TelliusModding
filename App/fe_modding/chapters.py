@@ -25,8 +25,10 @@ script, every map folder) under a new number, renaming the ``bmapNN``
 names its deployments and script use. ``add_story_chapter()`` builds a
 playable chapter on top of that: a ``ChapterData`` record naming the new
 files, a battle-scene row, base shops, a title (``MCTnn``) and its place in
-the story flow (``game_code.chapter_flow``: the next-chapter table patched
-into ``main.dol``). Chapter numbers are the ``ChapterData`` ids the game
+the story flow. ``remove_story_chapter()`` removes those pieces again for a
+chapter while protecting the fixed new-game start and ending. The flow is
+``game_code.chapter_flow``'s next-chapter table, patched into ``main.dol``.
+Chapter numbers are the ``ChapterData`` ids the game
 loads by; 0-31 are the retail story, 32 plays the ending, 51/52/58 and
 80-82 are other records and 90 up are trial maps, so new story chapters
 take the free ids of :data:`NEW_CHAPTER_IDS`.
@@ -226,6 +228,9 @@ def chapter_display_title(chapter_id: str, titles: dict[str, str]) -> str:
 #: Free numbers for new story chapters: above 32 (the ending) and below the trial maps (90+).
 #: Numbers a ``ChapterData`` record already uses (51, 52, 58, 80-82 in retail) are skipped.
 NEW_CHAPTER_IDS = range(33, 90)
+#: Chapters whose complete records and assets the chapter page can delete.
+#: Chapter 01 is the fixed new-game start and 32 is the fixed ending.
+DELETABLE_CHAPTER_IDS = frozenset(range(2, 32)) | frozenset(NEW_CHAPTER_IDS)
 
 
 def free_chapter_ids(project: ModProject, used_record_ids=()) -> list[int]:
@@ -493,6 +498,106 @@ def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: i
     if changes is not None:
         flow.set_many(changes)
     return plan
+
+
+@dataclass
+class RemovedChapterPlan:
+    """The data and on-disc assets changed while removing a chapter."""
+    fe8data: bytes
+    removed: list[Path]
+    shops: dict[Path, bytes]
+    common: Optional[tuple]
+
+
+def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow) -> RemovedChapterPlan:
+    """Fully remove a story chapter.
+
+    The chapter's ``ChapterData`` record, battle-scene rows, shops, title text,
+    dialogue, script, map phases and title pictures are removed. Its predecessors
+    are routed to its former successor. Chapter 01 and the ending stay protected.
+
+    ``FE8Data.bin`` is returned for the shared editor session to save, matching
+    :func:`add_story_chapter`; the other files and the story flow are changed here.
+    """
+    from . import chapter_images
+    from .formats import fe8data, message, shop
+
+    try:
+        chapter = int(chapter_id)
+    except (TypeError, ValueError):
+        raise ValueError(f"Chapter {chapter_id} is not a Path of Radiance chapter number.") from None
+    if chapter not in DELETABLE_CHAPTER_IDS:
+        raise ValueError("Chapter 01 starts every new game and chapter 32 is the ending; they cannot be deleted.")
+    if flow is None or not flow.available:
+        reason = flow.unavailable_reason if flow is not None else "it could not be opened."
+        raise ValueError(f"main.dol cannot update the story flow: {reason}")
+    from .game_code.hub_flow import HubFlow
+    installed_hub = HubFlow(flow.editor)
+    if installed_hub.installed and installed_hub.config()[0] == chapter:
+        raise ValueError("The hub chapter is managed by Hub setup and cannot be deleted.")
+
+    records = fe8data.read_chapter_data(fe8)
+    matching = [record for record in records if record.chapter_id == chapter]
+    if len(matching) > 1:
+        raise ValueError(f"FE8Data.bin has more than one ChapterData record for chapter {chapter:02d}.")
+    title_key = matching[0].title_key if matching else None
+    data = fe8data.remove_record(fe8, "chapter", matching[0].index) if matching else fe8
+    map_prefix = f"bmap{chapter:02d}"
+    rows = [row for row in fe8data.read_battle_terrain(data)
+            if row.map_name != map_prefix and not row.map_name.startswith(map_prefix + "_")]
+    data = fe8data.write_battle_terrain(data, rows)
+
+    shops: dict[Path, bytes] = {}
+    shop_folder = project.extracted_dir / "files" / "shop"
+    for name in shop.DIFFICULTY_FILES.values():
+        path = shop_folder / name
+        if not path.is_file():
+            continue
+        doc = shop.parse_shop(path.read_bytes())
+        if shop.remove_chapter(doc, chapter):
+            shops[path] = shop.build_shop(doc)
+
+    common = None
+    common_path = _common_messages_path(project)
+    remaining_keys = {record.title_key for record in fe8data.read_chapter_data(data)}
+    if title_key and title_key not in remaining_keys and common_path is not None:
+        messages = message.read_messages_path(common_path)
+        kept = [entry for entry in messages if entry.speaker != title_key]
+        if len(kept) != len(messages):
+            common = (common_path, message.write_messages(kept))
+
+    padded = f"{chapter:02d}"
+    files = project.extracted_dir / "files"
+    strip = files / chapter_images.STRIP_FOLDER / chapter_images.strip_name(chapter)
+    remaining_chapters = [int(cid) for cid in list_chapter_ids(project)
+                          if cid.isdigit() and int(cid) != chapter]
+    strip_is_shared = any(chapter_images.strip_name(other) == strip.name for other in remaining_chapters)
+    assets = [files / "Mess" / f"c{padded}.m", files / "Scripts" / f"C{padded}.cmb",
+              files / chapter_images.CARD_FOLDER / chapter_images.card_name(chapter)]
+    if not strip_is_shared:
+        assets.append(strip)
+    assets.extend(files / "zmap" / folder for folder in chapter_phases(project, padded))
+
+    # Update references before deleting their targets. The deletion route also
+    # clears an unreachable chapter's own flow-table entry.
+    from .game_code import chapter_parts
+    parts = chapter_parts.ChapterParts(flow.editor)
+    if chapter in parts.continued():
+        parts.set_continued(chapter, False)
+    flow.remove_for_deletion(chapter, set(remaining_chapters))
+    for path, updated in shops.items():
+        project.write_keeping_original(path, updated)
+    if common is not None:
+        project.write_keeping_original(*common)
+    removed = []
+    for path in assets:
+        if path.is_dir():
+            shutil.rmtree(path)
+            removed.append(path)
+        elif path.is_file():
+            path.unlink()
+            removed.append(path)
+    return RemovedChapterPlan(data, removed, shops, common)
 
 
 def ensure_name_images(project: ModProject) -> list[Path]:
