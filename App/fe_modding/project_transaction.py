@@ -47,15 +47,19 @@ def _exclusive(root):
 
 def _target(root, path):
     path = Path(path).absolute()
-    relative = path.relative_to(root)
-    if not relative.parts or relative.parts[0] in (JOURNAL, LOCK):
-        raise ValueError("Transaction target overlaps its journal")
-    cursor = root
-    for part in relative.parts:
+    # Check the spelling supplied by the caller before resolving it so a
+    # symlink cannot be used to escape and then re-enter the project.  Resolve
+    # afterwards because Windows may spell the same path through an 8.3 alias
+    # (for example RUNNER~1 versus runneradmin on GitHub Actions).
+    cursor = Path(path.anchor)
+    for part in path.parts[1:]:
         cursor /= part
         if cursor.is_symlink():
             raise ValueError("Transaction targets must not traverse symbolic links")
-    path.resolve().relative_to(root)
+    path = path.resolve()
+    relative = path.relative_to(root)
+    if not relative.parts or relative.parts[0] in (JOURNAL, LOCK):
+        raise ValueError("Transaction target overlaps its journal")
     return path
 
 
