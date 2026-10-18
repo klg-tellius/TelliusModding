@@ -558,7 +558,8 @@ class StatsEditor(EditorPanel):
         except (KeyError, ValueError, struct.error):
             chapters = []
         self._pickers["chapters"].set_entries(
-            unique([f"{self._text(c.title_key) or c.title_key or '(untitled)'}  ·  {c.script or '-'}  ·  id {c.chapter_id}"
+            unique([f"{self._text(c.title_key) or c.title_text or c.title_key or '(untitled)'}  ·  "
+                    f"{c.script or '-'}  ·  id {c.chapter_id}"
                     for c in chapters]),
             [f"{c.map_name} {c.message}" for c in chapters])
 
@@ -1507,7 +1508,11 @@ class StatsEditor(EditorPanel):
 
         self._heading(parent, "Identity and files", row, columns)
         row += 1
-        text_row("Title key", "title_key", lambda: chapter().title_key, prefix="MCT")
+        if fe8data.japanese_chapter_layout(self._data):
+            text_row("Title", "title_text", lambda: chapter().title_text,
+                     "The Japanese release stores the displayed title directly in this record.")
+        else:
+            text_row("Title key", "title_key", lambda: chapter().title_key, prefix="MCT")
         tip(ttk.Label(parent, text="Chapter id"), "Scripts change to a chapter by this id; 90 and up are the trial "
                                                   "maps.").grid(row=row, column=0, sticky="w", pady=1)
         var = tk.StringVar()
@@ -1544,7 +1549,8 @@ class StatsEditor(EditorPanel):
 
         self._heading(parent, "Enemy levels and trial grades", row, columns)
         row += 1
-        self._byte_row(parent, form, row, "Enemy levels +", list(fe8data.DIFFICULTY_NAMES),
+        difficulty_names = list(fe8data.DIFFICULTY_NAMES[:len(chapter().enemy_bonus_levels)])
+        self._byte_row(parent, form, row, "Enemy levels +", difficulty_names,
                        lambda i: chapter().enemy_bonus_levels[i],
                        lambda d, i, v: patch(d, index, f"enemy_bonus_level{i}", v),
                        help_text="Levels added to auto-levelled enemies on each difficulty (capped at level 20).",
@@ -1858,7 +1864,7 @@ class ChapterRecordPanel(StatsEditor):
                          if self._chapter_id is not None else bool(self._map_name and c.map_name == self._map_name))]
         if self._chapter_id is not None and self._map_name:
             self._matches.sort(key=lambda i: chapters[i].map_name != self._map_name)
-        labels = [f"{self._text(chapters[i].title_key) or chapters[i].title_key or '(untitled)'}  ·  "
+        labels = [f"{self._text(chapters[i].title_key) or chapters[i].title_text or chapters[i].title_key or '(untitled)'}  ·  "
                   f"{chapters[i].script or '-'}  ·  id {chapters[i].chapter_id}  ·  record {i}" for i in self._matches]
         try:
             self._record_combo.configure(values=labels)

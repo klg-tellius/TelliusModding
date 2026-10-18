@@ -76,6 +76,11 @@ CHAPTER_FIELDS = (
     (0x3D, 4, "enemy_bonus_levels", DECODED), (0x41, 3, "align", PADDING),
     (0x44, 0x1C, "backgrounds_trial_grades", DECODED),
 )
+JP_CHAPTER_FIELDS = (
+    (0x00, 4, "title_text", DECODED), (0x04, 0x38, "names_objectives", DECODED),
+    (0x3C, 1, "chapter_id", DECODED), (0x3D, 3, "enemy_bonus_levels", DECODED),
+    (0x40, 0x1C, "backgrounds_trial_grades", DECODED),
+)
 
 
 @dataclass
@@ -351,7 +356,10 @@ def build_coverage(data: bytes) -> CoverageMap:
             cov.mark(start + 1, 3, PADDING, "pad")
             cov.mark(start + 4, 4 * data[start], DECODED, "sky_names")
         elif name == "ChapterData":
-            content_end = _mark_table(cov, start, fe8data.CHAPTER_RECORD_SIZE, CHAPTER_FIELDS, "chapter")
+            japanese = fe8data.japanese_chapter_layout(data)
+            size = fe8data.JP_CHAPTER_RECORD_SIZE if japanese else fe8data.CHAPTER_RECORD_SIZE
+            content_end = _mark_table(cov, start, size, JP_CHAPTER_FIELDS if japanese else CHAPTER_FIELDS,
+                                      "chapter")
         elif name == "GroupData":
             cov.mark(start, 4 + 4 * _u32(data, start), DECODED, "group_names")
         elif name == "RelianceData":

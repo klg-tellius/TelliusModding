@@ -28,7 +28,7 @@ A useful mental model is a stack of transparent sheets. The common game design i
 
 For a modder, the practical consequence is that compatibility has to be claimed narrowly. A valid US executable address is not a PAL address. A deployment that works on Normal says nothing about the Hard group. A text edit that fits the English font may overflow a German window. Identify the build, selected mode, resource variant, and consumer before deciding that an edit is portable.
 
-## FE9-SYS-025 — Difficulty profile
+## Difficulty profile
 
 <span id="fe9-sys-025"></span> `current_difficulty_id` uses the verified internal mapping `0 Normal, 1 Hard, 2 Maniac, 3 Easy` in the US and PAL executable correspondence. The byte survives party reinitialization and is serialized. Chapter packs commonly contain common plus Normal, Hard, and Maniac deployment groups; shop selection maps Normal/Easy to `shopitem_n.bin`, Hard to `_h`, Maniac to `_m`, with invalid values falling back to Normal. The loader selects authored content rather than scaling one universal enemy list.
 
@@ -50,7 +50,7 @@ The retail three-build audit resolves the table rather than assuming one region'
 
 The US manual exposes Easy, Normal, and Hard. The Japanese release has Normal, Hard, and Maniac instead of US Easy. A mod editor should name both the logical mode and the physical data column/file it changes, because an internal Maniac slot can be repurposed by localization.
 
-## FE9-SYS-013 — Region and revision handling
+## Region and revision handling
 
 <span id="fe9-sys-013"></span> A regional build includes its own `main.dol`, disc identifier, localized messages, fonts/glyph coverage, and possibly altered data or rules. US executable addresses such as `0x801F19A0` are not portable identities. PAL code has growing address drift due in part to extra language support; matching instructions and call graphs is safer than adding a fixed offset.
 
@@ -100,7 +100,7 @@ Suppose a US mod changes a chapter's Hard deployment and patches a native formul
 
 Adding a guessed constant to the US address does not establish step 2. Likewise, copying the whole US chapter archive may overwrite localized or region-specific resources that were unrelated to the deployment change. The safe test launches the PAL build, enters the affected chapter on Hard, confirms the expected units and formula result, and checks adjacent UI and save/load behavior.
 
-## FE9-SYS-381 — Difficulty and region overrides
+## Difficulty and region overrides
 
 <span id="fe9-sys-381"></span> Override priority should be documented per subsystem:
 

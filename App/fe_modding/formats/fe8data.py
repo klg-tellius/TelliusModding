@@ -470,8 +470,6 @@ CHAPTER_RECORD_SIZE = 0x60
 #: level and its padding (0x5C bytes), and the first field is the title itself (or a message
 #: key for the trial maps) instead of a ``MCTnn`` key.
 JP_CHAPTER_RECORD_SIZE = 0x5C
-JP_CHAPTER_LAYOUT_ERROR = ("This FE8Data.bin uses the Japanese chapter record layout (no Easy mode, "
-                           "literal chapter titles); chapter records can be read but not edited.")
 
 # HP, Str, Mag, Skl, Spd, Lck, Def, Res - standard Fire Emblem stat order,
 # not independently confirmed field-by-field but consistent with every
@@ -585,7 +583,8 @@ def _label_offset(data: bytes, label: str, *, pool_only: bool = False) -> Option
     for kind in TABLES:
         try:
             start = table_start(data, kind)
-            areas.append((start - 4, start + table_count(data, kind) * TABLES[kind][1]))
+            size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
+            areas.append((start - 4, start + table_count(data, kind) * size))
         except (ValueError, struct.error):
             continue
     idx = data.find(needle)
@@ -1802,7 +1801,7 @@ def append_block(data: bytes, block: bytes, pointer_fields=()) -> tuple[bytes, i
 
 
 def record_bytes(data: bytes, kind: str, index: int) -> bytes:
-    size = TABLES[kind][1]
+    size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
     off = table_start(data, kind) + index * size
     return data[off : off + size]
 
@@ -1811,17 +1810,18 @@ def protected_record_words(data: bytes, kind: str, index: int) -> set[int]:
     """Record-relative offsets of the 4-byte words raw editing must leave
     alone: the known pointer fields, and any word on the pointer list (the
     loader relocates those, so a hand-typed value there would be wrong)."""
-    size = TABLES[kind][1]
+    size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
     off = table_start(data, kind) + index * size
     listed = {f - off for f in listed_pointer_fields(data) if off <= f < off + size}
-    return set(RECORD_POINTER_FIELDS[kind]) | listed
+    known = chapter_pointer_offsets(data) if kind == "chapter" else RECORD_POINTER_FIELDS[kind]
+    return set(known) | listed
 
 
 def patch_record_bytes(data: bytes, kind: str, index: int, new: bytes) -> bytes:
     """Overwrite one whole record with ``new`` (same size). Raises ValueError
     when a protected word (see :func:`protected_record_words`) would change:
     pointers are edited through their own fields."""
-    size = TABLES[kind][1]
+    size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
     if len(new) != size:
         raise ValueError(f"A {kind} record is {size} bytes, not {len(new)}.")
     off = table_start(data, kind) + index * size
@@ -1844,9 +1844,7 @@ class RawRecord:
 
 
 def read_table(data: bytes, kind: str) -> list[RawRecord]:
-    if kind == "chapter":
-        require_editable_chapters(data)
-    size = TABLES[kind][1]
+    size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
     start = table_start(data, kind)
     listed = listed_pointer_fields(data)
     rows = []
@@ -1859,13 +1857,12 @@ def read_table(data: bytes, kind: str) -> list[RawRecord]:
 def write_table(data: bytes, kind: str, rows: list[RawRecord]) -> bytes:
     """Rebuild a table from ``rows`` (count word + records). The table stays
     in place when it fits, else moves to the end of the data section."""
-    if kind == "chapter":
-        require_editable_chapters(data)
     count = table_count(data, kind)
     if kind in FIXED_TABLES and len(rows) != count:
         raise ValueError(f"The game is bound to the {count} {kind} records: "
                          "they can be edited but not added or removed.")
-    symbol, size, _default = TABLES[kind]
+    symbol, configured_size, _default = TABLES[kind]
+    size = chapter_record_size(data) if kind == "chapter" else configured_size
     start = table_start(data, kind) - 4
     block = bytearray(struct.pack(">I", len(rows)))
     pointers = []
@@ -1888,7 +1885,7 @@ def add_record(data: bytes, kind: str, new_id: Optional[str] = None,
     has yet; added to the string pool). A new chapter gets the lowest
     free story chapter id (33-89, see below). Returns the file and the new record's index."""
     rows = read_table(data, kind)
-    size = TABLES[kind][1]
+    size = chapter_record_size(data) if kind == "chapter" else TABLES[kind][1]
     if kind in RECORD_ID_FIELDS:
         prefix = RECORD_ID_FIELDS[kind][1]
         new_id = (new_id or "").strip()
@@ -2115,13 +2112,20 @@ def japanese_chapter_layout(data: bytes) -> bool:
     return bool(probes) and all(p in listed for p in probes)
 
 
-def require_editable_chapters(data: bytes) -> None:
+def chapter_record_size(data: bytes) -> int:
+    """Record stride for this regional build's ``ChapterData`` table."""
+    return JP_CHAPTER_RECORD_SIZE if japanese_chapter_layout(data) else CHAPTER_RECORD_SIZE
+
+
+def chapter_pointer_offsets(data: bytes) -> tuple[int, ...]:
+    """Record-relative pointer fields for this regional chapter layout."""
     if japanese_chapter_layout(data):
-        raise ValueError(JP_CHAPTER_LAYOUT_ERROR)
+        return tuple(range(0x00, 0x3C, 4)) + (0x40, 0x44, 0x48, 0x4C)
+    return RECORD_POINTER_FIELDS["chapter"]
 
 
 def read_chapter_data(data: bytes) -> list[ChapterRecord]:
-    """``ChapterData``: a count word, then 0x60-byte chapter records."""
+    """``ChapterData``: a count word, then regional 0x60- or 0x5C-byte records."""
     start = _section_start(data, "ChapterData")
     if start is None:
         return []
@@ -2253,6 +2257,21 @@ CHAPTER_BYTE_FIELDS = {
     **{f"trial_score_grade{i}": 0x5C + i for i in range(4)},
 }
 
+JP_CHAPTER_POINTER_FIELDS = {
+    "title_text": 0x00, "title_key": 0x00, "map_name": 0x04, "script": 0x08,
+    "message": 0x0C, "bgm": 0x10,
+    **{f"objective{i}": 0x14 + 4 * i for i in range(4)},
+    **{f"hard_objective{i}": 0x24 + 4 * i for i in range(3)},
+    **{f"maniac_objective{i}": 0x30 + 4 * i for i in range(3)},
+    "base_background": 0x40, "scene_map": 0x44, "scene_sky": 0x48, "talk_background": 0x4C,
+}
+JP_CHAPTER_BYTE_FIELDS = {
+    **{f"enemy_bonus_level{i}": 0x3D + i for i in range(3)},
+    **{f"trial_turn_grade{i}": 0x50 + i for i in range(4)},
+    **{f"trial_loss_grade{i}": 0x54 + i for i in range(4)},
+    **{f"trial_score_grade{i}": 0x58 + i for i in range(4)},
+}
+
 
 def patch_chapter_field(data: bytes, index: int, field: str, value) -> bytes:
     """Return a copy of data with one field of one ``ChapterData`` record
@@ -2260,14 +2279,24 @@ def patch_chapter_field(data: bytes, index: int, field: str, value) -> bytes:
     the string pool when new, or None), a :data:`CHAPTER_BYTE_FIELDS` name
     (0-255), or ``chapter_id`` (0-255, unique: ``find_chapter_record_by_id``
     matches it)."""
-    require_editable_chapters(data)
-    off = table_start(data, "chapter") + index * CHAPTER_RECORD_SIZE
-    if field in CHAPTER_POINTER_FIELDS:
-        return _patch_label_field(data, off + CHAPTER_POINTER_FIELDS[field], (value or "").strip() or None,
+    japanese = japanese_chapter_layout(data)
+    size = JP_CHAPTER_RECORD_SIZE if japanese else CHAPTER_RECORD_SIZE
+    pointer_fields = JP_CHAPTER_POINTER_FIELDS if japanese else CHAPTER_POINTER_FIELDS
+    byte_fields = JP_CHAPTER_BYTE_FIELDS if japanese else CHAPTER_BYTE_FIELDS
+    off = table_start(data, "chapter") + index * size
+    if not 0 <= index < table_count(data, "chapter"):
+        raise ValueError(f"No chapter record {index}.")
+    if field in pointer_fields:
+        label = (value or "").strip() or None
+        if japanese and field in ("title_text", "title_key") and label is None:
+            raise ValueError("A Japanese chapter record needs a title.")
+        return _patch_label_field(data, off + pointer_fields[field], label,
                                   append=True)
     out = bytearray(data)
-    if field in CHAPTER_BYTE_FIELDS:
-        out[off + CHAPTER_BYTE_FIELDS[field]] = _byte(value)
+    if field in byte_fields:
+        out[off + byte_fields[field]] = _byte(value)
+    elif japanese and field == "enemy_bonus_level3":
+        raise ValueError("The Japanese chapter layout has no Easy-mode enemy bonus level.")
     elif field == "chapter_id":
         value = _byte(value)
         others = [c.index for c in read_chapter_data(data) if c.chapter_id == value and c.index != index]

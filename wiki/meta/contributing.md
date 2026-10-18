@@ -39,6 +39,8 @@ A published article should move from accessible explanation to precise reference
 
 Do not publish game-derived files, long copyrighted text, private credentials, research process diaries, or speculation presented as fact.
 
+Modding lessons have an additional executable standard. Use the [Modding Tutorial Authoring Standard](tutorial-authoring-standard.md) and update the [Tutorial Coverage Ledger](tutorial-coverage.md) before moving a lesson beyond its legacy stage. A short checklist of fields is not a substitute for a reproducible walkthrough, complete control coverage, and an independent execution review.
+
 ## System coverage review
 
 Every Path of Radiance system has a stable `FE9-SYS-NNN` identity in the [Complete Game Systems Inventory](game-systems-inventory.md). A system article lists the entries it intends to explain in `system_entries`; this is an ownership claim, not proof that the page is complete. A reviewer, either a person or an AI agent, moves an ID into `system_reviewed` only after applying the full [Game System Documentation Review](system-review.md) rubric.

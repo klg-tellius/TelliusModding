@@ -30,7 +30,7 @@ Think of the camera as a temporary lease on one view object. Ordinary map input 
 
 For example, a reinforcement event can hide player input, pan toward a doorway, spawn units, wait for the move/shot to finish, and then restore the cursor's area. If the scene is skipped, the reinforcements and final camera ownership must match the watched path even though intermediate interpolation is omitted. Saving unit coordinates does not automatically preserve the camera lease or an in-progress event wait.
 
-## FE9-SYS-066 — Camera ownership and state
+## Camera ownership and state
 
 <span id="fe9-sys-066"></span> Camera inputs include tactical focus, target unit or coordinate, map/world conversion, map extents, zoom/rotation mode, transition duration, event/script requests, and scene/input state. Output is presentation state: view center/orientation/scale and a completion signal used by scripts or processes waiting for motion.
 

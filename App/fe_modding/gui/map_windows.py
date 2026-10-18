@@ -310,35 +310,34 @@ class MapObjectsWindow(_Window):
         dialog.transient(self)
         frame = ttk.Frame(dialog, padding=12)
         frame.pack(fill="both", expand=True)
-        fields = ("flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")
-        raw = {}
-        for row, field in enumerate(fields):
-            ttk.Label(frame, text=field.replace("_", " ")).grid(row=row, column=0, sticky="w", pady=2)
-            raw[field] = tk.StringVar(value=f"0x{getattr(obj, field):02X}")
-            ttk.Entry(frame, textvariable=raw[field], width=8).grid(row=row, column=1, sticky="w", padx=(8, 0))
         ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
-                  style="Muted.TLabel").grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 3))
-        toggles = map_props.PROP_FLAG_TOGGLES
+                  style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
         checks = []
-        for row, (field, mask, label) in enumerate(toggles if self.map.verified_us_map_layout else (), start=5):
-            initial = bool(getattr(obj, field) & mask)
-            var = tk.BooleanVar(value=initial)
-            ttk.Checkbutton(frame, text=label, variable=var).grid(row=row, column=0, columnspan=2, sticky="w")
-            checks.append((field, mask, initial, var))
+        if self.map.verified_us_map_layout:
+            for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+                group = ttk.LabelFrame(frame, text=title, padding=6)
+                group.grid(row=1, column=column, sticky="nw", padx=(0, 6))
+                for row, (mask, label) in enumerate(controls):
+                    var = tk.BooleanVar(value=bool(getattr(obj, field) & mask))
+                    ttk.Checkbutton(group, text=label, variable=var).grid(row=row, column=0, sticky="w")
+                    checks.append((field, mask, var))
+        else:
+            ttk.Label(frame, text="Object flags are not editable for this unverified map layout.",
+                      style="Muted.TLabel").grid(row=1, column=0, sticky="w")
         info(frame, "These flags belong to the object definition and affect every placement. "
-                    "C bit 0 is probably unused in the retail builds; raw bytes preserve it. "
+                    "Every bit has its own control; reserved and ignored bits should normally be preserved. "
                     "The footprint test also depends on map flags and runtime state.").grid(
-            row=18, column=0, sticky="w", pady=(8, 0))
+            row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
         def apply() -> None:
+            if not self.map.verified_us_map_layout:
+                return
             try:
-                values = {field: int(var.get(), 0) for field, var in raw.items()}
-                if any(not 0 <= value <= 255 for value in values.values()):
-                    raise ValueError("Each raw flag must be a byte (0–255).")
-                for field, mask, initial, var in checks:
-                    if var.get() != initial:
-                        values[field] = (values[field] | mask) if var.get() else (values[field] & ~mask)
+                values = {field: 0 for field, _title, _controls in map_props.PROP_FLAG_GROUPS}
+                for field, mask, var in checks:
+                    if var.get():
+                        values[field] |= mask
                 changed = {field: value for field, value in values.items() if value != getattr(obj, field)}
                 if changed:
                     def edit(files):
@@ -352,7 +351,9 @@ class MapObjectsWindow(_Window):
                 return
             dialog.destroy()
 
-        ttk.Button(frame, text="Apply", command=apply).grid(row=19, column=0, sticky="w", pady=(10, 0))
+        ttk.Button(frame, text="Apply", command=apply,
+                   state="normal" if self.map.verified_us_map_layout else "disabled").grid(
+                       row=3, column=0, sticky="w", pady=(10, 0))
         dialog.grab_set()
 
     def _apply(self) -> None:

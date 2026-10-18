@@ -135,13 +135,16 @@ class MapObject:
         always set together (raw value 3), never independently. Real object
         *size* doesn't discriminate this at all (some ordinary props are far
         larger than these "map-wide" entries) - filename is what does.
-      - flag_bits_b: bit 5 occurs on castle roofs; bits 2-4 commonly
-        co-occur on invisible goal markers across dozens of chapters,
+      - flag_bits_b: bit 5 places an actor in render sub-list 2 and occurs
+        only on castle roofs; bits 2-4 commonly co-occur on invisible goal
+        markers across dozens of chapters,
         each literally named after its own win condition -
         `ascendancy_01`, `defense_01`, `attainment_01`, `secession_01`,
-        `visit_01`. That correlation does not prove a 3-bit enum: bit 4
-        independently excludes footprint testing, and bit 2 sets an actor
-        runtime flag whose visual meaning remains open.
+        `visit_01`. Bit 3 is their common victory-objective marker. Bit 4
+        independently excludes footprint testing, and bit 2 sets actor
+        flag 0x400, making material setup use the constant ambient colour
+        rather than the map's light record. Bits 6-7 are never set in the
+        US, PAL or Japanese retail map corpus.
         bit 1 sets the instance's initial hidden state (all 11 shipped
         users are destroyed-house models); bit 0 suppresses placed-object
         drawing (the four shipped users are rock models).
@@ -157,18 +160,18 @@ class MapObject:
         also clear means "no" in 18/18 real cases, no exceptions either way.
         The old "bit 0 = no .ga file" reading is refuted by a later
         876-object US archive census: the bit occurs both with and without
-        a matching `.ga` file. A second US executable reader scan found no
-        test of bit 0, so it is probably unused in that build; preserve it
-        raw for all regions.
+        a matching `.ga` file. Reader scans found no direct or immediate-
+        mask test of bit 0 in the US, PAL or Japanese map code, so it is
+        treated as ignored legacy data; preserve it for file compatibility.
     effect_type is a bitfield, not an enum. Bit 0 selects one of two actor
     update passes; bit 1 copies roof-panel corner heights into the base
     elevation buffer as well as the combined buffer in
     ``load_uniquepanel_sections``; bit 3 selects an extended frustum-overlap test and is
     also set by the engine for a footprint wider than one tile; bit 4
     excludes footprint and tile-object hit tests; bit 6 suppresses
-    placed-object drawing; bit 7 excludes tile-object lookup. Bits 4/5/7
-    also contribute to the optional object sort key. The remaining visual
-    meanings are unresolved.
+    placed-object drawing; bit 7 excludes tile-object lookup. Bit 5 selects
+    render sub-list 2 and bits 4/5/7 contribute to the optional object sort
+    key. Bit 2 is never set in the US, PAL or Japanese retail map corpus.
     """
 
     offset_x: float

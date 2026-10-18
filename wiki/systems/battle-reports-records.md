@@ -30,13 +30,13 @@ Think of the records system as three notebooks written at different times. A uni
 
 This distinction is essential for save editing. Changing a report counter does not create a lifetime kill, and changing a unit's lifetime kills does not rewrite a past chapter entry. Viewers should consume the appropriate owner instead of silently copying values among them.
 
-## FE9-SYS-217 — Per-unit records
+## Per-unit records
 
 <span id="fe9-sys-217"></span> Each serialized unit has counters for battles, lifetime kills, kills on the current map, tiles moved, chapter of last kill, and two fields not yet fully named. Combat and movement update them at the action/consequence stage. A carried, scripted, or event battle must be tested before assuming it counts like an ordinary player command.
 
 The mutable unit is the owner, so changing deployment or presentation does not by itself create a statistic. Battle counters update from committed exchanges, kills from confirmed death consequences, and distance from committed movement rather than cursor preview. Map-local kill counts reset at the chapter/deployment boundary while lifetime totals persist. The two unnamed neighboring fields must be preserved by editors until identified, but they do not change ownership of the named counters.
 
-## FE9-SYS-218 and FE9-SYS-219 — Clear history and time
+## Clear history and time
 
 <span id="fe9-sys-218"></span> Party state contains forty clear-history entries with chapter, part flag, turns, and elapsed seconds. Multi-part chapters need the part discriminator so identical chapter identity does not collapse separate maps.
 
@@ -48,15 +48,15 @@ During a map, committed actions update unit-owned counters and the live time ser
 
 The forty-entry capacity is a hard research boundary. A safe editor must preserve array order and part identity and should reject an out-of-range count until the retail overflow policy is known. Likewise, a suspended session must restore the accumulated base tick exactly once before new ticks are added.
 
-## FE9-SYS-282 — Base report presentation
+## Base report presentation
 
 <span id="fe9-sys-282"></span> Soren's report reads four signed 16-bit counters: gold earned, gold spent, Combat Exp, and Bonus Exp. Gold setters update earned/spent by actual clamped balance movement. EXP/BEXP award paths update their corresponding counters. Presentation occurs in the base, then the reporting counters reset for the next period while current gold/BEXP and unit progression remain.
 
-## FE9-SYS-216 — MVP selection
+## MVP selection
 
 <span id="fe9-sys-216"></span> MVP is a selected unit in the chapter report, not one of the four signed period totals. The traced selector iterates eligible campaign units and chooses the maximum current-map kill field at unit offset `+0x22C`; the iteration/comparator supplies deterministic tie behavior. It runs after chapter activity has populated unit state and before the report panel renders the chosen identity alongside joined/dead information, and it does not mutate any counter.
 
-## FE9-SYS-220 — Completion records
+## Completion records
 
 <span id="fe9-sys-220"></span> Postgame Records combines persistent clear history, difficulty/clear/playthrough flags, roster and survival facts, and per-unit statistics into viewable completion records. The viewer is a read-only consumer: opening it does not create clears, rewrite history, or normalize unit counters. Stored facts remain owned by save/unit records; labels, ordering, unlock visibility, and empty-state formatting are derived presentation tables.
 

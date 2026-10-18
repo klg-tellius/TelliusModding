@@ -322,6 +322,55 @@ def check_flag_name(name: str, taken: Iterable[str]) -> Optional[str]:
     return None
 
 
+def rename_flag_references(source: str, old: str, new: str) -> str:
+    """Rewrite only parsed literal flag operands, retaining comments and formatting."""
+    from .cmb.parser import parse
+    from .cmb.decompiler import quote
+    module = parse(source)
+    literals = []
+    functions = {fd.name for fd in module.functions}
+    for fd in module.functions:
+        for call in _calls(fd.body):
+            if call.name not in ("get", "set", "clr", "regist", "global"):
+                continue
+            if not call.extern and call.name in functions:
+                continue
+            if not call.args or not isinstance(call.args[0], A.Str):
+                raise ValueError("Dynamic flag references require a manual script review before renaming")
+            literals.append(call.args[0])
+        for decorator in fd.decorators:
+            label = (decorator.kwargs.get("name") if decorator.name in ("on_talk", "on_battle") else
+                     decorator.kwargs.get("flag") if decorator.name == "on_base_talk" else None)
+            if isinstance(label, A.Str):
+                literals.append(label)
+    lines = source.splitlines(keepends=True)
+    spans = {literal.source_span for literal in literals if literal.value == old}
+    for line, start, end in sorted(spans, reverse=True):
+        lines[line - 1] = lines[line - 1][:start] + quote(new) + lines[line - 1][end:]
+    return "".join(lines)
+
+
+def remove_unused_registration(source: str, name: str, entry: str, native: str) -> str:
+    """Remove a standalone unused registration without changing other statements."""
+    import re
+    from .cmb.parser import parse
+    module = parse(source)
+    uses = flag_uses(module).get(name, [])
+    if any(kind != native for _, kind in uses):
+        raise ValueError(f"{name} is still referenced by event logic")
+    sites = [site for site in registration_sites(module, entry, native) if site.name == name]
+    if len(sites) != 1 or len(uses) != 1:
+        raise ValueError("Expected exactly one standalone registration")
+    lines = source.splitlines(keepends=True)
+    index = sites[0].line - 1
+    line = lines[index]
+    if not re.fullmatch(r'\s*' + re.escape(_call_source(native, name)) + r'\s*(?:#.*)?', line.rstrip("\r\n")):
+        raise ValueError("Registration must be a standalone generated statement before deletion")
+    indent = line[:len(line) - len(line.lstrip())]
+    lines[index] = indent + "pass  # Extended flag retired; its slot is reserved.\n"
+    return "".join(lines)
+
+
 def exported_functions(module: A.Module) -> dict[str, int]:
     """Name -> argument count of every function a script exports (what other
     scripts can call by name)."""

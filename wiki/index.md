@@ -25,6 +25,8 @@ The **Tellius Archive** documents, at the byte level, how *Fire Emblem: Path of 
 
 ## How to use this archive
 
+  To learn the editor through practical exercises, start with [Modding Path of Radiance](modding/index.md). Its illustrated tutorials explain what to open, what to change, how to save, and how to check the result, from your first project through a three-chapter campaign.
+
   Begin with the player-facing system you want to understand, follow its links down to the formats that supply data, then return through related-system links to see where those values are consumed. Use the format index instead when starting from an unknown file.
 
 ## File formats
@@ -36,6 +38,7 @@ The **Tellius Archive** documents, at the byte level, how *Fire Emblem: Path of 
 
 ## Explore the archive
 
+- [Follow the illustrated modding tutorials](modding/index.md)
 - [Browse file formats](meta/format-coverage.md)
 - [Browse game systems](systems/chapters.md)
 - [Follow a learning path](guides/learning-paths.md)

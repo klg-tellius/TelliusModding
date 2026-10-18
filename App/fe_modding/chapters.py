@@ -379,10 +379,11 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
     writing anything (``fe8`` is the current ``FE8Data.bin``, unsaved edits included):
 
     - a ``ChapterData`` record copied from the template's, with the new id and the new
-      ``bmapNN`` / ``CNN`` / ``MCTNN`` names (objectives, music, backgrounds stay the template's);
+      ``bmapNN`` / ``CNN`` names plus a localized title field (objectives, music and backgrounds
+      stay the template's);
     - a ``BattleTerrData`` row for the new map, copied from the template map's;
     - the three shop sections in each difficulty's shop file, copied from the template's;
-    - the ``MCTNN`` title in ``Mess/common.m``;
+    - the ``MCTNN`` title in ``Mess/common.m`` on US/PAL, or the Japanese record's literal title;
     - the chapter's name pictures (``window/chapter2/chapNN.cms`` in the file menu's save slots,
       ``window/chapter/chapNN.cms`` at the chapter start), drawn from the title."""
     from .formats import fe8data, message, shop
@@ -399,6 +400,8 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
     if template is None:
         raise ValueError(f"Chapter {source_id} has no ChapterData record to copy.")
     padded = f"{new_id:02d}"
+    title = title.strip() or f"Chapter {new_id}"
+    japanese = fe8data.japanese_chapter_layout(fe8)
     warnings: list[str] = []
 
     data, index = fe8data.add_record(fe8, "chapter", copy_from=template.index)
@@ -407,7 +410,8 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
     data = fe8data.patch_chapter_field(data, index, "script", f"C{padded}")
     if template.message is not None:
         data = fe8data.patch_chapter_field(data, index, "message", f"C{padded}")
-    data = fe8data.patch_chapter_field(data, index, "title_key", f"MCT{padded}")
+    data = fe8data.patch_chapter_field(
+        data, index, "title_text" if japanese else "title_key", title if japanese else f"MCT{padded}")
 
     rows = fe8data.read_battle_terrain(data)
     row = next((r for r in rows if r.map_name == template.map_name), None)
@@ -429,8 +433,9 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
 
     common = None
     common_path = _common_messages_path(project)
-    title = title.strip() or f"Chapter {new_id}"
-    if common_path is None:
+    if japanese:
+        pass  # Japanese ChapterData stores the displayed title directly in the record.
+    elif common_path is None:
         warnings.append("No Mess/common.m: the chapter has no title text.")
     else:
         try:

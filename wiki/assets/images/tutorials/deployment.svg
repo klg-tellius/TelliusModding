@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">One wave needs data, a trigger, and a guard</title>
+<desc id="desc">1 · WHO / WHERE. Deployment section: your exact name. Units + army + start / arrival tiles. Create it in each intended difficulty file.. 2 · WHEN. Script trigger → Dispos* call. Use that same section name. Check turn, phase, and occupied arrival tiles.. 3 · ONLY ONCE. Chapter flag: not yet → done. Check before loading; set after success. Advance to another eligible phase to verify.. A section defines units; it does not schedule its own arrival.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">One wave needs data, a trigger, and a guard</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · WHO / WHERE</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">Deployment section: your exact name</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Units + army + start / arrival tiles</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">Create it in each intended difficulty file.</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · WHEN</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">Script trigger → Dispos* call</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Use that same section name</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Check turn, phase, and occupied arrival tiles.</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · ONLY ONCE</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">Chapter flag: not yet → done</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Check before loading; set after success</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Advance to another eligible phase to verify.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">A section defines units; it does not schedule its own arrival.</text>
+</g></svg>

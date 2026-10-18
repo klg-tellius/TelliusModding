@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from review_systems import review_repository, update_or_check_report
+from review_tutorials import review_tutorials
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -140,6 +141,9 @@ def main() -> int:
         report_error = update_or_check_report(system_state, write=False)
         if report_error:
             errors.append(report_error)
+
+    tutorial_errors, _tutorial_state = review_tutorials()
+    errors.extend(tutorial_errors)
 
     if errors:
         for error in errors:

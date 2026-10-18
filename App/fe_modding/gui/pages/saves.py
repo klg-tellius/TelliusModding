@@ -16,6 +16,7 @@ from typing import Callable, Optional
 
 from ... import script_sources
 from ...formats import event_flags as ef
+from ...formats import extended_flags as xf
 from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
 from .. import theme
@@ -965,11 +966,26 @@ class SaveEditorPage(Page):
 
     def _global_flags(self) -> list:
         try:
-            return ef.global_flags(parse(script_sources.peek(self.project, script_sources.startup_path(self.project))))
+            names = ef.global_flags(parse(script_sources.peek(self.project, script_sources.startup_path(self.project))))
+            layout = self._extended_layout()
+            return layout.vanilla_names(names, "campaign") if layout else names
         except (OSError, ValueError, ParseError, AttributeError):
             return ef.global_flags_vanilla()
 
+    def _extended_layout(self):
+        if not self.block or self.block.extended_flags is None:
+            return None
+        try:
+            layout = xf.FlagLayout.from_json((self.project.directory / xf.MANIFEST_NAME).read_text(encoding="utf-8"))
+            self.block.extended_flags.require_layout(layout)
+            return layout
+        except (OSError, ValueError, AttributeError):
+            return None
+
     def _slot_names(self) -> list:
+        layout = self._extended_layout()
+        if self.block.extended_flags is not None and layout is None:
+            return [None] * ef.SLOT_COUNT
         globals_ = self._global_flags()
         locals_: list = []
         m = self.block.party.chapter_name
@@ -978,6 +994,8 @@ class SaveEditorPage(Page):
                 path = script_sources.chapter_script(self.project, m[4:6])
                 if path is not None:
                     locals_ = ef.local_flags(parse(script_sources.peek(self.project, path)))
+                    if layout:
+                        locals_ = layout.vanilla_names(locals_, "chapter", int(m[4:6]))
             except (OSError, ValueError, ParseError, AttributeError):
                 pass
         return ef.slot_names(globals_, locals_)
@@ -1022,10 +1040,56 @@ class SaveEditorPage(Page):
                 continue
             tree.insert("", "end", iid=str(slot), values=(ON if on else OFF, slot, name or "", meaning),
                         tags=() if name else ("muted",))
+        self._fill_extended_flags()
+
+    def _fill_extended_flags(self) -> None:
+        state = self.block.extended_flags
+        if state is None:
+            return
+        layout = None
+        note = " Extended flags require the patched game."
+        try:
+            layout = xf.FlagLayout.from_json((self.project.directory / xf.MANIFEST_NAME).read_text(encoding="utf-8"))
+            state.require_layout(layout)
+        except (OSError, ValueError, AttributeError) as exc:
+            layout = None
+            note += f" Extended names unavailable: {exc}. Showing set bits by slot."
+        self._flags_note.configure(text=self._flags_note.cget("text") + note)
+        chapter = self.block.party.chapter_name
+        chapter_id = int(chapter[4:6]) if chapter.startswith("bmap") and chapter[4:6].isdigit() else None
+        for scope, size in (("campaign", xf.CAMPAIGN_SLOTS), ("chapter", xf.CHAPTER_SLOTS)):
+            names = {e.slot: e.name for e in layout.entries if not e.deleted and e.scope == scope
+                     and (scope == "campaign" or e.chapter == chapter_id)} if layout else {}
+            for slot in range(size):
+                on, name = state.get(scope, slot), names.get(slot, "")
+                if not on and not name:
+                    continue
+                meaning = f"Extended {scope} flag"
+                if scope == "chapter" and self.block.flags_stale:
+                    meaning += " (stale; resets at chapter start)"
+                self._flag_tree.insert("", "end", iid=f"ext:{scope}:{slot}",
+                                       values=(ON if on else OFF, f"X{slot}", name, meaning))
+        for name in xf.HUB_ALIASES:
+            self._flag_tree.insert("", "end", iid=f"hub:{name}",
+                                   values=(ON if state.hub_flag(name) else OFF, "Hub", name, "Persistent hub state"))
 
     def _toggle_flag(self) -> None:
         sel = self._flag_tree.selection()
         if not sel or not self.block or not self.block.decoded:
+            return
+        if sel[0].startswith(("ext:", "hub:")):
+            state = self.block.extended_flags
+            if sel[0].startswith("ext:"):
+                _, scope, slot_text = sel[0].split(":")
+                slot = int(slot_text)
+                on = not state.get(scope, slot)
+                state.set(scope, slot, on)
+            else:
+                name = sel[0].split(":", 1)[1]
+                on = not state.hub_flag(name)
+                state.hub_flag(name, on)
+            self._flag_tree.set(sel[0], "on", ON if on else OFF)
+            self.mark_dirty()
             return
         bits = self._bits()
         slot = int(sel[0])
@@ -1036,7 +1100,13 @@ class SaveEditorPage(Page):
     def _clear_locals(self) -> None:
         if not self.block or not self.block.decoded:
             return
+        if self.block.extended_flags is not None and self._extended_layout() is None:
+            messagebox.showerror("Cannot identify chapter flags",
+                                 "Open the project with this save's matching extended flag layout first.", parent=self)
+            return
         n = len(self._global_flags())
+        if self.block.extended_flags is not None:
+            self.block.extended_flags.clear_chapter()
         bits = self._bits()
         self._set_bits([on if i < n else False for i, on in enumerate(bits)])
         self._fill_flags()

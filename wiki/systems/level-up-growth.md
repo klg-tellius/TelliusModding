@@ -30,13 +30,13 @@ Every character has eight growth rates (in percent), set in the [character recor
 
 Treat EXP, level, and stat growth as three connected but distinct steps. Combat awards EXP to mutable unit state. Crossing the threshold requests a level-up. The selected growth mode then produces eight pending gains, which are capped before the result is committed and shown. A 140% Strength growth in random mode always contributes one point and rolls the remaining 40% for a second; in fixed mode it adds 140 to the hidden Strength counter, pays one point at 100, and carries 40 forward. If the class cap permits only one more point, the pending result is trimmed even if the growth procedure produced two.
 
-## FE9-SYS-169 — Level and EXP progression
+## Level and EXP progression
 
 <span id="fe9-sys-169"></span> Current level and EXP belong to the mutable unit rather than to its character or class definition. An eligible combat result adds EXP; reaching the level threshold hands control to one of the two growth paths below, commits allowed gains, increments level, and retains the post-threshold remainder according to the result path. Promotion is a different transition: it replaces the class, resets level to 1 and EXP to 0, swaps class-granted capabilities, halves fixed-growth counters, and clamps HP to the new bounds. The detailed combat EXP formula is documented in [Combat Resolution](./combat-mechanics.md).
 
 The presentation is downstream state, not the authority. The EXP bar and level-up panel animate values that have already been calculated. Disabling or skipping that display does not avoid the level, stat, or promotion state changes. Repeated threshold crossings commit one level result at a time, delegate a promotion boundary to the class-change path, and finish pending state before save or the next presentation step.
 
-## FE9-SYS-170 — Random level-up growth
+## Random level-up growth
 
 <span id="fe9-sys-170"></span> Random mode processes HP, Strength, Magic, Skill, Speed, Luck, Defense, and Resistance independently. For each effective growth rate it first extracts guaranteed full hundreds, then consumes a random check for the remainder. Blossom (`Frac90`) grants the documented second chance on that remainder through the same growth path. Results enter pending gain bytes and are trimmed against the applicable stat limits before the UI consumes them.
 
@@ -50,13 +50,13 @@ This ordering matters for deterministic testing. Two units with the same display
 
   Each stat keeps a hidden counter. A level-up adds the growth rate to it; whenever the counter reaches the threshold (100) the stat gains a point and the threshold is subtracted. Units with the Frac90 skill use a threshold of 90 instead. A 40% growth therefore pays a point at levels 3, 5 and 8 and so on, with no randomness. The counters are halved when a unit promotes.
 
-## FE9-SYS-171 — Fixed growth mode
+## Fixed growth mode
 
 <span id="fe9-sys-171"></span> Fixed mode replaces the remainder roll with persistent accumulation. Each stat owns a counter, adds its effective growth on level-up, awards a point whenever the threshold is crossed, subtracts the threshold, and retains the remainder. Large rates can therefore generate a guaranteed point and preserve progress toward another. Blossom changes the threshold to 90 while its separate growth-rate adjustment still applies through the shared scaling helper.
 
 Because the counters persist, fixed growth crosses the serialization boundary in a way random rolls do not. Promotion halves them, so a mod that changes promotion without updating these counters changes future stat timing even if the visible promotion bonuses look correct. Constructors and recruitment seed the mutable counters from the unit's authored/new-unit state, while loading restores their serialized values; the system does not require one universal seed for every unit.
 
-## FE9-SYS-172 — Stat caps
+## Stat caps
 
 <span id="fe9-sys-172"></span> A generated gain is not automatically legal. The unit's current effective stat, mutable permanent delta, and current class limit define how much room remains; pending gains are reduced to that room before commitment. This prevents a high growth or guaranteed hundred from pushing a stat past its class cap. Promotion changes the applicable class record, so a value legal in one class must be reinterpreted under the replacement class, with current HP specifically clamped back into range.
 

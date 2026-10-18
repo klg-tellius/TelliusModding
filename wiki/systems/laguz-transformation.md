@@ -32,7 +32,7 @@ Think of the gauge as a bounded resource with two rates. An ordinary untransform
 
 The model also explains why the gauge is not simply “turns remaining.” Actions involving the unit and damage events can move it, always-transformed units bypass normal accounting, and one runtime condition reports a permanent full value independently of the stored byte.
 
-## FE9-SYS-188 — Gauge rules and lifecycle
+## Gauge rules and lifecycle
 
 <span id="fe9-sys-188"></span> Deployment chooses an initial value from character data, a deployment override, or the always-transformed class rule. While the unit is on the map, confirmed action steps add 2 in human form or subtract 1 in transformed form. A separate damage consequence adds 4 in human form or subtracts 3 in transformed form. Every write clamps to 0–20. Reaching the upper boundary requests transformation; reaching the lower boundary requests reversion, with the corresponding model/animation change presented after the authoritative state change.
 
@@ -65,7 +65,7 @@ The shared class-change routine removes the old class's traits, follows its bidi
 
 Saves serialize both the one-based current class number and the raw transform-gauge byte, so map save, Suspend, and ordinary reconstruction restore the paired form and its gauge rather than recomputing them from the character's initial value. Character/deployment initialization applies only when constructing a fresh unit or starting the corresponding new chapter state.
 
-## FE9-SYS-189 — Transformed stats and presentation
+## Transformed stats and presentation
 
 <span id="fe9-sys-189"></span> Transformation replaces `linked_class_data` with the current class's bidirectional partner. Character identity, permanent unit bonuses, level, EXP, and current HP stay in the unit instance; every class-backed consumer immediately sees the other class record. This includes class traits and permissions, base/cap contributions, Build, Weight, Movement, vision, capacity, categories, innate weapon definition, animation ID, and growth modifiers.
 

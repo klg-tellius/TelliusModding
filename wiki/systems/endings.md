@@ -30,7 +30,7 @@ Think of the ending as a report generated from the final save. Recruitment and s
 
 For example, adding a new epilogue requires more than a message key. The character must be admitted by the eligibility filter, the new variant must have an explicit priority against ordinary and paired variants, its card must be inserted into a deterministic order, and both watched and skipped paths must converge before the completion write.
 
-## FE9-SYS-036 — Endgame and ending selection
+## Endgame and ending selection
 
 <span id="fe9-sys-036"></span> Final-chapter victory reaches the normal completion boundary first: the chapter script sets the victory flag and the battle controller records the clear. Campaign routing then selects the special finale path rather than incrementing into an ordinary next map. The authored ending script (`ending.cmb`, including its `Ending` function references) owns scene sequencing, while persistent roster, death/retreat, recruitment, support/relationship, story-flag, difficulty, and playthrough state provide selection inputs.
 
@@ -40,7 +40,7 @@ The retail route is fixed at the campaign boundary: chapter number 32 invokes th
 
 The output side also has boundaries. Message and portrait/illustration resources render a chosen record; music, fades, and input control its presentation; credits consume their own ordered resources; completion code writes clear and unlock facts. The presentation layer should not invent survival or relationship state, and the save writer should not infer completion merely because the credits scene was opened in a debugger.
 
-## FE9-SYS-302 — Ending-card system
+## Ending-card system
 
 <span id="fe9-sys-302"></span> An ending card is the presentation record selected for one eligible character or ending subject. It combines a message identity with the visual and timing context needed to display it. The currently established boundary is that cards consume campaign state rather than owning it: roster membership, survival, departure, and relationships come from persistent systems, while the card process owns layout, fades, input, and advancement.
 

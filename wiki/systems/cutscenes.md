@@ -30,13 +30,13 @@ Treat a cutscene as a transaction with a visible path. The script establishes re
 
 For example, a scene may show a world-map route, fade to an illustration, play a THP movie, then set a story flag. Watching and skipping can differ in frames, audio, and elapsed time; both must set the flag once, destroy each presentation owner, restore input/audio, and resume at the same script instruction.
 
-## FE9-SYS-298 — World-map presentation
+## World-map presentation
 
 <span id="fe9-sys-298"></span> World-map scenes combine `gmap/` art, location/route markers, labels or captions, camera movement, fades, music, and script waits. The event chooses narrative destinations and timing; the world-map presenter translates its own coordinates, animates markers/routes, and signals completion. It does not change the tactical map or campaign chapter merely because a marker moved.
 
 World-map coordinates, route points, and layer identities are presenter-owned resource data. Scripts address the scene and wait on its handle; semantic progression occurs only in surrounding event operations. Skip completes or destroys the presentation handle and resumes the same VM continuation, so coordinate interpolation is never campaign state.
 
-## FE9-SYS-299 — Illustration and still-image scenes
+## Illustration and still-image scenes
 
 <span id="fe9-sys-299"></span> Still-image presentation resolves `illust/`, `ending/`, or other TPL resources, selects the required image/variant, composes it with captions or dialogue, controls fades/input waits, and releases it. Multi-image TPLs can contain variants; choosing the wrong image index is different from failing to decode the file.
 
@@ -44,7 +44,7 @@ Missing art should take a defined error/fallback path rather than strand the eve
 
 Image variant, crop, and scale are selected before drawing from the requested TPL image and layout rectangle. Those are authored presentation fields; preload/cache strategy and exact fade frames do not alter the lifecycle or event result.
 
-## FE9-SYS-300 — Real-time cutscene choreography
+## Real-time cutscene choreography
 
 <span id="fe9-sys-300"></span> Real-time scenes are script orchestration across actor creation and placement, animation clips, poses, attachments, cameras, effects, dialogue, sound, fades, and asynchronous waits. Each subsystem keeps its own state; the script composes them and joins at explicit boundaries.
 
@@ -52,7 +52,7 @@ Actors used only for presentation should be destroyed without deleting persisten
 
 The 43-script retail corpus makes the join rule explicit: native presentation calls return handles, script waits join them, and gameplay mutations remain separate bytecode/native calls. Skipping shortens or completes handles; it does not bypass later mutation instructions. A failed optional presenter unwinds acquired actors, cameras, and effects and releases its wait rather than manufacturing a gameplay result.
 
-## FE9-SYS-301 — Pre-rendered movie playback
+## Pre-rendered movie playback
 
 <span id="fe9-sys-301"></span> Chapter scripts select movies in two confirmed forms. `MoviePlay` receives a literal path such as `Movie/s06_M.thp`; `ChapterMoviePlay` receives a numeric chapter-opening identity. The call transfers full-screen/audio/input ownership to the THP player and waits until completion or skip returns control.
 
@@ -60,7 +60,7 @@ Literal-path selection has no music-style cue-table indirection. `ChapterMoviePl
 
 Retail scripts confirm both identities: `MoviePlay` embeds a path such as `Movie/s06_M.thp`, while `ChapterMoviePlay` passes a chapter number. The THP child owns full-screen video/audio/input until end or skip; either terminal path restores the caller and releases the same wait. Invalid media is a failed child presentation, not permission to advance chapter state independently.
 
-## FE9-SYS-303 — Staff credits
+## Staff credits
 
 <span id="fe9-sys-303"></span> The US build loads `ending/staffroll_noa.bin`; the adjacent `staffroll.bin` is the Japanese list and is not selected by the US loader. `END_STAFFROLL_LINES` supplies the row count and fixes total scroll length at `count × 0x30`. `END_STAFFROLL_STRS` contains rows of three nullable string pointers: column 1 is right-aligned to X `0x120`, column 2 is centered on X `0x130` and retains its own font control, and column 3 is formatted as `#F04%s` and drawn left-aligned at the registered third-column X coordinate. A null pointer renders an empty cell.
 

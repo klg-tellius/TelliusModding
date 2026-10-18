@@ -51,6 +51,7 @@ markdown_extensions:
   - footnotes
   - md_in_html
   - tables
+  - sane_lists
   - toc:
       permalink: true
   - pymdownx.details

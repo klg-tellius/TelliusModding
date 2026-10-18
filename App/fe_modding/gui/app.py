@@ -168,6 +168,9 @@ class MainWindow(tk.Tk):
         self._activate_project(project)
 
     def _activate_project(self, project: ModProject) -> None:
+        from .extended_recovery import resolve_recovery
+        if not resolve_recovery(self, project):
+            return
         self._teardown()
         self._project = project
         config.add_recent_project(project.directory)

@@ -240,8 +240,6 @@ class AddStoryChapterTests(unittest.TestCase):
         from fe_modding.project import ModProject
         source = Path(os.environ["FE9_EXTRACTED_FILES"])
         from fe_modding.formats import fe8data
-        if fe8data.japanese_chapter_layout((source / "FE8Data.bin").read_bytes()):
-            self.skipTest("Japanese chapter records are read-only")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)

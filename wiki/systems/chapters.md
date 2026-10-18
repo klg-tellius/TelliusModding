@@ -38,7 +38,7 @@ A story chapter is not one file — it is four independent files that happen to 
   </tbody></table>
 </div>
 
-## FE9-SYS-031 — Chapter record system
+## Chapter record system
 
 <span id="fe9-sys-031"></span>
 
@@ -63,7 +63,7 @@ A story chapter is not one file — it is four independent files that happen to 
 !!! info "Retail progression is native campaign routing, not a field in the chapter record"
     The unmodified story keeps one current-chapter byte and normally advances it by one after victory. `Complete18` preserves it for another part, the Chapter 27 pair and ending have native special cases, and trial maps use a separate entry route. The optional app patch can replace the `+1` result with an explicit next-chapter table. <span class="confidence confidence--confirmed">engine</span>
 
-## FE9-SYS-028 — Chapter lifecycle
+## Chapter lifecycle
 
 <span id="fe9-sys-028"></span>
 
@@ -79,7 +79,7 @@ A story chapter is not one file — it is four independent files that happen to 
 
   This is why the Prologue and Chapters 1&ndash;2 have neither base nor preparations (their scripts only define `Opening0`), Chapters 3&ndash;7 have preparations but no base, and later chapters have both.
 
-## FE9-SYS-029 — Multi-part chapter handling
+## Multi-part chapter handling
 
 <span id="fe9-sys-029"></span> Two mechanisms carry a presented chapter across multiple battles. Chapter 17 uses `Complete18(part)`: it ends the battle without advancing the chapter byte, heals/resets the units required by that boundary, writes resume point 5, 6, or 7, opens the save menu, and dispatches `Opening18_2`, `_3`, or `_4`. That entry point can load a different map and deployment while the same chapter script and selected campaign state remain active.
 
@@ -87,7 +87,7 @@ Chapter 27 instead occupies chapter/file numbers 28 and 29. The native transitio
 
 The tested `Complete18` example added a second battle to the Prologue, loaded `bmap02`, deployed units absent from part one, restarted at turn one, and reloaded correctly from an inter-part save. Events from the earlier part remained registered, so part-specific events need their own guards.
 
-## FE9-SYS-030 — Hub/base chapter routing
+## Hub/base chapter routing
 
 <span id="fe9-sys-030"></span> The campaign does not insert a generic base after every map. `GameController` checks whether the loaded chapter script exports `Opening1`. If it does, the late-game route can show the previous battle report, constructs the base, waits for the base to exit, and then runs `Opening1`. It next checks `Opening2` to decide whether preparations exist. Early scripts therefore omit facilities by omitting the corresponding entry point, while later scripts participate in the full story → base → prebattle → preparations route.
 
@@ -111,33 +111,33 @@ The save resume point distinguishes a base save from a preparation save. Reloadi
 
   For **MVP**, the game scans player-side units and chooses the unit with the greatest map kill count. Comparison is strictly greater, so the first unit encountered wins a tie, and nobody is shown when every count is zero. **New Ally** and **Fallen** come from per-unit joined-this-chapter and death-recorded status bits. Once the report is prepared, its chapter counters and flags are cleared for the next battle. <span class="confidence confidence--confirmed">engine</span>
 
-## FE9-SYS-032 — Chapter-local state reset
+## Chapter-local state reset
 
 <span id="fe9-sys-032"></span> A true chapter start initializes the event system, registers global flags, clears `gf_complete` and `gf_gameover`, runs `Startup` to register the new chapter's flags, and runs `RegistLocationTT`. Loading a base, preparation, part, or checkpoint save follows that initialization with restoration of the saved chapter bits. A post-victory save already names the next chapter; its old local bits are leftovers and are not restored as the new chapter's live event state.
 
 Other state has its own boundary. Clear processing appends turns/time to history and preserves durable party progression, roster, inventory, supports, balances, and options. The battle report consumes and then clears its period counters and joined/fallen marks. A fresh chapter rebuilds deployment, transient map actors, occupancy, phase/action state, and unsaved effects from authored inputs. `Complete18` preserves chapter identity and explicitly selected cross-part state while resetting/healing the battle state its handler owns. Checkpoint resumes instead restore serialized unit placement, turns/phases, local flags, tile records, and mutable map state rather than recreating them from master definitions.
 
-## FE9-SYS-033 — Checkpoint and resume routing
+## Checkpoint and resume routing
 
 <span id="fe9-sys-033"></span> The saved resume byte is a dispatch key for `GameController`: 1 returns to base, 2 to preparations, 3 starts New Game, 4 starts the next chapter after victory, 5–7 continue parts 2–4, 8 restores a suspended battle, and 10 starts a trial map. The save also carries chapter and difficulty identities plus the tagged party/map/unit/tile state required by the chosen route.
 
 A resume point is not a saved program counter. Loading rebuilds scenes and resources, then routes to a named lifecycle stage. Using the wrong point can replay openings, omit initialization, restore a live map as if it were a fresh chapter, or send a trial block through story progression.
 
-## FE9-SYS-034 — Victory recognition
+## Victory recognition
 
 <span id="fe9-sys-034"></span> Chapter scripts own the condition—rout, seize, arrive, defend, escape, boss defeat, or a custom combination—and set `gf_complete` when it succeeds. The battle-map loop polls that final flag and changes to its victory label. From there the engine ends map music, shows the clear/achievement flow, applies chapter-end unit/support processing, records turns and time, awards successful BEXP lines, advances or continues the campaign, chooses resume point 4, and opens the save route.
 
 The displayed objective text and map goal marker do not end the chapter by themselves. They communicate or support the authored condition; the flag is the engine boundary. Presentation scheduling also matters: bypassing the post-battle process can leave numerical combat complete while skipping boss/victory consequences and soft-locking the chapter.
 
-## FE9-SYS-035 — Defeat recognition
+## Defeat recognition
 
 <span id="fe9-sys-035"></span> The symmetric engine boundary is `gf_gameover`: chapter logic, protected-unit death handling, or other failure checks set it, and the battle loop routes to the Game Over process. Lord/protected-unit, turn-limit, position, and scripted-retreat predicates are authored by the chapter; [Objectives](./objectives.md) owns the condition-level lifecycle, while this page owns the controller transition and retry/resume route.
 
-## FE9-SYS-036 — Endgame and ending selection
+## Endgame and ending selection
 
 <span id="fe9-sys-036"></span> Advancing to chapter 32 enters the ending route instead of loading an ordinary chapter. Native flow reloads the Endgame context for the final scene, runs ending/credits work, records clear bits by difficulty, and records the playthrough identifier once. [Ending Cards](./endings.md) owns survival/relationship selection, card order, skip convergence, records, credits, and unlock writes rather than duplicating that lifecycle here.
 
-## FE9-SYS-037 — Trial-map campaign flow
+## Trial-map campaign flow
 
 <span id="fe9-sys-037"></span> Trial maps are `ChapterData` records with chapter identities 90 and above, their own map/script/message resources, `Opening0` plus preparations through `Opening2`, and twelve grade limits. The Extras route reinitializes party state, preserves the selected difficulty, chooses the trial record, assigns a random game identifier, and uses resume point 10 so a trial save re-enters the trial path rather than story advancement.
 

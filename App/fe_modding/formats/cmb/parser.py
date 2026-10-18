@@ -28,6 +28,8 @@ class Token:
     kind: str  # NAME NUM STR OP NEWLINE INDENT DEDENT EOF
     value: object
     line: int
+    column: int = 0
+    end_column: int = 0
 
 
 _TOKEN_RE = re.compile(
@@ -103,7 +105,7 @@ def tokenize(source: str) -> list[Token]:
             elif kind == "name":
                 tokens.append(Token("NAME", text, lineno))
             elif kind == "str":
-                tokens.append(Token("STR", unescape(text[1:-1], lineno), lineno))
+                tokens.append(Token("STR", unescape(text[1:-1], lineno), lineno, m.start(), m.end()))
             else:
                 if text in "([":
                     depth += 1
@@ -475,7 +477,7 @@ class Parser:
             return A.Num(t.value)
         if t.kind == "STR":
             self.take()
-            return A.Str(t.value)
+            return A.Str(t.value, source_span=(t.line, t.column, t.end_column))
         if self.at_op("("):
             self.take()
             expr = self.parse_expr()

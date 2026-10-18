@@ -43,7 +43,7 @@ A character is the persistent identity behind a unit: Ike remains Ike when his c
 4. The engine creates a runtime unit carrying current HP, gained levels, temporary modifiers, status, and action state.
 5. Combat getters combine runtime values with character and class data when the game needs an effective stat.
 
-## FE9-SYS-016 — Character definition system
+## Character definition system
 
 <span id="fe9-sys-016"></span>
 
@@ -53,7 +53,7 @@ A character is the persistent identity behind a unit: Ike remains Ike when his c
 
 The definition is immutable shared input, not the party member itself. Scripts and deployment files normally name the `PID_`; the boot-loaded database registry resolves it to this record. Saves instead serialize the character's table number, so renaming a label can break external references while reordering the character table can reinterpret existing saves. Adding or changing a character must therefore preserve both kinds of identity.
 
-## FE9-SYS-018 — Runtime unit construction
+## Runtime unit construction
 
 <span id="fe9-sys-018"></span> Construction joins definitions with mutable input. A fresh chapter deployment resolves its `PID_` and optional `JID_`, allocates or reuses a unit slot, applies the requested level/autolevel and signed deployment bonuses, creates item instances with their own uses and flags, adds deployment skills and AI, assigns force and named army, and places the actor on its spawn and destination tiles. A returning party member instead brings forward saved stats, level, EXP, skills, inventory, weapon experience, supports, bonuses, and other mutable fields; the definitions still supply shared properties and caps.
 
@@ -61,7 +61,7 @@ The important precedence rule is conceptual: the character and class are definit
 
 Construction can also fail or be skipped at its boundaries. A deployment record outside the map is skipped; an absent character/class label cannot produce a valid actor; occupied destinations are resolved through the placement rules; and an old save whose table numbers now name different definitions can construct the wrong unit even though the bytes still parse.
 
-## FE9-SYS-019 — Unit slots and army lists
+## Unit slots and army lists
 
 <span id="fe9-sys-019"></span> The runtime has 159 serializable unit slots. The slot number is a stable handle within the current state and is also how records link to the previous/next member of a force and to a carried unit. Empty slots serialize only an empty character/class pair; occupied slots serialize a 143-byte unit payload. This is why unit count changes the position of later save chunks.
 
@@ -69,13 +69,13 @@ Each occupied slot belongs to one of eight doubly linked force lists: player, en
 
 Code that mutates a force while iterating it must preserve the next handle first, because relinking changes traversal order. Code must also distinguish “known character” from “allocated slot” and “allocated slot” from “present on the map.” Those are three different states.
 
-## FE9-SYS-020 — Unit-state flags
+## Unit-state flags
 
 <span id="fe9-sys-020"></span> A unit's state word is a compact set of lifecycle and map-control facts. Confirmed bits include acted this turn, carrying/carried, dead or inactive, reserve, off-screen, hidden by fog, under a roof, group commander, escaped, died this chapter, mandatory or position-locked in preparations, restrictions on Give/Drop, and second-team selection. Menus, scripts, AI, map drawing, preparation, and save/load all consume subsets of this word.
 
 Treat these as owned state, not a bag of independent cheats. `UnitSetStatus` can set a mask, but manually setting bookkeeping bits such as carrying, carried, or inactive without performing the corresponding list, occupancy, or carry operation desynchronizes the unit. Normal lifecycle code owns the paired mutations; scripts in the retail data directly set only a smaller set of control bits. Temporary status conditions and bonuses occupy separate serialized fields and should not be confused with this lifecycle word.
 
-## FE9-SYS-024 — Mutable party state
+## Mutable party state
 
 <span id="fe9-sys-024"></span> The save's `UNIP` record is the durable party member. It stores character and class indices, force links, deployment group, level and EXP, transform gauge, tile, state words, current HP, permanent build/movement bonuses, eight personal stat values above class base, fixed-growth accumulators, learned skills, eight item instances, weapon experience, battle counters, support points, and AI state. Definitions such as a class cap or Iron Sword might remain in the database and are looked up again.
 

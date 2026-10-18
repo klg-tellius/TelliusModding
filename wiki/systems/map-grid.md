@@ -26,7 +26,7 @@ system_gap_work: []
 
 Scenery placement and the tactical grid number their tiles the same way — tile `(x, y)` of an object instance is tile `(x, y)` of the cursor, the deployment data and the map's per-tile height and terrain records — but they turn tile numbers into world positions with different formulas. In the Prologue, props placed at columns 4 and 6 appeared one and three tiles right of a unit standing at column 3. <span class="confidence confidence--confirmed">in game</span>
 
-## FE9-SYS-056 — Tile coordinate system
+## Tile coordinate system
 
 <span id="fe9-sys-056"></span>
 
@@ -54,13 +54,13 @@ Scenery placement and the tactical grid number their tiles the same way — tile
 
 Suppose deployment places a unit at `(8, 5)`. The occupancy, cursor, event-zone, terrain, and movement systems all address grid cell `(8, 5)`. Rendering converts its center through the tactical 5-unit formula and samples the panel's surface height. A tree instance also authored at `(8, 5)` uses the scenery placement transform, terrain anchor, pivot, rotation, and stored height instead. The matching integers let the two appear together, but neither record is the other's coordinate source.
 
-## FE9-SYS-059 — Passability rules and lifecycle
+## Passability rules and lifecycle
 
 <span id="fe9-sys-059"></span> Every cell begins with four ground openings: west, east, south, and north in bits 0–3. Height filtering closes an edge when either shared corner differs by at least 400 elevation units. Sparse `maplink` entries then provide authored exceptions, `maplinkAt` supplies directional threat-search cost hints in bits 8–11, and `maplinkAbs` replaces the low openings while generating the corresponding high-nibble flying blocks. The playable inset finally closes outward edges at the boundary.
 
 This order matters. A sparse authored opening can restore a ground edge closed by height, while an absolute record owns the cell and should not be casually overwritten. Ground movement follows low openings; flying movement uses the high directional block state; threat projection can cross a closed ground edge at a higher cost when its block bit permits it.
 
-## FE9-SYS-067 — Height and terrain conformance
+## Height and terrain conformance
 
 <span id="fe9-sys-067"></span> Three panel layers store four signed corner elevations per shared record: combined ground/object, base ground, and roof. Index grids select those records for each tile. The base surface height is `−elevation / 400`, and the tactical overlay draws two triangles split along the same diagonal as authored terrain. Units sample this logical surface; placed props carry their own vertical value but are normally authored against the tile-center surface.
 

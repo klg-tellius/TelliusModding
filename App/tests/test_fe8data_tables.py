@@ -73,7 +73,7 @@ class _Builder:
         return bytes(header + self.data + tail)
 
 
-def build() -> bytes:
+def build(*, japanese: bool = False) -> bytes:
     b = _Builder()
     b.symbol("DatabaseHead")
     b.word(0)
@@ -128,8 +128,10 @@ def build() -> bytes:
     b.symbol("ChapterData")
     b.word(2)
     for cid, script in ((0, "C00"), (1, "C01")):
-        b.record(fe8data.CHAPTER_RECORD_SIZE, {0x00: f"MCT0{cid}", 0x04: f"bmap0{cid}", 0x08: script},
-                 {0x3C: cid, 0x3F: 2})
+        b.record(fe8data.JP_CHAPTER_RECORD_SIZE if japanese else fe8data.CHAPTER_RECORD_SIZE,
+                 {0x00: f"第{cid}章" if japanese else f"MCT0{cid}",
+                  0x04: f"bmap0{cid}", 0x08: script, 0x40 if japanese else 0x44: "RID_BASE"},
+                 {0x3C: cid, 0x3F: 2, 0x56 if japanese else 0x5A: 7})
     b.symbol("GroupData")
     b.word(2)
     b.ref(None)
@@ -326,6 +328,36 @@ class FieldTests(unittest.TestCase):
         self.assertEqual(fe8data.read_database_head(data), ("today", "me"))
         self.assertEqual([c.pid for c in fe8data.read_fe8data(data).characters], ["PID_IKE", "PID_MIST", "PID_BOLE"])
 
+    def test_japanese_chapters_are_editable_with_their_regional_layout(self):
+        original = build(japanese=True)
+        self.assertTrue(fe8data.japanese_chapter_layout(original))
+        self.assertEqual(fe8data.write_table(original, "chapter", fe8data.read_table(original, "chapter")), original)
+
+        with self.assertRaisesRegex(ValueError, "needs a title"):
+            fe8data.patch_chapter_field(original, 1, "title_text", "")
+
+        data = fe8data.patch_chapter_field(original, 1, "title_text", "新しい章")
+        data = fe8data.patch_chapter_field(data, 1, "bgm", "BGM_NEW")
+        data = fe8data.patch_chapter_field(data, 1, "enemy_bonus_level2", 9)
+        data = fe8data.patch_chapter_field(data, 1, "trial_loss_grade2", 4)
+        chapter = fe8data.read_chapter_data(data)[1]
+        self.assertEqual((chapter.title_text, chapter.bgm, chapter.enemy_bonus_levels,
+                          chapter.trial_loss_grades[2], chapter.base_background),
+                         ("新しい章", "BGM_NEW", (0, 0, 9), 4, "RID_BASE"))
+        with self.assertRaisesRegex(ValueError, "no Easy-mode"):
+            fe8data.patch_chapter_field(data, 1, "enemy_bonus_level3", 1)
+
+        data, index = fe8data.add_record(data, "chapter", copy_from=1)
+        self.assertEqual(fe8data.read_chapter_data(data)[index].chapter_id, 33)
+        restored = fe8data.remove_record(data, "chapter", index)
+        self.assertEqual(records(restored), records(fe8data.patch_chapter_field(
+            fe8data.patch_chapter_field(
+                fe8data.patch_chapter_field(
+                    fe8data.patch_chapter_field(original, 1, "title_text", "新しい章"),
+                    1, "bgm", "BGM_NEW"),
+                1, "enemy_bonus_level2", 9),
+            1, "trial_loss_grade2", 4)))
+
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
 class DiscTableTests(unittest.TestCase):
@@ -335,14 +367,13 @@ class DiscTableTests(unittest.TestCase):
     def test_vanilla_tables_rewrite_identically_and_survive_add_remove(self):
         before = records(self.data)
         groups = fe8data.read_group_names(self.data)
-        jp = fe8data.japanese_chapter_layout(self.data)     # its chapter records are read-only
-        for kind in ("character", "class", "item", "skill") + (() if jp else ("chapter",)):
+        for kind in ("character", "class", "item", "skill", "chapter"):
             self.assertEqual(fe8data.write_table(self.data, kind, fe8data.read_table(self.data, kind)), self.data)
         self.assertEqual(fe8data.write_group_names(self.data, groups), self.data)
         self.assertEqual(fe8data.write_battle_skies(self.data, fe8data.read_battle_skies(self.data)), self.data)
         self.assertEqual(fe8data.write_battle_terrain(self.data, fe8data.read_battle_terrain(self.data)), self.data)
-        for kind, new_id in ((("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"))
-                             + (() if jp else (("chapter", None),))):
+        for kind, new_id in (("character", "PID_NEW"), ("class", "JID_NEW"), ("item", "IID_NEW"),
+                             ("chapter", None)):
             data, index = fe8data.add_record(self.data, kind, new_id, copy_from=0)
             self.assertEqual(len(supports.read_support_lists(data)), len(supports.read_support_lists(self.data)))
             self.assertEqual(records(fe8data.remove_record(data, kind, index)), before, kind)

@@ -33,7 +33,7 @@ Chapter scripts have no general memory. When a script needs to know whether some
 
 Treat the table like 96 numbered lockers. Scripts attach names to lockers, but a save records only which numbered lockers are on. If Chapter 5 registers `C5_BOSS_TALK` in slot 95, setting it prevents the talk from repeating and a checkpoint preserves bit 95. When the next chapter starts, that high-slot name is removed and the new chapter may reuse slot 95 for a different local fact. Global names occupy the low lockers continuously, so their saved bits keep the same meaning across that transition.
 
-## FE9-SYS-044 — Global event flags
+## Global event flags
 
 <span id="fe9-sys-044"></span>
 
@@ -52,7 +52,7 @@ Treat the table like 96 numbered lockers. Scripts attach names to lockers, but a
 
 Global flags keep their names when chapter-local names are discarded, so their bit values survive the next chapter's initialization and save/load reconstruction. They are suitable for story facts that later chapters must test, but they are still slot-addressed in the save. Inserting or reordering a global registration changes the meaning of every later saved bit and also reduces the room available to every chapter.
 
-## FE9-SYS-045 — Chapter event flags
+## Chapter event flags
 
 <span id="fe9-sys-045"></span> Chapter flags allocate downward from slot 95 when `Startup` calls `regist`. They hold one-map facts such as reinforcement waves, conversations, opened scripted locations, and objective steps. They share the same 96-bit storage and name lookup as globals; “chapter” describes registration and reset lifetime, not a different data type.
 
@@ -69,7 +69,7 @@ Global flags keep their names when chapter-local names are discarded, so their b
 
   Talk, battle and base-conversation events carry a label, and that label is a flag name. The engine skips the event while that flag is on; the event's own script turns it on after the conversation. A boss's pre-battle line therefore plays once even though the trigger condition is met at every encounter. <span class="confidence confidence--confirmed">confirmed</span>
 
-## FE9-SYS-046 — Serialization and reset policy
+## Serialization and reset policy
 
 <span id="fe9-sys-046"></span>
 

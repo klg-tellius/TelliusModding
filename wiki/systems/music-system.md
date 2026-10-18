@@ -51,7 +51,7 @@ A request for `BGM_PHASE_PL1` resolves the cue record by name, starts its target
 
   This four-channel design is what makes layered battle music possible: `BGM_PHASE_PL1`/`PL2` (a player-phase variant) and `BGM_PHASE_CP1`/`CP2` (its CPU/enemy-phase counterpart) are faded against each other through this exact mechanism as control passes between phases, rather than being spliced into one track file or hard-cut at the phase boundary.
 
-## FE9-SYS-323, FE9-SYS-324, and FE9-SYS-326 — Selection to stream
+## Selection to stream
 
 <span id="fe9-sys-323"></span> **Music selection.** Scripts and native scene/phase code request symbolic `BGM_*` cues. The shared 509-bucket registry resolves the name to a `gcfesnd.bin` record, whose path selects the stream. Context priority belongs to the active scene caller: story/battle/victory code explicitly starts or fades its cue and the returning owner explicitly restores its map/phase context. The registry resolves identity but never decides which gameplay context outranks another.
 

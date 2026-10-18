@@ -26,7 +26,7 @@ system_gap_work: []
 
 Every unit slot in the game belongs, at any moment, to exactly one of eight runtime lists. Which list a unit is in is not a side-effect of some other stored value — it *is* the unit's current allegiance. Moving a unit to a different army means physically relinking it into a different list, not flipping a byte read elsewhere.
 
-## FE9-SYS-021 — Army and allegiance system
+## Army and allegiance system
 
 <span id="fe9-sys-021"></span>
 
@@ -58,7 +58,7 @@ Every unit slot in the game belongs, at any moment, to exactly one of eight runt
 
   A story event that recruits a unit moves that unit's slot from its current list into the player list. The transfer preserves stats, inventory, and position, but it is not visually inert: it takes the destination force's first commander's named army when available, clears item-drop marks for a transfer to player/allied/other, and reloads the map model in the destination color. Control, target relationships, phase iteration, and map presentation then observe the new force.
 
-## FE9-SYS-022 — Commander and group system
+## Commander and group system
 
 <span id="fe9-sys-022"></span>
 

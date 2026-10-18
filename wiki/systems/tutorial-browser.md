@@ -30,7 +30,7 @@ Think of each lesson as content plus state. Content defines its category, labels
 
 For example, a chapter event can request a combat lesson before the player acts. If allowed, the popup takes modal focus, renders its pages, waits for navigation/close, marks the appropriate seen/unlocked state, then restores the map event at the same continuation. Later the Guide enumerates the same topic under its category from persistent availability. Closing the Guide changes no tactical state.
 
-## FE9-SYS-343 — Tutorial popup system
+## Tutorial popup system
 
 <span id="fe9-sys-343"></span> A popup request supplies or resolves a topic from script/scene context. Eligibility checks tutorial settings, difficulty/chapter state, unlocked/seen facts, and whether another modal or non-interruptible process owns focus. Accepted requests suspend the parent, build the tutorial page presenter, give it input, and wait for one completion result.
 
@@ -38,7 +38,7 @@ Completion can record availability/seen state and must restore parent focus, inp
 
 Trigger priority is therefore caller/focus ownership, not a global topic scheduler: an authored script requests one topic, the current modal-safety and option/difficulty checks either create one child or return a suppressed result, and the seen/unlocked masks decide subsequent one-time versus browser access. Close/skip writes only the accepted topic state, releases the child, and resumes the exact waiting action/event once. Reload reconstructs availability from saved masks rather than a suspended popup process.
 
-## FE9-SYS-344 — Tutorial and Guide browser
+## Tutorial and Guide browser
 
 <span id="fe9-sys-344"></span> The Guide is initialized from four named sections: `TUT_CHAPTER`, `TUT_CATEGORY`, `TUT_INITIAL`, and `TUT_DATA`. `TUT_DATA` begins with a count followed by 24-byte records. Each record stores topic ID at `+0`, category key at `+1`, chapter key at `+2`, display-order byte at `+3`, initial-selection key at `+4`, four per-difficulty start-flag bytes at `+5..+8` (Normal, Hard, Maniac, Easy), title-message pointer at `+0x0C`, script pointer at `+0x10`, and function pointer at `+0x14`. Category/chapter/initial group builders use keys starting at 1, and the visible records are merge-sorted by the display-order byte.
 

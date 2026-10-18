@@ -26,11 +26,11 @@ system_gap_work: []
 
 A moving battle model combines three data sets: a `.g` skeleton holding each bone's transform values, `.ga` curves that overwrite some of those values over time, and a `.gs` mesh whose vertices carry bone indices and weights.
 
-## FE9-SYS-312 — Skeleton and skinning
+## Skeleton and skinning
 
 <span id="fe9-sys-312"></span> The skeleton is a child/sibling hierarchy of local transforms. Every frame, local matrices chain into world matrices. Rigid shapes reference one bone or a subset loaded into up to ten GameCube matrix slots; blended vertices instead combine up to four `world × skin` matrices on the CPU using weights stored in 256ths. Positions and normals follow the same bone ownership, with normals excluding translation.
 
-## FE9-SYS-313 — Animation-track evaluation
+## Animation-track evaluation
 
 <span id="fe9-sys-313"></span> A `.ga` clip supplies keyed value curves for selected bones. At frame *t*, each driven channel linearly interpolates between neighboring keys and overwrites the corresponding translation, rotation, or scale value. The engine rebuilds the local matrix with Maya-style pivots and X→Y→Z Euler order, then chains the hierarchy. Undriven bones retain their seed values, which is why incomplete clips still depend on the model's base skeleton.
 

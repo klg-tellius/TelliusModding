@@ -30,25 +30,25 @@ Think of the interface as a stack of temporary questions. Hover asks “what is 
 
 For example, selecting a cavalry unit runs movement search from its real tile using remaining movement, terrain costs, occupancy, and movement traits. Blue tiles display legal destinations. Moving the cursor to one destination builds commands but does not commit the move. Choosing Attack combines that candidate tile with each usable weapon's range and target filters; the resulting red tiles are attackable targets. Cancelling Attack returns to the command list, cancelling again returns to movement selection, and cancelling again returns the unit to ordinary map focus without changing authoritative position.
 
-## FE9-SYS-062 — Movement-range display
+## Movement-range display
 
 <span id="fe9-sys-062"></span> Movement range consumes the weighted search and candidate-cost buffer produced by [Maps](./maps-system.md). Terrain cost, movement type, remaining allowance, directional links, occupancy, and caller-specific pass/stop rules determine candidate tiles; the interface merely colors those candidates and associates route previews with cursor focus. Canto reruns the same search from the action endpoint with remaining movement and its reduced command policy. Overlay color is presentation, while the candidate set is revalidated at commitment.
 
 Selecting a destination adds context without mutating the unit. Canto or other post-action movement repeats the model from the action endpoint with a reduced allowance and stricter command choices. Fog and roofs can hide units or scenery without changing the underlying cost grid. A redraw is required after displacement, a door/bridge change, death/removal, status or movement changes, or any event that changes occupancy or terrain.
 
-## FE9-SYS-063 — Attack and staff range display
+## Attack and staff range display
 
 <span id="fe9-sys-063"></span> Attack/staff range begins with a candidate origin, resolves each usable item's stored or dynamic minimum/maximum distance, and unions its reachable tiles. Target builders then apply effect-specific predicates: weapons require a legal hostile target, while staves share rank, silence, uses, and distance gates before healing, hostile-status, relocation, repair, or object rules specialize the result. Changing item narrows the union to that item's mask.
 
 The visible overlay is therefore a preview of legal targeting, not a promise that every colored tile contains a target. Weapon choice can narrow the union, and final confirmation must revalidate inventory, status, target state, distance, and occupancy. Forecast consumes the selected actor/item/target tuple; it does not derive authority from pixel color.
 
-## FE9-SYS-064 — Threat-range display
+## Threat-range display
 
 <span id="fe9-sys-064"></span> Threat display runs a non-committing enemy reach query: its movement search uses the map-link threat direction bits and threat-specific edge costs, combines candidate destinations with usable attack ranges, and aggregates the masks for one enemy or the danger view. It never advances AI, scores a target, chooses an action, or consumes RNG. The result is legal geometric reach from current state, so healing, escape policy, scripted activation, and AI preferences can still produce different behavior.
 
 Fog and hidden-state rules constrain what the player may inspect. A hidden enemy must not leak its exact reach through the overlay unless the same state is otherwise visible. Changes to weapons, silence, transformation, movement, terrain, occupancy, allegiance, or activation require recomputation rather than recoloring stale data.
 
-## FE9-SYS-065 — Map cursor
+## Map cursor
 
 <span id="fe9-sys-065"></span> The cursor owns tactical tile focus and drives contextual inspection. Its current tile selects terrain, map objects, visible units, help, route previews, and destination candidates. Selection creates a focus stack—map, unit, destination, command, item, target, forecast—and cancel unwinds that stack without applying the previewed mutation.
 

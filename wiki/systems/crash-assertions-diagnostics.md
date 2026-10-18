@@ -30,7 +30,7 @@ Treat a diagnostic as the last labelled checkpoint before failure. It can identi
 
 For example, suppose a modified chapter crashes immediately after loading its map archive. First reproduce from the same clean save and capture the final messages. If the last diagnostic names a map section, compare the request string, archive directory, section size, and decompression result with an unmodified chapter. Then follow the caller into the consumer that interprets the section. Fixing the section name or record shape is safer than patching out the assertion, because later code still relies on the condition it checked.
 
-## FE9-SYS-014 — Diagnostic system boundary
+## Diagnostic system boundary
 
 <span id="fe9-sys-014"></span> Diagnostics sit across subsystems rather than owning gameplay. Resource managers report failed files, archives, sections, allocations, and decodes. Script/event code reports impossible call or state conditions. Platform and renderer/audio layers can report failed operations. Assertions additionally preserve development provenance such as source file, line, function, author, timestamp, or build context.
 
@@ -58,7 +58,7 @@ Do not infer severity from wording alone. “Error” can precede a recoverable 
 
 Patching out checks is hazardous. Assertions often guard bounds, allocation results, object types, resource sizes, and lifecycle order. If the invariant is genuinely too strict for a mod, update the producer, consumer, and validated limit together. If the error is expected and recoverable, preserve a clear failure return and test cleanup/retry behavior.
 
-## FE9-SYS-375 — Retail logging and assertion paths
+## Retail logging and assertion paths
 
 <span id="fe9-sys-375"></span> The retail executables contain three distinct mechanisms, and their retained strings must not be treated as one console:
 

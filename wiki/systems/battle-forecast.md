@@ -28,25 +28,25 @@ The forecast is a **preview of one legal combat setup**, not combat itself. The 
 
 Treat the forecast as a pure snapshot between two mutable stages. Before it, movement and command construction choose legal inputs. After it, confirmation rechecks them and builds the authoritative combat log. The preview may calculate with current unit/item/map state, but it must not spend durability, change HP, mark units acted, or advance the combat random generator. Cancel discards the snapshot.
 
-## FE9-SYS-113 — Target selection
+## Target selection
 
 <span id="fe9-sys-113"></span> Candidate targets must be alive/on-map, hostile under current allegiance, visible where fog rules require it, and within the selected weapon's legal range from the actor's committed destination. Objects such as breakable walls use their own action/target rules rather than becoming ordinary hostile units.
 
 Target order matters to UI and AI tie-breaking but does not change legality. If a script changes allegiance, hides/removes a unit, or opens terrain after the menu was built, execution must reject the stale selection or rebuild candidates.
 
-## FE9-SYS-114 — Weapon selection
+## Weapon selection
 
 <span id="fe9-sys-114"></span> A weapon is a usable inventory instance whose shared definition passes class/skill/character restrictions, whose rank is no higher than the unit's WEXP, whose uses remain, and whose range covers the target distance. Silence removes applicable tomes/staves; untransformed laguz cannot use their transformed natural strike. The currently equipped weapon is a default, not permission to attack outside its range.
 
 The UI may let the player choose among legal weapons and updates forecast for each. Choosing a different weapon can alter Attack Speed through weight, triangle, effectiveness, attack stat/type, range, hit/critical, stat bonuses, skill conditions, and defender counter eligibility.
 
-## FE9-SYS-115 — Defender weapon selection
+## Defender weapon selection
 
 <span id="fe9-sys-115"></span> The defender counters only with a usable weapon that reaches the actual distance. In runtime/save inventory, one item can carry the equipped flag, but a counter still needs current legality. If no equipped weapon can counter, the forecast shows no defender attack even though the defender is armed.
 
 The game's exact automatic fallback priority among multiple usable defender weapons needs a dedicated trace. TelliusModding's simulator chooses the first usable in-range weapon as an approximation; the article must not promote that implementation choice to confirmed retail behavior without comparison.
 
-## FE9-SYS-116 — Battle forecast
+## Battle forecast
 
 <span id="fe9-sys-116"></span> For each side, forecast combines effective stats, chosen weapon, terrain, support/bond, biorhythm, triangle, effectiveness, statuses, passive skills, range, and special protection. It presents HP and weapon plus the combat-facing values generally understood as damage, hit, critical, and strike/follow-up information.
 

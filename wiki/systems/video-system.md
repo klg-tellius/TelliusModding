@@ -30,7 +30,7 @@ Think of playback as a bounded producer/consumer pipeline. Disc/file I/O feeds c
 
 For example, `MoviePlay("Movie/s06_M.thp")` passes a literal path from event bytecode. The player validates the THP header, allocates its working/buffer state, reads frame data, decodes the first picture and audio samples, then begins scheduled presentation. Pressing the allowed skip input stops further visible playback, drains or cancels pending work, restores the previous audio/display/input owners, signals completion once, and lets the event continue.
 
-## FE9-SYS-331 — THP video decoder
+## THP video decoder
 
 <span id="fe9-sys-331"></span> A THP resource contains a timed sequence of frames. Each frame can carry JPEG-like video and DSP-ADPCM audio components plus sizes/timing information. Audio sample counts belong to synchronization; 32-byte padding is storage alignment and must not be decoded as additional picture or sound.
 

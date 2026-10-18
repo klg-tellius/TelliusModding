@@ -133,21 +133,64 @@ class HubCreationTests(unittest.TestCase):
         source = build_minimal_dispo_bytes((b"bmap05_mikata_c", b"bmap05_first_c"))
         donor = lz10.compress(pak.pack_pak([("dispos_c.bin", source)]))
         renamed = chapters._renumber_dispos(donor, "05", "33")
-        packed = lz10.decompress(hub_creation.avatar_deployment(renamed, "PID_HUB", 3, 4))
+        packed = lz10.decompress(hub_creation.avatar_deployment(renamed, "PID_HUB", 3, 4, "JID_RANGER"))
         entry = pak.read_pak_entries(packed)[0]
         doc = dispo.parse_dispo(pak.read_pak_file_content(packed, entry))
-        player = doc.section("bmap33_mikata_c")
+        player = doc.section("bmap33_avatar_c")
+        self.assertNotIn("_mikata_", player.name)
         self.assertEqual(len(player.units), 1)
         self.assertEqual(player.units[0][dispo.FIELD["pid"]], "PID_HUB")
+        self.assertEqual(player.units[0][dispo.FIELD["jid"]], "JID_RANGER")
+        for field, name in hub_creation.AVATAR_AI.items():
+            self.assertEqual(player.units[0][dispo.FIELD[field]], name)
         self.assertEqual((player.units[0][dispo.FIELD["pos_x"]], player.units[0][dispo.FIELD["pos_y"]]), (3, 4))
         self.assertFalse(doc.section("bmap33_first_c").units)
+        with tempfile.TemporaryDirectory() as tmp:
+            deployment = Path(tmp) / "dispos.cmp"
+            deployment.write_bytes(lz10.compress(packed))
+            self.assertEqual(hub._deployment_pids(deployment), ({"PID_HUB"}, {"PID_HUB"}))
+
+    def test_avatar_ai_repair_preserves_other_units_and_custom_ai(self):
+        from fe_modding import hub_creation
+        from tests.dispo_fixture import build_minimal_dispo_bytes
+        document = dispo.parse_dispo(build_minimal_dispo_bytes((b"bmap33_avatar_c",)))
+        unit = dispo.new_unit_values()
+        unit[dispo.FIELD["pid"]] = "PID_HUB"
+        unit[dispo.FIELD["seq_move"]] = "SEQ_CUSTOM_MOVE"
+        other = list(unit)
+        other[dispo.FIELD["pid"]] = "PID_OTHER"
+        document.section("bmap33_avatar_c").units = [unit, other]
+        archive = lz10.compress(pak.pack_pak([("dispos_c.bin", dispo.build_dispo(document))]))
+        repaired = hub_creation.repair_avatar_deployment(archive, "PID_HUB", "JID_RANGER")
+        self.assertEqual(hub_creation.repair_avatar_deployment(repaired, "PID_HUB", "JID_OTHER"), repaired)
+        raw = lz10.decompress(repaired)
+        result = dispo.parse_dispo(pak.read_pak_file_content(raw, pak.read_pak_entries(raw)[0]))
+        self.assertEqual(result.section("bmap33_avatar_c").units[1], other)
+        avatar = result.section("bmap33_avatar_c").units[0]
+        self.assertEqual(avatar[dispo.FIELD["jid"]], "JID_RANGER")
+        self.assertEqual(avatar[dispo.FIELD["seq_move"]], "SEQ_CUSTOM_MOVE")
+        for field in ("seq_attack", "seq_heal", "mtype"):
+            self.assertEqual(avatar[dispo.FIELD[field]], hub_creation.AVATAR_AI[field])
+
+    def test_opening_deploys_avatar_then_focuses_and_reveals_map(self):
+        from fe_modding import hub_creation
+        source = hub_creation.opening_source(33, "bmap33_avatar_c", "PID_HUB")
+        compile_source(source)
+        self.assertLess(source.index('InstantDisposFirst'), source.index('InstantUnitFocusByPID'))
+        self.assertLess(source.index('InstantSetMapCamera'), source.index('Fade(2, 500)'))
+        self.assertTrue(source.endswith('    FadeWait()\n'))
+        self.assertNotIn('Opening2', source)  # no preparations menu
 
     def test_flat_map_has_selected_dimensions_and_only_ground(self):
         from fe_modding import hub_creation
-        from fe_modding.formats import gs_file, lz10, map_file, pak
+        from fe_modding.formats import gs_file, lz10, map_file, pak, tpl
+        from PIL import Image
+        import io
         from tests.test_map_heights import _map_bin
 
-        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor")]))
+        original_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor"),
+                                          ("texpack.tpl", original_tpl)]))
         for width, height in ((4, 4), (23, 17), (63, 63)):
             packed = lz10.decompress(hub_creation.blank_map(donor, width, height))
             files = {entry.name: pak.read_pak_file_content(packed, entry) for entry in pak.read_pak_entries(packed)}
@@ -157,9 +200,47 @@ class HubCreationTests(unittest.TestCase):
             self.assertEqual(set(t for column in map_file.terrain_grid(files["map.bin"]) for t in column),
                              {hub_creation.GRASS})
             self.assertEqual(gs_file.read_gs(files["flat.gs"]).bbox_max[::2], (width * 5.0, height * 5.0))
+            ground = gs_file.read_gs(files["flat.gs"])
+            images = tpl.read_tpl_images(io.BytesIO(files["texpack.tpl"]))
+            self.assertEqual(images[0].tobytes(), tpl.read_tpl_images(io.BytesIO(original_tpl))[0].tobytes())
+            for material in ground.materials:
+                self.assertNotIn(material.name, {"map_base", "map_wall", "map_water"})
+                self.assertEqual(len(material.textures), 2)
+                for texture in material.textures:
+                    self.assertEqual(texture.tex_id, 1)
+                    self.assertEqual(images[texture.tex_id].tobytes(), b"\xff" * (8 * 8 * 4))
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES for real assets")
 class RealAssetIntegrationTests(unittest.TestCase):
+    def test_entrance_markers_follow_destinations_without_duplicates(self):
+        from types import SimpleNamespace
+        from fe_modding import map_props
+        from fe_modding.formats import map_file
+        from dataclasses import replace
+        files = Path(os.environ["FE9_EXTRACTED_FILES"])
+        project = SimpleNamespace(files_dir=files)
+        setup = hub.HubSetup(33, 1, "PID_HUB", (
+            hub.Destination(2, 4, 4, 5, 6), hub.Destination(3, 6, 4, 5, 6)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "map.cmp"
+            shutil.copy(files / "zmap/bmap05/map.cmp", path)
+            _, original = map_props.read_map_container(path)
+            original_records = map_file.instance_records(original["map.bin"])
+            first = hub.entrance_markers(project, path, setup)
+            path.write_bytes(first)
+            self.assertEqual(hub.entrance_markers(project, path, setup), first)
+            changed = replace(setup, destinations=(hub.Destination(3, 8, 4, 5, 6),))
+            path.write_bytes(hub.entrance_markers(project, path, changed))
+            _, result = map_props.read_map_container(path)
+            data = map_file.read_map_bytes(result["map.bin"])
+            index = next(i for i, o in enumerate(data.build_desc) if o.filename == hub.ENTRANCE_OBJECT)
+            self.assertEqual([(i.x, i.y) for i in data.build_inst if i.desc_index == index], [(8, 4)])
+            self.assertEqual([r for r, i in zip(map_file.instance_records(result["map.bin"]), data.build_inst)
+                              if i.desc_index != index], original_records)
+            self.assertEqual(map_file.terrain_grid(result["map.bin"]), map_file.terrain_grid(original["map.bin"]))
+            for ext in ("gs", "g", "ga"):
+                self.assertIn(f"{hub.ENTRANCE_OBJECT}.{ext}", result)
+
     def test_prepared_hub_installs_and_reconfigures(self):
         from fe_modding import hub_creation
         from fe_modding.games import Game
@@ -167,8 +248,6 @@ class RealAssetIntegrationTests(unittest.TestCase):
 
         source = Path(os.environ["FE9_EXTRACTED_FILES"])
         from fe_modding.formats import fe8data
-        if fe8data.japanese_chapter_layout((source / "FE8Data.bin").read_bytes()):
-            self.skipTest("Japanese chapter records are read-only")
         with tempfile.TemporaryDirectory() as tmp:
             project = ModProject.create(Path(tmp), "hub test", Game.PATH_OF_RADIANCE)
             files = project.extracted_dir / "files"
@@ -182,6 +261,8 @@ class RealAssetIntegrationTests(unittest.TestCase):
             for name in ("map.cmp", "dispos.cmp"):
                 shutil.copy(source / "zmap" / "bmap05" / name, files / "zmap" / "bmap05" / name)
                 shutil.copy(source / "zmap" / "bmap09" / name, files / "zmap" / "bmap09" / name)
+            (files / "zmap/bmap18").mkdir(parents=True)
+            shutil.copy(source / "zmap/bmap18/map.cmp", files / "zmap/bmap18/map.cmp")
             shutil.copy(source / "FE8Data.bin", files / "FE8Data.bin")
             shutil.copy(source / "Fonts" / "bigkana.gcf", files / "Fonts" / "bigkana.gcf")
             for folder in ("window/chapter", "window/chapter2"):
@@ -222,12 +303,105 @@ class RealAssetIntegrationTests(unittest.TestCase):
             base = read_cmb(hub_path.read_bytes())
             hub_path.write_bytes(write_cmb(compile_source("# Prepared hub script\n", base=base).script))
 
+            # Prepare directly in extended storage, without installing a legacy
+            # hub or modifying any of the project's files.
+            from fe_modding.extended_hub import prepare_fresh_project_update
+            from fe_modding.formats.extended_flags import FlagLayout, HUB_ALIASES
+            from fe_modding.formats import event_flags as ef
+            from fe_modding.formats.cmb.parser import parse
+            c18_script = files / "Scripts" / "C18.cmb"
+            c18_message = files / "Mess" / "c18.m"
+            shutil.copy(source / "Scripts" / "C18.cmb", c18_script)
+            shutil.copy(source / "Mess" / "c18.m", c18_message)
+            c18_source = script_sources.peek(project, c18_script)
+            old_locals = ef.local_flags(parse(c18_source))
+            self.assertEqual(len(old_locals), 58)
+            for name in ("extended_chapter_a", "extended_chapter_b"):
+                c18_source = ef.append_registration(c18_source, "Startup", "regist", name)
+            c18_script.write_bytes(write_cmb(compile_source(c18_source, base=read_cmb(c18_script.read_bytes())).script))
+            c18_sidecar = script_sources.sidecar_path(project, c18_script)
+            c18_sidecar.parent.mkdir(parents=True, exist_ok=True)
+            c18_sidecar.write_text(c18_source, encoding="utf-8")
+            before = {p: p.read_bytes() for p in project.directory.rglob("*") if p.is_file()}
+            layout = (FlagLayout().add("extended_chapter_a", "chapter", 18)
+                      .add("extended_chapter_b", "chapter", 18))
+            from dataclasses import replace
+            fresh_setup = replace(setup, start_x=1, start_y=1,
+                                  destinations=(replace(setup.destinations[0], description="Visit chapter five."),))
+            update = prepare_fresh_project_update(project, fresh_setup, layout)
+            self.assertEqual({p: p.read_bytes() for p in project.directory.rglob("*") if p.is_file()}, before)
+            self.assertEqual(update.migration.configuration["storage"], "extended")
+            self.assertEqual(update.migration.configuration["layout_identity"], layout.identity)
+            self.assertNotIn("slots", update.migration.configuration)
+            names = ef.global_flags(parse(update.migration.startup_source))
+            self.assertEqual(names[-18:], list(HUB_ALIASES))
+            self.assertFalse(any(name.startswith("HUB_PAD_") for name in names))
+            self.assertEqual(len(update.migration.vanilla_globals), 30)
+            outputs = {item.path: item.after for item in update.changes}
+            self.assertIn(hub_path, outputs)
+            self.assertIn(script_sources.chapter_script(project, "09"), outputs)
+            self.assertIn(chapters.chapter_paths(project, "33").dialogue, outputs)
+            self.assertIn(deployment, outputs)
+            update.verify_unchanged()
+            original_map = map_path.read_bytes()
+            map_path.write_bytes(original_map + b"changed")
+            with self.assertRaisesRegex(ValueError, "changed after"):
+                update.verify_unchanged()
+            map_path.write_bytes(original_map)
+            with self.assertRaisesRegex(ValueError, "Chapter 18"):
+                hub.prepare(project, setup)
+            # Exercise installed extended reconfiguration in this isolated
+            # fixture, including removal of the old activation event.
+            from fe_modding.extended_hub import prepare_reconfigure_project_update
+            from fe_modding.game_code.extended_flag_installation import inspect_project, RuntimeState
+            for item in update.changes:
+                item.path.parent.mkdir(parents=True, exist_ok=True)
+                item.path.write_bytes(item.after)
+            try:
+                self.assertEqual(inspect_project(project).state, RuntimeState.MATCHING)
+                installed = {p: p.read_bytes() for p in project.directory.rglob("*") if p.is_file()}
+                revised = replace(fresh_setup, activation_chapter=5)
+                reconfigured = prepare_reconfigure_project_update(project, revised, layout)
+                self.assertEqual({p: p.read_bytes() for p in project.directory.rglob("*") if p.is_file()}, installed)
+                names = ef.global_flags(parse(reconfigured.migration.startup_source))
+                self.assertEqual(names[-18:], list(HUB_ALIASES))
+                self.assertEqual(reconfigured.migration.configuration["normal_successor"], 34)
+                revised_outputs = {item.path: item.after for item in reconfigured.changes}
+                old_activation = script_sources.chapter_script(project, "09")
+                old_text = revised_outputs[script_sources.sidecar_path(project, old_activation)].decode("utf-8")
+                self.assertEqual(hub._remove_generated(old_text), old_text)
+                for item in reconfigured.changes:
+                    item.path.write_bytes(item.after)
+                self.assertEqual(inspect_project(project).state, RuntimeState.MATCHING)
+            finally:
+                for path in tuple(project.directory.rglob("*")):
+                    if path.is_file() and path not in before:
+                        path.unlink()
+                for path, data in before.items():
+                    path.write_bytes(data)
+            # Keep the pre-existing legacy installation/reconfiguration test
+            # independent of the extended-only C18 fixture.
+            c18_script.unlink()
+            c18_message.unlink()
+            c18_sidecar.unlink()
+
             prepared = hub.prepare(project, setup)
             self.assertEqual(prepared["slots"]["active"], 30)
             first = hub.install(project, setup)
             self.assertEqual(first["chapter"], 33)
             self.assertEqual(hub.install(project, setup)["slots"], first["slots"])
             self.assertEqual(hub.saved_setup(project)["normal_successor"], 34)
+            from fe_modding.extended_hub import prepare_install_project_update
+            migration = prepare_install_project_update(project, replace(setup, activation_chapter=5), FlagLayout())
+            self.assertEqual(hub.saved_setup(project)["version"], first["version"])
+            self.assertEqual(migration.migration.configuration["activation_chapter"], 5)
+            migrated_names = ef.global_flags(parse(migration.migration.startup_source))
+            self.assertEqual(migrated_names[-18:], list(HUB_ALIASES))
+            self.assertFalse(any(name.startswith("HUB_PAD_") for name in migrated_names))
+            old_activation = script_sources.chapter_script(project, "09")
+            migration_outputs = {item.path: item.after for item in migration.changes}
+            old_text = migration_outputs[script_sources.sidecar_path(project, old_activation)].decode("utf-8")
+            self.assertEqual(hub._remove_generated(old_text), old_text)
             generated = hub_creation.create_chapter(project, project.read_logical("game_data"), "05", 34,
                                                     "Generated Hub", 16, 12, "PID_SOTHE", (1, 1))
             self.assertIsNotNone(generated.fe8data)
@@ -252,6 +426,8 @@ class HubDraftTests(unittest.TestCase):
             setup = hub.setup_from(hub.working_setup(project))
             self.assertEqual(setup.destinations, (hub.Destination(8, 1, 2, 1, 3, ""),))
             self.assertIsNone(setup.start_x)
+            hub.save_draft(project, {**draft, "storage": "extended"})
+            self.assertEqual(hub.working_setup(project)["storage"], "extended")
             hub.config_path(project).write_text('{"chapter": 41}', encoding="utf-8")
             self.assertEqual(hub.hub_chapter(project), 40)  # the draft is what is being edited
             hub.draft_path(project).unlink()

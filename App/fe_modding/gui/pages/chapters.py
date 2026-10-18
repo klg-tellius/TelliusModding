@@ -903,7 +903,7 @@ class ChapterPage(Page):
                 self._set_phase(folder)
             self._build.select_unit(difficulty, section, int(unit))
 
-    def _install_hub(self, setup) -> bool:
+    def _install_hub(self, setup, *, storage="vanilla") -> bool:
         """Install the hub (Build tab › Hub tool): its events, texts, flags and chapter routing."""
         dirty = [p for p in (self._map, self._deployment, self._script, self._dialogue) if p.dirty]
         if dirty:
@@ -915,7 +915,22 @@ class ChapterPage(Page):
                 if not panel.save():
                     return False
         try:
-            hub.install(self.project, setup)
+            if storage == "extended":
+                from ...formats.extended_flags import FlagLayout, MANIFEST_NAME
+                from ...extended_hub import prepare_install_project_update, commit_project_update
+                manifest = self.project.directory / MANIFEST_NAME
+                layout = FlagLayout.from_json(manifest.read_text(encoding="utf-8")) if manifest.exists() else FlagLayout()
+                update = prepare_install_project_update(self.project, setup, layout)
+                commit_project_update(self.project, update)
+                for change in update.changes:
+                    self._script.reload_if_open(change.path)
+            elif storage == "vanilla":
+                current = hub.saved_setup(self.project)
+                if current and current.get("storage") == "extended":
+                    raise ValueError("Downgrading an extended hub to vanilla storage is not supported.")
+                hub.install(self.project, setup)
+            else:
+                raise ValueError("Unknown hub storage bank")
         except Exception as exc:  # noqa: BLE001 - validation and codec failures alike
             messagebox.showerror("Could not install the hub", str(exc), parent=self)
             return False

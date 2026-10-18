@@ -47,6 +47,19 @@ class HubTool(ttk.Frame):
         self._status = ttk.Label(head, text="", style="Muted.TLabel")
         self._status.pack(side="right")
 
+        storage_row = ttk.Frame(self)
+        storage_row.pack(fill="x", pady=(8, 0))
+        ttk.Label(storage_row, text="Flag storage").pack(side="left")
+        self._storage = tk.StringVar(value="Extended")
+        self._storage_box = ttk.Combobox(storage_row, textvariable=self._storage,
+                                       values=("Extended", "Vanilla"), state="readonly", width=12)
+        self._storage_box.pack(side="left", padx=(6, 0))
+        self._storage_box.bind("<<ComboboxSelected>>", lambda e: self._storage_changed())
+        info(storage_row, "Extended gives the hub its own saved storage and frees vanilla flag slots. "
+                         "Initial installation or migration requires a fresh playthrough. Existing saves "
+                         "are not converted. Extended installation remains unavailable until regional "
+                         "in-game validation passes.").pack(side="left", padx=(6, 0))
+
         row = ttk.Frame(self)
         row.pack(fill="x", pady=(8, 0))
         tip(ttk.Label(row, text="Opens after"),
@@ -66,7 +79,8 @@ class HubTool(ttk.Frame):
 
         tip(ttk.Label(self, text="Chapter links"),
             "Green square: the action tile. Blue circle: where the avatar stands when it comes back from that "
-            "chapter. Drag either one to move it.").pack(anchor="w", pady=(10, 2))
+            "chapter. Drag either one to move it. Applying hub setup places a visible Arrive marker "
+            "on each action tile in game.").pack(anchor="w", pady=(10, 2))
         self._list = tk.Listbox(self, height=7, exportselection=False, activestyle="none")
         self._list.pack(fill="x")
         self._list.bind("<<ListboxSelect>>", lambda e: self._list_selected())
@@ -117,6 +131,14 @@ class HubTool(ttk.Frame):
             self.data = None
             return False
         self.data = data
+        installed = hub.saved_setup(project)
+        storage = data.get("storage") or (installed.get("storage", "vanilla") if installed else "extended")
+        if installed and installed.get("storage") == "extended":
+            storage = "extended"
+        self.data["storage"] = storage
+        self._storage.set(storage.title())
+        self._storage_box.configure(values=("Extended",) if installed and installed.get("storage") == "extended"
+                                    else ("Extended", "Vanilla"))
         self.data.setdefault("destinations", [])
         self.current = None
         self.placing = None
@@ -167,12 +189,23 @@ class HubTool(ttk.Frame):
 
     def _update_status(self) -> None:
         project = self._builder.project
-        installed = hub.saved_setup(project) is not None
+        configuration = hub.saved_setup(project)
+        installed = configuration is not None
         text = ("Changes not installed" if hub.draft_path(project).is_file() and installed else
                 "Installed" if installed else "Not installed yet")
+        if installed and configuration.get("storage") == "extended":
+            from ..game_code.extended_flag_installation import inspect_project, RuntimeState
+            status = inspect_project(project)
+            text = (text + " · verified extended" if status.state == RuntimeState.MATCHING else
+                    "Extended: " + status.state.value)
         self._status.configure(text=text)
 
     # -- editing ------------------------------------------------------------------------------
+    def _storage_changed(self):
+        if self.data is not None:
+            self.data["storage"] = self._storage.get().lower()
+            self._save()
+
     def _save(self) -> None:
         hub.save_draft(self._builder.project, self.data)
         self._update_status()
@@ -333,6 +366,6 @@ class HubTool(ttk.Frame):
         except (KeyError, TypeError) as exc:
             messagebox.showerror("Install hub", f"The hub setup is incomplete: {exc}", parent=self)
             return
-        if self._builder.install_hub(setup):
+        if self._builder.install_hub(setup, storage=self._storage.get().lower()):
             self.load(f"{data['chapter']:02d}")
             self._builder.hub_changed()

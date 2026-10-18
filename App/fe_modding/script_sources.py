@@ -115,10 +115,28 @@ def chapter_script(project: ModProject, chapter_id: str) -> Optional[Path]:
 def save(project: ModProject, script: LoadedScript, source: str):
     """Compile ``source`` onto ``script.base`` and write both files. Raises
     :class:`CompileError`; returns the CompileResult and updates ``script``."""
+    from .game_code.extended_flags import require_project_runtime
+    require_project_runtime(project)
     context = CompileContext.for_script(project, script.path, source)
+    from .formats.extended_flags import FlagLayout, FlagCompileContext, MANIFEST_NAME
+    manifest = project.directory / MANIFEST_NAME
+    extended = None
+    if manifest.exists():
+        layout = FlagLayout.from_json(manifest.read_text(encoding="utf-8"))
+        match = re.fullmatch(r"C(\d{2})", script.path.stem, re.IGNORECASE)
+        extended = FlagCompileContext(layout, int(match.group(1)) if match else None)
     result = compile_source(source, base=script.base, known_script_functions=context.helpers,
-                            global_flags=context.global_flags)
+                            global_flags=context.global_flags, flag_context=extended)
     data = write_cmb(result.script)
+    if extended is not None:
+        from .extended_project import prepare_runtime_update
+        from .extended_hub import commit_project_update
+        update = prepare_runtime_update(project, layout, {script.path: source})
+        commit_project_update(project, update)
+        CompileContext._cache.clear()
+        script.base = read_cmb(data)
+        script.source = source
+        return result
     project.write_keeping_original(script.path, data)
     sidecar = sidecar_path(project, script.path)
     sidecar.parent.mkdir(parents=True, exist_ok=True)

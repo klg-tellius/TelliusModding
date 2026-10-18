@@ -28,21 +28,21 @@ Bonus Experience (BEXP) separates **how well a chapter was completed** from **wh
 
 Treat BEXP as a bank account with two independent ledgers. If clear processing awards 500, the persistent pool rises by 500 and the current report-period counter records the award. Spending 120 at the base lowers the pool to 380 and advances the selected unit toward its next level; it does not retroactively change the chapter's award criteria. When the report counter later resets, the 380 unspent points remain available because the pool and report are different fields.
 
-## FE9-SYS-208 — Award calculation
+## Award calculation
 
 <span id="fe9-sys-208"></span> Each chapter defines relevant performance conditions. Clear processing evaluates them after victory, combines their awards, and adds the result to the persistent pool. Common inputs include turns and optional objectives, but the system is chapter-specific rather than one universal formula.
 
 The save confirms a 32-bit BEXP balance and a separate signed report counter. Scripts/flags can represent optional accomplishments, while native clear processing can apply chapter, difficulty, and display rules. Until the complete consumer is traced, individual chapter tables should be documented as evidence, not generalized beyond their observed maps.
 
-## FE9-SYS-209 — Turn-efficiency component
+## Turn-efficiency component
 
 <span id="fe9-sys-209"></span> Many chapters reward faster completion. The likely shape is a chapter-authored threshold or decay schedule using the final turn count. Correct research must test boundary turns on each difficulty; observing “fewer turns gives more” does not identify rounding, floor, maximum, or whether multi-part chapters count separately.
 
-## FE9-SYS-210 — Objective component
+## Objective component
 
 <span id="fe9-sys-210"></span> Optional conditions can reward protecting NPCs, escaping additional units, avoiding prohibited actions, or satisfying chapter-specific goals. These are naturally represented by event flags/counters set during play and read at clear. The article should name the exact flag/script path for each confirmed objective.
 
-## Rules and lifecycle — FE9-SYS-211 pool accounting
+## Rules and lifecycle — pool accounting
 
 <span id="fe9-sys-211"></span> The party stores current BEXP separately from gold and report totals. Clear awards increase the pool; base spending decreases it. The report's Bonus Exp counter describes the reporting period and can reset without erasing unspent pool balance. Save/load must preserve both meanings.
 
@@ -50,13 +50,13 @@ Pool accounting has three authoritative boundaries. Chapter-clear award logic re
 
 This separation also defines failure behavior. Cancelling a unit selection or allocation leaves the pool unchanged. A failed or ineligible level-up must not spend points. Resetting the report period leaves the pool untouched. Modders adding a new award should use the same accounting entry point so the pool and report counter remain synchronized rather than writing one field directly.
 
-## FE9-SYS-212 and FE9-SYS-278 — Distribution at the base
+## Distribution at the base
 
 <span id="fe9-sys-212"></span><span id="fe9-sys-278"></span> The base BEXP menu selects an eligible unit and spends points toward the next 100-EXP level. Crossing the threshold invokes the active level-up mode, stat caps, and promotion rules; the menu must update pool, unit EXP/level, and any promotion transition atomically. Eligibility excludes units that cannot gain EXP or level further under current rules.
 
 BEXP changes *where* EXP came from, not the definition of a level. Random/fixed growth, equipped growth modifiers, repeated threshold crossings, caps, and the level-20 promotion boundary all use the ordinary reviewed level-up path; BEXP has no independent growth formula.
 
-## FE9-SYS-213 — Breakdown display
+## Breakdown display
 
 <span id="fe9-sys-213"></span> After the relevant clear unlock, an option can show the chapter-end BEXP breakdown. This presentation should consume the same component results as accounting; it must not recalculate from already-reset flags or counters. The breakdown is distinct from Soren's later Battle Report.
 

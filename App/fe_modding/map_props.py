@@ -716,21 +716,58 @@ def set_water_scroll(ga: bytes, values: tuple[float, float, float, float]) -> by
 PROP_FIELDS = ("offset_x", "offset_y", "offset_z", "size_x", "size_y", "size_z",
                "flag_bits_a", "flag_bits_b", "flag_bits_c", "effect_type")
 
-#: Flag bits with a known effect (``map_file.MapObject``): (field, mask, label).
-PROP_FLAG_TOGGLES = (
-    ("flag_bits_b", 0x01, "Skip placed-object draw (B bit 0)"),
-    ("flag_bits_b", 0x02, "Initially hidden (B bit 1)"),
-    ("flag_bits_b", 0x10, "Exclude from footprint test (B bit 4)"),
-    ("flag_bits_c", 0x04, "Advance animation timer (C bit 2)"),
-    ("flag_bits_c", 0x08, "Footprint test candidate (C bit 3)"),
-    ("flag_bits_c", 0x10, "Footprint test candidate (C bit 4)"),
-    ("flag_bits_c", 0x20, "Projected texture target (C bit 5)"),
-    ("effect_type", 0x01, "Second actor update pass (effect bit 0)"),
-    ("effect_type", 0x02, "Copy roof height to base layer too (effect bit 1)"),
-    ("effect_type", 0x08, "Extended frustum test (effect bit 3)"),
-    ("effect_type", 0x10, "Exclude from footprint test (effect bit 4)"),
-    ("effect_type", 0x40, "Skip placed-object draw (effect bit 6)"),
-    ("effect_type", 0x80, "Exclude from tile-object lookup (effect bit 7)"),
+#: User-facing names for every independent bit in the four object flag bytes.
+#: Reserved/ignored bits deliberately remain controls: hiding them behind a raw
+#: byte made it too easy to overwrite an unrelated setting while changing one
+#: known behavior.
+PROP_FLAG_GROUPS = (
+    ("flag_bits_a", "Map role", (
+        (0x01, "Reserved A0 (never set by retail maps)"),
+        (0x02, "Reserved A1 (never set by retail maps)"),
+        (0x04, "Reserved A2 (never set by retail maps)"),
+        (0x08, "Reserved A3 (never set by retail maps)"),
+        (0x10, "Reserved A4 (never set by retail maps)"),
+        (0x20, "Reserved A5 (never set by retail maps)"),
+        (0x40, "Base terrain marker A6 (A6 + A7 required)"),
+        (0x80, "Base terrain marker A7 (A6 + A7 required)"),
+    )),
+    ("flag_bits_b", "Visibility and goals", (
+        (0x01, "Do not draw this placed object"),
+        (0x02, "Start hidden"),
+        (0x04, "Use flat ambient lighting (objective markers)"),
+        (0x08, "Victory-objective marker"),
+        (0x10, "Ignore footprint tests"),
+        (0x20, "Draw in effect/overlay sub-list (castle roofs)"),
+        (0x40, "Reserved B6 (never set by retail maps)"),
+        (0x80, "Reserved B7 (never set by retail maps)"),
+    )),
+    ("flag_bits_c", "Object behavior", (
+        (0x01, "Ignored legacy C0 (no known retail reader)"),
+        (0x02, "Load matching .ga animation"),
+        (0x04, "Advance and stagger animation"),
+        (0x08, "Use object footprint"),
+        (0x10, "Openable door model"),
+        (0x20, "Projected-texture wall/building rendering"),
+        (0x40, "Thicket model"),
+        (0x80, "Ballista or catapult model"),
+    )),
+    ("effect_type", "Runtime and drawing", (
+        (0x01, "Use second actor update pass"),
+        (0x02, "Copy roof height to ground layer too"),
+        (0x04, "Reserved effect 2 (never set by retail maps)"),
+        (0x08, "Use extended camera-frustum test"),
+        (0x10, "Ignore footprint and tile-object tests"),
+        (0x20, "Effect/marker render sub-list and sort group"),
+        (0x40, "Do not draw this placed object"),
+        (0x80, "Exclude from tile-object lookup"),
+    )),
+)
+
+#: Flat compatibility view used by editors and third-party callers.
+PROP_FLAG_TOGGLES = tuple(
+    (field, mask, label)
+    for field, _title, controls in PROP_FLAG_GROUPS
+    for mask, label in controls
 )
 
 

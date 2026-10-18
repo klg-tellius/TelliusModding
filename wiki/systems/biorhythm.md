@@ -26,7 +26,7 @@ system_gap_work: []
 
 Path of Radiance computes a genuine, correctly-cycling Biorhythm value — the wave-shaped stat fluctuation more commonly associated with this game's sequel and earlier series entries — every single time it evaluates one of four core stats. It has never once changed the value of any of them in the retail game.
 
-## FE9-SYS-126 — Biorhythm combat modifier
+## Biorhythm combat modifier
 
 <span id="fe9-sys-126"></span> The reviewed conclusion is deliberately narrower than the familiar series description: Path of Radiance owns and advances a per-unit rhythm cycle, but the confirmed retail stat consumers receive zero from it. Documentation and tools must preserve that distinction. Showing the phase or editing the counter is valid; claiming a live Hit/Avoid bonus in this game is not supported by the executable path.
 
@@ -37,7 +37,7 @@ Path of Radiance computes a genuine, correctly-cycling Biorhythm value — the w
 
   Each unit carries its own phase counter, which increments by exactly 1 for *both* participants every time a battle is resolved — not once per turn. That counter is combined with a fixed per-unit cycle length of 30 and a small per-chapter offset (so units don't all start a chapter synced to the same point in the wave), fed through a real sine function, and bucketed into one of five bands along the wave: two "good" bands, a neutral middle band, and two "bad" bands. A unit's active status effects can double or halve the swing between bands.
 
-## FE9-SYS-187 — Biorhythm progression
+## Biorhythm progression
 
 <span id="fe9-sys-187"></span> Progression is the live part of the mechanic even though its retail stat output is zero. Construction supplies the pattern and phase seed, saved unit state owns the mutable battle counter, each resolved battle advances both participants by one, and the next query combines that counter with the fixed 30-step cycle and chapter offset. The sine result selects one of five bands; status can scale the selected row before a consumer reads it. Save/load preserves the counter, so reloading does not restart every character at the beginning of the wave.
 

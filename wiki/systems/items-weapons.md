@@ -22,11 +22,11 @@ system_gap_work: []
 ---
 # Items & Weapons
 
-## FE9-SYS-178 — Weapon experience and rank growth
+## Weapon experience and rank growth
 
 <span id="fe9-sys-178"></span> Each unit stores separate WEXP for sword, lance, axe, bow, fire, thunder, wind, and staff. A qualifying committed weapon or staff action adds the item's configured WEXP once through its action handler; a miss is still a committed action, while additional strikes in that action do not independently grant another action award. Siege and scripted paths award only when their handler invokes the same progression entry point. Thresholds are E 1, D 31, C 71, B 121, A 181, and S 251, with saturation at the supported cap. Class/skill access is still required: reaching a threshold does not grant a weapon family the class cannot use. Promotion can add access, after which stored WEXP participates in legality. The result is saved unit progression and can trigger rank-up presentation.
 
-## FE9-SYS-182 — Stat boosters and permanent bonuses
+## Stat boosters and permanent bonuses
 
 <span id="fe9-sys-182"></span> Consumable boosters write permanent HP/Str/Mag/Skl/Spd/Lck/Def/Res, build, or movement gains into mutable unit state, capped by the applicable effective-stat rule. This differs from an equipped item's temporary stat bonus and from Ward/Pure Water temporary Resistance. The availability check rejects a target with no legal positive delta; confirmation applies only the capped delta, refreshes derived/UI values, consumes the instance at commit, and serializes the result. Each booster definition supplies the affected field and amount.
 
@@ -36,7 +36,7 @@ An item definition describes what a weapon or usable object is. A deployment or 
 
 Every weapon, by type: [Swords](./weapons-swords.md), [Lances](./weapons-lances.md), [Axes](./weapons-axes.md), [Bows](./weapons-bows.md), [Knives](./weapons-knives.md), [Tomes](./weapons-tomes.md), [Staves](./weapons-staves.md), [Laguz natural weapons](./weapons-laguz.md); and [Ragnell and Alondite](./ragnell-and-alondite.md).
 
-## FE9-SYS-190 through FE9-SYS-196 — Ownership boundaries
+## Ownership boundaries
 
 <span id="fe9-sys-190"></span> **Item definitions.** The 0x60-byte `FE8Data.bin` record is immutable shared data: identity and text keys, weapon and attack types, rank, properties, effectiveness categories, effects, price, uses, combat values, range, icon, WEXP, stat/growth modifiers, and trail color. The complete field table below is the primary implementation trail. Editing it changes how every instance of that IID is interpreted; it does not locate or mutate an individual carried copy.
 

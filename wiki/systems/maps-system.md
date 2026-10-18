@@ -29,7 +29,7 @@ A chapter's battlefield is built from two files that never touch each other dire
 !!! info "Mental model: stage, tiles, and actors"
     The map archive builds the **stage**: geometry, props, elevation, light, fog, and invisible markers. Deployment places the **actors** on the tactical tile grid. Event scripting then changes that state over time. A unit at tile (8, 5) is not a 3D prop instance at object coordinates (8, 5); the two systems merely render into the same scene.
 
-## FE9-SYS-055 — Map-loading rules and lifecycle
+## Map-loading rules and lifecycle
 
 <span id="fe9-sys-055"></span>
 
@@ -59,29 +59,29 @@ The loader establishes dependencies in order: dimensions and section addresses f
 
   The tactical camera itself rotates in fixed steps rather than spinning freely — each step is clamped to a set angle range and plays its own confirming sound cue, rather than exposing free continuous rotation.
 
-## FE9-SYS-057 — Terrain-type system
+## Terrain-type system
 
 <span id="fe9-sys-057"></span> Each combined panel resolves its terrain name against the 77-entry `TerrainData` table and stores the resulting type in a runtime grid. A type supplies its displayed name, Avoid/Def/Res bonuses, healing percentage, an object-tile bit, and fifteen movement costs. Combat reads the standing unit's tile from this grid; `SetTerrain` can replace the runtime type, but changing the rule grid alone does not repaint the mesh or texture.
 
 Some display names are shared by several internal terrain identities. Impassability also is not one terrain flag: a cost of 255 blocks a movement type, the object bit excludes nearest-free placement, and directional link or height state can close an edge even when both endpoint terrain costs are finite.
 
-## FE9-SYS-058 — Movement-type system
+## Movement-type system
 
 <span id="fe9-sys-058"></span> A class chooses one of the fifteen movement-cost columns. Infantry, armor, magic users, cavalry, fliers, thieves/bandits, and laguz therefore read different costs from the same tile. Flying movement also selects the alternate directional-link interpretation. The resulting cost grid is per unit: changing class or movement traits can change reachable tiles without changing the map.
 
-## FE9-SYS-060 — Pathfinding and movement search
+## Pathfinding and movement search
 
 <span id="fe9-sys-060"></span> Movement range is a weighted four-neighbor flood fill. The engine uses two alternating frontier buffers, reads the unit's terrain-cost table, tests the applicable directional opening, rejects blocking occupancy, and relaxes a tile only when the new accumulated cost is strictly cheaper. Equal-cost arrivals therefore retain the route already recorded; deterministic frontier and direction traversal provide the tie break. Tiles whose best cost fits the movement budget are legal candidates, and route reconstruction follows those costs and the selected link mode back toward the start.
 
 The map-link word assigns bits 0–3 to west/east/south/north ground openings, bits 4–7 to the corresponding flying blocks, and bits 8–11 to the threat-search `maplinkAt` directions. Threat edges cost 1 when the low opening or matching `maplinkAt` bit permits them and otherwise 2; a flying-block bit rejects the edge, while terrain `0x1C` can raise cost 1 to 3. Hold-position AI and deployment bridge restrictions are caller policies layered over these primitives, not hidden tie-breaking modes.
 
-## FE9-SYS-061 — Occupancy and collision
+## Occupancy and collision
 
 <span id="fe9-sys-061"></span> Runtime occupancy maps a tile to its unit handle. `MapGetUnit` exposes that neutral grid directly and `MapUpdate` rebuilds it after scripted mutations; the grid itself does not decide whether an occupant may be passed, targeted, displaced, or used as a stopping tile. Movement, targeting, deployment, rescue/drop, shove, and scripted actions each apply their own allegiance, visibility, and action-state policy to the same lookup.
 
 Deployment and `UnitSetPos`/`UnitMovePos` use a general nearest-free-tile search when their requested destination is occupied. That search rejects out-of-bounds, impassable/object, and eligible placed-object footprint tiles in addition to occupied tiles. Thus pass-through, stop, target, forced displacement, fog-hidden collision, and nearest-free placement form a matrix of caller rules; there is no missing universal collision table to infer from the occupancy map.
 
-## FE9-SYS-077 — Fog of war
+## Fog of war
 
 <span id="fe9-sys-077"></span> Gameplay fog is a visibility grid, not the colored distance fog used by the renderer. A map's `mapextra` sight bits select a runtime sight mode with difficulty gating. `SetSight(mode, unused)` consumes only its first argument in the US executable, changes that mode, recomputes the map-range overlay, and refreshes the map. A unit's vision getter supplies a Manhattan-radius source: most classes contribute 3, thieves, assassins, and beast laguz contribute 5, and Torch adds 4. Combining friendly sources sets or clears the hidden-by-fog unit-state bit (`0x40`).
 
@@ -89,7 +89,7 @@ That result is consumed before presentation: hidden enemies are omitted from ord
 
 As a worked example, a sight-3 unit with Torch contributes the larger temporary view, then a `SetSight` event forces a visibility/range refresh. `SetFog`, by contrast, only changes the camera's distance-fog type, start/end distances, and color; it cannot reveal an enemy. Exact tile propagation at obstructions and the full inspection/AI exception matrix remain open.
 
-## FE9-SYS-078 — Roof and interior visibility
+## Roof and interior visibility
 
 <span id="fe9-sys-078"></span> Roof handling coordinates three representations. `uniquepanelRoof` supplies roof elevations; flagged roof/house object instances supply a rotated tile footprint; units inside an enabled footprint receive the under-roof state bit (`0x80`). That footprint also excludes tiles from general nearest-free placement, preventing a scripted relocation from casually placing a unit inside concealed geometry.
 
