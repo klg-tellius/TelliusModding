@@ -383,7 +383,12 @@ def particle_cards(effect: EffectAsset) -> list[_Triangle]:
         blend = "additive" if emitter.draw_flags & 0x1000 else "normal"
         for indices in ((0, 1, 2), (0, 2, 3)):
             face_uv = tuple(uv[i] for i in indices)
-            layers = (_TextureLayer(face_uv, texture, "diffuse"),) if texture is not None else ()
+            # Textured triangles are shaded from their texture layer, not ``_Triangle.color``.
+            # Carry the particle material tint on that layer just as the standalone effect
+            # viewer does; without it, intensity-mask spark textures render solid white.
+            layers = (_TextureLayer(face_uv, texture, "diffuse",
+                                    color_scale=tuple(channel / 255.0 for channel in color)),) \
+                if texture is not None else ()
             cards.append(_Triangle((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0),
                                    tuple(color), uv=face_uv if texture is not None else None, texture=texture,
                                    texture_layers=layers, alpha=1.0, blend_mode=blend, cull="none"))
@@ -659,6 +664,21 @@ class BattleStage:
             angle = math.radians(s.rotation_degrees)
             axis_x = right * math.cos(angle) + up * math.sin(angle)
             axis_y = up * math.cos(angle) - right * math.sin(angle)
+            if mode == 2:
+                # Line particles streak along their emitter velocity in screen space.  The
+                # previous battle path left every line on the camera-up axis, producing the
+                # forest of vertical white bars visible in hit effects.  Transform the local
+                # velocity through the same bone/effect rotations as its position, then remove
+                # the view-depth component so the card remains a billboard.
+                direction = np.asarray(s.velocity, dtype=np.float64)
+                if bone is not None and bone < len(world):
+                    direction = np.asarray(world[bone], dtype=np.float64)[:, :3] @ direction
+                direction = place[:, :3] @ direction
+                direction -= forward * np.dot(direction, forward)
+                length = np.linalg.norm(direction)
+                if length > 1e-6:
+                    axis_y = direction / length
+                    axis_x = np.cross(axis_y, forward)
             dx, dy = axis_x * width * 0.5, axis_y * height * 0.5
             c = (point - dx - dy, point + dx - dy, point + dx + dy, point - dx + dy)
             cards[2 * index] = (c[0], c[1], c[2])

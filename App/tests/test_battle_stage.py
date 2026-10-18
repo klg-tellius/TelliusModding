@@ -234,6 +234,41 @@ class ParticleTests(unittest.TestCase):
         self.assertEqual(particle_preview.anchor_bone("|group|other|", bones), 0)
         self.assertIsNone(particle_preview.anchor_bone("|nothing|", bones))
 
+    def test_battle_cards_keep_material_tint(self):
+        from types import SimpleNamespace
+        from fe_modding.formats import animation, particle_preview
+        emitter = animation.ParticleEmitterLayout(
+            0, "|root|", 0, 0, 0, 0, 0, (1.0, 1.0), 0.0, 1, 0, 0, 0, 0, 1)
+        layout = animation.ParticleStageLayout(0, 0, 0, 10, (0.0, 0.0, 0.0), 0, 0)
+        texture = np.full((2, 2, 4), 255, dtype=np.uint8)
+        loaded = SimpleNamespace(particle_materials={0: (texture, (128, 64, 32), 1.0)})
+        effect = SimpleNamespace(loaded=loaded, particles=(particle_preview.Stage(emitter, layout, ()),))
+        cards = battle_stage.particle_cards(effect)
+        self.assertEqual(cards[0].texture_layers[0].color_scale, (128 / 255, 64 / 255, 32 / 255))
+
+    def test_battle_line_card_follows_velocity(self):
+        from types import SimpleNamespace
+        from fe_modding.formats import animation, particle_preview
+        emitter = animation.ParticleEmitterLayout(
+            0, "|root|", 0, 0, 0, 2, 0, (1.0, 1.0), 0.0, 1, 0, 0, 0, 0, 1)
+        layout = animation.ParticleStageLayout(0, 0, 0, 10, (0.0, 0.0, 0.0), 0, 1)
+        particle = particle_preview.Stage(emitter, layout, ((1, ((0, 1.0),)), (2, ((0, 1.0),))))
+        loaded = SimpleNamespace(bones=[], particle_materials={0: (None, (255, 255, 255), 1.0)})
+        effect = battle_stage.EffectAsset(loaded, battle_stage.SkinnedMesh([]), None, 10.0, (particle,))
+        stage = battle_stage.BattleStage([])
+        cue = SimpleNamespace(frame=0.0, side=0, aim=None, height=0.0)
+        cards = battle_stage.particle_cards(effect)
+        stage._add("particles", cards, side=0, item=(cue, effect))
+        stage.alphas = np.zeros(len(cards), dtype=np.float32)
+        positions = np.zeros((len(cards), 3, 3))
+        normals = np.zeros((len(cards), 3))
+        stage._particles(positions, normals, stage._parts[0], effect, cue, 1.0, 1.0)
+        long_edge = positions[0, 2] - positions[0, 1]
+        # side 0 turns local +Z into world +X; with +Y too, the streak is diagonal,
+        # rather than locked to the camera's vertical axis.
+        self.assertGreater(abs(long_edge[0]), 0.1)
+        self.assertGreater(abs(long_edge[1]), 0.1)
+
     @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES")
     def test_fire_cards_are_placed_and_hidden(self):
         from types import SimpleNamespace
