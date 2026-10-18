@@ -83,6 +83,7 @@ class PropBrowser(ttk.Frame):
         paned.pack(fill="both", expand=True)
         left = ttk.Frame(paned)
         paned.add(left, weight=1)
+        ttk.Label(left, text="Select an object", style="Subtitle.TLabel").pack(anchor="w", pady=(0, 4))
         self._tree = ttk.Treeview(left, columns=[c[0] for c in COLUMNS], show="headings", selectmode="browse")
         for key, title, width in COLUMNS:
             self._tree.heading(key, text=title, command=lambda k=key: self._sort_by(k))
@@ -180,6 +181,7 @@ class PropBrowser(ttk.Frame):
         self._tree.delete(*self._tree.get_children())
         self._rows = {}
         visible = self._visible()
+        selected_row = None
         for info in visible:
             w, d = info.footprint
             row = self._tree.insert("", "end", values=(
@@ -187,8 +189,12 @@ class PropBrowser(ttk.Frame):
                 _kind(info)))
             self._rows[row] = info
             if previous is not None and (info.path, info.name) == (previous.path, previous.name):
-                self._tree.selection_set(row)
-                self._tree.see(row)
+                selected_row = row
+        if selected_row is None and visible:
+            selected_row = next(iter(self._rows))
+        if selected_row is not None:
+            self._tree.selection_set(selected_row)
+            self._tree.see(selected_row)
         maps = len({p.map_name for p in self._props})
         self._status.configure(text=f"{len(visible)} of {len(self._props)} props, {maps} maps")
 
@@ -306,6 +312,11 @@ class MapObjectsPanel(EditorPanel):
         self._export.configure(state="normal" if prop is not None else "disabled")
         self._apply_button.configure(state="normal" if prop is not None else "disabled")
         if prop is None:
+            for var in self._vars.values():
+                var.set("")
+            for _field, _mask, var in self._toggles:
+                var.set(False)
+            self._form_status.configure(text="Select an object above.")
             return
         obj = prop.obj
         for key in map_props.PROP_FIELDS[:6]:
