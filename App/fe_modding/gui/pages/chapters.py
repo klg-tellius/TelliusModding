@@ -255,7 +255,8 @@ class ChaptersHub(Page):
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        chapter, title, source_id, keep_map, size, avatar_pid, activation = dialog.result
+        (chapter, title, source_id, keep_map, size, avatar_pid, activation,
+         ground_color, ground_image, tile_ground_image) = dialog.result
         start = None
         if keep_map:  # the template's size, the avatar on its first player unit's tile
             source = chapters.chapter_paths(self.project, source_id)
@@ -282,7 +283,9 @@ class ChaptersHub(Page):
             return
         try:
             plan = hub_creation.create_chapter(self.project, session.data, source_id, chapter, title, *size,
-                                               avatar_pid, start, keep_map=keep_map)
+                                               avatar_pid, start, keep_map=keep_map,
+                                               ground_color=ground_color, ground_image=ground_image,
+                                               tile_ground_image=tile_ground_image)
             session.data = plan.fe8data
             session.changed(self)
             session.save()
