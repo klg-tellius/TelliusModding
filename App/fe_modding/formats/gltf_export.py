@@ -435,8 +435,8 @@ def _project_uv(matrix, points: "np.ndarray") -> tuple["np.ndarray", "np.ndarray
     return s / q, t / q
 
 
-def _sample_repeat(image: Image.Image, u: "np.ndarray", v: "np.ndarray") -> "np.ndarray":
-    pixels = np.asarray(image.convert("RGBA"), dtype=np.float64)
+def _sample_repeat(image: "Image.Image | np.ndarray", u: "np.ndarray", v: "np.ndarray") -> "np.ndarray":
+    pixels = image if isinstance(image, np.ndarray) else np.asarray(image.convert("RGBA"), dtype=np.float64)
     height, width = pixels.shape[:2]
     x = np.minimum((np.mod(u, 1.0) * width).astype(np.int64), width - 1)
     y = np.minimum((np.mod(v, 1.0) * height).astype(np.int64), height - 1)
@@ -463,6 +463,8 @@ def _bake_map_texture(tris, atlas: Image.Image, mask: Image.Image, light: Image.
     weights = np.maximum(weights, 0.0)
     weights /= np.maximum(weights.sum(axis=-1, keepdims=True), 1e-12)
     display_uvs = []
+    # decoded once: converting per triangle took minutes on a whole map
+    atlas, mask, light = (np.asarray(image.convert("RGBA"), dtype=np.float64) for image in (atlas, mask, light))
 
     for index, tri in enumerate(tris):
         row, column = divmod(index, columns)
