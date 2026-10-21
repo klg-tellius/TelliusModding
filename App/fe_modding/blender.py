@@ -107,9 +107,12 @@ def export_blend(
     blender: Optional[Path | str] = None,
     terrain_name: str = "",
     *,
+    atlas_layout: str = "",
     run=subprocess.run,
 ) -> Path:
-    """Run Blender to build ``target``. All temporary source images are packed."""
+    """Run Blender to build ``target``. All temporary source images are packed.
+    ``atlas_layout`` (``terrain_paint.AtlasLayout`` JSON) is kept on the scene
+    for the add-on's atlas-piece tool."""
     executable = Path(blender) if blender else configured_blender()
     if executable is None:
         raise BlenderError("Blender was not found. Set its location in Settings > Preferences.")
@@ -138,7 +141,7 @@ def export_blend(
                 "selector_matrix": _blender_projection(material.selector_matrix),
                 "light_matrix": _blender_projection(material.light_matrix),
             })
-        manifest_path.write_text(json.dumps({"terrain_name": terrain_name, "materials": records}), encoding="utf-8")
+        manifest_path.write_text(json.dumps({"terrain_name": terrain_name, "materials": records, "atlas_layout": atlas_layout}), encoding="utf-8")
         try:
             result = run(
                 command(executable, script_path, glb_path, manifest_path, target),
@@ -193,6 +196,214 @@ def export_model_blend(
                 details = details[-3000:]
             raise BlenderError(f"Blender could not create the .blend file (exit {result.returncode}):\n{details}")
     return target
+
+
+# ---------------------------------------------------------------- terrain kits and the add-on
+
+ADDON_MODULE = "tellius_terrain"
+ADDON_SOURCE = Path(__file__).resolve().parent / "blender_addon" / ADDON_MODULE
+#: The compiler shared with the app; the add-on gets a copy (Blender has numpy but not this package).
+ADDON_SHARED = Path(__file__).resolve().parent / "terrain_paint.py"
+
+
+def addon_files() -> dict[str, bytes]:
+    """The add-on package's files, relative to its folder."""
+    files = {p.name: p.read_bytes() for p in sorted(ADDON_SOURCE.glob("*.py"))}
+    files["terrain_paint.py"] = ADDON_SHARED.read_bytes()
+    return files
+
+
+def stage_addon(folder: Path) -> Path:
+    """Write the add-on package into ``folder/tellius_terrain``; returns ``folder``
+    (what a headless script puts on ``sys.path``)."""
+    package = Path(folder) / ADDON_MODULE
+    package.mkdir(parents=True, exist_ok=True)
+    for name, data in addon_files().items():
+        (package / name).write_bytes(data)
+    return Path(folder)
+
+
+def addon_zip(target: Path | str) -> Path:
+    import zipfile
+
+    target = Path(target)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in addon_files().items():
+            archive.writestr(f"{ADDON_MODULE}/{name}", data)
+    return target
+
+
+def _executable(blender: Optional[Path | str]) -> Path:
+    executable = Path(blender) if blender else configured_blender()
+    if executable is None:
+        raise BlenderError("Blender was not found. Set its location in Settings > Preferences.")
+    if not executable.is_file():
+        raise BlenderError(f"Blender was not found at {executable}. Set its location in Settings > Preferences.")
+    return executable
+
+
+def _run_checked(run, args: list[str], what: str, expected: Optional[Path] = None):
+    try:
+        result = run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise BlenderError(f"Blender could not be started: {exc}") from exc
+    if result.returncode != 0 or (expected is not None and not expected.exists()):
+        details = (result.stderr or result.stdout or "No diagnostic output.").strip()
+        if len(details) > 3000:
+            details = details[-3000:]
+        raise BlenderError(f"Blender could not {what} (exit {result.returncode}):\n{details}")
+    return result
+
+
+_INSTALL_SCRIPT = r'''
+import bpy
+import sys
+
+zip_path, module = sys.argv[sys.argv.index("--") + 1:]
+bpy.ops.preferences.addon_install(filepath=zip_path, overwrite=True)
+bpy.ops.preferences.addon_enable(module=module)
+bpy.ops.wm.save_userpref()
+print("TELLIUS_ADDON_INSTALLED")
+'''
+
+
+def install_addon(blender: Optional[Path | str] = None, *, run=subprocess.run) -> Path:
+    """Install and enable the Tellius Terrain add-on in the user's Blender
+    preferences (not a factory startup: the preferences are saved)."""
+    executable = _executable(blender)
+    with tempfile.TemporaryDirectory(prefix="tellius_addon_") as folder:
+        work = Path(folder)
+        archive = addon_zip(work / f"{ADDON_MODULE}.zip")
+        script = work / "install.py"
+        script.write_text(_INSTALL_SCRIPT, encoding="utf-8")
+        result = _run_checked(
+            run,
+            [str(executable), "--background", "--python", str(script), "--", str(archive), ADDON_MODULE],
+            "install the add-on",
+        )
+        if "TELLIUS_ADDON_INSTALLED" not in (result.stdout or ""):
+            details = (result.stderr or result.stdout or "").strip()[-3000:]
+            raise BlenderError(f"Blender did not confirm the add-on install:\n{details}")
+    return executable
+
+
+_KIT_BUILD_SCRIPT = r'''
+import sys
+
+addon_parent, glb_path, folder, target = sys.argv[sys.argv.index("--") + 1:]
+sys.path.insert(0, addon_parent)
+from tellius_terrain import kit
+
+kit.build_kit(glb_path, folder, target)
+'''
+
+
+def export_terrain_kit(
+    glb: bytes,
+    write_inputs: Callable[[Path], None],
+    target: Path | str,
+    blender: Optional[Path | str] = None,
+    *,
+    run=subprocess.run,
+) -> Path:
+    """Run Blender to build a terrain kit ``.blend``: ``glb`` is the map's
+    terrain and context props; ``write_inputs(folder)`` writes the
+    :func:`terrain_kit.write_paint_dir` folder Blender reads."""
+    executable = _executable(blender)
+    target = Path(target).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="tellius_kit_") as folder:
+        work = Path(folder)
+        stage_addon(work / "addon")
+        inputs = work / "inputs"
+        write_inputs(inputs)
+        glb_path = work / "terrain.glb"
+        glb_path.write_bytes(glb)
+        script = work / "build_kit.py"
+        script.write_text(_KIT_BUILD_SCRIPT, encoding="utf-8")
+        _run_checked(
+            run,
+            [str(executable), "--background", "--factory-startup", "--disable-autoexec", "--python", str(script),
+             "--", str(work / "addon"), str(glb_path), str(inputs), str(target)],
+            "create the terrain kit",
+            target,
+        )
+    return target
+
+
+_TERRAIN_IMPORT_SCRIPT = r'''
+import bpy
+import sys
+
+addon_parent, source_path, folder, terrain_name = sys.argv[sys.argv.index("--") + 1:]
+sys.path.insert(0, addon_parent)
+from pathlib import Path
+from tellius_terrain import kit
+
+bpy.ops.wm.open_mainfile(filepath=source_path, load_ui=False, use_scripts=False)
+if bpy.context.scene.get(kit.KIT_KEY):
+    kit.export_kit(source_path, folder)
+else:
+    bpy.ops.object.select_all(action="DESELECT")
+    terrain = [obj for obj in bpy.context.scene.objects
+               if obj.type == "MESH" and (obj.get("fe9_map_terrain") or obj.name == terrain_name)]
+    if not terrain:
+        raise RuntimeError(
+            "No tagged terrain object was found. Keep the exported terrain object or its fe9_map_terrain property."
+        )
+    for obj in terrain:
+        obj.hide_set(False)
+        obj.hide_viewport = False
+        obj.hide_render = False
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = terrain[0]
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    bpy.ops.export_scene.gltf(
+        filepath=str(Path(folder) / "terrain.glb"), export_format="GLB", use_selection=True,
+        export_yup=True, export_extras=True,
+    )
+'''
+
+
+@dataclass
+class TerrainBlend:
+    """A map ``.blend`` converted for import: the terrain GLB and, for a
+    terrain kit, its paint (``terrain_kit.PaintData``)."""
+
+    glb: bytes
+    paint: object = None
+
+
+def blend_terrain_for_import(
+    source: Path | str,
+    terrain_name: str,
+    blender: Optional[Path | str] = None,
+    *,
+    run=subprocess.run,
+) -> TerrainBlend:
+    """Convert a map ``.blend``: a terrain kit gives its game mesh and
+    paint, a plain map export its tagged terrain objects."""
+    from . import terrain_kit
+
+    executable = _executable(blender)
+    source = Path(source).resolve()
+    if not source.is_file():
+        raise BlenderError(f"The Blender file does not exist: {source}")
+    with tempfile.TemporaryDirectory(prefix="tellius_kit_import_") as folder:
+        work = Path(folder)
+        stage_addon(work / "addon")
+        out = work / "out"
+        script = work / "import_terrain.py"
+        script.write_text(_TERRAIN_IMPORT_SCRIPT, encoding="utf-8")
+        _run_checked(
+            run,
+            [str(executable), "--background", "--factory-startup", "--disable-autoexec", "--python", str(script),
+             "--", str(work / "addon"), str(source), str(out), terrain_name],
+            "convert the .blend file",
+            out / "terrain.glb",
+        )
+        paint = terrain_kit.read_paint_dir(out) if (out / terrain_kit.MANIFEST).is_file() else None
+        return TerrainBlend((out / "terrain.glb").read_bytes(), paint)
 
 
 def import_command(blender: Path | str, script: Path | str, source: Path | str,
@@ -483,6 +694,8 @@ bpy.ops.import_scene.gltf(filepath=glb_path)
 with open(manifest_path, "r", encoding="utf-8") as stream:
     manifest = json.load(stream)
 terrain_name = manifest.get("terrain_name", "")
+if manifest.get("atlas_layout"):
+    bpy.context.scene["fe9_atlas_layout"] = manifest["atlas_layout"]
 for obj in bpy.data.objects:
     if obj.type == "MESH" and obj.name == terrain_name:
         obj["fe9_map_terrain"] = True

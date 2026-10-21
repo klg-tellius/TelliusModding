@@ -126,12 +126,14 @@ from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file,
 from ..formats import model as model_fmt
 from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
+from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, zdbx
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_path_of
 from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .terrain_paint_dialogs import AtlasSwatchesDialog, PaintImportOptions, PaintKitDialog, add_texturing_tab
 from .widgets import info, tip
 
 
@@ -1004,6 +1006,9 @@ class ModelImport:
     outputs: dict[Path, bytes]
     warnings: list[str] = field(default_factory=list)
     joint_map: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # painted terrain: top-down views and the compile report for the review's Texturing tab
+    previews: dict[str, Image.Image] = field(default_factory=dict)
+    texturing: list[str] = field(default_factory=list)
 
 
 def replace_set_with_static_glb(container_path: Path, gltf_path: Path) -> ModelImport:
@@ -1338,8 +1343,50 @@ def export_map_blend(
             projection.selector_matrix,
             projection.last_matrix,
         ))
+    try:
+        layout_json = terrain_kit.detect_layout(terrain_kit.read_terrain(container_path)).to_json()
+    except Exception:  # noqa: BLE001 - the swatch table only serves the add-on's piece tool
+        layout_json = ""
     return blender_tool.export_blend(
-        export_map_terrain_glb(container_path, object_names), specs, target, blender, terrain_name=terrain
+        export_map_terrain_glb(container_path, object_names), specs, target, blender, terrain_name=terrain,
+        atlas_layout=layout_json,
+    )
+
+
+def export_terrain_kit(
+    container_path: Path,
+    target: Path,
+    object_names: tuple[str, ...] | list[str] = (),
+    blender: Path | str | None = None,
+    project_dir: Path | None = None,
+    sculpt_spacing: float = terrain_kit.SCULPT_SPACING,
+    from_current: bool = True,
+) -> Path:
+    """A terrain kit ``.blend``: a sculpt grid seeded from the map's ground,
+    paint layers (the map's current look with ``from_current``, else the
+    base alone), the atlas, the light overlay, the playable tiles and the
+    chosen context props, for the Tellius Terrain add-on."""
+    _entries, files = _read_container(container_path)
+    map_data = map_file.read_map_bytes(files["map.bin"])
+    source = terrain_kit.read_terrain(container_path)
+    folder = container_path.parent.name
+    layout, atlas, custom = terrain_kit.load_layout(source, project_dir, folder)
+    paint = terrain_kit.kit_paint(source, layout, atlas, custom) if from_current else terrain_kit.PaintData(
+        layout, [terrain_paint.Layer(layout.swatches[layout.base].name, layout.base)], atlas, custom, source.light
+    )
+    extra = {
+        "map": folder,
+        "terrain": source.terrain,
+        "light_matrix": [list(row) for row in source.light_matrix] if source.light_matrix is not None else None,
+        "playable": list(source.playable) if source.playable is not None else None,
+        "tile_size": MAP_TILE_SIZE,
+        "sculpt_spacing": sculpt_spacing,
+        "paint_resolution": terrain_kit.PAINT_RESOLUTION,
+        "budget": int(max(source.triangles, 9000)),
+    }
+    glb = export_map_terrain_glb(container_path, object_names)
+    return blender_tool.export_terrain_kit(
+        glb, lambda inputs: terrain_kit.write_paint_dir(inputs, paint, extra), target, blender
     )
 
 
@@ -1409,6 +1456,8 @@ def replace_map_terrain_with_glb(
     map_texturing: bool = False,
     mask: Image.Image | None = None,
     keep_light: bool = False,
+    paint: terrain_kit.PaintData | None = None,
+    light: Image.Image | None = None,
 ) -> ModelImport:
     """``map.cmp`` with its land terrain rebuilt from a glTF (a static mesh
     in the terrain's own coordinates, as :func:`export_map_terrain_glb`
@@ -1427,8 +1476,15 @@ def replace_map_terrain_with_glb(
     atlas sampled through both UV sets (glTF ``TEXCOORD_0``/``_1``), blended
     by the grey mask stored right after it (``mask``, else the current
     terrain's; black keeps the first UV set, white the second; see
-    :data:`MAP_MASK_SPAN`), and multiplied by a last image: the current
-    light overlay with ``keep_light``, else white."""
+    :data:`MAP_MASK_SPAN`), and multiplied by a last image: ``light``, the
+    current light overlay with ``keep_light``, else white.
+
+    ``paint`` (a terrain kit's layers, :mod:`terrain_kit`) implies map
+    texturing: after the playable area is fitted, the ``map_base``
+    triangles are cut on the swatch repeat lines and both UV sets and the
+    mask come from the compiled layers; the atlas is the paint's."""
+    if paint is not None:
+        map_texturing = True
     entries, files = _read_container(container_path)
     current = dict(files)
     map_data = map_file.read_map_bytes(files["map.bin"])
@@ -1476,6 +1532,19 @@ def replace_map_terrain_with_glb(
                 f"The playable area was fitted to the tile grid ({cut} triangles cut): the move grid and units use "
                 "one flat panel per tile half, so the ground there is flattened onto those panels."
             )
+    painted = None
+    if paint is not None:
+        from . import map_scene
+
+        projection = map_scene.compute_map_texture_projection(name, map_data)
+        light_matrix = projection.last_matrix if projection is not None else None
+        shown_light = light
+        if shown_light is None and keep_light and last_record is not None:
+            current_images = tpl.read_tpl_images(io.BytesIO(files[map_props.texpack_name(files)]))
+            if 0 <= last_record.tex_id < len(current_images):
+                shown_light = current_images[last_record.tex_id]
+        painted = terrain_kit.apply_paint(scene, paint, light_matrix, shown_light)
+        mask = painted.mask
     texpack = next((n for n in files if n.lower() == "texpack.tpl"), None)
     if texpack is None:
         raise gltf_import.GltfImportError(f"{container_path.name} has no texpack.tpl.")
@@ -1509,7 +1578,9 @@ def replace_map_terrain_with_glb(
     white_id = base + len(images)
     last_image = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
     last_entry = (last_image, tpl.FORMAT_I4, tpl.WRAP_CLAMP)
-    if map_texturing and keep_light and last_record is not None:
+    if map_texturing and light is not None:
+        last_entry = (light.convert("L"), tpl.FORMAT_I4, tpl.WRAP_CLAMP)
+    elif map_texturing and keep_light and last_record is not None:
         old_images = tpl.read_tpl_images(io.BytesIO(current[texpack]))
         if 0 <= last_record.tex_id < len(old_images):
             last_entry = (old_images[last_record.tex_id], tpl.FORMAT_I4, tpl.WRAP_CLAMP)
@@ -1561,10 +1632,14 @@ def replace_map_terrain_with_glb(
     for material in build.gs.materials:
         material.textures = [replace(t, tex_id=final.get(t.tex_id, t.tex_id)) for t in material.textures]
     if textured:
+        lighting = (", under the kit's light overlay." if light is not None
+                    else ", under the current light overlay." if keep_light else ", with a white light overlay.")
         warnings.append(
-            "Map texturing kept: the atlas is sampled through both UV sets and blended by the "
-            + ("new" if mask is not None else "current") + " road/shore mask"
-            + (", under the current light overlay." if keep_light else ", with a white light overlay.")
+            ("Painted texturing: the atlas is sampled through both UV sets and blended by the mask compiled "
+             "from the kit's layers" if painted is not None else
+             "Map texturing kept: the atlas is sampled through both UV sets and blended by the "
+             + ("new" if mask is not None else "current") + " road/shore mask")
+            + lighting
         )
     files[f"{name}.gs"] = gs_file.write_gs(build.gs)
     # Images no model uses any more (the replaced terrain's) are dropped.
@@ -1624,7 +1699,13 @@ def replace_map_terrain_with_glb(
                         f"{blocked} passages between neighbouring tiles are now blocked: the game closes an edge "
                         "whose corners differ by one unit (400 elevation) or more."
                     )
-    return ModelImport({container_path: _pack(container_path, entries, files)}, warnings)
+    outcome = ModelImport({container_path: _pack(container_path, entries, files)}, warnings)
+    if painted is not None:
+        outcome.previews = painted.previews
+        outcome.texturing = painted.notes
+        if painted.result.conflict_share > 0.01:
+            warnings.append(painted.notes[-1])
+    return outcome
 
 
 def _triangle_array(triangles: list[_Triangle]) -> "np.ndarray":
@@ -3334,6 +3415,10 @@ class _ImportReviewDialog(tk.Toplevel):
                 mapping.insert("", "end", values=(joint, bone, how))
             mapping.pack(fill="both", expand=True)
 
+        if result.previews:
+            texturing_tab = add_texturing_tab(tabs, result.previews, result.texturing)
+            tabs.select(texturing_tab)
+
         warnings = notes + result.warnings
         if warnings:
             warnings_tab = ttk.Frame(tabs, padding=6)
@@ -4800,12 +4885,22 @@ class ModelViewer(EditorPanel):
         )
         self._new_slot_button = ttk.Button(buttons, text="New slot...", command=self._new_slot, state="disabled")
         self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables)
+        self._paint_kit_button = ttk.Button(
+            buttons, text="Sculpt & paint kit...", command=self._export_paint_kit, state="disabled"
+        )
+        tip(self._paint_kit_button, "A Blender file to sculpt this map's ground and paint it with its atlas "
+                                    "(Tellius Terrain add-on); import the saved file with Import .blend/.glb...")
+        self._swatches_button = ttk.Button(
+            buttons, text="Atlas swatches...", command=self._edit_swatches, state="disabled"
+        )
+        tip(self._swatches_button, "The atlas rectangles this map's ground can be painted with, and the atlas "
+                                   "builder for custom textures.")
 
         # wrapped in rows so the button bar never widens the list pane
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
-                                    self._tables_button)):
+                                    self._tables_button, self._paint_kit_button, self._swatches_button)):
             button.grid(row=i // 3, column=i % 3, sticky="ew", padx=(0, 4), pady=(0, 4))
         for column in range(3):
             buttons.grid_columnconfigure(column, weight=1, uniform="buttons")
@@ -4847,6 +4942,9 @@ class ModelViewer(EditorPanel):
         self._fit_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         self._restore_button.config(state="normal" if self._project.originals_in(path.parent) else "disabled")
         self._new_slot_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+        paintable = "normal" if is_map_container(path) else "disabled"
+        self._paint_kit_button.config(state=paintable)
+        self._swatches_button.config(state=paintable)
         try:
             loaded = _load_model_set(label, path)
         except Exception as exc:  # noqa: BLE001
@@ -4956,7 +5054,7 @@ class ModelViewer(EditorPanel):
         self._run_blend_export(work, is_map_container(path))
 
     def _run_blend_export(
-        self, work, live_map_materials: bool
+        self, work, live_map_materials: bool, details: str | None = None
     ) -> None:
         """Generate a .blend off the Tk thread; Blender can take a while."""
         progress = tk.Toplevel(self)
@@ -5003,14 +5101,14 @@ class ModelViewer(EditorPanel):
                     state="normal" if selected is not None else "disabled"
                 )
                 if status == "ok":
-                    details = (
+                    message = details or (
                         "Textures are packed and map_base/map_wall use a live FE9 blend node graph."
                         if live_map_materials else
                         "Textures are packed. Edit objects inside the tagged FE9 Model collection for re-import."
                     )
                     messagebox.showinfo(
                         "Exported",
-                        f"Wrote {payload}\n\n{details}",
+                        f"Wrote {payload}\n\n{message}",
                         parent=self,
                     )
                 else:
@@ -5018,6 +5116,84 @@ class ModelViewer(EditorPanel):
 
         threading.Thread(target=worker, daemon=True).start()
         self.after(100, poll)
+
+    def _export_paint_kit(self) -> None:
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, path = selected
+        executable = blender_tool.configured_blender()
+        if executable is None:
+            messagebox.showerror("Blender not found", "Set Blender's location in Settings > Preferences, then try again.",
+                                 parent=self)
+            return
+        try:
+            _entries, files = _read_container(path)
+            map_data = map_file.read_map_bytes(files["map.bin"])
+            terrain = map_terrain_name(files, map_data, path.parent.name)
+            available = map_export_object_names(files, map_data, terrain)
+            terrain_kit.read_terrain(path)  # a map_base to paint
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Cannot paint this terrain", str(exc), parent=self)
+            return
+        dialog = PaintKitDialog(self, available)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        object_names, spacing, from_current = dialog.result
+        target = filedialog.asksaveasfilename(
+            title="Save the terrain kit",
+            defaultextension=".blend",
+            initialfile=f"{path.parent.name}_terrain_kit.blend",
+            filetypes=[("Blender file", "*.blend")],
+            parent=self,
+        )
+        if not target:
+            return
+        project_dir = self._project.directory
+        self._run_blend_export(
+            lambda: export_terrain_kit(path, Path(target), object_names, executable, project_dir, spacing, from_current),
+            True,
+            "Open it in Blender with the Tellius Terrain add-on enabled (Settings > Preferences > Install add-on). "
+            "Sculpt FE9 Sculpt, paint the layers from the sidebar's Tellius tab, save, then import the .blend "
+            "here with Import .blend/.glb...",
+        )
+
+    def _edit_swatches(self) -> None:
+        selected = self._selected_set()
+        if selected is None:
+            return
+        _label, path = selected
+        try:
+            dialog = AtlasSwatchesDialog(self, self._project.directory, path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Atlas swatches", str(exc), parent=self)
+            return
+        self.wait_window(dialog)
+
+    def _import_paint_kit(self, label: str, path: Path, source: Path, paint, display_name: str) -> None:
+        """Import a terrain kit's game mesh with its compiled paint."""
+        options = PaintImportOptions(self, paint.light is not None)
+        self.wait_window(options)
+        if options.result is None:
+            return
+        follow, conform, light_mode = options.result
+        try:
+            result = self._busy(lambda: replace_map_terrain_with_glb(
+                path, source, follow, conform, True, None, light_mode == "current",
+                paint=paint, light=paint.light if light_mode == "kit" else None,
+            ))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import terrain", str(exc), parent=self)
+            return
+        names = ", ".join(output.name for output in result.outputs)
+        self._review_and_write(
+            label,
+            path,
+            result,
+            f"Replace the {label} terrain with a painted kit",
+            f"Replaced terrain with painted kit {display_name} (wrote {names})",
+        )
 
     def _import_rig(self) -> None:
         selected = self._selected_set()
@@ -5331,8 +5507,8 @@ class ModelViewer(EditorPanel):
         def worker() -> None:
             try:
                 converted = (
-                    blender_tool.blend_to_glb(source, terrain, executable)
-                    if terrain else blender_tool.model_blend_to_glb(source, executable)
+                    blender_tool.blend_terrain_for_import(source, terrain, executable)
+                    if terrain else blender_tool.TerrainBlend(blender_tool.model_blend_to_glb(source, executable))
                 )
                 results.put(("ok", converted))
             except Exception as exc:  # noqa: BLE001
@@ -5357,8 +5533,10 @@ class ModelViewer(EditorPanel):
                 return
             with tempfile.TemporaryDirectory(prefix="tellius_blend_glb_") as folder:
                 converted = Path(folder) / (source.stem + ".glb")
-                converted.write_bytes(payload)
-                if terrain:
+                converted.write_bytes(payload.glb)
+                if terrain and payload.paint is not None:
+                    self._import_paint_kit(label, path, converted, payload.paint, source.name)
+                elif terrain:
                     self._import_map_source(label, path, converted, source.name)
                 else:
                     self._import_model_source(label, path, converted, source.name)
