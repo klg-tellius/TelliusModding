@@ -210,6 +210,7 @@ The coordinate scale, importer options, map-texturing pipeline, mask span, heigh
 
 ## Related tutorials and references
 
+- To sculpt the ground and paint it with the map's atlas in Blender: [Sculpt and paint a terrain in Blender](terrain-sculpt-paint.md)
 - [Edit tile heights, slopes, and exits](23-tile-heights.md)
 - [Place, copy, import, and configure props](24-map-props.md)
 - [Import water and set its flow](26-water.md)

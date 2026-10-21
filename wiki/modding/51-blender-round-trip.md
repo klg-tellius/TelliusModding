@@ -47,7 +47,7 @@ Model-set prefixes identify different contracts:
 - `ymu/` map-character sets import a body weighted to the existing class skeleton.
 - `zu/` battle sets import a fully blended battle body weighted to the existing skeleton.
 - `zmap/` and chapter terrain have map-specific geometry, texturing, and grid/height options.
-- Bows are skinned/composite weapon meshes and are refused by the ordinary weapon importer.
+- Bows use a dedicated composite-skinned import path that retains their existing weapon skeleton; preserve its bone names and weights.
 
 **Export .glb…** exports the selected set. **Import .glb…** replaces only the mesh/body contract appropriate to that set and preserves other resources where documented. Import conversion happens before writing. The **Import Review** shows the preview, current-versus-imported figures, proposed files, joint mappings, and warnings. Nothing changes until **Write files**.
 
@@ -65,7 +65,11 @@ Inspect the preview from several angles. Record the triangle and bone counts sho
 
 Click **Export .glb…** and save outside the extracted project tree using the proposed set-based filename. Re-select the set after export and confirm that export itself did not modify the project.
 
-For chapter terrain, export may also write a `_mask.png`; it maps a 640 × 640-unit area and records how the two UV sets blend the atlas. Preserve it beside the `.glb`. This first exercise should avoid chapter terrain unless you are specifically following the terrain-mesh lesson.
+For chapter terrain, export may also write a `_mask.png`; it maps a 640 × 640-unit area and records how the two UV sets blend the atlas. Preserve it beside the `.glb`. The GLB also carries a display-only baked texture on a third UV channel, so Blender shows the atlas blend and projected light overlay without needing FE9's runtime material callback. UV0 and UV1 remain the game-facing channels—do not delete or merge them. This first exercise should avoid chapter terrain unless you are specifically following the terrain-mesh lesson.
+
+If Blender is configured under **Settings → Preferences → 3D tools**, every supported model set also offers **Export .blend…** and **Import .blend/.glb…**. The app runs Blender in the background, packs the model's images, and saves one self-contained file. Ordinary scenery, weapons, map characters, and battle characters are placed in a tagged **FE9 Model** collection; keep the objects being returned to the game inside that collection. Import asks Blender to export only that collection and then runs the same static, skinned-body, or battle-body conversion and Import Review used for GLB files. Armatures and exported animations remain available in the Blender file, but ordinary mesh import still follows the selected set's existing contract; use **Replace rig…** or **Import animation…** when that is the intended operation.
+
+Chapter maps additionally receive the live node graph that samples the atlas through UV0 and UV1, blends them with the projected mask, and multiplies the projected light overlay. Their import converts only the tagged terrain objects, opens the normal terrain options, and excludes optional context props. The live Blender graph itself cannot be written into FE9, so the geometry round trip keeps the map's current game atlas, mask, and light textures.
 
 ### 3. Import into Blender without “cleanup”
 
@@ -85,15 +89,15 @@ For a static model, move one small group of vertices enough to be visible withou
 
 For a later body-only test, move a small surface region while keeping the existing armature and weights. Do not edit socket or anchor bones. Save the `.blend` before export so you can inspect Blender state independently of the `.glb`.
 
-### 5. Export glTF 2.0 binary
+### 5. Save the Blender file or export glTF 2.0 binary
 
-Export a `.glb` containing the intended objects, materials, images, and—only when relevant—armature and animations. Use the Blender export report to catch missing images or unsupported features. Keep the original exported `.glb`, the edited `.blend`, and the edited `.glb` as separate files.
+When you started with **Export .blend…**, save the file and import that `.blend` directly; keep intended replacement objects in its tagged **FE9 Model** collection. When you started with GLB, export a `.glb` containing the intended objects, materials, images, and—only when relevant—armature and animations. Use the Blender export report to catch missing images or unsupported features. Keep the original export and edited file as separate files.
 
 Do not overwrite the untouched reference. A byte-identical source is valuable when determining whether an import warning was introduced by Blender or already present in the exported set.
 
 ### 6. Convert and read the complete Import Review
 
-Return to the same model-set label and choose **Import .glb…**. Select the edited file. For `ymu/` sets above the known map-body triangle range, the app may offer reduction; keep the mesh for the first comparison unless you are deliberately testing reduction.
+Return to the same model-set label and choose **Import .blend/.glb…**. Select the edited file. Blender conversion runs in the background for `.blend`; the normal importer then continues. For `ymu/` sets above the known map-body triangle range, the app may offer reduction; keep the mesh for the first comparison unless you are deliberately testing reduction.
 
 The conversion opens **Import Review**. Inspect every tab before writing:
 
@@ -141,7 +145,8 @@ Do not combine these transitions into one first test.
 | --- | --- | --- |
 | Model-set search | Filters known `ymu/`, `zu/`, `zmap/`, `zbg/`, and `xwp/` sets. | Record the full selected label before exporting and importing. |
 | **Export .glb…** | Converts the selected set or map terrain to binary glTF. | Preserve the file as a reference; export is non-mutating. |
-| **Import .glb…** | Rebuilds the compatible mesh/body for the selected set. | Use for static mesh or body-on-existing-rig work; bow imports are refused. |
+| **Export .blend…** | Creates a self-contained Blender file with packed images and a tagged model collection. | Keep replacement objects in **FE9 Model**; map terrain receives its specialized live material graph. |
+| **Import .blend/.glb…** | Rebuilds the compatible mesh/body for the selected set. | `.blend` is converted in the background, then follows the same reviewed import as GLB; bows use their dedicated composite-skinned path. |
 | **Import animation…** | Replaces one target `.ga` from a named glTF animation. | Match source and target deliberately; review frames/events afterward. |
 | **Replace rig…** | Replaces skeleton, body, and required animations from a glTF rig. | Use only with a complete rig contract and inspect missing/extra animation warnings. |
 | **Rig kit…** | Exports reference `.glb`, checklist `.md`, and animation list `.json`. | Treat its anchors, weapons, animations, frames, and events as requirements. |
@@ -201,7 +206,7 @@ For a rigged or battle asset, add rendered-fight and Dolphin tests covering idle
 | Animation exists but attack never completes | Animation event track and target situation | Restore required hit/swing/throw events and test the exact battle situation. |
 | Preview works but game crashes or corrupts | Red budget figures, file size, blended buffer, unsupported feature | Reduce to/below a proven range and test each feature boundary in Dolphin. |
 | Import wants unrelated output files | Selected set and glTF contents | Cancel and export only the intended compatible objects/resources. |
-| Bow import is refused | `xwp/` bow's composite/skinned contract | Do not force static import; use a supported specialized workflow when available. |
+| Bow no longer bends correctly | Joint mapping, vertex groups, or renamed/deleted bow bones | Cancel the review and restore the exported armature and weights; the dedicated bow importer retains the existing skeleton and rebuilds composite geometry. |
 | Restore is unavailable | Whether this project has recorded originals for the folder | Restore the project checkpoint rather than overwriting more files. |
 
 ## Save, build, and revert
@@ -215,13 +220,13 @@ Use **Restore original…** for the exact set when available. Otherwise restore 
 - Export/import routing, supported set types, review figures, warnings, joint mappings, backup writes, and preview controls are source-reviewed.
 - The preview uses decoded engine-style poses and skinning, but it is not the retail renderer and cannot prove memory budgets, draw ordering, timing, or resource lookup.
 - Static imports and selected model-format contracts have stronger evidence than arbitrary new rigs. Rigged and smoothly blended user imports remain Dolphin-test requirements.
-- Multi-texture materials, some blend flags, and specialized skinned weapons are not covered by the ordinary first-pass importer.
+- Multi-texture materials and some blend flags are not covered by the ordinary first-pass importer. Bows are supported through their separate existing-skeleton composite importer.
 - Do not upgrade `unknown` model behavior to verified because one idle pose looks correct.
 
 ## Related tutorials and references
 
 - Prerequisites: [Save changes and restore originals](03-saving-and-restoring.md), [Edit weapon and scenery models within budgets](54-model-budgets.md)
-- Continue with: [Replace or fit a humanoid rig](52-replace-rig.md), [Import animations and edit events](53-animation-import.md), [Edit battle presentation](55-battle-presentation.md)
+- Continue with: [Sculpt and paint a terrain in Blender](terrain-sculpt-paint.md), [Replace or fit a humanoid rig](52-replace-rig.md), [Import animations and edit events](53-animation-import.md), [Edit battle presentation](55-battle-presentation.md)
 - Assignment and testing: [Give a character unique models](12-character-model-slot.md), [Simulate and render a fight](56-battle-simulator.md)
 - References: [Model Formats](../formats/model-formats.md), [Combat Animation](../systems/combat-animation.md), [Battle Staging](../systems/battle-staging.md)
 

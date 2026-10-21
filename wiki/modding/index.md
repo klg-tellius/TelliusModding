@@ -123,6 +123,8 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 27. [Set fog, lighting, border, and objectives](27-map-settings.md)
 28. [Assign battle backgrounds by terrain](28-battle-backgrounds.md)
 
+Additional walkthrough: [Sculpt and paint a terrain in Blender](terrain-sculpt-paint.md), with a terrain kit, the Tellius Terrain add-on and the map's own atlas.
+
 ### Place units and write events
 
 29. [Choose deployment sections](29-deployment-sections.md)

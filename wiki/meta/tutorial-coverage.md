@@ -62,6 +62,7 @@ The **evidence owner** is the first source an author must inspect, not the only 
 | 23 | height values, slopes, links and movement/display effects | map builder/map grid | traversable height transition |
 | 24 | every prop operation, placement field and import warning | map objects tools | place, copy, reopen and trigger |
 | 25 | terrain-mesh export/import contract | model/map formats | minimal visible round trip |
+| 25+ (terrain-sculpt-paint) | terrain kits, paint layers, swatch table, compiled texturing | terrain_paint/terrain_kit and the Tellius Terrain add-on | sculpt, paint, import and Dolphin check |
 | 26 | water geometry, material and flow controls | model/material tools | preview and built-game check |
 | 27 | every map-setting control and objective linkage | map settings/chapters | app preview plus game check |
 | 28 | terrain-to-scenery assignment and fallback | battle terrain/staging | explicit and fallback scene |
@@ -109,6 +110,7 @@ The **evidence owner** is the first source an author must inspect, not the only 
 | Class growth rows | Class-form tooltip, FE8Data comments, growth system article and runtime consumers | Do not state how the class growth row combines with personal growth until the accounts agree or the uncertainty is explicit. |
 | Promotion result | Class reference, simulator implementation and executable evidence | Separate simulator coverage from confirmed game behavior. |
 | Model import | Importer review, preview renderer and Dolphin behavior | Keep rigged/blended import labeled untested until a recorded game test passes. |
+| Painted terrain | Compiled preview, app renderer and Dolphin | Keep painted texturing, custom atlases and baked light labelled untested until a recorded game test passes. |
 | Map collision | Visible props, terrain costs, height links and scripted object interaction | Test each ownership layer independently instead of calling all of them “collision.” |
 
 ## Batch acceptance record
