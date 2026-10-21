@@ -58,7 +58,8 @@ for a single resolved model - see ``map_editor.py``'s "View Model..."
 buttons for where this gets used.
 
 Write support: "Export .glb..." writes the selected set through
-``gltf_export``. "Import .glb..." rebuilds the set's ``.gs`` from a glTF
+``gltf_export``. "Export .blend..." packs that model into a tagged Blender
+collection, and "Import .blend/.glb..." rebuilds the set's ``.gs`` from Blender or glTF
 through ``gltf_import`` and repacks the ``.cmp``: as a static mesh for
 ``zbg/`` scenery (``replace_set_with_static_glb()``), as a skinned body on
 the class skeleton for ``ymu/`` characters (blended vertices use the engine's
@@ -80,8 +81,9 @@ Weapon models (``xwp/<name>/<name>.cmp``, and ``xwp/forge/<name>_b.cmp``
 for forged weapons; see ``formats/icons.py`` for how an item picks one) are
 listed as ``xwp/<name>`` and ``xwp/forge/<name>_b``; Game Data's items link
 here. "Import .glb..." replaces a weapon as a rigid static mesh, like
-scenery; bows are refused (``is_skinned_weapon()``): their string bends
-through composite shapes, which that import doesn't write.
+scenery. Bows are detected by ``is_skinned_weapon()`` and use their own
+importer: it rebuilds every triangle as composite skinning on the weapon's
+existing skeleton so the bow and string can continue bending.
 
 Each import first returns a :class:`ModelImport` (the files it would
 write, warnings, the joint -> bone mapping). ``_ImportReviewDialog`` shows
@@ -108,7 +110,10 @@ from __future__ import annotations
 import io
 import json
 import math
+import queue
 import re
+import threading
+import tempfile
 import tkinter as tk
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -119,6 +124,7 @@ from PIL import Image, ImageTk
 
 from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, pak, particle_preview, skeleton, tpl
 from ..formats import model as model_fmt
+from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from ..formats import anim_registry, fe8data, zdbx
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_path_of
@@ -1036,6 +1042,115 @@ def replace_set_with_static_glb(container_path: Path, gltf_path: Path) -> ModelI
     return ModelImport({container_path: _pack(container_path, entries, files)}, warnings)
 
 
+def replace_bow_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
+    """Rebuild a bow as a composite-skinned weapon on its existing skeleton.
+
+    Unlike ordinary rigid ``xwp`` weapons, bows bend through their own ``.g``
+    bones. Every imported triangle is therefore written as a composite shape,
+    including one-bone vertices. The skeleton, animations, and unrelated pack
+    entries are preserved. Existing texture files are retained when all glTF
+    images match one of them; otherwise the pack's single texture file is
+    rebuilt from the imported images.
+    """
+    entries, files = _read_container(container_path)
+    gs_names = [name for name in files if Path(name).suffix.lower() == ".gs"]
+    g_names = [name for name in files if Path(name).suffix.lower() == ".g"]
+    tpl_names = [name for name in files if Path(name).suffix.lower() == ".tpl"]
+    if len(gs_names) != 1 or len(g_names) != 1:
+        raise gltf_import.GltfImportError(
+            f"{container_path.name} is not a skinned weapon pack (expected one .gs and one .g)."
+        )
+    original = gs_file.read_gs(files[gs_names[0]])
+    if original.composite is None:
+        raise gltf_import.GltfImportError(
+            f"{container_path.name} is a rigid weapon; use the ordinary weapon importer."
+        )
+
+    parsed_animations = tuple(
+        animation.read_animation_bytes(data)
+        for name, data in files.items()
+        if Path(name).suffix.lower() == ".ga"
+    )
+    source_model = model_fmt.read_model_bytes(files[gs_names[0]])
+    usage: dict[int, int] = {}
+    for chunk in source_model.chunks:
+        for strip in chunk.strips:
+            for vertex in strip:
+                for bone in vertex.bone_indices:
+                    usage[bone] = usage.get(bone, 0) + 1
+    fallback = max(usage, key=usage.get) if usage else None
+    build = gltf_import.import_skinned_build(
+        gltf_path.read_bytes(),
+        files[g_names[0]],
+        fallback_bone=fallback,
+        base_dir=gltf_path.parent,
+        name=Path(gs_names[0]).stem,
+        animations=parsed_animations,
+        composite_only=True,
+    )
+    gs, images, warnings = build.gs, build.images, list(build.warnings)
+    if gs.composite is None:
+        raise gltf_import.GltfImportError("The imported bow contains no mesh geometry.")
+
+    template = next((texture for material in original.materials for texture in material.textures), None)
+
+    def texture_record(tex_id: int) -> gs_file.GsTexture:
+        if template is None:
+            return gs_file.GsTexture((1, 0), tex_id, (257, 0, 0, 0, 0), 1.0, 1.0, 0)
+        return gs_file.GsTexture(
+            template.flags, tex_id, template.params, template.scale_u, template.scale_v, template.extra
+        )
+
+    new_tpl: bytes | None = None
+    if not images:
+        by_name = {material.name: material for material in original.materials}
+        for material in gs.materials:
+            source = by_name.get(material.name)
+            material.textures = (
+                [
+                    gs_file.GsTexture(t.flags, t.tex_id, t.params, t.scale_u, t.scale_v, t.extra)
+                    for t in source.textures
+                ]
+                if source is not None and source.textures
+                else [texture_record(0)]
+            )
+        warnings.append(
+            "The bow has no imported texture: matching materials keep their original texture records."
+        )
+    else:
+        mapping = None
+        for name in tpl_names:
+            try:
+                known = tpl.read_tpl_images(io.BytesIO(files[name]))
+            except Exception:  # noqa: BLE001 - an unreadable texture simply cannot match
+                continue
+            found = [next((index for index, old in enumerate(known) if _same_image(image, old)), None)
+                     for image in images]
+            if all(index is not None for index in found):
+                mapping = found
+                break
+        if mapping is None:
+            if len(tpl_names) > 1:
+                raise gltf_import.GltfImportError(
+                    f"{container_path.name} has several .tpl files; not sure which bow texture to replace."
+                )
+            mip_count = tpl.typical_mip_count(files[tpl_names[0]]) if tpl_names else 0
+            new_tpl = tpl.build_tpl([gltf_import.texture_for_tpl(image) for image in images], mip_count=mip_count)
+            mapping = list(range(len(images)))
+            warnings.append("The bow texture file is replaced with the images imported from Blender.")
+        for material in gs.materials:
+            material.textures = [texture_record(mapping[t.tex_id]) for t in material.textures]
+
+    files[gs_names[0]] = gs_file.write_gs(gs)
+    if new_tpl is not None:
+        tpl_name = tpl_names[0] if tpl_names else Path(gs_names[0]).stem + ".tpl"
+        if tpl_name not in files:
+            entries.append(pak.PakEntry(tpl_name, 0, 0))
+        files[tpl_name] = new_tpl
+    warnings.append("Bow geometry was rebuilt as composite skinning on the existing weapon skeleton.")
+    return ModelImport({container_path: _pack(container_path, entries, files)}, warnings, build.joint_map)
+
+
 #: Material names the map loader gives texture-projection callbacks
 #: (``setup_map_texture_material_callbacks``); an imported terrain material
 #: with one of these names is renamed so it draws as a plain textured mesh.
@@ -1102,21 +1217,142 @@ def surface_heights(triangles: list[_Triangle], points: list[tuple[float, float]
     return map_heights.surface_heights(_triangle_array(triangles), points)
 
 
-def export_map_terrain_glb(container_path: Path) -> bytes:
+def map_export_object_names(files: dict[str, bytes], map_data: map_file.MapData, terrain_name: str) -> list[str]:
+    """Modeled map objects available as optional context in a terrain export.
+
+    Descriptor order is the useful order shown by the map editor; duplicate
+    descriptors with the same filename become one checkbox because all of
+    their placed instances share the same model and selection state.
+    """
+    seen = {terrain_name}
+    names = []
+    for obj in map_data.build_desc:
+        if obj.filename in seen or f"{obj.filename}.gs" not in files:
+            continue
+        seen.add(obj.filename)
+        names.append(obj.filename)
+    return names
+
+
+def export_map_terrain_glb(container_path: Path, object_names: tuple[str, ...] | list[str] = ()) -> bytes:
     """A chapter's land terrain as ``.glb``, in the mesh's own coordinates
     (5 units per tile, tile 0 at ``panel_offset * 5``), with each material's
-    referenced textures embedded. Props and water stored in separate ``.gs``
-    files are left out."""
+    referenced textures embedded. Each name in ``object_names`` adds that
+    modeled object: terrain/water layers use their map-local identity
+    placement, while props get one glTF node per map instance at the same
+    transform used by the full map viewer."""
     _entries, files = _read_container(container_path)
     map_data = map_file.read_map_bytes(files["map.bin"])
     name = map_terrain_name(files, map_data, container_path.parent.name)
-    gs_model = model_fmt.read_model_bytes(files[f"{name}.gs"])
-    used = {texture.tex_id for material in gs_model.materials for texture in material.textures}
+    available = map_export_object_names(files, map_data, name)
+    requested = set(object_names)
+    selected = [candidate for candidate in available if candidate in requested]
+    models = [(name, model_fmt.read_model_bytes(files[f"{name}.gs"]))]
+    models += [(candidate, model_fmt.read_model_bytes(files[f"{candidate}.gs"])) for candidate in selected]
+    used = {
+        texture.tex_id
+        for _model_name, gs_model in models
+        for material in gs_model.materials
+        for texture in material.textures
+    }
     all_textures = _load_textures({n: d for n, d in files.items() if Path(n).suffix.lower() == ".tpl"})
     textures = {i: t.image for i, t in all_textures.items() if i in used}
+
+    # Import lazily: map_scene imports this module for model decoding.
+    from . import map_scene
+
+    placements = {}
+    terrain_indices = map_scene._base_terrain_desc_indices(map_data)
+    anchor = map_scene._find_prop_anchor(map_data, 1.0)
+    for candidate in selected:
+        indices = {i for i, obj in enumerate(map_data.build_desc) if obj.filename == candidate}
+        if indices & terrain_indices:
+            placements[candidate] = [(candidate, None)]
+            continue
+        instances = [inst for inst in map_data.build_inst if inst.desc_index in indices]
+        placements[candidate] = [
+            (
+                f"{candidate}_{i + 1:03d}",
+                tuple(tuple(row[:4]) for row in inst.world_transform(map_scale=1.0, parent_matrix=anchor)[:3]),
+            )
+            for i, inst in enumerate(instances)
+        ] or [(candidate, None)]
     # The terrain's one bone is the identity: exported without a skeleton,
     # the mesh re-imports as the static mesh it is.
-    return gltf_export.export_glb([(name, gs_model)], [], textures, [])
+    projection = map_scene.compute_map_texture_projection(name, map_data)
+    bake = (
+        gltf_export.MapTextureBake(projection.selector_matrix, projection.last_matrix)
+        if projection is not None else None
+    )
+    return gltf_export.export_glb(
+        models, [], textures, [], placements=placements, map_texture_bake=bake
+    )
+
+
+def export_map_blend(
+    container_path: Path,
+    target: Path,
+    object_names: tuple[str, ...] | list[str] = (),
+    blender: Path | str | None = None,
+) -> Path:
+    """Create a packed Blender file with live FE9 terrain material nodes."""
+    # Import lazily: map_scene imports this module for model decoding.
+    from . import map_scene
+
+    _entries, files = _read_container(container_path)
+    map_data = map_file.read_map_bytes(files["map.bin"])
+    terrain = map_terrain_name(files, map_data, container_path.parent.name)
+    gs_model = model_fmt.read_model_bytes(files[f"{terrain}.gs"])
+    projected = [
+        material for material in gs_model.materials
+        if material.name in gltf_import.UV2_MATERIALS and len(material.textures) >= 2
+    ]
+    projection = map_scene.compute_map_texture_projection(terrain, map_data)
+    if projected and projection is None:
+        raise gltf_import.GltfImportError(
+            f"The projected texture coordinates of {terrain} could not be derived from map.bin."
+        )
+    decoded = _load_textures({
+        name: data for name, data in files.items() if Path(name).suffix.lower() == ".tpl"
+    })
+    specs = []
+    seen = set()
+    for material in projected:
+        if material.name in seen:
+            continue
+        seen.add(material.name)
+        atlas_id = material.textures[0].tex_id
+        mask_id = atlas_id + 1
+        light_id = material.textures[-1].tex_id
+        missing = [index for index in (atlas_id, mask_id, light_id) if index not in decoded]
+        if missing:
+            raise gltf_import.GltfImportError(
+                f"Material {material.name} references unavailable texture indices: "
+                + ", ".join(str(index) for index in missing)
+            )
+        specs.append(blender_tool.TerrainMaterial(
+            material.name,
+            decoded[atlas_id].image,
+            decoded[mask_id].image,
+            decoded[light_id].image,
+            projection.selector_matrix,
+            projection.last_matrix,
+        ))
+    return blender_tool.export_blend(
+        export_map_terrain_glb(container_path, object_names), specs, target, blender, terrain_name=terrain
+    )
+
+
+def export_set_blend(
+    container_path: Path,
+    target: Path,
+    blender: Path | str | None = None,
+    model_name: str = "",
+) -> Path:
+    """Create a packed, tagged Blender file for an ordinary model set."""
+    return blender_tool.export_model_blend(
+        export_set_glb(container_path), target, blender, model_name=model_name
+    )
 
 
 #: The map_base mask (texture ``index + 1``) spans 128 tiles from the
@@ -1135,6 +1371,34 @@ def terrain_mask_image(files: dict[str, bytes], terrain: str) -> Image.Image | N
     images = tpl.read_tpl_images(io.BytesIO(files[map_props.texpack_name(files)]))
     index = material.textures[0].tex_id + 1
     return images[index] if index < len(images) else None
+
+
+def _shared_map_atlas(materials: list[gs_file.GsMaterial]) -> int:
+    """Return the atlas shared by projected map materials, with actionable errors."""
+    atlas_ids = {material.textures[0].tex_id for material in materials if len(material.textures) >= 2}
+    if any(len(material.textures) < 2 for material in materials) or len(atlas_ids) != 1:
+        raise gltf_import.GltfImportError(
+            "Keep map texturing requires every map_base and map_wall material to use the same atlas image; "
+            "the game projects that one image across the terrain. Assign the same image to all of those "
+            "materials, or turn off 'Keep map texturing' to import each material with its own custom texture "
+            "(the importer will rename the engine-reserved materials)."
+        )
+    return atlas_ids.pop()
+
+
+def _bake_untextured_material_colors(
+    scene: gltf_import.ImportedScene, *, exclude: frozenset[str] = frozenset()
+) -> list[str]:
+    """Give solid-colour materials a texture for map render paths that ignore ``color0``."""
+    baked = []
+    for material in scene.materials:
+        if material.image is not None or material.name in exclude:
+            continue
+        rgba = tuple(max(0, min(255, round(channel * 255))) for channel in material.base_color)
+        material.image = Image.new("RGBA", (8, 8), rgba)
+        material.base_color = (1.0, 1.0, 1.0, 1.0)
+        baked.append(material.name)
+    return baked
 
 
 def replace_map_terrain_with_glb(
@@ -1178,12 +1442,32 @@ def replace_map_terrain_with_glb(
     warnings = []
     old_mask = terrain_mask_image(files, name)
     old_base = next((m for m in original.materials if m.name in gltf_import.UV2_MATERIALS and len(m.textures) >= 2), None)
+    if map_texturing and old_base is not None:
+        current_images = tpl.read_tpl_images(io.BytesIO(files[map_props.texpack_name(files)]))
+        atlas_id = old_base.textures[0].tex_id
+        for material in scene.materials:
+            # The exporter's Blender-friendly texture is only a visualization
+            # bake. Keep the actual atlas contract when that GLB comes back.
+            if (
+                material.name in gltf_import.UV2_MATERIALS
+                and (material.baked_terrain_preview or material.image is None)
+                and atlas_id < len(current_images)
+            ):
+                material.image = current_images[atlas_id]
     for material in scene.materials:
         if map_texturing and material.name in gltf_import.UV2_MATERIALS:
             continue
         if material.name in MAP_CALLBACK_MATERIALS:
             warnings.append(f"Material {material.name} renamed {material.name}_mesh: the map loader would give it projected textures.")
             material.name += "_mesh"
+    # Generic map materials do not reliably apply color0 in game.  A glTF material with only
+    # baseColorFactor otherwise becomes the white light-overlay texture (bmap16 exposed this as
+    # purple in the app but bright white on hardware). Projected map materials were skipped above:
+    # they must keep their atlas contract and are validated separately.
+    skipped_projected = gltf_import.UV2_MATERIALS if map_texturing else frozenset()
+    baked = _bake_untextured_material_colors(scene, exclude=skipped_projected)
+    warnings += [f"Material {name}'s solid colour was baked into a texture for in-game rendering."
+                 for name in baked]
     area = map_playable_area(map_data, name) if conform else None
     if area is not None:
         cut = terrain_conform.conform_to_tiles(scene, *area)
@@ -1209,15 +1493,11 @@ def replace_map_terrain_with_glb(
     textured = [m for m in build.gs.materials if m.name in gltf_import.UV2_MATERIALS] if map_texturing else []
     mask_at = None
     if textured:
-        atlas_ids = {m.textures[0].tex_id for m in textured if len(m.textures) > 1}
-        if len(atlas_ids) != 1:
-            raise gltf_import.GltfImportError(
-                "Map texturing needs every map_base/map_wall material to use one and the same texture (the atlas)."
-            )
+        atlas_id = _shared_map_atlas(textured)
         source_mask = mask if mask is not None else old_mask
         if source_mask is None:
             raise gltf_import.GltfImportError("This terrain has no road/shore mask to keep: choose a mask image.")
-        mask_at = atlas_ids.pop() - base + 1  # the mask must be the image right after the atlas
+        mask_at = atlas_id - base + 1  # the mask must be the image right after the atlas
         images.insert(mask_at, source_mask)
         for material in build.gs.materials:
             material.textures = [
@@ -2552,8 +2832,14 @@ class _TerrainImportOptions(tk.Toplevel):
         ).pack(anchor="w", pady=(4, 0))
         ttk.Checkbutton(
             body, variable=self._texturing,
-            text="Keep map texturing on materials named map_base (atlas through both UV sets, blended by the mask)",
+            text="Keep projected map texturing on map_base/map_wall (one shared atlas, blended by the mask)",
         ).pack(anchor="w", pady=(8, 0))
+        ttk.Label(
+            body,
+            text="For separate custom textures on the ground and walls, turn this off. The importer renames "
+                 "those engine-reserved materials so the game renders each texture normally.",
+            style="Muted.TLabel", wraplength=760, justify="left",
+        ).pack(anchor="w", padx=(20, 0), pady=(2, 0))
         mask_row = ttk.Frame(body)
         mask_row.pack(fill="x", padx=(20, 0), pady=(2, 0))
         ttk.Label(mask_row, text="Mask image (empty: keep the current one)").pack(side="left")
@@ -4378,6 +4664,63 @@ class ModelPreviewDialog(tk.Toplevel):
         self.destroy()
 
 
+class _MapExportDialog(tk.Toplevel):
+    """Choose the modeled object types included beside the terrain GLB."""
+
+    def __init__(self, parent: tk.Misc, names: list[str]):
+        super().__init__(parent)
+        self.title("Map export objects")
+        self.transient(parent.winfo_toplevel())
+        self.resizable(True, True)
+        self.result: list[str] | None = None
+        self._vars = {name: tk.BooleanVar(value=False) for name in names}
+
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Map terrain", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(body, text="The land terrain is always exported.", style="Muted.TLabel").pack(anchor="w", pady=(0, 10))
+        ttk.Label(body, text="Other objects", style="Heading.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Check each object type to include all of its placed instances in the same .glb.",
+            style="Muted.TLabel",
+            wraplength=500,
+        ).pack(anchor="w", pady=(0, 6))
+
+        list_box = ttk.Frame(body)
+        list_box.pack(fill="both", expand=True)
+        canvas = tk.Canvas(list_box, highlightthickness=0, width=480, height=min(420, max(80, len(names) * 25)))
+        scroll = ttk.Scrollbar(list_box, orient="vertical", command=canvas.yview)
+        choices = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=choices, anchor="nw")
+        choices.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        for row, name in enumerate(names):
+            ttk.Checkbutton(choices, text=name, variable=self._vars[name]).grid(row=row, column=0, sticky="w", pady=1)
+
+        controls = ttk.Frame(body)
+        controls.pack(fill="x", pady=(10, 0))
+        ttk.Button(controls, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
+        ttk.Button(controls, text="Select none", command=lambda: self._set_all(False)).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(controls, text="Continue…", command=self._accept).pack(side="right", padx=(0, 6))
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.bind("<Return>", lambda _e: self._accept())
+        self.grab_set()
+
+    def _set_all(self, value: bool) -> None:
+        for var in self._vars.values():
+            var.set(value)
+
+    def _accept(self) -> None:
+        self.result = [name for name, var in self._vars.items() if var.get()]
+        self.destroy()
+
+
 class ModelViewer(EditorPanel):
     display_name = "3D Models"
 
@@ -4441,6 +4784,7 @@ class ModelViewer(EditorPanel):
         buttons = ttk.Frame(left)
         buttons.pack(fill="x", pady=(6, 0))
         self._export_button = ttk.Button(buttons, text="Export .glb...", command=self._export_glb, state="disabled")
+        self._blend_button = ttk.Button(buttons, text="Export .blend...", command=self._export_blend, state="disabled")
         self._import_button = ttk.Button(buttons, text="Import .glb...", command=self._import_glb, state="disabled")
         self._import_anim_button = ttk.Button(
             buttons, text="Import animation...", command=self._import_animation, state="disabled"
@@ -4458,7 +4802,7 @@ class ModelViewer(EditorPanel):
         self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables)
 
         # wrapped in rows so the button bar never widens the list pane
-        for i, button in enumerate((self._export_button, self._import_button, self._import_anim_button,
+        for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
                                     self._tables_button)):
@@ -4490,9 +4834,12 @@ class ModelViewer(EditorPanel):
             return
         label, path = self._filtered_sets[selection[0]]
         self._export_button.config(state="normal")
+        self._blend_button.config(state="normal")
         # Scenery takes a static mesh, map and battle models a skinned body.
         self._import_button.config(
-            state="normal" if label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")) else "disabled")
+            text="Import .blend/.glb...",
+            state="normal" if label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")) else "disabled",
+        )
         self._import_anim_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         self._import_rig_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         self._kit_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
@@ -4516,6 +4863,22 @@ class ModelViewer(EditorPanel):
         if selected is None:
             return
         label, path = selected
+        object_names: list[str] = []
+        if is_map_container(path):
+            try:
+                _entries, files = _read_container(path)
+                map_data = map_file.read_map_bytes(files["map.bin"])
+                terrain = map_terrain_name(files, map_data, path.parent.name)
+                available = map_export_object_names(files, map_data, terrain)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Could not read map objects", str(exc), parent=self)
+                return
+            if available:
+                dialog = _MapExportDialog(self, available)
+                self.wait_window(dialog)
+                if dialog.result is None:
+                    return
+                object_names = dialog.result
         target = filedialog.asksaveasfilename(
             title="Export model as glTF",
             defaultextension=".glb",
@@ -4526,7 +4889,7 @@ class ModelViewer(EditorPanel):
         if not target:
             return
         try:
-            data = export_map_terrain_glb(path) if is_map_container(path) else export_set_glb(path)
+            data = export_map_terrain_glb(path, object_names) if is_map_container(path) else export_set_glb(path)
             Path(target).write_bytes(data)
             written = [target]
             if is_map_container(path):
@@ -4547,6 +4910,114 @@ class ModelViewer(EditorPanel):
                 "downwards: black shows the atlas through the first UV set, white through the second (roads, shores)."
             )
         messagebox.showinfo("Exported", "Wrote " + "\n".join(written) + note, parent=self)
+
+    def _export_blend(self) -> None:
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, path = selected
+        executable = blender_tool.configured_blender()
+        if executable is None:
+            messagebox.showerror(
+                "Blender not found",
+                "Set Blender's location in Settings > Preferences, then try again.",
+                parent=self,
+            )
+            return
+        object_names: list[str] = []
+        if is_map_container(path):
+            try:
+                _entries, files = _read_container(path)
+                map_data = map_file.read_map_bytes(files["map.bin"])
+                terrain = map_terrain_name(files, map_data, path.parent.name)
+                available = map_export_object_names(files, map_data, terrain)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Could not read map objects", str(exc), parent=self)
+                return
+            if available:
+                dialog = _MapExportDialog(self, available)
+                self.wait_window(dialog)
+                if dialog.result is None:
+                    return
+                object_names = dialog.result
+        target = filedialog.asksaveasfilename(
+            title="Export as a self-contained Blender file",
+            defaultextension=".blend",
+            initialfile=label.replace("/", "_") + ".blend",
+            filetypes=[("Blender file", "*.blend")],
+            parent=self,
+        )
+        if not target:
+            return
+        if is_map_container(path):
+            work = lambda: export_map_blend(path, Path(target), object_names, executable)
+        else:
+            work = lambda: export_set_blend(path, Path(target), executable, label)
+        self._run_blend_export(work, is_map_container(path))
+
+    def _run_blend_export(
+        self, work, live_map_materials: bool
+    ) -> None:
+        """Generate a .blend off the Tk thread; Blender can take a while."""
+        progress = tk.Toplevel(self)
+        progress.title("Exporting Blender file")
+        progress.transient(self.winfo_toplevel())
+        progress.resizable(False, False)
+        body = ttk.Frame(progress, padding=20)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Creating the self-contained Blender file…").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Blender is running in the background. Large maps can take a minute.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 10))
+        bar = ttk.Progressbar(body, mode="indeterminate", length=380)
+        bar.pack(fill="x")
+        bar.start(12)
+        progress.protocol("WM_DELETE_WINDOW", lambda: None)
+        progress.grab_set()
+        self._blend_button.config(state="disabled")
+
+        results: "queue.Queue" = queue.Queue()
+
+        def worker() -> None:
+            try:
+                results.put(("ok", work()))
+            except Exception as exc:  # noqa: BLE001
+                results.put(("error", str(exc)))
+
+        def poll() -> None:
+            try:
+                status, payload = results.get_nowait()
+            except queue.Empty:
+                if self.winfo_exists():
+                    self.after(100, poll)
+                return
+            bar.stop()
+            if progress.winfo_exists():
+                progress.grab_release()
+                progress.destroy()
+            if self.winfo_exists():
+                selected = self._selected_set()
+                self._blend_button.config(
+                    state="normal" if selected is not None else "disabled"
+                )
+                if status == "ok":
+                    details = (
+                        "Textures are packed and map_base/map_wall use a live FE9 blend node graph."
+                        if live_map_materials else
+                        "Textures are packed. Edit objects inside the tagged FE9 Model collection for re-import."
+                    )
+                    messagebox.showinfo(
+                        "Exported",
+                        f"Wrote {payload}\n\n{details}",
+                        parent=self,
+                    )
+                else:
+                    messagebox.showerror("Could not export Blender file", payload, parent=self)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, poll)
 
     def _import_rig(self) -> None:
         selected = self._selected_set()
@@ -4740,63 +5211,160 @@ class ModelViewer(EditorPanel):
         if selected is None:
             return
         label, path = selected
-        skinned = label.startswith(("ymu/", "zu/"))
-        if label.startswith("xwp/"):
-            try:
-                bow = is_skinned_weapon(path)
-            except Exception as exc:  # noqa: BLE001
-                messagebox.showerror("Could not read model", str(exc), parent=self)
-                return
-            if bow:
-                messagebox.showerror(
-                    "Can't import this weapon",
-                    f"{label} is a bow: the game bends it through a skinned (composite) mesh, which the importer "
-                    "doesn't write. Swords, lances, axes and knives can be replaced.", parent=self)
-                return
         chosen = filedialog.askopenfilename(
-            title=f"Replace the {label} terrain with a glTF model" if is_map_container(path) else f"Replace the {label} mesh with a glTF model",
-            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")],
+            title=f"Replace the {label} mesh with a Blender or glTF model",
+            filetypes=[("Blender or glTF", "*.blend *.glb *.gltf"), ("All files", "*.*")],
             parent=self,
         )
         if not chosen:
             return
-        try:
+        chosen_path = Path(chosen)
+        if chosen_path.suffix.lower() == ".blend":
+            executable = blender_tool.configured_blender()
+            if executable is None:
+                messagebox.showerror(
+                    "Blender not found",
+                    "Set Blender's location in Settings > Preferences, then try again.",
+                    parent=self,
+                )
+                return
+            terrain = None
             if is_map_container(path):
-                has_map_base = any(
-                    m.name in gltf_import.UV2_MATERIALS
-                    for m in gltf_import.read_gltf(Path(chosen).read_bytes(), Path(chosen).parent).materials
-                )
-                options = _TerrainImportOptions(self, has_map_base)
-                self.wait_window(options)
-                if options.result is None:
+                try:
+                    _entries, files = _read_container(path)
+                    terrain = map_terrain_name(files, map_file.read_map_bytes(files["map.bin"]), path.parent.name)
+                except Exception as exc:  # noqa: BLE001
+                    messagebox.showerror("Could not read map", str(exc), parent=self)
                     return
-                follow, conform, texturing, mask, keep_light = options.result
-                result = self._busy(
-                    lambda: replace_map_terrain_with_glb(path, Path(chosen), follow, conform, texturing, mask, keep_light)
-                )
+            self._convert_blend_for_import(label, path, chosen_path, terrain, executable)
+            return
+        if is_map_container(path):
+            self._import_map_source(label, path, chosen_path, chosen_path.name)
+            return
+        self._import_model_source(label, path, chosen_path, chosen_path.name)
+
+    def _import_model_source(self, label: str, path: Path, source_path: Path, display_name: str) -> None:
+        """Run the existing static/skinned/battle importer on a GLB source."""
+        skinned = label.startswith(("ymu/", "zu/"))
+        try:
+            bow = label.startswith("xwp/") and is_skinned_weapon(path)
+            if bow:
+                result = self._busy(lambda: replace_bow_with_glb(path, source_path))
             elif label.startswith("zu/"):
-                result = self._busy(lambda: replace_battle_body_with_glb(path, Path(chosen)))
+                result = self._busy(lambda: replace_battle_body_with_glb(path, source_path))
             elif skinned:
-                source = self._map_model_source(label, path, Path(chosen))
+                source = self._map_model_source(label, path, source_path)
                 if source is None:
                     return
                 source, notes = source
                 result = self._busy(lambda: replace_body_with_glb(path, source))
                 result.warnings[:0] = notes
             else:
-                result = self._busy(lambda: replace_set_with_static_glb(path, Path(chosen)))
+                result = self._busy(lambda: replace_set_with_static_glb(path, source_path))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not import model", str(exc), parent=self)
             return
-        kind = "terrain import" if is_map_container(path) else "skinned body import" if skinned else "static import"
+        kind = "skinned bow import" if bow else "skinned body import" if skinned else "static import"
         names = ", ".join(p.name for p in result.outputs)
         self._review_and_write(
             label,
             path,
             result,
             f"Replace the {label} mesh",
-            f"Replaced mesh with {Path(chosen).name} ({kind}; wrote {names})",
+            f"Replaced mesh with {display_name} ({kind}; wrote {names})",
         )
+
+    def _import_map_source(self, label: str, path: Path, source: Path, display_name: str) -> None:
+        """Run the ordinary map importer on a GLB, including one converted from .blend."""
+        try:
+            has_map_base = any(
+                material.name in gltf_import.UV2_MATERIALS
+                for material in gltf_import.read_gltf(source.read_bytes(), source.parent).materials
+            )
+            options = _TerrainImportOptions(self, has_map_base)
+            self.wait_window(options)
+            if options.result is None:
+                return
+            follow, conform, texturing, mask, keep_light = options.result
+            result = self._busy(
+                lambda: replace_map_terrain_with_glb(path, source, follow, conform, texturing, mask, keep_light)
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import terrain", str(exc), parent=self)
+            return
+        names = ", ".join(output.name for output in result.outputs)
+        self._review_and_write(
+            label,
+            path,
+            result,
+            f"Replace the {label} mesh",
+            f"Replaced mesh with {display_name} (terrain import; wrote {names})",
+        )
+
+    def _convert_blend_for_import(
+        self, label: str, path: Path, source: Path, terrain: str | None, executable: Path
+    ) -> None:
+        """Convert a .blend without blocking Tk, then continue its normal importer."""
+        progress = tk.Toplevel(self)
+        progress.title("Reading Blender file")
+        progress.transient(self.winfo_toplevel())
+        progress.resizable(False, False)
+        body = ttk.Frame(progress, padding=20)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body,
+            text="Converting the tagged terrain to glTF…" if terrain else "Converting the tagged FE9 model to glTF…",
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Blender is running in the background.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 10))
+        bar = ttk.Progressbar(body, mode="indeterminate", length=380)
+        bar.pack(fill="x")
+        bar.start(12)
+        progress.protocol("WM_DELETE_WINDOW", lambda: None)
+        progress.grab_set()
+        self._import_button.config(state="disabled")
+        results: "queue.Queue" = queue.Queue()
+
+        def worker() -> None:
+            try:
+                converted = (
+                    blender_tool.blend_to_glb(source, terrain, executable)
+                    if terrain else blender_tool.model_blend_to_glb(source, executable)
+                )
+                results.put(("ok", converted))
+            except Exception as exc:  # noqa: BLE001
+                results.put(("error", str(exc)))
+
+        def poll() -> None:
+            try:
+                status, payload = results.get_nowait()
+            except queue.Empty:
+                if self.winfo_exists():
+                    self.after(100, poll)
+                return
+            bar.stop()
+            if progress.winfo_exists():
+                progress.grab_release()
+                progress.destroy()
+            if not self.winfo_exists():
+                return
+            self._import_button.config(state="normal")
+            if status == "error":
+                messagebox.showerror("Could not read Blender file", payload, parent=self)
+                return
+            with tempfile.TemporaryDirectory(prefix="tellius_blend_glb_") as folder:
+                converted = Path(folder) / (source.stem + ".glb")
+                converted.write_bytes(payload)
+                if terrain:
+                    self._import_map_source(label, path, converted, source.name)
+                else:
+                    self._import_model_source(label, path, converted, source.name)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, poll)
 
     def _busy(self, work):
         """Run ``work()`` with a wait cursor (imports take a few seconds)."""

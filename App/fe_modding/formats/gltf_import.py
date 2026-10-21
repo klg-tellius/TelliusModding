@@ -102,6 +102,7 @@ class ImportedMaterial:
     color1: Optional[tuple[int, int, int, int]] = None
     color2: Optional[tuple[int, int, int, int]] = None
     material_flag1: int = 0  # .gs byte +5, preserved by glTF extras
+    baked_terrain_preview: bool = False  # display-only texture made by the FE9 map exporter
 
     @property
     def pass_flag(self) -> int:
@@ -401,6 +402,13 @@ def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedSce
         pbr = mat.get("pbrMetallicRoughness", {})
         image = d.image(pbr["baseColorTexture"]["index"]) if "baseColorTexture" in pbr else None
         extras = mat.get("extras") if isinstance(mat.get("extras"), dict) else {}
+        texture_name = ""
+        if "baseColorTexture" in pbr:
+            texture_index = pbr["baseColorTexture"].get("index")
+            if isinstance(texture_index, int) and 0 <= texture_index < len(doc.get("textures", [])):
+                source = doc["textures"][texture_index].get("source")
+                if isinstance(source, int) and 0 <= source < len(doc.get("images", [])):
+                    texture_name = str(doc["images"][source].get("name", ""))
 
         def colour(key: str):
             value = extras.get(key)
@@ -417,6 +425,7 @@ def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedSce
                 colour("fe9_color1"),
                 colour("fe9_color2"),
                 int(extras.get("fe9_material_flag1", 0) or 0) & 0xFF,
+                bool(extras.get("fe9_baked_terrain_preview")) or texture_name.startswith("fe9_baked_terrain_"),
             )
         )
     default_material: Optional[int] = None
