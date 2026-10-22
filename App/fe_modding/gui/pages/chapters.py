@@ -452,20 +452,24 @@ class ChapterPage(Page):
         left.pack(side="left", fill="x", expand=True)
         self._title = ttk.Label(left, text="", style="Title.TLabel")
         self._title.pack(anchor="w")
+        # The map phase controls get a row of their own under the title, so a long title
+        # cannot squeeze them (or the chapter buttons on the right) out of the header.
+        phases = ttk.Frame(left, style="Page.TFrame")
+        phases.pack(anchor="w", pady=(4, 0))
         self._phase_status = ttk.Label(left, text="", style="Muted.TLabel")
         self._phase_status.pack(anchor="w")
 
         right = ttk.Frame(header, style="Page.TFrame")
-        right.pack(side="right")
+        right.pack(side="right", anchor="n")
         self._phase_var = tk.StringVar()
-        self._phase_label = ttk.Label(right, text="Phase", style="Muted.TLabel")
-        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=24)
+        self._phase_label = ttk.Label(phases, text="Phase", style="Muted.TLabel")
+        self._phase_combo = ttk.Combobox(phases, textvariable=self._phase_var, state="readonly", width=24)
         self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(
             self._phase_by_label.get(self._phase_var.get(), self._phase_var.get())))
-        self._previous_phase = ttk.Button(right, text="‹ Part", command=lambda: self._step_phase(-1))
-        self._next_phase = ttk.Button(right, text="Part ›", command=lambda: self._step_phase(1))
-        self._add_phase_button = ttk.Button(right, text="+ Phase…", command=self._add_phase)
-        self._remove_phase_button = ttk.Button(right, text="Remove phase…", command=self._remove_phase)
+        self._previous_phase = ttk.Button(phases, text="‹ Part", command=lambda: self._step_phase(-1))
+        self._next_phase = ttk.Button(phases, text="Part ›", command=lambda: self._step_phase(1))
+        self._add_phase_button = ttk.Button(phases, text="+ Phase…", command=self._add_phase)
+        self._remove_phase_button = ttk.Button(phases, text="Remove phase…", command=self._remove_phase)
         self._prev = ttk.Button(right, text="‹ Previous", command=lambda: self._step(-1))
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
@@ -1005,7 +1009,10 @@ class ChapterPage(Page):
                    if c == chapter_flow.GAME_CLEARED or f"{c:02d}" in self._ids]
         labels = {_flow_label(c, titles): c for c in choices}
         current = flow.next_of(chapter)
-        var = tk.StringVar(value=_flow_label(current, titles))
+        shown = _flow_label(current, titles)
+        if current not in choices:  # out of the story: the default successor, a chapter that doesn't exist
+            shown = f"{current:02d} · missing chapter: pick one"
+        var = tk.StringVar(value=shown)
         combo = ttk.Combobox(line, textvariable=var, values=list(labels), state="readonly", width=40)
         combo.pack(side="left", padx=(8, 0))
         combo.bind("<<ComboboxSelected>>", lambda e: self._set_next(chapter, labels[var.get()]))

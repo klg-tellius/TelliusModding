@@ -129,11 +129,11 @@ def review_tutorials() -> tuple[list[str], dict[str, int]]:
     else:
         ledger = LEDGER.read_text(encoding="utf-8")
         numbered_rows = re.findall(r"^\|\s*(\d{2})\s*\|", ledger, re.M)
-        expected = {f"{i:02d}" for i in range(1, 65)}
+        expected = {path.name[:2] for path in MODDING.glob("[0-9][0-9]-*.md")}
         found = set(numbered_rows)
         if found != expected:
             errors.append(
-                "wiki/meta/tutorial-coverage.md: lesson ledger differs from 01-64 "
+                "wiki/meta/tutorial-coverage.md: lesson ledger differs from the numbered lessons "
                 f"(missing {sorted(expected - found)}, extra {sorted(found - expected)})"
             )
 

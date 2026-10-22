@@ -77,6 +77,14 @@ The editor preserves readable `.fe9s` source in the project's `script_sources` d
 
 ## Guided walkthrough
 
+<!-- screenshot 36-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Scripts page with the chapter script cards and the shared scripts section.](../assets/images/tutorials/screenshots/36-a-setup.png)](../assets/images/tutorials/screenshots/36-a-setup.png)
+
+<figcaption markdown="span">**Assets › Scripts**: each chapter's script, then the shared scripts (`startup.cmb` with the helpers every chapter calls, and the others).</figcaption>
+</figure>
+
 ### 1. Audit the startup helper before copying it
 
 Select `startup.cmb` in **File**. Use **Search code** for the helper's local definition name and exported name. Record:

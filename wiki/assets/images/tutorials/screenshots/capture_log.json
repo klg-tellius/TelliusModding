@@ -1,0 +1,2732 @@
+{
+ "01-a-setup.png": {
+  "file": "01-a-setup.png",
+  "lesson": 1,
+  "caption": "**New Project** with Path of Radiance selected, the name *Tutorial Practice* and the parent folder. The preview line shows the folder the app will create.",
+  "alt": "New Project dialog: game choice, project name, Create in folder with Browse, folder preview, Create Project and Cancel buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   420,
+   267
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "01-b-result.png": {
+  "file": "01-b-result.png",
+  "lesson": 1,
+  "caption": "Home of the extracted project: its name, game, platform and folder, the six section cards (Chapters lists 31 chapters, Characters 47 playable of 127) and **Changes this session**.",
+  "alt": "Home page of Tutorial Practice with the Browse cards and the changes list.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "01-c-extract.png": {
+  "file": "01-c-extract.png",
+  "lesson": 1,
+  "caption": "**Disc & Patch** after **Choose disc image…**: the image is copied into the project's `source` folder and named on the **Source disc** card, *Not extracted yet*. **Extract** unpacks it; until then only Home and Disc & Patch open.",
+  "alt": "Disc and Patch page of an unextracted project with the source disc card, Choose disc image and Extract, and the disabled build and patch buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "01-d-tools.png": {
+  "file": "01-d-tools.png",
+  "lesson": 1,
+  "caption": "**Settings › Disc and media tools…** (offered at first start when WIT is missing): **Download missing tools** fetches WIT, which extracts and builds discs, and, with **Include FFmpeg for audio/video imports**, FFmpeg. Your game files are not downloaded or included.",
+  "alt": "Set up disc and media tools dialog with the FFmpeg checkbox, Download missing tools and Later.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   562,
+   342
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "01-launcher.png": {
+  "file": "01-launcher.png",
+  "lesson": 1,
+  "caption": "The launcher when no project is open: **New project…** creates one, **Open project folder…** opens an existing one, and **Recent projects** lists the last ones opened.",
+  "alt": "Tellius Modding launcher with New project, Open project folder and the empty recent projects list.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "02-a-setup.png": {
+  "file": "02-a-setup.png",
+  "lesson": 2,
+  "caption": "The workspace: section bar along the top, breadcrumbs with Back/Forward under it, the page, and the status bar with the unsaved count and **Changes this session**.",
+  "alt": "Home page showing the top section bar, search box, breadcrumb bar and status bar.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "02-b-result.png": {
+  "file": "02-b-result.png",
+  "lesson": 2,
+  "caption": "**Ctrl+K** search for *Ike*: one list finds characters, classes, items, chapters and messages. Enter opens the selected result.",
+  "alt": "Search palette over the workspace with the query Ike and matching results listed by kind.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "02-c-crumbs.png": {
+  "file": "02-c-crumbs.png",
+  "lesson": 2,
+  "caption": "The breadcrumb bar after Characters → Ike → Prologue: **‹** goes back to Ike (Alt+Left), **›** forward again (Alt+Right), and each crumb (*Chapters › Prologue: Mercenaries › Script*) is a link. The section tab in the top bar shows where you are.",
+  "alt": "Workspace on the Prologue Script tab with the breadcrumb bar and back and forward buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "02-d-back.png": {
+  "file": "02-d-back.png",
+  "lesson": 2,
+  "caption": "**‹** returned to Ike's Stats tab, as it was: pages keep their state while you move around, and unsaved edits stay in their editor.",
+  "alt": "Ike's character page after pressing back, with the forward button now enabled.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "03-a-setup.png": {
+  "file": "03-a-setup.png",
+  "lesson": 3,
+  "caption": "An applied but unsaved edit: the form says **Unsaved changes in FE8Data.bin**, **Save FE8Data.bin** is enabled, and the status bar names the unsaved file.",
+  "alt": "Character Stats tab with the unsaved-changes warning beside Save FE8Data.bin and the unsaved count in the status bar.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "03-b-result.png": {
+  "file": "03-b-result.png",
+  "lesson": 3,
+  "caption": "After saving, leaving and reopening the record, the Strength bonus is still raised and **Save FE8Data.bin** is disabled again: the file holds the value.",
+  "alt": "Character Stats tab after reopening, with Save FE8Data.bin disabled and the raised Strength bonus.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "03-c-changes.png": {
+  "file": "03-c-changes.png",
+  "lesson": 3,
+  "caption": "**Changes this session** (the counter at the bottom left, or **View › Changes this session**): every save, import and restore of the session with its time and owner. It is not saved with the project.",
+  "alt": "Workspace with the Changes this session drawer open above the status bar, listing the saves.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "04-a-setup.png": {
+  "file": "04-a-setup.png",
+  "lesson": 4,
+  "caption": "**Settings › Preferences…**: **Dolphin location (Dolphin.exe)** is the emulator the app launches; Blender is optional and only used by the .blend model tools.",
+  "alt": "Preferences dialog with theme choice, Dolphin location and Blender location fields with Browse buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   464,
+   552
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "04-b-result.png": {
+  "file": "04-b-result.png",
+  "lesson": 4,
+  "caption": "After **Build disc**: the status bar reads *Built* and the image path, the project's `build/Tutorial Practice.ciso`. Every build overwrites that file; open it in Dolphin, or use **Build and play in Dolphin**.",
+  "alt": "Disc and Patch page after a build, with the built image path in the status bar.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "04-c-build.png": {
+  "file": "04-c-build.png",
+  "lesson": 4,
+  "caption": "The **Build** card on Disc & Patch: **Build disc** packs the saved project files into a new image; **Build and play in Dolphin** also starts it.",
+  "alt": "Disc and Patch page with the Build card showing Build disc and Build and play in Dolphin.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "04-d-play-chapter.png": {
+  "file": "04-d-play-chapter.png",
+  "lesson": 4,
+  "caption": "**Play › Play chapter in Dolphin…** (F5): pick a chapter and a **Difficulty**; Dolphin starts on the extracted files, without a build, straight in that chapter.",
+  "alt": "Play in Dolphin dialog with the chapter list, the difficulty choice, Play and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   535,
+   229
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "05-a-setup.png": {
+  "file": "05-a-setup.png",
+  "lesson": 5,
+  "caption": "**Tools › Check › Run check** on the unmodified project gives the baseline list. Note these rows: after an edit, only new rows are yours to fix.",
+  "alt": "Check page with the Run check button, the summary line and the results table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "05-b-result.png": {
+  "file": "05-b-result.png",
+  "lesson": 5,
+  "caption": "The file put back and **Run check** again: *0 errors, 4 warnings*, the baseline. The four warnings are in the retail data, in places the game never reaches.",
+  "alt": "Check page back to the four baseline warnings and no error.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "05-c-error.png": {
+  "file": "05-c-error.png",
+  "lesson": 5,
+  "caption": "An induced failure: with `Mess/C31.m` moved away, **Run check** reports *1 error*: **Severity** error, **Area** Chapter 31, **File** `Mess/C31.m`, *The chapter's message file is missing.* Double-click the row to open the chapter it belongs to.",
+  "alt": "Check page with one error row for the missing message file of chapter 31 above the four baseline warnings.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "06-a-setup.png": {
+  "file": "06-a-setup.png",
+  "lesson": 6,
+  "caption": "The **Overview** of Ch.5: Flight! (slot 06). Under the title, the **Map phase** list (*Map phase 1 · bmap06*) with **‹ Phase** / **Phase ›**, **+ Phase…** and **Remove phase…**; on the right **▶ Play in Dolphin…**, **‹ Previous**, **Delete chapter…** and **Next ›**. The page lists the story flow, then the cast of each section of the Normal deployment file, here the 22 enemies of `bmap06_first_n` first.",
+  "alt": "Overview of Ch.5 Flight! with the map phase controls under the title, the Story flow box and the first section of the cast.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "06-b-result.png": {
+  "file": "06-b-result.png",
+  "lesson": 6,
+  "caption": "Back on **Map phase 1 · bmap06**, the **Build** tab with the *Normal* file: the battle map with the 8 player slots, the 22 enemies of `bmap06_first_n` and the 5 reinforcements of `bmap06_zoen_n` on their tiles.",
+  "alt": "Build tab of Ch.5 Flight! on the Normal deployment file with the unit markers on the map.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "06-c-phase.png": {
+  "file": "06-c-phase.png",
+  "lesson": 6,
+  "caption": "**Map phase 2 · bmap06_2** with **Deployment file** *Common*: the map of the opening cutscene. Its sections `bmap06_2_event00_c` and `bmap06_2_event_ged_c` are only placed by the script; its Normal, Hard and Maniac files are empty.",
+  "alt": "Overview of the second map phase of Ch.5 with the common deployment file's two event sections.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "06-d-script.png": {
+  "file": "06-d-script.png",
+  "lesson": 6,
+  "caption": "The **Script** tab on `func_10`, the opening scene: `MapLoad(\"bmap06_2\")` loads the cutscene map, `InstantDispos(\"bmap06_2_event00_c\")` places its section, and `TalkEvent` plays the messages `MS_06_OP_01` and `MS_06_OP_02` of `c06.m`.",
+  "alt": "Script tab of Ch.5 with the function list and the opening function that loads bmap06_2.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "06-e-record.png": {
+  "file": "06-e-record.png",
+  "lesson": 6,
+  "caption": "The **Chapter data** tab: chapter 06's record in `FE8Data.bin`. **Map** `bmap06`, **Script** `C06`, **Message file** `C06` and the **Title key** `MCT06` are the names the other tabs follow.",
+  "alt": "Chapter data tab of Ch.5 with the record's title key, map, script and message names and its other fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-a-setup.png": {
+  "file": "07-a-setup.png",
+  "lesson": 7,
+  "caption": "**Add chapter…**: **Copy of** Ch.1 (02), **Chapter number** 33, **Title** *Tutorial: Side Path*, **Played after** 02. The line under it says what changes: 02 will lead to 33, and 33 to 03.",
+  "alt": "Add Chapter dialog with Copy of, Chapter number, Title and Played after, the routing hint, Add Chapter and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   516,
+   313
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-b-result.png": {
+  "file": "07-b-result.png",
+  "lesson": 7,
+  "caption": "Ch.1's **Story flow** after the add: its **Next chapter** is now *33 · Tutorial: Side Path*. The change is in `main.dol`'s next-chapter table; only playing Ch.1 to its end in Dolphin proves the transition.",
+  "alt": "Story flow box of Ch.1 with Next chapter set to 33 Tutorial: Side Path.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-c-flow.png": {
+  "file": "07-c-flow.png",
+  "lesson": 7,
+  "caption": "The new chapter 33's **Overview**: **Played after:** *02 · Ch.1: The Battle Begins*, **Next chapter:** *03 · Ch.2: Rescue*, and **Take out of the story**, which only added chapters have. The header shows **Delete chapter…** for every chapter but the Prologue.",
+  "alt": "Overview of the added chapter 33 with its Story flow box, the Take out of the story button and the copied cast.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-chapters.png": {
+  "file": "07-chapters.png",
+  "lesson": 7,
+  "caption": "**Chapters**: the action cards (**Add chapter…**, **New campaign…**, **Story order…**, **Create hub…**), then the story in play order with each chapter's place (*#1* to *#31*).",
+  "alt": "Chapters page with the action cards and the story chapter cards with order badges.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-d-order.png": {
+  "file": "07-d-order.png",
+  "lesson": 7,
+  "caption": "**Story order…**: retail chapters carry a lock and keep their place; the added chapter 33 sits between 02 and 03. **Move up** / **Move down** swap it only with another added chapter, so here they do nothing.",
+  "alt": "Story order dialog with locked retail chapters and the unlocked chapter 33 selected between 02 and 03.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   465,
+   433
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "07-e-out.png": {
+  "file": "07-e-out.png",
+  "lesson": 7,
+  "caption": "After **Take out of the story**: *no chapter leads here: the game never reaches it*. Ch.1 leads to 03 again; chapter 33 and its files are still there, listed under **Other chapters**.",
+  "alt": "Overview of chapter 33 after Take out of the story, with the unreachable note.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-a-setup.png": {
+  "file": "08-a-setup.png",
+  "lesson": 8,
+  "caption": "**New campaign…**: **Played after** the last story chapter (31, Endgame), three chapter rows (copies of 02, 03 with **Empty** ticked, and 04) and one row under **Characters (optional)**: `PID_TUTORIAL_SCOUT`, *Scout*, a copy of Boyd.",
+  "alt": "New campaign dialog with three filled chapter rows, one character row, Add chapter row, Add character row, Create campaign and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   651,
+   527
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-b-result.png": {
+  "file": "08-b-result.png",
+  "lesson": 8,
+  "caption": "**Chapters** after **Create campaign**: the three new chapters close the story as *#32*, *#33* and *#34*, after Endgame.",
+  "alt": "Chapters page scrolled to the end of the story with the three added chapter cards.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-c-first.png": {
+  "file": "08-c-first.png",
+  "lesson": 8,
+  "caption": "The campaign's first chapter, 33 *Tutorial: Border Watch*, opens: **Played after** *31 · Endgame: Repatriation*, **Next chapter** *34 · Tutorial: The Ford*. Endgame no longer leads to the ending but to 33; 35 leads to the ending.",
+  "alt": "Overview of chapter 33 Tutorial: Border Watch with its story flow from 31 to 34.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-d-empty.png": {
+  "file": "08-d-empty.png",
+  "lesson": 8,
+  "caption": "Chapter 34, made with **Empty**: the cast keeps only the player sections (*Player units*); the enemies of Ch.2 are gone, their sections kept empty so the copied script still finds them.",
+  "alt": "Overview of chapter 34 Tutorial: The Ford whose cast shows only the player units.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-e-order.png": {
+  "file": "08-e-order.png",
+  "lesson": 8,
+  "caption": "**Story order…** after selecting 34 and **Move down**: the three added chapters can be reordered among themselves (here 33, 35, 34). **Apply** would rewrite the links; this run closes with **Cancel**.",
+  "alt": "Story order dialog with the three unlocked added chapters at the end, 34 moved below 35.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   465,
+   433
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "08-f-cast.png": {
+  "file": "08-f-cast.png",
+  "lesson": 8,
+  "caption": "The campaign's character `PID_TUTORIAL_SCOUT`: a copy of Boyd with its own name key `MPID_TUTORIAL_SCOUT` (*Scout*). No chapter deploys it yet.",
+  "alt": "Character page of PID_TUTORIAL_SCOUT with Boyd's class and stats and the name Scout.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-a-setup.png": {
+  "file": "10-a-setup.png",
+  "lesson": 10,
+  "caption": "**Characters › New character…**: the new PID is `PID_TUTORIAL_GUARD` and **Start as a copy of** is Boyd (`PID_BOLE`). The copy keeps Boyd's name key, portrait and class until you change them.",
+  "alt": "New character dialog with the new ID field, the copy-from list set to PID_BOLE, Create and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   459,
+   215
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-b-result.png": {
+  "file": "10-b-result.png",
+  "lesson": 10,
+  "caption": "After **Apply** and **Save FE8Data.bin**, reopening the record: the page is titled *Guard*, **Save FE8Data.bin** is disabled and the HP bonus is kept. The record exists, but nothing deploys it yet.",
+  "alt": "Character page of PID_TUTORIAL_GUARD titled Guard after saving, with its saved stats.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-c-stats.png": {
+  "file": "10-c-stats.png",
+  "lesson": 10,
+  "caption": "The new record after **＋ Create new message…** and before **Apply**: **Name key (MPID)** reads `MPID_TUTORIAL_GUARD` (*Guard*), the HP **Personal bonus** is raised from 6 to 7. The header still says *Boyd* and lists the records sharing his name until the file is saved.",
+  "alt": "Stats tab of PID_TUTORIAL_GUARD: identity, skills, map models, level row and the stat grid with the edited HP bonus.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-d-deployment.png": {
+  "file": "10-d-deployment.png",
+  "lesson": 10,
+  "caption": "Placing it: on Ch.1's **Build** tab (*Normal*), Boyd's slot in `bmap02_mikata_n` selected and **Character** changed to `PID_TUTORIAL_GUARD`. **Apply**, then **Save Chapter**, writes the deployment file; this capture stops before **Apply**.",
+  "alt": "Build tab of Ch.1 with a player unit selected and PID_TUTORIAL_GUARD in its Character field.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-e-hub.png": {
+  "file": "10-e-hub.png",
+  "lesson": 10,
+  "caption": "**Characters**, **All**, *Boyd* in **Search name or PID**: one card, Boyd, *+3 copies*. Records that share a name key are shown as one: Boyd's two event records and the new `PID_TUTORIAL_GUARD`, which still uses `MPID_BOLE`.",
+  "alt": "Characters page filtered on Boyd with the category chips, the count and the matching cards.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-f-name.png": {
+  "file": "10-f-name.png",
+  "lesson": 10,
+  "caption": "**Name key (MPID)** › **＋ Create new message…**: **Message ID** `MPID_TUTORIAL_GUARD`, **Message text** *Guard*. **Create and assign** writes the text into `Mess/common.m` and points the record at it; Boyd keeps `MPID_BOLE`.",
+  "alt": "Create message dialog with the message ID, the message text, Create and assign and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   496,
+   287
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "10-g-unused.png": {
+  "file": "10-g-unused.png",
+  "lesson": 10,
+  "caption": "**Appearances** of the new character: *Not found in any deployment file or chapter message.* Creating a record neither deploys nor recruits it.",
+  "alt": "Appearances tab of PID_TUTORIAL_GUARD with empty Deployed in and Dialogue tables.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "11-a-setup.png": {
+  "file": "11-a-setup.png",
+  "lesson": 11,
+  "caption": "**New portrait…**: name `TGUARD` (makes `FID_TGUARD` and `FID_L_TGUARD`), the nameplate key, **Use for character** `PID_TUTORIAL_GUARD`, and one body picture. Mouth and eye frames are optional; without them the face does not animate.",
+  "alt": "New portrait dialog with name, name key and character fields, the small and large portrait picture rows with Choose buttons, position spinboxes and the menu face row.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   980,
+   643
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "11-b-result.png": {
+  "file": "11-b-result.png",
+  "lesson": 11,
+  "caption": "`PID_TUTORIAL_GUARD`'s **Portrait & models** tab after **Create** and saving FE8Data.bin: the character resolves `FID_TGUARD`. This is the app's assembled preview, not the game.",
+  "alt": "Portrait and models tab of PID_TUTORIAL_GUARD showing the new placeholder face and the model list.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "11-viewer.png": {
+  "file": "11-viewer.png",
+  "lesson": 11,
+  "caption": "**Assets › Portraits** with `FID_IKE` selected: the pictures as the game assembles them, **Replace picture…**, and the **Face record (Face/facedata.bin)** with eye and mouth positions.",
+  "alt": "Portraits page with the portrait list, the assembled face preview, replace controls and the face record form.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "12-a-setup.png": {
+  "file": "12-a-setup.png",
+  "lesson": 12,
+  "caption": "**New slot…** on `ymu/fighter`: **Copy animation ID** `AID_FIGHTER_BO` (Boyd's), **New animation ID** `AID_TGUARD`, **New folder** `tguard` (its own copy of the files), **Character** `PID_TUTORIAL_GUARD`, **Promoted model** off.",
+  "alt": "New slot dialog for a map model with the copied animation ID, new ID, new folder, character and promoted fields, Create and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   559,
+   249
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "12-b-result.png": {
+  "file": "12-b-result.png",
+  "lesson": 12,
+  "caption": "**Model tables…**, **Battle job list**: the new line `JID_FIGHTER+PID_TUTORIAL_GUARD` → `tgd1`. **Which models does a character get?** with `PID_TUTORIAL_GUARD`: battle `zu/tgd1`, map from `AID_TGUARD`. Boyd still gets `zu/fig1` and `AID_FIGHTER_BO`.",
+  "alt": "Model tables dialog with the battle job list, the new character line selected and the result of Which models does a character get.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   902,
+   592
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "12-c-battle.png": {
+  "file": "12-c-battle.png",
+  "lesson": 12,
+  "caption": "**New slot…** on `zu/fig1`: **New model code** `tgd1`, **Character** `PID_TUTORIAL_GUARD`, **Class** `JID_FIGHTER` (filled from the character). **Create** copies the model and adds the job-list line `JID_FIGHTER+PID_TUTORIAL_GUARD`.",
+  "alt": "New slot dialog for a battle model with the model code, character and class fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   543,
+   185
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "12-d-look.png": {
+  "file": "12-d-look.png",
+  "lesson": 12,
+  "caption": "The Guard's **Portrait & models** after both slots: *Battle model* `zu/tgd1`, *Map model* `ymu/tguard` via `AID_TGUARD`. The promoted rows are unchanged: the slots were made for the unpromoted state only.",
+  "alt": "Portrait and models tab of the Guard with its own battle and map models.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "12-look.png": {
+  "file": "12-look.png",
+  "lesson": 12,
+  "caption": "**Portrait & models** answers which models a character gets: *Battle model* `zu/fig1` via Fighter, *Map model* `ymu/fighter` via `AID_FIGHTER_BO`, and the promoted pair. Every Fighter shares `zu/fig1`; Boyd and his copy share `AID_FIGHTER_BO`.",
+  "alt": "Portrait and models tab listing battle model, promoted battle model, map model and promoted map model with their sources and Open in 3D Models buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "13-a-setup.png": {
+  "file": "13-a-setup.png",
+  "lesson": 13,
+  "caption": "Ike's **Supports** tab with a partner selected: the pair's C/B/A thresholds, the conversation buttons and **Add bond with**. Both partners hold their own copy of the pair.",
+  "alt": "Supports tab with the partner list, affinity, thresholds per rank, conversation buttons and the bond section.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "13-b-result.png": {
+  "file": "13-b-result.png",
+  "lesson": 13,
+  "caption": "Oscar's **Supports**: the same pair, written to both lists with the same thresholds, in the first empty slot of Oscar's list (2). Its **Bonus at A (each unit)** is *Attack +1, Hit +7, Avoid +15* (Fire with Earth). **Remove partner** on either side removes both and leaves the slots empty.",
+  "alt": "Supports tab of Oscar with the new Guard pair selected among his partners.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "13-c-pair.png": {
+  "file": "13-c-pair.png",
+  "lesson": 13,
+  "caption": "The Guard's **Supports** after **Add partner** `PID_OSCAR` › **Add**: the pair starts at *1 / 3 / 5*; here **C at** 4, **B at** 10, **A at** 18. **Conversation** offers **Create C**, **Create B**, **Create A**: no `MYELL_` scene exists yet.",
+  "alt": "Supports tab of the Guard with Oscar as partner, the thresholds and the conversation buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "14-a-setup.png": {
+  "file": "14-a-setup.png",
+  "lesson": 14,
+  "caption": "One Ch.1 bandit (`bmap02_first_n`, *Normal*, tile 3, 12) turned into the Guard: **Character** `PID_TUTORIAL_GUARD`, **Faction** *Enemy*. **Class** stays *Myrmidon*: the deployment's class wins over the character's. **Apply**, then **Save Chapter**.",
+  "alt": "Build tab of Ch.1 with an enemy bandit selected and PID_TUTORIAL_GUARD in its Character field.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "14-b-result.png": {
+  "file": "14-b-result.png",
+  "lesson": 14,
+  "caption": "After **Save** and **Save Chapter**, the Guard's **Script references** lists Ch.1's `TutorialGuardTalk`, and **Appearances** lists its `bmap02_first_n` row: the script and the deployment now agree.",
+  "alt": "Script references tab of the Guard listing the Ch.1 talk function.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "14-c-talk.png": {
+  "file": "14-c-talk.png",
+  "lesson": 14,
+  "caption": "The talk event at the end of `C02.cmb`, after **Check**: `@on_talk(pid1=\"PID_IKE\", pid2=\"PID_TUTORIAL_GUARD\", flag=0, name=\"TUTORIAL_GUARD_JOINED\")` plays the message, moves the Guard to the player army (force 0) and sets the one-time flag, registered in `Startup`.",
+  "alt": "Script tab of Ch.1 with the new TutorialGuardTalk function and its on_talk trigger.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "14-d-boss.png": {
+  "file": "14-d-boss.png",
+  "lesson": 14,
+  "caption": "Ch.1's boss, Zawana (`PID_ZAWANAR`, `bmap02_first_n`), selected on **Build** (*Normal*): **Faction** *Enemy*, his flags and items, and his AI further down. Nothing in the record says *boss*: his quotes and death event are in the script.",
+  "alt": "Build tab of Ch.1 with the boss selected and his deployment fields in the selection panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "15-a-setup.png": {
+  "file": "15-a-setup.png",
+  "lesson": 15,
+  "caption": "Before removing a record, read its **Appearances**: every deployment row and message that names Boyd. **Script references** lists the script functions.",
+  "alt": "Appearances tab of Boyd with the Deployed in table and the Dialogue table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "15-b-result.png": {
+  "file": "15-b-result.png",
+  "lesson": 15,
+  "caption": "**Script references** for Boyd: the functions that move, talk to or recruit him. A record with rows here or in Appearances is still in use.",
+  "alt": "Script references tab listing chapter, function and the PID it uses.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "15-c-removed.png": {
+  "file": "15-c-removed.png",
+  "lesson": 15,
+  "caption": "After **Remove** on the Guard (nothing named it, and it was the last record, so no other record moved) and **Save FE8Data.bin**: **Characters** finds nothing for *TUTORIAL*. Its name text `MPID_TUTORIAL_GUARD` and portrait `FID_TGUARD` are still in the project.",
+  "alt": "Characters page with the search TUTORIAL and no matching card.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "16-a-setup.png": {
+  "file": "16-a-setup.png",
+  "lesson": 16,
+  "caption": "**Game Data › Classes** with `JID_FIGHTER`: bases, caps, growths, weapon ranks, movement type and **Promotes to**. Every Fighter in the game uses this record.",
+  "alt": "Classes tab with the class list and the Fighter form.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "16-data-hub.png": {
+  "file": "16-data-hub.png",
+  "lesson": 16,
+  "caption": "**Game Data**: classes, items, skills, terrain, general rules and supports, then script flags, AI and rect RIDs. All but the last three are records in FE8Data.bin.",
+  "alt": "Game Data hub with tiles for Classes, Items, Skills, Terrain, General, Supports, Flags, AI and Rect RIDs.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "17-a-setup.png": {
+  "file": "17-a-setup.png",
+  "lesson": 17,
+  "caption": "**Game Data › Items** with the Iron Axe: weapon type and rank, might, hit, weight, range, uses, price, and the battle model links.",
+  "alt": "Items tab with the item list and the Iron Axe form.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "18-a-setup.png": {
+  "file": "18-a-setup.png",
+  "lesson": 18,
+  "caption": "**Game Data › Skills** with Tempest (`SID_TEMPER`, Boyd's skill): capacity, icon and the lists of who can and cannot have it. Effects are tied to the table position, so skills are edited, not added.",
+  "alt": "Skills tab with the skill list and the selected skill's form.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "19-a-setup.png": {
+  "file": "19-a-setup.png",
+  "lesson": 19,
+  "caption": "**Game Data › Terrain** with a forest type selected: avoid, defence, healing and one movement cost per movement type.",
+  "alt": "Terrain tab with the terrain list and the movement cost table of the selected type.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "20-a-setup.png": {
+  "file": "20-a-setup.png",
+  "lesson": 20,
+  "caption": "**Game Data › General**: the difficulty constants, army groups and battle skies.",
+  "alt": "General tab with the difficulty table, army groups and battle skies.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "21-a-setup.png": {
+  "file": "21-a-setup.png",
+  "lesson": 21,
+  "caption": "The Prologue's **Build** tab: **Save Chapter**, **Play…**, **Undo/Redo**, the difficulty file (**Common**) and section filter, the tool column on the left, the layer checkboxes under the map and the selection panel on the right.",
+  "alt": "Build tab with the top bar, tool column, map canvas with units, layer checkboxes and the empty selection panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "21-b-result.png": {
+  "file": "21-b-result.png",
+  "lesson": 21,
+  "caption": "Clicking a unit selects it: the panel shows its character, class, level, items and AI, with **All fields…** for the raw record. Edits here go to the deployment file; **Save Chapter** writes them.",
+  "alt": "Build tab with Boyd selected on the map and his deployment fields in the selection panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "22-a-setup.png": {
+  "file": "22-a-setup.png",
+  "lesson": 22,
+  "caption": "**Paint terrain** with the **Terrain** layer on: pick a terrain type in the panel, then click or drag over tiles (**Fill a rectangle** paints a box). The colours are terrain types, not the picture.",
+  "alt": "Build tab with the Paint terrain tool, the terrain overlay on the map and the terrain type list in the panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "23-a-setup.png": {
+  "file": "23-a-setup.png",
+  "lesson": 23,
+  "caption": "**Tile heights** on tile (8, 7) with the **Heights** layer on: the panel shows the tile's four **Corner heights (steps)** on each layer and its neighbours' shared corners.",
+  "alt": "Build tab with the Tile heights tool, the heights overlay and the corner height fields of the selected tile.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "24-a-setup.png": {
+  "file": "24-a-setup.png",
+  "lesson": 24,
+  "caption": "**Place prop**: choose a prop of this map (or add one from another map or a .glb), its angle, then click a tile. A prop is only a picture; paint its footprint with Paint terrain.",
+  "alt": "Build tab with the Place prop tool and the prop list, angle and import buttons in the panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "24-b-map-objects.png": {
+  "file": "24-b-map-objects.png",
+  "lesson": 24,
+  "caption": "**Assets › Map Objects** lists every prop of every chapter map. Select one to export it, edit its bounds and flags, or **Add to this map**.",
+  "alt": "Map Objects page with the prop list across maps and the selected prop's details.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "25-a-setup.png": {
+  "file": "25-a-setup.png",
+  "lesson": 25,
+  "caption": "**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export .glb…** writes the terrain (and its `_mask.png`), **Import .glb…** opens the import review before anything is written.",
+  "alt": "3D Models page with the zmap/bmap01 set selected and the terrain mesh in the preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "27-a-setup.png": {
+  "file": "27-a-setup.png",
+  "lesson": 27,
+  "caption": "The **Map settings** tab: grid size and border, line colour, lighting, distance fog, weather, battle sky and fog of war. **Save Chapter** writes them into the map.",
+  "alt": "Map settings tab with the Grid, Lighting, Distance fog, Weather and Advanced groups.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "27-b-result.png": {
+  "file": "27-b-result.png",
+  "lesson": 27,
+  "caption": "The **Chapter data** tab: the chapter record in FE8Data.bin, with its title, files, map music, the objective text keys per difficulty and the scene backgrounds.",
+  "alt": "Chapter data tab with Identity and files, Objectives text keys and Scenes.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "28-a-setup.png": {
+  "file": "28-a-setup.png",
+  "lesson": 28,
+  "caption": "The **Battle scenes** tab: one battle backdrop per terrain type of this map. Blank rows use the default shown on the right; **Only terrain types on this map** hides the others.",
+  "alt": "Battle scenes tab with terrain types, tile counts, the battle scene per type and Browse buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "29-a-setup.png": {
+  "file": "29-a-setup.png",
+  "lesson": 29,
+  "caption": "**Units list** for Ch.1: every section of the deployment file with its army and role (player army, battle start, reinforcement, scene-only), and the units of the selected section.",
+  "alt": "Units list window with the section list and the unit table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   832
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "29-c-add-section.png": {
+  "file": "29-c-add-section.png",
+  "lesson": 29,
+  "caption": "**Add section**: the name the script will load (`bmap02_tutorial_wave`) and the section header (army, group). The section is added to each difficulty file.",
+  "alt": "Add section dialog with the name field, section header fields, OK and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   335,
+   277
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "30-c-add-to.png": {
+  "file": "30-c-add-to.png",
+  "lesson": 30,
+  "caption": "**Place unit**: **Add to** the **Common file (every difficulty)** or to chosen **Difficulty files**, in the chosen section. A unit in the common file appears on every difficulty.",
+  "alt": "Build tab with the Place unit tool and its Add to, difficulty and section choices.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "31-a-setup.png": {
+  "file": "31-a-setup.png",
+  "lesson": 31,
+  "caption": "An enemy of Ch.1 selected: its items with the per-slot drop flag, and its deployment flags. The drop flag belongs to the item slot, not to the unit.",
+  "alt": "Build tab with an enemy selected and its item slots and flags in the selection panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "33-a-setup.png": {
+  "file": "33-a-setup.png",
+  "lesson": 33,
+  "caption": "The **Script** tab on the Prologue (`C01.cmb`) with a function selected: the code, the **Function** list, **Trigger and description** with **Apply to code**, and **Check**/**Save**.",
+  "alt": "Script tab with the decompiled code, the function list, the trigger form and the toolbar.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "33-c-call-help.png": {
+  "file": "33-c-call-help.png",
+  "lesson": 33,
+  "caption": "**Insert call…**: search the game's script functions; the selected one shows its purpose and numbered arguments before it is inserted at the cursor.",
+  "alt": "Insert call dialog with the search box, the function tree and the help for the selected call.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1182,
+   592
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "34-a-setup.png": {
+  "file": "34-a-setup.png",
+  "lesson": 34,
+  "caption": "**Game Data › Flags**: campaign flags (kept in the save) and chapter flags, with their names, users and the room left.",
+  "alt": "Flags page with the Campaign flags, Chapter flags and Save file tabs and the flag table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "35-a-setup.png": {
+  "file": "35-a-setup.png",
+  "lesson": 35,
+  "caption": "A village recipe in Ch.1's script: the visit trigger, the guard flag test, the reward and the flag set at the end, so the visit runs once.",
+  "alt": "Script tab of Ch.1 with a village visit function selected and its trigger in the form.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "36-a-setup.png": {
+  "file": "36-a-setup.png",
+  "lesson": 36,
+  "caption": "**Assets › Scripts**: each chapter's script, then the shared scripts (`startup.cmb` with the helpers every chapter calls, and the others).",
+  "alt": "Scripts page with the chapter script cards and the shared scripts section.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "37-a-setup.png": {
+  "file": "37-a-setup.png",
+  "lesson": 37,
+  "caption": "The **Dialogue** tab on `MS_01_OP_01`: the message text with its actions highlighted, the **Layout** and action buttons, the portrait seats, and **Live Preview**.",
+  "alt": "Dialogue tab with the message list, the text editor, layout and action buttons, the seats and the preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "38-a-setup.png": {
+  "file": "38-a-setup.png",
+  "lesson": 38,
+  "caption": "**Assets › Backgrounds** with a conversation background selected: its layers, the rect resource that shows it, and the replace controls.",
+  "alt": "Backgrounds page with the file list and the selected background's preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "39-a-setup.png": {
+  "file": "39-a-setup.png",
+  "lesson": 39,
+  "caption": "**Assets › Fonts**: the five text fonts with their glyph sheets. Inline codes in a message can switch between them.",
+  "alt": "Fonts page with the font list and the selected font's glyph sheet.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "40-a-setup.png": {
+  "file": "40-a-setup.png",
+  "lesson": 40,
+  "caption": "**Assets › Conversations**: every message file, the chapters' and the shared ones (base conversations, world-map narration, support talks).",
+  "alt": "Conversations page with the chapter message files and the shared message files.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "41-a-setup.png": {
+  "file": "41-a-setup.png",
+  "lesson": 41,
+  "caption": "Ch.1's `Opening0`: the opening sequence the chapter runs first, with its `ChapterMoviePlay` title card and opening scenes.",
+  "alt": "Script tab of Ch.1 with the Opening0 function selected.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "43-a-setup.png": {
+  "file": "43-a-setup.png",
+  "lesson": 43,
+  "caption": "**Game Data › AI (CP)**: the AI scripts of `cp_data.bin` in the readable AI language, with the **Readable/Raw** view, **Apply** and the units that use the selected script.",
+  "alt": "AI page with the script list and the readable AI code of the selected script.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "44-a-setup.png": {
+  "file": "44-a-setup.png",
+  "lesson": 44,
+  "caption": "The AI page's **Routes & targets**: target lists that attack and move orders name, and the **Items an AI thief may steal**.",
+  "alt": "AI page on the Routes and targets tab with target lists and the thief item list.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "45-b-result.png": {
+  "file": "45-b-result.png",
+  "lesson": 45,
+  "caption": "The **AI** pane during an enemy's attack: its registers, the candidate it holds, and **How the target was chosen**, every possible attack best first with the points each term adds and the unit's MTYPE weights.",
+  "alt": "Play window AI pane with the attack candidate and the ranking table of possible attacks.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "46-a-setup.png": {
+  "file": "46-a-setup.png",
+  "lesson": 46,
+  "caption": "A chapter's **Shops** tab: the armory and vendor stock per difficulty, the forge grid, **Copy to other difficulties** and **Save Shops**.",
+  "alt": "Shops tab with the difficulty choice, armory and vendor lists and the forge section.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "47-a-setup.png": {
+  "file": "47-a-setup.png",
+  "lesson": 47,
+  "caption": "**Assets › Music** with a track selected: **Play/Stop**, **Export WAV…**, **Import Replacement Audio…**, the track's **Music cues** and **New track…**.",
+  "alt": "Music page with the track list and the selected track's controls and cues.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "47-c-new.png": {
+  "file": "47-c-new.png",
+  "lesson": 47,
+  "caption": "After **New track…** with a 4-second test tone made for this lesson (stereo, 32 kHz, loop from 1.0 s): `tutorial_theme.stm` is in the list and **Music cues** shows its new cue `BGM_TUTORIAL_THEME`. Chapters and scripts play it by that name.",
+  "alt": "Music page with the new tutorial_theme track selected and its cue BGM_TUTORIAL_THEME.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "48-a-setup.png": {
+  "file": "48-a-setup.png",
+  "lesson": 48,
+  "caption": "**Assets › Sound Effects** with a cue selected: its sound id, volume, pan, range and group in `gcfesnd.bin`, preview and replace.",
+  "alt": "Sound effects page with the cue list and the selected cue's parameters.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "48-c-import.png": {
+  "file": "48-c-import.png",
+  "lesson": 48,
+  "caption": "**Add…** on Sound Effects with a 0.6-second test tone made for this lesson: **Audio file** (*32000 Hz, 0.60 s (mono), about 11 KB once encoded*), **Cue name** `SFX_TUTORIAL_CHIME`, the **Sound group** it is loaded with, **Volume**, **Pan**, **Range**, and the warning that new sounds are experimental. **Add** encodes it; this capture stops before.",
+  "alt": "Sound effect import dialog with the audio file, cue name, sound group, warning, Add and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   572,
+   350
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "49-a-setup.png": {
+  "file": "49-a-setup.png",
+  "lesson": 49,
+  "caption": "**Assets › Videos** with a THP movie selected: the preview, frame counter, **Replace…** and **Add…**. Replacements count against the disc size.",
+  "alt": "Videos page with the movie list and the preview of the selected video.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "50-a-setup.png": {
+  "file": "50-a-setup.png",
+  "lesson": 50,
+  "caption": "**Assets › Icons**: the icon sheets cut into cells, the selected cell with the records that use it, **Export icon…** / **Replace icon…** and the whole-sheet actions.",
+  "alt": "Icons page with the sheet choice, the icon grid and the selected icon's details.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "50-b-result.png": {
+  "file": "50-b-result.png",
+  "lesson": 50,
+  "caption": "**Replace icon…** on the Iron Sword's cell (*Icon 96 (row 3, column 0)*, 24 × 24, *used by: IRONSWORD*) with a 32 × 32 shield drawn for this lesson, stretched to the cell: the sheet redraws and the status says *not saved yet*. **Save** writes `window/icon.tpl`; this capture uses **Discard changes**.",
+  "alt": "Icons page with the replaced icon cell selected and the not saved yet status.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "50-ui-windows.png": {
+  "file": "50-ui-windows.png",
+  "lesson": 50,
+  "caption": "**Assets › UI Windows**: every image of the selected texture file as thumbnails; select one to read its size and format before **Import Replacement Image…**.",
+  "alt": "UI Windows page with the file list and the image thumbnails of the selected file.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "51-viewer.png": {
+  "file": "51-viewer.png",
+  "lesson": 51,
+  "caption": "**Assets › 3D Models** with the Fighter battle model `zu/fig1`: preview with mesh and skeleton, animations, and the export/import buttons (**Export .glb…**, **Export .blend…**, **Import …**).",
+  "alt": "3D Models page with zu/fig1 selected, the posed model, the Skeleton and Animations tabs and the button grid.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "53-a-setup.png": {
+  "file": "53-a-setup.png",
+  "lesson": 53,
+  "caption": "**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: **Animation files (.ga)** lists the set's clips; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Import animation…** and **Events...** work on this set.",
+  "alt": "3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "53-c-events.png": {
+  "file": "53-c-events.png",
+  "lesson": 53,
+  "caption": "**Events...**: one animation's event track, one key per line (frame and codes). **Frame** and **Codes (comma-separated)** with **Add**, **Update**, **Delete**; *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release*: combat waits for these. **Save...** writes the set.",
+  "alt": "Events dialog with the animation choice, the list of event keys, frame and codes fields and the Add, Update, Delete, Save and Cancel buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   566,
+   468
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "54-a-setup.png": {
+  "file": "54-a-setup.png",
+  "lesson": 54,
+  "caption": "The Iron Axe's weapon model (`xwp/ironaxe`) in **3D Models**: the triangle count under the preview is the first budget figure to compare after an import.",
+  "alt": "3D Models page with the xwp/ironaxe weapon model selected.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "55-a-setup.png": {
+  "file": "55-a-setup.png",
+  "lesson": 55,
+  "caption": "**Assets › Battle Weapons** with `IRONAXE`: its **Type** (`2 - Axe`), **Flight** (`Melee`), **Effect** and **Target effect** (`EID_` names, empty for none), and the model it uses (`xwp/IRONAXE/IRONAXE.cmp`) in the preview.",
+  "alt": "Battle Weapons page with IRONAXE selected, its fields, Apply, Restore original, Add weapon and the axe model preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "55-b-result.png": {
+  "file": "55-b-result.png",
+  "lesson": 55,
+  "caption": "**Move speed** of `fig1` doubled from 0.8 and applied: the row is marked *edited* and the status says *Edited model fig1.* The change is written to `zdbx.cmp` at once; **Restore original** brings back the vanilla text.",
+  "alt": "Battle Unit Parameters with fig1 marked edited and the changed Move speed.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "55-c-params.png": {
+  "file": "55-c-params.png",
+  "lesson": 55,
+  "caption": "**Assets › Battle Unit Parameters** with `fig1`, the Fighter's battle model: **Move speed** and **Attack range** (engine units), run count, blend durations, and the jump, flying, large and finisher flags. An empty box removes the line.",
+  "alt": "Battle Unit Parameters page with fig1 selected and its tuning fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "55-sceneries.png": {
+  "file": "55-sceneries.png",
+  "lesson": 55,
+  "caption": "**Assets › Battle Sceneries** with `map03_ground01`, the plain behind the simulator's fights: **Place** (outdoors or indoors), **Footstep effect** and **Footstep sound**, and the backdrop model.",
+  "alt": "Battle Sceneries page with map03_ground01 selected, its three fields and its model preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "56-a-setup.png": {
+  "file": "56-a-setup.png",
+  "lesson": 56,
+  "caption": "The baseline fixture: Ike (Ranger, level 1, Iron Sword) attacks Boyd (Fighter, level 2, Iron Axe) at **Distance** 1, **Random** with **Seed** 1. The **Forecast**, the **Rolls** list and the **Fight** log on the right follow every change at once.",
+  "alt": "Battle Simulator with Ike as attacker and Boyd as defender, the forecast, the outcome box, the rolls table and the fight log.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "56-b-result.png": {
+  "file": "56-b-result.png",
+  "lesson": 56,
+  "caption": "**Render fight** stages the baseline fight with the battle models (`zu/reng` against `zu/fig1`), the weapons, camera and the **Scenery** `map03_ground01`; **Pause**, **Replay** and the time slider scrub it. It checks presentation; the forecast and log check the numbers.",
+  "alt": "Battle render window with Ike and Boyd facing each other on a grass plain, HP bars at the top and Pause, Replay and a time slider at the bottom.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   882,
+   792
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "56-c-fixed.png": {
+  "file": "56-c-fixed.png",
+  "lesson": 56,
+  "caption": "**Fix this fight** copies every roll of the random fight into **Fixed** mode; double-clicking Ike's first hit roll flipped it (marked `*`). The fight is re-run with only that change.",
+  "alt": "Battle Simulator in Fixed mode with the first roll flipped and the fight log showing the changed result.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "56-d-distance.png": {
+  "file": "56-d-distance.png",
+  "lesson": 56,
+  "caption": "The boundary case: at **Distance** 2 neither iron weapon reaches, so the forecast reads *cannot attack* for both sides and no roll is asked for.",
+  "alt": "Battle Simulator at distance 2 with both sides unable to attack and an empty rolls table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "57-a-setup.png": {
+  "file": "57-a-setup.png",
+  "lesson": 57,
+  "caption": "**Tools › Game Code** on the unmodified project: the recognised build (*Path of Radiance (USA) · sys/main.dol*), *Identical to the retail executable*, *Vanilla: nothing changed*, then the groups of patches (checkboxes) and values (each with its vanilla value and **Reset**).",
+  "alt": "Game Code page with the build summary card and the Chapters and Combat rules groups.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "57-b-result.png": {
+  "file": "57-b-result.png",
+  "lesson": 57,
+  "caption": "**Double-attack speed gap** set to 5: the value is written to `main.dol` at once, the summary reads *1 setting changed from vanilla* and *Differs from the retail executable*, and the change is listed under **Changes this session**.",
+  "alt": "Game Code page with the Double-attack speed gap field at 5 next to vanilla 4 and its Reset button.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-a-setup.png": {
+  "file": "58-a-setup.png",
+  "lesson": 58,
+  "caption": "**Play…** on Ch.1, Normal, with **Skip the opening** ticked: the opening ran without stopping and the window waits at turn 1, player phase. Top rows: **Restart**, **Difficulty**, **Seed**, the options; then **Step by**, the transport buttons, **End phase**, **Force next battle…** and the history slider.",
+  "alt": "Play chapter window on the Ch.1 map at turn 1 with the option rows, transport bar, turn line, map and the inspection tabs.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-b-result.png": {
+  "file": "58-b-result.png",
+  "lesson": 58,
+  "caption": "After **End phase** the enemy phase ran to turn 2. The **Log** lists it in order: each AI unit's scripts and action, every fight with its strikes, and the event checks that ran after each action.",
+  "alt": "Play window at turn 2 with the Log pane listing the enemy phase.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-c-select.png": {
+  "file": "58-c-select.png",
+  "lesson": 58,
+  "caption": "Clicking Ike selects him: blue tiles are where he can move, red the tiles he can strike from there, and the **Unit** pane lists his stats, items and skills. Click a blue tile to get the action menu, with the forecast on each attack entry.",
+  "alt": "Play window with Ike selected, his movement and attack ranges drawn on the map and his Unit pane.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-d-threat.png": {
+  "file": "58-d-threat.png",
+  "lesson": 58,
+  "caption": "Clicking an enemy shows its reach: orange is every tile it can attack this turn. The **Unit** pane adds its AI: attack and move scripts, heal script, MTYPE and order.",
+  "alt": "Play window with an enemy bandit selected, its threat range in orange and its AI lines in the Unit pane.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-e-rewind.png": {
+  "file": "58-e-rewind.png",
+  "lesson": 58,
+  "caption": "**◀** stepped back through the history into the enemy phase (entry 206 of 225): the status bar says a command from here starts a new branch. The **AI** pane shows the Bandit about to act on its chosen candidate, attacking Boyd from (11, 17).",
+  "alt": "Play window rewound to an enemy unit's turn with the AI pane showing its script and the history slider moved back.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1502,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "58-f-force.png": {
+  "file": "58-f-force.png",
+  "lesson": 58,
+  "caption": "**Force next battle…**: tick **hits** / **crits** per strike in fight order (counters and follow-ups included); unlisted strikes hit without crits or skills. **Use random rolls** goes back to the seed.",
+  "alt": "Force the next battle dialog with eight strike rows of hits and crits checkboxes and the Use random rolls, Force and Cancel buttons.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   467,
+   347
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "59-a-setup.png": {
+  "file": "59-a-setup.png",
+  "lesson": 59,
+  "caption": "**Open save file…** on a copy of a test save: **Block** lists the eight blocks of the file (five file saves and two suspend checkpoints; *loaded* marks the ones the game loads). The *File 5 · bmap05 · base* block is chosen: **Overview** shows its header, the party (gold, bonus EXP, map, turn), the options, the map state and the cleared maps.",
+  "alt": "Saves page with the opened file, the block list and the Overview tab fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "59-b-result.png": {
+  "file": "59-b-result.png",
+  "lesson": 59,
+  "caption": "**Gold** set to 12345 and written with **Save as…** to `chapter1_gold.gci`: reopening that file and the same block shows the new value, and the first copy is untouched. Loading it in the game is the next check.",
+  "alt": "Saves Overview of the edited file showing the raised gold value.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "59-c-units.png": {
+  "file": "59-c-units.png",
+  "lesson": 59,
+  "caption": "**Units**: every unit slot of the block. Ike's slot shows his character, class, army, level, EXP and HP, his stats gained on top of the class, fixed-growth points, weapon EXP, items, supports and skills.",
+  "alt": "Saves Units tab with the unit list and Ike's identity, stats and items fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "59-d-flags.png": {
+  "file": "59-d-flags.png",
+  "lesson": 59,
+  "caption": "**Flags**: the campaign flags and the chapter flags of the block's map, named from the project's scripts. Double-click (or Space) switches one; **Clear chapter flags** resets the chapter's.",
+  "alt": "Saves Flags tab with the flag table and the Clear chapter flags button.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "59-e-play.png": {
+  "file": "59-e-play.png",
+  "lesson": 59,
+  "caption": "**Play in Dolphin…**: load the block as saved, or **Start a chapter with this army:** any chapter, as after clearing the previous one. Dolphin runs the extracted files with a copy of the save alone on memory card A.",
+  "alt": "Play in Dolphin dialog with the two start choices, the chapter list, Play and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   624,
+   261
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "60-a-setup.png": {
+  "file": "60-a-setup.png",
+  "lesson": 60,
+  "caption": "The **Developer tools** group of Game Code: **Debug menus in the map pause menu**, **Development menu at startup** and the overlays that stay on (performance meters, safe frame, process tree). Each is a patch: tick to write it, untick to restore the retail bytes.",
+  "alt": "Game Code page scrolled to the Developer tools group with its six checkboxes.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "60-b-result.png": {
+  "file": "60-b-result.png",
+  "lesson": 60,
+  "caption": "**Debug menus in the map pause menu** ticked: the change is written to `sys/main.dol` at once and logged in **Changes this session** (*main.dol: Debug menus in the map pause menu: on*). The next build or chapter jump has the developer rows in the map's pause menu.",
+  "alt": "Game Code page with the debug menus entry ticked and the Changes this session drawer open.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "61-a-setup.png": {
+  "file": "61-a-setup.png",
+  "lesson": 61,
+  "caption": "**Disc & Patch › Mod details…**: **Name**, **Author**, **Version**, **Description** and **Credits (who made or allowed what)** are saved in the project and shown to whoever applies the patch.",
+  "alt": "Mod details dialog filled with the project name, author, version 0.1, a description and a credit line.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   528,
+   507
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "61-apply.png": {
+  "file": "61-apply.png",
+  "lesson": 61,
+  "caption": "**Apply patch…** (or **File › Apply patch to a disc…**, or the standalone Tellius Patcher): the patch shows its name, game and credits; **Game disc image** must be the clean disc it was made from; **Output** is the new image.",
+  "alt": "Apply a patch dialog with the patch, game disc image and output fields filled and the patch details shown.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   540,
+   408
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "61-b-result.png": {
+  "file": "61-b-result.png",
+  "lesson": 61,
+  "caption": "**Build patched disc** extracted the clean disc, checked every file the patch replaces against the retail hash, wrote the patch's files and packed a new image: the status reads *Built …*.",
+  "alt": "Apply a patch dialog after the build with the Built status line.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   625,
+   408
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "61-c-created.png": {
+  "file": "61-c-created.png",
+  "lesson": 61,
+  "caption": "After **Create patch…**: the **Create a patch** card shows the version and author, and *Last patch:* with the counts of replaced, added and removed files and the patch size.",
+  "alt": "Disc and Patch page with the Create a patch card showing the last patch line.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "65-a-setup.png": {
+  "file": "65-a-setup.png",
+  "lesson": 65,
+  "caption": "**+ Phase…** on Ch.1: *Clone bmap02 into a new map phase.* **Map phase only** copies the folder; **Next playable chapter part** also adds an opening for it to the chapter script.",
+  "alt": "Add phase dialog with the Map phase only and Next playable chapter part choices, Create and Cancel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   403,
+   235
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "65-b-result.png": {
+  "file": "65-b-result.png",
+  "lesson": 65,
+  "caption": "With **Next playable chapter part**: the header now says **Parts** (*Part 2 · bmap02_2*) and *Part 2: needs deployment and previous victory*; the Script tab shows the new, unsaved `Opening18_2` with its `MapLoad(\"bmap02_2\")`.",
+  "alt": "Script tab of Ch.1 with the new Opening18_2 function, the Parts list and the part status under the title.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "65-c-phases.png": {
+  "file": "65-c-phases.png",
+  "lesson": 65,
+  "caption": "Ch.8: Despair and Hope (slot 09) has five map phases, `bmap09` to `bmap09_5`: **Map phase** lists them in play order and **‹ Phase** / **Phase ›** step through them. Only the script's `MapLoad` calls decide when the game loads each one.",
+  "alt": "Overview of Ch.8 with the map phase list and its phase buttons under the title.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "65-d-map.png": {
+  "file": "65-d-map.png",
+  "lesson": 65,
+  "caption": "After **Create** with **Map phase only**: *Map phase 2 · bmap02_2*, a copy of `bmap02` whose sections are renamed (`bmap02_2_first_n`…). No script loads it yet, so the game never shows it; **Remove phase…** deletes it again.",
+  "alt": "Overview of Ch.1 on its new second map phase with the copied cast.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "65-e-linked.png": {
+  "file": "65-e-linked.png",
+  "lesson": 65,
+  "caption": "The part linked: `Complete18(1)` ends part 1's victory function `func_20`, and `Opening18_2` sets turn 1, loads `bmap02_2` and deploys its player and enemy sections. The status reads *Part 2: script links found*; **Save** writes `C02.cmb` once it compiles.",
+  "alt": "Script tab of Ch.1 with the completed Opening18_2 and the part status saying script links found.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "66-a-setup.png": {
+  "file": "66-a-setup.png",
+  "lesson": 66,
+  "caption": "The **Script function / zone** tool on Ch.1: the pink rectangles are the script's zones (the seize tile, the village visits). The panel makes a **New zone**: its kind, what it is **Triggered by** and the function it **Runs**.",
+  "alt": "Build tab of Ch.1 with the zone tool, script zones drawn on the map and the New zone panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "66-b-result.png": {
+  "file": "66-b-result.png",
+  "lesson": 66,
+  "caption": "A new **Area** zone drawn on tiles (1, 1)–(3, 3), **Triggered by** the player's units: the chapter script gets a new, empty function with an `@on_area` trigger (unsaved until **Save** on the Script tab). Write what it does there.",
+  "alt": "Build tab of Ch.1 with the new area zone selected in the corner of the map and its fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "66-c-zone.png": {
+  "file": "66-c-zone.png",
+  "lesson": 66,
+  "caption": "Ch.1's seize zone selected: `func_0`, *Location - a unit acts on a tile*, **Action** *seize* at (8, 5). **Apply** writes a change into the script, **Delete zone** removes the trigger, **Open in Script tab** shows the function (`set(\"gf_complete\")`).",
+  "alt": "Build tab with the seize zone selected and its kind, action, tiles and buttons in the panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "66-d-rock.png": {
+  "file": "66-d-rock.png",
+  "lesson": 66,
+  "caption": "Ch.25 (slot 26): a rolling-rock prop selected. Under **Rolling rock**: the **Initial direction** and the **Path** (one digit per step: 4 left, 6 right, 2 down, 8 up) of its `SetRock` call, **Apply route** and **Remove route**, and the script line that holds it.",
+  "alt": "Build tab of Ch.25 with a rock prop selected and its rolling-rock route fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "67-a-setup.png": {
+  "file": "67-a-setup.png",
+  "lesson": 67,
+  "caption": "**Characters**: search by name or PID, **New character…**, and **Export Excel… / Import Excel…** for editing every character in a spreadsheet.",
+  "alt": "Characters page with the search box, buttons and the character cards.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "67-b-result.png": {
+  "file": "67-b-result.png",
+  "lesson": 67,
+  "caption": "After **Import Excel…** of a workbook whose `PID_TUTORIAL_GUARD` row has `growth_hp` 90: the Guard's **Personal growth %** HP reads 90 and the status bar names FE8Data.bin as unsaved. Nothing is written until **Save FE8Data.bin**.",
+  "alt": "Stats tab of the Guard after the Excel import, with HP personal growth 90 and FE8Data.bin unsaved.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "67-c-text.png": {
+  "file": "67-c-text.png",
+  "lesson": 67,
+  "caption": "**Disc & Patch › Export as text…** into a chosen folder: *Wrote 686 files to …\text_export.* FE8Data tables, deployments, shops, messages, decompiled scripts, sound cues, the face table and the DBX tables, as text for git and diffs.",
+  "alt": "Disc and Patch page with the Export as text card and its result line.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "68-a-setup.png": {
+  "file": "68-a-setup.png",
+  "lesson": 68,
+  "caption": "**Ctrl+K** *Zawana*: one row, *Character Zawana — PID_ZAWANAR · Bandit*. The search matches record names and IDs, and the words of every chapter message; his name is in no message text, so no *Message* row appears.",
+  "alt": "Search palette with the query Zawana listing the character and his messages.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "68-b-result.png": {
+  "file": "68-b-result.png",
+  "lesson": 68,
+  "caption": "**Game Data › AI (CP)**, `SEQ_ALLATK100_NOGREIL` selected, **Used by** › **Find**: *Scripts/C06.cmb: named 1 time* (Ch.5's script switches Dakova to it) and *zmap/bmap06/dispos.cmp: named 3 times* (units that start with it). The same file search runs before every **Remove**.",
+  "alt": "AI page with an attack script selected and its Used by list after Find.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "69-a-setup.png": {
+  "file": "69-a-setup.png",
+  "lesson": 69,
+  "caption": "**Assets › Visual Effects** with `EID_K_FIRE`, the Fire tome's spell: its registry flags, the parts of its `yme/` pack, its particle emitters, its textures and the animated preview.",
+  "alt": "Visual Effects page with EID_K_FIRE selected, its details, buttons, texture thumbnails and the effect preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "69-b-result.png": {
+  "file": "69-b-result.png",
+  "lesson": 69,
+  "caption": "**Edit particles…** on `EID_K_FIRE`: the **Timing events**, the material tracks (alpha, colour, texture scroll) and each emitter with its stages, curves and keys. Select one to edit its fields, **Apply fields**, then **Save effect**; the preview is approximate.",
+  "alt": "Particle editor window with the particle tree, the selected emitter's fields and the preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1452,
+   792
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "69-c-add.png": {
+  "file": "69-c-add.png",
+  "lesson": 69,
+  "caption": "**Add effect…**: a new `EID_` name, then **Clone effect** (copy an existing pack) or **Import pack** (a `.cmp` file), and **Copy flags from** an effect whose registry flags fit.",
+  "alt": "Add visual effect dialog with the effect name, the clone and import choices and the flags source.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   462,
+   266
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "70-a-setup.png": {
+  "file": "70-a-setup.png",
+  "lesson": 70,
+  "caption": "**Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.",
+  "alt": "Battle Cameras page with the script list, the standby script's caption, rig and keyframe table.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "70-b-result.png": {
+  "file": "70-b-result.png",
+  "lesson": 70,
+  "caption": "The last keyframe's **Distance** changed from 70 to 110 with **Update keyframe**, then **Preview**: the built-in fight (Ike against a Fighter) plays with the edited script, ending wider. **Apply script** would write it; nothing is written yet.",
+  "alt": "Battle Cameras page with the edited keyframe and the preview fight playing below.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "70-c-rigs.png": {
+  "file": "70-c-rigs.png",
+  "lesson": 70,
+  "caption": "**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore camera.dbx** restores them all.",
+  "alt": "Battle Cameras rigs tab with the rig list and cam1's fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "71-a-setup.png": {
+  "file": "71-a-setup.png",
+  "lesson": 71,
+  "caption": "**Assets › DBX Files** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key.",
+  "alt": "DBX Files page with zdbx/battle.dbx selected and its blocks in the Form tab.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "71-b-result.png": {
+  "file": "71-b-result.png",
+  "lesson": 71,
+  "caption": "The **Layout** tab draws every widget with a position on the 640 × 480 screen; `WpWinL`, the left weapon window, was dragged down. The text changed (**Save** is enabled), but nothing is written until **Save**.",
+  "alt": "DBX Files Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "72-a-setup.png": {
+  "file": "72-a-setup.png",
+  "lesson": 72,
+  "caption": "**Game Data › Rect RIDs**: the RIDs of a rect file, the layers of the selected RID, its properties and preview, and where it is **Referenced in**.",
+  "alt": "Rect RIDs page with the rect file choice, the RID list, layers, properties and preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "72-c-edit.png": {
+  "file": "72-c-edit.png",
+  "lesson": 72,
+  "caption": "**Edit RID…** on `RID_END_BOLE`, Boyd's epilogue picture: **RID settings** and its one layer on the left, *Layer 0: Rect* selected and its **Properties** in the middle, the **Illustrative preview (608 × 448)** on the right. **Apply** saves the rect file; **Revert** drops the edits.",
+  "alt": "Edit RID dialog with the layer list, the properties of the selected layer and the preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1102,
+   792
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "73-a-setup.png": {
+  "file": "73-a-setup.png",
+  "lesson": 73,
+  "caption": "**Assets › Tutorials**: the in-game tutorial list, its groups and order, and the flags that unlock each entry (**New game starts with it**).",
+  "alt": "Tutorials page with the tutorial list and the selected entry's fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "73-sound-room.png": {
+  "file": "73-sound-room.png",
+  "lesson": 73,
+  "caption": "**Assets › Soundroom Images**: the Sound Room slideshow pictures, in order, with their offsets.",
+  "alt": "Soundroom Images page with the picture list and preview.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "73-staff-credits.png": {
+  "file": "73-staff-credits.png",
+  "lesson": 73,
+  "caption": "**Assets › Staff Credits**: the end credits lines in three columns; edit, add and reorder, then **Save credits**.",
+  "alt": "Staff Credits page with the credits lines.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "73-tracks.png": {
+  "file": "73-tracks.png",
+  "lesson": 73,
+  "caption": "**Assets › Soundroom Tracks**: the Sound Room's 64 music cues, a table in `main.dol`. Pick and reorder them, then **Save tracks**.",
+  "alt": "Soundroom Tracks page with the 64 cue slots.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-20",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "74-a-setup.png": {
+  "file": "74-a-setup.png",
+  "lesson": 74,
+  "caption": "**Game Data › Classes**, `JID_BEAST_C/F` (*Beast Tribe*, Lethe's class in human form): **Promotes to / linked class** `JID_CAT/F`, the class the unit becomes when it transforms, and the innate skills `SID_ANIMALIZE` and `SID_HIGHER`. No innate weapon in this form.",
+  "alt": "Classes tab with the Beast Tribe class, its linked class and innate skills.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "74-b-result.png": {
+  "file": "74-b-result.png",
+  "lesson": 74,
+  "caption": "Lethe's **Stats**: **Class (JID)** `JID_BEAST_C/F`, **Transform gauge** 16 (she starts four points from transforming) and the personal skill `SID_EQUIPFANG`.",
+  "alt": "Character page of Lethe with her class, transform gauge and skills.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "74-c-cat.png": {
+  "file": "74-c-cat.png",
+  "lesson": 74,
+  "caption": "The linked class `JID_CAT/F` (*Cat*): it links back to `JID_BEAST_C/F`, its **Innate weapon** is `IID_CATNAIL` (*Claw*: fang, 8 might, 90 hit) and it adds `SID_LYCANTHROPE`, the transformed state. Its stats are the transformed unit's.",
+  "alt": "Classes tab with the Cat class, its linked class, innate weapon and innate skills.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "75-a-setup.png": {
+  "file": "75-a-setup.png",
+  "lesson": 75,
+  "caption": "**Game Data › Items**, `IID_SLEEP`: weapon type and attack type *rod* (staff), rank B, **Hit** 65, range 1–255 (255: Magic / 2), 3 uses, weapon EXP 5, the spell effect `EID_SLEEP`. What the staff does belongs to its ID, not to these fields.",
+  "alt": "Items tab with the Sleep staff's record.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "75-c-heal.png": {
+  "file": "75-c-heal.png",
+  "lesson": 75,
+  "caption": "**Game Data › AI (CP)**, **Heal**: the retreat rules an AI unit follows to heal itself. `SEQ_NOHEAL` selected: **Retreat below HP %** 0, **Stop retreating at HP %** 0, **Try healing items first (0/1)** 1. Healing others is part of the attack scripts (`use_staff(chance=100)`).",
+  "alt": "AI page on the Heal tab with the list of heal records and the selected one's fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "76-a-setup.png": {
+  "file": "76-a-setup.png",
+  "lesson": 76,
+  "caption": "Ch.10 (slot 11), **Build** with **Terrain** and **Script zones**: the chest at (2, 5) selected, `func_6`, *Location - a unit acts on a tile*, **Action** *chest*. Its function opens the chest (`TBoxOpen`), gives the item (`MindGetItem(\"IID_COUNTER\")`) and sets its flag.",
+  "alt": "Build tab of Ch.10 with terrain colours, script zones and a chest zone selected.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "76-b-result.png": {
+  "file": "76-b-result.png",
+  "lesson": 76,
+  "caption": "**Game Data › AI (CP)**, **Steal items**: *Items an AI thief may steal*, in order, with **Add**, **Remove selected**, **▲ Up**, **▼ Down**. Keys are set per unit: the deployment flags **AI uses Door Key** and **AI uses Chest Key**; thieves with Lockpick (`SID_KEY0`) open both without them.",
+  "alt": "AI page on the Steal items tab with the thief item list.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "76-c-door.png": {
+  "file": "76-c-door.png",
+  "lesson": 76,
+  "caption": "A door of Ch.10 selected: `func_13`, **Action** *door* at (8, 14). Its function opens it (`DoorOpen`) and sets `F0814`, then a story flag for the cell behind it.",
+  "alt": "Build tab of Ch.10 with a door zone selected and its fields.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "76-d-tile.png": {
+  "file": "76-d-tile.png",
+  "lesson": 76,
+  "caption": "The chest's tile (2, 5) selected: under **Tile (2, 5)** its terrain type, *Chest (宝箱)*, which makes the *Chest* command appear; the zone only says what opening it does.",
+  "alt": "Build tab with the chest tile selected and its terrain type in the panel.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "77-a-setup.png": {
+  "file": "77-a-setup.png",
+  "lesson": 77,
+  "caption": "Ch.5's `Opening0` on the **Script** tab: `UnitForcedSallyByPID(\"PID_IKE\")` and the other `UnitForcedSallyByPID` lines make units mandatory in the preparations; `UnitDontMoveSallyByPID(\"PID_IKE\")` also locks Ike's starting tile.",
+  "alt": "Script tab of Ch.5 on Opening0 with the forced deployment calls.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "77-b-result.png": {
+  "file": "77-b-result.png",
+  "lesson": 77,
+  "caption": "Ch.1's `func_21`, `@on_scenario_end`: the turn bonus. 200 bonus EXP, minus 10 per turn after turn 4, recorded with `AchieveSet(\"Ms_ach_02_turn\", v1)` as one line of the chapter's bonus results.",
+  "alt": "Script tab of Ch.1 on the scenario-end function that awards bonus experience.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "77-c-slots.png": {
+  "file": "77-c-slots.png",
+  "lesson": 77,
+  "caption": "**Build**, *Common* file, section `bmap06_mikata_c` only: 8 records, Ike, Gatrie, Soren, Boyd, Rhys, Titania, Oscar and Shinon, each appearing at (16, 9) and walking to its own tile (arrows). `RestoreSallyDisposition` calls `SallySetByGroup(\"bmap06_mikata_c\")`: the preparation screen takes its deployment tiles from this group.",
+  "alt": "Build tab of Ch.5 filtered to the player section with its eight slots on the map.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "78-a-setup.png": {
+  "file": "78-a-setup.png",
+  "lesson": 78,
+  "caption": "Ch.2's `func_11` (*Before a phase starts*, turn 3, player): Titania's arrival. `CopyMapCamera` keeps the view, `Fade` and `InstantFocus` / `InstantSetMapCamera` frame the edge of the map, `InstantDispos` places her section, `UnitMoveDirByPID(\"PID_TIAMAT\", \"888888\")` walks her six tiles up, then a message and `PastMapCamera` give the view back.",
+  "alt": "Script tab of Ch.2 on the turn-3 function with camera, fade and unit movement calls.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "78-c-calls.png": {
+  "file": "78-c-calls.png",
+  "lesson": 78,
+  "caption": "**Insert call…** with *Camera* in **Search**: every camera function with **What it does**; **Insert** writes the selected call at the cursor.",
+  "alt": "Insert call dialog filtered on Camera with the function list and descriptions.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   762,
+   552
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "79-a-setup.png": {
+  "file": "79-a-setup.png",
+  "lesson": 79,
+  "caption": "**Assets › Conversations**, `ending.m`: the war record's labels. `MED_CHAPnn_TAG` and `MED_CHAPnn_TITLE` name each cleared chapter (*Chapter 1*, *The Battle Begins*), `MED_DIED_CHAPnn` the chapter a unit fell in, `MED_REC_LV`, `_WIN`, `_TURN` the columns.",
+  "alt": "Dialogue editor on ending.m with the war-record label messages.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "79-b-result.png": {
+  "file": "79-b-result.png",
+  "lesson": 79,
+  "caption": "**Assets › Ending Art**, `bole_en.tpl`: Boyd's war-record card for the English game, his name drawn into the picture. The game shows it as `RID_END_BOLE` and writes his level, wins and the chapter he fell in over it.",
+  "alt": "Ending Art page with Boyd's English war-record card selected.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "79-c-script.png": {
+  "file": "79-c-script.png",
+  "lesson": 79,
+  "caption": "`ending.cmb`, function `Ending`, opened in a chapter's **Script** tab through **File**: the finale slideshow. Each `func_2(\"RID_END_GR01\", \"RID_END_LBL01\", …)` shows one artwork and its label with positions and timings; `func_5(\"RID_END_LYRIC01\", …)` the lyrics.",
+  "alt": "Script tab on ending.cmb with the Ending function and its slideshow calls.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "80-a-setup.png": {
+  "file": "80-a-setup.png",
+  "lesson": 80,
+  "caption": "**Ctrl+K** with *rect*: tools come first (*Tool · Rect RIDs*), then every record whose name, ID or text holds the word. **↑**/**↓** pick, **Enter** opens, **Esc** closes.",
+  "alt": "Search palette over the Home page with the query rect and matching tools and records.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "80-b-result.png": {
+  "file": "80-b-result.png",
+  "lesson": 80,
+  "caption": "**Settings › Disc and media tools…**: downloads WIT (extract and build discs) and, with **Include FFmpeg for audio/video imports**, FFmpeg. **Later** closes without downloading.",
+  "alt": "Set up disc and media tools dialog with the FFmpeg option and Download missing tools button.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   562,
+   342
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ },
+ "80-c-complete.png": {
+  "file": "80-c-complete.png",
+  "lesson": 80,
+  "caption": "Script tab, **Ctrl+Space** after `Unit`: every script function starting with it, with its arguments; **Enter** or a double-click inserts the selected one.",
+  "alt": "Script tab with the completion list open under the cursor, listing Unit functions.",
+  "status": "captured",
+  "notes": "",
+  "size": [
+   1442,
+   952
+  ],
+  "captured": "2026-10-21",
+  "app_commit": "a371364+dirty",
+  "project": "Tutorial Practice (USA, fresh extraction)"
+ }
+}

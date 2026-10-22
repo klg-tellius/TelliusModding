@@ -52,6 +52,14 @@ The game consolidates ownership into a position-indexed runtime bitset. The subs
 
 ## Guided walkthrough
 
+<!-- screenshot 18-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Skills tab with the skill list and the selected skill's form.](../assets/images/tutorials/screenshots/18-a-setup.png)](../assets/images/tutorials/screenshots/18-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Skills** with Tempest (`SID_TEMPER`, Boyd's skill): capacity, icon and the lists of who can and cannot have it. Effects are tied to the table position, so skills are edited, not added.</figcaption>
+</figure>
+
 ### 1. Identify the slot before editing its labels
 
 Select the chosen skill and record `skill record <n>` from the header. Search the [Skills system reference](../systems/skills.md) or its detailed skill page for the native behavior at that position.

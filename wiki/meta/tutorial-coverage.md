@@ -21,15 +21,15 @@ This is the handoff and acceptance ledger for the [modding curriculum](../moddin
 
 | Lessons | Curriculum track | Primary surfaces | Stage |
 | --- | --- | --- | --- |
-| 01–05 | Start safely | launcher, workspace shell, project/check/build workflows | all five lessons are deep drafts |
+| 01–05 | Start safely | launcher, workspace shell, project/check/build workflows | all five lessons are deep drafts; rewritten with literal walkthroughs and screenshots on 2026-10-21 |
 | 06–09 | Campaign foundations | chapter records, campaign wizard and routing | all four lessons are deep drafts |
 | 10–20 | Characters and game data | character, portrait, support, class, item, skill, terrain and army editors | all eleven lessons are deep drafts |
 | 21–28 | Maps | Build tab, terrain/heights/props, model import and map settings | all eight lessons are deep drafts |
 | 29–36 | Units and events | deployment, scripts, flags, functions and shared scripts | all eight lessons are deep drafts |
 | 37–42 | Dialogue and text | dialogue stage, messages, backgrounds, movies and fonts | all six lessons are deep drafts |
 | 43–50 | AI, economy and media | AI tools, shops, audio, video and graphics | all eight lessons are deep drafts |
-| 51–55 | Models and battle presentation | model viewer/importer, rigs, animations, battle resources | all five lessons are deep drafts |
-| 56–64 | Test and release | simulator, code patches, Play, saves, debug, packaging and diagnosis | all nine lessons are deep drafts |
+| 51–55, 69–71 | Models and battle presentation | model viewer/importer, rigs, animations, battle resources, effects, cameras, DBX | all eight lessons are deep drafts; 55 split into 55, 69, 70, 71 on 2026-10-20 |
+| 56–64 | Test and release | simulator, code patches, Play, saves, debug, packaging and diagnosis | all nine lessons are deep drafts; 56–59 and 61 rewritten with literal walkthroughs on 2026-10-20 |
 
 ## Lesson ledger
 
@@ -91,7 +91,7 @@ The **evidence owner** is the first source an author must inspect, not the only 
 | 52 | rig names, hierarchy, weights and fit constraints | model/animation formats | pose and animation matrix |
 | 53 | animation import/events/timing controls | animation/model tools | idle, move and attack checks |
 | 54 | weapon/scenery model controls and hard budgets | model/battle tables | normal/forged and scenery render |
-| 55 | battle table, camera, effect and staging controls | battle viewers/staging | same fight before/after |
+| 55 | battle weapon, scenery and unit-parameter tables | battle table viewers | same fight before/after |
 | 56 | every simulator input, roll mode, forecast/log and render boundary | battle simulator | deterministic comparison |
 | 57 | every exposed patch, compatibility and revert behavior | game-code catalog | install, detect and revert |
 | 58 | Play setup, controls, logs, rewind and unsupported behavior | playthrough tools | repeatable chapter action |
@@ -101,6 +101,57 @@ The **evidence owner** is the first source an author must inspect, not the only 
 | 62 | integration of three chapters and cross-chapter state | all prerequisite tutorials | fresh-save campaign run |
 | 63 | unsupported features, approximations and evidence level | source/system gap inventory | link every stated limit |
 | 64 | symptom-led diagnosis across check/build/boot/runtime | diagnostics and checker | reproduce representative failures |
+| 65 | map phases, playable parts with Complete18, two-part chapters | chapter page header, phase operations | add, remove and link one part |
+| 66 | area and location zones, their triggers, rolling-rock routes | Build zone tool, zone and rock inspectors, script_rocks | draw one zone, read one rock route |
+| 67 | Excel round trips, text import/export of dialogue and scripts, Export as text | characters, Game Data, units list, flags, dialogue, script, Disc & Patch | change one value in a workbook and import it |
+| 72 | rect files, RID settings, image layers, preview, add/rename/replace, references | Rect RIDs page and detail dialog | read one RID's layers and preview an edit |
+| 73 | Sound Room tracks and slideshow, staff credits, in-game tutorial list and start flags | soundroom, staffroll and tutorials editors | list one cue and add one credits line |
+| 68 | every reference search: character tabs, Remove's check, AI Used by, Referenced in, icons, flags, search | index, fe8_references, AI editor | answer who-uses for three records |
+| 74 | paired laguz classes, gauge rules, innate strike, starting gauge, laguz items | classes, character form, deployment gauge | read Lethe and copy her |
+| 75 | staff records versus ID-bound effects, status durations, boss immunity, Berserk, AI healing | item form, AI heal and attack scripts | tune one staff |
+| 76 | chest and door terrain, location events, open and give-item calls, keys, Lockpick, AI thieves | Build terrain and zones, script, AI steal list | read Ch.10, add one chest |
+| 77 | deployment tiles, forced and locked units, scenario-end bonus EXP | script calls, player sections | read Ch.5 and Ch.1, force one unit, change one bonus |
+| 78 | camera, fade, unit placement and movement, dialogue and view return in a map scene | Script tab, Insert call | read Ch.2's arrival, write one scene |
+| 79 | finale slideshow, lyrics, war-record labels and character cards | ending.cmb, ending.m, Ending Art, RectFinale | rename one label, retime one artwork, replace one card |
+| 80 | menus, window and editor shortcuts, search palette, completion, preferences and tool downloads | app shell, settings, tool setup | open a tab from the palette, complete one call |
+| 69 | effect registry, packs, textures, cloning and particle fields | effects viewer, particle editor, effect formats | clone and render one effect |
+| 70 | camera scripts, keyframes, rigs and what each script films | battle camera viewer, camera format | preview, apply and restore one script |
+| 71 | DBX Form, Layout and Text views, add, delete, restore | DBX files viewer, DBX form | move one HUD widget and restore |
+
+## Review 2026-10-20
+
+Every lesson was checked against the current app: the 12 required sections, length, and the visible control labels of the editors it owns (`text`/`label`/`title` literals in `App/fe_modding/gui`). Results:
+
+- **Structure** is complete everywhere except **Things to try next**, which 48 pages lack (01–15, 31–32, 34–50, 52–64 and the hub lesson).
+- **Depth** is uneven. Lessons 16–46 and 51 run 1,700–3,500 words with literal walkthroughs. Lessons 01–15 and 47–64 run 700–1,650 words, and their walkthroughs and control lists paraphrase instead of naming the controls. The thinnest describe the largest surfaces: Battle Simulator (56), Game Code (57), Play (58), Saves (59) and battle presentation (55, five editors in one page).
+- **Unexplained controls**: about 330 real labels are never named by their lesson. The largest gaps are in 3D Models (51–54), the Build tab selection panel (21), the chapter header (06, 07), the dialogue scene editor (37), the Play window (58), the Battle Simulator (56), portraits (11) and battle cameras (55).
+
+Rewrite order for the short lessons: 56, 58, 59, 57, 61, 55, 01–05, 06–08, 10–15, 47–50, 52–54, 60, 62–64 and the new lessons 65–68, 72–80 (all done 2026-10-20/21). Frames that need Dolphin, Blender or sample media are still pending.
+
+App surfaces and topics with no lesson yet, numbered after 64 so existing links stay valid:
+
+| New | Lesson | Covers |
+| --- | --- | --- |
+| **65** | Manage chapter parts and phases | **+ Phase…**, **Remove phase…**, **Delete chapter…**, **Take out of the story**, two-part chapters |
+| **66** | Script zones and unit routes on the map | the Build tab's **Script function / zone** tool, **Triggered by**, unit routes, **AI-controlled unit** |
+| **67** | Edit data in bulk outside the app | Excel export/import, deployment/script/dialogue/flag text export, **Export as text…** for git |
+| **68** | Find where a record is used | **Appearances**, **Script references**, message references, Check owner links, Ctrl+K |
+| **69** | Visual effects and particles | Assets › Visual Effects, the effect-add dialog, the particle editor |
+| **70** | Battle cameras | camera rigs (`camera.dbx`) and per-action scripts (`xcam/`) |
+| **71** | DBX files and the battle HUD | DBX Files, Form and Layout tabs, Battle Unit Parameters |
+| **72** | UI layouts and Rect RIDs | Game Data › Rect RIDs: files, layers, properties, references |
+| **73** | Sound Room, credits and in-game tutorials | Soundroom Tracks and Images, Staff Credits, Assets › Tutorials |
+| **74** | Make a laguz unit | laguz class, transform gauge, laguz weapons and items, AI |
+| **75** | Staves and status effects | staff items, status effects, staff EXP, healer AI |
+| **76** | Doors, chests and keys | door/chest terrain and events, keys, thief AI |
+| **77** | Preparations, forced units and bonus EXP | deploy count, forced and banned units, bonus EXP |
+| **78** | Script a map cutscene | map camera calls, scripted movement and fades |
+| **79** | Endings and epilogues | `ending.cmb`, epilogue text and its conditions |
+| **80** | Menus, shortcuts and preferences | reference page: every menu item, shortcut and preference |
+
+App findings from the same pass (all fixed by 2026-10-21 except where noted): the particle editor opened with its field panel too narrow to read and its action and save buttons cut off; DBX Files **Save** wrote text without checking its braces (it now lists the problems and asks); the **Changes this session** drawer disappeared on tall pages; the character page showed "No face file found" for a portrait added with **New portrait…** until the next build (the project index read the face table from `system.cmp` rather than the edited loose `Face/facedata.bin`; fixed), and character **Build**/**Weight** show bytes unsigned (Boyd reads 254), which lesson 10 must explain once the signedness is confirmed.
+
+Screenshots: see the [capture log](tutorial-capture-log.md).
 
 ## Discrepancy log
 

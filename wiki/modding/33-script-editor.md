@@ -40,6 +40,14 @@ Compilation success proves that source is structurally valid. It does not prove 
 
 ## How the editor fits together
 
+<!-- diagram events -->
+<figure class="tutorial-figure" markdown="1">
+
+[![An event as trigger and guard, action, and completion flag.](../assets/images/tutorials/events.svg)](../assets/images/tutorials/events.svg)
+
+<figcaption>Concept diagram, not an app screenshot. An event as trigger and guard, action, and completion flag. Select the image to open it at full size.</figcaption>
+</figure>
+
 A `.cmb` file is compiled bytecode. The editor exposes it as readable `.fe9s` source. The source text is the authority for the function list, trigger form, and compilation:
 
 - Selecting or editing a function changes the source view.
@@ -53,6 +61,22 @@ The **File** selector can point at the current chapter or a shared script. `star
 A trigger answers **when the engine selects a function**. The code body answers **what happens after selection**. A function with trigger type 0 runs only when another function or the engine calls it.
 
 ## Guided walkthrough
+
+<!-- screenshot 33-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Script tab with the decompiled code, the function list, the trigger form and the toolbar.](../assets/images/tutorials/screenshots/33-a-setup.png)](../assets/images/tutorials/screenshots/33-a-setup.png)
+
+<figcaption markdown="span">The **Script** tab on the Prologue (`C01.cmb`) with a function selected: the code, the **Function** list, **Trigger and description** with **Apply to code**, and **Check**/**Save**.</figcaption>
+</figure>
+
+<!-- screenshot 33-c-call-help.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Insert call dialog with the search box, the function tree and the help for the selected call.](../assets/images/tutorials/screenshots/33-c-call-help.png)](../assets/images/tutorials/screenshots/33-c-call-help.png)
+
+<figcaption markdown="span">**Insert call…**: search the game's script functions; the selected one shows its purpose and numbered arguments before it is inserted at the cursor.</figcaption>
+</figure>
 
 ### 1. Select the owning file and record the baseline
 

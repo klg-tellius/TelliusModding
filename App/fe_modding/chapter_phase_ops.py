@@ -189,7 +189,8 @@ def part_setup_issues(source: str, folder: str) -> tuple[int, list[str]] | None:
             continue
         part = int(match.group(1))
         issues = []
-        if not re.search(rf'\b(?:Dispos\w*|SelectAuxiliary)\s*\([^)]*["\x27]{re.escape(folder)}_', body):
+        # Dispos, DisposSetMode, InstantDispos, InstantDisposSetMode, InstantDisposRank...
+        if not re.search(rf'\b(?:\w*Dispos\w*|SelectAuxiliary)\s*\([^)]*["\x27]{re.escape(folder)}_', body):
             issues.append("deployment")
         if not re.search(rf'\bComplete18\s*\(\s*{part - 1}\s*\)', source):
             issues.append("previous victory")

@@ -67,6 +67,14 @@ Terrain does not decide a unit's movement column. A class record's **Movement ty
 
 ## Guided walkthrough
 
+<!-- screenshot 19-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Terrain tab with the terrain list and the movement cost table of the selected type.](../assets/images/tutorials/screenshots/19-a-setup.png)](../assets/images/tutorials/screenshots/19-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Terrain** with a forest type selected: avoid, defence, healing and one movement cost per movement type.</figcaption>
+</figure>
+
 ### 1. Choose and isolate the test terrain
 
 Open **Game Data → Terrain types** and select the terrain used in your small test area. Write down its internal name and current values.

@@ -4,6 +4,13 @@ The visible prop is in map.bin.  A ``SetRock`` call creates its gameplay
 terrain record, referring to a direction string registered by ``TTPMEntry``.
 Only straight-line, literal calls can be edited here; other script code is
 left intact for the Script tab.
+
+Retail (Ch.25, ``C26.cmb``) registers every path once, in order, in ``Startup``
+(``TTPMInit`` then eleven ``TTPMEntry``), and each ``SetRock(x, y, direction,
+n)`` in its own function names slot ``n`` of that list. All eleven rock props
+sit on the tile one step from the call's tile in its initial direction
+(``SetRock(4, 11, 2, 0)``: prop on 5, 11), so a prop is matched to its call by
+:attr:`RockRoute.prop_tile`, and the prop-keyed helpers below keep that layout.
 """
 
 from __future__ import annotations
@@ -17,7 +24,7 @@ from .parser import parse
 
 INITIAL_STEPS = {1: (-1, 0), 2: (1, 0), 4: (0, 1), 8: (0, -1)}
 PATH_STEPS = {"4": (-1, 0), "6": (1, 0), "2": (0, 1), "8": (0, -1)}
-MAX_PATH_LENGTH = 31  # conservative limit for the game's unbounded strcpy into its motion state
+MAX_PATH_LENGTH = 40  # the longest retail path (Ch.25); the game strcpys it unbounded into its motion state
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,12 @@ class RockRoute:
     path_line: int | None
     path_variable: str | None
     editable: bool
+
+    @property
+    def prop_tile(self) -> tuple[int, int]:
+        """The tile of the rock prop this call belongs to: one step from (x, y) in the initial direction."""
+        dx, dy = INITIAL_STEPS.get(self.direction, (0, 0))
+        return self.x + dx, self.y + dy
 
     def tiles(self) -> list[tuple[int, int]]:
         """Rock tile, initial adjacent tile, then each route step."""
@@ -67,6 +80,16 @@ def routes(source: str) -> list[RockRoute]:
     module = parse(source)
     lines = source.splitlines()
     found: list[RockRoute] = []
+    # the script-wide registration list (retail fills it in Startup; SetRock calls elsewhere name its slots)
+    registered: list[tuple[str | None, int | None, str | None]] = []
+    for function in module.functions:
+        for stmt in function.body:
+            value = stmt.expr if isinstance(stmt, A.ExprStmt) else stmt.value if isinstance(stmt, (A.VarInit, A.Assign)) else None
+            if _call(value, "TTPMInit"):
+                registered.clear()
+            elif _call(value, "TTPMEntry"):
+                path = value.args[0].value if len(value.args) == 1 and isinstance(value.args[0], A.Str) else None
+                registered.append((path, stmt.line, None))
     for function in module.functions:
         slots: list[tuple[str | None, int | None, str | None]] = []
         named: dict[str, tuple[str | None, int | None, str | None]] = {}
@@ -98,6 +121,8 @@ def routes(source: str) -> list[RockRoute]:
                     path, path_line, path_var = named.get(ref.id, (None, None, None))
                 elif isinstance(ref, A.Num) and 0 <= ref.value < len(slots):
                     path, path_line, path_var = slots[ref.value]
+                elif isinstance(ref, A.Num) and not slots and 0 <= ref.value < len(registered):
+                    path, path_line, path_var = registered[ref.value]
                 elif _call(ref, "TTPMEntry") and len(ref.args) == 1 and isinstance(ref.args[0], A.Str):
                     path = ref.args[0].value
                 found.append(RockRoute(function.name, x, y, direction, path, stmt.line, path_line, path_var,
@@ -232,3 +257,45 @@ def remove_route(source: str, tile: tuple[int, int]) -> str:
     result = "\n".join(lines) + "\n"
     parse(result)
     return result
+
+
+# -- keyed by the rock prop's tile (what the Build tab selects) -------------------------------------
+def route_for_prop(source: str, tile: tuple[int, int]) -> list[RockRoute]:
+    """The SetRock calls whose prop is on ``tile`` (see :attr:`RockRoute.prop_tile`)."""
+    return [r for r in routes(source) if r.prop_tile == tuple(tile)]
+
+
+def _call_tile(prop: tuple[int, int], direction: int) -> tuple[int, int]:
+    dx, dy = INITIAL_STEPS[direction]
+    return prop[0] - dx, prop[1] - dy
+
+
+def set_prop_route(source: str, prop: tuple[int, int], direction: int, path: str) -> str:
+    """Add or edit the route of the rock prop on ``prop``, writing its SetRock call on the tile one step
+    behind the prop, as retail does."""
+    _validate(direction, path)
+    found = route_for_prop(source, prop)
+    if len(found) > 1:
+        raise ValueError("Several SetRock calls use this rock; edit them in the Script tab.")
+    target = _call_tile(prop, direction)
+    if not found:
+        return set_route(source, *target, direction, path)
+    old = (found[0].x, found[0].y)
+    changed = set_route(source, *old, direction, path)
+    return move_route(changed, old, target) if target != old else changed
+
+
+def move_prop_route(source: str, old_prop: tuple[int, int], new_prop: tuple[int, int]) -> str:
+    """Keep a rock's SetRock call one step behind its prop after the prop moved."""
+    found = route_for_prop(source, old_prop)
+    if len(found) != 1:
+        return source
+    route = found[0]
+    return move_route(source, (route.x, route.y), _call_tile(new_prop, route.direction))
+
+
+def remove_prop_route(source: str, prop: tuple[int, int]) -> str:
+    found = route_for_prop(source, prop)
+    if len(found) != 1:
+        return source
+    return remove_route(source, (found[0].x, found[0].y))

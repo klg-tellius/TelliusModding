@@ -9,11 +9,11 @@ tutorial_kind: "task"
 tutorial_track: "characters-and-game-data"
 tutorial_stage: "draft"
 prerequisites: ["modding-character-model-slot"]
-verification: ["source-reviewed", "unknown"]
+verification: ["source-reviewed", "app-tested", "unknown"]
 tags: ["Guide", "Supports", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/13-supports.md"
@@ -24,42 +24,101 @@ source_path: "modding/13-supports.md"
 
 ## What you will make
 
-You will create one symmetric support pair with increasing C/B/A thresholds, author all three rank conversations, inspect both affinity rows, and test point gain, conversation unlock, rank activation, range, and the five-star cap.
+You will pair `PID_TUTORIAL_GUARD` with Oscar, set the pair's C, B and A thresholds, see the pair on both characters, and read its bonus. At the end you know where supports, bonds and affinity bonuses are stored, what each threshold means in points, and how to add the three conversations.
 
 ## Before you begin
 
-Choose two valid PIDs that can be deployed together. Record their affinities and existing partners/stars. Write three short scenes. Use a checkpoint: support-list slot positions are stored in unit save data, so restructuring existing lists can affect continued saves.
+- `PID_TUTORIAL_GUARD` from [Create a character](10-create-character.md), saved. A copied character does not copy its template's support list: it starts with no partner.
+- A copy of the project folder. Saves remember support points by slot number, so changing a list in a released mod affects saves already made.
 
 ## How the editor fits together
 
-Support lists, bonds, character affinities, and affinity bonus rows live in `FE8Data.bin`. Rank conversations live separately in `Mess/yell.m` under `MYELL_` identities. A pair is symmetric and must appear consistently for both PIDs. Removing a partner leaves an empty slot rather than shifting later slots because a save remembers points by slot index.
+| Data | Where it is | Edited on |
+| --- | --- | --- |
+| Each character's affinity and support list (up to 10 partners, with C/B/A thresholds) | `FE8Data.bin` | the character's **Supports** tab; **Game Data › Supports › Pairs** |
+| Bonds (always-on pair effects, separate from ranks) | `FE8Data.bin` | the character's **Supports** tab, **Bonds** |
+| Bonus per affinity and rank | `FE8Data.bin` | **Game Data › Supports › Affinity bonuses** |
+| The C, B and A conversations | `Mess/yell.m`, `MYELL_…` messages | **Conversation** buttons; **Game Data › Supports › Conversations** |
 
-At chapter end, deployed player units gain one point with each deployed partner unless a threshold is waiting to be viewed or either unit has five support stars. Viewing the base conversation grants the final point to both. Rank comparison uses points beyond the stored C/B/A threshold. C/B/A cost 1/2/3 stars, with five stars maximum per unit.
+A pair is written to both characters' lists with the same thresholds. Both units gain 1 point at the end of each chapter they finish on the map together; when the points reach **C at**, **B at** or **A at**, the base offers that conversation, and viewing it raises the rank. A unit holds at most 5 support stars (C = 1, B = 2, A = 3). With a rank, each unit gets the bonus of its own affinity row and its partner's when they are within 3 tiles in the same army.
 
 ## Guided walkthrough
 
-1. Open character A → **Supports**. Select character B under **Add partner** and choose **Add**. Confirm the pair appears when viewing B too.
-2. Select the pair and enter strictly increasing **C at**, **B at**, and **A at** thresholds. Choose small test values in a disposable save so all ranks can be observed.
-3. Inspect each character's **Affinity**. In **Game Data → Supports → Affinities**, read the per-rank Attack, Defence, Hit, Avoid, Critical, and Critical avoid row; the last two stored bytes are unused.
-4. Use **Conversation C**, author/save the `MYELL_` scene in `yell.m`, and repeat for B/A. Reopen each rank to verify the message identity survived independently.
-5. Save `yell.m`, then **Save FE8Data.bin**. Run Check and resolve one-sided/missing-PID problems.
-6. Deploy both as player units through chapter completion. In base, confirm only the expected rank conversation is available; view it and inspect the new rank/points.
-7. Place the pair within three tiles and compare forecast/combat bonuses with one partner removed or farther away. Continue through B/A while observing the five-star limit.
+### 1. Read a retail list
+
+<!-- screenshot 13-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Supports tab with the partner list, affinity, thresholds per rank, conversation buttons and the bond section.](../assets/images/tutorials/screenshots/13-a-setup.png)](../assets/images/tutorials/screenshots/13-a-setup.png)
+
+<figcaption markdown="span">Ike's **Supports** tab with a partner selected: the pair's C/B/A thresholds, the conversation buttons and **Add bond with**. Both partners hold their own copy of the pair.</figcaption>
+</figure>
+
+Open Ike › **Supports**: **Affinity** *Earth*, then **Support partners** *7 partners, 8 of 10 slots used*. Each row gives **Slot**, **Partner**, **Partner affinity**, **C at**, **B at**, **A at**, **Bonus at A (each unit)** and **Conversations** (*CBA*: all three exist). Select Titania: *Ike (PID_IKE) and Titania (PID_TIAMAT): thresholds apply to both lists.*, with 8 / 12 / 28.
+
+### 2. Add a partner
+
+<!-- screenshot 13-c-pair.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Supports tab of the Guard with Oscar as partner, the thresholds and the conversation buttons.](../assets/images/tutorials/screenshots/13-c-pair.png)](../assets/images/tutorials/screenshots/13-c-pair.png)
+
+<figcaption markdown="span">The Guard's **Supports** after **Add partner** `PID_OSCAR` › **Add**: the pair starts at *1 / 3 / 5*; here **C at** 4, **B at** 10, **A at** 18. **Conversation** offers **Create C**, **Create B**, **Create A**: no `MYELL_` scene exists yet.</figcaption>
+</figure>
+
+1. Open the Guard › **Supports**. **Affinity** is *Fire* (copied from Boyd); **Support partners** is empty.
+2. In **Add partner**, pick *Oscar (PID_OSCAR)* and press **Add**. The pair appears with 1 / 3 / 5, the most common retail thresholds.
+3. Set **C at** `4`, **B at** `10`, **A at** `18` (each larger than the last); Tab or Enter applies them. The bar reads *Unsaved changes in FE8Data.bin*.
+4. **Conversation** shows **Create C**, **Create B**, **Create A**: no scene exists yet.
+
+### 3. Check the other side
+
+<!-- screenshot 13-b-result.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Supports tab of Oscar with the new Guard pair selected among his partners.](../assets/images/tutorials/screenshots/13-b-result.png)](../assets/images/tutorials/screenshots/13-b-result.png)
+
+<figcaption markdown="span">Oscar's **Supports**: the same pair, written to both lists with the same thresholds, in the first empty slot of Oscar's list (2). Its **Bonus at A (each unit)** is *Attack +1, Hit +7, Avoid +15* (Fire with Earth). **Remove partner** on either side removes both and leaves the slots empty.</figcaption>
+</figure>
+
+Double-click Oscar in the list (or open his page) › **Supports**: *Guard (PID_TUTORIAL_GUARD)* sits in slot 2, the first empty slot of his list, with 4 / 10 / 18 and **Bonus at A (each unit)** *Attack +1, Hit +7, Avoid +15*.
+
+### 4. Write the conversations and save
+
+1. Press **Create C**: **Game Data › Supports › Conversations** opens on a new `MYELL_…` message for the pair in `Mess/yell.m`, filled from a template scene with both characters' large portraits. Write the scene ([Author and connect a dialogue scene](37-dialogue-editor.md)) and press that tab's **Save** (`yell.m` has its own save). Repeat for B and A; the buttons become **Edit C**, **Edit B**, **Edit A**.
+2. Press **Save FE8Data.bin**.
+3. Run **Tools › Check**: a pair missing from one side, or naming a character that does not exist, is reported under **Supports**.
 
 ## Understand every control
 
-| Control | Meaning |
+### Supports tab
+
+| Control | What it does |
 | --- | --- |
-| Affinity | character's row used for support bonuses |
-| Support partners | symmetric pair slots for the selected PID |
-| C/B/A at | point thresholds; must increase and fit stored byte values |
-| Conversation C/B/A | opens or creates the rank's `MYELL_` message |
-| Remove partner | empties both sides without shifting later saved slots |
-| Bonds | separate always-defined relationship records, not rank progression |
-| Bond Effect kind 1 | adjacent same-army pair each gains configured Critical |
-| Bond Effect kind 2 | when PID2 is adjacent to PID1, opponents have zero Critical against PID2 |
-| Bond Value | signed magnitude used by the selected bond effect |
-| Affinity table | bonuses per rank: Atk, Def, Hit, Avoid, Crit, Crit avoid |
+| **Affinity** | The character's element; its row of **Affinity bonuses** applies |
+| **Support partners** | The list, by slot; *N partners, M of 10 slots used* |
+| **C at** / **B at** / **A at** | Points needed for each rank; must increase |
+| **Remove partner** | Removes the pair from both lists, leaving the slots empty |
+| **Conversation** **Create C** / **Edit C** (B, A) | Opens the rank's message in **Game Data › Supports › Conversations**, creating it from a template scene when missing |
+| **Add partner** / **Add** | Adds a pair (1 / 3 / 5) |
+| **Bonds** | **With**, **This character is**, **Effect**, **Value**; **Remove bond**; **Add bond with** / **Add** |
+| **Save FE8Data.bin** | Writes the lists, bonds and affinities |
+
+Bond effects: an adjacent same-army pair each gains the configured Critical, or opponents have no Critical against the second unit while the first is adjacent. Bonds need no rank.
+
+### Game Data › Supports
+
+| Tab | What it shows |
+| --- | --- |
+| **Pairs** | Every pair once: **Character**, **Partner**, thresholds, bonus, conversations; problems in yellow |
+| **Affinity bonuses** | **Bonus per support rank**: per **Affinity**, Attack, Defence, Hit, Avoid, Critical, Critical avoid |
+| **Conversations** | Every `MYELL_` support conversation |
+
+## Things to try next
+
+1. **A bond.** On the Guard's **Supports**, **Add bond with** Boyd and set its **Effect** and **Value**; compare in the **Battle Simulator** with the two units adjacent.
+2. **Bonus rows.** In **Affinity bonuses**, read the Fire and Earth rows and add them up: they give the pair's *Bonus at A*.
+3. **Remove the pair.** **Remove partner**, save, and look at Oscar's list: slot 2 is empty again.
 
 ## Interactions and precedence
 
@@ -88,12 +147,13 @@ Save relationship/affinity/bond data to FE8Data and conversations to `yell.m`; r
 
 ## Limits and confidence
 
-Data structure, point/rank rules, star cost, range, affinity combination, bond semantics, and editor controls are source-reviewed. Exact multi-part timing and customized game-code patches require runtime verification. The editor/checker cannot prove every base-availability condition.
+- The data layout, point and rank rules, star cost, range and controls are source-reviewed. Adding the Guard–Oscar pair and setting its thresholds was done in the app on a US disc, then reverted (app-tested).
+- Point gain, the base conversations and the bonuses in play are not checked in Dolphin here (unknown).
 
 ## Related tutorials and references
 
 - [Create a character](10-create-character.md)
-- [Write chapter dialogue](37-dialogue-editor.md)
+- [Author and connect a dialogue scene](37-dialogue-editor.md)
 - [Support System](../systems/support-system.md)
 - [Dialogue Engine](../systems/dialogue-engine.md)
 

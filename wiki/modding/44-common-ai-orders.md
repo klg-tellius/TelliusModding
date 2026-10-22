@@ -51,6 +51,14 @@ An AI role is an assembly:
 
 ## Guided walkthrough
 
+<!-- screenshot 44-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![AI page on the Routes and targets tab with target lists and the thief item list.](../assets/images/tutorials/screenshots/44-a-setup.png)](../assets/images/tutorials/screenshots/44-a-setup.png)
+
+<figcaption markdown="span">The AI page's **Routes & targets**: target lists that attack and move orders name, and the **Items an AI thief may steal**.</figcaption>
+</figure>
+
 ### Recipe 1: stationary boss that attacks in range
 
 Copy an Attack sequence and use `attack_in_place(chance=100)`. Branch on `found` to the terminating success path. Pair it with a Move sequence that registers no movement, normally a copy of `SEQ_NOMOVE`, and assign both to the boss.

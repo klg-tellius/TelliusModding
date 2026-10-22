@@ -371,6 +371,43 @@ class NewChapterPlan:
     common: Optional[tuple]                 # (Mess/common.m path, new bytes) with the title
     warnings: list
     images: dict = None                     # chapter-name picture path -> bytes (chapter_images)
+    war_record: Optional[tuple] = None      # (Mess/ending.m path, new bytes) with the war-record labels
+
+
+#: The ending's war record labels each cleared chapter with MED_CHAPnn_TAG / _TITLE and a dead unit
+#: with MED_DIED_CHAPnn (``main.dol`` builds the keys with %02d); retail has them for 01-31 only.
+WAR_RECORD_KEYS = ("MED_CHAP{:02d}_TAG", "MED_CHAP{:02d}_TITLE", "MED_DIED_CHAP{:02d}")
+
+
+def _ending_messages_path(project: ModProject) -> Optional[Path]:
+    path = files_dir_of(project) / "Mess" / "ending.m"
+    return path if path.is_file() else None
+
+
+def war_record_texts(chapter: int, title: str) -> dict:
+    """The war-record labels of a chapter titled ``title``: ``"Border: Watch"`` is tag ``Border``,
+    title ``Watch``, as retail ``Chapter 1`` / ``The Battle Begins``; a title without a colon is
+    tagged ``Chapter N``."""
+    tag, sep, name = title.partition(":")
+    tag, name = (tag.strip(), name.strip()) if sep else (f"Chapter {chapter}", title.strip())
+    keys = [k.format(chapter) for k in WAR_RECORD_KEYS]
+    return {keys[0]: tag, keys[1]: name, keys[2]: f"Fell in {tag}"}
+
+
+def _with_war_record(path: Path, chapter: int, title: str) -> bytes:
+    from .formats import message
+    texts = war_record_texts(chapter, title)
+    messages = [m for m in message.read_messages_path(path) if m.speaker not in texts]
+    messages += [message.Message(key, text) for key, text in texts.items()]
+    return message.write_messages(messages)
+
+
+def _without_war_record(path: Path, chapter: int) -> Optional[bytes]:
+    from .formats import message
+    keys = {k.format(chapter) for k in WAR_RECORD_KEYS}
+    messages = message.read_messages_path(path)
+    kept = [m for m in messages if m.speaker not in keys]
+    return message.write_messages(kept) if len(kept) != len(messages) else None
 
 
 def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int,
@@ -462,7 +499,11 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
     if len(images) < 2:
         warnings.append("The chapter-name pictures could not be drawn (no template picture or no "
                         "Fonts/bigkana.gcf): the file menu shows an empty box for this chapter.")
-    return NewChapterPlan(data, index, shops, common, warnings, images)
+    war_record = None
+    ending_path = _ending_messages_path(project)
+    if ending_path is not None and not japanese:
+        war_record = (ending_path, _with_war_record(ending_path, new_id, title))
+    return NewChapterPlan(data, index, shops, common, warnings, images, war_record)
 
 
 def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: int, title: str = "",
@@ -490,6 +531,8 @@ def add_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: i
         project.write_keeping_original(path, data)
     if plan.common is not None:
         project.write_keeping_original(*plan.common)
+    if plan.war_record is not None:
+        project.write_keeping_original(*plan.war_record)
     if changes is not None:
         flow.set_many(changes)
     return plan

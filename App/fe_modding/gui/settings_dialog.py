@@ -17,7 +17,7 @@ class SettingsDialog(tk.Toplevel):
         self.title("Settings")
         self.resizable(False, False)
         self.transient(parent.winfo_toplevel())
-        self._root = parent.winfo_toplevel()
+        self._main_window = parent.winfo_toplevel()
 
         body = ttk.Frame(self, padding=20)
         body.pack(fill="both", expand=True)
@@ -61,4 +61,4 @@ class SettingsDialog(tk.Toplevel):
         save_setting(emulator.SETTING_KEY, self._dolphin.get().strip())
 
     def _apply_theme(self) -> None:
-        theme.set_mode(self._root, self._theme.get())
+        theme.set_mode(self._main_window, self._theme.get())

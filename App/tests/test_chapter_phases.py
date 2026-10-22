@@ -103,6 +103,10 @@ class PhaseTests(unittest.TestCase):
         linked += '\ndef Victory():\n    Complete18(1)\n'
         self.assertEqual(chapter_phase_ops.part_setup_issues(linked, "bmap09_2"), (2, []))
         self.assertIsNone(chapter_phase_ops.part_setup_issues(linked, "bmap09_3"))
+        instant = source.replace('    MapLoad("bmap09_2")',
+                                 '    MapLoad("bmap09_2")\n'
+                                 '    InstantDisposSetMode("bmap09_2_mikata_n", "bmap09_2_mikata_h", "bmap09_2_mikata_m")')
+        self.assertEqual(chapter_phase_ops.part_setup_issues(instant, "bmap09_2"), (2, ["previous victory"]))
 
     def test_playable_parts_are_distinct_from_extra_map_phases(self):
         phases = ["bmap18", "bmap18_2", "bmap18_3", "bmap18_4"]

@@ -2723,8 +2723,8 @@ class _EventEditorDialog(tk.Toplevel):
         top = ttk.Frame(self, padding=8)
         top.pack(fill="both", expand=True)
         ttk.Label(top, text="Animation").grid(row=0, column=0, sticky="w")
-        self._name = tk.StringVar(value=names[0] if names else "")
-        box = ttk.Combobox(top, textvariable=self._name, values=names, state="readonly", width=36)
+        self._animation_var = tk.StringVar(value=names[0] if names else "")
+        box = ttk.Combobox(top, textvariable=self._animation_var, values=names, state="readonly", width=36)
         box.grid(row=0, column=1, columnspan=3, sticky="we")
         box.bind("<<ComboboxSelected>>", lambda e: self._load())
         self._info = ttk.Label(top, text="", style="Muted.TLabel")
@@ -2760,7 +2760,7 @@ class _EventEditorDialog(tk.Toplevel):
         self.grab_set()
 
     def _load(self) -> None:
-        name = self._name.get()
+        name = self._animation_var.get()
         if not name:
             return
         try:
@@ -2825,7 +2825,7 @@ class _EventEditorDialog(tk.Toplevel):
             self._refresh()
 
     def _ok(self) -> None:
-        self.result = (self._name.get(), list(self._events))
+        self.result = (self._animation_var.get(), list(self._events))
         self.destroy()
 
 
@@ -4361,11 +4361,15 @@ class ModelPreviewDialog(tk.Toplevel):
 
 class ModelViewer(EditorPanel):
     display_name = "3D Models"
+    uses_fe8_session = True
 
-    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
+    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session=None):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
+        # New slot… and Model tables… write FE8Data.bin themselves (a character's animation ID);
+        # the shared copy every other editor works on is saved before and reloaded after.
+        self._session = session
         self._dirty = False  # read-only viewer - never has unsaved changes
         self._all_sets: list[tuple[str, Path]] = []
         self._filtered_sets: list[tuple[str, Path]] = []
@@ -4443,12 +4447,27 @@ class ModelViewer(EditorPanel):
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
                                     self._tables_button)):
-            button.grid(row=i // 3, column=i % 3, sticky="ew", padx=(0, 4), pady=(0, 4))
-        for column in range(3):
+            # two per row: three cut labels such as "Import animation..." at the default pane width
+            button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
+        for column in range(2):
             buttons.grid_columnconfigure(column, weight=1, uniform="buttons")
 
         self._preview = _ModelPreview(paned)
         paned.add(self._preview, weight=5)
+        self._place_list_sash(paned, left)
+
+    def _place_list_sash(self, paned: ttk.PanedWindow, left: ttk.Frame, tries: int = 30) -> None:
+        """Give the list pane the width its buttons ask for once the window has its size (the 1:5
+        weights alone squeeze it and cut the button labels)."""
+        if not paned.winfo_exists():
+            return
+        if paned.winfo_width() < 600 and tries > 0:
+            self.after(100, lambda: self._place_list_sash(paned, left, tries - 1))
+            return
+        try:
+            paned.sashpos(0, min(left.winfo_reqwidth(), paned.winfo_width() // 3))
+        except tk.TclError:
+            pass
 
     # -- data loading ---------------------------------------------------------
     def _load_set_list(self) -> None:
@@ -4814,9 +4833,30 @@ class ModelViewer(EditorPanel):
         self._changelog.append(label, description)
         self._on_set_selected()
 
+    def _game_data_saved(self) -> bool:
+        """The slot dialogs read and write FE8Data.bin on disk: save the shared copy's edits first."""
+        session = self._session
+        if session is None or not getattr(session, "dirty", False):
+            return True
+        if not messagebox.askyesno("Save FE8Data.bin?", "Model slots can change characters' animation IDs in "
+                                   "FE8Data.bin. Save its unsaved edits first?", parent=self):
+            return False
+        try:
+            session.save()
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+            return False
+        return True
+
+    def _reload_game_data(self) -> None:
+        if self._session is not None and getattr(self._session, "available", False):
+            self._session.revert()
+            for callback in list(getattr(self._session, "on_saved", ())):
+                callback()  # the project index: character pages show the models they resolve to
+
     def _new_slot(self) -> None:
         selected = self._selected_set()
-        if selected is None:
+        if selected is None or not self._game_data_saved():
             return
         label, _path = selected
         try:
@@ -4827,11 +4867,16 @@ class ModelViewer(EditorPanel):
         self.wait_window(dialog)
         if dialog.result is None:
             return
+        self._reload_game_data()
         self._changelog.append(label, dialog.result)
         self._load_set_list()
 
     def _model_tables(self) -> None:
+        if not self._game_data_saved():
+            return
+
         def changed(label: str, text: str) -> None:
+            self._reload_game_data()
             self._changelog.append(label, text)
             self._load_set_list()
 

@@ -46,6 +46,17 @@ The output side also has boundaries. Message and portrait/illustration resources
 
 Candidate enumeration, substitution, and order are authored by the ending script/data path, not inferred from disc asset order. Each selected card owns one presentation lifetime and advances the established sequence on completion or skip. A missing optional visual may fall back or fail that card's presentation, but cannot make an ineligible character eligible or write clear data early.
 
+## Files in Path of Radiance
+
+| Part | Owner |
+| --- | --- |
+| Sequence | `Scripts/ending.cmb`, exported function `Ending`: credit names (`RID_END_STAFFCREDIT`…), 22 artworks with labels (`RID_END_GR01`–`GR22`, `RID_END_LBL01`–`LBL22`) over `BGM_ED_STAFF1`, the song `BGM_ED_SONG1` with `StaffRoll` and 12 lyric images, copyright and *Fin*, then `WarRecord(15000)` and `IndividualWarRecord(15000)` |
+| Images | `ending/RectFinale_en.bin` (US) and `ending/RectFinale.bin` (Japanese), textures in `ending/` |
+| War record labels | `Mess/ending.m`: `MED_CHAPnn_TAG` / `MED_CHAPnn_TITLE` per chapter slot, `MED_DIED_CHAPnn`, column headers `MED_REC_LV`, `MED_REC_WIN`, `MED_REC_TURN`; retail has slots 01–31 |
+| Character cards | `RID_END_` + the PID without `PID_` (`PID_BOLE` → `RID_END_BOLE`, `ending/bole_en.tpl`, 528 × 376). The name is drawn into the picture; the US cards carry no epilogue text |
+
+The modding app writes the three labels for a chapter it adds and removes them with it. See [Edit the ending and the war record](../modding/79-ending-and-war-record.md).
+
 ## Rules and lifecycle
 
 1. Final battle logic commits victory through the ordinary objective/chapter boundary.

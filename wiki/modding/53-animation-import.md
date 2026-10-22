@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Animation", "Events", "Models"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/53-animation-import.md"
@@ -16,7 +16,7 @@ tutorial_kind: "task"
 tutorial_track: "models-and-battle-presentation"
 tutorial_stage: "draft"
 prerequisites: ["modding-blender-round-trip"]
-verification: ["source-reviewed", "unknown"]
+verification: ["source-reviewed", "app-tested", "unknown"]
 ---
 # Import animations and edit events
 
@@ -45,7 +45,15 @@ If the glTF does not supply an event track, the importer preserves the old event
 
 ### Choose the exact target
 
-Select the set and preview the original animation. For battle models, confirm the weapon pack and role suffix (`at1`, `at2`, `cr1`, `dog`, `dam`, `ded`, combined follow-ups). Similar names are distinct presentation transitions. For map models, relate the file to the FE8Anim action mask.
+<!-- screenshot 53-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.](../assets/images/tutorials/screenshots/53-a-setup.png)](../assets/images/tutorials/screenshots/53-a-setup.png)
+
+<figcaption markdown="span">**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: **Animation files (.ga)** lists the set's clips; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Import animation…** and **Events...** work on this set.</figcaption>
+</figure>
+
+Select the set in **Model sets** (`zu/fig1`, the Fighter) and open the **Animations** tab: **Animation files (.ga)** lists the clips (`fig1_at1_ax.ga`, the first attack with an axe). Selecting one gives its curves, animated bones, frames and events (*75 curves, 26 animated bones, 59 frames, events: 6*); **Play** / **Pause** and the slider step through it (*frame 0/59*). The **Skeleton** tab lists the bones. Preview the original animation. For battle models, confirm the weapon pack and role suffix (`at1`, `at2`, `cr1`, `dog`, `dam`, `ded`, combined follow-ups). Similar names are distinct presentation transitions. For map models, relate the file to the FE8Anim action mask.
 
 ### Import one clip
 
@@ -57,7 +65,15 @@ If animation extremes exceed the body's encoded blended-vertex range, follow the
 
 ### Edit synchronization events
 
-Open **Events…**. Each key has a frame and one to four codes. Select an event to edit, **Add** a new key, or **Remove** a selected key. Frames must be numeric and fall from 0 through the clip's frame count. Preserve unknown codes unless executable evidence assigns them.
+<!-- screenshot 53-c-events.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Events dialog with the animation choice, the list of event keys, frame and codes fields and the Add, Update, Delete, Save and Cancel buttons.](../assets/images/tutorials/screenshots/53-c-events.png)](../assets/images/tutorials/screenshots/53-c-events.png)
+
+<figcaption markdown="span">**Events...**: one animation's event track, one key per line (frame and codes). **Frame** and **Codes (comma-separated)** with **Add**, **Update**, **Delete**; *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release*: combat waits for these. **Save...** writes the set.</figcaption>
+</figure>
+
+Open **Events...**. **Animation** picks the clip (*59 frames, plays once*); the list shows one key per line, e.g. `frame 33: 1*` and `frame 41: 0*` (the asterisk marks codes the battle script waits for). Select a key to load it into **Frame** and **Codes (comma-separated)**, then **Update**; **Add** a new key, or **Delete** the selected one. Frames must be numeric and fall from 0 through the clip's frame count. Preserve unknown codes unless executable evidence assigns them.
 
 Move markers to the frame where the new action visually reaches the synchronization point. Impact/swing markers coordinate hit/dodge presentation; release markers detach arrows/thrown weapons; effect markers transfer spells or select hit/miss stages; other markers can control visibility, dust, water, snow, or completion.
 
@@ -69,15 +85,22 @@ In Import Review, inspect proposed files and warnings, then **Write files**. Reo
 
 ## Understand every control
 
-- **Animation selector/playback/frame control:** previews the selected encoded clip.
+- **Animations** tab, **Animation files (.ga)**, **Play** / **Pause**, slider and *frame N/M*: previews the selected encoded clip.
 - **Import animation…:** chooses source glTF animation and exact replacement target.
 - **Template:** preserves target role, events, and loop data when source omits them.
 - **Events… list:** ordered event keys shown by frame.
 - **Frame:** callback position within `0..length_in_frames`.
 - **Codes:** one to four raw numeric values owned by the active presenter.
-- **Add / Update / Remove:** edits the in-dialog event list only.
+- **Add / Update / Delete:** edits the in-dialog event list only.
+- Code legend: *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release: combat waits for these.* *50 footsteps, 0x14-0x1B trails (0x19 ends), 1000+ sounds.*
 - **Save…:** validates and opens Import Review; it is not yet the final write.
 - **Write files:** commits proposed packed/loose `.ga` output.
+
+## Things to try next
+
+1. **Move a hit frame.** In **Events...**, move the code-0 key of `fig1_at1_ax.ga` two frames later, **Save...**, and compare the hit timing in **Simulate a battle…** ([Simulate and render a fight](56-battle-simulator.md)).
+2. **Read the roles.** Compare the event tracks of `at1`, `cr1` and `dog`: which codes each role waits for.
+3. **Footsteps.** Find the `50` codes of a run cycle and line them up with the feet.
 
 ## Interactions and precedence
 
