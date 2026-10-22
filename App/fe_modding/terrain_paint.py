@@ -398,26 +398,73 @@ def drawn_swatches(layers: list[Layer]) -> list[int]:
     return sorted(used)
 
 
-def seam_cut(positions: np.ndarray, swatches, layout: AtlasLayout, attrs: Optional[dict] = None, *,
-             slope_degrees: float = SLOPE_DEGREES) -> tuple[np.ndarray, dict, np.ndarray]:
-    """Cut the mesh on the repeat lines of the given swatches (and the
-    base): x and z lines everywhere, height lines through steep triangles.
-    Returns positions, attrs and which triangles are steep."""
+def layer_reach(positions: np.ndarray, layers: list[Layer], steep: np.ndarray,
+                span: float = MASK_SPAN) -> np.ndarray:
+    """``(n, len(layers))`` bool: the layers that can show anywhere on each
+    triangle. The base always can; a painted layer where any weight pixel a
+    bilinear sample inside the triangle's footprint reads is painted; a
+    slopes layer on steep triangles. A triangle only needs cutting on the
+    repeat lines of these layers' swatches."""
+    positions = np.asarray(positions, float).reshape(-1, 3, 3)
+    reach = np.zeros((len(positions), len(layers)), bool)
+    reach[:, 0] = True
+    lo = positions.min(axis=1)
+    hi = positions.max(axis=1)
+    for k, layer in enumerate(layers[1:], 1):
+        if layer.slopes:
+            reach[steep, k] = True
+        if layer.weights is None:
+            continue
+        painted = np.asarray(layer.weights) > 1e-3
+        if not painted.any():
+            continue
+        size_z, size_x = painted.shape
+        # pixels a sample may read (see :func:`sample`), on a 2x2 tiling so
+        # wrapped ranges stay contiguous; counted with an integral image
+        tiled = np.zeros((2 * size_z + 1, 2 * size_x + 1), np.int64)
+        tiled[1:, 1:] = np.tile(painted, (2, 2)).cumsum(axis=0).cumsum(axis=1)
+        x0 = np.floor(lo[:, 0] / span * size_x - 0.5).astype(np.int64)
+        x1 = np.floor(hi[:, 0] / span * size_x - 0.5).astype(np.int64) + 1
+        z0 = np.floor(lo[:, 2] / span * size_z - 0.5).astype(np.int64)
+        z1 = np.floor(hi[:, 2] / span * size_z - 0.5).astype(np.int64) + 1
+        wide = (x1 - x0 + 1 >= size_x) | (z1 - z0 + 1 >= size_z)
+        xa, za = np.mod(x0, size_x), np.mod(z0, size_z)
+        xb = np.where(wide, xa, xa + x1 - x0 + 1)
+        zb = np.where(wide, za, za + z1 - z0 + 1)
+        count = tiled[zb, xb] - tiled[za, xb] - tiled[zb, xa] + tiled[za, xa]
+        reach[:, k] |= wide | (count > 0)
+    return reach
+
+
+def seam_cut(positions: np.ndarray, layers: list[Layer], layout: AtlasLayout, attrs: Optional[dict] = None, *,
+             slope_degrees: float = SLOPE_DEGREES, span: float = MASK_SPAN
+             ) -> tuple[np.ndarray, dict, np.ndarray, np.ndarray]:
+    """Cut each triangle on the repeat lines of the swatches that can show
+    on it (:func:`layer_reach`): x and z lines everywhere, height lines
+    through steep triangles. A small swatch only adds its lines where it is
+    painted, not over the whole map. Returns positions, attrs, which
+    triangles are steep and the layer reach of each cut triangle."""
     positions = np.asarray(positions, float).reshape(-1, 3, 3)
     attrs = {k: np.asarray(v, float) for k, v in (attrs or {}).items()}
-    used = sorted(set(swatches) | {layout.base})
-    period_x, period_z = _swatch_periods(layout, used)
-    lo, hi = positions.reshape(-1, 3).min(axis=0), positions.reshape(-1, 3).max(axis=0)
-    positions, attrs, _ = cut_planes(positions, attrs, 0, _period_lines(lo[0], hi[0], period_x))
-    positions, attrs, _ = cut_planes(positions, attrs, 2, _period_lines(lo[2], hi[2], period_z))
     steep = _steep(positions, slope_degrees)
-    if steep.any():
-        # sides were cut on x/z lines already, which also bound their horizontal repeat
-        positions, attrs, origin = cut_planes(
-            positions, attrs, 1, _period_lines(lo[1], hi[1], min(period_x, period_z)), only=steep
-        )
-        steep = steep[origin]
-    return positions, attrs, steep
+    reach = layer_reach(positions, layers, steep, span)
+    widths = np.array([layout.swatches[layer.swatch].w for layer in layers])
+    heights = np.array([layout.swatches[layer.swatch].h for layer in layers])
+    period_x = np.gcd.reduce(np.where(reach, widths, 0), axis=1) / layout.density
+    period_z = np.gcd.reduce(np.where(reach, heights, 0), axis=1) / layout.density
+    # sides were cut on x/z lines already, which also bound their horizontal repeat
+    period_y = np.where(steep, np.minimum(period_x, period_z), 0.0)
+    origin = np.arange(len(positions))
+    for axis, periods in ((0, period_x), (2, period_z), (1, period_y)):
+        for period in np.unique(periods[periods > 0]):
+            group = periods[origin] == period
+            if not group.any():
+                continue
+            coords = positions[group][:, :, axis]
+            lines = _period_lines(coords.min(), coords.max(), period)
+            positions, attrs, cut_origin = cut_planes(positions, attrs, axis, lines, only=group)
+            origin = origin[cut_origin]
+    return positions, attrs, steep[origin], reach[origin]
 
 
 def compile_paint(
@@ -438,8 +485,8 @@ def compile_paint(
     layout.validate()
     positions = np.asarray(positions, float).reshape(-1, 3, 3)
     before = len(positions)
-    positions, attrs, steep = seam_cut(positions, drawn_swatches(layers), layout, attrs,
-                                       slope_degrees=slope_degrees)
+    positions, attrs, steep, reach = seam_cut(positions, layers, layout, attrs,
+                                              slope_degrees=slope_degrees, span=span)
 
     n = len(positions)
     # each triangle's layer shares: its corners, edge midpoints and centre
@@ -449,6 +496,8 @@ def compile_paint(
     points = np.concatenate([corners, mids, centre], axis=1)  # (n, 7, 3)
     share = visibility(layers, points[:, :, 0], points[:, :, 2], span).mean(axis=2)  # (L, n)
 
+    # a triangle only draws layers whose repeat lines it was cut on
+    share = np.where(reach.T, share, -1.0)
     base_layer = 0
     detail = share.copy()
     detail[base_layer] = -1.0

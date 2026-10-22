@@ -176,6 +176,13 @@ details away from image edges and prefer source dimensions already matching a su
 
 If an imported mesh is unusually large, the model panel can offer triangle reduction. Reduction changes geometry and may affect UV seams or silhouettes, so compare before/after renders and routes.
 
+The game's mesh tables use 16-bit indices, so an import with more than 65,536 distinct positions, normals, or UVs
+is refused. When **Make Game Mesh** cuts painted terrain on atlas-repeat boundaries, each triangle is cut only on
+the repeat lines of swatches that can appear on that triangle. A small swatch therefore adds detail where it is
+painted instead of subdividing the whole map. If those required cuts still exceed the triangle budget, the add-on
+keeps the smallest mesh it found and warns; lower the budget, paint small swatches less widely, or use larger
+swatches.
+
 ## Interactions and precedence
 
 Trace terrain behavior through these independent outputs:

@@ -1126,7 +1126,7 @@ def make_game_mesh(scene, budget: int):
         raise RuntimeError("The kit has no FE9 Sculpt object.")
     data = kit_data(scene) or {}
     layout = layout_of(scene)
-    swatches = tp.drawn_swatches(kit_layers(scene))
+    layers = kit_layers(scene)
     slope = float(data.get("slope_degrees", tp.SLOPE_DEGREES))
     depsgraph = bpy.context.evaluated_depsgraph_get()
     mesh = bpy.data.meshes.new_from_object(sculpt.evaluated_get(depsgraph))
@@ -1142,8 +1142,10 @@ def make_game_mesh(scene, budget: int):
     count = sum(len(p.vertices) - 2 for p in mesh.polygons)
     # Keeping the vertices where repeat lines cross stops the reduction from
     # leaving long triangles over many lines; the cuts then add a quarter fewer
-    # triangles for the same detail (measured on the Prologue).
-    period_x, period_z = tp.repeat_periods(layout, swatches)
+    # triangles for the same detail (measured on the Prologue). Only the base
+    # swatch's lines run over the whole map: a small swatch's would pin a fine
+    # grid of vertices everywhere.
+    period_x, period_z = tp.repeat_periods(layout, [])
     co = np.empty(len(mesh.vertices) * 3, np.float64)
     mesh.vertices.foreach_get("co", co)
     game = to_game(co.reshape(-1, 3) @ np.array(obj.matrix_world)[:3, :3].T + np.array(obj.matrix_world)[:3, 3])
@@ -1153,10 +1155,13 @@ def make_game_mesh(scene, budget: int):
     )
     keep = obj.vertex_groups.new(name="FE9 Repeat Crossings")
     keep.add([int(i) for i in crossings], 1.0, "REPLACE")
+    # The cut count is a floor (the repeat lines' grid) plus a share of the
+    # source triangles, and fewer source triangles can cross more lines:
+    # search the decimation target, keeping the most detailed mesh that fits.
+    attempts: dict[int, tuple[int, object]] = {}  # target -> (cut count, mesh)
+    fits = over = None  # largest target that fits, smallest that does not
     target = budget
-    reduced = None
-    cut_count = 0
-    for _attempt in range(4):
+    for _attempt in range(6):
         obj.modifiers.clear()
         obj.data = mesh
         triangulate = obj.modifiers.new("Triangulate", "TRIANGULATE")
@@ -1170,15 +1175,39 @@ def make_game_mesh(scene, budget: int):
             decimate.invert_vertex_group = True
             decimate.vertex_group_factor = 2.0
         depsgraph = bpy.context.evaluated_depsgraph_get()
-        if reduced is not None:
-            bpy.data.meshes.remove(reduced)
         reduced = bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph))
         obj.modifiers.clear()
         obj.data = reduced
-        cut_count = len(tp.seam_cut(triangles_of(obj), swatches, layout, slope_degrees=slope)[0])
-        if cut_count <= budget * 1.03 or target >= count and cut_count <= budget:
+        cut_count = len(tp.seam_cut(triangles_of(obj), layers, layout, slope_degrees=slope)[0])
+        obj.data = mesh
+        attempts[target] = (cut_count, reduced)
+        if cut_count <= budget * 1.03:
+            fits = target if fits is None else max(fits, target)
+            if target >= count or cut_count >= budget * 0.9:
+                break
+        else:
+            over = target if over is None else min(over, target)
+        if fits is not None and over is not None:
+            guess = (fits + over) / 2
+        elif fits is None:
+            guess = target * budget / cut_count * 0.97
+            low = sorted(attempts)[:2]
+            if len(low) == 2 and attempts[low[1]][0] != attempts[low[0]][0]:
+                slope_k = (attempts[low[1]][0] - attempts[low[0]][0]) / (low[1] - low[0])
+                if slope_k > 0:
+                    guess = low[0] + (budget * 0.98 - attempts[low[0]][0]) / slope_k
+        else:
+            guess = target * budget / cut_count * 0.97
+        target = min(max(int(guess), 200), count)
+        if target in attempts or (fits is not None and over is not None and over - fits < max(50, fits // 20)):
             break
-        target = max(int(target * budget / cut_count * 0.97), 200)
+    fitting = [a for a in attempts.values() if a[0] <= budget * 1.03]
+    best = max(fitting, key=lambda a: a[0]) if fitting else min(attempts.values(), key=lambda a: a[0])
+    for attempt in attempts.values():
+        if attempt is not best:
+            bpy.data.meshes.remove(attempt[1])
+    cut_count, reduced = best
+    obj.data = reduced
     bpy.data.meshes.remove(mesh)
     obj.vertex_groups.clear()
     reduced.name = GAME_MESH_NAME
