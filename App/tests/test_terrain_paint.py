@@ -107,6 +107,18 @@ class CompileTests(unittest.TestCase):
             for line in (20.0, 40.0):
                 self.assertFalse(np.any((coords.min(axis=1) < line - 1e-6) & (coords.max(axis=1) > line + 1e-6)))
 
+    def test_an_empty_layer_adds_no_cuts(self):
+        mesh = np.array([[[0, 0, 0], [0, 0, 60], [60, 0, 0]]], float)
+        narrow = tp.AtlasLayout(512, 1024, layout().swatches + [tp.Swatch("Stairs", 448, 512, 64, 128)])
+        road = np.full((64, 64), 0.5, np.float32)
+        painted = [tp.Layer("Grass", 0), tp.Layer("Road", 1, road)]
+        with_empty = painted + [tp.Layer("Stairs", 4, np.zeros((64, 64), np.float32))]
+        self.assertEqual(tp.drawn_swatches(with_empty), [0, 1])
+        self.assertEqual(len(tp.compile_paint(mesh, with_empty, narrow).positions),
+                         len(tp.compile_paint(mesh, painted, narrow).positions))
+        # a cliff layer counts even without paint: it covers steep faces
+        self.assertEqual(tp.drawn_swatches(painted + [tp.Layer("Stairs", 4, None, slopes=True)]), [0, 1, 4])
+
     def test_three_overlapping_layers_report_conflicts(self):
         mesh = grid(60)
         layers = [

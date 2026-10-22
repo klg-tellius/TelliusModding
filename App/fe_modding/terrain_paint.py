@@ -382,6 +382,22 @@ def _steep(positions: np.ndarray, slope_degrees: float) -> np.ndarray:
 # ---------------------------------------------------------------- compile
 
 
+def repeat_periods(layout: AtlasLayout, swatches) -> tuple[float, float]:
+    """Units between the x and the z lines the mesh is cut on for these
+    swatches (and the base)."""
+    return _swatch_periods(layout, sorted(set(swatches) | {layout.base}))
+
+
+def drawn_swatches(layers: list[Layer]) -> list[int]:
+    """Swatches a compile can draw: the base, every layer with paint, and
+    cliff layers. An empty layer adds no repeat lines to cut."""
+    used = {layers[0].swatch}
+    for layer in layers[1:]:
+        if layer.slopes or (layer.weights is not None and float(np.max(layer.weights)) > 1e-3):
+            used.add(layer.swatch)
+    return sorted(used)
+
+
 def seam_cut(positions: np.ndarray, swatches, layout: AtlasLayout, attrs: Optional[dict] = None, *,
              slope_degrees: float = SLOPE_DEGREES) -> tuple[np.ndarray, dict, np.ndarray]:
     """Cut the mesh on the repeat lines of the given swatches (and the
@@ -422,7 +438,7 @@ def compile_paint(
     layout.validate()
     positions = np.asarray(positions, float).reshape(-1, 3, 3)
     before = len(positions)
-    positions, attrs, steep = seam_cut(positions, [layer.swatch for layer in layers], layout, attrs,
+    positions, attrs, steep = seam_cut(positions, drawn_swatches(layers), layout, attrs,
                                        slope_degrees=slope_degrees)
 
     n = len(positions)
