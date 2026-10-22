@@ -90,11 +90,11 @@ class _AddInstanceDialog(tk.Toplevel):
         self.result = None
         body = ttk.Frame(self, padding=10)
         body.pack(fill="both", expand=True)
-        self._name = tk.StringVar(value=selected if selected in names else names[0])
+        self._object_var = tk.StringVar(value=selected if selected in names else names[0])
         self._x, self._y = tk.StringVar(value=str(tile[0])), tk.StringVar(value=str(tile[1]))
         self._angle = tk.StringVar(value="0°")
         rows = (
-            ("Object", ttk.Combobox(body, textvariable=self._name, values=names, state="readonly", width=24)),
+            ("Object", ttk.Combobox(body, textvariable=self._object_var, values=names, state="readonly", width=24)),
             ("Tile x", ttk.Spinbox(body, textvariable=self._x, from_=-128, to=127, width=8)),
             ("Tile y", ttk.Spinbox(body, textvariable=self._y, from_=-128, to=127, width=8)),
             ("Angle", ttk.Combobox(body, textvariable=self._angle, values=list(ANGLES), state="readonly", width=8)),
@@ -116,7 +116,7 @@ class _AddInstanceDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Add object", "Tile x and y are whole numbers.", parent=self)
             return
-        self.result = (self._name.get(), x, y, ANGLES[self._angle.get()])
+        self.result = (self._object_var.get(), x, y, ANGLES[self._angle.get()])
         self.destroy()
 
 

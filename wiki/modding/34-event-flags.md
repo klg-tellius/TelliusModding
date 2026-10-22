@@ -70,6 +70,14 @@ The Flags page writes and compiles the owning script immediately. It refuses to 
 
 ## Guided walkthrough
 
+<!-- screenshot 34-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Flags page with the Campaign flags, Chapter flags and Save file tabs and the flag table.](../assets/images/tutorials/screenshots/34-a-setup.png)](../assets/images/tutorials/screenshots/34-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Flags**: campaign flags (kept in the save) and chapter flags, with their names, users and the room left.</figcaption>
+</figure>
+
 ### 1. Inspect the campaign table and shared budget
 
 Open **Game Data → Flags → Campaign flags**. Read these columns:

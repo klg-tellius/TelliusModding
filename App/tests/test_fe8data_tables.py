@@ -247,6 +247,15 @@ class FieldTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fe8data.patch_character_field(self.data, 0, "weapon_ranks", "DD")
 
+    def test_character_build_and_weight_are_signed(self):
+        # retail Boyd (PID_BOLE) stores -2 (0xFE) in both: the class value minus two
+        data = fe8data.patch_character_field(self.data, 0, "build", -2)
+        data = fe8data.patch_character_field(data, 0, "weight", -2)
+        c = fe8data.read_fe8data(data).characters[0]
+        self.assertEqual((c.build, c.weight), (-2, -2))
+        with self.assertRaises(ValueError):
+            fe8data.patch_character_field(self.data, 0, "build", 200)
+
     def test_class_fields(self):
         data = fe8data.patch_class_field(self.data, 0, "categories", ["armor", "human"])
         data = fe8data.patch_class_field(data, 0, "innate_weapon", "IID_IRONSWORD")

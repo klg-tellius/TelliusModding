@@ -49,6 +49,14 @@ Objective text keys are presentation. The chapter script owns victory, defeat, s
 
 ## Guided walkthrough
 
+<!-- screenshot 27-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Map settings tab with the Grid, Lighting, Distance fog, Weather and Advanced groups.](../assets/images/tutorials/screenshots/27-a-setup.png)](../assets/images/tutorials/screenshots/27-a-setup.png)
+
+<figcaption markdown="span">The **Map settings** tab: grid size and border, line colour, lighting, distance fog, weather, battle sky and fog of war. **Save Chapter** writes them into the map.</figcaption>
+</figure>
+
 ### 1. Verify the grid and border
 
 Open **Map settings**. Record **Map size** and **Border**. The border is an inset on every edge: a `2`-tile border removes two rows/columns from each side, so the playable width and height each shrink by four.
@@ -103,6 +111,14 @@ Hard/Maniac store overrides for Normal slots 0, 1, and 3. There is no independen
 Save FE8Data and the chapter map, reopen both pages, and launch each affected difficulty. Confirm the displayed objective and defeat lines. Then trigger the original victory condition.
 
 If you want new objective logic, edit and test the chapter script in a later lesson. Do not call a text-only result “a new objective.”
+
+<!-- screenshot 27-b-result.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Chapter data tab with Identity and files, Objectives text keys and Scenes.](../assets/images/tutorials/screenshots/27-b-result.png)](../assets/images/tutorials/screenshots/27-b-result.png)
+
+<figcaption markdown="span">The **Chapter data** tab: the chapter record in FE8Data.bin, with its title, files, map music, the objective text keys per difficulty and the scene backgrounds.</figcaption>
+</figure>
 
 ## Understand every control
 

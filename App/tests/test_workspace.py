@@ -80,6 +80,49 @@ class PageHelperTests(unittest.TestCase):
         self.assertEqual(_message_group("MDIE_IKE_MAP1"), "MDIE")
 
 
+class IndexTextTests(unittest.TestCase):
+    def test_names_come_from_the_loose_common_messages(self):
+        """A name added since the last build is only in the loose Mess/common.m (the build copies it
+        into system.cmp), so the index reads that file first."""
+        from fe_modding.formats import message
+        with tempfile.TemporaryDirectory() as tmp:
+            extracted = Path(tmp) / "extracted"
+            mess = extracted / "files" / "Mess"
+            mess.mkdir(parents=True)
+            (mess / "common.m").write_bytes(message.write_messages([message.Message("MPID_TUTORIAL_SCOUT", "Scout")]))
+            index = ProjectIndex(_fake_project(extracted))
+            self.assertEqual(index._read_texts().get("MPID_TUTORIAL_SCOUT"), "Scout")
+
+
+    def test_trigger_parameters_count_as_script_references(self):
+        """An @on_death that names a character pushes nothing: its PID is a trigger parameter."""
+        from fe_modding.formats.cmb import compile_source, read_cmb, write_cmb
+        from fe_modding.project_index import _pool_text, _trigger_labels
+        source = '@on_death(pid="PID_ZAWANAR")\ndef BossDies():\n    set("BOSS_DEAD")\n'
+        script = read_cmb(write_cmb(compile_source(source).script))  # as the index reads it from disk
+        fn = script.functions[0]
+        self.assertEqual(_trigger_labels(script, fn, _pool_text(script)), ["PID_ZAWANAR"])
+
+    def test_function_names_come_from_the_saved_source(self):
+        """Script references name a saved function as the Script tab does, from its kept source."""
+        from fe_modding.formats.cmb import compile_source, write_cmb
+        from fe_modding.project_index import _saved_source_names
+        source = ('@on_talk(pid1="PID_IKE", pid2="PID_BOLE", flag=0, name="TALKED")\n'
+                  'def TutorialTalk():\n    set("TALKED")\n')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cmb = root / "extracted" / "files" / "Scripts" / "C01.cmb"
+            cmb.parent.mkdir(parents=True)
+            cmb.write_bytes(write_cmb(compile_source(source).script))
+            project = SimpleNamespace(directory=root)
+            self.assertIsNone(_saved_source_names(project, cmb, 1))  # no saved source: decompiler names
+            sidecar = root / "script_sources" / "C01.fe9s"
+            sidecar.parent.mkdir()
+            sidecar.write_text(source, encoding="utf-8")
+            self.assertEqual(_saved_source_names(project, cmb, 1), ["TutorialTalk"])
+            sidecar.write_text(source.replace("TALKED", "OTHER"), encoding="utf-8")
+            self.assertIsNone(_saved_source_names(project, cmb, 1))  # stale: it no longer compiles to the file
+
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED"), "set FE9_EXTRACTED to the extracted FE9 project")
 class ProjectIndexTests(unittest.TestCase):
     @classmethod

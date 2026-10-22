@@ -55,6 +55,14 @@ Save a chapter backup. Record the opening deployment sections and the selected e
 
 ## How the editor fits together
 
+<!-- diagram deployment -->
+<figure class="tutorial-figure" markdown="1">
+
+[![A reinforcement wave needs a deployment section, a script trigger and a once-only guard.](../assets/images/tutorials/deployment.svg)](../assets/images/tutorials/deployment.svg)
+
+<figcaption>Concept diagram, not an app screenshot. A reinforcement wave needs a deployment section, a script trigger and a once-only guard. Select the image to open it at full size.</figcaption>
+</figure>
+
 A deployment section is data, not a timer. It describes which records a loader can create. A script trigger is a timer/condition, not a unit definition. It decides when code runs. The deployment call joins them by asking the engine to load the chosen section.
 
 ```text

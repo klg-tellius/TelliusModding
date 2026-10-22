@@ -41,6 +41,14 @@ The exercise teaches the boundary between static scenery, map-character bodies, 
 
 ## How the editor fits together
 
+<!-- diagram model -->
+<figure class="tutorial-figure" markdown="1">
+
+[![A small model round trip: export, edit, import review, then pose and attack checks.](../assets/images/tutorials/model.svg)](../assets/images/tutorials/model.svg)
+
+<figcaption>Concept diagram, not an app screenshot. A small model round trip: export, edit, import review, then pose and attack checks. Select the image to open it at full size.</figcaption>
+</figure>
+
 Model-set prefixes identify different contracts:
 
 - `zbg/` scenery and most `xwp/` weapons use static mesh replacement.
@@ -54,6 +62,14 @@ Model-set prefixes identify different contracts:
 Written files go through the project backup mechanism, which keeps extracted originals. **Restore original…** becomes available when originals exist for that model folder.
 
 ## Guided walkthrough
+
+<!-- screenshot 51-viewer.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![3D Models page with zu/fig1 selected, the posed model, the Skeleton and Animations tabs and the button grid.](../assets/images/tutorials/screenshots/51-viewer.png)](../assets/images/tutorials/screenshots/51-viewer.png)
+
+<figcaption markdown="span">**Assets › 3D Models** with the Fighter battle model `zu/fig1`: preview with mesh and skeleton, animations, and the export/import buttons (**Export .glb…**, **Export .blend…**, **Import …**).</figcaption>
+</figure>
 
 ### 1. Select and document one exact set
 

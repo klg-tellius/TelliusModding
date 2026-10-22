@@ -10,6 +10,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from .. import battle_tables
 from ..exceptions import ProjectError
+from ..formats import dbx
 from ..project import ModProject
 from .changelog import ChangeLog
 from .dbx_form import DbxForm, DbxLayout
@@ -216,6 +217,13 @@ class DbxFilesViewer(EditorPanel):
             return False
         text = self._editor.get("1.0", "end-1c")
         encoded_text = text.replace("\n", self._line_ending)
+        problems = dbx.check(text)
+        if problems and not messagebox.askyesno(
+                "DBX text has problems",
+                "\n".join(problems[:12]) + ("\n…" if len(problems) > 12 else "")
+                + "\n\nThe fields after a problem are lost to the Form and Layout tabs, and the game may not "
+                  "read them either. Save anyway?", icon="warning", default="no", parent=self):
+            return False
         try:
             if self._new:
                 battle_tables.add_entry(self._project, self._path, encoded_text)

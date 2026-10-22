@@ -49,6 +49,14 @@ Make a backup before importing. Prop assets and the shared map texture pack live
 
 ## How the editor fits together
 
+<!-- diagram terrain-footprint -->
+<figure class="tutorial-figure" markdown="1">
+
+[![A prop's visible footprint and the terrain tiles painted under it.](../assets/images/tutorials/terrain-footprint.svg)](../assets/images/tutorials/terrain-footprint.svg)
+
+<figcaption>Concept diagram, not an app screenshot. A prop's visible footprint and the terrain tiles painted under it. Select the image to open it at full size.</figcaption>
+</figure>
+
 Build's prop list contains model-backed, non-terrain object definitions in the current map. Selecting one and clicking a cell creates an instance referencing that definition. Several instances can share one definition and model.
 
 **Add from another map...** copies the other map's definition and associated model resources into the current map. It is safer than copying a `.gs` model alone because skeleton, animation, texture IDs, and flags can be part of the contract.
@@ -58,6 +66,14 @@ Build's prop list contains model-backed, non-terrain object definitions in the c
 **Game Data → Map Objects** edits saved object definitions directly in `map.cmp`. It does not edit open unsaved Build state. Saving an older Build buffer afterward can overwrite those direct changes, so save or discard Build work before using that panel.
 
 ## Guided walkthrough
+
+<!-- screenshot 24-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with the Place prop tool and the prop list, angle and import buttons in the panel.](../assets/images/tutorials/screenshots/24-a-setup.png)](../assets/images/tutorials/screenshots/24-a-setup.png)
+
+<figcaption markdown="span">**Place prop**: choose a prop of this map (or add one from another map or a .glb), its angle, then click a tile. A prop is only a picture; paint its footprint with Paint terrain.</figcaption>
+</figure>
 
 ### 1. Place and inspect an existing prop
 
@@ -114,6 +130,14 @@ Return to Build and reopen the phase after any Map Objects edit so you do not re
 Turn on **Terrain**, **Heights**, and **Grid**. Paint appropriate terrain under the visual footprint. For a solid obstacle, use a terrain definition impassable to the intended movement types or configure directional exits. For a bridge or platform, align Units/Ground/Roof heights deliberately.
 
 Test at least one infantry class and one flier. A prop model never makes its cells impassable merely by occupying space.
+
+<!-- screenshot 24-b-map-objects.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Map Objects page with the prop list across maps and the selected prop's details.](../assets/images/tutorials/screenshots/24-b-map-objects.png)](../assets/images/tutorials/screenshots/24-b-map-objects.png)
+
+<figcaption markdown="span">**Assets › Map Objects** lists every prop of every chapter map. Select one to export it, edit its bounds and flags, or **Add to this map**.</figcaption>
+</figure>
 
 ## Understand every control
 

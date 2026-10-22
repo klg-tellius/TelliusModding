@@ -759,8 +759,8 @@ def _read_character(data: bytes, index: int, base: Optional[int] = None) -> Char
         aid_unpromoted=_resolve(data, aid_un),
         aid_promoted=_resolve(data, aid_pr),
         level=rec[0x36],
-        build=rec[0x37],
-        weight=rec[0x38],
+        build=_signed(rec[0x37:0x38])[0],  # signed: retail PID_BOLE has build and weight -2 (0xFE)
+        weight=_signed(rec[0x38:0x39])[0],
         stat_bonus=_signed(rec[0x39:0x41]),  # signed: retail PID_KILROY has Def -1 (0xFF)
         growth=list(rec[0x41:0x49]),
         fixed_growth_start=list(rec[0x49:0x51]),
@@ -1246,9 +1246,9 @@ def patch_character_field(data: bytes, index: int, field: str, value) -> bytes:
     - ``jid``, ``sid0``..``sid2``: an existing label or None;
     - ``weapon_ranks``: a 9-character rank string (see
       :data:`WEAPON_RANK_CHARS`) or None for the class's ranks;
-    - ``level``, ``build``, ``weight``, ``start_transform_gauge``,
-      ``biorhythm_phase`` (0-255), ``roster_order``, ``biorhythm_pattern``
-      (0-65535);
+    - ``level``, ``start_transform_gauge``, ``biorhythm_phase`` (0-255),
+      ``build``, ``weight`` (-128..127), ``roster_order``,
+      ``biorhythm_pattern`` (0-65535);
     - ``stat_bonus0..7`` (-128..127), ``growth0..7``, ``fixed_growth_start0..7`` (0-255)."""
     off = table_start(data, "character") + index * CHARACTER_RECORD_SIZE
     if field == "pid":
@@ -1263,7 +1263,9 @@ def patch_character_field(data: bytes, index: int, field: str, value) -> bytes:
         ranks = None if value is None or not str(value).strip() else _weapon_rank_string(value)
         return _patch_label_field(data, off + 0x18, ranks, append=True)
     out = bytearray(data)
-    if field in CHARACTER_BYTE_FIELDS:
+    if field in ("build", "weight"):
+        out[off + CHARACTER_BYTE_FIELDS[field]] = _byte(value, -128, 127)
+    elif field in CHARACTER_BYTE_FIELDS:
         out[off + CHARACTER_BYTE_FIELDS[field]] = _byte(value)
     elif field in ("roster_order", "biorhythm_pattern"):
         if not 0 <= int(value) <= 0xFFFF:

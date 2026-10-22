@@ -58,6 +58,14 @@ These choices are independent. “Keep map texturing” does not move tactical h
 
 ## Guided walkthrough
 
+<!-- screenshot 25-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![3D Models page with the zmap/bmap01 set selected and the terrain mesh in the preview.](../assets/images/tutorials/screenshots/25-a-setup.png)](../assets/images/tutorials/screenshots/25-a-setup.png)
+
+<figcaption markdown="span">**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export .glb…** writes the terrain (and its `_mask.png`), **Import .glb…** opens the import review before anything is written.</figcaption>
+</figure>
+
 ### 1. Export and archive the reference
 
 Open **Assets → 3D Models**, select the exact `zmap/<map>` terrain entry, and export it as GLB. Keep an untouched copy. If the exporter writes `<name>_mask.png`, keep it beside the reference.

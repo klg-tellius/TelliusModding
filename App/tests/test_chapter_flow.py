@@ -231,6 +231,32 @@ class FlowEditorTests(unittest.TestCase):
             flow.remove(5)                         # retail chapters are routed around, not removed
 
 
+
+class WarRecordLabelTests(unittest.TestCase):
+    """An added chapter gets the ending war record's MED_CHAPnn_TAG / _TITLE / MED_DIED_CHAPnn labels."""
+
+    def test_labels_follow_the_retail_split(self):
+        from fe_modding import chapters
+        self.assertEqual(chapters.war_record_texts(33, "Tutorial: Side Path"),
+                         {"MED_CHAP33_TAG": "Tutorial", "MED_CHAP33_TITLE": "Side Path",
+                          "MED_DIED_CHAP33": "Fell in Tutorial"})
+        self.assertEqual(chapters.war_record_texts(34, "Old Fort")["MED_CHAP34_TAG"], "Chapter 34")
+
+    def test_added_then_removed(self):
+        import tempfile
+        from fe_modding import chapters
+        from pathlib import Path
+        from fe_modding.formats import message
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ending.m"
+            path.write_bytes(message.write_messages([message.Message("MED_CHAP02_TAG", "Chapter 1")]))
+            path.write_bytes(chapters._with_war_record(path, 33, "Tutorial: Side Path"))
+            keys = [m.speaker for m in message.read_messages_path(path)]
+            self.assertEqual(keys, ["MED_CHAP02_TAG", "MED_CHAP33_TAG", "MED_CHAP33_TITLE", "MED_DIED_CHAP33"])
+            path.write_bytes(chapters._without_war_record(path, 33))
+            self.assertEqual([m.speaker for m in message.read_messages_path(path)], ["MED_CHAP02_TAG"])
+            self.assertIsNone(chapters._without_war_record(path, 33))
+
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
 class AddStoryChapterTests(unittest.TestCase):
     """add_story_chapter on a copy of the pieces of a real extraction it touches."""

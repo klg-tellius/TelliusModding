@@ -50,6 +50,14 @@ The sell shop has no authored stock list: it enumerates the party's owned instan
 
 ## Guided walkthrough
 
+<!-- screenshot 46-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Shops tab with the difficulty choice, armory and vendor lists and the forge section.](../assets/images/tutorials/screenshots/46-a-setup.png)](../assets/images/tutorials/screenshots/46-a-setup.png)
+
+<figcaption markdown="span">A chapter's **Shops** tab: the armory and vendor stock per difficulty, the forge grid, **Copy to other difficulties** and **Save Shops**.</figcaption>
+</figure>
+
 ### 1. Confirm the chapter and difficulty owner
 
 Select the chapter, open **Shops**, and read the banner. It names the chapter number, active `shopitem_*.bin`, and `…_Cnn` section suffix. Change the **Difficulty** picker and verify which plan you are viewing. Easy intentionally uses Normal data.

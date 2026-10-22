@@ -66,6 +66,14 @@ World-map narration is not a separate text database. It is message content using
 
 ## Guided walkthrough
 
+<!-- screenshot 40-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Conversations page with the chapter message files and the shared message files.](../assets/images/tutorials/screenshots/40-a-setup.png)](../assets/images/tutorials/screenshots/40-a-setup.png)
+
+<figcaption markdown="span">**Assets › Conversations**: every message file, the chapters' and the shared ones (base conversations, world-map narration, support talks).</figcaption>
+</figure>
+
 ### 1. Edit an existing C support without changing identity
 
 Open **Game Data → Supports → Pairs** and find the selected pair. The **Conversations** column uses `C`, `B`, `A` for present ranks and a dot for missing ones. Double-click/open the owning character, choose its **Supports** tab, select the partner, and click the existing **C** conversation.

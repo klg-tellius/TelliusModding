@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Sound effects", "MusyX", "Audio"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/48-sound-effects.md"
@@ -45,6 +45,14 @@ A group is a load boundary. A sound is available only while its group is residen
 
 ## Guided walkthrough
 
+<!-- screenshot 48-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Sound effects page with the cue list and the selected cue's parameters.](../assets/images/tutorials/screenshots/48-a-setup.png)](../assets/images/tutorials/screenshots/48-a-setup.png)
+
+<figcaption markdown="span">**Assets › Sound Effects** with a cue selected: its sound id, volume, pan, range and group in `gcfesnd.bin`, preview and replace.</figcaption>
+</figure>
+
 ### Inspect before replacing
 
 Search by cue text or numeric sound ID and optionally filter **Group**. Select the cue. Read its sharing count: several names can resolve to the same original sound. Double-click or press **Play**, then read **Sound macro** from top to bottom. Look for note changes, random note, waits, sample start/stop, layers, ADSR, and loops.
@@ -59,7 +67,15 @@ Reselect the cue. Its name and caller identity remain stable, but its sound ID m
 
 ### Add a distinct cue
 
-Choose **Add sound effect…** and enter a unique uppercase ASCII `SFX_*` name. Select a group that is loaded in the target scene. Set:
+<!-- screenshot 48-c-import.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Sound effect import dialog with the audio file, cue name, sound group, warning, Add and Cancel.](../assets/images/tutorials/screenshots/48-c-import.png)](../assets/images/tutorials/screenshots/48-c-import.png)
+
+<figcaption markdown="span">**Add…** on Sound Effects with a 0.6-second test tone made for this lesson: **Audio file** (*32000 Hz, 0.60 s (mono), about 11 KB once encoded*), **Cue name** `SFX_TUTORIAL_CHIME`, the **Sound group** it is loaded with, **Volume**, **Pan**, **Range**, and the warning that new sounds are experimental. **Add** encodes it; this capture stops before.</figcaption>
+</figure>
+
+Choose **Add sound effect…**. In the dialog, **Audio file** › **Browse...** picks the audio (*Choose audio*); the line under it gives its rate, length and encoded size, e.g. *32000 Hz, 0.60 s (mono), about 11 KB once encoded*. Enter a unique uppercase ASCII **Cue name** (`SFX_TUTORIAL_CHIME`). **Sound group** says which sounds are loaded together: a sound is only available while its group is loaded, and the group holding the menu sounds (SYS) is the safest choice for a new cue. Set:
 
 - **Volume** `0–127`: cue default gain; begin near a comparable retail sound.
 - **Pan** `0–127`: 0 left, 64 center, 127 right. Local preview does not prove it.
@@ -80,6 +96,14 @@ Trigger the cue beside music, voice, and other effects. Compare loudness, timing
 - **Replace audio…:** preserves the cue name and writes a new backing effect.
 - **Add sound effect…:** adds a new cue and backing effect with simple generated macro.
 - **Delete:** removes only a project-added cue; its appended bank content remains, and retail cues cannot be deleted.
+- **Sound macro** messages: *No FX entry for this sound id.* when no bank has an effect for the cue's sound id; *Sequenced song N (gcfesnd.slib): no FX macro.* for ids above 255, which are sequenced songs.
+- **Add** / **Replace** (dialog): encodes and writes; *Encoding...* shows while it runs (roughly twice the clip's length). **Cancel** closes without writing.
+
+## Things to try next
+
+1. **Replace a menu sound.** Select `SFX_SYS_SELECT1`, **Replace audio...** with a short click, and listen in the title menu after a build.
+2. **Group choice.** Before adding a cue for a battle, filter **Group** to see which group the retail battle sounds use, and add yours to that one.
+3. **Read a macro.** Compare the **Sound macro** of a retail cue with the generated one of your added cue.
 
 ## Interactions and precedence
 
