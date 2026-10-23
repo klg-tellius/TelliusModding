@@ -22,6 +22,7 @@ ROLL_TRUE_HIT = {US: 0x8000CD88, EU: 0x8000CEB0, JP: 0x8000CD58}
 
 G_COMBAT = "Combat rules"
 G_PROCS = "Skill activation"
+G_TRIANGLE = "Triangle Attack"
 
 
 def _word(value: int) -> bytes:
@@ -58,6 +59,37 @@ CATALOG.add(Patch(
     "Replaces the two-roll averaged 'true hit' with one plain roll, so displayed hit % is the real chance.",
     versions={v: (Edit(a, _word(ppc.bl(a, ROLL_TRUE_HIT[v])), _word(ppc.bl(a, ROLL_PERCENT[v]))),)
               for v, a in _TRUE_HIT_SITE.items()}))
+
+
+# -- Triangle Attack -----------------------------------------------------------------------------
+# check_skill_formation_condition has two paths. SID_TRI_A checks SID_HIGHER on each of its three
+# adjacent participants. SID_TRI_B requires weapon type 3 (bow), confirms that every participant's
+# equipped weapon reaches the target, then checks that the target lies inside their triangle.
+# These branches are at the same offsets in all three retail builds.
+_TRIANGLE_A_PROMOTION_SITE = {US: 0x801A401C, EU: 0x801A6454, JP: 0x801A1DD0}
+_TRIANGLE_B_WEAPON_SITE = {US: 0x801A41DC, EU: 0x801A6614, JP: 0x801A1F90}
+_TRIANGLE_B_GEOMETRY_SITE = {US: 0x801A42A0, EU: 0x801A66D8, JP: 0x801A2054}
+
+CATALOG.add(Patch(
+    "triangle.a_allow_unpromoted", G_TRIANGLE, "Triangle A: allow unpromoted units",
+    "Removes the SID_HIGHER requirement from the adjacent, one-range Triangle Attack used by "
+    "Elincia, Tanith and Marcia. The three units still need SID_TRI_A and valid one-range weapons.",
+    versions={v: (Edit(a, _word(0x4082000C), _word(ppc.b(a, a + 0x0C))),)
+              for v, a in _TRIANGLE_A_PROMOTION_SITE.items()}))
+
+CATALOG.add(Patch(
+    "triangle.b_allow_any_weapon", G_TRIANGLE, "Triangle B: allow any weapon type",
+    "Removes the bow-only check from the ranged Triangle Attack used by Oscar, Boyd and Rolf. "
+    "Every participant must still have a valid equipped weapon that can reach the target.",
+    versions={v: (Edit(a, _word(0x4182000C), _word(ppc.b(a, a + 0x0C))),)
+              for v, a in _TRIANGLE_B_WEAPON_SITE.items()}))
+
+CATALOG.add(Patch(
+    "triangle.b_relaxed_formation", G_TRIANGLE, "Triangle B: relax formation",
+    "Removes the requirement that the target lie inside the triangle formed by the three units. "
+    "All three must still have SID_TRI_B and be able to reach the target with their equipped weapons.",
+    versions={v: (Edit(a, _word(0x3C605555), _word(ppc.b(a, a + 0x124))),)
+              for v, a in _TRIANGLE_B_GEOMETRY_SITE.items()}))
 
 
 # Weapon effectiveness doubles the attacker's Atk (`slwi r0,r0,1` in compute_forecast_stats); the

@@ -293,6 +293,32 @@ class RetailCatalogTests(unittest.TestCase):
         if not found:
             self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
 
+    def test_triangle_attack_options_patch_the_formation_checks(self):
+        option_ids = (
+            "triangle.a_allow_unpromoted",
+            "triangle.b_allow_any_weapon",
+            "triangle.b_relaxed_formation",
+        )
+        found = 0
+        for code in entries.ALL:
+            path = RETAIL_DIR / f"{code}.dol"
+            if not path.is_file():
+                continue
+            found += 1
+            for option_id in option_ids:
+                with self.subTest(code=code, option=option_id):
+                    dol = Dol.open(path)
+                    before = dol.sha1()
+                    option = CATALOG.entries[option_id]
+                    session = Session(dol, versions.VERSIONS[code], Dol.open(path).read)
+                    self.assertEqual(session.status(option).state, State.ORIGINAL)
+                    session.set_patch(option, True)
+                    self.assertEqual(session.status(option).state, State.APPLIED)
+                    session.set_patch(option, False)
+                    self.assertEqual(dol.sha1(), before)
+        if not found:
+            self.skipTest(f"no retail DOLs in {RETAIL_DIR}")
+
     def test_promotion_magic_choices_gain_separate_rank_handlers(self):
         patch = CATALOG.entries["promotion.anima_weapon_choice"]
         found = 0
