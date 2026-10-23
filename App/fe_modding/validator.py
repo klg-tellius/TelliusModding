@@ -372,11 +372,20 @@ def validate_project(project: ModProject, flow=None) -> Report:
     reachable = None
     if flow is not None and flow.available:
         reachable, current = set(), 0
+        record_ids, missing_reported = {r.chapter_id for r in records}, False
         while current not in reachable and current < FIRST_SPECIAL_CHAPTER:
             reachable.add(current)
             if current == GAME_CLEARED:
                 break
-            current = flow.next_of(current)
+            nxt = flow.next_of(current)
+            if nxt != GAME_CLEARED and nxt not in record_ids and not missing_reported:
+                missing_reported = True
+                # an added chapter taken out of the story keeps the default successor (its number + 1)
+                issues.append(Issue(ERROR, "Chapters", "main.dol",
+                                    f"Chapter {current:02d} leads to chapter {nxt:02d}, which does not exist: the "
+                                    f"game cannot load it after {current:02d}'s victory. Pick another next chapter.",
+                                    ("chapter", f"{current:02d}") if current else ()))
+            current = nxt
         clears = len(reachable - {0, GAME_CLEARED})
         if clears > CLEAR_HISTORY_SLOTS:
             issues.append(Issue(WARNING, "Chapters", "story flow",

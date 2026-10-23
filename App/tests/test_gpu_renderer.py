@@ -17,7 +17,8 @@ def _canvas(yaw=0.6, pitch=-0.4, zoom=1.0):
     return canvas
 
 
-def _quad(z, texture=None, color=(200, 50, 50), alpha=1.0, blend_mode="normal", layers=(), size=1.0, uv_scale=1.0):
+def _quad(z, texture=None, color=(200, 50, 50), alpha=1.0, blend_mode="normal", layers=(), size=1.0,
+          uv_scale=1.0, shade=1.0):
     """Two triangles facing the default camera (+Z normal points away from it)."""
     a, b, c, d = (-size, -size, z), (size, -size, z), (size, size, z), (-size, size, z)
     s = uv_scale
@@ -38,6 +39,7 @@ def _quad(z, texture=None, color=(200, 50, 50), alpha=1.0, blend_mode="normal", 
                 texture_layers=tri_layers,
                 alpha=alpha,
                 blend_mode=blend_mode,
+                shade=shade,
             )
         )
     return tris
@@ -74,6 +76,10 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
     def test_flat_color(self):
         self._compare(_quad(0.0))
 
+    def test_magic_fade_shade(self):
+        self._compare(_quad(0.0, shade=60.0 / 255.0))
+        self._compare(_quad(0.0, texture=_checker(), shade=60.0 / 255.0), tolerance=0.08)
+
     def test_textured_wrap_modes(self):
         tex = _checker()
         for wrap in (0, 1, 2):
@@ -83,6 +89,22 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
 
     def test_single_texture_path(self):
         self._compare(_quad(0.0, texture=_checker()), tolerance=0.08)
+
+    def test_map_water_layers(self):
+        water = np.zeros((8, 8, 4), np.uint8)
+        water[..., :3] = (20, 90, 140)
+        water[:4, ..., :3] = (60, 140, 180)
+        water[..., 3] = 255
+        fade = np.zeros((8, 8, 4), np.uint8)
+        fade[:, 4:] = 204  # 0.8 on one side: lighter and see-through there
+        layers = (
+            model_viewer._TextureLayer(((0, 0),) * 3, water, "diffuse"),
+            model_viewer._TextureLayer(((0, 0),) * 3, water, "water_layer2"),
+            model_viewer._TextureLayer(((0, 0),) * 3, fade, "water_fade"),
+        )
+        tris = _quad(0.5, color=(150, 120, 60))  # the bank under the water
+        tris += _quad(0.0, layers=layers, alpha=model_viewer.MAP_WATER_ALPHA)
+        self._compare(tris, tolerance=0.08)
 
     def test_depth_translucent_and_additive(self):
         tris = _quad(0.5, color=(30, 200, 30))
@@ -142,3 +164,30 @@ class GpuRendererMatchesCpuTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MapWaterLayerTest(unittest.TestCase):
+    """The ``map_water`` callback as the CPU sampler draws it (GRAPHICS_NOTES "Map water")."""
+
+    def test_layers_average_and_fade(self):
+        image = np.zeros((2, 2, 4), np.uint8)
+        image[..., :3], image[..., 3] = (100, 100, 100), 255
+        image[1, :, :3] = (200, 200, 200)
+        fade = np.zeros((2, 2, 4), np.uint8)
+        fade[..., :3] = 204
+        uv_top, uv_bottom = ((0.25, 0.25),) * 3, ((0.25, 0.75),) * 3
+        layers = (
+            model_viewer._TextureLayer(uv_top, image, "diffuse"),
+            model_viewer._TextureLayer(uv_bottom, image, "water_layer2"),
+            model_viewer._TextureLayer(uv_top, fade, "water_fade"),
+        )
+        w = np.full((1, 1), 1.0 / 3.0)
+        rgba = model_viewer._sample_texture_layers(layers, w, w, w)
+        self.assertAlmostEqual(rgba[0, 0, 0], (100 + 200) / 2 + 204 / 2)
+        self.assertAlmostEqual(rgba[0, 0, 3], 255 - 204)
+
+    def test_water_uvs(self):
+        point = (16.0, 3.0, 8.0)
+        self.assertEqual(model_viewer._water_uv("diffuse", point), (1.0, 0.75))
+        self.assertEqual(model_viewer._water_uv("water_layer2", point), (1.0, 0.25))
+        self.assertEqual(model_viewer._water_uv("water_fade", point), (16.0 / 640.0, 8.0 / 640.0))

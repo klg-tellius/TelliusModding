@@ -920,7 +920,9 @@ class StatsEditor(EditorPanel):
 
         self._heading(parent, "Movement and build", row)
         row += 1
-        for label, field, note in (("Movement", "movement", ""), ("Build (Con)", "build", ""),
+        for label, field, note in (("Movement", "movement",
+                                    f"Effective Movement is capped at {fe8data.MAX_MOVEMENT} by the game."),
+                                   ("Build (Con)", "build", ""),
                                    ("Weight", "weight", ""),
                                    ("Skill capacity", "skill_capacity", "The capacity skills fill (0-255)."),
                                    ("Vision", "vision", "Fog-of-war sight range in tiles; a Torch adds to it.")):
@@ -931,7 +933,9 @@ class StatsEditor(EditorPanel):
             offset = fe8data.CLASS_BYTE_FIELDS[field]
             form.add(entry, label, var,
                      lambda o=offset: str(fe8data.record_bytes(self._data, "class", index)[o]),
-                     lambda data, v, f=field: patch(data, index, f, _number(v, 0, 255)))
+                     lambda data, v, f=field: patch(
+                         data, index, f,
+                         _number(v, 0, fe8data.MAX_MOVEMENT if f == "movement" else 255)))
             row += 1
         tip(ttk.Label(parent, text="Movement type"), "Picks the terrain cost column (Terrain tab).").grid(
             row=row, column=0, sticky="w", pady=1)

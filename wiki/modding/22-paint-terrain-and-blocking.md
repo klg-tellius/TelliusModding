@@ -38,6 +38,14 @@ Do not alter global terrain definitions during the first pass. First prove that 
 
 ## How the editor fits together
 
+<!-- diagram terrain -->
+<figure class="tutorial-figure" markdown="1">
+
+[![What you see (props), where you walk (terrain tiles) and where you stand (tile heights) are separate layers.](../assets/images/tutorials/terrain.svg)](../assets/images/tutorials/terrain.svg)
+
+<figcaption>Concept diagram, not an app screenshot. What you see (props), where you walk (terrain tiles) and where you stand (tile heights) are separate layers. Select the image to open it at full size.</figcaption>
+</figure>
+
 The Build tab combines several resources on one canvas:
 
 - **Map image** and **Props** show presentation.
@@ -50,6 +58,14 @@ A prop does not automatically block the tiles it covers. Painting an obstacle do
 **Save Chapter** writes the edited chapter resources. **Undo** and **Redo** operate on the current Build-tab history; opening another map clears that history. **Play…** loads the current saved chapter state for an app-level movement test.
 
 ## Guided walkthrough
+
+<!-- screenshot 22-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with the Paint terrain tool, the terrain overlay on the map and the terrain type list in the panel.](../assets/images/tutorials/screenshots/22-a-setup.png)](../assets/images/tutorials/screenshots/22-a-setup.png)
+
+<figcaption markdown="span">**Paint terrain** with the **Terrain** layer on: pick a terrain type in the panel, then click or drag over tiles (**Fill a rectangle** paints a box). The colours are terrain types, not the picture.</figcaption>
+</figure>
 
 ### 1. Lock the chapter context
 

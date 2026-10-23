@@ -95,8 +95,8 @@ class NewMessageDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=12)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Message ID").grid(row=0, column=0, sticky="w")
-        self._name = tk.StringVar(value=initial_id)
-        entry = ttk.Entry(body, textvariable=self._name, width=52)
+        self._id_var = tk.StringVar(value=initial_id)
+        entry = ttk.Entry(body, textvariable=self._id_var, width=52)
         entry.grid(row=1, column=0, sticky="ew", pady=(2, 10))
         ttk.Label(body, text="Message text").grid(row=2, column=0, sticky="w")
         self._text = tk.Text(body, width=58, height=7, wrap="word")
@@ -112,5 +112,5 @@ class NewMessageDialog(tk.Toplevel):
         self.wait_window()
 
     def _accept(self) -> None:
-        self.result = (self._name.get().strip(), self._text.get("1.0", "end-1c"))
+        self.result = (self._id_var.get().strip(), self._text.get("1.0", "end-1c"))
         self.destroy()

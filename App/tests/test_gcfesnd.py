@@ -59,6 +59,16 @@ class SfxCueTests(unittest.TestCase):
         with self.assertRaises(gcfesnd.GcfesndError):
             gcfesnd.read_sfx_cues(bytes(data))
 
+    def test_reads_numeric_sfx_event_table(self):
+        names = b"SFX_FIRE1\0SFX_FIRE2\0"
+        table_size = 4 + 2 * 8
+        body = struct.pack(">IIIII", 2, 1000, table_size, 1010, table_size + 10) + names
+        section_names = b"SFXTable\0"
+        tail = struct.pack(">II", 0, 0) + section_names
+        data = struct.pack(">8I", 32 + len(body) + len(tail), len(body), 0, 1, 0, 0, 0, 0) + body + tail
+        self.assertEqual([(entry.event_code, entry.name) for entry in gcfesnd.read_sfx_table(data)],
+                         [(1000, "SFX_FIRE1"), (1010, "SFX_FIRE2")])
+
 
 def _container(bgm, sfx_names, outside=None):
     """A gcfesnd.bin with its header and relocation table: bgm is a list of

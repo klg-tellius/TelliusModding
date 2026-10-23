@@ -81,7 +81,7 @@ class FontViewer(EditorPanel):
                        if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]
         self._pending: dict[str, bytes] = {}  # font name -> unsaved GCF bytes
         self._loaded: dict[str, GameFont] = {}
-        self._name: Optional[str] = None
+        self._font_name: Optional[str] = None
         self._dirty = False
         self._photos: dict[str, ImageTk.PhotoImage] = {}  # kept alive while shown
         self._build_widgets()
@@ -191,19 +191,19 @@ class FontViewer(EditorPanel):
         selection = self._list.selection()
         if not selection:
             return
-        self._name = selection[0]
+        self._font_name = selection[0]
         try:
-            font = self._font(self._name)
+            font = self._font(self._font_name)
         except (OSError, ValueError) as exc:
-            messagebox.showerror("Could not read font", f"{self._name}: {exc}", parent=self)
+            messagebox.showerror("Could not read font", f"{self._font_name}: {exc}", parent=self)
             return
         self._sheet_box.configure(to=font.sheet_count - 1)
         self._sheet.set(0)
-        self._sample.set(SAMPLES[_base(self._name)])
+        self._sample.set(SAMPLES[_base(self._font_name)])
         self._refresh()
 
     def _refresh(self) -> None:
-        name = self._name
+        name = self._font_name
         if name is None:
             return
         font = self._font(name)
@@ -220,16 +220,16 @@ class FontViewer(EditorPanel):
         self._draw_sheet()
 
     def _draw_sample(self) -> None:
-        if self._name is None:
+        if self._font_name is None:
             return
-        photo = ImageTk.PhotoImage(render_sample(self._font(self._name), self._sample.get()))
+        photo = ImageTk.PhotoImage(render_sample(self._font(self._font_name), self._sample.get()))
         self._photos["sample"] = photo
         self._sample_label.configure(image=photo)
 
     def _draw_sheet(self) -> None:
-        if self._name is None:
+        if self._font_name is None:
             return
-        font = self._font(self._name)
+        font = self._font(self._font_name)
         index = min(max(0, self._sheet.get()), font.sheet_count - 1)
         sheet = font.sheet(index)
         shown = Image.merge("RGBA", (sheet, sheet, sheet, Image.new("L", sheet.size, 255)))
@@ -244,33 +244,33 @@ class FontViewer(EditorPanel):
 
     # -- actions -------------------------------------------------------------------
     def _import(self) -> None:
-        if self._name is None:
+        if self._font_name is None:
             return
-        dialog = ImportDialog(self, self._name, self._font(self._name))
+        dialog = ImportDialog(self, self._font_name, self._font(self._font_name))
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        self._pending[self._name] = dialog.result.data
-        self._loaded.pop(self._name, None)
+        self._pending[self._font_name] = dialog.result.data
+        self._loaded.pop(self._font_name, None)
         self._dirty = True
         self._save_button.configure(state="normal")
         self._revert_button.configure(state="normal")
         result = dialog.result
-        self._status.configure(text=f"{self._name}: {len(result.replaced)} glyphs replaced, "
+        self._status.configure(text=f"{self._font_name}: {len(result.replaced)} glyphs replaced, "
                                     f"{len(result.added)} added from {dialog.source.name} at {result.size} px. "
                                     "Save to write the font file.")
         self._refresh()
 
     def _export(self) -> None:
-        if self._name is None:
+        if self._font_name is None:
             return
         folder = filedialog.askdirectory(parent=self, title="Export font sheets to")
         if not folder:
             return
-        font = self._font(self._name)
+        font = self._font(self._font_name)
         for index in range(font.sheet_count):
-            font.sheet(index).save(Path(folder) / f"{self._name}_{index:02d}.png")
-        self._status.configure(text=f"Exported {font.sheet_count} sheets of {self._name}.")
+            font.sheet(index).save(Path(folder) / f"{self._font_name}_{index:02d}.png")
+        self._status.configure(text=f"Exported {font.sheet_count} sheets of {self._font_name}.")
 
     def _save(self) -> None:
         saved = []
@@ -309,7 +309,7 @@ class FontViewer(EditorPanel):
         self._refresh()
 
     def _restore(self) -> None:
-        name = self._name
+        name = self._font_name
         if name is None:
             return
         path = self._path(name)
@@ -339,7 +339,7 @@ class ImportDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.result: Optional[fe9_font.ImportResult] = None
         self.source: Optional[Path] = None
-        self._name, self._base = name, base
+        self._font_name, self._base = name, base
         self._pending_job = None
         self._photos = []
         body = ttk.Frame(self, padding=12)

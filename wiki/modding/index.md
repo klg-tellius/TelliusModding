@@ -59,7 +59,7 @@ Start with **What you will make** and create the named checkpoint in **Before yo
 
 Older lessons retain their compact **Route**, **Steps at a glance**, and **Check your result** sections until their track is migrated. Treat those pages as an introduction rather than a complete editor reference.
 
-Images are original explanatory diagrams, clearly labeled as such, rather than screenshots. Select one to enlarge it. Example IDs such as `PID_TUTORIAL_GUARD` are placeholders to create and check for uniqueness, not records guaranteed to exist in your disc. Features labeled **Untested in game** keep that status until verified in Dolphin; the app preview alone does not establish it.
+Screenshots are taken from the real app on a disposable practice project and show the editor state named in their caption, not in-game behaviour; concept diagrams are labelled as such. Select an image to enlarge it. Example IDs such as `PID_TUTORIAL_GUARD` are placeholders to create and check for uniqueness, not records guaranteed to exist in your disc. Features labeled **Untested in game** keep that status until verified in Dolphin; the app preview alone does not establish it.
 
 ### Terms you will encounter
 
@@ -90,6 +90,8 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 3. [Save changes and restore originals](03-saving-and-restoring.md)
 4. [Set up Dolphin and build the game](04-dolphin-setup.md)
 5. [Check a project and fix problems](05-check-project.md)
+68. [Find where a record is used](68-find-references.md)
+80. [Use menus, shortcuts and preferences](80-menus-shortcuts-preferences.md)
 
 ### Plan a campaign
 
@@ -97,6 +99,8 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 7. [Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)
 8. [Create a campaign skeleton](08-new-campaign-wizard.md)
 9. [Plan around campaign limits](09-campaign-limits.md)
+65. [Manage chapter parts and phases](65-chapter-parts-and-phases.md)
+77. [Set deployment slots, forced units and bonus EXP](77-preparations-and-bonus-exp.md)
 
 ### Build the cast and shared rules
 
@@ -106,6 +110,9 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 13. [Create supports and conversations](13-supports.md)
 14. [Recruit by talk and make a boss](14-recruitment-and-bosses.md)
 15. [Remove records without corrupting saves](15-remove-records.md)
+67. [Edit data in bulk outside the app](67-bulk-edit.md)
+74. [Make a laguz unit](74-laguz-units.md)
+75. [Tune staves and status effects](75-staves-and-status.md)
 16. [Create and link a class](16-classes.md)
 17. [Create an item or weapon](17-items-and-weapons.md)
 18. [Edit and redistribute skills](18-skills.md)
@@ -118,6 +125,7 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 22. [Paint terrain and block movement](22-paint-terrain-and-blocking.md)
 23. [Edit tile heights and slopes](23-tile-heights.md)
 24. [Place, copy, and import props](24-map-props.md)
+76. [Add doors, chests and keys](76-doors-chests-keys.md)
 25. [Replace a terrain mesh](25-terrain-mesh.md)
 26. [Import water and set its flow](26-water.md)
 27. [Set fog, lighting, border, and objectives](27-map-settings.md)
@@ -130,17 +138,23 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 31. [Set inventory, drops, rings, and flags](31-unit-inventory-and-flags.md)
 32. [Add a reinforcement wave](32-reinforcements.md)
 33. [Edit and compile event scripts](33-script-editor.md)
+66. [Place script zones and rolling rocks on the map](66-script-zones-and-rocks.md)
+78. [Script a map cutscene](78-map-cutscene.md)
 34. [Use campaign and chapter flags](34-event-flags.md)
 35. [Build common chapter events](35-event-recipes.md)
 36. [Edit startup helpers and endings](36-shared-scripts.md)
+
+Additional walkthrough: [Create a hub and plan chapter unlocks](hub-chapters.md), including entrance tiles, persistent progression flags, and the current limits of conditional Visit/marker visibility.
 
 ### Tell the story
 
 37. [Author dialogue and cutscenes](37-dialogue-editor.md)
 38. [Add and show a background](38-backgrounds.md)
+72. [Lay out screens with Rect RIDs](72-rect-rids.md)
 39. [Use inline codes and Tellius fonts](39-inline-text-and-fonts.md)
 40. [Edit base conversations and narration](40-base-and-world-map-text.md)
 41. [Set chapter title cards and movies](41-chapter-opening-movies.md)
+79. [Edit the ending and the war record](79-ending-and-war-record.md)
 42. [Import a translation font](42-font-translation.md)
 
 ### Tune behavior and resources
@@ -153,6 +167,7 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 48. [Add or replace sound effects](48-sound-effects.md)
 49. [Replace a video and manage disc size](49-videos.md)
 50. [Replace 2D graphics](50-graphics.md)
+73. [Edit the Sound Room, credits and in-game tutorials](73-sound-room-credits-tutorials.md)
 
 ### Work with models and battle presentation
 
@@ -161,6 +176,9 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 53. [Import animations and edit events](53-animation-import.md)
 54. [Edit weapon and scenery models within budgets](54-model-budgets.md)
 55. [Edit battle presentation](55-battle-presentation.md)
+69. [Edit visual effects and particles](69-visual-effects.md)
+70. [Edit battle cameras](70-battle-cameras.md)
+71. [Edit DBX files and the battle HUD](71-dbx-files-and-hud.md)
 
 ### Test, troubleshoot, and release
 
@@ -176,4 +194,4 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 
 ## Screenshot work for contributors
 
-Real app screenshots are still pending. The [capture checklist](../meta/tutorial-screenshot-plan.md) specifies setup and result frames for every lesson, additional intermediate states, filenames, captions, and acceptance checks. It is an authoring handoff, not evidence that those captures or gameplay tests have already been completed.
+The app screenshots are taken by `App/tools/capture_tutorial_screenshots.py` from a disposable practice project. The [capture log](../meta/tutorial-capture-log.md) lists every frame and the ones still to take (mostly the in-game results that need Dolphin); the [capture checklist](../meta/tutorial-screenshot-plan.md) specifies what each frame must show. A screenshot shows the editor's state, not a gameplay test.

@@ -77,6 +77,14 @@ The editor's font operation wraps each selected line separately and returns non-
 
 ## Guided walkthrough
 
+<!-- screenshot 39-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Fonts page with the font list and the selected font's glyph sheet.](../assets/images/tutorials/screenshots/39-a-setup.png)](../assets/images/tutorials/screenshots/39-a-setup.png)
+
+<figcaption markdown="span">**Assets › Fonts**: the five text fonts with their glyph sheets. Inline codes in a message can switch between them.</figcaption>
+</figure>
+
 ### 1. Establish a plain control page
 
 Open the duplicated message. Keep one speaker and one box active. Use these four plain phrases or equivalents:

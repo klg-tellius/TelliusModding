@@ -72,8 +72,10 @@ word, ``count`` ``u16`` offsets, then ``count`` keys of ``(frame: u16,
 code_count: u16, codes: u16...)``. Each frame the engine collects (up to
 four) codes whose frame was crossed and acts on them - ``3``/``4`` mark a
 loop start/end, ``0x1C``/``0x1D`` set/clear a battle flag, ``0x28``/``0x29``
-spawn camera/light effects; the rest are read elsewhere (``1`` sits on
-the hit frame of every attack, codes above 1000 look like sound ids).
+spawn camera/light effects; the rest are read elsewhere (``0`` lands a
+hit, ``1`` advances a miss, ``6``/``7`` are ignored Ward-effect markers,
+and codes at least 1000 are looked up in
+``gcfesnd.bin``'s ``SFXTable`` and played as sound cues).
 Slot 1 holds **material alpha tracks** (:func:`read_material_tracks`,
 ``interpolate_animation_keyframe_value``, ``0x80064938``): the same head
 (count, pad, runtime pointer word, ``count`` ``u16`` offsets, ``0xFFFF`` for

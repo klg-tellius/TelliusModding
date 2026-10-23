@@ -9,11 +9,11 @@ tutorial_kind: "task"
 tutorial_track: "characters-and-game-data"
 tutorial_stage: "draft"
 prerequisites: ["modding-recruitment-and-bosses", "modding-check-project"]
-verification: ["source-reviewed", "unknown"]
+verification: ["source-reviewed", "app-tested"]
 tags: ["Guide", "Records", "Save compatibility", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/15-remove-records.md"
@@ -24,42 +24,85 @@ source_path: "modding/15-remove-records.md"
 
 ## What you will make
 
-You will produce a reference audit for one disposable appended record, replace or remove every intentional caller, delete the record, and verify the project from a fresh save. You will also make an explicit release decision about older-save compatibility.
+You will try to remove Boyd and read why the app refuses, then remove `PID_TUTORIAL_GUARD`, which nothing uses, and see what stays behind. At the end you know how to find every user of a record, when a removal renumbers other records, and why that matters for saves.
 
 ## Before you begin
 
-Back up the complete project and save all open editors so the scan reads current files. Choose a mod-added record, preferably the last table entry created for practice. Never learn deletion on a retail record or a record named by `main.dol`. Decide whether supporting saves created before this change is mandatory.
+- `PID_TUTORIAL_GUARD` from [Create a character](10-create-character.md), not placed in any chapter (undo lesson 14's placement first).
+- A copy of the project folder: removal saves nothing by itself, but a saved removal cannot be undone from the app.
 
 ## How the editor fits together
 
-Records refer to each other by PID/JID/IID/SID strings, and external files can contain the same identities. **Remove** scans pointer fields in FE8Data, support/bond/skill lists, scripts, compressed deployments, shops, battle-model data, map-model registry, and `main.dol` string literals. If a supported reference remains, deletion is blocked and the dialog lists owners.
+Every record of `FE8Data.bin` (character, class, item, skill…) is found by its ID and also has a **number**, its place in its table. Other files use the ID: deployments, scripts, support lists, bonds, shops. Saves use the number for characters, classes and items.
 
-Characters, classes, and items are also stored in saves by 1-based table position. Removing a non-final entry shifts every later record number. No string-reference scan can repair an old save that now maps those numbers to different records.
+**Remove** checks, before anything changes, every place that names the record's ID: pointer fields of `FE8Data.bin` (support lists, bonds, skill restriction lists, other records), and the strings of every game file that names records (`Scripts/*.cmb`, `zmap/*/dispos.cmp`, the shop files, `zdbx.cmp`, `FE8Anim.bin` and `sys/main.dol`). If one place names it, the removal is refused with the list. If none does, it asks to confirm; removing a record that is not the last one moves every later record up one number, and the confirmation says so.
+
+So a released mod can append records safely, but removing or reordering characters, classes or items makes saves of the previous version load other records. The safe way to retire a record from a released mod is to leave it in place, unused.
 
 ## Guided walkthrough
 
-1. Record candidate kind, ID, table index, whether it is last, and all intended consumers. Save and run Check for a baseline.
-2. Select **Remove** without confirming anything destructive. If blocked, copy every displayed reference; the dialog shows up to 14 and reports additional count.
-3. Classify each owner. Repoint an erroneous caller to the exact intended replacement; delete a caller only when its behavior is no longer wanted. Audit FE8Data links, supports/bonds, deployments, scripts, shops, battle tables, map models, and any executable literal.
-4. Save every owner, rerun Check, and retry **Remove**. Repeat until the scan returns no supported references.
-5. Read the confirmation. If later records will move, record the count. For character/class/item removal, declare pre-change saves incompatible unless the record is final and your compatibility analysis proves no numeric shift or other state dependency.
-6. Confirm deletion. The shared FE8Data session is now dirty; select **Save FE8Data.bin**.
-7. Close/reopen, search the removed ID, rerun Check, inspect the records immediately before/after its old position, build, and start a new game.
+### 1. Read who uses a record
+
+<!-- screenshot 15-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Appearances tab of Boyd with the Deployed in table and the Dialogue table.](../assets/images/tutorials/screenshots/15-a-setup.png)](../assets/images/tutorials/screenshots/15-a-setup.png)
+
+<figcaption markdown="span">Before removing a record, read its **Appearances**: every deployment row and message that names Boyd. **Script references** lists the script functions.</figcaption>
+</figure>
+
+Open Boyd › **Appearances**: **Deployed in** lists every deployment row (*152 unit records*), **Dialogue** every message that shows his portrait or names him.
+
+<!-- screenshot 15-b-result.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Script references tab listing chapter, function and the PID it uses.](../assets/images/tutorials/screenshots/15-b-result.png)](../assets/images/tutorials/screenshots/15-b-result.png)
+
+<figcaption markdown="span">**Script references** for Boyd: the functions that move, talk to or recruit him. A record with rows here or in Appearances is still in use.</figcaption>
+</figure>
+
+**Script references** lists the script functions that name `PID_BOLE` or his name key. These two tabs are the quick view; **Remove** runs the complete check.
+
+### 2. Try to remove a record in use
+
+On Boyd's **Stats** tab, press **Remove**. The app refuses: *PID_BOLE is still used*, *PID_BOLE cannot be removed while these name it:* and the first 14 of 72 places (*FE8Data.bin: support list of PID_TIAMAT*, *FE8Data.bin: bond PID_OSCAR / PID_BOLE*, *Scripts/C02.cmb: named 1 time*, *zmap/bmap02/dispos.cmp: …*), then *… and 58 more* and *Point them at another record first.* Nothing changed.
+
+### 3. Remove a record nothing uses
+
+<!-- screenshot 15-c-removed.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Characters page with the search TUTORIAL and no matching card.](../assets/images/tutorials/screenshots/15-c-removed.png)](../assets/images/tutorials/screenshots/15-c-removed.png)
+
+<figcaption markdown="span">After **Remove** on the Guard (nothing named it, and it was the last record, so no other record moved) and **Save FE8Data.bin**: **Characters** finds nothing for *TUTORIAL*. Its name text `MPID_TUTORIAL_GUARD` and portrait `FID_TGUARD` are still in the project.</figcaption>
+</figure>
+
+1. Open the Guard › **Stats** › **Remove**. The check finds nothing, and the confirmation asks *Remove PID_TUTORIAL_GUARD from FE8Data.bin?* The Guard is the last character record (number 340 of 341), so no other record moves; for any other record the dialog adds *The N records after it move up one number.* and the warning about saves.
+2. **Yes**. The status reads *Removed PID_TUTORIAL_GUARD: save FE8Data.bin to keep it*. Press **Save FE8Data.bin**.
+3. On **Characters**, **All**, search `TUTORIAL`: *0 shown*.
+
+The name text `MPID_TUTORIAL_GUARD` (in `Mess/common.m`) and the portrait `FID_TGUARD` (in `Face/`) are separate resources and stay. Remove the portrait in **Assets › Portraits › Remove** if nothing else uses it; an unused text does no harm.
+
+### 4. Put it back (for the next lessons)
+
+Restore your project copy, or redo [Create a character](10-create-character.md) steps 2–4: the new record takes the same last number.
 
 ## Understand every choice
 
-| Scan/choice | Coverage or consequence |
-| --- | --- |
-| FE8Data pointers | record fields, support lists, bonds, skill lists and other named sections |
-| Scripts | NUL-terminated ID strings in CMB files |
-| Deployments | IDs inside compressed `dispos.cmp` archives |
-| Shops | item identities in shop binaries |
-| Battle/map model data | assignments in battle data and `FE8Anim.bin` |
-| `main.dol` | engine string literals; usually a strong reason not to remove |
-| Repoint caller | preserves caller with deliberate replacement semantics |
-| Delete caller | removes that gameplay path; must be tested |
-| Remove final entry | avoids shifting later table entries, but still affects references/state |
-| Remove middle entry | shifts all later indices; old saves can load wrong records |
+| Choice | What happens | Safe for existing saves? |
+| --- | --- | --- |
+| Leave the record, unused | Nothing | Yes |
+| Point users elsewhere, keep the record | The record is unused | Yes |
+| Remove the last record | It goes; no record moves | Yes, unless a save holds that unit |
+| Remove a record in the middle | Every later record moves up one number | No for characters, classes, items: start a new game |
+| Remove a chapter record | Scripts that change to its id find no chapter | Use **Delete chapter…** instead ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)) |
+| **Discard unsaved edits** (Game Data) | Drops the removal before saving | Yes |
+
+## Things to try next
+
+1. **An item in use.** Try **Remove** on `IID_IRONAXE` in **Game Data › Items**: 39 places, starting with `zmap/bmap02/dispos.cmp`.
+2. **Retire instead of remove.** Rename a record's name text to `(unused)` and leave the record.
+3. **Check after.** Run **Tools › Check** after a removal: references the checker sees would show as errors, but the removal check already refused those.
 
 ## Interactions and precedence
 
@@ -88,7 +131,8 @@ Make the checkpoint before repointing callers. After removal, save FE8Data, run 
 
 ## Limits and confidence
 
-The reference-scan coverage, deletion blocking, table shifting, and number-based save warning are source-reviewed. The scan cannot prove absence from every unsupported/opaque file and cannot rewrite old saves safely. Compatibility remains **unknown** unless explicitly tested and should default to “new game required” after shifting character/class/item tables.
+- The reference check, the renumbering and the save rule are source-reviewed; the refusal for Boyd (72 references) and the removal of the Guard were run in the app on a US disc, then reverted (app-tested).
+- The check reads IDs as strings in the files it knows (`FE8Data.bin`, scripts, deployments, shops, `zdbx.cmp`, `FE8Anim.bin`, `main.dol`); an ID built at run time from pieces is not found.
 
 ## Related tutorials and references
 

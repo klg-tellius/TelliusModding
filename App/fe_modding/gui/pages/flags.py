@@ -741,15 +741,14 @@ class _SaveTab(ttk.Frame):
     def _block_label(b: ef.SaveBlock) -> str:
         kind = "checkpoint" if b.size == 0x6000 else "file"
         crc = "" if b.crc_ok else " · CHECKSUM BAD"
-        return f"{kind} @0x{b.offset:05x} · {b.chapter_map or '?'} · sequence {b.sequence} · " \
-               f"kind {b.save_kind} mode {b.save_mode}{crc}"
+        return f"{kind} @0x{b.offset:05x} · chapter {b.chapter:02d} · sequence {b.sequence} · " \
+               f"kind {b.save_kind} resume {b.resume_point}{crc}"
 
     def _chapter_names(self, block: ef.SaveBlock) -> list[Optional[str]]:
         globals_ = self._page.global_flags()
         locals_: list[str] = []
-        m = block.chapter_map
-        if m.startswith("bmap") and m[4:6].isdigit():
-            path = script_sources.chapter_script(self._page.project, m[4:6])
+        if block.chapter:
+            path = script_sources.chapter_script(self._page.project, f"{block.chapter:02d}")
             if path is not None:
                 try:
                     locals_ = ef.local_flags(parse(script_sources.peek(self._page.project, path)))

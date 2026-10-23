@@ -13,7 +13,7 @@ verification: ["source-reviewed", "unknown"]
 tags: ["Guide", "Troubleshooting", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/64-troubleshooting.md"
@@ -62,6 +62,23 @@ Therefore a visible symptom is often downstream. A missing PID shown in a deploy
 | Build boots with old content | editor save, build timestamp, output selected | owning file, `system.cmp` synchronization, output image |
 | Dolphin differs from a new game | fresh save versus existing save | recruited units, flags, clear history, cached progression |
 | Model distorts after import | pristine export versus imported set | scale, weights, anchor bones, alpha/material modes |
+| Crash right after a chapter's victory | its **Next chapter:** on the Overview | `main.dol` story table ([07](07-chapter-ids-and-story-flow.md)); **Check** reports *leads to chapter N, which does not exist* |
+| A chapter loads but plays another chapter's cutscenes | its script is a template copy | the chapter's Script tab ([08](08-new-campaign-wizard.md)) |
+| A playable part never starts | part 1's victory and the part opening | `Complete18(1)` and `Opening18_2` ([65](65-chapter-parts-and-phases.md)); the header's part status |
+| A new character is called by its template's name | **Name key (MPID)** on its Stats tab | `Mess/common.m` ([10](10-create-character.md)) |
+| A copied character shares the template's look | **Portrait & models** | portrait and model slots ([11](11-portraits.md), [12](12-character-model-slot.md)) |
+| A model assignment comes undone after a save | which page wrote `FE8Data.bin` last | 3D Models › New slot… now saves and reloads the shared copy ([12](12-character-model-slot.md)) |
+| A talk never appears, or appears twice | the `@on_talk` trigger and its one-time flag | the script and `Startup`'s `regist` ([14](14-recruitment-and-bosses.md)) |
+| A removal is refused | the reference list it shows | every listed owner ([15](15-remove-records.md)) |
+| An Excel import changes nothing | *Excel import has errors* rows | the workbook's `index` and label columns ([67](67-bulk-edit.md)) |
+| A Sound Room entry is silent | the cue name | `Sound/gcfesnd.bin` and **Soundroom Tracks** ([73](73-sound-room-credits-tutorials.md)) |
+| The image is too big for a disc | the build's size warning | videos and music ([49](49-videos.md)) |
+
+## Things to try next
+
+1. **Induce and repair.** Take a chapter out of the story by hand (set a chapter's **Next chapter:** to a missing number), run **Check**, repair it.
+2. **Bisect on purpose.** Make three unrelated edits, break one, and find it by reverting half at a time.
+3. **Keep a symptom log.** Add each new symptom and its owner to the table above for your project.
 
 ## Interactions and precedence
 
@@ -104,4 +121,4 @@ The symptom-to-owner method, checker categories, build boundaries, and extractio
 
 ---
 
-[← Previous: Know the current limits](63-known-limits.md) · [All tutorials](index.md)
+[← Previous: Know the current limits](63-known-limits.md) · [All tutorials](index.md) · [Next: Edit visual effects and particles →](69-visual-effects.md)

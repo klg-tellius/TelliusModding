@@ -31,6 +31,7 @@ def build_gci(bits: bytes = bytes(ef.BIT_BYTES)) -> bytearray:
     b = ef.GCI_HEADER_SIZE + ef.BLOCK_OFFSETS[0]
     gci[b + 0x40:b + 0x50] = struct.pack(">4I", ef.SAVE_MAGIC, 0x20050201, 7, 0x4000)
     gci[b + 0x60] = 2
+    gci[b + 0x65] = 4
     gci[b + 0x70:b + 0x74] = b"SYSF"
     gci[b + 0xB8:b + 0xBC] = b"BMST"
     gci[b + ef.FLAGS_OFFSET:b + ef.FLAGS_OFFSET + ef.BIT_BYTES] = bits
@@ -77,6 +78,7 @@ class SaveTests(unittest.TestCase):
         gci = build_gci(bytes(bits))
         (block,) = ef.save_blocks(bytes(gci))
         self.assertTrue(block.crc_ok)
+        self.assertEqual((block.save_kind, block.resume_point), (2, 4))
         self.assertEqual(block.chapter_map, "bmap05")
         on = [i for i, v in enumerate(ef.read_flag_bits(bytes(gci), block)) if v]
         self.assertEqual(on, [29, 95])

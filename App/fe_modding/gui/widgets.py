@@ -23,6 +23,7 @@ from . import theme
 # -- tooltips -------------------------------------------------------------------
 
 TIP_DELAY_MS = 450
+TIP_CURSOR_OFFSET = (12, 20)
 
 
 class _Tooltip:
@@ -68,8 +69,13 @@ class _Tooltip:
                  relief="solid", background=theme.color("surface_hover"), foreground=theme.color("fg"),
                  font=theme.font("caption")).pack()
         window.update_idletasks()
-        x = self._widget.winfo_rootx() + 8
-        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        # Anchor the tip to the pointer rather than the widget.  Help marks can
+        # live inside padded, scrolling, or reflowing containers, so using the
+        # widget's lower-left corner made the tip appear noticeably detached
+        # from the cursor on many pages.
+        pointer_x, pointer_y = self._widget.winfo_pointerxy()
+        x = pointer_x + TIP_CURSOR_OFFSET[0]
+        y = pointer_y + TIP_CURSOR_OFFSET[1]
         screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
         x = min(x, screen_w - window.winfo_width() - 8)
         if y + window.winfo_height() > screen_h:
@@ -243,17 +249,30 @@ def list_buttons(parent: tk.Misc, add_text: str, on_add, on_delete, delete_help:
     return delete
 
 
-def confirm_delete_added(parent: tk.Misc, project, path: Path, kind: str, users: list[str] = ()) -> bool:
-    """Ask before deleting ``path`` (a file under files/); False, after saying why, for a
-    file of the source disc."""
+def confirm_delete_added(parent: tk.Misc, project, path: Path, kind: str, users: list[str] = (), *,
+                         allow_retail: bool = False, protected_reason: str = "") -> bool:
+    """Ask before deleting an asset.
+
+    Most callers retain the historical added-files-only rule.  Large streamed
+    media opts into ``allow_retail`` because omitting an unused retail movie or
+    track is a useful way to recover disc space.  ``protected_reason`` always
+    wins and is used for front-end media which native menu code still loads.
+    """
     from tkinter import messagebox
 
+    if protected_reason:
+        messagebox.showinfo(f"Delete {kind}", f"{path.name} can't be deleted. {protected_reason}", parent=parent)
+        return False
     added = project.is_added_file(path)
-    if added is False:
+    if added is False and not allow_retail:
         messagebox.showinfo(f"Delete {kind}", f"{path.name} is one of the game's own files: the game loads it, "
                             "so it can't be deleted. Replace it instead.", parent=parent)
         return False
-    text = f"Delete {path.name}? This can't be undone."
+    if added is False:
+        text = (f"Remove the base game's {path.name} from the built disc?\n\n"
+                f"Any scene or hardcoded game code which still requests it will find a missing file.")
+    else:
+        text = f"Delete {path.name}? This can't be undone."
     if added is None:
         text += "\n\nThe disc's file list isn't in this project, so it can't tell whether the game loads it."
     if users:

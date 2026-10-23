@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
@@ -10,7 +11,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fe_modding.formats import gltf_import, gs_file, map_file, tpl
+from fe_modding.formats import gltf_export, gltf_import, gs_file, map_file, tpl
 from fe_modding.gui import model_viewer as mv
 from test_formats import _build_map_object, _quad_glb
 
@@ -67,6 +68,51 @@ class TerrainHelperTests(unittest.TestCase):
         with self.assertRaises(gltf_import.GltfImportError):
             mv.map_terrain_name({"bmap09_water0.gs": b""}, data, "bmap09")
 
+    def test_export_object_choices_are_modeled_unique_and_exclude_the_land(self):
+        terrain = _build_map_object(flag_bits_a=0xC0, filename="bmap09")
+        water = _build_map_object(flag_bits_a=0xC0, filename="bmap09_water0")
+        tree = _build_map_object(filename="tree_01")
+        marker = _build_map_object(filename="logic_only")
+        data = map_file.MapData(build_desc=[terrain, water, tree, tree, marker])
+        files = {"bmap09.gs": b"", "bmap09_water0.gs": b"", "tree_01.gs": b""}
+
+        self.assertEqual(mv.map_export_object_names(files, data, "bmap09"), ["bmap09_water0", "tree_01"])
+
+    def test_projected_map_materials_require_one_shared_atlas(self):
+        material = lambda *ids: SimpleNamespace(textures=[SimpleNamespace(tex_id=i) for i in ids])
+        self.assertEqual(mv._shared_map_atlas([material(12, 13), material(12, 13)]), 12)
+
+        for incompatible in ([material(12, 13), material(14, 15)], [material(12, 13), material(99)]):
+            with self.subTest(incompatible=incompatible), self.assertRaises(gltf_import.GltfImportError) as raised:
+                mv._shared_map_atlas(incompatible)
+            self.assertIn("turn off 'Keep map texturing'", str(raised.exception))
+            self.assertIn("custom texture", str(raised.exception))
+
+    def test_blender_preview_bake_combines_both_uvs_mask_and_light(self):
+        vertex = lambda position, uv, uv2: SimpleNamespace(position=position, uv=uv, uv2=uv2)
+        tri = (
+            vertex((0.0, 0.0, 0.0), (0.1, 0.1), (0.6, 0.1)),
+            vertex((1.0, 0.0, 0.0), (0.1, 0.1), (0.6, 0.1)),
+            vertex((0.0, 0.0, 1.0), (0.1, 0.1), (0.6, 0.1)),
+        )
+        atlas = Image.new("RGBA", (10, 2), (200, 0, 0, 255))
+        for x in range(5, 10):
+            for y in range(2):
+                atlas.putpixel((x, y), (0, 100, 0, 255))
+        mask = Image.new("RGBA", (2, 2), (128, 128, 128, 255))
+        light = Image.new("RGBA", (2, 2), (128, 128, 128, 255))
+        identity_projection = ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0),
+                               (0.0, 0.0, 0.0, 1.0))
+        baked, display_uvs = gltf_export._bake_map_texture(
+            [tri], atlas, mask, light,
+            gltf_export.MapTextureBake(identity_projection, identity_projection),
+        )
+        # Half red/half green, then half-light: approximately (50, 25, 0).
+        r, g, b, a = baked.getpixel((baked.width // 2, baked.height // 2))
+        self.assertTrue(48 <= r <= 52 and 24 <= g <= 27)
+        self.assertEqual((b, a), (0, 255))
+        self.assertEqual(len(display_uvs), 1)
+
 
 class StaticBuildTextureBaseTests(unittest.TestCase):
     def test_texture_ids_start_at_the_base_and_extra_records_follow(self):
@@ -75,6 +121,16 @@ class StaticBuildTextureBaseTests(unittest.TestCase):
         build = gltf_import.build_static_gs(scene, tex_id_base=7, extra_textures=(white,))
         self.assertEqual([t.tex_id for t in build.gs.materials[0].textures], [7, 9])
         self.assertEqual(len(build.images), 1)
+
+    def test_untextured_terrain_colour_is_baked_into_an_image(self):
+        scene = gltf_import.ImportedScene(
+            materials=[gltf_import.ImportedMaterial("map_base", (0.25, 0.0, 0.5, 1.0))],
+            triangles={},
+        )
+        self.assertEqual(mv._bake_untextured_material_colors(scene), ["map_base"])
+        material = scene.materials[0]
+        self.assertEqual(material.image.getpixel((0, 0)), (64, 0, 128, 255))
+        self.assertEqual(material.base_color, (1.0, 1.0, 1.0, 1.0))
 
 
 class ConformToTilesTests(unittest.TestCase):
@@ -159,7 +215,14 @@ class DiscMapTexturingTests(unittest.TestCase):
         )
         self.assertEqual(mesh_names, {"bmap16"})
         self.assertNotIn("castle_desart_01", mesh_names)
-        self.assertEqual(image_names, {"tex_0", "tex_1", "tex_6"})
+        self.assertTrue({"tex_0", "tex_1", "tex_6"}.issubset(image_names))
+        self.assertTrue(any(name and name.startswith("fe9_baked_terrain_") for name in image_names))
+        terrain_primitive = next(
+            primitive for primitive in doc["meshes"][0]["primitives"]
+            if "TEXCOORD_2" in primitive["attributes"]
+        )
+        terrain_material = doc["materials"][terrain_primitive["material"]]
+        self.assertEqual(terrain_material["pbrMetallicRoughness"]["baseColorTexture"].get("texCoord"), 2)
         self.assertEqual(exported_indices, source_triangles * 3)
 
     def test_prologue_terrain_round_trip_keeps_map_texturing(self):

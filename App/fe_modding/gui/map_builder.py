@@ -1073,7 +1073,7 @@ class MapBuilder(EditorPanel):
             try:
                 for route in script_rocks.routes(source):
                     owner = next((p for p in props if "rock" in p["name"].lower() and
-                                  (data.build_inst[p["index"]].x, data.build_inst[p["index"]].y) == (route.x, route.y)),
+                                  (data.build_inst[p["index"]].x, data.build_inst[p["index"]].y) == route.prop_tile),
                                  None)
                     if owner is not None:
                         canvas.rocks.append({"tiles": route.tiles(), "selected": owner["index"] == selected_prop})
@@ -1433,8 +1433,8 @@ class MapBuilder(EditorPanel):
                     new_rock = (new_inst.x, new_inst.y)
             if new_rock != old_rock:
                 try:
-                    changed = (script_rocks.move_route(source, old_rock, new_rock) if new_rock is not None else
-                               script_rocks.remove_route(source, old_rock))
+                    changed = (script_rocks.move_prop_route(source, old_rock, new_rock) if new_rock is not None else
+                               script_rocks.remove_prop_route(source, old_rock))
                     if changed != source:
                         self._script.edit_chapter_source(changed)
                 except (ParseError, ValueError) as exc:
@@ -2274,7 +2274,7 @@ class MapBuilder(EditorPanel):
                 ttk.Button(body, text="Open chapter script", command=self._open_chapter_script).pack(anchor="w", pady=(5, 0))
             return
         try:
-            matches = [route for route in script_rocks.routes(source) if (route.x, route.y) == (x, y)]
+            matches = script_rocks.route_for_prop(source, (x, y))
         except ParseError as exc:
             ttk.Label(body, text=f"Script parse error on line {exc.line}: {exc.message}",
                       style="Muted.TLabel", wraplength=300).pack(anchor="w")
@@ -2301,8 +2301,8 @@ class MapBuilder(EditorPanel):
             return
 
         def apply() -> None:
-            if self._edit_script(lambda text: script_rocks.set_route(text, x, y, directions[direction.get()],
-                                                                     path.get().strip())):
+            if self._edit_script(lambda text: script_rocks.set_prop_route(text, (x, y), directions[direction.get()],
+                                                                          path.get().strip())):
                 self._refresh_inspector()
 
         entry.bind("<Return>", lambda _event: apply())
@@ -2311,7 +2311,7 @@ class MapBuilder(EditorPanel):
         ttk.Button(buttons, text="Apply route" if route else "Add route", command=apply).pack(side="left")
         if route is not None:
             def remove() -> None:
-                if self._edit_script(lambda text: script_rocks.remove_route(text, (x, y))):
+                if self._edit_script(lambda text: script_rocks.remove_prop_route(text, (x, y))):
                     self._refresh_inspector()
 
             ttk.Button(buttons, text="Remove route", command=remove).pack(side="left", padx=(6, 0))
@@ -2971,6 +2971,37 @@ class MapBuilder(EditorPanel):
 
     def hub_changed(self) -> None:
         self._refresh_canvas()
+
+    def hub_ground_appearance(self):
+        from .. import hub_creation
+        return hub_creation.flat_ground_appearance(self._map.pak_contents)
+
+    def edit_hub_ground(self, color, image_path, tiled: bool, use_image: bool,
+                        replace_custom_terrain: bool = False) -> None:
+        from .. import hub_creation
+        appearance = (None if replace_custom_terrain
+                      else hub_creation.flat_ground_appearance(self._map.pak_contents))
+        image = None
+        if use_image:
+            if image_path:
+                try:
+                    with Image.open(image_path) as opened:
+                        image = opened.convert("RGBA").copy()
+                except Exception as exc:  # noqa: BLE001 - Pillow uses several exception types
+                    raise ValueError(f"Could not read the hub ground image: {exc}") from exc
+            else:
+                image = appearance.image if appearance is not None else None
+        self._record()
+        try:
+            self._map.edit_pack(
+                lambda entries, files: hub_creation.replace_flat_ground(
+                    entries, files, ground_color=color, ground_image=image, tile_ground_image=tiled,
+                    replace_custom_terrain=replace_custom_terrain),
+                "Changed hub ground appearance")
+        except Exception:
+            self._undo.pop()
+            self._update_buttons()
+            raise
 
     def map_size(self) -> tuple[int, int] | None:
         return self._canvas.size

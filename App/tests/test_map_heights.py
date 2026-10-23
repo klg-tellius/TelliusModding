@@ -93,6 +93,46 @@ class MapSectionWriterTests(unittest.TestCase):
         self.assertEqual((new.extra.half_x_size, new.extra.texture_projection_extent_x2), (1, 64))
         self.assertEqual(struct.unpack(">I", out[8:12])[0], 5)
 
+    def test_resize_grid_preserves_overlap_and_extends_edge_tiles(self):
+        raw = _map_bin(2, 2)
+        raw = map_file.set_tile_terrains(raw, {(1, 0): "forest"})
+
+        out = map_file.resize_grid(raw, 3, 4)
+
+        data = map_file.read_map_bytes(out)
+        self.assertEqual((data.capacity.x_size, data.capacity.y_size), (3, 4))
+        self.assertEqual((data.extra.half_x_size, data.extra.half_y_size), (2, 2))
+        self.assertEqual(map_file.terrain_grid(out), [
+            ["plain", "plain", "plain", "plain"],
+            ["forest", "plain", "plain", "plain"],
+            ["forest", "plain", "plain", "plain"],
+        ])
+        self.assertEqual((len(data.panel_index_base), len(data.panel_index_base[0])), (3, 4))
+
+    def test_resize_grid_prunes_sparse_links_outside_new_bounds(self):
+        raw = _map_bin(3, 2)
+        raw = map_file.set_link_openings(raw, 1, 0, map_file.LINK_PASS_EAST)
+        raw = map_file.set_link_openings(raw, 2, 1, map_file.LINK_PASS_NORTH)
+
+        out = map_file.resize_grid(raw, 2, 1)
+
+        data = map_file.read_map_bytes(out)
+        self.assertEqual((data.capacity.x_size, data.capacity.y_size), (2, 1))
+        self.assertEqual(data.link[1][0], map_file.LINK_PASS_EAST)
+        start, _length = map_file.section_bytes(out, "maplink")
+        self.assertEqual(struct.unpack_from(">H", out, start)[0], 1)
+
+    def test_resize_grid_rejects_dimensions_outside_supported_range(self):
+        raw = _map_bin()
+        for dimensions in ((0, 2), (2, 0), (64, 2), (2, 64), (255, 2)):
+            with self.subTest(dimensions=dimensions), self.assertRaises(map_file.MapFileError):
+                map_file.resize_grid(raw, *dimensions)
+
+    def test_resize_grid_accepts_largest_retail_dimensions(self):
+        out = map_file.resize_grid(_map_bin(), map_file.MAX_GRID_SIZE, map_file.MAX_GRID_SIZE)
+        capacity = map_file.read_map_bytes(out).capacity
+        self.assertEqual((capacity.x_size, capacity.y_size), (63, 63))
+
 
 class FollowTerrainTests(unittest.TestCase):
     def test_raised_corner_moves_both_layers_and_the_prop(self):

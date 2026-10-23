@@ -68,6 +68,14 @@ The Dialogue Background control inserts a background action into the message. A 
 
 ## Guided walkthrough
 
+<!-- screenshot 38-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Backgrounds page with the file list and the selected background's preview.](../assets/images/tutorials/screenshots/38-a-setup.png)](../assets/images/tutorials/screenshots/38-a-setup.png)
+
+<figcaption markdown="span">**Assets › Backgrounds** with a conversation background selected: its layers, the rect resource that shows it, and the replace controls.</figcaption>
+</figure>
+
 ### 1. Inspect a working resource end to end
 
 Open **Assets → Backgrounds** and search the current RID or filename. Select the file. If it contains several images, click every thumbnail and record its dimensions and encoding information.

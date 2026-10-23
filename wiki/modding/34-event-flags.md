@@ -24,6 +24,8 @@ verification: ["source-reviewed", "unknown"]
 
 ## What you will make
 
+For a hub-specific workflow, see [Create a hub and plan chapter unlocks](hub-chapters.md). It explains persistent unlock/completion flags and why flags alone do not yet hide generated chapter entrances.
+
 You will create and verify two named state switches:
 
 - a chapter flag meaning “the turn-3 reinforcement wave has loaded”;
@@ -69,6 +71,14 @@ A save stores flag bits by slot, not by the human meaning of a name. This is why
 The Flags page writes and compiles the owning script immediately. It refuses to overwrite conflicting unsaved Script-tab work. Save or revert the open script before adding, renaming, importing, or retiring flags.
 
 ## Guided walkthrough
+
+<!-- screenshot 34-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Flags page with the Campaign flags, Chapter flags and Save file tabs and the flag table.](../assets/images/tutorials/screenshots/34-a-setup.png)](../assets/images/tutorials/screenshots/34-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Flags**: campaign flags (kept in the save) and chapter flags, with their names, users and the room left.</figcaption>
+</figure>
 
 ### 1. Inspect the campaign table and shared budget
 

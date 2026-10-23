@@ -10,7 +10,8 @@ from fe_modding.game_code import entries  # noqa: F401  (registers every entry)
 from fe_modding.game_code.catalog import CAVE_ADDRESS, State
 from fe_modding.game_code.dol import Dol
 from fe_modding.game_code.phase_control import (
-    ARMIES, CHOICES, DEFAULTS, PHASE_HOOK, PHASE_ROUTINE, PHASE_TUNABLES, _RETAIL, _SITES, value_address,
+    ARMIES, CHOICES, DEFAULTS, PHASE_HOOK, PHASE_ROUTINE, PHASE_TUNABLES, PLAYER_AI_ROUTINE,
+    _DISPATCH_SITES, _RETAIL, _SITES, value_address,
 )
 from test_chapter_flow import PARTY, RETAIL_DIR, MiniPPC
 
@@ -42,6 +43,14 @@ class RoutineTests(unittest.TestCase):
         for tunable in PHASE_TUNABLES:
             self.assertEqual(len(tunable.choices), tunable.maximum - tunable.minimum + 1)
         self.assertEqual(CHOICES[1], "Player")
+
+    def test_player_army_dispatches_to_ai_only_for_computer_control(self):
+        base = PARTY + 0x14
+        dispatch = _DISPATCH_SITES["GFEE01"]
+        for controller, target in ((1, dispatch + 0x10), (2, dispatch + 0x54)):
+            cpu = MiniPPC(_routine("GFEE01"), {base: controller})
+            cpu.r[30] = base
+            self.assertEqual(cpu.run(PLAYER_AI_ROUTINE, {dispatch + 0x10, dispatch + 0x54}), target)
 
 
 class RetailSiteTests(unittest.TestCase):

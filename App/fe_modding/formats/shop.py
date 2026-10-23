@@ -248,3 +248,14 @@ def add_chapter(doc: ShopDocument, chapter: int, template: Optional[int] = None)
         # after the last section of the same kind, keeping each kind's run together
         same = [i for i, s in enumerate(doc.sections) if s.kind == kind]
         doc.sections.insert(same[-1] + 1 if same else len(doc.sections), new)
+
+
+def remove_chapter(doc: ShopDocument, chapter: int) -> int:
+    """Remove every armory, vendor and forge section for ``chapter``.
+
+    Returns the number of sections removed. Missing sections are harmless so
+    partially-created chapters can be cleaned up too.
+    """
+    before = len(doc.sections)
+    doc.sections[:] = [section for section in doc.sections if section.chapter != chapter]
+    return before - len(doc.sections)

@@ -31,6 +31,13 @@ class DbxBlockTests(unittest.TestCase):
         with self.assertRaises(dbx.DbxError):
             doc.duplicate_block(doc.blocks()[0], "named")
 
+    def test_check_finds_structural_problems(self):
+        self.assertEqual(dbx.check(TEXT + "\\\r\n"), [])  # retail files end with a lone backslash
+        self.assertEqual(dbx.check("{\n\tclass\tA\n"), ["Line 1: this block is never closed."])
+        self.assertEqual(dbx.check("}\n"), ["Line 1: } closes no block."])
+        self.assertEqual(dbx.check("{\n{\n}\n"), ["Line 2: { opens a block inside the block opened on line 1."])
+        self.assertEqual(dbx.check("\tname\tA\n"), ["Line 1: “name\tA” is outside every block."])
+
     def test_param_notes(self):
         self.assertIn("counter", battle_dbx_notes.note("zdbx/param.dbx", "WaitAtk2"))
         self.assertEqual(battle_dbx_notes.note("zdbx/battle.dbx", "pos"), battle_dbx_notes.WIDGET_NOTES["pos"])

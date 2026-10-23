@@ -28,7 +28,7 @@ from ..graphics_viewers import (
 )
 from ..font_viewer import FontViewer
 from ..icon_viewer import IconViewer
-from ..model_viewer import ModelViewer
+from ..model_viewer import MapModelViewer, ModelViewer
 from ..prop_browser import MapObjectsPanel
 from ..music_editor import MusicEditor
 from ..portrait_viewer import PortraitViewer
@@ -36,6 +36,7 @@ from ..sfx_viewer import SfxViewer
 from ..soundroom_editor import SoundRoomEditor
 from ..staffroll_editor import StaffRollEditor
 from ..tutorials_editor import TutorialsEditor
+from ..tileset_manager import TilesetManager
 from ..soundroom_tracks_editor import SoundRoomTracksEditor
 from ..shell import TOOL_ASSETS, Page
 from ..video_viewer import VideoViewer
@@ -51,6 +52,8 @@ ASSET_TOOLS = [
      "Base conversations, Conversation Room supports, support chat lines (FE10Conversation.cms)", Fe10ConversationLists),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
+    ("map_models", "Map Models", "▦", "Every chapter map model, terrain sculpting, painting and water", MapModelViewer),
+    ("tilesets", "Tilesets", "▥", "Browse every terrain atlas; create and edit reusable paint swatches", TilesetManager),
     ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse, export, edit", MapObjectsPanel),
     ("backgrounds", "Backgrounds", "▭", "Conversation backgrounds (s/)", BackgroundViewer),
     ("illustrations", "Illustrations", "✎", "Textures in illust/", IllustrationViewer),
@@ -81,7 +84,7 @@ TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
 #: Tools that need a decoder the game's profile must list (``GameProfile.features``); the rest open
 #: for every game. Without it the page says the tool is not available for the game yet.
 ASSET_FEATURES = {
-    "map_objects": CHAPTERS,
+    "map_models": CHAPTERS, "tilesets": CHAPTERS, "map_objects": CHAPTERS,
     "effects": EFFECTS,
     "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_TABLES,
     "battle_sim": BATTLE_TABLES, "battle_params": BATTLE_TABLES,
@@ -107,7 +110,7 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "fonts")),
-                            ("Characters and models", ("portraits", "models", "map_objects")),
+                            ("Characters and models", ("portraits", "models", "map_models", "tilesets", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment")),
@@ -188,7 +191,7 @@ class AssetPage(Page):
         if len(route) > 2 and route[2]:
             if key == "portraits":
                 panel.select_character(route[2])
-            elif key == "models":
+            elif key in ("models", "map_models"):
                 panel.select_set(route[2])
             elif key == "icons":
                 panel.select_icon(route[2])

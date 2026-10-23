@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import map_heights
+from . import map_heights, water_kit
 from .formats import animation, gltf_export, gltf_import, gs_file, lz10, map_file, model, pak, skeleton, tpl
 
 #: Material names the map loader gives projected-texture callbacks.
@@ -548,15 +548,11 @@ def water_terrain_mismatch(files: dict[str, bytes]) -> tuple[int, int]:
     if grid is None:
         return 0, 0
     terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o) and o.filename not in names), "")
-    ox, oy = map_heights.terrain_origin(data, terrain)
     tris = [_water_triangles(files[f"{n}.gs"]) for n in names]
     tris = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
-    cells = [(x, y) for x in range(len(grid)) for y in range(len(grid[0]))]
-    centres = [(map_heights.TILE_SIZE * (x - ox) + 2.5, map_heights.TILE_SIZE * (y - oy) + 2.5) for x, y in cells]
-    covered = ~np.isnan(map_heights.surface_heights(tris, centres)) if len(tris) else np.zeros(len(cells), bool)
-    dry = sum(1 for (x, y), c in zip(cells, covered) if c and grid[x][y] not in WATER_TERRAINS)
-    uncovered = sum(1 for (x, y), c in zip(cells, covered) if not c and grid[x][y] in WATER_TERRAINS)
-    return dry, uncovered
+    covered = water_kit.covered_tiles(tris, len(grid), len(grid[0]), map_heights.terrain_origin(data, terrain))
+    wet = np.array([[t in WATER_TERRAINS for t in column] for column in grid], bool)
+    return int((covered & ~wet).sum()), int((~covered & wet).sum())
 
 
 def import_water(
@@ -575,6 +571,19 @@ def import_water(
     sits at y = -2). Every material becomes ``map_water``, keeping the water
     material's colours (alpha 127) and texture records; a glTF image
     replaces the first record's image. Returns warnings."""
+    return import_water_scene(entries, files, gltf_import.read_gltf(gltf_data, base_dir), name, donor=donor)
+
+
+def import_water_scene(
+    entries: list[pak.PakEntry],
+    files: dict[str, bytes],
+    scene: gltf_import.ImportedScene,
+    name: str | None = None,
+    donor: dict[str, bytes] | None = None,
+) -> list[str]:
+    """:func:`import_water` from an already read glTF scene. A new name on
+    a map that has water copies the look of the map's first water body
+    (sharing its images); ``donor`` is needed only on a map without any."""
     data = map_file.read_map_bytes(files["map.bin"])
     waters = water_names(files, data)
     warnings: list[str] = []
@@ -583,6 +592,8 @@ def import_water(
         name = waters[0] if waters else None
     if name is not None and name in waters:
         source_files, source_name, new = files, name, False
+    elif waters and donor is None:
+        source_files, source_name, new = files, waters[0], True
     else:
         if donor is None:
             raise gltf_import.GltfImportError("This map has no water: pick a map with water to copy its animation and textures from.")
@@ -600,7 +611,7 @@ def import_water(
 
     source_material = next(m for m in gs_file.read_gs(source_files[f"{source_name}.gs"]).materials if m.name == "map_water")
     records = [replace(t) for t in source_material.textures]
-    if new:  # the donor's water images go after this map's images
+    if new and source_files is not files:  # the donor's water images go after this map's images
         donor_tpl = source_files[texpack_name(source_files)]
         donor_images = tpl.read_tpl_images(io.BytesIO(donor_tpl))
         donor_info = tpl.read_tpl_image_info(io.BytesIO(donor_tpl))
@@ -613,7 +624,6 @@ def import_water(
         files[texpack], first = tpl.append_images(files[texpack], added, tpl.typical_mip_count(donor_tpl))
         records = [replace(t, tex_id=first + ids.index(t.tex_id)) for t in records]
 
-    scene = gltf_import.read_gltf(gltf_data, base_dir)
     base = len(tpl.read_tpl_image_info(io.BytesIO(files[texpack])))
     build = gltf_import.build_static_gs(scene, bone=0, name=name, tex_id_base=base)
     warnings += build.warnings
@@ -659,6 +669,13 @@ def import_water(
         existing = next(o for o in data.build_desc if o.filename == name)
         for field_name, value in bounds.items():
             map_bin = map_file.patch_object_field(map_bin, existing, field_name, float(value))
+        data = map_file.read_map_bytes(map_bin)
+        index = next(i for i, o in enumerate(data.build_desc) if o.filename == name)
+        if not any(inst.desc_index == index for inst in data.build_inst):  # taken off earlier: place it again
+            records_out = map_file.instance_records(map_bin)
+            records_out.append(map_file.instance_record(data.build_desc[index], index, -data.extra.panel_offset_x,
+                                                        -data.extra.panel_offset_y, 0, 0.0))
+            map_bin = map_file.set_build_instances(map_bin, records_out)
     files["map.bin"] = map_bin
     dry, uncovered = water_terrain_mismatch(files)
     if dry or uncovered:
@@ -666,6 +683,25 @@ def import_water(
             f"{dry} tiles under the water are not a water terrain type, and {uncovered} water-type tiles have no water "
             "over them: paint them with the Build tab's Paint terrain tool (River, Sea...) so movement matches."
         )
+    return warnings
+
+
+def remove_water(files: dict[str, bytes], name: str) -> list[str]:
+    """Take water body ``name`` off the map: its instances go (its model
+    stays in the pack, unused), and the map's water flag is cleared when no
+    water is placed any more. Returns warnings."""
+    data = map_file.read_map_bytes(files["map.bin"])
+    indices = {i for i, o in enumerate(data.build_desc) if o.filename == name}
+    records = map_file.instance_records(files["map.bin"])
+    kept = [r for r, inst in zip(records, data.build_inst) if inst.desc_index not in indices]
+    files["map.bin"] = map_file.set_build_instances(files["map.bin"], kept)
+    data = map_file.read_map_bytes(files["map.bin"])
+    placed = {data.build_desc[i.desc_index].filename for i in data.build_inst}
+    warnings = [f"Water {name} was taken off the map."]
+    if not placed & set(water_names(files, data)) and data.extra is not None and data.extra.unknown_tail & MAP_FLAG_WATER:
+        files["map.bin"] = map_file.patch_extra_field(files["map.bin"], data.extra, "unknown_tail",
+                                                      data.extra.unknown_tail & ~MAP_FLAG_WATER)
+        warnings.append("The map has no water left: its water flag (0x20) was cleared.")
     return warnings
 
 
@@ -728,8 +764,8 @@ PROP_FLAG_GROUPS = (
         (0x08, "Reserved A3 (never set by retail maps)"),
         (0x10, "Reserved A4 (never set by retail maps)"),
         (0x20, "Reserved A5 (never set by retail maps)"),
-        (0x40, "Base terrain marker A6 (A6 + A7 required)"),
-        (0x80, "Base terrain marker A7 (A6 + A7 required)"),
+        (0x40, "Base terrain identity — first half (enable both A6 and A7)"),
+        (0x80, "Base terrain identity — second half (enable both A6 and A7)"),
     )),
     ("flag_bits_b", "Visibility and goals", (
         (0x01, "Do not draw this placed object"),
