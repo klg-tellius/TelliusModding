@@ -28,7 +28,7 @@ The base is a campaign hub over persistent party state, not a tactical map. It o
 
 The base is an orchestrator over saved campaign data. Entering it can run one opening event, then constructs menu entries from chapter and flags. Choosing Manage edits units and inventory directly; choosing Info runs a one-time script; choosing Forge performs a transaction; leaving routes to story or preparation. None of those choices consumes a tactical unit action because no army phase is active.
 
-For example, forging must coordinate five owners: chapter stock selects the base, the forge editor creates temporary customization, Economy validates and spends gold, the forge pool allocates a persistent record, and Warehouse or a unit inventory receives the item. Only after successful delivery may the one-per-chapter flag be set. Cancelling before confirmation must leave every owner unchanged.
+For example, forging coordinates five owners: chapter stock selects the base, the forge editor creates temporary customization, Economy validates and spends gold, the forge pool allocates a persistent record, and Warehouse or a unit inventory receives the item. Cancelling before confirmation leaves them unchanged. The ordinary successful route sets the one-per-chapter flag, but a completely full forge pool is a known non-atomic failure: allocation returns zero and the unchecked record setters overwrite convoy slots 198–200 rather than rejecting confirmation.
 
 <span id="fe9-sys-274"></span> **Base menu state.** Campaign routing enters the base, runs its opening event once, builds available facilities from chapter/flags, and remembers the correct exit. A saved byte prevents the opening from replaying after reload.
 
@@ -54,7 +54,7 @@ Info conversations are registered content: labels and participants identify an e
 
 ## Interactions and edge cases
 
-An Info event can add/remove a unit or alter flags, so the menu and every facility must rebuild stale lists on return. A full inventory/convoy, insufficient gold, exhausted forge pool, invalid support pair, capped unit, or missing shop resource must fail without partial state. Reload after the opening event must not replay it; reload after a committed transaction must not duplicate delivery. Exit routing must not accidentally start a tactical phase before preparation commits deployment.
+An Info event can add/remove a unit or alter flags, so the menu and every facility must rebuild stale lists on return. Full inventory/convoy, insufficient gold, invalid support pairs, capped units, and missing shop resources need explicit failure routes. Forge-pool exhaustion is the exception the retail engine fails to guard: it can partially commit and corrupt the convoy, which is why repeatable-forge mods must enforce the 48-record ceiling. Reload after the opening event must not replay it; reload after a committed transaction must not duplicate delivery. Exit routing must not accidentally start a tactical phase before preparation commits deployment.
 
 ## Interactions and review boundary
 
