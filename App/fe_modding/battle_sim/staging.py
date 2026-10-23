@@ -63,6 +63,11 @@ class BattleParams:
     quake_skill: float = 1.8
     quake_shoot: float = 0.5
     quake_magic: float = 1.2
+    quake_weak: float = 0.5
+    quake: float = 1.0
+    quake_hard: float = 1.8
+    magic_fade: float = 60.0  # grayscale multiplier applied to units/weapons during magic
+    magic_fade_time: int = 20
     attack_dist_scale: float = 1.0
     wall_dist: float = 90.0  # a unit never stands farther than this from the scene centre
     avoid_scale: float = 0.8  # a dodging unit steps back to its range x this from the striker
@@ -86,6 +91,8 @@ class BattleParams:
         "WaitSkill0": "wait_skill0", "WaitShoot1": "wait_shoot1", "WaitMagic1": "wait_magic1",
         "WaitDie1": "wait_die1", "QuakeAttack": "quake_attack", "QuakeCrit": "quake_crit",
         "QuakeSkill": "quake_skill", "QuakeShoot": "quake_shoot", "QuakeMagic": "quake_magic",
+        "QuakeWeak": "quake_weak", "Quake": "quake", "QuakeHard": "quake_hard",
+        "MagicFade": "magic_fade", "MagicFadeTime": "magic_fade_time",
         "AttackDistScale": "attack_dist_scale", "WallDist": "wall_dist", "AvoidScale": "avoid_scale",
         "AvoidSpeed": "avoid_speed", "DamageBack": "damage_back", "DamageBackSpd": "damage_back_spd",
         "KnifeSpeed": "knife_speed", "SpearSpeed": "spear_speed",

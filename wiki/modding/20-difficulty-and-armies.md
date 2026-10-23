@@ -57,6 +57,14 @@ An army group is a name and commander-effect grouping, not allegiance. Player, e
 
 ## Guided walkthrough
 
+<!-- screenshot 20-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![General tab with the difficulty table, army groups and battle skies.](../assets/images/tutorials/screenshots/20-a-setup.png)](../assets/images/tutorials/screenshots/20-a-setup.png)
+
+<figcaption markdown="span">**Game Data › General**: the difficulty constants, army groups and battle skies.</figcaption>
+</figure>
+
 ### 1. Establish a cross-difficulty baseline
 
 Open the chapter on Normal and Hard using the same test method. Inspect the same ordinary enemy in each mode and record its level. Also record one boss or fixed-level unit. This tells you whether the chapter already has authored differences and gives you a control unit that may not respond to auto-levelling.

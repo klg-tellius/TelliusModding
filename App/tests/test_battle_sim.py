@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -375,9 +376,11 @@ class StagingTests(unittest.TestCase):
     def test_battle_params(self):
         from fe_modding.battle_sim.staging import BattleParams
         p = BattleParams.from_text("{\r\n\tInitPosL\t\t-25.0, 0.0, 0.0, 0.0\t# left\r\n\tWaitInit\t60\r\n"
-                                   "\tQuakeCrit\t2.5\r\n\tPertnerAngle\t40.0f\r\n}\r\n")
-        self.assertEqual((p.start_x(0), p.start_x(1), p.wait_init, p.quake_crit, p.wait_atk2),
-                         (-25.0, 20.0, 60, 2.5, 20))
+                                   "\tQuakeCrit\t2.5\r\n\tQuake\t1.25\r\n\tMagicFade\t60\r\n"
+                                   "\tMagicFadeTime\t20\r\n\tPertnerAngle\t40.0f\r\n}\r\n")
+        self.assertEqual((p.start_x(0), p.start_x(1), p.wait_init, p.quake_crit, p.quake,
+                          p.magic_fade, p.magic_fade_time, p.wait_atk2),
+                         (-25.0, 20.0, 60, 2.5, 1.25, 60.0, 20, 20))
 
     def test_unit_params(self):
         from fe_modding.battle_sim.staging import UnitParams, number
@@ -435,6 +438,25 @@ class CueAndFlightTests(unittest.TestCase):
         tl = timeline.build(log, self.lookup, weapons=(timeline.WeaponEffects(0, "EID_K_FIRE"),))
         self.assertEqual(next(c.side for c in tl.cues if c.key == "EID_K_FIRE"), 1)
 
+    def test_long_spell_finishes_before_counterattack(self):
+        rexbolt = Weapon(**{**FIRE.__dict__, "iid": "IID_MJOLNIR", "effect": "EID_K_THUNDER4"})
+        spell = Clip("EID_K_THUNDER4", 400, impact=195, swing=190,
+                     events=((36, 31), (400, 33)))
+        log = simulate(unit("Soren", weapon=rexbolt), unit("Titania"))
+        tl = timeline.build(log, self.lookup,
+                            weapons=(timeline.WeaponEffects(1, "EID_K_THUNDER4", camera_name="MJOLNIR"),),
+                            effect_clip=lambda eid: spell if eid == "EID_K_THUNDER4" else None)
+        cue = next(c for c in tl.cues if c.key == "EID_K_THUNDER4")
+        counter = next(seg for seg in tl.segments if seg.side == 1 and seg.role in (sa.ATTACK1, sa.ATTACK2))
+        self.assertGreaterEqual(counter.start, cue.frame + spell.length)
+        self.assertIn("MJOLNIR_at0", [camera.script for camera in tl.camera])
+        self.assertIn("MJOLNIR_at1", [camera.script for camera in tl.camera])
+        self.assertNotIn("THUNDER4_at0", [camera.script for camera in tl.camera])
+        effect_quakes = [(q.frame - cue.frame, q.strength, q.duration) for q in tl.quakes
+                         if q.frame >= cue.frame and q.frame != tl.changes[0].frame]
+        self.assertIn((36, 1.0, -1), effect_quakes)
+        self.assertIn((400, 0.0, 0), effect_quakes)
+
     def test_clip_cameras(self):
         log = simulate(unit("A"), unit("D"))
         plain = timeline.build(log, self.lookup)
@@ -458,7 +480,10 @@ class CueAndFlightTests(unittest.TestCase):
 
         tl, cues = effects(simulate(unit("A"), unit("D", weapon=None)))
         hit = tl.changes[0].frame
-        self.assertIn((1, timeline.HIT_EFFECT, hit + 1, 0.0), cues)  # DamageEffWait after the blow
+        # One blow spawns one hit effect. A duplicated cue makes the same particle section play
+        # twice on the defender (most visibly on Titania's large model).
+        self.assertEqual([cue for cue in cues if cue[1] == timeline.HIT_EFFECT],
+                         [(1, timeline.HIT_EFFECT, hit + 1, 0.0)])  # DamageEffWait after the blow
         log = simulate(unit("A"), unit("D", weapon=None), outcomes=FixedOutcomes({(1, "crit"): True}))
         tl, cues = effects(log)
         self.assertIn((1, timeline.SPECIAL_HIT_EFFECT, tl.changes[0].frame + 1, 0.0), cues)
@@ -568,12 +593,30 @@ class CameraTests(unittest.TestCase):
         self.assertEqual(set(gc.scripts), {"atk_l", "fig1_at1_ax"})
         self.assertEqual(gc.track([camera.Cue(0, "fig1_at1_ax")], [], 2)[0].dist, 60.0)
 
+    @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"),
+                         "set FE9_EXTRACTED_FILES to an extracted files/ directory")
+    def test_rexbolt_is_mjolnir_camera_not_thunder4(self):
+        from fe_modding.formats import battle_camera as bc
+        pack = Path(os.environ["FE9_EXTRACTED_FILES"]) / "xcam" / "magic" / "cam.cmp"
+        names = {script.name for script in bc.read_script_pack(pack.read_bytes())}
+        self.assertIn("MJOLNIR_at0", names)
+        self.assertIn("MJOLNIR_at1", names)
+        self.assertNotIn("THUNDER4_at0", names)
+        self.assertNotIn("THUNDER4_at1", names)
+
     def test_quake(self):
         gc = self.camera()
         shots = gc.track([camera.Cue(0, "atk_l")], [camera.Quake(5, 1.0)], 80)
         self.assertEqual(shots[4].shake, (0.0, 0.0))
         self.assertNotEqual(shots[6].shake[0], 0.0)
         self.assertAlmostEqual(shots[70].shake[0], shots[71].shake[0])  # died down
+
+    def test_indefinite_quake_holds_until_stop_event(self):
+        gc = self.camera()
+        quakes = [camera.Quake(2, 1.0, -1), camera.Quake(20, 0.0, 0)]
+        shots = gc.track([camera.Cue(0, "atk_l")], quakes, 25)
+        self.assertNotEqual(shots[19].shake, (0.0, 0.0))
+        self.assertEqual(shots[20].shake, (0.0, 0.0))
 
     def test_eye_and_look_at(self):
         shot = camera.Shot(0, (0.0, 0.0, 0.0), (0.0, 7.0, 0.0), 0.0, 180.0, 60.0)

@@ -457,9 +457,10 @@ class SaveBlock:
     size: int
     sequence: int
     save_kind: int
-    save_mode: int
-    chapter_map: str  # "bmapNN" the block resumes into
+    resume_point: int
+    chapter_map: str  # party_data+0x504: the last map loaded; the block's own map only when suspended
     crc_ok: bool
+    chapter: int = 0  # party_data+0x10: current_chapter_number, the ChapterData id (script CNN) it loads into
 
     @property
     def flags_offset(self) -> int:
@@ -478,7 +479,9 @@ def _block_at(data: bytes, offset: int) -> Optional[SaveBlock]:
     # that end the BMST payload, 0x140+0x18 bytes after the flags.
     name_at = FLAGS_OFFSET + BIT_BYTES + 0x140
     chapter = b[name_at:name_at + 0x18].split(b"\0")[0].decode("ascii", "replace")
-    return SaveBlock(offset, size, seq, b[0x60], b[0x65], chapter, ok)
+    # The name is only refreshed when a map loads: a base or chapter-start save keeps the previous
+    # map's name, so the chapter is read from current_chapter_number (BMST payload + 0x10).
+    return SaveBlock(offset, size, seq, b[0x60], b[0x65], chapter, ok, b[0xBC + 0x10])
 
 
 def save_blocks(gci: bytes) -> list[SaveBlock]:
@@ -515,10 +518,10 @@ def refresh_crc(gci: bytearray, block: SaveBlock) -> None:
 
 # -- command line ---------------------------------------------------------------
 
-def _chapter_script(scripts: Path, chapter_map: str) -> Optional[Path]:
-    """``bmapNN`` (and ``bmapNN_2``...) runs ``Scripts/CNN.cmb``."""
-    if chapter_map.startswith("bmap") and chapter_map[4:6].isdigit():
-        path = scripts / f"C{int(chapter_map[4:6]):02d}.cmb"
+def _chapter_script(scripts: Path, chapter: int) -> Optional[Path]:
+    """Chapter ``NN`` (``current_chapter_number``) runs ``Scripts/CNN.cmb``."""
+    if chapter:
+        path = scripts / f"C{chapter:02d}.cmb"
         return path if path.exists() else None
     return None
 
@@ -530,7 +533,7 @@ def _slot_labels(scripts: Optional[Path], block: SaveBlock) -> list[Optional[str
     from .cmb.parser import parse
 
     globals_ = global_flags_from_cmb(scripts / "startup.cmb")
-    chapter = _chapter_script(scripts, block.chapter_map)
+    chapter = _chapter_script(scripts, block.chapter)
     locals_ = []
     if chapter is not None:
         locals_ = local_flags(parse(decompile(read_cmb_path(chapter), chapter.name)[0]))
@@ -559,7 +562,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     for b in blocks:
         print(f"block 0x{b.offset:05x}  size 0x{b.size:x}  seq {b.sequence:5d}  kind {b.save_kind}  "
-              f"mode {b.save_mode}  {b.chapter_map:<10} crc {'ok' if b.crc_ok else 'BAD'}")
+              f"resume {b.resume_point}  chapter {b.chapter:02d}  crc {'ok' if b.crc_ok else 'BAD'}")
     block = max(blocks, key=lambda b: b.sequence)
     if args.block is not None:
         block = next(b for b in blocks if b.offset == args.block)
@@ -575,7 +578,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         bits[slot_of(token)] = True
     for token in args.clr:
         bits[slot_of(token)] = False
-    print(f"\nflags of block 0x{block.offset:05x} ({block.chapter_map}):")
+    print(f"\nflags of block 0x{block.offset:05x} (chapter {block.chapter:02d}):")
     for i, on in enumerate(bits):
         if on or (args.set or args.clr) and labels[i]:
             name = labels[i] or "(no name in this chapter)"

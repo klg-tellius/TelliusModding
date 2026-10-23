@@ -9,7 +9,7 @@ from fe_modding.gui.model_viewer import _load_model_set, _particle_triangles
 
 
 class ParticleSamplingTest(unittest.TestCase):
-    def test_window_and_velocity_integral(self):
+    def test_window_and_global_translation_curve(self):
         emitter = animation.ParticleEmitterLayout(
             0, "|root|", 0, 0, 1, 4, 0, (1.0, 1.0), 0.0, 1, 0, 0, 0, 0, 1)
         stage = animation.ParticleStageLayout(0, 0, 5, 15, (2.0, 3.0, 4.0), 0, 1)
@@ -17,8 +17,19 @@ class ParticleSamplingTest(unittest.TestCase):
         self.assertEqual(particle_preview.sample(prepared, 4), ())
         at_ten = particle_preview.sample(prepared, 10)
         self.assertEqual(len(at_ten), 1)
-        self.assertAlmostEqual(at_ten[0].position[0], 9.5)  # 2 + integral 0..5 of 1..2
+        self.assertAlmostEqual(at_ten[0].position[0], 5.0)  # initial 2 + frame-10 offset 3
         self.assertEqual(particle_preview.sample(prepared, 16), ())
+
+    def test_later_stage_does_not_restart_its_curves(self):
+        emitter = animation.ParticleEmitterLayout(
+            0, "|root|", 0, 0, 1, 4, 0, (1.0, 1.0), 0.0, 1, 0, 0, 0, 0, 1)
+        stage = animation.ParticleStageLayout(0, 0, 12, 27, (0.0, 0.0, 0.0), 0, 1)
+        prepared = (particle_preview.Stage(
+            emitter, stage, ((4, ((13, 0.0), (14, 0.25), (16, 1.0), (27, 0.0))),)),)
+        # EID_K_ATTACK has this exact shape: restarting the curve at local frame zero kept the
+        # particle invisible until frame 26 and made a false second burst after the hit.
+        self.assertEqual(particle_preview.sample(prepared, 12)[0].alpha, 0.0)
+        self.assertEqual(particle_preview.sample(prepared, 16)[0].alpha, 1.0)
 
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "FE9_EXTRACTED_FILES not set")

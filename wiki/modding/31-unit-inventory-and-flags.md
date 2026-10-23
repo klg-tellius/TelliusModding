@@ -62,6 +62,14 @@ Build and Deployment expose the same underlying records through different workfl
 
 ## Guided walkthrough
 
+<!-- screenshot 31-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with an enemy selected and its item slots and flags in the selection panel.](../assets/images/tutorials/screenshots/31-a-setup.png)](../assets/images/tutorials/screenshots/31-a-setup.png)
+
+<figcaption markdown="span">An enemy of Ch.1 selected: its items with the per-slot drop flag, and its deployment flags. The drop flag belongs to the item slot, not to the unit.</figcaption>
+</figure>
+
 ### 1. Establish a predictable identity and position
 
 Select the test enemy. Keep its working **Character** and **Class** for now. If **Class** is empty, the character's normal class is used; entering a JID here overrides that class for this deployment record.

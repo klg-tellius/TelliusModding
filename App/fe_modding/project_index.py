@@ -37,8 +37,8 @@ from .project import ModProject
 PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
 CATEGORY_LABELS = {PLAYABLE: "Playable", NAMED: "Named NPCs & bosses", GENERIC: "Generic"}
 
-# Normal/Hard/Maniac are presumed from the letters; the 4th file (c) is not identified yet.
-_DIFFICULTY_NAMES = {"n": "Normal", "h": "Hard", "m": "Maniac", "c": "c (unidentified)"}
+# dispos_c.bin is the common file: its sections are read on every difficulty (the Build tab's "Common").
+_DIFFICULTY_NAMES = {"n": "Normal", "h": "Hard", "m": "Maniac", "c": "Common"}
 _PORTRAIT_CODE_RE = re.compile(r"\$FC(?:L_)?([^|$]*)\|")
 _SPEAKER_CODE_RE = re.compile(r"\$c[0-9]([^|$]*)\|")
 _TRAILING_DIGITS_RE = re.compile(r"\d+$")
@@ -178,6 +178,14 @@ class ProjectIndex:
         if not self.profile.has_file("system_archive"):
             return {}
         system_cmp = self.profile.path(self.files, "system_archive")
+        # The loose Mess/common.m holds the names added since the last build (the build copies
+        # it into system.cmp), so it wins when it exists.
+        loose = chapters._common_messages_path(self.project)
+        if loose is not None:
+            try:
+                return {key: m.text for key, m in chapters._common_messages(loose).items()}
+            except Exception:  # noqa: BLE001 - fall back to the archive's copy
+                pass
         try:
             return fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
         except Exception:  # noqa: BLE001
@@ -301,8 +309,10 @@ class ProjectIndex:
                 continue
             key = c.mpid or c.pid
             main = first_by_mpid.setdefault(key, c.pid)
-            if (c.fid is None or len(fid_names.get(c.fid, ())) > 1 or (c.mpid or "").endswith("DUMMY")
-                    or is_tutorial(c.mpid)):
+            # A portrait shared by several names is a generic soldier's, unless the record levels up
+            # on the player side (no retail generic does): a renamed copy of Boyd keeps both playable.
+            shared_face = len(fid_names.get(c.fid, ())) > 1 and sum(c.fixed_growth_start) == 0
+            if c.fid is None or shared_face or (c.mpid or "").endswith("DUMMY") or is_tutorial(c.mpid):
                 category = GENERIC
             # 0x49-0x50 are the fixed-mode level-up accumulators (fe8data.CharacterEntry.fixed_growth_start);
             # only units that level up on the player side have them
@@ -338,7 +348,10 @@ class ProjectIndex:
             packed = lz10.decompress(self.profile.path(self.files, "system_archive").read_bytes())
             for entry in pak.read_pak_entries(packed):
                 if entry.name.replace("\\", "/").casefold() == "face/facedata.bin":
-                    return read_face_table(pak.read_pak_file_content(packed, entry))
+                    # The portrait editors change the loose copy; the build copies it into system.cmp.
+                    loose = self.files / entry.name
+                    return read_face_table(loose.read_bytes() if loose.is_file()
+                                           else pak.read_pak_file_content(packed, entry))
         except Exception:  # noqa: BLE001
             pass
         return {}
@@ -439,16 +452,65 @@ class ProjectIndex:
                 continue
             try:
                 script = read_cmb_path(path)
-                names = _Names(script).defs
+                names = _saved_source_names(self.project, path, len(script.functions)) or _Names(script).defs
+                pool_text = _pool_text(script)
             except Exception:  # noqa: BLE001
                 continue
             self._script_functions[chapter_id] = [(names[i], fn.type) for i, fn in enumerate(script.functions)]
+            # characters named by a trigger (@on_talk, @on_battle, @on_death...) and not pushed by its code
+            for i, fn in enumerate(script.functions):
+                for label in _trigger_labels(script, fn, pool_text):
+                    if label.startswith(("PID_", "MPID_")):
+                        refs.setdefault(label, []).append(ScriptRef(chapter_id, names[i], label))
             for i, fn in enumerate(script.functions):
                 for instr in fn.code:
                     for operand in getattr(instr, "operands", ()):
                         if isinstance(operand, str) and operand.startswith(("PID_", "MPID_")):
                             refs.setdefault(operand, []).append(ScriptRef(chapter_id, names[i], operand))
-        return refs
+        return {label: list(dict.fromkeys(found)) for label, found in refs.items()}
+
+
+def _pool_text(script) -> dict:
+    """String-pool offset -> text of a script (what trigger parameters point to)."""
+    from .formats.cmb.binary import _pool_layout
+    _size, offsets = _pool_layout(script)
+    text = {}
+    for value, offset in offsets.items():
+        text.setdefault(offset, value)
+    return text
+
+
+def _trigger_labels(script, fn, pool_text: dict) -> list:
+    """The label parameters (``pid1``, ``pid2``, ``pid``, ``mpid``...) of a function's trigger."""
+    from .formats.cmb.catalog import triggers
+    kind = triggers("fe9").get(fn.type)
+    if kind is None or fn.type == 0 or len(fn.params) != len(kind.params):
+        return []
+    return [pool_text[value] for spec, value in zip(kind.params, fn.params)
+            if spec.kind in ("pid", "mpid") and value and value in pool_text]
+
+
+def _saved_source_names(project, path: Path, count: int) -> Optional[list]:
+    """The function names of the script's saved source (``script_sources/<name>.fe9s``, written by the
+    Script tab's Save) when it still compiles to the file, so the index names functions as the Script
+    tab does (``TutorialGuardTalk``, not ``func_29``). None: no matching saved source."""
+    from . import script_sources
+    from .formats.cmb import compile_source, write_cmb
+    from .formats.cmb.binary import read_cmb
+    from .formats.cmb import source_tools
+
+    sidecar = script_sources.sidecar_path(project, path)
+    if not sidecar.is_file():
+        return None
+    try:
+        text = sidecar.read_text(encoding="utf-8")
+        data = path.read_bytes()
+        if write_cmb(compile_source(text, base=read_cmb(data)).script) != data:
+            return None
+        names = [span.name for span in source_tools.function_spans(text)]
+    except Exception:  # noqa: BLE001 - a stale or broken source: fall back to the decompiler's names
+        return None
+    return names if len(names) == count else None
 
 
 def _zu(code: Optional[str]) -> Optional[str]:

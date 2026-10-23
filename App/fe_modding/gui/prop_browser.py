@@ -26,6 +26,8 @@ from .widgets import info
 ALL_MAPS = "All maps"
 COLUMNS = (("map", "Map", 150), ("name", "Object", 190), ("placed", "Placed", 60), ("tiles", "Tiles", 60),
            ("height", "Height", 60), ("kind", "Kind", 110))
+LIST_WIDTH = sum(column[2] for column in COLUMNS) + 24
+PREVIEW_MIN_WIDTH = 320
 
 
 def _kind(info: map_props.PropInfo) -> str:
@@ -57,6 +59,7 @@ class PropBrowser(ttk.Frame):
         self._loaded_path: Optional[Path] = None
         self._loaded_files: dict[str, bytes] = {}
         self._titles: dict[str, str] | None = None
+        self._sash_initialized = False
         self._build_widgets()
         self.bind("<Map>", lambda e: self._first_show(), add="+")
 
@@ -81,8 +84,10 @@ class PropBrowser(ttk.Frame):
 
         self._paned = paned = ttk.PanedWindow(self, orient="horizontal")
         paned.pack(fill="both", expand=True)
+        paned.bind("<Configure>", self._initialize_sash, add="+")
         left = ttk.Frame(paned)
         paned.add(left, weight=1)
+        ttk.Label(left, text="Select an object", style="Subtitle.TLabel").pack(anchor="w", pady=(0, 4))
         self._tree = ttk.Treeview(left, columns=[c[0] for c in COLUMNS], show="headings", selectmode="browse")
         for key, title, width in COLUMNS:
             self._tree.heading(key, text=title, command=lambda k=key: self._sort_by(k))
@@ -102,9 +107,16 @@ class PropBrowser(ttk.Frame):
         self._preview.show(None, "Select a prop to preview it.")
 
     # -- catalog -----------------------------------------------------------------------
+    def _initialize_sash(self, event) -> None:
+        """Set the initial split once the paned window has a real width."""
+        if self._sash_initialized or event.width <= 1:
+            return
+        preview_width = min(PREVIEW_MIN_WIDTH, event.width // 2)
+        self._paned.sashpos(0, min(LIST_WIDTH, event.width - preview_width))
+        self._sash_initialized = True
+
     def _first_show(self) -> None:
         if not self._props and not self._scanning:
-            self.after_idle(lambda: self._paned.sashpos(0, sum(c[2] for c in COLUMNS) + 24))
             self.scan()
 
     def scan(self) -> None:
@@ -180,6 +192,7 @@ class PropBrowser(ttk.Frame):
         self._tree.delete(*self._tree.get_children())
         self._rows = {}
         visible = self._visible()
+        selected_row = None
         for info in visible:
             w, d = info.footprint
             row = self._tree.insert("", "end", values=(
@@ -187,8 +200,12 @@ class PropBrowser(ttk.Frame):
                 _kind(info)))
             self._rows[row] = info
             if previous is not None and (info.path, info.name) == (previous.path, previous.name):
-                self._tree.selection_set(row)
-                self._tree.see(row)
+                selected_row = row
+        if selected_row is None and visible:
+            selected_row = next(iter(self._rows))
+        if selected_row is not None:
+            self._tree.selection_set(selected_row)
+            self._tree.see(selected_row)
         maps = len({p.map_name for p in self._props})
         self._status.configure(text=f"{len(visible)} of {len(self._props)} props, {maps} maps")
 
@@ -306,6 +323,11 @@ class MapObjectsPanel(EditorPanel):
         self._export.configure(state="normal" if prop is not None else "disabled")
         self._apply_button.configure(state="normal" if prop is not None else "disabled")
         if prop is None:
+            for var in self._vars.values():
+                var.set("")
+            for _field, _mask, var in self._toggles:
+                var.set(False)
+            self._form_status.configure(text="Select an object above.")
             return
         obj = prop.obj
         for key in map_props.PROP_FIELDS[:6]:

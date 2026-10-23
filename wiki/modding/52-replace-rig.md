@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Models", "Rigging", "Blender"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/52-replace-rig.md"
@@ -57,9 +57,9 @@ For battle sets, remember that the same body/skeleton participates in multiple w
 
 ### Review a Fit mapping
 
-Open **Fit new rig…** and select the rigged model. The mapping table lists model joints and guessed game bones. Check root/pelvis first, then spine/chest/neck/head, shoulders/arms/hands, hips/legs/feet, and any tails/wings. Detect mirrored left/right matches and mappings that cross body chains.
+Open **Fit new rig…** and select the rigged model. The dialog *Fit new rig - zu/&lt;code&gt;* explains: *Each model joint turns like the game bone it follows. Blank: the joint follows its parent (fingers, hair...). The pelvis must be the one mapped joint all the others hang from.* The table lists model joints (indented by depth) and the guessed game bone of each. Check root/pelvis first, then spine/chest/neck/head, shoulders/arms/hands, hips/legs/feet, and any tails/wings. Detect mirrored left/right matches and mappings that cross body chains.
 
-Blank means a joint is not driven by a mapped game bone; it may remain in bind pose. Many model joints mapped to one game bone can be intentional for twist/deformation, but test them. Use **Save mapping…** to keep reviewed JSON and **Load mapping…** for reproducibility. If offered mesh reduction, set a budget deliberately; locked weapon joints are preserved but silhouette and weights still need review.
+Blank means a joint is not driven by a mapped game bone; it may remain in bind pose. Many model joints mapped to one game bone can be intentional for twist/deformation, but test them. Use **Save mapping...** (*Save the joint mapping*, a `.json` file) to keep the reviewed table and **Load mapping...** (*Load a joint mapping*) to reuse it on the next export of the same model. **Fit** builds the fitted model; **Cancel** stops. If offered mesh reduction, set a budget deliberately; locked weapon joints are preserved but silhouette and weights still need review.
 
 Keep the generated fitted glTF. Open it in Blender and inspect bind pose and several animation frames before accepting the game-file transaction.
 
@@ -83,6 +83,12 @@ Compare triangle/vertex/texture figures, proposed files, mapping method, and eve
 - **Import Review → Bones:** shows each joint, destination bone, and matching method.
 - **Warnings:** texture-variant loss, dropped tracks, bind-pose bones, reused clips, visibility/range concerns.
 - **Write files:** commits the whole proposed output through project backup handling.
+
+## Things to try next
+
+1. **Keep a mapping.** Save the mapping of a first fit, change one joint, fit again from **Load mapping...**, and compare.
+2. **A blank joint.** Leave a tail joint blank and watch it follow its parent through an attack.
+3. **Coverage report.** On **Replace rig...**, read which battle animations were retargeted and which were reused from another clip.
 
 ## Interactions and precedence
 

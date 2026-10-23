@@ -45,6 +45,14 @@ Back up the chapter message file and script. A new message is inert until a scri
 
 ## How the editor fits together
 
+<!-- diagram dialogue -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Scene setup, text and timing, then the script call that reaches the message.](../assets/images/tutorials/dialogue.svg)](../assets/images/tutorials/dialogue.svg)
+
+<figcaption>Concept diagram, not an app screenshot. Scene setup, text and timing, then the script call that reaches the message. Select the image to open it at full size.</figcaption>
+</figure>
+
 Messages are addressed by string ID, not by row number. A script call such as a chapter's existing `TalkEvent` family resolves the ID through the game's name table. The editor keeps messages sorted by encoded ID for consistency, but changing their displayed order does not retarget a caller.
 
 The Dialogue page has four synchronized views:
@@ -67,6 +75,14 @@ Layout, background, portraits, selected speaker/textbox, typing sound, waits, an
 If notation is invalid, the editor underlines the error and Live Preview retains the last valid parsed text. A pretty preview during an error is stale evidence; resolve the red error before saving.
 
 ## Guided walkthrough
+
+<!-- screenshot 37-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Dialogue tab with the message list, the text editor, layout and action buttons, the seats and the preview.](../assets/images/tutorials/screenshots/37-a-setup.png)](../assets/images/tutorials/screenshots/37-a-setup.png)
+
+<figcaption markdown="span">The **Dialogue** tab on `MS_01_OP_01`: the message text with its actions highlighted, the **Layout** and action buttons, the portrait seats, and **Live Preview**.</figcaption>
+</figure>
 
 ### 1. Audit a working message and caller
 

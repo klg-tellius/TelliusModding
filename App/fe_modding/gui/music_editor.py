@@ -47,6 +47,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from .. import tools
 from ..exceptions import ModdingError
 from ..formats import gcfesnd, stm
+from ..media_references import executable_bgm_cues, front_end_track_cues
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -78,6 +79,7 @@ class MusicEditor(EditorPanel):
         self._playback_wav: Path | None = None
         self._task_running = False
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_music_"))
+        self._native_bgm_cues = executable_bgm_cues(self._project.extracted_dir / "sys" / "main.dol")
 
         self._build_widgets()
         self._load_track_list()
@@ -97,7 +99,11 @@ class MusicEditor(EditorPanel):
         ttk.Entry(left, textvariable=search_var).pack(fill="x", pady=(4, 4))
         search_var.trace_add("write", lambda *_: self._apply_filter(search_var.get()))
 
-        self._delete_button = list_buttons(left, "New track…", self._add_new_track, self._delete_track)
+        self._delete_button = list_buttons(
+            left, "New track…", self._add_new_track, self._delete_track,
+            "Removes this stream from the built disc. Front-end menu tracks are protected; "
+            "remaining BGM cues and hardcoded executable references are shown first.",
+        )
         list_frame = ttk.Frame(left)
         list_frame.pack(fill="both", expand=True)
         self._file_list = tk.Listbox(list_frame, exportselection=False)
@@ -252,6 +258,11 @@ class MusicEditor(EditorPanel):
         self._cue_label.config(text=", ".join(c.name for c in cues) or "none: the game cannot play this track yet")
         self._new_cue_button.config(state="normal" if self._catalog().is_file() else "disabled")
         self._remove_cue_button.config(state="normal" if self._added_cues(cues) else "disabled")
+        native = sorted(c.name for c in cues if c.name in self._native_bgm_cues)
+        if native:
+            protected = front_end_track_cues(set(native))
+            suffix = " Front-end menu music: it may be replaced, but not deleted." if protected else ""
+            self._status_label.config(text=f"Hardcoded in main.dol: {', '.join(native)}.{suffix}")
 
     def _add_cue(self, path: Path, name: str) -> bool:
         try:
@@ -381,7 +392,13 @@ class MusicEditor(EditorPanel):
                      if c.path.rsplit("/", 1)[-1].lower() == path.stem.lower()]
         except (OSError, gcfesnd.GcfesndError, ValueError):
             users = []
-        if not confirm_delete_added(self, self._project, path, "track", users):
+        protected = front_end_track_cues(set(users))
+        reason = (f"It is used by the front-end menu through the hardcoded cue(s) {', '.join(protected)}. "
+                  "Replace it instead." if protected else "")
+        annotated_users = [f"{name} (hardcoded in main.dol)" if name in self._native_bgm_cues else name
+                           for name in users]
+        if not confirm_delete_added(self, self._project, path, "track", annotated_users,
+                                    allow_retail=True, protected_reason=reason):
             return
         self._stop()
         added = self._added_cues(self._cues_of(path))

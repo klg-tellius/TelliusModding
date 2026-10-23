@@ -22,8 +22,8 @@ from .fe8_session import Fe8DataSession
 from .widgets import tip
 
 STAT_HELP = {
-    "level": "Base level.", "build": "Constitution added to the class's (rescue and weight checks).",
-    "weight": "Weight added to the class's (who can rescue whom).",
+    "level": "Base level.", "build": "Constitution added to the class's (rescue and weight checks); can be negative.",
+    "weight": "Weight added to the class's (who can rescue whom); can be negative.",
     "start_transform_gauge": "A laguz's transformation gauge when deployed (0-20).",
     "roster_order": "Default position in the unit lists.",
     "biorhythm_pattern": "The biorhythm curve (0: a random one).",
@@ -88,8 +88,12 @@ class CharacterForm(ttk.Frame):
 
         top = ttk.Frame(self._body, style="Page.TFrame")
         top.pack(fill="x")
-        identity = self._group(top, "Identity")
-        identity.master.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        # Identity with Map models under it, then Skills: three groups side by side did not fit
+        # 1440 px (the weapon-rank table makes Skills wide) and cut Map models off.
+        left = ttk.Frame(top, style="Page.TFrame")
+        left.pack(side="left", fill="both", padx=(0, 12))
+        identity = self._group(left, "Identity")
+        identity.master.pack(fill="x")
         self._pointer(identity, 0, "Character (PID)", "pid", c.pid, "PID")
         self._pointer(identity, 1, "Name key (MPID)", "mpid", c.mpid, "MPID")
         self._picker(identity, 2, "Portrait (FID)", "fid", c.fid, "FID",
@@ -101,7 +105,7 @@ class CharacterForm(ttk.Frame):
             link.grid(row=3, column=2, sticky="w", padx=(6, 0))
 
         skills = self._group(top, "Skills")
-        skills.master.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        skills.master.pack(side="left", fill="both", expand=True)
         for i in range(3):
             self._pointer(skills, i, f"Slot {i}", f"sid{i}", c.sids[i], "SID")
         ttk.Label(skills, text="Class innate skills", style="SurfaceMuted.TLabel").grid(
@@ -111,8 +115,8 @@ class CharacterForm(ttk.Frame):
                   wraplength=290, justify="left").grid(row=3, column=1, sticky="w")
         self._weapon_ranks(skills, 4, c.weapon_ranks, cls.weapon_ranks if cls else None)
 
-        models = self._group(top, "Map models", "The unit's map animation set (AID); empty: the class's own.")
-        models.master.pack(side="left", fill="both", expand=True)
+        models = self._group(left, "Map models", "The unit's map animation set (AID); empty: the class's own.")
+        models.master.pack(fill="x", pady=(12, 0))
         for row, (label, field, value) in enumerate((("Unpromoted", "aid_unpromoted", c.aid_unpromoted),
                                                      ("Promoted", "aid_promoted", c.aid_promoted))):
             self._picker(models, row, label, field, value, "AID",

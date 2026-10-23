@@ -65,6 +65,14 @@ The two script views represent the same instructions. **Readable code** compiles
 
 ## Guided walkthrough
 
+<!-- screenshot 43-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![AI page with the script list and the readable AI code of the selected script.](../assets/images/tutorials/screenshots/43-a-setup.png)](../assets/images/tutorials/screenshots/43-a-setup.png)
+
+<figcaption markdown="span">**Game Data › AI (CP)**: the AI scripts of `cp_data.bin` in the readable AI language, with the **Readable/Raw** view, **Apply** and the units that use the selected script.</figcaption>
+</figure>
+
 ### 1. Resolve the sequence that actually reaches the unit
 
 Open the deployment and copy the exact Attack sequence name. In **Game Data → AI (CP)** choose **Attack**, select that name, and press **Find**. Results can include deployment data and other CP scripts. A chapter event can later call a sequence setter, so search the event scripts too when the unit changes behavior mid-map.

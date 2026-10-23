@@ -6,7 +6,11 @@ root = Path(SPECPATH).parent
 sys.path.insert(0, str(root / 'App'))
 datas = [(str(root / 'App/fe_modding/formats/cmb/externs_fe9.json'), 'fe_modding/formats/cmb'),
          (str(root / 'App/fe_modding/formats/cmb/externs_fe10.json'), 'fe_modding/formats/cmb'),
-         (str(root / 'App/licenses'), 'licenses')]
+         (str(root / 'App/licenses'), 'licenses'),
+         # the Tellius Terrain Blender add-on is copied into Blender as source, with the shared compiler
+         (str(root / 'App/fe_modding/blender_addon/tellius_terrain/__init__.py'), 'fe_modding/blender_addon/tellius_terrain'),
+         (str(root / 'App/fe_modding/blender_addon/tellius_terrain/kit.py'), 'fe_modding/blender_addon/tellius_terrain'),
+         (str(root / 'App/fe_modding/terrain_paint.py'), 'fe_modding')]
 binaries = []
 hiddenimports = collect_submodules('fe_modding')
 for package in ('sv_ttk', 'wgpu', 'rendercanvas'):

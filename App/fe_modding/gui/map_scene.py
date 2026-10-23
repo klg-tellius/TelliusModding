@@ -65,10 +65,10 @@ with no parent rotation gives the same picture in the app's Y-up space.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .. import map_heights
-from ..formats import map_file
+from ..formats import animation, map_file
 from .model_viewer import FIT_FRACTION, GridOverlay, MapTextureProjection, _LoadedSet, _ModelCanvas, _Triangle, load_named_model_set
 
 
@@ -331,26 +331,14 @@ def compute_gameplay_grid_overlay(map_data: map_file.MapData, tile_scale: float 
     precedent) requires flagging that distinction honestly rather than
     shipping a guess as fact.
 
-    Found by static cross-referencing in `research/main_dol` (GAME_NOTES.md's
-    Twenty-eighth finding), not live-debugged the way the placement grid's
-    Twentieth finding was: `compute_cursor_tile_world_position()` (renamed
-    from `FUN_80045b9c`) builds `world = tile_scale(5.0) * (float)tile *
-    mapScale` from two globals (`cursor_tile_x`/`cursor_tile_y`, renamed from
-    `DAT_8036728d`/`DAT_8036728e`) - the exact same `tile_scale` SDA constant
-    and map-state `+0x6c` `mapScale` field the CONFIRMED
-    `MapBuildInstance.world_transform()` uses, but a plain multiply with
-    **no pivot/rotation**. The viewer then expresses that grid in the same
-    terrain-local placement space as props: real maps checked in this pass
+    The earlier native-code rationale for this transform was disproved:
+    `FUN_80045b9c` applies map fog, and its two signed globals are fog start
+    and end distances rather than cursor coordinates. The viewer still
+    expresses the tactical grid in the same terrain-local placement space as
+    props because real maps checked in this pass
     store `mapextra.panel_offset_x/y` as the positive counterpart of the base
     terrain instance's negative `mapbuildinst.x/y`, so tile 0 is drawn at that
     placement origin instead of the raw mesh's own `(0, 0)` corner.
-    Those two globals are written by cursor-move code throughout the
-    map-code cluster and are tied, through a shared grid-bounds buffer
-    (`DAT_802ca518`), to the same map-state struct `load_uniquepanel_sections()`
-    reads `x_size`/`y_size` from - real evidence, but not a live memory
-    trace confirming the cursor bytes are literally bounded by
-    `x_size`/`y_size` the way the Twentieth finding's recipe would give.
-
     Cross-checked against already-decoded, already-trusted data before
     shipping: real deployment units' `dispo.py` `pos_x`/`pos_y` fields (their
     literal tactical-grid deployment tile) fall strictly inside
@@ -358,8 +346,8 @@ def compute_gameplay_grid_overlay(map_data: map_file.MapData, tile_scale: float 
     checked (`bmap01`/`bmap07`/`bmap12`) - confirming which coordinate space
     `MapCapacity`'s grid is in, even though the *world-space transform*
     itself is only strong evidence. `tile_scale` defaults to the same `5.0`
-    confirmed for placement, since the gameplay-grid formula reuses that
-    exact SDA constant. `mapextra.grid_buffer` is the confirmed usable
+    confirmed for placement; no native tactical-grid transform has yet been
+    isolated. `mapextra.grid_buffer` is the confirmed usable
     tactical inset (`min=buffer`, `max=size-buffer`), and Fire Emblem Wiki's
     rendered chapter-map dimensions match that inset for the checked early
     FE9 maps rather than the full padded `MapCapacity` dimensions."""
@@ -475,6 +463,7 @@ def build_map_scene(
 
     anchor = _find_prop_anchor(map_data, map_scale)
     terrain_indices = _base_terrain_desc_indices(map_data)
+    stills: dict[str, list[_Triangle]] = {}
 
     for inst in map_data.build_inst:
         if not (0 <= inst.desc_index < len(map_data.build_desc)):
@@ -485,19 +474,50 @@ def build_map_scene(
         loaded = _loaded_for_map_model(pak_contents, map_data, cache, obj.filename)
         if loaded is None:
             continue
+        if obj.filename not in stills:
+            stills[obj.filename] = _still_triangles(loaded)
         matrix = inst.world_transform(map_scale=map_scale, parent_matrix=anchor)
-        triangles.extend(_transform_triangle(tri, matrix) for tri in loaded.triangles)
+        triangles.extend(_transform_triangle(tri, matrix) for tri in stills[obj.filename])
 
     return _LoadedSet(label="map scene", bones=[], triangles=triangles, bone_markers={}, animations=[])
 
 
+#: Share of an alpha track's peak a still picture shows (the foam texture
+#: is mostly transparent already: wave_99's mean alpha is 18/255).
+STILL_ALPHA_SHARE = 1.0
+
+
+def _still_triangles(loaded: _LoadedSet) -> list[_Triangle]:
+    """A prop as a still picture shows it. Props that fade in and out from
+    nothing (``wave_99``'s shore foam: material alpha 0, raised by its
+    ``.ga``'s footer slot-1 tracks) get each faded material at its track's
+    peak (times :data:`STILL_ALPHA_SHARE`) instead of staying invisible;
+    every other prop is unchanged."""
+    if not loaded.animations or not any(t.alpha < 0.01 for t in loaded.triangles):
+        return loaded.triangles
+    try:
+        anim = animation.read_animation_bytes(loaded.animations[0][1])
+        tracks = anim.material_alphas()
+    except Exception:  # noqa: BLE001 - an unreadable animation leaves the prop as it is
+        return loaded.triangles
+    if not tracks:
+        return loaded.triangles
+    end = max(int(anim.length_in_frames), 1)
+    peaks = {index: max(track.value(frame) for frame in range(0, end + 1, 2)) / 255.0
+             for index, track in tracks.items()}
+    return [replace(t, alpha=min(1.0, peaks[t.material] * STILL_ALPHA_SHARE))
+            if t.alpha < 0.01 and t.material in peaks else t for t in loaded.triangles]
+
+
 # -- top-down image (the Build tab's backdrop) -------------------------------------------
 
-#: Camera rotation looking straight down: screen x = world x, screen y = world
-#: z (rows grow downwards with ``screen_y_sign = -1``), depth = -height, so
-#: higher geometry is nearer. A proper rotation (det +1); both renderers cull
-#: by the stored normal, which an upward face passes.
+#: Camera rotation looking straight down. The screen signs below rotate the
+#: raw model-space X/Z image 180 degrees into the map orientation shown by the
+#: game; depth is -height, so higher geometry is nearer. A proper rotation
+#: (det +1); both renderers cull by the stored normal, which an upward face
+#: passes.
 TOPDOWN_ROTATION = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))
+TOPDOWN_SCREEN_SIGNS = (-1.0, 1.0)
 
 
 @dataclass
@@ -541,7 +561,7 @@ class _TopdownRasterCamera:
         self._center = camera.center
         self._extent = camera.extent
         self._zoom = camera.scale * camera.extent / (min(camera.width, camera.height) * FIT_FRACTION)
-        self._screen_x_sign, self._screen_y_sign = 1.0, -1.0
+        self._screen_x_sign, self._screen_y_sign = TOPDOWN_SCREEN_SIGNS
 
     def _rotation_matrix(self):
         return self._matrix
@@ -557,6 +577,6 @@ def render_topdown(scene: _LoadedSet, camera: TopdownCamera, gpu=None):
     if gpu is not None:
         gpu.set_triangles(scene.triangles)
         return gpu.render_image(camera.width, camera.height, np.array(TOPDOWN_ROTATION), camera.center,
-                                camera.scale, camera.extent, 1.0, -1.0)
+                                camera.scale, camera.extent, *TOPDOWN_SCREEN_SIGNS)
     frame = _ModelCanvas._rasterize(_TopdownRasterCamera(camera), scene.triangles, camera.width, camera.height)
     return Image.fromarray(frame)

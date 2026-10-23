@@ -57,6 +57,14 @@ Traversal has another layer: directional exits. The engine first derives closed 
 
 ## Guided walkthrough
 
+<!-- screenshot 23-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with the Tile heights tool, the heights overlay and the corner height fields of the selected tile.](../assets/images/tutorials/screenshots/23-a-setup.png)](../assets/images/tutorials/screenshots/23-a-setup.png)
+
+<figcaption markdown="span">**Tile heights** on tile (8, 7) with the **Heights** layer on: the panel shows the tile's four **Corner heights (steps)** on each layer and its neighbours' shared corners.</figcaption>
+</figure>
+
 ### 1. Inspect the two cells
 
 Activate **Tile heights** and select the lower/first cell. In the inspector, read all four corners for each available layer. Select its neighbor and do the same.

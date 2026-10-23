@@ -249,17 +249,30 @@ def list_buttons(parent: tk.Misc, add_text: str, on_add, on_delete, delete_help:
     return delete
 
 
-def confirm_delete_added(parent: tk.Misc, project, path: Path, kind: str, users: list[str] = ()) -> bool:
-    """Ask before deleting ``path`` (a file under files/); False, after saying why, for a
-    file of the source disc."""
+def confirm_delete_added(parent: tk.Misc, project, path: Path, kind: str, users: list[str] = (), *,
+                         allow_retail: bool = False, protected_reason: str = "") -> bool:
+    """Ask before deleting an asset.
+
+    Most callers retain the historical added-files-only rule.  Large streamed
+    media opts into ``allow_retail`` because omitting an unused retail movie or
+    track is a useful way to recover disc space.  ``protected_reason`` always
+    wins and is used for front-end media which native menu code still loads.
+    """
     from tkinter import messagebox
 
+    if protected_reason:
+        messagebox.showinfo(f"Delete {kind}", f"{path.name} can't be deleted. {protected_reason}", parent=parent)
+        return False
     added = project.is_added_file(path)
-    if added is False:
+    if added is False and not allow_retail:
         messagebox.showinfo(f"Delete {kind}", f"{path.name} is one of the game's own files: the game loads it, "
                             "so it can't be deleted. Replace it instead.", parent=parent)
         return False
-    text = f"Delete {path.name}? This can't be undone."
+    if added is False:
+        text = (f"Remove the base game's {path.name} from the built disc?\n\n"
+                f"Any scene or hardcoded game code which still requests it will find a missing file.")
+    else:
+        text = f"Delete {path.name}? This can't be undone."
     if added is None:
         text += "\n\nThe disc's file list isn't in this project, so it can't tell whether the game loads it."
     if users:

@@ -15,7 +15,7 @@ source_path: "meta/tutorial-screenshot-plan.md"
 ---
 # Tutorial screenshot capture plan
 
-**Capture status: pending. No real app screenshots have been delivered for this checklist.** Existing SVG diagrams are explanatory illustrations and do not count as captures. This is a handoff for an agent or person operating the real desktop app, with Dolphin and Blender where explicitly required.
+**Capture status: in progress.** The app-only frames are taken by `App/tools/capture_tutorial_screenshots.py` and listed, with the frames still to take, in the [capture log](tutorial-capture-log.md). Frames that need Dolphin, Blender or sample media are still pending. SVG diagrams are explanatory illustrations and do not count as captures. This is a handoff for an agent or person operating the real desktop app, with Dolphin and Blender where explicitly required.
 
 The objective is to show a reader **where to act, what to enter, and what a successful result looks like**. Capture the specific lesson state below, not merely an empty editor or a generic application window.
 
@@ -36,8 +36,8 @@ Store accepted PNGs under `wiki/assets/images/tutorials/screenshots/`.
 - Extra frames use a descriptive suffix, for example `32-c-repeat-check.png`. Extra-frame requirements are listed after the tables.
 - Preserve the raw capture. If annotations are helpful, save a separate `NN-a-setup-annotated.png`; do not replace the raw file. Add numbered callouts beside controls without obscuring labels, values, warnings, or preview content. No reconstructed controls or generated screenshots.
 - Insert **A** beside the matching setup/action step in the lesson's **Guided walkthrough**. Insert **B** beside the result test. Extra frames belong beside the exact intermediate step they explain. Replace an interface schematic once its real capture is accepted; retain a conceptual diagram only if it explains something the screenshot cannot.
-- Do not add Markdown image links until the files exist. Use text-only checklist status while captures are pending so the site has no broken images.
-- Record each file in a capture log with: lesson and step, checkpoint, actual record IDs, app/build version, chapter/part/difficulty, actions performed, observed result, capture date, raw/annotated paths, draft caption, alt text, and status. Allowed statuses: **pending**, **captured**, **accepted**, **blocked**. A successful screenshot API response alone does not make a capture accepted.
+- Do not add Markdown image links until the files exist. `capture_tutorial_screenshots.py --insert` adds only logged frames, setup frames at the start of the lesson's **Guided walkthrough** and result frames at its end; move a figure beside its exact step by hand when a lesson is rewritten (the `<!-- screenshot … -->` marker keeps it recognised).
+- Record each file in the capture log (`screenshots/capture_log.json`, published as the [capture log](tutorial-capture-log.md)) with: lesson and step, checkpoint, actual record IDs, app/build version, chapter/part/difficulty, actions performed, observed result, capture date, raw/annotated paths, draft caption, alt text, and status. Allowed statuses: **pending**, **captured**, **accepted**, **blocked**. A successful screenshot API response alone does not make a capture accepted.
 
 Use this log entry for every frame:
 

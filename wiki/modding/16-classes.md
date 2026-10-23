@@ -52,6 +52,22 @@ Map and battle appearance are separate lookups:
 
 ## Guided walkthrough
 
+<!-- screenshot 16-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Classes tab with the class list and the Fighter form.](../assets/images/tutorials/screenshots/16-a-setup.png)](../assets/images/tutorials/screenshots/16-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Classes** with `JID_FIGHTER`: bases, caps, growths, weapon ranks, movement type and **Promotes to**. Every Fighter in the game uses this record.</figcaption>
+</figure>
+
+<!-- screenshot 16-data-hub.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Game Data hub with tiles for Classes, Items, Skills, Terrain, General, Supports, Flags, AI and Rect RIDs.](../assets/images/tutorials/screenshots/16-data-hub.png)](../assets/images/tutorials/screenshots/16-data-hub.png)
+
+<figcaption markdown="span">**Game Data**: classes, items, skills, terrain, general rules and supports, then script flags, AI and rect RIDs. All but the last three are records in FE8Data.bin.</figcaption>
+</figure>
+
 ### 1. Copy both sides of a working promotion pair
 
 Select the unpromoted template and click **New…**. Choose the option to copy the selected record rather than create an empty record. An empty record requires every pointer and byte to be reconstructed and is inappropriate for a first class.

@@ -91,6 +91,25 @@ class HubPatchTests(unittest.TestCase):
 
 
 class HubScriptTests(unittest.TestCase):
+    def test_generated_opening_positions_before_focus_and_fade(self):
+        from fe_modding import hub_creation
+        from dataclasses import replace
+        setup = hub.HubSetup(33, 1, "PID_HUB", (hub.Destination(2, 4, 4, 5, 6),))
+        source = hub.hub_script(hub_creation.opening_source(33, "bmap33_avatar_c", "PID_HUB"), setup)
+        opening = source.split(hub.START_MARK)[0]
+        self.assertLess(opening.index('InstantDisposFirst'), opening.index('HubPositionAvatar()'))
+        self.assertLess(opening.index('HubPositionAvatar()'), opening.index('InstantUnitFocusByPID'))
+        self.assertLess(opening.index('HubPositionAvatar()'), opening.index('Fade(2, 500)'))
+        self.assertEqual(hub.hub_script(source, setup), source)
+        changed = hub.hub_script(source, replace(setup, destinations=(hub.Destination(2, 4, 4, 7, 8),)))
+        self.assertNotIn('UnitSetPos(unit, 5, 6)', changed)
+        self.assertIn('UnitSetPos(unit, 7, 8)', changed)
+        self.assertEqual(changed.split(hub.START_MARK)[0].count('HubPositionAvatar()'), 1)
+        compile_source(changed, global_flags=[hub.ACTIVE, hub.STARTED, *hub.DEST, *hub.PENDING])
+        removed = hub._remove_opening_hook(hub._remove_generated(changed), setup.avatar_pid)
+        self.assertNotIn("HubPositionAvatar", removed)
+        self.assertIn('InstantUnitFocusByPID("PID_HUB")', removed)
+
     def test_scripts_compile_and_reconfigure_without_duplicates(self):
         setup = hub.HubSetup(40, 5, "PID_HUB", (hub.Destination(6, 2, 3, 4, 5),
                                                 hub.Destination(8, 6, 7, 8, 9)))
@@ -102,6 +121,16 @@ class HubScriptTests(unittest.TestCase):
         activation = hub.activation_script(original)
         self.assertEqual(hub.activation_script(activation), activation)
         compile_source(activation, global_flags=[hub.ACTIVE, hub.STARTED])
+
+    def test_generated_script_refreshes_avatar_after_every_action(self):
+        setup = hub.HubSetup(40, 5, "PID_HUB", (hub.Destination(6, 2, 3, 4, 5),))
+        generated = hub.hub_script("# Fresh hub\n", setup)
+        refresh = generated.split("@after_action", 1)[1].split("@on_complete", 1)[0]
+        self.assertIn("def HubRefreshAvatar():", refresh)
+        self.assertIn('unit = UnitGetByPID("PID_HUB")', refresh)
+        self.assertIn("UnitClrStatus(unit, 1)", refresh)
+        self.assertIn("UnitDispReload()", refresh)
+        self.assertIn("MapUpdate()", refresh)
 
     def test_optional_description_uses_separate_visit_action(self):
         setup = hub.HubSetup(40, 5, "PID_HUB", (
@@ -209,6 +238,95 @@ class HubCreationTests(unittest.TestCase):
                 for texture in material.textures:
                     self.assertEqual(texture.tex_id, 1)
                     self.assertEqual(images[texture.tex_id].tobytes(), b"\xff" * (8 * 8 * 4))
+
+    def test_flat_map_accepts_color_and_stretched_or_tiled_image(self):
+        from fe_modding import hub_creation
+        from fe_modding.formats import gs_file, lz10, map_file, pak, tpl
+        from PIL import Image
+        import io
+        from tests.test_map_heights import _map_bin
+
+        donor_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor"),
+                                           ("texpack.tpl", donor_tpl)]))
+
+        colored = lz10.decompress(hub_creation.blank_map(donor, 8, 6, ground_color=(20, 40, 60)))
+        files = {entry.name: pak.read_pak_file_content(colored, entry) for entry in pak.read_pak_entries(colored)}
+        material = gs_file.read_gs(files["flat.gs"]).materials[0]
+        loaded_rgb = tuple(round(channel * 1.25) for channel in material.color0[:3])
+        self.assertEqual(loaded_rgb, (20, 40, 60))
+
+        picture = Image.new("RGBA", (16, 8), (12, 34, 56, 255))
+        for tiled in (False, True):
+            packed = lz10.decompress(hub_creation.blank_map(
+                donor, 8, 6, ground_color=(1, 2, 3), ground_image=picture, tile_ground_image=tiled))
+            files = {entry.name: pak.read_pak_file_content(packed, entry)
+                     for entry in pak.read_pak_entries(packed)}
+            ground = gs_file.read_gs(files["flat.gs"])
+            material = ground.materials[0]
+            images = tpl.read_tpl_images(io.BytesIO(files["texpack.tpl"]))
+            self.assertEqual(tuple(round(channel * 1.25) for channel in material.color0[:3]),
+                             (255, 255, 255))
+            decoded = images[material.textures[0].tex_id].getpixel((0, 0))[:3]
+            self.assertTrue(all(abs(actual - expected) <= 4
+                                for actual, expected in zip(decoded, (12, 34, 56))))
+            uvs = [(u / (1 << ground.uv_frac), v / (1 << ground.uv_frac)) for u, v in ground.uvs]
+            self.assertAlmostEqual(max(uv[0] for uv in uvs), 8.0 if tiled else 1.0)
+            self.assertAlmostEqual(max(uv[1] for uv in uvs), 6.0 if tiled else 1.0)
+
+    def test_existing_flat_hub_ground_can_change_without_touching_map_data(self):
+        from fe_modding import hub_creation
+        from fe_modding.formats import lz10, pak, tpl
+        from PIL import Image
+        import io
+        from tests.test_map_heights import _map_bin
+
+        donor_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor"),
+                                           ("texpack.tpl", donor_tpl)]))
+        packed = lz10.decompress(hub_creation.blank_map(donor, 9, 7))
+        entries = pak.read_pak_entries(packed)
+        files = {entry.name: pak.read_pak_file_content(packed, entry) for entry in entries}
+        original_map = files["map.bin"]
+
+        picture = Image.new("RGBA", (32, 16), (80, 120, 160, 255))
+        hub_creation.replace_flat_ground(entries, files, ground_image=picture, tile_ground_image=True)
+        self.assertEqual(files["map.bin"], original_map)
+        appearance = hub_creation.flat_ground_appearance(files)
+        self.assertIsNotNone(appearance.image)
+        self.assertTrue(appearance.tiled)
+        self.assertTrue(all(abs(actual - expected) <= 8 for actual, expected in zip(
+            appearance.image.getpixel((0, 0))[:3], (80, 120, 160))))
+
+        hub_creation.replace_flat_ground(entries, files, ground_color=(30, 60, 90))
+        appearance = hub_creation.flat_ground_appearance(files)
+        self.assertIsNone(appearance.image)
+        self.assertFalse(appearance.tiled)
+        self.assertEqual(appearance.color, (30, 60, 90))
+        self.assertLessEqual(len(tpl.read_tpl_images(io.BytesIO(files["texpack.tpl"]))), 2)
+
+    def test_custom_terrain_requires_opt_in_then_becomes_flat_image_ground(self):
+        from fe_modding import hub_creation
+        from fe_modding.formats import gs_file, lz10, pak, tpl
+        from PIL import Image
+        from tests.test_map_heights import _map_bin
+
+        donor_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        donor = lz10.compress(pak.pack_pak([("map.bin", _map_bin()), ("flat.gs", b"donor"),
+                                           ("texpack.tpl", donor_tpl)]))
+        packed = lz10.decompress(hub_creation.blank_map(donor, 10, 8))
+        entries = pak.read_pak_entries(packed)
+        files = {entry.name: pak.read_pak_file_content(packed, entry) for entry in entries}
+        model = gs_file.read_gs(files["flat.gs"])
+        model.materials[0].name = "custom_terrain"
+        files["flat.gs"] = gs_file.write_gs(model)
+
+        with self.assertRaisesRegex(ValueError, "Blank map"):
+            hub_creation.replace_flat_ground(entries, files, ground_image=Image.new("RGBA", (8, 8), "blue"))
+        hub_creation.replace_flat_ground(entries, files, ground_image=Image.new("RGBA", (8, 8), "blue"),
+                                         replace_custom_terrain=True)
+        self.assertEqual(gs_file.read_gs(files["flat.gs"]).materials[0].name, "hub_ground")
+        self.assertIsNotNone(hub_creation.flat_ground_appearance(files).image)
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES for real assets")
 class RealAssetIntegrationTests(unittest.TestCase):
@@ -411,6 +529,17 @@ class RealAssetIntegrationTests(unittest.TestCase):
             from fe_modding.formats import map_file
             capacity = map_file.read_map_bytes(pak.read_pak_file_content(packed_map, map_entry)).capacity
             self.assertEqual((capacity.x_size, capacity.y_size), (16, 12))
+
+            removed = hub.uninstall(project)
+            self.assertEqual(removed["chapter"], 33)
+            self.assertIsNone(hub.saved_setup(project))
+            editor = CodeEditor(project.extracted_dir)
+            self.assertFalse(hub_flow.HubFlow(editor).installed)
+            self.assertEqual(chapter_flow.ChapterFlow(editor).next_of(33), 34)
+            for cid in ("09", "33"):
+                source_text = script_sources.peek(project, script_sources.chapter_script(project, cid))
+                self.assertNotIn(hub.START_MARK, source_text)
+                self.assertNotIn("HubPositionAvatar", source_text)
 
 
 class HubDraftTests(unittest.TestCase):

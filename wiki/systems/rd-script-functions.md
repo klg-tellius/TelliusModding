@@ -768,7 +768,7 @@ Every native function Radiant Dawn's event scripts can call, grouped by the part
 
   `SetEventCameraUnit(mode, unit)` — Makes the event camera follow a unit (-1: none).
 
-  `SetFog(fog_type, start_distance, end_distance, red, green, blue)` — Sets the map’s rendering fog and refreshes its render state.
+  `SetFog(fog_type, start_distance, end_distance, red, green, blue)` — Sets the map’s rendering fog and refreshes its render state. Type 0 disables fog; types 1–5 select perspective-linear, exponential, exponential-squared, reverse-exponential, and reverse-exponential-squared curves respectively.
 
   `SetGrid(percent)` — Sets the map-grid display intensity or restores the value saved when scene settings were created.
 

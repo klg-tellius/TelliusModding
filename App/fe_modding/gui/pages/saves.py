@@ -507,7 +507,7 @@ class SaveEditorPage(Page):
         f.add("Gold", self._party, "gold", "u32")
         f.add("Bonus EXP", self._party, "bonus_exp", "u32")
         f.add("Chapter", self._party, "chapter")
-        f.add("Map", self._party, "chapter_name", "text:24", width=14)
+        f.add("Last map loaded", self._party, "chapter_name", "text:24", width=14)
         f.add("Turn", self._party, "turn", "u16")
         f.add("Phase (army)", self._party, "phase", dict(sf.ARMIES))
         f.add("Playthrough number", self._party, "playthrough")
@@ -988,14 +988,14 @@ class SaveEditorPage(Page):
             return [None] * ef.SLOT_COUNT
         globals_ = self._global_flags()
         locals_: list = []
-        m = self.block.party.chapter_name
-        if m.startswith("bmap") and m[4:6].isdigit():
+        chapter = self.block.party.chapter
+        if chapter:
             try:
-                path = script_sources.chapter_script(self.project, m[4:6])
+                path = script_sources.chapter_script(self.project, f"{chapter:02d}")
                 if path is not None:
                     locals_ = ef.local_flags(parse(script_sources.peek(self.project, path)))
                     if layout:
-                        locals_ = layout.vanilla_names(locals_, "chapter", int(m[4:6]))
+                        locals_ = layout.vanilla_names(locals_, "chapter", chapter)
             except (OSError, ValueError, ParseError, AttributeError):
                 pass
         return ef.slot_names(globals_, locals_)
@@ -1055,8 +1055,7 @@ class SaveEditorPage(Page):
             layout = None
             note += f" Extended names unavailable: {exc}. Showing set bits by slot."
         self._flags_note.configure(text=self._flags_note.cget("text") + note)
-        chapter = self.block.party.chapter_name
-        chapter_id = int(chapter[4:6]) if chapter.startswith("bmap") and chapter[4:6].isdigit() else None
+        chapter_id = self.block.party.chapter or None
         for scope, size in (("campaign", xf.CAMPAIGN_SLOTS), ("chapter", xf.CHAPTER_SLOTS)):
             names = {e.slot: e.name for e in layout.entries if not e.deleted and e.scope == scope
                      and (scope == "campaign" or e.chapter == chapter_id)} if layout else {}

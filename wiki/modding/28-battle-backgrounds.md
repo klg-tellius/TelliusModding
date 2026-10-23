@@ -53,6 +53,14 @@ The first terrain column remains visible even when the map has none of its tiles
 
 ## Guided walkthrough
 
+<!-- screenshot 28-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Battle scenes tab with terrain types, tile counts, the battle scene per type and Browse buttons.](../assets/images/tutorials/screenshots/28-a-setup.png)](../assets/images/tutorials/screenshots/28-a-setup.png)
+
+<figcaption markdown="span">The **Battle scenes** tab: one battle backdrop per terrain type of this map. Blank rows use the default shown on the right; **Only terrain types on this map** hides the others.</figcaption>
+</figure>
+
 ### 1. Read the map's effective state
 
 Open the chapter phase's **Battle scenes** tab. Leave **Only terrain types on this map** enabled. The table shows terrain index, display/internal name, tile count, assigned scene, and fallback note.

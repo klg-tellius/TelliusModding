@@ -95,7 +95,9 @@ class _Pool:
     """The string pool, append-only so existing offsets never move."""
 
     def __init__(self, entries: list[str]):
-        self.entries = list(entries)
+        # A new pool starts with "" (as retail C02.cmb does): a trigger parameter of 0 means None
+        # ("anyone"), so a label at offset 0 would read back - and run - as None.
+        self.entries = list(entries) or [""]
         self.offsets: dict[str, int] = {}
         self.size = 0
         for text in self.entries:

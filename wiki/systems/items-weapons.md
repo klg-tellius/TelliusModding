@@ -177,7 +177,7 @@ A new item with a stat booster's fields but a different ID has no use effect: th
     <tr><td><code>flutter</code></td><td>Vortex</td><td>Plays the Vortex animation; treated as a long-range attack in battle</td></tr>
     <tr><td><code>valuable</code></td><td>Unique and legendary weapons, Knight Ring</td><td>Cannot be sold or discarded</td></tr>
     <tr><td><code>JH</code></td><td>Demi Band</td><td>Halves the laguz transformation bonus to Str, Mag, Skl, Spd, Def and Res</td></tr>
-    <tr><td><code>noneart</code></td><td>Boots</td><td>Property token preserved by the format; no independent US executable consumer is required for the Boots movement-booster effect</td></tr>
+    <tr><td><code>noneart</code></td><td>US/PAL Boots only</td><td>Unused regional flag. Japanese Boots omits it but has the same Mov +2 record and use handlers; the US executable loads the bit but never reads it</td></tr>
   </tbody></table>
 </div>
 

@@ -58,6 +58,22 @@ The section header's **Army** is a numeric `GroupData` name assigned to deployed
 
 ## Guided walkthrough
 
+<!-- screenshot 29-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Units list window with the section list and the unit table.](../assets/images/tutorials/screenshots/29-a-setup.png)](../assets/images/tutorials/screenshots/29-a-setup.png)
+
+<figcaption markdown="span">**Units list** for Ch.1: every section of the deployment file with its army and role (player army, battle start, reinforcement, scene-only), and the units of the selected section.</figcaption>
+</figure>
+
+<!-- screenshot 29-c-add-section.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Add section dialog with the name field, section header fields, OK and Cancel.](../assets/images/tutorials/screenshots/29-c-add-section.png)](../assets/images/tutorials/screenshots/29-c-add-section.png)
+
+<figcaption markdown="span">**Add section**: the name the script will load (`bmap02_tutorial_wave`) and the section header (army, group). The section is added to each difficulty file.</figcaption>
+</figure>
+
 ### 1. Trace a working opening section
 
 Open **Deployment** and select the Normal variant. In **Sections / Units**, select the opening enemy section. Record its exact name and expand it to inspect its units.
