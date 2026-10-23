@@ -1,5 +1,15 @@
 # Extended flag / hub playtest
 
+## Return positioning update (revision 7)
+
+The generated opening now applies the return tile immediately after deploying
+the avatar, before camera focus and fade-in. It should no longer visibly teleport
+when the player phase begins. Existing campaign saves and layouts are unchanged.
+Restart Dolphin with the same launcher/profile you have been testing, then do a
+chapter round trip. Do not restore an old Dolphin save state. In-game confirmation
+of this timing change is pending.
+
+
 Experimental USA, EU and Japanese builds include a hub, 100 campaign probes,
 80 local probes, visible entrance markers, 2x animations and turn-one victory
 shortcuts in the linked chapters. Each build has its own save layout and card.

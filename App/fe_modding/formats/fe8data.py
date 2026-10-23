@@ -432,7 +432,7 @@ ITEM_PROPERTY_TOKENS = {
     "movtw": "Canto - move again after acting (Knight Ring)",
     "beastsamul": "Keeps a laguz transformed (Demi Band, Laguz Band)",
     "JH": "Vanilla: Demi Band",
-    "noneart": "Vanilla: Boots",
+    "noneart": "Unused US/PAL Boots flag; Japanese Boots omits it",
     "heroonly": "Requires SID_HERO (Ike has it; Regal Sword, Ragnell)",
     "blackonly": "Requires class JID_BKNIGHT (Alondite)",
     "finalonly": "Requires SID_FINAL (Ashnard has it; Gurgurant)",
@@ -1286,6 +1286,7 @@ CLASS_KEY_FIELDS = {"mjid": 0x04, "hybrid_id": 0x08, "aid": CLASS_AID_OFFSET}
 #: Class pointer fields naming another record: the label must exist.
 CLASS_LINK_FIELDS = {"promotes_to": 0x0C, "innate_weapon": 0x10, **{f"skill{i}": 0x18 + 4 * i for i in range(5)}}
 CLASS_CATEGORY_SLOTS = 3  # 0x2C/0x30/0x34
+MAX_MOVEMENT = 20  # the runtime effective-Movement getter clamps to this value
 CLASS_BYTE_FIELDS = {"movement": CLASS_MOVE_OFFSET, "build": 0x3C, "weight": 0x3D, "skill_capacity": 0x40,
                      "vision": 0x41}
 
@@ -1305,8 +1306,8 @@ def patch_class_field(data: bytes, index: int, field: str, value) -> bytes:
       the old string keep it);
     - ``categories``: up to 3 category tokens (:data:`ITEM_CATEGORY_TOKENS`,
       the set ``apply_unit_category_flag_token`` knows), written in order;
-    - ``movement``, ``build``, ``weight``, ``skill_capacity``, ``vision``
-      (0-255), ``movement_type`` (0-14);
+    - ``movement`` (0-20, the runtime cap), ``build``, ``weight``,
+      ``skill_capacity``, ``vision`` (0-255), ``movement_type`` (0-14);
     - ``cap0..7``, ``base_stat0..7``, ``growth0..7`` (0-255) and
       ``growth_modifier0..7`` (-128..127), STAT_NAMES order."""
     off = table_start(data, "class") + index * CLASS_RECORD_SIZE
@@ -1332,7 +1333,8 @@ def patch_class_field(data: bytes, index: int, field: str, value) -> bytes:
         return data
     out = bytearray(data)
     if field in CLASS_BYTE_FIELDS:
-        out[off + CLASS_BYTE_FIELDS[field]] = _byte(value)
+        maximum = MAX_MOVEMENT if field == "movement" else 255
+        out[off + CLASS_BYTE_FIELDS[field]] = _byte(value, 0, maximum)
     elif field == "movement_type":
         if not 0 <= int(value) < len(MOVEMENT_TYPE_NAMES):
             raise ValueError(f"Movement type {value} is not 0-{len(MOVEMENT_TYPE_NAMES) - 1}.")

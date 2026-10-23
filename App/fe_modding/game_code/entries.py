@@ -469,6 +469,13 @@ _CHARISMA = {US: (0x801A8240, 0x801A824C), EU: (0x801AA688, 0x801AA694), JP: (0x
 _HORROR = {US: (0x801A81B0, 0x801A81BC), EU: (0x801AA5F8, 0x801AA604), JP: (0x801A5F40, 0x801A5F4C)}
 _CHARISMA_RANGE = {US: 0x801A8234, EU: 0x801AA67C, JP: 0x801A5FC4}
 _HORROR_RANGE = {US: 0x801A8170, EU: 0x801AA5B8, JP: 0x801A5F00}
+_PLAYER_CHARISMA_GATE = {US: 0x801A81E4, EU: 0x801AA62C, JP: 0x801A5F74}
+CATALOG.add(Patch(
+    "combat.player_charisma", G_COMBAT, "Charisma affects the player army",
+    "Lets a player-army group commander grant Charisma to nearby units. Retail explicitly skips "
+    "faction 0 even when its commander has the skill.",
+    versions={v: (Edit(a, _word(0x41820070), _word(ppc.NOP)),)
+              for v, a in _PLAYER_CHARISMA_GATE.items()}))
 CATALOG.add(Tunable(
     "combat.charisma_bonus", G_COMBAT, "Charisma bonus",
     "Added to two combat modifiers of a unit whose group commander has Charisma nearby (vanilla 5).",
@@ -837,7 +844,7 @@ BATTLE_STATS_HOOK = CAVE_ADDRESS + 0x300
 # Data: x nudge, y nudge, text size, 0.0 (f32), position preset (u32), pad, then one (x left, x right,
 # y) f32 triple per preset, then the formats. A bare "#C" is a 4-byte token to the text code (it
 # would swallow the terminator), so every colour code carries its two digits.
-BATTLE_STATS_DATA = CAVE_ADDRESS + 0x480
+BATTLE_STATS_DATA = CAVE_ADDRESS + 0x4A0
 _STATS_FORMAT = b"#C06Dmg #C01%d  #C06Hit #C01%d  #C06Crit #C01%d\x00"
 _STATS_UNARMED = b"#C06Dmg #C01--  #C06Hit #C01--  #C06Crit #C01--\x00"
 STATS_PRESETS = (                     # (x left, x right, y) on the 640x480 HUD
@@ -883,7 +890,9 @@ def _battle_stats_code(version: str) -> bytes:
         "preset",
         ppc.mulli(0, 0, 12), ppc.addi(11, 12, _cave_offset(_PRESET_TABLE)), ppc.add(11, 11, 0),
         ppc.lfs(1, 0, 11),
-        ppc.lwz(0, 0x48, 31), ppc.cmpwi(0, 200), ("lt", "left"),
+        # Gauge mode is the stable identity: 0 left, 1 right, 2 EXP.  The widget x is relative
+        # to its layer and is not a reliable left/right discriminator in every HUD layout.
+        ppc.lwz(0, 0x6C, 31), ppc.cmpwi(0, 0), ("eq", "left"),
         ppc.mr(0, 30), ppc.mr(30, 29), ppc.mr(29, 0), ppc.lfs(1, 4, 11),
         "left",
         ppc.lfs(2, 8, 11),
@@ -892,7 +901,20 @@ def _battle_stats_code(version: str) -> bytes:
         ppc.srawi(0, 9, 31), ppc.andc(9, 9, 0),
         ppc.lha(10, 0x2A2, 30), ppc.lha(11, 0x2A8, 30),
         ppc.addi(8, 12, _cave_offset(_FORMAT_AT)),
-        ppc.lbz(0, 0x2C8, 30), ppc.extsb(0, 0), ppc.cmpwi(0, 0), ("gt", "armed"),
+        # An equipped slot alone does not mean this fighter can counter: an archer still has
+        # its bow equipped in a range-1 battle.  Check the equipped ItemData min/max range
+        # against the actors' map-tile distance.
+        ppc.lbz(0, 0x2C8, 30), ppc.extsb(0, 0), ppc.cmpwi(0, 0), ("le", "unarmed"),
+        ppc.lwz(7, 0x28C, 30), ppc.cmplwi(7, 0), ("eq", "unarmed"),
+        ppc.lbz(3, 0x19E, 30), ppc.lbz(4, 0x19E, 29), ppc.subf(3, 3, 4),
+        ppc.cmpwi(3, 0), ("ge", "x_positive"), ppc.li(4, 0), ppc.subf(3, 3, 4),
+        "x_positive",
+        ppc.lbz(5, 0x19F, 30), ppc.lbz(6, 0x19F, 29), ppc.subf(5, 5, 6),
+        ppc.cmpwi(5, 0), ("ge", "y_positive"), ppc.li(6, 0), ppc.subf(5, 5, 6),
+        "y_positive", ppc.add(3, 3, 5),
+        ppc.lbz(4, 0x1D, 7), ppc.cmplw(3, 4), ("lt", "unarmed"),
+        ppc.lbz(4, 0x1E, 7), ppc.cmplw(3, 4), ("le", "armed"),
+        "unarmed",
         ppc.addi(8, 12, _cave_offset(_UNARMED_AT)),
         "armed",
         ppc.lfs(3, data + 8, 12), ppc.lfs(4, data + 12, 12),

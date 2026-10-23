@@ -571,7 +571,7 @@ class MapSceneGameplayGridTests(unittest.TestCase):
         canvas.reset_view()
         self.assertEqual(canvas._center, (1.0, 2.0, 3.0))
 
-    def test_top_down_view_matches_game_facing_horizontal_orientation(self):
+    def test_top_down_view_matches_game_facing_orientation(self):
         canvas = object.__new__(model_viewer._ModelCanvas)
         canvas._yaw = 0.0
         canvas._pitch = 0.0
@@ -580,10 +580,19 @@ class MapSceneGameplayGridTests(unittest.TestCase):
 
         canvas.top_down_view()
         right = canvas._rotate((1.0, 0.0, 0.0))
-        up = canvas._rotate((0.0, 0.0, 1.0))
+        down = canvas._rotate((0.0, 0.0, 1.0))
 
-        self.assertGreater(right[0] * canvas._screen_x_sign, 0.0)
-        self.assertGreater(up[1], 0.0)
+        self.assertLess(right[0] * canvas._screen_x_sign, 0.0)
+        self.assertLess(-down[1] * canvas._screen_y_sign, 0.0)
+
+    def test_build_backdrop_uses_the_same_top_down_orientation(self):
+        camera = map_scene.TopdownCamera(100, 80, (0.0, 0.0, 0.0), 1.0, 10.0)
+        raster = map_scene._TopdownRasterCamera(camera)
+
+        self.assertEqual(
+            (raster._screen_x_sign, raster._screen_y_sign),
+            map_scene.TOPDOWN_SCREEN_SIGNS,
+        )
 
     def test_texture_sampling_can_flip_v_for_terrain_detail(self):
         image = Image.new("RGB", (1, 2))
@@ -1692,6 +1701,8 @@ class Fe8DataTests(unittest.TestCase):
         # untouched stat_caps/base_stats entries survive
         self.assertEqual(fe8.classes[0].stat_caps[1], 20)
         self.assertEqual(fe8.classes[0].base_stats[0], 60)
+        with self.assertRaises(ValueError):
+            fe8data.patch_class_field(data, 0, "movement", fe8data.MAX_MOVEMENT + 1)
 
     def test_patch_class_weapon_ranks_adds_a_new_string(self):
         data = bytearray(_build_synthetic_fe8data())
@@ -2177,6 +2188,20 @@ class GltfExportTests(unittest.TestCase):
         self.assertEqual(len(doc["meshes"][0]["primitives"]), 1)
         self.assertEqual(doc["animations"][0]["extras"]["end_frame"], 10)
 
+    def test_placements_share_one_mesh_and_get_named_transformed_nodes(self):
+        gs = model.read_model_bytes(gs_file.write_gs(_synthetic_gs_file()))
+        transforms = [
+            ("tree_001", ((1.0, 0.0, 0.0, 5.0), (0.0, 1.0, 0.0, 2.0), (0.0, 0.0, 1.0, 10.0))),
+            ("tree_002", ((1.0, 0.0, 0.0, 15.0), (0.0, 1.0, 0.0, 3.0), (0.0, 0.0, 1.0, 20.0))),
+        ]
+        glb = gltf_export.export_glb([("tree", gs)], placements={"tree": transforms})
+        doc = json.loads(glb[20 : 20 + struct.unpack_from("<I", glb, 12)[0]])
+
+        self.assertEqual(len(doc["meshes"]), 1)
+        self.assertEqual([node["name"] for node in doc["nodes"]], ["tree_001", "tree_002"])
+        self.assertEqual([node["mesh"] for node in doc["nodes"]], [0, 0])
+        self.assertEqual([node["translation"] for node in doc["nodes"]], [[5.0, 2.0, 10.0], [15.0, 3.0, 20.0]])
+
 
 def _quad_glb(translation=(0.0, 0.0, 0.0), with_texture=True, alpha_mode=None, double_sided=False) -> bytes:
     """A one-node glTF: a 2x2 quad facing +Y (counter-clockwise from above),
@@ -2441,6 +2466,44 @@ class SkinnedImportTests(unittest.TestCase):
                 _w1, p1 = engine_pose.pose(self.bones, back, float(frame))
                 for a, b in zip(engine_pose.apply(p0[1], (1.0, 2.0, 1.0)), engine_pose.apply(p1[1], (1.0, 2.0, 1.0))):
                     self.assertAlmostEqual(a, b, delta=2e-3)
+
+    def test_bow_import_rebuilds_composite_mesh_and_preserves_pack(self):
+        image = Image.new("RGBA", (8, 8), (80, 40, 20, 255))
+        scene = _skinned_scene(self.bones)
+        scene.materials[0].image = image
+        original = gltf_import.build_skinned_gs(
+            scene, self.bones, composite_only=True
+        ).gs
+        original_bytes = gs_file.write_gs(original)
+        texture_bytes = tpl.build_tpl([(image, tpl.FORMAT_RGBA8)])
+        packed = pak.pack_pak(
+            [("bow.gs", original_bytes), ("bow.g", self.skel), ("bow.tpl", texture_bytes), ("note.bin", b"keep")],
+            [0, 0, 0, 0],
+        )
+        glb = gltf_export.export_glb(
+            [("bow", model.read_model_bytes(original_bytes))], self.bones, {0: image}
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            container = root / "bow.cmp"
+            source = root / "bow.glb"
+            container.write_bytes(lz10.compress(packed))
+            source.write_bytes(glb)
+            self.assertTrue(model_viewer.is_skinned_weapon(container))
+
+            result = model_viewer.replace_bow_with_glb(container, source)
+            entries = pak.read_pak_entries(lz10.decompress(result.outputs[container]))
+            raw = lz10.decompress(result.outputs[container])
+            files = {entry.name: pak.read_pak_file_content(raw, entry) for entry in entries}
+
+        rebuilt = gs_file.read_gs(files["bow.gs"])
+        self.assertIsNotNone(rebuilt.composite)
+        self.assertEqual({chunk.flags & 0x3 for chunk in rebuilt.chunks}, {0x1})
+        self.assertEqual(files["bow.g"], self.skel)
+        self.assertEqual(files["bow.tpl"], texture_bytes)
+        self.assertEqual(files["note.bin"], b"keep")
+        self.assertEqual(set(result.joint_map), {"arm", "root"})
+        self.assertTrue(any("composite skinning" in warning for warning in result.warnings))
 
     def test_children_of_a_hidden_bone_keep_their_place(self):
         # a weapon bone scaled to 0 at rest (hidden), shown by the animation,

@@ -2972,6 +2972,37 @@ class MapBuilder(EditorPanel):
     def hub_changed(self) -> None:
         self._refresh_canvas()
 
+    def hub_ground_appearance(self):
+        from .. import hub_creation
+        return hub_creation.flat_ground_appearance(self._map.pak_contents)
+
+    def edit_hub_ground(self, color, image_path, tiled: bool, use_image: bool,
+                        replace_custom_terrain: bool = False) -> None:
+        from .. import hub_creation
+        appearance = (None if replace_custom_terrain
+                      else hub_creation.flat_ground_appearance(self._map.pak_contents))
+        image = None
+        if use_image:
+            if image_path:
+                try:
+                    with Image.open(image_path) as opened:
+                        image = opened.convert("RGBA").copy()
+                except Exception as exc:  # noqa: BLE001 - Pillow uses several exception types
+                    raise ValueError(f"Could not read the hub ground image: {exc}") from exc
+            else:
+                image = appearance.image if appearance is not None else None
+        self._record()
+        try:
+            self._map.edit_pack(
+                lambda entries, files: hub_creation.replace_flat_ground(
+                    entries, files, ground_color=color, ground_image=image, tile_ground_image=tiled,
+                    replace_custom_terrain=replace_custom_terrain),
+                "Changed hub ground appearance")
+        except Exception:
+            self._undo.pop()
+            self._update_buttons()
+            raise
+
     def map_size(self) -> tuple[int, int] | None:
         return self._canvas.size
 

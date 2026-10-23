@@ -407,7 +407,7 @@
     }
    ],
    "uses": 6,
-   "note": "Sets the party's gold.",
+   "note": "Sets the party's gold and adds the difference to this chapter's gained or spent total for the next report.",
    "returns": "The value passed in (before the cap)."
   },
   "BMSetPhase": {
@@ -1365,7 +1365,7 @@
     {
      "name": "normal_group",
      "kind": "str",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -1405,7 +1405,7 @@
     {
      "name": "normal_group",
      "kind": "int",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -1455,7 +1455,7 @@
     {
      "name": "normal_group",
      "kind": "str",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -1691,7 +1691,7 @@
    "group": "",
    "args": [],
    "uses": 1,
-   "note": "Always returns 0 in this US build; do not use this as a working difficulty test.",
+   "note": "Always returns 0 in every retail build; do not use this as a working difficulty test.",
    "returns": "0, always."
   },
   "EffectPlay": {
@@ -2806,7 +2806,7 @@
     {
      "name": "normal_group",
      "kind": "int",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -2846,7 +2846,7 @@
     {
      "name": "normal_group",
      "kind": "str",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -2886,7 +2886,7 @@
     {
      "name": "normal_group",
      "kind": "str",
-     "help": "First deployment group; its branch is unreachable with the researched US unregistered NormalOnly name."
+     "help": "First deployment group; its branch is unreachable because NormalOnly is unregistered in every retail build."
     },
     {
      "name": "hard_group",
@@ -3491,7 +3491,7 @@
    "group": "",
    "args": [],
    "uses": 6,
-   "note": "Always returns 0 in this US build; do not use this as a working difficulty test.",
+   "note": "Always returns 0 in every retail build; do not use this as a working difficulty test.",
    "returns": "0, always."
   },
   "PIDisAlive": {

@@ -64,6 +64,7 @@ class UnitAssets:
     roles: dict = field(default_factory=dict)  # role -> .ga stem, for ``prefix``
     texture: Optional[Path] = None
     weapon_model: Optional[Path] = None
+    weapon_name: Optional[str] = None  # xwp/<NAME>.dbx name; magic cameras use this, not the IID suffix
     weapon_kind: Optional[int] = None  # battle_weapons.KINDS
     weapon_missile: int = 0  # the weapon table's missile (1 missiles and tomes, 2 magic swords)
     weapon_effect: Optional[str] = None  # its effectId (a tome's spell)
@@ -168,6 +169,7 @@ class BattleAssets:
                 except battle_weapons.WeaponError:
                     table = None
                 if table is not None:
+                    found.weapon_name = table.name or name
                     found.weapon_kind = table.kind
                     found.weapon_missile = table.missile
                     found.weapon_effect = table.effect_id

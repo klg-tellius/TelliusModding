@@ -334,18 +334,37 @@ class ChapterFlow:
 
     def remove(self, chapter: int) -> str:
         """Take ``chapter`` out of the flow: whatever led to it goes to its successor instead."""
+        if chapter <= LAST_RETAIL_STORY:
+            raise ValueError(f"Chapter {chapter} is a retail chapter; change the chapter before it instead.")
+        return self._remove_from_flow(chapter)
+
+    def remove_for_deletion(self, chapter: int, existing_chapters: set[int] | None = None) -> str:
+        """Route around a chapter whose records and files are being deleted.
+
+        Unlike :meth:`remove`, this supports ordinary retail story chapters.
+        The fixed new-game start (01) and ending (32) remain indispensable.
+        """
+        if chapter == 1:
+            raise ValueError("Chapter 01 starts every new game and cannot be deleted.")
+        if chapter == GAME_CLEARED:
+            raise ValueError("Chapter 32 is the ending and cannot be deleted.")
+        if not 1 <= chapter < FIRST_TRIAL:
+            raise ValueError(f"Chapter {chapter} is not a deletable story chapter.")
+        return self._remove_from_flow(chapter, existing_chapters)
+
+    def _remove_from_flow(self, chapter: int, existing_chapters: set[int] | None = None) -> str:
         if not self.available:
             raise ValueError(f"Story flow: {self.unavailable_reason}")
         from .hub_flow import HubFlow
         hub = HubFlow(self.editor)
         if hub.installed and chapter == hub.config()[0]:
             raise ValueError("The hub chapter is managed by Hub setup.")
-        overrides = self.overrides()
-        if chapter <= LAST_RETAIL_STORY:
-            raise ValueError(f"Chapter {chapter} is a retail chapter; change the chapter before it instead.")
         after = self.next_of(chapter)
+        predecessors = self.predecessors(chapter)
+        if existing_chapters is not None:
+            predecessors = [c for c in predecessors if c in existing_chapters]
         raw = {c: 0 if c <= LAST_RETAIL_STORY and after == c + 1 else after
-               for c, n in overrides.items() if n == chapter and c != chapter}
+               for c in predecessors if c != chapter}
         raw[chapter] = 0
         return self._store(raw, f"removed {chapter:02d} from the story flow")
 

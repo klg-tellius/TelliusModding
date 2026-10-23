@@ -144,6 +144,8 @@ The [saving lesson](03-saving-and-restoring.md#which-save-belongs-to-this-change
 35. [Build common chapter events](35-event-recipes.md)
 36. [Edit startup helpers and endings](36-shared-scripts.md)
 
+Additional walkthrough: [Create a hub and plan chapter unlocks](hub-chapters.md), including entrance tiles, persistent progression flags, and the current limits of conditional Visit/marker visibility.
+
 ### Tell the story
 
 37. [Author dialogue and cutscenes](37-dialogue-editor.md)

@@ -158,6 +158,13 @@ def _remove_generated(source: str) -> str:
     return source[:start].rstrip() + "\n" + source[end:]
 
 
+def _remove_opening_hook(source: str, avatar_pid: str) -> str:
+    """Remove the positioning call inserted immediately before the generated avatar focus."""
+    hook = '    HubPositionAvatar()\n'
+    focus = f'    InstantUnitFocusByPID("{avatar_pid}")'
+    return source.replace(hook + focus, focus, 1)
+
+
 def _flag_assignments(chapter: int) -> list[str]:
     return [f'    {"set" if chapter & (1 << i) else "clr"}("{name}")'
             for i, name in enumerate(DEST)]
@@ -169,17 +176,26 @@ def _destination_expression(chapter: int) -> str:
 
 def hub_script(source: str, setup: HubSetup) -> str:
     """Replace only the app-owned event block in a prepared hub script."""
+    # Generated openings focus the avatar while the screen is still black.
+    # Position it before that focus/fade instead of visibly moving it on turn 1.
+    focus = f'    InstantUnitFocusByPID("{setup.avatar_pid}")'
+    hook = '    HubPositionAvatar()\n'
+    opening = re.search(r"(?m)^def Opening0\(\):\n(?:[ \t].*\n|\n)*", source)
+    if opening and focus in opening[0] and hook + focus not in opening[0]:
+        source = source[:opening.start()] + opening[0].replace(focus, hook + focus, 1) + source[opening.end():]
     body = [START_MARK,
-            '@on_phase(turn_from=1, turn_to=1, phase="player")',
-            'def HubPlaceAvatar():',
+            '@export',
+            'def HubPositionAvatar():',
             f'    unit = UnitGetByPID("{setup.avatar_pid}")',
             '    if unit:']
     for dest in setup.destinations:
         body += [f'        if {_destination_expression(dest.chapter)}:',
                  f'            UnitSetPos(unit, {dest.return_x}, {dest.return_y})']
-    body += ['', '@after_action', 'def HubRefreshAvatar():',
+    body += ['', '@on_phase(turn_from=1, turn_to=1, phase="player")',
+             'def HubPlaceAvatar():', '    HubPositionAvatar()',
+             '', '@after_action', 'def HubRefreshAvatar():',
              f'    unit = UnitGetByPID("{setup.avatar_pid}")',
-             '    if unit:', '        UnitClrStatus(unit, 1)', '        MapUpdate()',
+             '    if unit:', '        UnitClrStatus(unit, 1)', '        UnitDispReload()', '        MapUpdate()',
              '', '@on_complete(flag="gf_complete")', 'def HubReleaseAvatar():',
              f'    unit = UnitGetByPID("{setup.avatar_pid}")',
              '    if unit:', '        UnitTransferToForce(unit, 4)']
@@ -518,3 +534,95 @@ def install(project, setup: HubSetup) -> dict:
     if draft_path(project).is_file():
         draft_path(project).unlink()
     return saved
+
+
+def uninstall(project) -> dict:
+    """Remove an installed vanilla hub setup while preserving the chapter and user edits.
+
+    Generated event blocks, Visit messages, entrance placements and executable routing are
+    removed.  The appended global registrations remain reserved so later user flags never move
+    to different save slots.  Extended-runtime hubs must be removed with that runtime's own
+    lifecycle because restoring only its router would invalidate the signed receipt.
+    """
+    current = saved_setup(project)
+    if current is None:
+        draft = draft_path(project)
+        if draft.is_file():
+            draft.unlink()
+        return {}
+    if current.get("storage", "vanilla") == "extended":
+        raise ValueError("Remove the extended flag runtime before deleting its hub chapter.")
+
+    setup = setup_from(current)
+    editor = CodeEditor(project.extracted_dir, project.write_keeping_original)
+    router = HubFlow(editor)
+    if not router.installed:
+        raise ValueError("The saved hub configuration exists, but its executable routing is not installed.")
+    flow = ChapterFlow(editor)
+    if not flow.available:
+        raise ValueError(f"Story flow is unavailable: {flow.unavailable_reason}")
+
+    startup = script_sources.startup_path(project)
+    hub_path = script_sources.chapter_script(project, f"{setup.chapter:02d}")
+    activation_path = script_sources.chapter_script(project, f"{setup.activation_chapter:02d}")
+    if hub_path is None or activation_path is None:
+        raise ValueError("The hub or activation chapter script is missing.")
+    sources = {
+        hub_path: _remove_opening_hook(_remove_generated(script_sources.peek(project, hub_path)), setup.avatar_pid),
+        activation_path: _remove_generated(script_sources.peek(project, activation_path)),
+    }
+    globals_ = ef.global_flags(parse(script_sources.peek(project, startup)))
+    helpers = ef.exported_functions(parse(script_sources.peek(project, startup)))
+    compiled = {}
+    for path, source in sources.items():
+        base = read_cmb(path.read_bytes())
+        result = compile_source(source, base=base, known_script_functions=helpers,
+                                global_flags=globals_)
+        compiled[path] = source, write_cmb(result.script)
+
+    dialogue = chapters.chapter_paths(project, f"{setup.chapter:02d}").dialogue
+    message_update = None
+    if dialogue is not None:
+        kept = [m for m in message.read_messages_path(dialogue)
+                if not re.fullmatch(r"MS_HUB_\d{2}_INFO", m.speaker)]
+        message_update = dialogue, message.write_messages(kept, message.read_text_order_path(dialogue))
+
+    map_update = None
+    phases = chapters.chapter_phases(project, f"{setup.chapter:02d}")
+    if phases:
+        _deployment, map_path = chapters.phase_paths(project, phases[0])
+        if map_path is not None:
+            entries, files = map_props.read_map_container(map_path)
+            data = map_file.read_map_bytes(files["map.bin"])
+            index = next((i for i, obj in enumerate(data.build_desc)
+                          if obj.filename == ENTRANCE_OBJECT), None)
+            if index is not None:
+                records = map_file.instance_records(files["map.bin"])
+                files["map.bin"] = map_file.set_build_instances(
+                    files["map.bin"],
+                    [record for record, instance in zip(records, data.build_inst)
+                     if instance.desc_index != index],
+                )
+                map_update = map_path, lz10.compress(pak.pack_pak(
+                    [(entry.name, files[entry.name]) for entry in entries],
+                    [entry.reserved for entry in entries],
+                ))
+
+    # Remove the router before restoring the hub chapter's normal successor; ChapterFlow protects
+    # the managed hub entry while the router is present.
+    router.remove()
+    flow = ChapterFlow(CodeEditor(project.extracted_dir, project.write_keeping_original))
+    flow.set_next(setup.chapter, int(current["normal_successor"]))
+    for path, (source, data) in compiled.items():
+        project.write_keeping_original(path, data)
+        sidecar = script_sources.sidecar_path(project, path)
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(source, encoding="utf-8")
+    if message_update is not None:
+        project.write_keeping_original(*message_update)
+    if map_update is not None:
+        project.write_keeping_original(*map_update)
+    config_path(project).unlink()
+    if draft_path(project).is_file():
+        draft_path(project).unlink()
+    return current

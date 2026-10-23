@@ -147,7 +147,7 @@ Press **Delete chapter…** in the header. The confirmation lists what goes: *it
 | **Next chapter:** | Where this chapter's victory leads: any chapter, or *32 · Ending*. Writes `main.dol` at once. |
 | **Take out of the story** | Added chapters only: whatever led here leads to this chapter's successor instead. The files stay. |
 | **The next chapter is this chapter's second part** | Plays the next chapter like the second half of Ch.27: no save menu between them, the army is not sorted out, support points are not counted again. Writes `main.dol` at once. |
-| Notes | Chapters 28 and 29 always behave as two halves; a hub chapter's flow is set in its hub setup; trial maps have no flow. |
+| Notes | Chapters 28 and 29 always behave as two halves; a hub chapter's flow is set in its hub setup ([Create a hub and plan chapter unlocks](hub-chapters.md)); trial maps have no flow. |
 
 ### Story order…
 

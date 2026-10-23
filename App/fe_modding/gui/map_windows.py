@@ -555,10 +555,11 @@ class MapSettingsForm(ttk.Frame):
             return
         cap, extra, us = data.capacity, data.extra, self.map.verified_us_map_layout
         row = self._section(0, "grid", "Grid")
-        size = f"{cap.x_size} × {cap.y_size} tiles"
-        tip(ttk.Label(self, text="Map size"), "The whole map, border included. Changing it needs a new map.").grid(
-            row=row, column=0, sticky="w")
-        ttk.Label(self, text=size, style="Muted.TLabel").grid(row=row, column=1, columnspan=3, sticky="w")
+        self._number(row, 0, "capacity:x_size", "Width", cap.x_size,
+                     "The whole grid width, border included. New tiles repeat the nearest edge tile.", "tiles")
+        self._number(row, 2, "capacity:y_size", "Height", cap.y_size,
+                     "The whole grid height, border included. Shrinking can leave units or objects outside the grid.",
+                     "tiles")
         row += 1
         if extra is not None:
             playable = (f"playable {cap.x_size - 2 * extra.grid_buffer} × {cap.y_size - 2 * extra.grid_buffer}"
@@ -594,7 +595,9 @@ class MapSettingsForm(ttk.Frame):
             row += 1
             if fog.mode_code:  # 0 on every vanilla map
                 self._number(row, 0, "fog:mode_code", "Fog type", fog.mode_code,
-                             "Render fog type minus 1. 0 on every vanilla map.")
+                             "Curve: 0 linear, 1 exponential, 2 exponential-squared, "
+                             "3 reverse-exponential, 4 reverse-exponential-squared. "
+                             "Every vanilla map uses 0.")
                 row += 1
             row = self._colour_row(row, "fog", fog, "Colour", ("red", "green", "blue"), "Colour of the fog.")
         if extra is not None and us:
@@ -757,14 +760,20 @@ class MapSettingsForm(ttk.Frame):
                    "grid": map_file.patch_grid_field, "extra": map_file.patch_extra_field}
         pending = []
         try:
+            width, height = self._value("capacity:x_size"), self._value("capacity:y_size")
+            if not 1 <= width <= map_file.MAX_GRID_SIZE or not 1 <= height <= map_file.MAX_GRID_SIZE:
+                raise ValueError(f"Width and height must each be from 1 to {map_file.MAX_GRID_SIZE} tiles.")
+            resize = (width, height) != (data.capacity.x_size, data.capacity.y_size)
             for key in self._vars:
                 prefix, f = key.split(":", 1)
+                if prefix == "capacity":
+                    continue
                 if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order", "other_flags"):
                     continue
                 record = getattr(data, prefix)
                 value = self._value(key)
                 if record is not None and value != getattr(record, f):
-                    pending.append((record, f, value, patches[prefix]))
+                    pending.append((prefix, f, value))
             extra = data.extra
             if extra is not None:
                 flags = self._value("extra:other_flags")
@@ -777,25 +786,32 @@ class MapSettingsForm(ttk.Frame):
                              | (self._value("extra:weather_id") << 20)
                              | (self._value("extra:preserve_object_order") << 29))
                 if flags != extra.unknown_tail:
-                    pending.append((extra, "unknown_tail", flags, map_file.patch_extra_field))
-                if data.capacity is not None:  # keep the half sizes in step with the map size
-                    for f, size in (("half_x_size", data.capacity.x_size), ("half_y_size", data.capacity.y_size)):
+                    pending.append(("extra", "unknown_tail", flags))
+                if data.capacity is not None:  # keep the half sizes in step with the requested map size
+                    for f, size in (("half_x_size", width), ("half_y_size", height)):
                         if getattr(extra, f) != (size + 1) // 2:
-                            pending.append((extra, f, (size + 1) // 2, map_file.patch_extra_field))
+                            pending.append(("extra", f, (size + 1) // 2))
         except ValueError as exc:
             messagebox.showerror("Map settings", str(exc), parent=self)
             return
-        if not pending:
+        if not pending and not resize:
             return
 
         def edit(files):
             out = files["map.bin"]
-            for record, f, value, patch in pending:  # patching never moves a record
-                out = patch(out, record, f, value)
+            if resize:
+                out = map_file.resize_grid(out, width, height)
+            for prefix, f, value in pending:
+                current = map_file.read_map_bytes(out)
+                record = getattr(current, prefix)
+                out = patches[prefix](out, record, f, value)
             files["map.bin"] = out
 
         try:
-            self.builder.edit_map(edit, "Changed " + ", ".join(sorted({f for _r, f, _v, _p in pending})), raise_errors=True)
+            changed = {f for _prefix, f, _value in pending}
+            if resize:
+                changed.add(f"grid size to {width}×{height}")
+            self.builder.edit_map(edit, "Changed " + ", ".join(sorted(changed)), raise_errors=True)
         except (struct.error, OverflowError, map_file.MapFileError) as exc:
             messagebox.showerror("Could not apply", str(exc), parent=self)
 

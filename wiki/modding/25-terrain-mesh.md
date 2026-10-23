@@ -20,7 +20,7 @@ verification: ["source-reviewed", "unknown"]
 ---
 # Replace a terrain mesh safely
 
-**Route:** Assets → 3D Models → `zmap/<map>` → Export/Import GLB
+**Route:** Assets → Map Models (or 3D Models → `zmap/<map>`)
 
 ## What you will make
 
@@ -42,6 +42,20 @@ Choose a disposable chapter map that already renders and plays correctly. Save a
 Export the terrain before editing. The exporter also writes a `_mask.png` beside the GLB when the terrain has a map-texturing mask. Preserve both as your reference.
 
 Use the exported coordinate system. One tile is **5 model units**. Do not apply a global scale or origin change during a first round trip.
+
+To begin with blank ground instead, open **Assets → Map Models**. Select a map and choose **Create new map and
+replace…** when the finished terrain should replace that existing map. Choose **Create new map file…** to copy a
+template into a separate `zmap/<name>/map.cmp` first; the source map remains untouched and the generated kit
+targets the new copy. Set the square ground size, playable-grid width and height, and the grid's X/Y offset within
+that ground. Choose another map as the terrain tileset and optionally include a water surface. Ground and grid
+dimensions are limited to 63 tiles. The tileset picker groups maps whose decoded atlases are identical and
+previews each genuinely distinct atlas. The resulting `.blend` is a normal terrain kit with a flat **FE9 Sculpt**,
+the grid already positioned, the base texture without the old map's light overlay, and every unused atlas cell
+already available as a visually named paint swatch. The unused-cell grid is inferred independently on each axis
+from the map's real UV swatches, including the smaller rectangular regions used by indoor maps. That minimum grid
+is only used for detection: adjacent cells whose pixels continue naturally across their shared edge are grouped
+into larger rectangular swatches. It does not resize `map.bin`; set the destination map's
+tactical dimensions in **Map settings** before importing the finished kit.
 
 ## How the editor fits together
 
@@ -153,6 +167,13 @@ The old overlay can preserve vanilla shading on a no-change round trip. It is no
 
 Imported images are converted for the game's texture formats and texture pack. Individual GX textures are limited to 1024 pixels per side. The importer warns when the resulting `texpack.tpl` exceeds the largest observed vanilla map size; that warning is a compatibility risk, not a cosmetic note.
 
+To use your own tileset, open **Atlas swatches… → Build custom tileset…**. PNG is recommended because it is
+lossless and supports transparency; JPEG, BMP and TGA are also accepted. Supply one tileable base image (it is
+centre-cropped and resized to 512×512) and any number of tileable extra images. Each extra image's width and height
+are fitted independently to 32, 64, 128 or 256 texels, so rectangular indoor walls and trim are supported. The
+editor packs them into the 512×1024 terrain atlas and uses each filename as its initial swatch name. Keep important
+details away from image edges and prefer source dimensions already matching a supported size to avoid resampling.
+
 If an imported mesh is unusually large, the model panel can offer triangle reduction. Reduction changes geometry and may affect UV seams or silhouettes, so compare before/after renders and routes.
 
 ## Interactions and precedence
@@ -220,7 +241,7 @@ The coordinate scale, importer options, map-texturing pipeline, mask span, heigh
 
 - [Edit tile heights, slopes, and exits](23-tile-heights.md)
 - [Place, copy, import, and configure props](24-map-props.md)
-- [Import water and set its flow](26-water.md)
+- [Import water and set its flow](26-water.md): the Sculpt & paint kit carries the map's water and shore waves too.
 - [Terrain texture rendering](../systems/terrain-texture-rendering.md)
 - [Map format](../formats/map-format.md)
 

@@ -105,6 +105,7 @@ class Cue:
 class Quake:
     frame: int
     strength: float
+    duration: int = SHAKE_TICKS  # -1: hold until another quake event; 0: stop
 
 
 @dataclass(frozen=True)
@@ -253,7 +254,9 @@ class GameCamera:
         by_frame: dict = {}
         for cue in cues:
             by_frame.setdefault(int(cue.frame), []).append(cue)
-        shakes = {int(q.frame): q.strength for q in quakes}
+        shakes: dict[int, list[Quake]] = {}
+        for quake in quakes:
+            shakes.setdefault(int(quake.frame), []).append(quake)
         amp, decay, phase, left = 0.0, 0.0, 0.0, 0
         shake_x = 0.0
         shots = []
@@ -270,8 +273,13 @@ class GameCamera:
                     state.dest = tuple(cue.dest)
                 state.start(script, cue.slot, cue.mirror)
                 active = state
-            if tick in shakes:
-                amp, decay, phase, left = SHAKE_SCALE * shakes[tick], -SHAKE_DECAY * shakes[tick], 0.0, SHAKE_TICKS
+            for quake in shakes.get(tick, ()):
+                if quake.duration == 0 or quake.strength <= 0.0:
+                    amp, decay, phase, left, shake_x = 0.0, 0.0, 0.0, 0, 0.0
+                else:
+                    amp = SHAKE_SCALE * quake.strength
+                    decay = 0.0 if quake.duration < 0 else -SHAKE_DECAY * quake.strength
+                    phase, left = 0.0, (length - tick + 1 if quake.duration < 0 else quake.duration)
             active.advance()
             for state in states.values():
                 state.step()

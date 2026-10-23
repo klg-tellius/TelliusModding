@@ -67,11 +67,12 @@ The meaning of +0x0C and +0x10 is inferred from accessor offsets, not proven.
 
 from __future__ import annotations
 
+import io
 import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .common import HEADER_SIZE
+from .common import HEADER_SIZE, read_section_table
 
 BGM_RECORD_SIZE = 12
 BGM_TYPE_REAL = 0x06
@@ -201,6 +202,46 @@ class SfxCue:
         """Category taken from the name: ``SFX_SYS_SELECT1`` -> ``SYS``."""
         parts = self.name.split("_")
         return parts[1] if len(parts) > 2 and parts[0] == "SFX" else "OTHER"
+
+
+@dataclass(frozen=True)
+class SfxTableEntry:
+    """One numeric animation/event code to symbolic ``SFX_*`` cue mapping."""
+
+    event_code: int
+    name: str
+
+
+def read_sfx_table(data: bytes) -> list[SfxTableEntry]:
+    """Read the ``SFXTable`` section used by ``lookup_sfx_name_by_event_code``.
+
+    The section starts with a big-endian count followed by ``count`` pairs
+    of ``(u32 event_code, u32 name_offset)``.  Offsets use the container's
+    normal data-relative convention.  ``.ga`` event codes of 1000 or more
+    are looked up in this table before the resulting cue name is played.
+    """
+    data_size, reloc_count, _section_count, reloc_start = _read_container(data)
+    sections_start = reloc_start + 4 * reloc_count
+    sections = {name: address for address, name in
+                read_section_table(io.BytesIO(data), sections_start, len(data))}
+    start = sections.get("SFXTable")
+    if start is None:
+        raise GcfesndError("gcfesnd.bin has no SFXTable section.")
+    if start + 4 > HEADER_SIZE + data_size:
+        raise GcfesndError("Truncated SFXTable header.")
+    count = struct.unpack_from(">I", data, start)[0]
+    end = start + 4 + count * 8
+    if end > HEADER_SIZE + data_size:
+        raise GcfesndError(f"Truncated SFXTable ({count} entries).")
+    entries = []
+    for pos in range(start + 4, end, 8):
+        event_code, name_offset = struct.unpack_from(">II", data, pos)
+        try:
+            name = _read_cstring_at(data, HEADER_SIZE + name_offset)
+        except (GcfesndError, UnicodeDecodeError) as error:
+            raise GcfesndError(f"Invalid SFXTable name for code {event_code}.") from error
+        entries.append(SfxTableEntry(event_code, name))
+    return entries
 
 
 def read_sfx_cues(data: bytes) -> list[SfxCue]:

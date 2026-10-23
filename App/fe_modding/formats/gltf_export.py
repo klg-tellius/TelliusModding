@@ -38,6 +38,7 @@ import struct
 from dataclasses import dataclass, field, replace
 from typing import Optional
 
+import numpy as np
 from PIL import Image
 
 from . import animation, engine_pose, model, skeleton
@@ -45,6 +46,18 @@ from . import animation, engine_pose, model, skeleton
 _FLOAT, _UNSIGNED_SHORT, _UNSIGNED_BYTE, _UNSIGNED_INT = 5126, 5123, 5121, 5125
 _ARRAY_BUFFER, _ELEMENT_ARRAY_BUFFER = 34962, 34963
 _REPEAT = 10497
+
+
+@dataclass(frozen=True)
+class MapTextureBake:
+    """Projection state used to make FE9 terrain visible in ordinary glTF
+    viewers. The original UV0/UV1 remain the editable, game-facing data; a
+    third UV set addresses a per-triangle baked preview because core glTF
+    cannot express the game's two-sample material callback."""
+
+    selector_matrix: tuple[tuple[float, float, float, float], ...]
+    last_matrix: tuple[tuple[float, float, float, float], ...]
+    material_names: frozenset[str] = frozenset({"map_base", "map_wall"})
 
 
 @dataclass
@@ -160,13 +173,22 @@ def export_glb(
     textures: Optional[dict[int, Image.Image]] = None,
     animations: Optional[list[tuple[str, animation.GaAnimation]]] = None,
     fps: float = 60.0,
+    placements: Optional[dict[str, list[tuple[str, skeleton.Mat3x4]]]] = None,
+    map_texture_bake: Optional[MapTextureBake] = None,
 ) -> bytes:
     """Build a ``.glb``. ``gs_models`` are ``(name, model)`` pairs sharing
     the one skeleton; ``textures`` maps a material ``tex_id`` to its decoded
-    image (the caller decides that mapping - see ``model_viewer``)."""
+    image (the caller decides that mapping - see ``model_viewer``).
+
+    ``placements`` optionally maps a model name to named 3x4 transforms.
+    The mesh is written once and referenced by one node per transform.  A
+    model absent from the mapping gets its usual identity node.  This is
+    used by chapter-map export, where dozens of placed trees can share one
+    mesh without making dozens of copies of its vertex data."""
     bones = bones or []
     textures = textures or {}
     animations = animations or []
+    placements = placements or {}
     b = _Builder()
     gltf: dict = {
         "asset": {"version": "2.0", "generator": "Tellius Modding"},
@@ -188,17 +210,25 @@ def export_glb(
         else:
             scene_nodes.append(i)
 
-    # Textures.
+    # Textures. More images can be appended below when an FE9 terrain
+    # callback is baked for stock glTF/Blender material display.
     image_index: dict[int, int] = {}
+
+    def add_image(name: str, image: Image.Image) -> int:
+        if "images" not in gltf:
+            gltf["images"], gltf["textures"] = [], []
+            gltf["samplers"] = [{"wrapS": _REPEAT, "wrapT": _REPEAT}]
+        png = io.BytesIO()
+        image.convert("RGBA").save(png, format="PNG")
+        gltf["images"].append({"bufferView": b.view(png.getvalue()), "mimeType": "image/png", "name": name})
+        gltf["textures"].append({"source": len(gltf["images"]) - 1, "sampler": 0})
+        return len(gltf["textures"]) - 1
+
     if textures:
         gltf["images"], gltf["textures"] = [], []
         gltf["samplers"] = [{"wrapS": _REPEAT, "wrapT": _REPEAT}]
         for tex_id, image in sorted(textures.items()):
-            png = io.BytesIO()
-            image.convert("RGBA").save(png, format="PNG")
-            gltf["images"].append({"bufferView": b.view(png.getvalue()), "mimeType": "image/png", "name": f"tex_{tex_id}"})
-            gltf["textures"].append({"source": len(gltf["images"]) - 1, "sampler": 0})
-            image_index[tex_id] = len(gltf["textures"]) - 1
+            image_index[tex_id] = add_image(f"tex_{tex_id}", image)
 
     for model_name, gs in gs_models:
         material_ids: dict[int, int] = {}
@@ -219,29 +249,55 @@ def export_glb(
         for c in gs.chunks:
             passes[c.material_index] = max(passes.get(c.material_index, 0), (c.format >> 13 & 3) - 1)
             blend_flags[c.material_index] = blend_flags.get(c.material_index, 0) | (c.format & SHAPE_BLEND_FLAGS)
+        baked_uvs: dict[int, list[tuple[tuple[float, float], ...]]] = {}
+        baked_textures: dict[int, int] = {}
+        if map_texture_bake is not None:
+            for mat_index, tris in by_material.items():
+                material = gs.materials[mat_index] if 0 <= mat_index < len(gs.materials) else None
+                if (
+                    material is None
+                    or material.name not in map_texture_bake.material_names
+                    or len(material.textures) < 2
+                ):
+                    continue
+                atlas_id = material.textures[0].tex_id
+                mask_id = atlas_id + 1
+                light_id = material.textures[-1].tex_id
+                if atlas_id not in textures or mask_id not in textures or light_id not in textures:
+                    continue
+                baked, display_uvs = _bake_map_texture(
+                    tris, textures[atlas_id], textures[mask_id], textures[light_id], map_texture_bake
+                )
+                baked_uvs[mat_index] = display_uvs
+                baked_textures[mat_index] = add_image(
+                    f"fe9_baked_terrain_{model_name}_{material.name}_{mat_index}", baked
+                )
         for mat_index, tris in by_material.items():
             if mat_index not in material_ids:
                 material_ids[mat_index] = _add_material(
                     gltf, gs, mat_index, image_index, model_name, mat_index in double_sided,
                     passes.get(mat_index, 0),
                     blend_flags.get(mat_index, 0),
+                    baked_textures.get(mat_index),
                 )
             keys: dict[tuple, int] = {}
             positions, normals, uvs, colors, joints, weights, indices = [], [], [], [], [], [], []
-            uvs2 = []
+            uvs2, uvs3 = [], []
             has_color = any(v.color is not None for t in tris for v in t)
             has_uv2 = any(v.uv2 is not None for t in tris for v in t)
             has_skin = model_has_skin
-            for tri in tris:
-                for v in tri:
+            for tri_index, tri in enumerate(tris):
+                for corner, v in enumerate(tri):
                     j, w = _vertex_skin(v, len(bones)) if has_skin else ((0, 0, 0, 0), (1.0, 0.0, 0.0, 0.0))
-                    key = (v.position, v.normal, v.uv, v.uv2, v.color, j, w)
+                    display_uv = baked_uvs[mat_index][tri_index][corner] if mat_index in baked_uvs else None
+                    key = (v.position, v.normal, v.uv, v.uv2, display_uv, v.color, j, w)
                     if key not in keys:
                         keys[key] = len(positions)
                         positions.append(tuple(float(c) for c in v.position))
                         normals.append(_normalize(v.normal))
                         uvs.append(tuple(float(c) for c in v.uv))
                         uvs2.append(tuple(float(c) for c in (v.uv2 if v.uv2 is not None else v.uv)))
+                        uvs3.append(display_uv or (0.0, 0.0))
                         colors.append(tuple(v.color) if v.color is not None else (255, 255, 255, 255))
                         joints.append(j)
                         weights.append(w)
@@ -253,6 +309,8 @@ def export_glb(
             }
             if has_uv2:  # the second UV set of map terrain (map_base's second texture0 sample)
                 attributes["TEXCOORD_1"] = b.accessor(uvs2, "VEC2", _FLOAT, target=_ARRAY_BUFFER)
+            if mat_index in baked_uvs:
+                attributes["TEXCOORD_2"] = b.accessor(uvs3, "VEC2", _FLOAT, target=_ARRAY_BUFFER)
             if has_color:
                 attributes["COLOR_0"] = b.accessor(colors, "VEC4", _UNSIGNED_BYTE, target=_ARRAY_BUFFER, normalized=True)
             if has_skin:
@@ -269,11 +327,18 @@ def export_glb(
         if not primitives:
             continue
         gltf["meshes"].append({"name": model_name, "primitives": primitives})
-        mesh_node = {"name": model_name, "mesh": len(gltf["meshes"]) - 1}
-        if bones and any("JOINTS_0" in p["attributes"] for p in primitives):
-            mesh_node["skin"] = 0
-        nodes.append(mesh_node)
-        scene_nodes.append(len(nodes) - 1)
+        mesh_index = len(gltf["meshes"]) - 1
+        model_placements = placements.get(model_name)
+        if model_placements is None:
+            model_placements = [(model_name, None)]
+        for node_name, transform in model_placements:
+            mesh_node = {"name": node_name, "mesh": mesh_index}
+            if transform is not None:
+                mesh_node.update(_node_trs(transform))
+            if bones and any("JOINTS_0" in p["attributes"] for p in primitives):
+                mesh_node["skin"] = 0
+            nodes.append(mesh_node)
+            scene_nodes.append(len(nodes) - 1)
 
     if bones:  # written even without a skinned mesh: the inverse binds define the rig for animation import
         ibm = b.accessor([_mat4(engine_pose.inverse_bind(bone)) for bone in bones], "MAT4", _FLOAT)
@@ -315,6 +380,7 @@ def _add_material(
     double_sided: bool,
     draw_pass: int = 0,
     shape_flags: int = 0,
+    baked_texture: int | None = None,
 ) -> int:
     """``draw_pass`` is the chunk list the material's shapes are drawn in:
     list 1 (alpha-tested) becomes ``alphaMode`` MASK, list 2 (blended)
@@ -328,7 +394,9 @@ def _add_material(
     )
     pbr: dict = {"baseColorFactor": color, "metallicFactor": 0.0, "roughnessFactor": 1.0}
     entry: dict = {"name": material.name if material and material.name else f"{model_name}_mat{mat_index}", "doubleSided": double_sided}
-    if material and material.textures and material.textures[0].tex_id in image_index:
+    if baked_texture is not None:
+        pbr["baseColorTexture"] = {"index": baked_texture, "texCoord": 2}
+    elif material and material.textures and material.textures[0].tex_id in image_index:
         pbr["baseColorTexture"] = {"index": image_index[material.textures[0].tex_id]}
     if draw_pass == 1:
         entry["alphaMode"] = "MASK"
@@ -344,8 +412,85 @@ def _add_material(
             "fe9_color2": list(material.color2),
             "fe9_material_flag1": material.flag1,
         }
+        if baked_texture is not None:
+            entry["extras"]["fe9_baked_terrain_preview"] = True
     gltf["materials"].append(entry)
     return len(gltf["materials"]) - 1
+
+
+def _project_uv(matrix, points: "np.ndarray") -> tuple["np.ndarray", "np.ndarray"]:
+    s = (
+        points[..., 0] * matrix[0][0] + points[..., 1] * matrix[0][1]
+        + points[..., 2] * matrix[0][2] + matrix[0][3]
+    )
+    t = (
+        points[..., 0] * matrix[1][0] + points[..., 1] * matrix[1][1]
+        + points[..., 2] * matrix[1][2] + matrix[1][3]
+    )
+    q = (
+        points[..., 0] * matrix[2][0] + points[..., 1] * matrix[2][1]
+        + points[..., 2] * matrix[2][2] + matrix[2][3]
+    )
+    q = np.where(np.abs(q) > 1e-8, q, 1.0)
+    return s / q, t / q
+
+
+def _sample_repeat(image: "Image.Image | np.ndarray", u: "np.ndarray", v: "np.ndarray") -> "np.ndarray":
+    pixels = image if isinstance(image, np.ndarray) else np.asarray(image.convert("RGBA"), dtype=np.float64)
+    height, width = pixels.shape[:2]
+    x = np.minimum((np.mod(u, 1.0) * width).astype(np.int64), width - 1)
+    y = np.minimum((np.mod(v, 1.0) * height).astype(np.int64), height - 1)
+    return pixels[y, x]
+
+
+def _bake_map_texture(tris, atlas: Image.Image, mask: Image.Image, light: Image.Image,
+                      setup: MapTextureBake) -> tuple[Image.Image, list[tuple[tuple[float, float], ...]]]:
+    """Bake one projected FE9 material into independent triangle tiles.
+
+    Triangle tiles avoid assuming terrain has one world-space unwrap (walls
+    and folded ground do not), while UV0 and UV1 stay untouched for import.
+    """
+    count = max(len(tris), 1)
+    columns = math.ceil(math.sqrt(count))
+    inner = max(6, min(24, 4096 // columns - 2))
+    cell = inner + 2
+    rows = math.ceil(count / columns)
+    width, height = columns * cell, rows * cell
+    output = np.zeros((height, width, 4), dtype=np.uint8)
+    axis = (np.arange(cell, dtype=np.float64) - 1.0) / max(inner - 1, 1)
+    bx, by = np.meshgrid(axis, axis)
+    weights = np.stack((1.0 - bx - by, bx, by), axis=-1)
+    weights = np.maximum(weights, 0.0)
+    weights /= np.maximum(weights.sum(axis=-1, keepdims=True), 1e-12)
+    display_uvs = []
+    # decoded once: converting per triangle took minutes on a whole map
+    atlas, mask, light = (np.asarray(image.convert("RGBA"), dtype=np.float64) for image in (atlas, mask, light))
+
+    for index, tri in enumerate(tris):
+        row, column = divmod(index, columns)
+        x0, y0 = column * cell, row * cell
+        positions = np.asarray([v.position for v in tri], dtype=np.float64)
+        uv0 = np.asarray([v.uv for v in tri], dtype=np.float64)
+        uv1 = np.asarray([v.uv2 if v.uv2 is not None else v.uv for v in tri], dtype=np.float64)
+        points = np.einsum("...i,ij->...j", weights, positions)
+        first_uv = np.einsum("...i,ij->...j", weights, uv0)
+        second_uv = np.einsum("...i,ij->...j", weights, uv1)
+        first = _sample_repeat(atlas, first_uv[..., 0], first_uv[..., 1])
+        second = _sample_repeat(atlas, second_uv[..., 0], second_uv[..., 1])
+        mu, mv = _project_uv(setup.selector_matrix, points)
+        selector = _sample_repeat(mask, mu, mv)[..., :3].mean(axis=-1, keepdims=True) / 255.0
+        blended = first[..., :3] * (1.0 - selector) + second[..., :3] * selector
+        lu, lv = _project_uv(setup.last_matrix, points)
+        illumination = _sample_repeat(light, lu, lv)[..., :3] / 255.0
+        rgba = np.concatenate((blended * illumination, first[..., 3:4]), axis=-1)
+        output[y0:y0 + cell, x0:x0 + cell] = np.clip(np.rint(rgba), 0, 255).astype(np.uint8)
+        left, top = x0 + 1.5, y0 + 1.5
+        right, bottom = x0 + inner + 0.5, y0 + inner + 0.5
+        display_uvs.append(
+            ((left / width, top / height), (right / width, top / height), (left / width, bottom / height))
+        )
+
+    return Image.fromarray(output, "RGBA"), display_uvs
 
 
 def _node_trs(m: skeleton.Mat3x4) -> dict:

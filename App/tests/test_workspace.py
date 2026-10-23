@@ -63,6 +63,27 @@ class ChapterHelperTests(unittest.TestCase):
         self.assertEqual(chapters.chapter_display_title("01", {"01": "Prologue: Mercenaries"}), "Prologue: Mercenaries")
         self.assertEqual(chapters.chapter_display_title("32", {}), "Chapter 32")
 
+    def test_story_chapters_except_start_and_ending_are_deletable(self):
+        self.assertNotIn(1, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertIn(2, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertIn(31, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertNotIn(32, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertIn(33, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertIn(89, chapters.DELETABLE_CHAPTER_IDS)
+        self.assertNotIn(90, chapters.DELETABLE_CHAPTER_IDS)
+
+    def test_removing_chapter_shops_leaves_other_sections(self):
+        from fe_modding.formats import shop
+        doc = shop.ShopDocument([], [
+            shop.ShopSection("WSHOP_ITEMS_C01", ["IID_IRONSWORD"]),
+            shop.ShopSection("WSHOP_ITEMS_C33", ["IID_STEELSWORD"]),
+            shop.ShopSection("ISHOP_ITEMS_C33", ["IID_VULNERARY"]),
+            shop.ShopSection("FSHOP_ITEMS_C33", [0, "MDV_IRN"]),
+        ], [], bytes(16))
+        self.assertEqual(shop.remove_chapter(doc, 33), 3)
+        self.assertEqual([section.name for section in doc.sections], ["WSHOP_ITEMS_C01"])
+        self.assertEqual(shop.remove_chapter(doc, 33), 0)
+
 
 class PageHelperTests(unittest.TestCase):
     def test_plain_text_strips_commands(self):

@@ -24,6 +24,8 @@ verification: ["source-reviewed", "unknown"]
 
 ## What you will make
 
+For a hub-specific workflow, see [Create a hub and plan chapter unlocks](hub-chapters.md). It explains persistent unlock/completion flags and why flags alone do not yet hide generated chapter entrances.
+
 You will create and verify two named state switches:
 
 - a chapter flag meaning “the turn-3 reinforcement wave has loaded”;

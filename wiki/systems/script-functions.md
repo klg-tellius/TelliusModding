@@ -2219,7 +2219,7 @@ Every `externCall` target the game's event scripts can use, with what it does in
 
   `SetFog(fog_type, start_distance, end_distance, red, green, blue)` — Sets the map’s rendering fog and refreshes its render state.
 
-- `fog_type`: Rendering fog mode byte. Use the map’s existing supported mode; 0 disables fog.
+- `fog_type`: 0 disables fog; 1 is perspective-linear, 2 exponential, 3 exponential-squared, 4 reverse-exponential, and 5 reverse-exponential-squared.
 - `start_distance`: Signed-byte fog start distance in map units; converted by 5 × map scale for rendering.
 - `end_distance`: Signed-byte fog end distance in the same units.
 - `red`: Fog color red, 0–255.

@@ -231,6 +231,7 @@ The listed controls, default layers, shortcuts, 50-state undo cap, and Save Chap
 
 ## Related tutorials and references
 
+- [Create a hub and plan chapter unlocks](hub-chapters.md)
 - [Paint terrain and block movement](22-paint-terrain-and-blocking.md)
 - [Edit tile heights and slopes](23-tile-heights.md)
 - [Place, copy, and import props](24-map-props.md)

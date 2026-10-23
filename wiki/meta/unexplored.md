@@ -30,7 +30,7 @@ This page records the boundaries of the current game description. An open item m
 
 ## Partially described formats
 
-- `tut_data.bin` / `tut_data_en.bin` — the same labeled-section container; per-chapter trigger data and the [tutorial browser](../systems/tutorial-browser.md) topic/list ownership are identified, but several record fields still need names.
+- `tut_data.bin` / `tut_data_en.bin` — fully decoded labeled-section containers; the [tutorial browser](../systems/tutorial-browser.md) documents topic ownership, grouping, ordering, initial flags, and script targets.
 
 ## The GBA link program
 
@@ -42,7 +42,6 @@ This page records the boundaries of the current game description. An open item m
 <table><thead><tr><th>Question</th><th>Status</th><th>Article</th></tr></thead><tbody>
     <tr><td>What are the actual support-bonus numbers?</td><td><span class="badge open">open</span></td><td><a class="wl" href="../../systems/support-system/">Support System</a></td></tr>
     <tr><td>Exactly what script code reads a battle-goal marker's state?</td><td><span class="badge open">open</span></td><td><a class="wl" href="../../systems/objectives/">Objectives</a></td></tr>
-    <tr><td>What does the Boots' item property <code>noneart</code> change in play?</td><td><span class="badge open">open</span></td><td><a class="wl" href="../../systems/items-weapons/">Items &amp; Weapons</a></td></tr>
     <tr><td>Which battle-event code triggers the hit and damage number, and what do the codes from 1,000 up play?</td><td><span class="badge plausible">partial</span></td><td><a class="wl" href="../../formats/model-formats/">.g / .gs / .ga</a></td></tr>
     <tr><td>What is the second, greyscale texture the Prologue scenery's materials point to, and what do shape flags <code>0x8</code> and <code>0x200</code> do?</td><td><span class="badge open">open</span></td><td><a class="wl" href="../../formats/model-formats/">.g / .gs / .ga</a></td></tr>
     <tr><td>What do map-model registry bytes <code>0x09</code> and <code>0x0B</code> mean, and which class field supplies the animation ID of a unit whose character has none?</td><td><span class="badge open">open</span></td><td><a class="wl" href="../../formats/fe8anim/">FE8Anim.bin</a></td></tr>
