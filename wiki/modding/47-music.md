@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Music", "Audio", "STM"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/47-music.md"
@@ -16,7 +16,7 @@ tutorial_kind: "task"
 tutorial_track: "ai-economy-and-media"
 tutorial_stage: "draft"
 prerequisites: ["modding-script-editor", "modding-chapter-anatomy"]
-verification: ["source-reviewed", "unknown"]
+verification: ["source-reviewed", "app-tested", "unknown"]
 ---
 # Replace or add music
 
@@ -45,6 +45,14 @@ Choose one short looping retail track for the replacement exercise and export it
 
 ## How the editor fits together
 
+<!-- diagram media -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Media checks at the boundaries: start, loop or end, and the built game.](../assets/images/tutorials/media.svg)](../assets/images/tutorials/media.svg)
+
+<figcaption>Concept diagram, not an app screenshot. Media checks at the boundaries: start, loop or end, and the built game. Select the image to open it at full size.</figcaption>
+</figure>
+
 The track list shows files in `Sound/*.stm`. Selecting one decodes it and reports sample rate, channel count, duration, and loop time. **Play** listens to a temporary decoded WAV; **Import Replacement Audio…** encodes over the selected STM. Neither control by itself changes which scenes request the track.
 
 The **Music cues** row reads `Sound/gcfesnd.bin`. Multiple `BGM_*` cues may point to one STM. The game registers cues by symbolic name at boot; chapters, event scripts, phase code, and the Sound Room request those names, never raw list positions.
@@ -53,9 +61,17 @@ Up to four BGM channels can coexist. Scene/phase callers start, stop, and fade t
 
 ## Guided walkthrough
 
+<!-- screenshot 47-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Music page with the track list and the selected track's controls and cues.](../assets/images/tutorials/screenshots/47-a-setup.png)](../assets/images/tutorials/screenshots/47-a-setup.png)
+
+<figcaption markdown="span">**Assets › Music** with a track selected: **Play/Stop**, **Export WAV…**, **Import Replacement Audio…**, the track's **Music cues** and **New track…**.</figcaption>
+</figure>
+
 ### 1. Replace an existing stream without changing callers
 
-Select the target track and press **Export WAV…** to keep an audible reference. Press **Import Replacement Audio…** and choose WAV, MP3, OGG, FLAC, M4A, AAC, or WMA. For a non-WAV source, the app first asks FFmpeg to create a scratch WAV.
+Select the target track and press **Export WAV…** (*Export as WAV*) to keep an audible reference. Press **Import Replacement Audio…** and, in *Choose audio to import*, pick WAV, MP3, OGG, FLAC, M4A, AAC, or WMA. For a non-WAV source, the app first asks FFmpeg to create a scratch WAV.
 
 If the original track loops, the editor asks whether the replacement should loop. Enter the loop start in seconds. The time is rounded to a sample index and must be before the end. Choose a zero-crossing or musically continuous boundary; STM stores codec history for the boundary, but it cannot repair mismatched waveforms or reverb tails.
 
@@ -71,11 +87,19 @@ Cue names must start with `BGM_`, use uppercase ASCII letters/digits/underscore,
 
 Use **New cue…** only when another symbolic identity should share this stream. Multiple aliases are useful when separate callers must keep stable names, but they do not create separate audio or loop data.
 
+<!-- screenshot 47-c-new.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Music page with the new tutorial_theme track selected and its cue BGM_TUTORIAL_THEME.](../assets/images/tutorials/screenshots/47-c-new.png)](../assets/images/tutorials/screenshots/47-c-new.png)
+
+<figcaption markdown="span">After **New track…** with a 4-second test tone made for this lesson (stereo, 32 kHz, loop from 1.0 s): `tutorial_theme.stm` is in the list and **Music cues** shows its new cue `BGM_TUTORIAL_THEME`. Chapters and scripts play it by that name.</figcaption>
+</figure>
+
 ### 3. Assign the cue, not the filename
 
 For chapter map music, open **Game Data → Chapters** and select `BGM_TUTORIAL_THEME`. For event music, edit/compile the `BGMPlay` call with that exact cue. Do not pass `tutorial_theme_32k`, `.stm`, or a filesystem path to a BGM caller.
 
-If the cue is intended for the Extras Sound Room, edit the separate fixed 64-entry **Sound Room Tracks** list under the appropriate asset surface. Adding a cue does not automatically place it in that menu, and Sound Room background illustrations are owned by another file.
+If the cue is intended for the Extras Sound Room, edit the separate fixed 64-entry list in **Assets › Soundroom Tracks** and press **Save tracks** ([Edit the Sound Room, credits and in-game tutorials](73-sound-room-credits-tutorials.md)). Adding a cue does not automatically place it in that menu, and Sound Room background illustrations are owned by another file.
 
 ### 4. Test the boundaries that reveal audio defects
 
@@ -94,6 +118,12 @@ For one-shot music, listen through its final sample and the following scene acti
 - **Music cues:** lists every BGM record whose path points at the selected stem.
 - **New cue…:** appends another callable BGM record.
 - **Remove cue:** removes a project-added cue; callers naming it become silent/unresolved.
+
+## Things to try next
+
+1. **A cue alias.** Select your new track, **New cue…** `BGM_TUTORIAL_THEME_ALT`, and use it in one chapter while the first cue stays on another.
+2. **A one-shot.** Make a second track and answer **No** to *Looping track*; play it with `BGMPlay` in a victory event and listen to its end.
+3. **Undo a new track.** **Delete** on the track: the app lists the cues that point to it and removes the ones the project added.
 
 ## Interactions and precedence
 
@@ -144,8 +174,8 @@ STM decoding/encoding, channel/loop fields, cue parsing/writing, name rules, and
 
 ## Related tutorials and references
 
-- [Edit event scripts safely](33-script-editor.md)
-- [Replace chapter-opening movies](41-chapter-opening-movies.md)
+- [Edit, compile, and test event scripts](33-script-editor.md)
+- [Set chapter title cards and full-screen movies](41-chapter-opening-movies.md)
 - [Add or replace sound effects](48-sound-effects.md)
 - [Music System](../systems/music-system.md)
 - [STM & DSP-ADPCM](../formats/stm-format.md)

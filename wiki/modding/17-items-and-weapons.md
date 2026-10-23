@@ -50,6 +50,14 @@ The item record owns mechanics and references: identity, weapon/attack type, ran
 
 ## Guided walkthrough
 
+<!-- screenshot 17-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Items tab with the item list and the Iron Axe form.](../assets/images/tutorials/screenshots/17-a-setup.png)](../assets/images/tutorials/screenshots/17-a-setup.png)
+
+<figcaption markdown="span">**Game Data › Items** with the Iron Axe: weapon type and rank, might, hit, weight, range, uses, price, and the battle model links.</figcaption>
+</figure>
+
 ### 1. Copy the nearest mechanical template
 
 Select the template and click **New…**, then copy the selected item. Set **Item ID (IID)** to `IID_TUTORIAL_SPEAR`. An empty record is inappropriate here because item properties, type/rank tokens, effect pointers, and model expectations must all agree.

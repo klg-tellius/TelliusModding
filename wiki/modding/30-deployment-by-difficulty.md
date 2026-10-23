@@ -49,6 +49,14 @@ Changing other fields through **Apply** updates all matched counterparts. **All 
 
 ## Guided walkthrough
 
+<!-- screenshot 30-c-add-to.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with the Place unit tool and its Add to, difficulty and section choices.](../assets/images/tutorials/screenshots/30-c-add-to.png)](../assets/images/tutorials/screenshots/30-c-add-to.png)
+
+<figcaption markdown="span">**Place unit**: **Add to** the **Common file (every difficulty)** or to chosen **Difficulty files**, in the chosen section. A unit in the common file appears on every difficulty.</figcaption>
+</figure>
+
 ### 1. Create matched destination sections
 
 Open Normal in Build and filter to the intended `_n` section. Verify corresponding `_h` and `_m` sections exist. Counterpart creation cannot work when the destination section is absent.

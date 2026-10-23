@@ -25,7 +25,9 @@ def repair_hub_opening(project, setup, layout):
            f'    MapLoad("bmap{setup.chapter:02d}")\n'
            f'    InstantDisposFirst("{old_group}")\n')
     new = hub_creation.opening_source(setup.chapter, new_group, setup.avatar_pid)
-    if new in source:
+    focused = new.replace(f'    InstantUnitFocusByPID("{setup.avatar_pid}")',
+                         f'    HubPositionAvatar()\n    InstantUnitFocusByPID("{setup.avatar_pid}")')
+    if new in source or focused in source:
         return
     if old not in source:
         raise ValueError("Unexpected hub opening; refusing to overwrite other script changes")
@@ -50,7 +52,7 @@ def main():
     args = parser.parse_args()
     root = args.root.resolve()
     records = json.loads((root / "builds.json").read_text(encoding="utf-8"))
-    evidence = root / "evidence" / datetime.now().strftime("before-r6-%Y%m%d-%H%M%S")
+    evidence = root / "evidence" / datetime.now().strftime("before-r7-%Y%m%d-%H%M%S")
     evidence.mkdir(parents=True, exist_ok=False)
     shutil.copy2(root / "builds.json", evidence / "builds.json")
     previous_verification = root / "verification.json"
@@ -90,6 +92,8 @@ def main():
             project.write_keeping_original(map_path, hub_creation.blank_map(
                 original, capacity.x_size, capacity.y_size))
         repair_hub_opening(project, setup, layout)
+        write_script(project, paths.script,
+                     hub.hub_script(script_sources.peek(project, paths.script), setup), layout)
         project.write_keeping_original(paths.deployment, hub_creation.repair_avatar_deployment(
             paths.deployment.read_bytes(), setup.avatar_pid,
             hub_creation.avatar_class(project.read_logical("game_data"), setup.avatar_pid)))
@@ -106,7 +110,8 @@ def main():
         verify_packaged_executable(image, (project.extracted_dir / "sys/main.dol").read_bytes(), region)
         with image.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        record.update(sha256=digest, fixture_revision=6, animation_speed=2.0,
+        record.update(sha256=digest, fixture_revision=7, animation_speed=2.0,
+                      return_position_before_fade=True,
                       avatar_ai_fix=True,
                       avatar_class_fix=True,
                       entrance_markers=[[d.x, d.y] for d in setup.destinations],
@@ -116,14 +121,14 @@ def main():
                       boot_archive_synced=changed, in_game_verified=False)
         (project.directory / "test-build.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         (root / "builds.json").write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
-        print(f"{region}: revision 6 ready; memory card unchanged", flush=True)
+        print(f"{region}: revision 7 ready; memory card unchanged", flush=True)
     print(f"Original test evidence copied to {evidence}")
     (root / "verification.json").write_text(json.dumps({
-        "fixture_revision": 6, "in_game_tested": False,
+        "fixture_revision": 7, "in_game_tested": False,
         "images": [{"region": r["region"], "fixture_revision": r["fixture_revision"], "packaged_executable_matches": True,
                     "boot_archive_synced": r["boot_archive_synced"], "sha256": r["sha256"]}
                    for r in records],
-        "full_dolphin_image_verification": "Not repeated for revision 6",
+        "full_dolphin_image_verification": "Not repeated for revision 7",
     }, indent=2) + "\n", encoding="utf-8")
 
 

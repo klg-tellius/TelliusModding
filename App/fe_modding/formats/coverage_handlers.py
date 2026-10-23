@@ -271,8 +271,8 @@ def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
 
 
 #: Combat and effect-movement events (GRAPHICS_NOTES, "Rig contract" and
-#: ".ga footer"; rig_contract.EVENT_NAMES). Unexplained codes remain open.
-GA_EVENT_KNOWN = ({0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 0x11, 0x12,
+#: ".ga footer"; rig_contract.EVENT_NAMES). Codes 6/7 are confirmed no-ops.
+GA_EVENT_KNOWN = ({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0x0F, 0x10, 0x11, 0x12,
                    0x13, 0x1C, 0x1D, 0x28, 0x29, 0x2A, 43, 44, 45, 46,
                    47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 58, 60}
                   | set(range(0x14, 0x1C)) | set(range(0x1E, 0x28)))
@@ -337,7 +337,10 @@ def _ga_events(cov: FileCoverage, start: int, end: int) -> None:
             if code in GA_EVENT_KNOWN:
                 cov.mark(pos + 4 + 2 * c, 2, DECODED)
             elif code >= 1000:
-                cov.mark(pos + 4 + 2 * c, 2, PLAUSIBLE, "event code >= 1000 (sound id)")
+                # play_actor_sfx_cue_array passes these through
+                # lookup_sfx_name_by_event_code, which binary-searches gcfesnd.bin's
+                # SFXTable and plays the returned symbolic cue name.
+                cov.mark(pos + 4 + 2 * c, 2, DECODED)
             else:
                 cov.mark(pos + 4 + 2 * c, 2, UNDECODED, f"event code {code}")
         pos += 4 + 2 * n

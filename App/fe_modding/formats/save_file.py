@@ -22,9 +22,10 @@ Block layout (``finalize_save_block_header_and_compute_crc``, the writers
     +0x70  system data (0x48 bytes, see SystemData)
     +0xB8  tagged stream: BMST, MDST, UNIP, SOKO, FWEP, "T  T", then zeros
 
-Save kind: 2 file save, 3 checkpoint, 1 a consumed copy (only its first
-0x2000 bytes are written, its CRC is not checked, and the card loader
-discards it). Resume point (``resume_game_from_save_data``): see
+Save kind: 2 file save, 3 checkpoint, 1 a disposable system-data carrier
+(only its first 0x2000 bytes are written, its CRC is not checked, and the
+card loader consumes it after loading its embedded SYSF). Resume point
+(``resume_game_from_save_data``): see
 ``RESUME_POINTS``. The stream has no length fields; every record has a fixed
 size except ``UNIP``, whose 159 slots are 2 bytes when empty and 143 bytes
 otherwise. Characters, classes and items are stored as 1-based FE8Data table
@@ -62,7 +63,7 @@ TERRAIN_ENTRIES = 64
 # (body offset, size) of the eight blocks.
 BLOCK_LOCATIONS = tuple((0x2000 + i * 0x4000, 0x4000) for i in range(6)) + ((0x1A000, 0x6000), (0x20000, 0x6000))
 
-SAVE_KINDS = {1: "consumed copy", 2: "file save", 3: "checkpoint"}
+SAVE_KINDS = {1: "system-data carrier", 2: "file save", 3: "checkpoint"}
 RESUME_POINTS = {
     1: "base", 2: "battle preparations", 3: "new game", 4: "chapter start",
     5: "chapter part 2", 6: "chapter part 3", 7: "chapter part 4", 8: "suspended map", 10: "trial map",
@@ -289,7 +290,7 @@ class PartyState:
     options: bytes  # +0x9C, 12 bytes, see OPTION_FIELDS
     flag_bits: bytes  # +0xB4 event flag table bits (96 slots)
     clear_history: list  # +0x3C4, 40 ClearRecord
-    chapter_name: str  # +0x504, "bmapNN" (0x18 bytes)
+    chapter_name: str  # +0x504, "bmapNN" (0x18 bytes): the last map loaded, stale in base / chapter-start saves
     tail: bytes  # 8 bytes, 0
 
     SIZE = 0x214
@@ -857,7 +858,11 @@ def play_copy(save: SaveFile, index: int, chapter: Optional[int] = None, rebuild
 def block_label(b: SaveBlock) -> str:
     h = b.header
     where = "Checkpoint" if b.is_checkpoint else f"File {h.file_slot + 1}"
-    name = b.party.chapter_name if b.party else "?"
+    # party.chapter_name is the last map loaded: right for a suspended map, stale for a base or
+    # chapter-start save, so the label names the chapter the block loads into.
+    name = f"chapter {b.party.chapter:02d}" if b.party else "?"
+    if b.party and (h.resume_point & 0x7F) == 8 and b.party.chapter_name:
+        name += f" ({b.party.chapter_name})"
     resume = RESUME_POINTS.get(h.resume_point & 0x7F, str(h.resume_point))
     return f"{where} - {name} - {resume} - seq {h.sequence}{'' if b.crc_ok else ' - BAD CRC'}"
 

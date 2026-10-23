@@ -23,7 +23,7 @@ from .. import battle_sim
 from ..battle_sim import camera as battle_camera
 from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import weapon_from_item
-from ..formats import effects as effects_fmt
+from ..formats import effect_registry, effects as effects_fmt
 from . import battle_stage
 
 #: The camera preview's fight: Ike with an Iron Sword against a level-1 Fighter with an Iron Axe.
@@ -58,6 +58,7 @@ class BattlePlayer(ttk.Frame):
         self._assets: Optional[sa.BattleAssets] = None
         self._camera: Optional[battle_camera.GameCamera] = None
         self._effects: dict = {}
+        self._effect_records = None
         self.top = ttk.Frame(self, padding=(0, 6))
         self.top.pack(fill="x")
         self._note = ttk.Label(self.top, text="", style="Muted.TLabel")
@@ -92,7 +93,13 @@ class BattlePlayer(ttk.Frame):
             return None
         if eid not in self._effects:
             try:
-                self._effects[eid] = battle_stage.load_effect(effects_fmt.pack_path(self._files, eid))
+                if self._effect_records is None:
+                    registry = self._files / "FE8Effect.bin"
+                    self._effect_records = effect_registry.read_effect_registry(registry.read_bytes()) \
+                        if registry.is_file() else []
+                names = effect_registry.chain(self._effect_records, eid)
+                self._effects[eid] = battle_stage.load_effect_chain(
+                    effects_fmt.pack_path(self._files, name) for name in names)
             except Exception:  # noqa: BLE001 - a broken effect pack is skipped
                 self._effects[eid] = None
         return self._effects[eid]

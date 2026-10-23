@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Models", "Weapons", "Scenery"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/54-model-budgets.md"
@@ -38,7 +38,28 @@ Create a fixed Battle Simulator setup using the asset. Record actors, weapon, di
 
 The importer supports its documented material subset. Geometry, UVs, texture encoding, shape/render family, coordinate system, and model-local transforms jointly determine the result. Raising a count does not add engine support for an unsupported blend or skinning mode.
 
+### Reference figures
+
+Import Review compares the new model with the one it replaces and with the largest figures found on the disc. These are sizes the game is known to handle; no engine limit is known.
+
+| Model kind | File size | Triangles | Positions | Bones used | Blended vertices |
+| --- | --- | --- | --- | --- | --- |
+| Map body (`ymu/<class>/body.gs`), median 444 triangles | 19,936 bytes | 853 | 715 | 70 | 0 |
+| Battle model (`zu/<code>/<code>.gs`, 93 on the disc) | 209,636 bytes (`pal3`) | 8,840 (`drm2`) | 55 | 113 (`pal2`) | 5,800 (`pal3`) |
+| Chapter terrain (`zmap/<map>/map.cmp` land), one bone | 393,868 bytes (`bmap25`) | 20,982 | 10,664 | 1 | 0 |
+| Terrain `texpack.tpl` | 1,519,072 bytes | | | | |
+
+Battle models draw almost everything as blended vertices (skinned on the CPU every frame); map bodies use none. A map-model import over 853 triangles opens **Map model size**: *The model has N triangles; vanilla map models have 444 (median) and at most 853.* **Reduce to** *n* **triangles** › **Reduce** shrinks it (edge collapses that keep UV seams, material borders and skin joints), **Keep all** imports it as it is, **Cancel** stops the import.
+
 ## Guided walkthrough
+
+<!-- screenshot 54-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![3D Models page with the xwp/ironaxe weapon model selected.](../assets/images/tutorials/screenshots/54-a-setup.png)](../assets/images/tutorials/screenshots/54-a-setup.png)
+
+<figcaption markdown="span">The Iron Axe's weapon model (`xwp/ironaxe`) in **3D Models**: the triangle count under the preview is the first budget figure to compare after an import.</figcaption>
+</figure>
 
 Make one visible, low-risk change while retaining origin, scale, orientation, UVs, and material alpha family. Reuse the exported texture when possible. Preserve mip levels/appropriate texture size so a close preview does not hide distance shimmer.
 
@@ -56,6 +77,12 @@ Write the files, reopen the set, and rotate/zoom the preview. Render the fixed f
 - **Warnings:** unsupported or above-reference conditions requiring correction or game evidence.
 - **Reduce mesh:** trades geometric detail for budget; it does not repair UV/material design.
 - **Write files / Restore original…:** transaction commit and whole-resource recovery.
+
+## Things to try next
+
+1. **Read a retail outlier.** Open `zu/drm2` and `zu/pal3` and read their figures under the preview: they set the battle references.
+2. **Reduce a map model.** Export a battle model as `.glb`, import it onto a map model slot made with **New slot...**, and choose **Reduce** to 800 triangles; compare the silhouette.
+3. **A texture budget.** Halve a weapon texture and compare the file size in Import Review.
 
 ## Interactions and precedence
 

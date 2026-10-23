@@ -167,3 +167,25 @@ class DbxDoc:
 
 def parse(text: str) -> DbxDoc:
     return DbxDoc(text)
+
+
+def check(text: str) -> list[str]:
+    """Structural problems of ``text`` (1-based line numbers): a ``{`` inside a block, a ``}`` with
+    no block to close, a block never closed, a key line outside every block. :meth:`DbxDoc.blocks`
+    silently skips all of these, so the fields after them would be lost to the editors."""
+    problems, opened = [], None
+    for i, raw in enumerate(text.splitlines(), 1):
+        code = raw.split("#", 1)[0].strip()
+        if code == "{":
+            if opened is not None:
+                problems.append(f"Line {i}: {{ opens a block inside the block opened on line {opened}.")
+            opened = i
+        elif code == "}":
+            if opened is None:
+                problems.append(f"Line {i}: }} closes no block.")
+            opened = None
+        elif code and opened is None and code != "\\":  # retail files end with a lone backslash
+            problems.append(f"Line {i}: “{code[:40]}” is outside every block.")
+    if opened is not None:
+        problems.append(f"Line {opened}: this block is never closed.")
+    return problems

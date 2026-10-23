@@ -199,6 +199,24 @@ class ModelSlotProjectTests(unittest.TestCase):
         char = fe8data.read_fe8data((self.files / "FE8Data.bin").read_bytes()).characters[0]
         self.assertEqual(char.aid_unpromoted, vanilla)
 
+    def test_remove_map_model_clears_it_from_added_characters(self):
+        """A character the mod added (past the end of the vanilla table) falls back to its class's model."""
+        from types import SimpleNamespace
+        from unittest import mock
+        model_slots.clone_map_model(self.project, "AID_FIGHTER_BO", "AID_FIGHTER_NEW", "fighter_new")
+        model_slots.assign_map_model(self.project, "PID_TEST", "AID_FIGHTER_NEW")
+        real = fe8data.read_fe8data
+
+        def read(data):  # a vanilla table without PID_TEST: it is a character the mod added
+            return SimpleNamespace(characters=[], classes=[]) if data == b"vanilla" else real(data)
+        real_vanilla = model_slots._vanilla_bytes
+        with mock.patch.object(model_slots, "_vanilla_bytes", side_effect=lambda project, path: (
+                b"vanilla" if path.name == "FE8Data.bin" else real_vanilla(project, path))), \
+                mock.patch.object(model_slots.fe8data, "read_fe8data", side_effect=read):
+            model_slots.remove_map_model(self.project, "AID_FIGHTER_NEW")
+        char = fe8data.read_fe8data((self.files / "FE8Data.bin").read_bytes()).characters[0]
+        self.assertIsNone(char.aid_unpromoted)
+
     def test_build_syncs_edited_loose_files_into_system_archive(self):
         system = [("FE8Data.bin", (self.files / "FE8Data.bin").read_bytes()), ("mess/common.m", b"text")]
         (self.files / "system.cmp").write_bytes(lz10.compress(pak.pack_pak(system)))

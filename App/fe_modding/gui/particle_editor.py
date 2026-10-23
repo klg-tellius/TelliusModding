@@ -56,6 +56,8 @@ class ParticleEditor(tk.Toplevel):
         ttk.Button(header, text="Add emitter...", command=lambda: self._guard(self._add_emitter)).pack(side="right")
         body = ttk.PanedWindow(outer, orient="horizontal")
         body.pack(fill="both", expand=True)
+        self._body = body
+        self.after(100, self._place_sashes)
         left = ttk.Frame(body)
         body.add(left, weight=3)
         self._tree = ttk.Treeview(left, columns=("details",), show="tree headings", selectmode="browse")
@@ -75,13 +77,15 @@ class ParticleEditor(tk.Toplevel):
         self._heading.pack(anchor="w", pady=(0, 8))
         self._properties = ttk.Frame(right)
         self._properties.pack(fill="both", expand=True)
-        self._chart = tk.Canvas(right, height=145, background="#20232a", highlightthickness=0)
+        self._chart = tk.Canvas(right, height=110, background="#20232a", highlightthickness=0)
         self._chart.pack(fill="x", pady=(4, 6))
         self._help = ttk.Label(right, text="", wraplength=380, justify="left", style="Muted.TLabel")
         self._help.pack(anchor="w", pady=(8, 5))
-        ttk.Button(right, text="Apply fields", command=self._apply).pack(anchor="e")
-        self._actions = ttk.Frame(right)
-        self._actions.pack(fill="x", pady=(12, 0))
+        row = ttk.Frame(right)  # one row, so the actions stay in view below tall field lists
+        row.pack(fill="x")
+        ttk.Button(row, text="Apply fields", command=self._apply).pack(side="right")
+        self._actions = ttk.Frame(row)
+        self._actions.pack(side="left", fill="x", expand=True)
         self._preview = None
         if self._preview_base is not None:
             preview_host = ttk.Frame(body, padding=(10, 0, 0, 0))
@@ -91,13 +95,29 @@ class ParticleEditor(tk.Toplevel):
             self._preview = _ModelPreview(preview_host)
             self._preview.pack(fill="both", expand=True)
         bar = ttk.Frame(outer)
-        bar.pack(fill="x", pady=(10, 0))
+        bar.pack(side="bottom", fill="x", pady=(10, 0), before=body)  # kept visible when the fields are tall
         self._status = ttk.Label(bar, text="No changes", style="Muted.TLabel")
         self._status.pack(side="left")
         ttk.Button(bar, text="Save effect", command=self._save).pack(side="right", padx=(6, 0))
         ttk.Button(bar, text="Close", command=self._close).pack(side="right", padx=(6, 0))
         ttk.Button(bar, text="Undo", command=self._undo_last).pack(side="right", padx=(6, 0))
         ttk.Button(bar, text="Discard edits", command=self._discard).pack(side="right")
+
+    def _place_sashes(self, tries: int = 30) -> None:
+        """Share the width between the panes: they open at their requested widths, which left the
+        field panel too narrow to show its values. Retried until the window has its real size."""
+        try:
+            width = self._body.winfo_width()
+            if width < 600 and tries > 0:
+                self.after(100, lambda: self._place_sashes(tries - 1))
+                return
+            if len(self._body.panes()) == 3:  # tree | fields | preview
+                self._body.sashpos(0, int(width * 0.28))
+                self._body.sashpos(1, int(width * 0.58))
+            else:
+                self._body.sashpos(0, int(width * 0.5))
+        except tk.TclError:
+            pass
 
     def _populate(self, keep: str | None = None) -> None:
         self._tree.delete(*self._tree.get_children())
@@ -413,7 +433,7 @@ class ParticleEditor(tk.Toplevel):
             return
         canvas.update_idletasks()
         width = max(240, canvas.winfo_width())
-        height = 145
+        height = max(90, canvas.winfo_height())
         left, right, top, bottom = 38, width - 16, 20, height - 24
         values = [value for _, value in keys]
         min_value, max_value = min(values), max(values)

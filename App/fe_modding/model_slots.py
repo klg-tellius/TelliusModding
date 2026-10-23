@@ -263,11 +263,14 @@ def remove_map_model(project: ModProject, base_aid: str) -> list[str]:
     data = path.read_bytes()
     vanilla = fe8data.read_fe8data(_vanilla_bytes(project, path))
     current = fe8data.read_fe8data(data)
-    for character, original in zip(current.characters, vanilla.characters):
+    for i, character in enumerate(current.characters):
+        # a character the mod added has no vanilla record: it goes back to its class's model (None)
+        original = vanilla.characters[i] if i < len(vanilla.characters) else None
         for field in ("aid_unpromoted", "aid_promoted"):
             if getattr(character, field) == base_aid:
-                data = fe8data.patch_character_field(data, character.index, field, getattr(original, field))
-                changes.append(f"{character.pid} {field} back to {getattr(original, field)}")
+                value = getattr(original, field) if original is not None else None
+                data = fe8data.patch_character_field(data, character.index, field, value)
+                changes.append(f"{character.pid} {field} back to {value or 'the class model'}")
     for job, original in zip(current.classes, vanilla.classes):
         if job.aid == base_aid:
             data = fe8data.patch_class_field(data, job.index, "aid", original.aid)

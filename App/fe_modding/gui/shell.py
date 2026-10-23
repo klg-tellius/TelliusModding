@@ -112,9 +112,11 @@ class Shell(ttk.Frame):
 
         self._build_top_bar()
         self._build_crumb_bar()
+        # the status bar (and the changes drawer above it) are packed before the page, so a tall page
+        # cannot squeeze them out of the window
+        self._build_status_bar()
         self.host = ttk.Frame(self, style="Page.TFrame")
         self.host.pack(fill="both", expand=True)
-        self._build_status_bar()
 
         changelog.subscribe(self._on_change_entry)
         self._poll_unsaved()
@@ -251,7 +253,7 @@ class Shell(ttk.Frame):
         if self._drawer_open:
             self._drawer.pack_forget()
         else:
-            self._drawer.pack(fill="x", side="bottom", before=self._status_bar)
+            self._drawer.pack(fill="x", side="bottom", after=self._status_bar)
         self._drawer_open = not self._drawer_open
 
     def _on_change_entry(self, entry) -> None:
@@ -472,10 +474,8 @@ class Shell(ttk.Frame):
         items += [("Tool", label, "Tools", (key,)) for key, label in (("saves", "Saves"), ("code", "Game Code"))]
         for key, label in self._asset_tools:
             items.append(("Tool", label, "Tools" if key in TOOL_ASSETS else "Assets", ("asset", key)))
-        items += [("Tool", label, "Game Data", ("data", key))
-                  for key, label in (("classes", "Classes"), ("items", "Items"), ("skills", "Skills"),
-                                     ("terrain", "Terrain"), ("supports", "Supports"),
-                                     ("flags", "Flags"))]
+        from .pages.data import TABS as DATA_TABS
+        items += [("Tool", label, "Game Data", ("data", key)) for key, label in DATA_TABS.items()]
         items += [("Tool", label, "Game Data › Flags", ("data", "flags", key))
                   for key, label in (("campaign", "Campaign flags"), ("chapter", "Chapter flags"),
                                      ("save", "Save file flags"))]

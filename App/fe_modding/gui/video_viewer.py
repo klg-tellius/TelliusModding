@@ -53,6 +53,8 @@ from PIL import ImageTk
 from .. import tools
 from ..exceptions import ModdingError
 from ..formats import stm, thp
+from ..media_references import (executable_video_paths, front_end_video_reason,
+                                script_video_users)
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -82,6 +84,7 @@ class VideoViewer(EditorPanel):
         self._scrubbing = False
         self._task_running = False
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_video_"))
+        self._native_video_paths = executable_video_paths(self._project.extracted_dir / "sys" / "main.dol")
 
         self._build_widgets()
         self._load_video_list()
@@ -94,7 +97,11 @@ class VideoViewer(EditorPanel):
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
         ttk.Label(left, text="Cutscenes").pack(anchor="w")
-        self._delete_button = list_buttons(left, "New video…", self._add_new_video, self._delete_video)
+        self._delete_button = list_buttons(
+            left, "New video…", self._add_new_video, self._delete_video,
+            "Removes this video from the built disc. The front-end opening movie is protected; "
+            "references from scripts and main.dol are shown before other videos are removed.",
+        )
         self._file_list = tk.Listbox(left, exportselection=False)
         self._file_list.pack(fill="both", expand=True, pady=(4, 0))
         self._file_list.bind("<<ListboxSelect>>", lambda e: self._on_file_selected())
@@ -181,7 +188,13 @@ class VideoViewer(EditorPanel):
 
         self._play_button.config(state="normal")
         self._refresh_action_button_states()
-        self._status_label.config(text="")
+        native_path = f"movie/{self._current_path.name}".lower()
+        note = ""
+        if native_path in self._native_video_paths:
+            note = "Hardcoded path in main.dol; replacing this file changes the native caller."
+        if front_end_video_reason(self._current_path):
+            note += (" " if note else "") + "Required by the front-end menu; it may be replaced, but not deleted."
+        self._status_label.config(text=note)
 
     def _close_current_file(self) -> None:
         if self._current_file is not None:
@@ -447,7 +460,16 @@ class VideoViewer(EditorPanel):
 
     def _delete_video(self) -> None:
         path = self._current_path
-        if path is None or not confirm_delete_added(self, self._project, path, "video"):
+        if path is None:
+            return
+        users = script_video_users(self._project.files_dir / "Scripts", path.name)
+        native_path = f"movie/{path.name}".lower()
+        if native_path in self._native_video_paths:
+            users.insert(0, "main.dol (hardcoded path)")
+        if not confirm_delete_added(
+            self, self._project, path, "video", users, allow_retail=True,
+            protected_reason=front_end_video_reason(path),
+        ):
             return
         self._pause()
         self._close_current_file()

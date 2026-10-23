@@ -86,6 +86,14 @@ The form's label/name fields do not all mean the same thing. For Talk and Battle
 
 ## Guided walkthrough
 
+<!-- screenshot 35-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Script tab of Ch.1 with a village visit function selected and its trigger in the form.](../assets/images/tutorials/screenshots/35-a-setup.png)](../assets/images/tutorials/screenshots/35-a-setup.png)
+
+<figcaption markdown="span">A village recipe in Ch.1's script: the visit trigger, the guard flag test, the reward and the flag set at the end, so the visit runs once.</figcaption>
+</figure>
+
 ### 1. Duplicate the closest working Visit event
 
 Open **Chapter → Script** and select **This chapter**. Run **Check** and record its warnings. Find a short working function whose trigger is **A unit acts at a map location** with action **visit**.

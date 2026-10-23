@@ -37,7 +37,7 @@ import math
 import struct
 import time
 import tkinter as tk
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tkinter import ttk
 from typing import Optional
@@ -312,6 +312,12 @@ class EffectAsset:
     anim: Optional[animation.GaAnimation]
     length: float
     particles: tuple = ()  # particle_preview.Stage of the animation's footer slot 8, in order
+    companions: tuple = ()  # FE8Effect.bin chain entries played with this effect
+    screen_space: bool = False  # category-6 / *_2D packs use the battle viewport, not world space
+
+    def layers(self):
+        """The primary pack and every chained pack the engine starts with it."""
+        return (self, *self.companions)
 
     def alphas(self, local: float) -> Optional[np.ndarray]:
         """Each triangle's alpha at ``local`` from the animation's material alpha tracks (footer
@@ -352,7 +358,7 @@ class EffectAsset:
         return min((local - start) / (end - start), 1.0)
 
 
-def load_effect(path: Path) -> Optional[EffectAsset]:
+def load_effect(path: Path, *, screen_space: Optional[bool] = None) -> Optional[EffectAsset]:
     if not path.is_file():
         return None
     loaded = _load_model_set(path.stem, path)
@@ -368,19 +374,41 @@ def load_effect(path: Path) -> Optional[EffectAsset]:
             particles = ()
         break
     length = float(anim.length_in_frames) if anim is not None and anim.length_in_frames else EFFECT_FRAMES
-    return EffectAsset(loaded, SkinnedMesh(loaded.triangles), anim, length, particles)
+    if screen_space is None:
+        screen_space = path.stem.upper().endswith("_2D")
+    return EffectAsset(loaded, SkinnedMesh(loaded.triangles), anim, length, particles,
+                       screen_space=screen_space)
+
+
+def load_effect_chain(paths) -> Optional[EffectAsset]:
+    """Load a FE8Effect registry chain as one effect.
+
+    The first entry supplies combat timing.  Later entries are simultaneous
+    visual layers; terminal ``*_2D`` packs are authored on an 8-by-6 viewport
+    plane and therefore follow the camera rather than either combatant.
+    """
+    loaded = [load_effect(Path(path)) for path in paths]
+    loaded = [effect for effect in loaded if effect is not None]
+    if not loaded:
+        return None
+    loaded[0].companions = tuple(loaded[1:])
+    return loaded[0]
 
 
 def particle_cards(effect: EffectAsset) -> list[_Triangle]:
     """Two triangles per particle stage, textured and blended as the stage's emitter says
     (``.gs`` material, ``draw_flags & 0x1000`` additive); placed each frame by
-    :meth:`BattleStage.arrays`. The material colour is baked in; colour curves are not applied."""
+    :meth:`BattleStage.arrays`. The material colour and the stage's initial colour curve are
+    baked into each card.  (Alpha and geometry continue to update every frame.)"""
     uv = ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0))
     cards = []
     for stage in effect.particles:
         emitter = stage.emitter
         texture, color, _alpha = effect.loaded.particle_materials.get(
             emitter.material_index, (None, (255, 255, 255), 1.0))
+        sampled = particle_preview.sample((stage,), stage.layout.start_frame)
+        curve_color = sampled[0].color if sampled else (1.0, 1.0, 1.0)
+        tint = tuple(color[i] / 255.0 * curve_color[i] for i in range(3))
         blend = "additive" if emitter.draw_flags & 0x1000 else "normal"
         for indices in ((0, 1, 2), (0, 2, 3)):
             face_uv = tuple(uv[i] for i in indices)
@@ -388,7 +416,7 @@ def particle_cards(effect: EffectAsset) -> list[_Triangle]:
             # Carry the particle material tint on that layer just as the standalone effect
             # viewer does; without it, intensity-mask spark textures render solid white.
             layers = (_TextureLayer(face_uv, texture, "diffuse",
-                                    color_scale=tuple(channel / 255.0 for channel in color)),) \
+                                    color_scale=tint),) \
                 if texture is not None else ()
             cards.append(_Triangle((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0),
                                    tuple(color), uv=face_uv if texture is not None else None, texture=texture,
@@ -406,6 +434,15 @@ POSE_CACHE = 4000  # unit poses kept (two units, a long fight)
 EFFECT_FRAMES = 60.0  # an effect without an animation shows this long
 ARROW_COLOR = (150, 110, 70)
 ARROW_LENGTH = 6.0
+SCREEN_EFFECT_DEPTH = 5.0  # comfortably beyond the near plane; overlay depth is otherwise independent
+SCREEN_EFFECT_OVERSCAN = 1.05  # cover the viewport after per-layer depth offsets
+# Full-screen effect cards can themselves move across the 8 x 6 authoring
+# plane.  Rexbolt's cloud cards travel almost one local unit to the right;
+# without a larger card that exposes the preceding sky along the left edge.
+# Enlarge only viewport-sized cards, keeping the lightning at its authored
+# width.  The unchanged UVs deliberately crop the texture edges as it pans.
+SCREEN_EFFECT_LAYER_OVERSCAN = 1.25
+REXBOLT_STRIKE_SHADE = 0.82
 
 
 def _arrow(length: float) -> tuple[list[_Triangle], np.ndarray, np.ndarray]:
@@ -468,6 +505,7 @@ class BattleStage:
         self._poses: dict = {}
         self.changed: Optional[np.ndarray] = None
         self.alphas: Optional[np.ndarray] = None
+        self.shades: Optional[np.ndarray] = None
         self._rest: Optional[np.ndarray] = None
         self._rest_normals: Optional[np.ndarray] = None
         self._effect_pose_key = None
@@ -492,7 +530,8 @@ class BattleStage:
                                   units=[u.params for u in self.units],
                                   weapon_kinds=[u.assets.weapon_kind for u in self.units],
                                   weapons=[tlm.WeaponEffects(u.assets.weapon_missile, u.assets.weapon_effect,
-                                                             u.assets.weapon_damage_effect) for u in self.units],
+                                                             u.assets.weapon_damage_effect,
+                                                             u.assets.weapon_name) for u in self.units],
                                   effect_clip=self.effect_clip, foot_effect=self.foot_effect,
                                   cameras=game_camera.scripts if game_camera is not None else ())
         self.shots = game_camera.track(self.timeline.camera, self.timeline.quakes, int(self.timeline.length)) \
@@ -530,10 +569,18 @@ class BattleStage:
         for cue in (tl.cues if tl is not None else ()):
             effect = self.effects(cue.kind, cue.key)
             if effect is not None:
-                self._add("effect", effect.loaded.triangles, effect.mesh.positions, effect.mesh.normals,
-                          cue.side, (cue, effect))
-                if effect.particles:
-                    self._add("particles", particle_cards(effect), side=cue.side, item=(cue, effect))
+                for layer in effect.layers():
+                    kind = "effect2d" if layer.screen_space else "effect"
+                    triangles = ([replace(triangle, overlay=True) for triangle in layer.loaded.triangles]
+                                 if layer.screen_space else layer.loaded.triangles)
+                    self._add(kind, triangles, layer.mesh.positions, layer.mesh.normals,
+                              cue.side, (cue, layer))
+                    if layer.particles:
+                        cards = particle_cards(layer)
+                        if layer.screen_space:
+                            cards = [replace(card, overlay=True) for card in cards]
+                        self._add("particles2d" if layer.screen_space else "particles", cards,
+                                  side=cue.side, item=(cue, layer))
         if self._rest_parts:
             self._rest = np.concatenate([p for p, _n in self._rest_parts])
             self._rest_normals = np.concatenate([n for _p, n in self._rest_parts])
@@ -544,6 +591,7 @@ class BattleStage:
         self._posed = self._rest.copy(), self._rest_normals.copy()
         self._rest_alphas = np.array([t.alpha for t in self._triangles], dtype=np.float32)
         self.alphas = self._rest_alphas.copy()  # each triangle's alpha this frame (effects fade)
+        self.shades = np.ones(len(self._triangles), dtype=np.float32)
         self.changed = np.ones(len(self._triangles), dtype=bool)
         for part in self._parts:
             if part.kind == "scenery":
@@ -570,6 +618,7 @@ class BattleStage:
         if self._rest is None:
             self._layout()
         positions, normals = self._posed
+        self.shades.fill(1.0)
         tl = self.timeline
         flying = {id(f) for f in (tl.flights if tl is not None else ()) if f.progress(t) is not None}
         thrown = {f.side for f in (tl.flights if tl is not None else ())
@@ -602,7 +651,7 @@ class BattleStage:
                     self._hide(positions, part)
                 else:
                     self._put(positions, normals, part, *self._projectile(part, u, t))
-            elif part.kind == "effect":
+            elif part.kind in ("effect", "effect2d"):
                 cue, effect = part.item
                 if cue.frame <= t < cue.frame + effect.length:
                     self._put(positions, normals, part, *self._effect(effect, cue, t - cue.frame, t))
@@ -610,15 +659,57 @@ class BattleStage:
                     rest = self._rest_alphas[part.start:part.start + part.count]
                     self.alphas[part.start:part.start + part.count] = effect_alpha(
                         faded if faded is not None else rest)
+                    # Rexbolt replaces its dark cloud field with the much
+                    # brighter ``sisso_clowd`` card while the descending bolt
+                    # is visible.  Keep that intentional flash, but temper its
+                    # cyan wash in the preview.  Material 9 is that named card
+                    # in both regional THUNDER4_2D packs.
+                    label = getattr(effect.loaded, "label", "").upper()
+                    if effect.screen_space and label.endswith("THUNDER4_2D"):
+                        effect_materials = np.asarray(
+                            [triangle.material for triangle in effect.loaded.triangles])
+                        part_shades = self.shades[part.start:part.start + part.count]
+                        part_shades[effect_materials == 9] = REXBOLT_STRIKE_SHADE
                 else:
                     self._hide(positions, part)
-            elif part.kind == "particles":
+            elif part.kind in ("particles", "particles2d"):
                 cue, effect = part.item
                 if cue.frame <= t < cue.frame + effect.length:
                     self._particles(positions, normals, part, effect, cue, t - cue.frame, t)
                 else:
                     self._hide(positions, part)
+        shade = self._magic_shade(t)
+        if shade < 1.0:
+            for part in self._parts:
+                if part.kind in ("unit", "weapon"):
+                    self.shades[part.start:part.start + part.count] = shade
         return positions, normals
+
+    def _magic_shade(self, t: float) -> float:
+        """Retail ``MagicFade``: darken combatants and held weapons, but not the backdrop or
+        spell geometry. The battle process queues the grayscale value over ``MagicFadeTime``
+        when magic starts and restores it after the effect actor finishes."""
+        tl = self.timeline
+        if tl is None:
+            return 1.0
+        spell_ids = {u.assets.weapon_effect for u in self.units if u.assets.weapon_effect}
+        fade_ticks = max(float(self.params.magic_fade_time), 1.0)
+        target = max(0.0, min(float(self.params.magic_fade), 255.0)) / 255.0
+        shade = 1.0
+        for cue in tl.cues:
+            if cue.kind != "effect" or cue.key not in spell_ids:
+                continue
+            effect = self.effects(cue.kind, cue.key)
+            if effect is None:
+                continue
+            start, end = float(cue.frame), float(cue.frame + effect.length)
+            if start <= t < end:
+                progress = min((t - start) / fade_ticks, 1.0)
+                shade = min(shade, 1.0 + (target - 1.0) * progress)
+            elif end <= t < end + fade_ticks:
+                at_end = 1.0 + (target - 1.0) * min((end - start) / fade_ticks, 1.0)
+                shade = min(shade, at_end + (1.0 - at_end) * ((t - end) / fade_ticks))
+        return shade
 
     def _camera_axes(self, t: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Screen right, up and the view direction at ``t`` (particles face the camera)."""
@@ -705,7 +796,7 @@ class BattleStage:
     def frame(self, t: float) -> list[_Triangle]:
         """The visible triangles at frame ``t`` (hidden parts left out)."""
         positions, normals = self.arrays(t)
-        posed = posed_triangles(self._triangles, positions, normals, self.alphas)
+        posed = posed_triangles(self._triangles, positions, normals, self.alphas, self.shades)
         hidden = set()
         for part in self._parts:
             if not positions[part.start:part.start + part.count].any():
@@ -754,12 +845,15 @@ class BattleStage:
         position = start + across * flight.offset(k)
         position[1] = start[1] - (target[1] - start[1]) * math.sin(phase)
         spin = math.radians(-self.params.axe_rot_speed * k)
-        side_axis = np.cross(np.array([0.0, 1.0, 0.0]), across)
+        up_axis = np.array([0.0, 1.0, 0.0])
+        side_axis = np.cross(up_axis, across)
         c, s = math.cos(spin), math.sin(spin)
-        # turn about the axis across the flight, so the blade wheels end over end along it
-        x = side_axis
-        y = np.array([0.0, c, 0.0]) + across * s
-        z = np.cross(x, y)
+        # The retail hand axe lies in a plane parallel to the ground and spins around the
+        # vertical axis.  The old transform put local Y upright and made it cartwheel in a
+        # vertical plane.
+        x = side_axis * c + across * s
+        y = across * c - side_axis * s
+        z = up_axis
         matrix = np.zeros((3, 4))
         matrix[:, :3] = np.stack([x, y, z], axis=1)
         matrix[:, 3] = position
@@ -769,7 +863,36 @@ class BattleStage:
 
     def _effect(self, effect: EffectAsset, cue: tlm.Cue, local: float, t: float) -> tuple[np.ndarray, np.ndarray]:
         world, palette = self._effect_pose(effect, local)
-        return effect.mesh.pose(world, palette, self._effect_matrix(effect, cue, local))
+        positions, normals = effect.mesh.pose(world, palette)
+        if effect.screen_space:
+            positions = self._cover_screen_effect_layers(effect, positions)
+        return _transform(self._effect_matrix(effect, cue, local), positions, normals)
+
+    @staticmethod
+    def _cover_screen_effect_layers(effect: EffectAsset, positions: np.ndarray) -> np.ndarray:
+        """Overscan moving 8 x 6 backdrop cards without enlarging bolts.
+
+        Category-6 packs animate full-screen cards inside the nominal viewport.
+        A card translated sideways would expose a strip of the card behind it
+        unless its own extent is enlarged.  Narrow lightning and particle cards
+        are left untouched.
+        """
+        if not len(positions):
+            return positions
+        materials = np.asarray([triangle.material for triangle in effect.loaded.triangles])
+        covered = positions.copy()
+        for material in np.unique(materials):
+            selected = materials == material
+            points = covered[selected].reshape(-1, 3)
+            low, high = points.min(axis=0), points.max(axis=0)
+            if high[0] - low[0] < 7.5 or high[2] - low[2] < 5.5:
+                continue
+            center = (low + high) / 2.0
+            covered[selected, :, 0] = center[0] + (
+                covered[selected, :, 0] - center[0]) * SCREEN_EFFECT_LAYER_OVERSCAN
+            covered[selected, :, 2] = center[2] + (
+                covered[selected, :, 2] - center[2]) * SCREEN_EFFECT_LAYER_OVERSCAN
+        return covered
 
     def _effect_pose(self, effect: EffectAsset, local: float):
         """Pose an effect once per frame even when both its mesh and particles use its bones."""
@@ -781,6 +904,39 @@ class BattleStage:
         return self._effect_pose_value
 
     def _effect_matrix(self, effect: EffectAsset, cue: tlm.Cue, local: float) -> np.ndarray:
+        if effect.screen_space:
+            # Category-6 effects are modelled on an 8 x 6 horizontal plane:
+            # local X is viewport-right, local -Z is viewport-up and local Y is
+            # layer depth.  Put that plane in front of the active perspective
+            # camera so it fills the same 4:3 viewport at every battle shot.
+            view = self.view(cue.frame + local)
+            if view is not None:
+                eye, center = (np.asarray(point, dtype=np.float64) for point in view)
+                forward = center - eye
+                length = np.linalg.norm(forward)
+                if length > 1e-6:
+                    forward /= length
+                    right = np.cross(forward, (0.0, 1.0, 0.0))
+                    right_length = np.linalg.norm(right)
+                    if right_length > 1e-6:
+                        right /= right_length
+                        up = np.cross(right, forward)
+                        depth = SCREEN_EFFECT_DEPTH
+                        scale = (depth * math.tan(math.radians(cam.FOVY) / 2.0)
+                                 / 3.0 * SCREEN_EFFECT_OVERSCAN)
+                        matrix = np.zeros((3, 4), dtype=np.float64)
+                        matrix[:, 0] = right * scale
+                        # The authored layer depth grows toward the viewer:
+                        # Rexbolt's black sky is at Y=-0.20, while its clouds
+                        # and bolt are at -0.02..0.00.  Negate this axis so the
+                        # backdrop remains behind the animated foreground.
+                        matrix[:, 1] = -forward * scale
+                        # In these 2D packs local -Z is screen-up.  Rexbolt's
+                        # bolt animates from negative Z toward zero, which is
+                        # a downward strike once this authored axis is kept.
+                        matrix[:, 2] = -up * scale
+                        matrix[:, 3] = eye + forward * depth
+                        return matrix
         # spawn_effect_at_position: where the unit stands when the effect starts, on the ground
         # (cue.height up), turned as the unit is; it stays there while it plays
         matrix = self.placement(cue.side, cue.frame)
@@ -885,7 +1041,7 @@ class StageView(ttk.Frame):
         if stage is None or stage.timeline is None:
             return
         positions, normals = stage.arrays(t)
-        self.canvas.set_pose_arrays(positions, normals, stage.changed, stage.alphas)
+        self.canvas.set_pose_arrays(positions, normals, stage.changed, stage.alphas, stage.shades)
         view = stage.view(t)
         if view is not None:
             self.canvas.set_camera(view[0], view[1], cam.FOVY)

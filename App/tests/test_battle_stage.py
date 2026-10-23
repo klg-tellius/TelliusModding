@@ -3,6 +3,8 @@ import random
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -121,6 +123,20 @@ class StageExtrasTests(unittest.TestCase):
         xs = [p[0] for t in flying[3:] for p in (t.a, t.b, t.c)]
         self.assertTrue(-20 < min(xs) and max(xs) < 20)
 
+    def test_returning_hand_axe_spins_parallel_to_ground(self):
+        # A rest-model triangle in local X/Y is the axe's blade plane.  Retail keeps that
+        # plane horizontal during the throw; the previous transform mapped local Y to world
+        # up and made the weapon cartwheel vertically.
+        self.stage._rest = np.asarray([((0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
+                                        (0.0, 2.0, 0.0))])
+        self.stage._rest_normals = np.asarray([(0.0, 0.0, 1.0)])
+        part = SimpleNamespace(side=0, start=0, count=1)
+        flight = self.tlm.Flight(10.0, 30.0, 0, speed=4.5)
+
+        positions, _normals = self.stage._returning_axe(part, flight, 15.0)
+
+        np.testing.assert_allclose(positions[0, :, 1], positions[0, 0, 1], atol=1e-9)
+
     def test_spell_travel_and_fade(self):
         from dataclasses import replace
         from types import SimpleNamespace
@@ -151,6 +167,30 @@ class StageExtrasTests(unittest.TestCase):
         self.assertAlmostEqual(self.stage.frame(25)[3].alpha,
                                float(battle_stage.effect_alpha(127 / 255)), places=5)
 
+    def test_magic_fade_darkens_units_but_not_spell(self):
+        self.stage.units[0].assets.weapon_effect = "sol"
+        tl = self.tlm.Timeline(hp_start=(10, 10), length=100)
+        tl.cues = [self.tlm.Cue(20, 0, "effect", "sol", aim=1)]
+        self.stage.timeline = tl
+        self.stage._layout()
+
+        self.stage.arrays(25)
+        expected = 1.0 + (60.0 / 255.0 - 1.0) * 0.25
+        self.assertEqual(float(self.stage.shades[0]), 1.0)  # scenery stays bright
+        self.assertAlmostEqual(float(self.stage.shades[1]), expected, places=5)
+        self.assertAlmostEqual(float(self.stage.shades[2]), expected, places=5)
+        self.assertEqual(float(self.stage.shades[3]), 1.0)  # spell geometry stays bright
+        self.assertAlmostEqual(self.stage.frame(25)[1].shade, expected, places=5)
+        self.assertEqual(self.stage.frame(25)[3].shade, 1.0)
+
+        # This fixture's spell is only 10 ticks long, so restoration starts from
+        # the partially faded value without a brightness discontinuity.
+        self.stage.arrays(30)
+        at_end = 1.0 + (60.0 / 255.0 - 1.0) * 0.5
+        self.assertAlmostEqual(float(self.stage.shades[1]), at_end, places=5)
+        self.stage.arrays(40)
+        self.assertAlmostEqual(float(self.stage.shades[1]), (at_end + 1.0) / 2.0, places=5)
+
     def test_game_camera_view(self):
         from fe_modding.battle_sim import camera
         tl = self.tlm.Timeline(hp_start=(10, 10), length=10)
@@ -165,9 +205,122 @@ class StageExtrasTests(unittest.TestCase):
         self.stage.shots = None
         self.assertIsNone(self.stage.view(5))
 
+    def test_2d_effect_layer_fills_the_camera_viewport(self):
+        # FE8Effect category-6 packs use an 8 x 6 authoring plane.  It must be
+        # attached to the camera; placing it at the caster leaves Rexbolt's
+        # sky and lightning overlay flat on the battlefield floor.
+        tri = _Triangle((-4.0, 0.0, -3.0), (4.0, 0.0, -3.0),
+                        (4.0, 0.0, 3.0), (0.0, 1.0, 0.0), (1, 2, 3))
+
+        class Loaded:
+            bones = []
+            triangles = [tri]
+            animations = []
+
+        overlay = battle_stage.EffectAsset(
+            Loaded(), battle_stage.SkinnedMesh([tri]), None, 10.0, screen_space=True)
+        self.stage.effects = lambda _kind, _key: overlay
+        tl = self.tlm.Timeline(hp_start=(10, 10), length=10)
+        tl.cues = [self.tlm.Cue(0, 0, "effect", "EID_K_THUNDER4")]
+        self.stage.timeline = tl
+        self.stage.shots = [camera.Shot(None, (0.0, 9.0, 0.0), (0.0, 0.0, 0.0),
+                                          0.0, 180.0, 60.0)] * 11
+        self.stage._layout()
+
+        frame = self.stage.frame(1)
+        overlay_tri = frame[-1]
+        half_height = (battle_stage.SCREEN_EFFECT_DEPTH
+                       * np.tan(np.radians(camera.FOVY) / 2.0)
+                       * battle_stage.SCREEN_EFFECT_OVERSCAN
+                       * battle_stage.SCREEN_EFFECT_LAYER_OVERSCAN)
+        self.assertAlmostEqual(overlay_tri.a[0], -half_height * camera.ASPECT, places=6)
+        self.assertAlmostEqual(overlay_tri.b[0], half_height * camera.ASPECT, places=6)
+        self.assertAlmostEqual(overlay_tri.a[1], 9.0 + half_height, places=6)
+        self.assertAlmostEqual(overlay_tri.c[1], 9.0 - half_height, places=6)
+
+        backdrop = battle_stage.EffectAsset(
+            Loaded(), battle_stage.SkinnedMesh([tri]), None, 10.0, screen_space=True)
+        cue = tl.cues[0]
+        matrix = self.stage._effect_matrix(backdrop, cue, 1.0)
+        # Local Y=-0.20 is Rexbolt's black sky plane; Y=0 is its lightning.
+        # Along this camera's -Z view axis, the sky must be farther away.
+        sky = matrix @ np.array((0.0, -0.20, 0.0, 1.0))
+        bolt = matrix @ np.array((0.0, 0.0, 0.0, 1.0))
+        self.assertLess(sky[2], bolt[2])
+        bolt_top = matrix @ np.array((0.0, 0.0, -6.0, 1.0))
+        bolt_later = matrix @ np.array((0.0, 0.0, -4.0, 1.0))
+        self.assertGreater(bolt_top[1], bolt_later[1])  # authored motion is downward on screen
+        self.assertGreater(bolt[2], 50.0)  # screen pass is in front of ordinary battle geometry
+
+    def test_screen_backdrop_overscan_does_not_enlarge_lightning(self):
+        backdrop = _Triangle((-3.2, 0.0, -3.0), (4.8, 0.0, -3.0),
+                             (4.8, 0.0, 3.0), (0.0, 1.0, 0.0), (1, 2, 3), material=9)
+        bolt = _Triangle((-1.5, 0.0, -7.0), (1.5, 0.0, -7.0),
+                         (1.5, 0.0, -1.0), (0.0, 1.0, 0.0), (1, 2, 3), material=10)
+
+        class Loaded:
+            label = "EID_K_THUNDER4_2D"
+            bones = []
+            animations = []
+            triangles = [backdrop, bolt]
+
+        effect = battle_stage.EffectAsset(
+            Loaded(), battle_stage.SkinnedMesh(Loaded.triangles), None, 10.0, screen_space=True)
+        positions = effect.mesh.positions.copy()
+        covered = self.stage._cover_screen_effect_layers(effect, positions)
+
+        self.assertAlmostEqual(float(covered[0, :, 0].min()), -4.2)
+        self.assertAlmostEqual(float(covered[0, :, 0].max()), 5.8)
+        np.testing.assert_allclose(covered[1], positions[1])
+
+        self.stage.effects = lambda _kind, _key: effect
+        tl = self.tlm.Timeline(hp_start=(10, 10), length=10)
+        tl.cues = [self.tlm.Cue(0, 0, "effect", "EID_K_THUNDER4")]
+        self.stage.timeline = tl
+        self.stage._layout()
+        self.stage.arrays(1)
+        self.assertAlmostEqual(float(self.stage.shades[-2]), battle_stage.REXBOLT_STRIKE_SHADE)
+        self.assertEqual(float(self.stage.shades[-1]), 1.0)  # bolt intensity is unchanged
+
 
 @unittest.skipIf(battle_stage is None, "needs tkinter and numpy")
 class PerspectiveTests(unittest.TestCase):
+    def test_screen_overlay_ignores_world_depth(self):
+        canvas = SimpleNamespace(
+            _center=(0.0, 0.0, 0.0), _perspective=0.0,
+            _screen_x_sign=1.0, _screen_y_sign=1.0,
+            _rotation_matrix=lambda: np.eye(3), _scale=lambda _width, _height: 20.0,
+        )
+        foreground = _Triangle(
+            (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (0.0, 1.0, -1.0),
+            (0.0, 0.0, -1.0), (255, 0, 0), cull="none")
+        overlay = _Triangle(
+            (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (0.0, 1.0, 1.0),
+            (0.0, 0.0, -1.0), (0, 0, 255), cull="none", overlay=True)
+
+        image = battle_stage._ModelCanvas._rasterize(canvas, [overlay, foreground], 80, 80)
+
+        self.assertEqual(tuple(image[40, 40]), (0, 0, 255))
+
+    def test_transparent_effect_cards_are_culled_before_texture_sampling(self):
+        canvas = SimpleNamespace(
+            _center=(0.0, 0.0, 0.0), _perspective=0.0,
+            _screen_x_sign=1.0, _screen_y_sign=1.0,
+            _rotation_matrix=lambda: np.eye(3), _scale=lambda _width, _height: 20.0,
+        )
+        texture = np.full((2, 2, 4), 255, dtype=np.uint8)
+        hidden = _Triangle(
+            (-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0),
+            (255, 255, 255), uv=((0, 0), (1, 0), (0.5, 1)), texture=texture,
+            alpha=battle_stage.effect_alpha(0.0), blend_mode="additive", cull="none",
+        )
+
+        with patch("fe_modding.gui.model_viewer._sample_texture_batch",
+                   side_effect=AssertionError("transparent texture should not be sampled")):
+            image = battle_stage._ModelCanvas._rasterize(canvas, [hidden] * 1496, 80, 60)
+
+        self.assertFalse((image != 43).any())
+
     def test_far_geometry_shrinks(self):
         import tkinter as tk
         try:
@@ -226,6 +379,51 @@ class PerspectiveTests(unittest.TestCase):
             root.destroy()
 
 
+@unittest.skipIf(battle_stage is None, "needs tkinter and numpy")
+class StageViewPlaybackTests(unittest.TestCase):
+    def test_slow_effect_draw_advances_exactly_one_tick(self):
+        shown = []
+        scheduled = []
+        view = SimpleNamespace(
+            _after="previous", _playing=True, _t=1.0,
+            stage=SimpleNamespace(timeline=SimpleNamespace(length=400.0)),
+            _scale=SimpleNamespace(set=lambda _value: None),
+            _show=lambda frame, now=False: shown.append((frame, now)),
+            update_idletasks=lambda: None,
+            after=lambda delay, callback: scheduled.append((delay, callback)) or "next",
+            on_finished=None,
+        )
+        view._tick = lambda: None
+
+        # Simulate a two-second Breathred draw. Playback must slow down for it rather than
+        # deriving the next animation frame from elapsed wall time and jumping near the end.
+        with patch("fe_modding.gui.battle_stage.time.perf_counter", side_effect=(10.0, 12.0)):
+            battle_stage.StageView._tick(view)
+
+        self.assertEqual(view._t, 2.0)
+        self.assertEqual(shown, [(2.0, True)])
+        self.assertEqual(scheduled[0][0], 1)
+        self.assertEqual(view._after, "next")
+
+
+class ModelPreviewPlaybackTests(unittest.TestCase):
+    def test_programmatic_slider_change_renders_one_frame(self):
+        from fe_modding.gui import model_viewer
+
+        rendered = []
+        preview = SimpleNamespace(_setting_frame=False)
+        preview._on_frame_scrub = lambda value: model_viewer._ModelPreview._on_frame_scrub(preview, value)
+        preview._update_pose_display = lambda frame: rendered.append(frame)
+
+        class Scale:
+            def set(self, value):
+                preview._on_frame_scrub(str(value))
+
+        preview._frame_scale = Scale()
+        model_viewer._ModelPreview._set_frame(preview, 12.0)
+        self.assertEqual(rendered, [12.0])
+
+
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES") and battle_stage is not None,
                      "set FE9_EXTRACTED_FILES to an extracted files/ directory")
 class DiscStageTests(unittest.TestCase):
@@ -272,6 +470,21 @@ class ParticleTests(unittest.TestCase):
         effect = SimpleNamespace(loaded=loaded, particles=(particle_preview.Stage(emitter, layout, ()),))
         cards = battle_stage.particle_cards(effect)
         self.assertEqual(cards[0].texture_layers[0].color_scale, (128 / 255, 64 / 255, 32 / 255))
+
+    def test_battle_cards_apply_particle_colour_curve(self):
+        from fe_modding.formats import animation, particle_preview
+        emitter = animation.ParticleEmitterLayout(
+            0, "|root|", 0, 0, 0, 0, 0, (1.0, 1.0), 0.0, 1, 0, 0, 0, 0, 1)
+        layout = animation.ParticleStageLayout(0, 0, 0, 10, (0.0, 0.0, 0.0), 0, 3)
+        curves = ((5, ((0, 1.0),)), (6, ((0, 0.5),)), (7, ((0, 0.25),)))
+        texture = np.full((2, 2, 4), 255, dtype=np.uint8)
+        loaded = SimpleNamespace(particle_materials={0: (texture, (128, 128, 128), 1.0)})
+        effect = SimpleNamespace(loaded=loaded, particles=(particle_preview.Stage(emitter, layout, curves),))
+
+        cards = battle_stage.particle_cards(effect)
+
+        self.assertEqual(cards[0].texture_layers[0].color_scale,
+                         (128 / 255, 64 / 255, 32 / 255))
 
     def test_battle_line_card_follows_velocity(self):
         from types import SimpleNamespace

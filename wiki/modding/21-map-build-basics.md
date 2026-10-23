@@ -60,6 +60,14 @@ Build maintains an undo history of up to 50 captured edit states. A new edit cle
 
 ## Guided walkthrough
 
+<!-- screenshot 21-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with the top bar, tool column, map canvas with units, layer checkboxes and the empty selection panel.](../assets/images/tutorials/screenshots/21-a-setup.png)](../assets/images/tutorials/screenshots/21-a-setup.png)
+
+<figcaption markdown="span">The Prologue's **Build** tab: **Save Chapter**, **Play…**, **Undo/Redo**, the difficulty file (**Common**) and section filter, the tool column on the left, the layer checkboxes under the map and the selection panel on the right.</figcaption>
+</figure>
+
 ### 1. Confirm the active document
 
 Open **Chapter → Build**. Before touching the canvas, read the current phase, difficulty variant, and section filter. Choose a single section rather than **All sections** when you need unambiguous unit selection.
@@ -109,6 +117,14 @@ Choose **Save Chapter**. Build writes the edited map, deployment documents, and 
 Leave Build, reopen the same chapter phase and deployment variant, and verify both the unit coordinate and terrain identity. Use **Play...** to launch the selected chapter through the app's chapter-run workflow and confirm the unit and cell appear where expected.
 
 Finally, restore the original unit coordinate and terrain cell unless you want to keep the exercise.
+
+<!-- screenshot 21-b-result.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Build tab with Boyd selected on the map and his deployment fields in the selection panel.](../assets/images/tutorials/screenshots/21-b-result.png)](../assets/images/tutorials/screenshots/21-b-result.png)
+
+<figcaption markdown="span">Clicking a unit selects it: the panel shows its character, class, level, items and AI, with **All fields…** for the raw record. Edits here go to the deployment file; **Save Chapter** writes them.</figcaption>
+</figure>
 
 ## Understand every control
 
@@ -215,6 +231,7 @@ The listed controls, default layers, shortcuts, 50-state undo cap, and Save Chap
 
 ## Related tutorials and references
 
+- [Create a hub and plan chapter unlocks](hub-chapters.md)
 - [Paint terrain and block movement](22-paint-terrain-and-blocking.md)
 - [Edit tile heights and slopes](23-tile-heights.md)
 - [Place, copy, and import props](24-map-props.md)

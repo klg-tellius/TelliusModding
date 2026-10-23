@@ -8,7 +8,7 @@ article_type: "tutorial"
 tags: ["Guide", "Modding app", "Video", "THP", "Cutscenes"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-17"
+last_reviewed: "2026-10-21"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/49-videos.md"
@@ -40,19 +40,27 @@ The viewer parses the THP header and linked frame chain, decodes its JPEG-like p
 
 ## Guided walkthrough
 
+<!-- screenshot 49-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Videos page with the movie list and the preview of the selected video.](../assets/images/tutorials/screenshots/49-a-setup.png)](../assets/images/tutorials/screenshots/49-a-setup.png)
+
+<figcaption markdown="span">**Assets › Videos** with a THP movie selected: the preview, frame counter, **Replace…** and **Add…**. Replacements count against the disc size.</figcaption>
+</figure>
+
 ### Establish the baseline
 
-Select the source THP. Scrub the first, middle, and last frames; play it; export audio when present. Record metadata and file size. Follow the caller: `MoviePlay` uses the literal path, while chapter-opening wrappers may select a movie ID/path through chapter data.
+Select the source THP in **Cutscenes**. Drag the frame slider to the first, middle, and last frames (the label under the picture reads *Frame 12 / 1800*); press **Play** and **Pause**; **Export Audio as WAV...** when it has sound. Record metadata and file size. Follow the caller: `MoviePlay` uses the literal path, while chapter-opening wrappers may select a movie ID/path through chapter data.
 
 ### Replace an existing slot
 
-Choose **Import Replacement Video…** and select a format FFmpeg can decode. The dialog states the inherited dimensions and that the image will be scaled/letterboxed. The app decodes every frame at the existing rate, decodes audio to the existing sample rate/channel count, estimates/encodes, and writes the destination only on success.
+Choose **Import Replacement Video…** and select a format FFmpeg can decode. The dialog states the inherited dimensions and that the image will be scaled/letterboxed. The app estimates the encode time and asks (*Encoding is slow - expect roughly Ns. Continue?*), then decodes every frame at the existing rate, decodes audio to the existing sample rate/channel count, encodes, and writes the destination only on success. *Loading...* shows while it reads a file.
 
 After import, reselect the THP and inspect beginning, scene cuts, middle, penultimate, and final frames. Export its encoded audio rather than trusting the source file. Verify lip/action synchronization and the final tail; audio longer than video is dropped and shorter audio leaves silence in trailing frames.
 
 ### Add a new literal identity
 
-Choose **New video…**, provide a unique safe filename, then dimensions and frame rate. Use a known retail slot's values unless you have a reason to diverge. The new THP does not receive a registry record. Edit the event to call `Movie/<name>.thp` exactly and compile/save it.
+Choose **New video…**, provide a unique safe filename (*New video name*), then, in *New video dimensions*, a width and height that are each a multiple of 16 and the frame rate, and press **Continue**. Use a known retail slot's values unless you have a reason to diverge. The new THP does not receive a registry record. Edit the event to call `Movie/<name>.thp` exactly and compile/save it.
 
 ### Test completion and skip convergence
 
@@ -64,11 +72,18 @@ Finally compare full rebuilt image size with the clean baseline and the target p
 
 - **New video… / Delete:** manages project-added literal files; deleting requires callers to be updated first.
 - **Frame slider/navigation:** decodes specific encoded frames and exposes frame-chain corruption.
-- **Play / Stop:** local sequential preview; it does not reproduce game skip/input restoration.
+- **Play / Pause:** local sequential preview; it does not reproduce game skip/input restoration.
+- *Frame N / M*: the frame shown and the frame count; *(no video selected)* until you pick one.
 - **Export Audio as WAV…:** checks the audio actually encoded in the THP.
 - **Import Replacement Video…:** inherits the selected slot contract.
 - **New-video dimensions/rate:** defines a new contract; dimensions are multiples of 16.
 - **Progress/status:** FFmpeg decoding and JPEG/DSP encoding can take several minutes for long movies.
+
+## Things to try next
+
+1. **Measure the budget.** Note the size of `Movie/` before and after a replacement, and build: the build warns when the image passes the GameCube disc size ([Set up Dolphin and build the game](04-dolphin-setup.md)).
+2. **A shorter movie.** Replace a chapter opening with a 5-second clip and test natural completion and skip in Dolphin.
+3. **Check the audio.** **Export Audio as WAV...** after an import and compare its length with the picture's.
 
 ## Interactions and precedence
 
@@ -113,7 +128,7 @@ THP parsing/encoding, frame-chain rules, per-frame audio packing, input conversi
 
 ## Related tutorials and references
 
-- [Configure chapter-opening movies](41-chapter-opening-movies.md)
+- [Set chapter title cards and full-screen movies](41-chapter-opening-movies.md)
 - [Edit, compile, and test event scripts](33-script-editor.md)
 - [THP Video Playback](../systems/video-system.md)
 - [THP format](../formats/thp-format.md)

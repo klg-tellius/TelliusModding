@@ -111,6 +111,14 @@ Rewind to the boundary and change one run-state input if Play supports it, or ed
 
 Predict the affected eligibility row or score column before replaying. A useful diagnosis is falsifiable.
 
+<!-- screenshot 45-b-result.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Play window AI pane with the attack candidate and the ranking table of possible attacks.](../assets/images/tutorials/screenshots/45-b-result.png)](../assets/images/tutorials/screenshots/45-b-result.png)
+
+<figcaption markdown="span">The **AI** pane during an enemy's attack: its registers, the candidate it holds, and **How the target was chosen**, every possible attack best first with the points each term adds and the unit's MTYPE weights.</figcaption>
+</figure>
+
 ## Understand every control
 
 - **Advance/step controls:** progress the simulation at command or action boundaries. Use them to stop on the deciding AI unit rather than letting the whole phase erase context.

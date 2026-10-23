@@ -26,6 +26,7 @@ from fe_modding.game_code.extended_flag_installation import RECEIPT_NAME, receip
 from fe_modding.game_code.extended_flag_container import container_name
 from fe_modding.games import Game
 from fe_modding.project import ModProject
+from tools.build_hub_infinite_action_test import patched_executable
 
 CAMPAIGN = [f"XFT_CAMPAIGN_{i:03d}" for i in range(100)]
 LOCALS = [f"XFT_LOCAL_{i:03d}" for i in range(80)]
@@ -222,6 +223,12 @@ def build_region(source, output, region, dolphin, controller_config):
     status = inspect_project(project)
     if status.state != RuntimeState.MATCHING:
         raise ValueError(f"Candidate verification failed: {status}")
+    if has_hub:
+        # Script refreshes redraw the map, but only the two native action
+        # finalizers decide whether the acting unit's turn is consumed.  Keep
+        # this fixture-only patch guarded by the installed Hub chapter.
+        executable = project.extracted_dir / "sys/main.dol"
+        executable.write_bytes(patched_executable(executable.read_bytes(), setup.chapter))
     image = project.directory / f"{region}-extended-flags-EXPERIMENTAL.ciso"
     print(f"{region}: building {image.name}", flush=True)
     result = gcdisc.build_gamecube_ciso(project.extracted_dir, image)
@@ -249,7 +256,9 @@ def build_region(source, output, region, dolphin, controller_config):
               "image": str(image), "sha256": image_digest,
               "source_dol_sha256": hashlib.sha256((source / region / "sys/main.dol").read_bytes()).hexdigest(),
               "runtime_verified": True, "in_game_verified": False,
-              "fixture_revision": 6, "animation_speed": 2.0,
+              "fixture_revision": 8, "animation_speed": 2.0,
+              "native_infinite_actions": bool(setup),
+              "return_position_before_fade": bool(setup),
               "avatar_ai_fix": bool(setup),
               "avatar_class_fix": bool(setup),
               "entrance_markers": [[d.x, d.y] for d in setup.destinations] if setup else [],

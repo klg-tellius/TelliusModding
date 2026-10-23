@@ -14,6 +14,8 @@ grid border. The **Chapter data** tab edits the chapter's data record.
 **Add chapter** creates a playable chapter (``chapters.add_story_chapter``) and
 places it in the story flow; each chapter's Overview shows and changes which
 chapter comes next (``game_code.chapter_flow``, a table patched into ``main.dol``).
+Deletable story chapters have a **Delete chapter** action that removes their
+records, assets and story-flow entry. The fixed Prologue and Ending stay protected.
 
 **Play in Dolphin** boots the extracted files straight into the chapter, with a fresh army, on
 the chosen difficulty (``emulator.prepare_chapter_run``, ``game_code.chapter_jump``).
@@ -255,7 +257,8 @@ class ChaptersHub(Page):
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        chapter, title, source_id, keep_map, size, avatar_pid, activation = dialog.result
+        (chapter, title, source_id, keep_map, size, avatar_pid, activation,
+         ground_color, ground_image, tile_ground_image) = dialog.result
         start = None
         if keep_map:  # the template's size, the avatar on its first player unit's tile
             source = chapters.chapter_paths(self.project, source_id)
@@ -282,7 +285,9 @@ class ChaptersHub(Page):
             return
         try:
             plan = hub_creation.create_chapter(self.project, session.data, source_id, chapter, title, *size,
-                                               avatar_pid, start, keep_map=keep_map)
+                                               avatar_pid, start, keep_map=keep_map,
+                                               ground_color=ground_color, ground_image=ground_image,
+                                               tile_ground_image=tile_ground_image)
             session.data = plan.fe8data
             session.changed(self)
             session.save()
@@ -452,24 +457,29 @@ class ChapterPage(Page):
         left.pack(side="left", fill="x", expand=True)
         self._title = ttk.Label(left, text="", style="Title.TLabel")
         self._title.pack(anchor="w")
+        # The map phase controls get a row of their own under the title, so a long title
+        # cannot squeeze them (or the chapter buttons on the right) out of the header.
+        phases = ttk.Frame(left, style="Page.TFrame")
+        phases.pack(anchor="w", pady=(4, 0))
         self._phase_status = ttk.Label(left, text="", style="Muted.TLabel")
         self._phase_status.pack(anchor="w")
 
         right = ttk.Frame(header, style="Page.TFrame")
-        right.pack(side="right")
+        right.pack(side="right", anchor="n")
         self._phase_var = tk.StringVar()
-        self._phase_label = ttk.Label(right, text="Phase", style="Muted.TLabel")
-        self._phase_combo = ttk.Combobox(right, textvariable=self._phase_var, state="readonly", width=24)
+        self._phase_label = ttk.Label(phases, text="Phase", style="Muted.TLabel")
+        self._phase_combo = ttk.Combobox(phases, textvariable=self._phase_var, state="readonly", width=24)
         self._phase_combo.bind("<<ComboboxSelected>>", lambda e: self._set_phase(
             self._phase_by_label.get(self._phase_var.get(), self._phase_var.get())))
-        self._previous_phase = ttk.Button(right, text="‹ Part", command=lambda: self._step_phase(-1))
-        self._next_phase = ttk.Button(right, text="Part ›", command=lambda: self._step_phase(1))
-        self._add_phase_button = ttk.Button(right, text="+ Phase…", command=self._add_phase)
-        self._remove_phase_button = ttk.Button(right, text="Remove phase…", command=self._remove_phase)
+        self._previous_phase = ttk.Button(phases, text="‹ Part", command=lambda: self._step_phase(-1))
+        self._next_phase = ttk.Button(phases, text="Part ›", command=lambda: self._step_phase(1))
+        self._add_phase_button = ttk.Button(phases, text="+ Phase…", command=self._add_phase)
+        self._remove_phase_button = ttk.Button(phases, text="Remove phase…", command=self._remove_phase)
         self._prev = ttk.Button(right, text="‹ Previous", command=lambda: self._step(-1))
         self._next = ttk.Button(right, text="Next ›", command=lambda: self._step(1))
         self._next.pack(side="right")
         self._prev.pack(side="right", padx=(0, 6))
+        self._delete_chapter_button = ttk.Button(right, text="Delete chapter…", command=self._delete_chapter)
         ttk.Button(right, text="▶ Play in Dolphin…", command=self._play_in_dolphin).pack(side="right", padx=(0, 18))
 
         self._notebook = ttk.Notebook(self)
@@ -847,6 +857,79 @@ class ChapterPage(Page):
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
+        if cid is not None and cid.isdigit() and int(cid) in chapters.DELETABLE_CHAPTER_IDS:
+            self._delete_chapter_button.pack(side="right", padx=(0, 6), before=self._prev)
+        else:
+            self._delete_chapter_button.pack_forget()
+
+    def _delete_chapter(self) -> None:
+        """Delete a chapter and its chapter-scoped assets."""
+        if self._chapter is None:
+            return
+        chapter_id = self._chapter
+        chapter = int(chapter_id)
+        if chapter not in chapters.DELETABLE_CHAPTER_IDS:
+            messagebox.showerror(
+                "Could not delete chapter",
+                "The Prologue starts every new game and the Ending completes it, so those chapters cannot be deleted.",
+                parent=self)
+            return
+        deleting_hub = hub.hub_chapter(self.project) == chapter
+        dirty = [panel for panel in self.panels() if panel.dirty]
+        if dirty:
+            names = ", ".join(panel.display_name for panel in dirty)
+            if not messagebox.askyesno(
+                    "Discard chapter changes?",
+                    f"Deleting this chapter discards its unsaved changes in: {names}. Continue?",
+                    icon="warning", parent=self):
+                return
+        session = self.shell.session
+        if not session.available:
+            messagebox.showerror("Could not delete chapter", "This project has no FE8Data.bin.", parent=self)
+            return
+        flow, why = open_flow(self.project)
+        if flow is None:
+            messagebox.showerror("Could not delete chapter", f"Story flow is unavailable: {why}", parent=self)
+            return
+        phases = chapters.chapter_phases(self.project, chapter_id)
+        details = ["its ChapterData and battle-scene records", "its dialogue and script",
+                   f"its {len(phases)} map phase{'s' if len(phases) != 1 else ''}",
+                   "its shops, title text and chapter-name pictures"]
+        if deleting_hub:
+            details.insert(0, "its installed hub setup and routing")
+        if not messagebox.askyesno(
+                "Delete chapter?",
+                f"Permanently delete {self._title_of(chapter_id)} ({chapter_id}) and:\n\n"
+                + "\n".join(f"• {detail}" for detail in details)
+                + "\n\nChapters leading here will lead to this chapter's successor. This cannot be undone "
+                  "from the chapter editor.",
+                icon="warning", parent=self):
+            return
+        if session.dirty and not messagebox.askyesno(
+                "Save FE8Data.bin?",
+                "Deleting the chapter saves FE8Data.bin, including its other unsaved edits. Continue?",
+                parent=self):
+            return
+        for panel in dirty:
+            panel._dirty = False
+        try:
+            if deleting_hub:
+                hub.uninstall(self.project)
+                flow, why = open_flow(self.project)
+                if flow is None:
+                    raise ValueError(f"Story flow is unavailable after removing the hub: {why}")
+            plan = chapters.remove_story_chapter(self.project, session.data, chapter_id, flow)
+            session.data = plan.fe8data
+            session.changed(self)
+            session.save()
+        except (ValueError, OSError, ModdingError) as exc:
+            messagebox.showerror("Could not delete chapter", str(exc), parent=self)
+            return
+        self.shell.changelog.append(f"Chapter {chapter_id}", "Deleted chapter and its assets")
+        self._chapter = None
+        self.refresh_chapter_lists()
+        self.shell.rebuild_index()
+        self.shell.navigate(("chapters",))
 
     def play_in_dolphin(self) -> bool:
         """Open the Play in Dolphin dialog for the open chapter (False: none is open)."""
@@ -1005,7 +1088,10 @@ class ChapterPage(Page):
                    if c == chapter_flow.GAME_CLEARED or f"{c:02d}" in self._ids]
         labels = {_flow_label(c, titles): c for c in choices}
         current = flow.next_of(chapter)
-        var = tk.StringVar(value=_flow_label(current, titles))
+        shown = _flow_label(current, titles)
+        if current not in choices:  # out of the story: the default successor, a chapter that doesn't exist
+            shown = f"{current:02d} · missing chapter: pick one"
+        var = tk.StringVar(value=shown)
         combo = ttk.Combobox(line, textvariable=var, values=list(labels), state="readonly", width=40)
         combo.pack(side="left", padx=(8, 0))
         combo.bind("<<ComboboxSelected>>", lambda e: self._set_next(chapter, labels[var.get()]))

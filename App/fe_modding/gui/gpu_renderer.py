@@ -43,8 +43,8 @@ MAX_LAYERS = 4
 BACKGROUND = (43, 43, 43)
 MSAA_SAMPLES = 4
 
-# vertex: position(3) normal(3) color(3) alpha(1) uv x MAX_LAYERS (8)
-_FLOATS_PER_VERTEX = 19
+# vertex: position(3) normal(3) color(3) alpha(1) uv x MAX_LAYERS (8), cull(1), shade(1)
+_FLOATS_PER_VERTEX = 20
 #: Vertex float 18: the shape's cull mode (model_viewer._chunk_cull).
 CULL_CODES = {"back": 0.0, "none": 1.0, "front": 2.0}
 
@@ -53,6 +53,8 @@ _ROLE_CODES = {
     "map_selector": 2,
     "map_projected_light": 3,
     "light": 4,
+    "water_layer2": 5,
+    "water_fade": 6,
 }
 
 _WRAP_MODES = {0: "clamp-to-edge", 1: "repeat", 2: "mirror-repeat"}
@@ -94,6 +96,7 @@ struct VIn {
     @location(4) uv01: vec4<f32>,
     @location(5) uv23: vec4<f32>,
     @location(6) cull: f32,  // 0 back faces, 1 none (both sides), 2 front faces
+    @location(7) shade: f32,
 };
 
 struct VOut {
@@ -103,6 +106,7 @@ struct VOut {
     @location(2) brightness: f32,
     @location(3) uv01: vec4<f32>,
     @location(4) uv23: vec4<f32>,
+    @location(5) shade: f32,
 };
 
 // model_viewer.PERSPECTIVE_NEAR
@@ -160,6 +164,7 @@ fn vs_main(v: VIn) -> VOut {
     }
     out.uv01 = v.uv01;
     out.uv23 = v.uv23;
+    out.shade = v.shade;
     return out;
 }
 
@@ -173,7 +178,7 @@ fn layer_uv(uv: vec2<f32>, i: u32) -> vec2<f32> {
 fn shade(f: VOut) -> vec4<f32> {
     let n = batch.info.x;
     if (n == 0u) {
-        return vec4<f32>(f.color * f.brightness, f.alpha);
+        return vec4<f32>(f.color * f.brightness * f.shade, f.alpha);
     }
     var samples: array<vec4<f32>, 4>;
     samples[0] = textureSampleLevel(t0, s0, layer_uv(f.uv01.xy, 0u), 0.0);
@@ -182,7 +187,7 @@ fn shade(f: VOut) -> vec4<f32> {
     samples[3] = textureSampleLevel(t3, s3, layer_uv(f.uv23.zw, 3u), 0.0);
 
     var sampled = samples[0].rgb * batch.scales[0].rgb;
-    let alpha = samples[0].a;
+    var alpha = samples[0].a;
     var pending = false;
     var pending_detail = vec3<f32>(0.0);
     var saw_selector = false;
@@ -208,9 +213,16 @@ fn shade(f: VOut) -> vec4<f32> {
                 sampled = mix(sampled, pending_detail, mask);
             }
             sampled = sampled * (0.7 + luma * 0.6);
+        } else if (role == 5u) {
+            // map_water: the same image sampled again, mirrored, averaged
+            sampled = (sampled + s.rgb * batch.scales[i].rgb) * 0.5;
+        } else if (role == 6u) {
+            // map_water's shoreline fade: lighter and see-through near the banks
+            sampled = sampled + vec3<f32>(s.r * 0.5);
+            alpha = max(alpha - s.r, 0.0);
         }
     }
-    return vec4<f32>(clamp(sampled * f.brightness, vec3<f32>(0.0), vec3<f32>(1.0)), alpha * f.alpha);
+    return vec4<f32>(clamp(sampled * f.brightness * f.shade, vec3<f32>(0.0), vec3<f32>(1.0)), alpha * f.alpha);
 }
 
 @fragment
@@ -247,6 +259,7 @@ class _Batch:
     first_vertex: int
     vertex_count: int
     additive: bool
+    overlay: bool
     bind_group: object
 
 
@@ -316,12 +329,14 @@ class _Device:
                         {"format": wgpu.VertexFormat.float32x4, "offset": 40, "shader_location": 4},
                         {"format": wgpu.VertexFormat.float32x4, "offset": 56, "shader_location": 5},
                         {"format": wgpu.VertexFormat.float32, "offset": 72, "shader_location": 6},
+                        {"format": wgpu.VertexFormat.float32, "offset": 76, "shader_location": 7},
                     ],
                 }
             ],
         }
 
-        def pipeline(entry_point: str, blend: dict | None, *, depth_write: bool = True):
+        def pipeline(entry_point: str, blend: dict | None, *, depth_write: bool = True,
+                     depth_compare=wgpu.CompareFunction.less):
             target = {"format": wgpu.TextureFormat.rgba8unorm}
             if blend is not None:
                 target["blend"] = blend
@@ -337,7 +352,7 @@ class _Device:
                     # Additive effect planes still test against solid scene geometry, but must
                     # not hide one another.  Rexbolt alone has 748 overlapping particle stages.
                     "depth_write_enabled": depth_write,
-                    "depth_compare": wgpu.CompareFunction.less,
+                    "depth_compare": depth_compare,
                 },
                 multisample={"count": MSAA_SAMPLES},
                 fragment={"module": shader, "entry_point": entry_point, "targets": [target]},
@@ -356,6 +371,27 @@ class _Device:
             "fs_additive",
             {"color": {"operation": "add", "src_factor": "src-alpha", "dst_factor": "one"}, "alpha": alpha_keep},
             depth_write=False,
+        )
+        # Category-6 battle effects are composed after the 3D scene.  Their
+        # own source order controls layering; scene depth must not cut holes
+        # through the sky or lightning.
+        self.overlay_opaque = pipeline("fs_opaque", None, depth_write=False,
+                                       depth_compare=wgpu.CompareFunction.always)
+        self.overlay_translucent = pipeline(
+            "fs_translucent",
+            {
+                "color": {"operation": "add", "src_factor": "src-alpha", "dst_factor": "one-minus-src-alpha"},
+                "alpha": alpha_keep,
+            },
+            depth_write=False,
+            depth_compare=wgpu.CompareFunction.always,
+        )
+        self.overlay_additive = pipeline(
+            "fs_additive",
+            {"color": {"operation": "add", "src_factor": "src-alpha", "dst_factor": "one"},
+             "alpha": alpha_keep},
+            depth_write=False,
+            depth_compare=wgpu.CompareFunction.always,
         )
 
         self._samplers: dict[tuple[int, int], object] = {}
@@ -462,6 +498,7 @@ class GpuSceneRenderer:
             layers = _layer_list(tri)
             layers_by_tri.append(layers)
             key = (
+                bool(getattr(tri, "overlay", False)),
                 tri.blend_mode == "additive",
                 tuple((id(t), role, flip, scale, ws, wt) for t, role, flip, scale, ws, wt, _uv in layers),
             )
@@ -475,6 +512,7 @@ class GpuSceneRenderer:
         vertices[:, :, 9] = np.array([t.alpha for t in ordered], dtype=np.float32)[:, None]
         vertices[:, :, 18] = np.array([CULL_CODES.get(getattr(t, "cull", "back"), 0.0) for t in ordered],
                                       dtype=np.float32)[:, None]
+        vertices[:, :, 19] = np.array([getattr(t, "shade", 1.0) for t in ordered], dtype=np.float32)[:, None]
         for slot in range(MAX_LAYERS):
             uvs = [layers_by_tri[i][slot][6] if slot < len(layers_by_tri[i]) else ((0, 0), (0, 0), (0, 0)) for i in order.tolist()]
             vertices[:, :, 10 + slot * 2 : 12 + slot * 2] = np.array(uvs, dtype=np.float32)
@@ -486,9 +524,10 @@ class GpuSceneRenderer:
         )
 
         first = 0
-        for (additive, _signature), idxs in groups.items():
+        for (overlay, additive, _signature), idxs in groups.items():
             layers = layers_by_tri[idxs[0]]
-            self._batches.append(_Batch(first * 3, len(idxs) * 3, additive, self._batch_group(layers)))
+            self._batches.append(_Batch(first * 3, len(idxs) * 3, additive, overlay,
+                                        self._batch_group(layers)))
             first += len(idxs)
 
     @staticmethod
@@ -510,11 +549,12 @@ class GpuSceneRenderer:
         return True
 
     def update_arrays(self, positions: np.ndarray, normals: np.ndarray | None = None,
-                      changed: np.ndarray | None = None, alphas: np.ndarray | None = None) -> bool:
+                      changed: np.ndarray | None = None, alphas: np.ndarray | None = None,
+                      shades: np.ndarray | None = None) -> bool:
         """``update_positions()`` from arrays: ``positions`` (n, 3, 3) and
         ``normals`` (n, 3) in the uploaded triangles' order, and optionally
-        each triangle's alpha (n,) (animated effect materials). ``changed`` (a
-        boolean mask in that order) limits the upload to those triangles:
+        each triangle's alpha (n,) (animated effect materials) and colour
+        multiplier ``shades`` (n,). ``changed`` (a boolean mask in that order) limits the upload to those triangles:
         they are written in the few contiguous runs they occupy."""
         if self._vertices is None or self._order is None or len(positions) != len(self._order):
             return False
@@ -524,6 +564,8 @@ class GpuSceneRenderer:
                 self._vertices[:, :, 3:6] = normals[self._order][:, None, :]
             if alphas is not None:
                 self._vertices[:, :, 9] = alphas[self._order][:, None]
+            if shades is not None:
+                self._vertices[:, :, 19] = shades[self._order][:, None]
             self._device.queue.write_buffer(self._vertex_buffer, 0, self._vertices)
             return True
         runs = self._runs(changed)
@@ -535,6 +577,8 @@ class GpuSceneRenderer:
                 self._vertices[start:end, :, 3:6] = normals[source][:, None, :]
             if alphas is not None:
                 self._vertices[start:end, :, 9] = alphas[source][:, None]
+            if shades is not None:
+                self._vertices[start:end, :, 19] = shades[source][:, None]
             self._device.queue.write_buffer(self._vertex_buffer, start * stride,
                                             np.ascontiguousarray(self._vertices[start:end]))
         return True
@@ -685,14 +729,17 @@ class GpuSceneRenderer:
         if self._batches:
             render_pass.set_bind_group(0, self._camera_group)
             render_pass.set_vertex_buffer(0, self._vertex_buffer)
-            for pipeline, additive in (
-                (self._shared.opaque, False),
-                (self._shared.translucent, False),
-                (self._shared.additive, True),
+            for pipeline, additive, overlay in (
+                (self._shared.opaque, False, False),
+                (self._shared.translucent, False, False),
+                (self._shared.additive, True, False),
+                (self._shared.overlay_opaque, False, True),
+                (self._shared.overlay_translucent, False, True),
+                (self._shared.overlay_additive, True, True),
             ):
                 render_pass.set_pipeline(pipeline)
                 for batch in self._batches:
-                    if batch.additive == additive:
+                    if batch.additive == additive and batch.overlay == overlay:
                         render_pass.set_bind_group(1, batch.bind_group)
                         render_pass.draw(batch.vertex_count, 1, batch.first_vertex, 0)
         render_pass.end()

@@ -31,6 +31,10 @@ EXP_FLAG = CAVE_ADDRESS + 0xF20
 EXP_TARGET = CAVE_ADDRESS + 0xF70
 BASE_EXP = CAVE_ADDRESS + 0x14B0
 TABLE_EXP = CAVE_ADDRESS + 0x14E0
+# The table EXP function overwrites r31 (the unit) with its level at +0x28, before the +0x34 hook:
+# TABLE_FLAG reads the tier bit there while r31 is still the unit and keeps it at 0x8(r1), a free
+# word of that function's frame, for TABLE_EXP.
+TABLE_FLAG = CAVE_ADDRESS + 0x14FC
 SEAL_PREDICATE = CAVE_ADDRESS + 0x1510
 CROWN_PREDICATE = CAVE_ADDRESS + 0x1530
 REGISTER_CROWN = CAVE_ADDRESS + 0x1570
@@ -125,6 +129,7 @@ def edits_for(version: str) -> tuple[Edit, ...]:
         _hook(exp + 0x98, 0x4182000C, EXP_FLAG),
         _hook(exp + 0xF8, 0x28030000, EXP_TARGET),
         _hook(base + 0x2C, 0x38030014, BASE_EXP),
+        _hook(table + 0x28, 0x8BFF019A, TABLE_FLAG),
         _hook(table + 0x34, 0x38030014, TABLE_EXP),
         _hook(register + 0x108, 0x80010014, REGISTER_CROWN),
         Edit(descriptor, _word(seal_fn), _word(SEAL_PREDICATE)),
@@ -154,13 +159,17 @@ def edits_for(version: str) -> tuple[Edit, ...]:
             ppc.li(3, 0), "done", ppc.cmplwi(3, 0), ("b", exp + 0xFC),
         ]),
     ]
-    for origin, resume, end in ((BASE_EXP, base + 0x30, TABLE_EXP),
-                                (TABLE_EXP, table + 0x38, SEAL_PREDICATE)):
+    for origin, resume, end, flag in ((BASE_EXP, base + 0x30, TABLE_EXP, ppc.lwz(0, 0x1C8, 31)),
+                                      (TABLE_EXP, table + 0x38, TABLE_FLAG, ppc.lwz(0, 0x8, 1))):
         edits.append(_stub(origin, end, [
-            ppc.lwz(0, 0x1C8, 31), ppc.andi_(0, 0, tier_bit), ("eq", "second"),
+            flag, ppc.andi_(0, 0, tier_bit), ("eq", "second"),
             ppc.addi(0, 3, 40), ("b", resume),
             "second", ppc.addi(0, 3, 20), ("b", resume),
         ]))
+    edits.append(_stub(TABLE_FLAG, SEAL_PREDICATE, [
+        ppc.lwz(0, 0x1C8, 31), ppc.stw(0, 0x8, 1),
+        ppc.lbz(31, 0x19A, 31), ("b", table + 0x2C),
+    ]))
     edits += [
         _stub(SEAL_PREDICATE, CROWN_PREDICATE, [
             ppc.lwz(0, 0x1BC, 3), ppc.andi_(0, 0, 4), ("ne", "reject"),

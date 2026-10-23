@@ -7,6 +7,12 @@ else in retail changes them except the developer menu. On a phase whose byte is 
 player's map controls (``start_blocking_process_if_faction_active``); on 2 it runs the AI
 (``dispatch_to_blocking_process_by_faction``); on 0 the army is skipped.
 
+Retail's dispatcher special-cases faction 0 and always starts player controls, without consulting
+whether its controller is 1 or 2.  The hook also redirects that case through a small cave routine:
+controller 2 enters the same AI process used by the other factions, while controller 1 retains the
+normal player-control path.  The downstream AI order builder already indexes the current faction's
+unit list and therefore handles the player army without further changes.
+
 :data:`PHASE_HOOK` replaces the first ``stb`` with a call to a cave routine that stores the four
 bytes from its own ``li`` immediates, and turns the other three into ``nop``. Each army's choice is
 the low byte of one ``li`` (a :class:`Tunable` with a field in the cave), so it applies from the
@@ -22,6 +28,7 @@ US, EU, JP = "GFEE01", "GFEP01", "GFEJ01"
 G_PHASES = "Army phases"
 
 PHASE_ROUTINE = CAVE_ADDRESS + 0x660
+PLAYER_AI_ROUTINE = CAVE_ADDRESS + 0x690
 ARMIES = ("player", "enemy", "other", "partner")
 DEFAULTS = (1, 2, 2, 2)
 CHOICES = ("No phase", "Player", "Computer")
@@ -30,6 +37,7 @@ assert in_cave(PHASE_ROUTINE, 4 * _ROUTINE_WORDS) and PHASE_ROUTINE + 4 * _ROUTI
 
 # initialize_chapter_start_state's `stb r3,0x14(r31)` (the three `stb r0` follow it)
 _SITES = {US: 0x8014D960, EU: 0x8014ECE8, JP: 0x8014AD88}
+_DISPATCH_SITES = {US: 0x8002E6C0, EU: 0x8002E860, JP: 0x8002DA94}
 _RETAIL = (0x987F0014, 0x981F0015, 0x981F0016, 0x981F0017)
 
 
@@ -53,19 +61,34 @@ def _routine() -> list[int]:
     return words + [ppc.BLR]
 
 
-def _edits(site: int) -> tuple[Edit, ...]:
+def _edits(site: int, dispatch: int) -> tuple[Edit, ...]:
     routine = _routine()
+    player_ai = ppc.assemble(PLAYER_AI_ROUTINE, [
+        ppc.lbz(0, 0, 30),
+        ppc.cmplwi(0, 2),
+        ("ne", "player_controls"),
+        ("b", dispatch + 0x54),
+        "player_controls",
+        ("b", dispatch + 0x10),
+    ])
     return (
         Edit(site, _words(_RETAIL), _words([ppc.bl(site, PHASE_ROUTINE), ppc.NOP, ppc.NOP, ppc.NOP])),
         Edit(PHASE_ROUTINE, bytes(4 * len(routine)), _words(routine),
              wild=tuple((8 * army + 3, 1) for army in range(len(ARMIES)))),
+        # At dispatch+4 retail branches faction 0 directly to player controls.  Retarget it to the
+        # otherwise unreachable instruction at +0x0C, which has room for an unconditional cave hook.
+        Edit(dispatch + 4, _word(ppc.bc("eq", dispatch + 4, dispatch + 0x10)),
+             _word(ppc.bc("eq", dispatch + 4, dispatch + 0x0C))),
+        Edit(dispatch + 0x0C, _word(ppc.b(dispatch + 0x0C, dispatch + 0x5C)),
+             _word(ppc.b(dispatch + 0x0C, PLAYER_AI_ROUTINE))),
+        Edit(PLAYER_AI_ROUTINE, bytes(4 * len(player_ai)), _words(player_ai)),
     )
 
 
 PHASE_HOOK = CATALOG.add(Patch(
     "phases.controller.hook", G_PHASES, "Army phase controller hook",
-    "Chapter start reads each army's phase controller from the cave.",
-    versions={v: _edits(site) for v, site in _SITES.items()}, internal=True))
+    "Chapter start reads each army's phase controller from the cave, including computer control of the player army.",
+    versions={v: _edits(site, _DISPATCH_SITES[v]) for v, site in _SITES.items()}, internal=True))
 
 PHASE_TUNABLES = tuple(CATALOG.add(Tunable(
     f"phases.{army}", G_PHASES, f"{army.capitalize()} phase",

@@ -182,6 +182,7 @@ class WeaponEffects:
     missile: int = 0  # 1 bows, thrown weapons, tomes; 2 magic swords
     effect: Optional[str] = None  # effectId: the spell
     damage_effect: Optional[str] = None  # damageEffId: replaces the hit effect
+    camera_name: Optional[str] = None  # xwp Weapon.name used by <NAME>_at0/_at1
 
 
 
@@ -429,7 +430,10 @@ class _Builder:
         fx = self.weapons[side]
         spell = (fx.effect or (w.effect if w is not None else None)) if path == "magic" else None
         spell_end = None
-        name = w.iid[4:] if w is not None and w.iid.startswith("IID_") else ""
+        # The game resolves the localized item label through weaponList.dbx and uses the
+        # resulting xwp Weapon.name for magic cameras. The spell effect name is not the camera
+        # name: Rexbolt is xwp/MJOLNIR with EID_K_THUNDER4, but uses MJOLNIR_at0/_at1.
+        name = fx.camera_name or (w.iid[4:] if w is not None and w.iid.startswith("IID_") else "")
         cast = start + (clip.release if clip and clip.release is not None else length)
         if path == "magic" and name:
             tl.camera.append(cam.Cue(int(cast), f"{name}_at0", slot, mirror))
@@ -440,6 +444,19 @@ class _Builder:
             if eff is not None:
                 contact = cast + (eff.impact if eff.impact is not None else eff.contact)
                 dodge = cast + (eff.swing if eff.swing is not None else eff.dodge)
+                # Effect actors drive their own camera quakes from .ga event codes. Codes
+                # 9/10/11 are weak/normal/hard 60-tick shakes; 30/31/32 hold those strengths
+                # until code 33 ends the effect-controlled shake. Rexbolt uses 31 at frame 36.
+                strengths = {
+                    9: self.params.quake_weak, 10: self.params.quake, 11: self.params.quake_hard,
+                    30: self.params.quake_weak, 31: self.params.quake, 32: self.params.quake_hard,
+                }
+                for event_frame, code in eff.events:
+                    if code in strengths:
+                        duration = -1 if code >= 30 else cam.SHAKE_TICKS
+                        tl.quakes.append(cam.Quake(int(cast + event_frame), strengths[code], duration))
+                    elif code == 33:
+                        tl.quakes.append(cam.Quake(int(cast + event_frame), 0.0, 0))
                 # The effect actor remains the active battle record through the end of its
                 # animation.  Long spells (notably Rexbolt's 400-tick EID_K_THUNDER4) keep
                 # playing well after their damage event, so the next combatant must not start

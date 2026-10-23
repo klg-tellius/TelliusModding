@@ -132,6 +132,18 @@ class ProjectChecks(unittest.TestCase):
         self.assertTrue(any("story flow" in i.message for i in warnings))
         self.assertFalse(any("story flow" in i.message for i in validator.validate_project(self.project).warnings))
 
+    def test_story_leading_to_a_missing_chapter_is_an_error(self):
+        class Flow:  # 01 -> 33, and 33 (taken out of the story once) keeps the default 34
+            available = True
+            def next_of(self, chapter):
+                return {0: 1, 1: 33}.get(chapter, chapter + 1)
+        data, _ = fe8data.add_record(build(), "chapter", None, copy_from=1)  # id 33
+        self.write("FE8Data.bin", data)
+        errors = [i for i in validator.validate_project(self.project, Flow()).errors if i.where == "main.dol"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Chapter 33 leads to chapter 34, which does not exist", errors[0].message)
+        self.assertEqual(errors[0].route, ("chapter", "33"))
+
     def test_more_than_forty_clears_is_a_warning(self):
         class Flow:  # 1..30, then ten added chapters 33..42, then 31 and the ending
             available = True

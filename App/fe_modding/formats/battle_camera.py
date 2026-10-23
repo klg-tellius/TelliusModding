@@ -37,6 +37,10 @@ units (0 = cut straight to it); the unit has not been measured.
   ``<NAME>_at1`` (it hits) per tome (``WIND_at0``...), created by
   ``gactor_create_weapon_instance`` for magic weapons. The sibling
   ``magic.cmp`` (also ``_cr0``/``_sk0``...) is never loaded.
+  ``NAME`` is the battle weapon name, not the effect: Rexbolt is
+  ``IID_MJOLNIR`` / ``xwp/MJOLNIR.dbx`` with effect ``EID_K_THUNDER4``, so
+  its scripts are ``MJOLNIR_at0`` and ``MJOLNIR_at1``. There is no
+  ``THUNDER4_at0`` in the US, Japanese, or European pack.
 """
 
 from __future__ import annotations

@@ -66,6 +66,14 @@ New THP dimensions must both be multiples of 16; width must stay under the encod
 
 ## Guided walkthrough
 
+<!-- screenshot 41-a-setup.png -->
+<figure class="tutorial-figure" markdown="1">
+
+[![Script tab of Ch.1 with the Opening0 function selected.](../assets/images/tutorials/screenshots/41-a-setup.png)](../assets/images/tutorials/screenshots/41-a-setup.png)
+
+<figcaption markdown="span">Ch.1's `Opening0`: the opening sequence the chapter runs first, with its `ChapterMoviePlay` title card and opening scenes.</figcaption>
+</figure>
+
 ### 1. Trace the chapter-title path
 
 Open the chapter Script and search `ChapterMoviePlay`. Select the call and inspect it through **Insert call...**. Confirm the numeric argument equals the chapter identity intended for this opening, not the source chapter from which it was copied.

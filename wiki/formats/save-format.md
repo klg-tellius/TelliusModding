@@ -43,7 +43,7 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
     <tr><td><code>+0x4C</code></td><td>4</td><td>Block size</td></tr>
     <tr><td><code>+0x50</code></td><td>4</td><td>CRC-32 of the block from <code>+0x70</code> to its end</td></tr>
     <tr><td><code>+0x58</code></td><td>8</td><td>Play time in console timer ticks (40.5 million per second)</td></tr>
-    <tr><td><code>+0x60</code></td><td>1</td><td>Save kind: 2 file save, 3 checkpoint, 1 a consumed copy (half-written, never loaded)</td></tr>
+    <tr><td><code>+0x60</code></td><td>1</td><td>Save kind: 2 file save, 3 checkpoint, 1 a disposable system-data carrier (never resumed)</td></tr>
     <tr><td><code>+0x61</code></td><td>1</td><td>Playthrough id, recorded in the system data when the game is finished</td></tr>
     <tr><td><code>+0x62</code></td><td>1</td><td>File slot 0–4</td></tr>
     <tr><td><code>+0x63</code></td><td>1</td><td>For a checkpoint, the file slot it suspends</td></tr>
@@ -55,7 +55,7 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
   </tbody></table>
 </div>
 
-  The checksum is standard CRC-32 (the same polynomial as ZIP and PNG). A block whose checksum doesn't match is treated as empty, so changing any byte from `+0x70` onward requires recomputing it. A stored checksum of `0x12345678` and save kind 1 skip the check. <span class="confidence confidence--confirmed">confirmed</span>
+  The checksum is standard CRC-32 (the same polynomial as ZIP and PNG). A block whose checksum doesn't match is treated as empty, so changing any byte from `+0x70` onward requires recomputing it. A stored checksum of `0x12345678` and save kind 1 skip the check. Kind 1 exists to commit the embedded global system data without replacing a gameplay save: the game writes only its first 0x2000 bytes, loads the newest `SYSF` from it at boot, then invalidates it. <span class="confidence confidence--confirmed">confirmed</span>
 
   The resume point decides where loading the block leads (see [Chapters](../systems/chapters.md)): <span class="confidence confidence--confirmed">engine</span>
 
@@ -70,6 +70,8 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
     <tr><td>10</td><td>A trial map</td><td>Starts that trial map</td></tr>
   </tbody></table>
 </div>
+
+  Values 1–7 and 10 are stored in kind-2 file blocks; value 8 is stored only in kind-3 checkpoint blocks. Kind 1 never feeds the resume dispatcher. The engine also writes value 9 into the file menu's RAM copy after a post-victory save, paired with the chapter just cleared. That change occurs after the disk write and is not committed, so 9 is a display marker rather than a loadable resume point.
 
 ## System data
 
@@ -120,7 +122,7 @@ A `.gci` file is a single GameCube memory-card entry: a 0x40-byte directory head
     <tr><td><code>0x9C</code></td><td>12</td><td>Options: four bytes of menu switches (every row of the Options menu, plus fixed growths, trial map and "show other units' moves"), grid thickness, brightness, screen position, music and sound volume, difficulty</td></tr>
     <tr><td><code>0xA8</code></td><td>12</td><td>The 96 event flag bits</td></tr>
     <tr><td><code>0xB4</code></td><td>0x140</td><td>Clear history: 40 entries of chapter, part flag, turns and play time in seconds</td></tr>
-    <tr><td><code>0x1F4</code></td><td>0x18</td><td>Map name, <code>bmap02</code> or <code>trial_05</code></td></tr>
+    <tr><td><code>0x1F4</code></td><td>0x18</td><td>Name of the last map loaded, <code>bmap02</code> or <code>trial_05</code>. It changes only when a map loads, so in a base or chapter-start save it names the previous map; the chapter the save loads into is <code>+0x10</code>.</td></tr>
   </tbody></table>
 </div>
 
