@@ -263,7 +263,7 @@ The scope is the **US release of Path of Radiance** unless a regional difference
 203. <span id="fe9-sys-203"></span> **FE9-SYS-203 — Forge stat customization** — Adjusts might, hit in 5-point steps, critical in 3-point steps, and weight within pricing and limit rules.
 204. <span id="fe9-sys-204"></span> **FE9-SYS-204 — Forge appearance customization** — Stores a custom weapon name and RGBA attack-trail color on the forged instance.
 205. <span id="fe9-sys-205"></span> **FE9-SYS-205 — Forge price calculation** — Prices upgrades from base weapon and selected stat changes, charges gold, and records spending.
-206. <span id="fe9-sys-206"></span> **FE9-SYS-206 — Forge-record pool** — Allocates one of 48 persistent forge records and links the inventory instance to that record through six flag bits.
+206. <span id="fe9-sys-206"></span> **FE9-SYS-206 — Forge-record pool** — Allocates one of 48 persistent forge records and links the inventory instance through six flag bits; an unchecked 49th allocation returns zero and overwrites convoy slots 198–200.
 207. <span id="fe9-sys-207"></span> **FE9-SYS-207 — Treasure and reward routing** — Sends scripted, chest, drop, visit, or clear rewards to a unit, convoy, gold/BEXP pool, or discard/full-inventory prompt as appropriate.
 
 ## 13. Bonus EXP, reports, records, and performance systems
