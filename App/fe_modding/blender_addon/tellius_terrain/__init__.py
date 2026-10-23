@@ -270,9 +270,15 @@ class FE9_OT_make_game_mesh(bpy.types.Operator):
             return {"CANCELLED"}
         if context.object and context.object.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-        obj, count = kit.make_game_mesh(context.scene, context.scene.fe9_budget)
-        self.report({"INFO"}, f"{obj.name}: about {count:,} triangles once cut on the swatch repeats "
-                              "(hidden; the import uses it).")
+        budget = context.scene.fe9_budget
+        obj, count = kit.make_game_mesh(context.scene, budget)
+        if count > budget * 1.03:
+            self.report({"WARNING"}, f"{obj.name}: {count:,} triangles once cut on the swatch repeats, over the "
+                                     f"{budget:,} budget: the repeat lines of the painted swatches alone need about "
+                                     "that many. Paint large swatches less widely or raise the budget.")
+        else:
+            self.report({"INFO"}, f"{obj.name}: about {count:,} triangles once cut on the swatch repeats "
+                                  "(hidden; the import uses it).")
         return {"FINISHED"}
 
 

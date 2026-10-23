@@ -746,6 +746,14 @@ def build_static_gs(
             table[key] = len(table)
         return table[key]
 
+    def check_tables() -> None:
+        for table, label in ((positions, "positions"), (normals, "normals"), (uvs, "UVs"), (colors, "colors")):
+            if len(table) > MAX_INDEX + 1:
+                raise GltfImportError(
+                    f"Too many distinct {label} ({len(table):,}); the game indexes them with 16 bits "
+                    f"(at most {MAX_INDEX + 1:,}). Reduce the mesh's triangle count."
+                )
+
     images: list[Image.Image] = []
     materials: list[gs_file.GsMaterial] = []
     meshes: list[gs_file.GsMesh] = []
@@ -790,6 +798,7 @@ def build_static_gs(
             a_, b_, c_ = corner_keys
             game_tris.append((a_, c_, b_))  # glTF counter-clockwise -> game clockwise
 
+        check_tables()
         dl = bytearray()
         for strip in stripify(game_tris):
             if len(strip) > 0xFFFF:
@@ -817,10 +826,6 @@ def build_static_gs(
                 display_list=bytes(dl),
             )
         )
-
-    for table, label in ((positions, "positions"), (normals, "normals"), (uvs, "UVs"), (colors, "colors")):
-        if len(table) > MAX_INDEX + 1:
-            raise GltfImportError(f"Too many distinct {label} ({len(table)}); the game indexes them with 16 bits.")
 
     gs = gs_file.GsFile(
         root_name="unknown",
@@ -1072,6 +1077,14 @@ def build_skinned_gs(
         if key not in table:
             table[key] = len(table)
         return table[key]
+
+    def check_tables() -> None:
+        for table, label in ((positions, "positions"), (normals, "normals"), (uvs, "UVs"), (colors, "colors")):
+            if len(table) > MAX_INDEX + 1:
+                raise GltfImportError(
+                    f"Too many distinct {label} ({len(table):,}); the game indexes them with 16 bits "
+                    f"(at most {MAX_INDEX + 1:,}). Reduce the mesh's triangle count."
+                )
 
     images: list[Image.Image] = []
     materials: list[gs_file.GsMaterial] = []

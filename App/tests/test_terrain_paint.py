@@ -119,6 +119,33 @@ class CompileTests(unittest.TestCase):
         # a cliff layer counts even without paint: it covers steep faces
         self.assertEqual(tp.drawn_swatches(painted + [tp.Layer("Stairs", 4, None, slopes=True)]), [0, 1, 4])
 
+    def test_a_small_swatch_cuts_only_where_it_is_painted(self):
+        # a 32-texel swatch repeats every 5 units; cut everywhere, a whole map
+        # outgrows the game's 16-bit indices (bmap02)
+        tiny = tp.AtlasLayout(512, 1024, layout().swatches + [tp.Swatch("Pebbles", 0, 576, 32, 32)])
+        mesh = grid(160, cell=20.0)
+        base_only = tp.compile_paint(mesh, [tp.Layer("Grass", 0)], tiny)
+        result = tp.compile_paint(mesh, [tp.Layer("Grass", 0), tp.Layer("Pebbles", 4, stripe(40, 60))], tiny)
+        far = result.positions.mean(axis=1)[:, 0] > 80
+        self.assertEqual(int(far.sum()), int((base_only.positions.mean(axis=1)[:, 0] > 80).sum()))
+        self.assertTrue(np.all(result.pairs[far] == (0, 0)))
+        drawn = np.any(result.pairs == 4, axis=1)
+        self.assertGreater(int(drawn.sum()), 0)
+        for axis in (0, 2):
+            coords = result.positions[drawn][:, :, axis]
+            for line in np.arange(0.0, 165.0, 5.0):
+                self.assertFalse(np.any((coords.min(axis=1) < line - 1e-6) & (coords.max(axis=1) > line + 1e-6)))
+        everywhere = tp.compile_paint(mesh, [tp.Layer("Grass", 0), tp.Layer("Pebbles", 4, stripe(0, 640))], tiny)
+        self.assertLess(len(result.positions), len(everywhere.positions) / 2)
+
+    def test_layer_reach_wraps_and_includes_cliff_layers(self):
+        tri = np.array([[[0, 0, 0], [0, 0, 4], [4, 0, 0]], [[300, 0, 300], [300, 0, 304], [304, 0, 300]]], float)
+        corner = np.zeros((64, 64), np.float32)
+        corner[63, 63] = 1.0  # bilinear samples near 0 read the opposite edge
+        layers = [tp.Layer("Grass", 0), tp.Layer("Road", 1, corner), tp.Layer("Rock", 2, None, slopes=True)]
+        reach = tp.layer_reach(tri, layers, np.array([False, True]))
+        self.assertEqual(reach.tolist(), [[True, True, False], [True, False, True]])
+
     def test_three_overlapping_layers_report_conflicts(self):
         mesh = grid(60)
         layers = [

@@ -560,6 +560,21 @@ class WaterKitDataTests(unittest.TestCase):
         self.assertEqual(uncovered, 0)
 
 
+class IndexLimitTests(unittest.TestCase):
+    def test_too_many_vertices_is_a_clear_error(self):
+        # More distinct positions than 16-bit indices reach: an import error, not struct.error.
+        up = ((0.0, 1.0, 0.0),) * 3
+        tris = []
+        for x in range(256):
+            for z in range(0, 258, 3):
+                for y in (0.0, 2.0):
+                    tris.append(gltf_import.ImportedTriangle(
+                        ((x, y, z), (x, y, z + 1), (x + 0.5, y, z)), up, ((0.0, 0.0),) * 3))
+        scene = gltf_import.ImportedScene([gltf_import.ImportedMaterial("ground")], {0: tris})
+        with self.assertRaisesRegex(gltf_import.GltfImportError, "16 bits"):
+            gltf_import.build_static_gs(scene)
+
+
 @unittest.skipUnless(FILES and os.environ.get("FE9_BLENDER"),
                      "set FE9_EXTRACTED_FILES and FE9_BLENDER (blender.exe) to build a real kit")
 class RealBlenderKitTests(unittest.TestCase):
@@ -576,6 +591,53 @@ class RealBlenderKitTests(unittest.TestCase):
         self.assertGreater(len(converted.glb), 1000)
         self.assertGreaterEqual(len(converted.paint.layers), 2)
         self.assertEqual(converted.paint.extra["map"], "bmap01")
+
+    def test_bmap02_kit_cuts_within_budget_and_imports(self):
+        # bmap02 paints a 32-texel swatch (a 5-unit repeat); cut on its lines
+        # over the whole map the game mesh outgrew the 16-bit indices.
+        import subprocess
+
+        from fe_modding.gui import model_viewer as mv
+
+        exe = os.environ["FE9_BLENDER"]
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder)
+            container = work / "zmap" / "bmap02" / "map.cmp"
+            container.parent.mkdir(parents=True)
+            shutil.copy(Path(FILES) / "zmap" / "bmap02" / "map.cmp", container)
+            kit = work / "kit.blend"
+            mv.export_terrain_kit(container, kit, (), exe, None, 4.0)
+            budget = int(terrain_kit.read_terrain(container).triangles)
+            blender.stage_addon(work / "addon")
+            script = work / "make_game_mesh.py"
+            script.write_text(
+                "import sys\n"
+                "addon, kit_path, budget = sys.argv[sys.argv.index('--') + 1:]\n"
+                "sys.path.insert(0, addon)\n"
+                "import bpy\n"
+                "from tellius_terrain import kit, register\n"
+                "register()\n"
+                "bpy.ops.wm.open_mainfile(filepath=kit_path)\n"
+                "_obj, count = kit.make_game_mesh(bpy.context.scene, int(budget))\n"
+                "print('FE9_CUT_COUNT', count)\n"
+                "bpy.ops.wm.save_mainfile(filepath=kit_path)\n",
+                encoding="utf-8",
+            )
+            run = subprocess.run(
+                [exe, "--background", "--factory-startup", "--python-exit-code", "1", "--python", str(script),
+                 "--", str(work / "addon"), str(kit), str(budget)],
+                capture_output=True, text=True, check=True,
+            )
+            count = int(next(line.split()[1] for line in run.stdout.splitlines()
+                             if line.startswith("FE9_CUT_COUNT")))
+            self.assertLessEqual(count, budget * 1.03)
+            converted = blender.blend_terrain_for_import(kit, "bmap02", exe)
+            glb = work / "terrain.glb"
+            glb.write_bytes(converted.glb)
+            result = mv.replace_map_terrain_with_glb(container, glb, True, True, True, None, False,
+                                                     paint=converted.paint, light=converted.paint.light)
+        self.assertEqual(list(result.outputs), [container])
+        self.assertTrue(any("Painted texturing" in w for w in result.warnings))
 
     def test_kit_carries_the_water_and_its_waves(self):
         import json
