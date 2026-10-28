@@ -85,6 +85,8 @@ Colour variants, the weapon triangle and the biorhythm table are still per game 
 - **Game Code**: Radiant Dawn's groups carry Path of Radiance's names (Combat rules, Skill activation, Level-up growth, ...) and `CATALOG.groups_for` lists both games' groups in one order. The Skill activation grid is built from `PROC_ROWS` (one tuple per skill in `entries.py` and `entries_fe10.py`) and the Level-up growth grid from the `growth.<mode>.<n>` / `rd.growth.<mode>.<n>` tunables the build has, so Radiant Dawn gets the same grids (random mode only: it has no fixed growth). `RD_GROUP_NOTES` holds the notes whose wording differs.
 - **Saves**: Radiant Dawn's save codec reads ITBL, the save's own name tables (`SaveRecord.id_tables`, `id_of`): the Convoy tab names items through it, and shows a forged item's name. Units and flags are not decoded yet (`research/rd/SAVE_NOTES.md`), so the page keeps its Overview, Convoy, Sections and Raw tabs.
 
+None of the parity work has been tried in game yet; [docs/app/parity-test-plan.md](docs/app/parity-test-plan.md) lists the Dolphin checks for both games.
+
 ## Chapter dialogue, scenery and forge controls
 
 In Path of Radiance's Dialogue tab, the layout picker shows English names. The editor converts the chosen name back to the game's layout ID when saving; a raw ID can still be entered for an unknown layout. The compact layout and background dropdowns on the two toolbar rows update their matching actions in the message; a missing action is added at the start. **Search…** opens a visual background picker. The step form and preview's initial context offer the same background choices. The Actions menu is one searchable list.
