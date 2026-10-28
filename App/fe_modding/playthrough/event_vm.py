@@ -234,8 +234,16 @@ class VM:
             args = stack[len(stack) - count:] if count else []
             del stack[len(stack) - count:]
             self.state.emit("script", "printf " + " ".join(str(a) for a in args))
-        elif name in ("nop", "nop4", "yield"):
+        elif name == "yield":  # the script waits one frame
+            self.state.frame += 1
+        elif name in ("nop", "nop4"):
             pass
+        elif name in ("inc", "dec"):  # RFEE01: pop an address, add or subtract 1 there, push nothing
+            addr = stack.pop()
+            self.write(addr, _s32(_num(self.read(addr)) + (1 if name == "inc" else -1)))
+        elif name == "assign":  # RFEE01: pop a value and an address, store, push nothing
+            value, addr = stack.pop(), stack.pop()
+            self.write(addr, value)
         elif name in ("ret0", "ret1"):
             return self._return(int(name == "ret1"))
         elif name == "dup":

@@ -312,8 +312,8 @@ def _combat(world: World, state: GameState, task: Combat) -> Step:
                 if item[2] and killer.faction == PLAYER and len(killer.items) < 8:
                     killer.items.append([item[0], item[1], False])
                     state.emit("action", f"{world.name(killer.pid)} gets {world.item_name(item[0])}")
-            after += [TriggerCheck(11, {"pid": unit.pid, "me": unit.uid}),
-                      TriggerCheck(10, {"pid": unit.pid, "me": unit.uid})]
+            after += [TriggerCheck(11, {"pid": unit.pid, "me": unit.uid, "die": unit.uid}),
+                      TriggerCheck(10, {"pid": unit.pid, "me": unit.uid, "die": unit.uid})]
     state.push_front(*after)
     return Step("battle", "Battle", task_done=True)
 
