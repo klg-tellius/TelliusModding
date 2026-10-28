@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from ..formats import fe8data, fe10data, item_rules
+from ..game_adapter import PorDataAdapter, RdDataAdapter
 from ..game_profile import DATA_TABLES, GAME_DATA, disc_root_of, sys_root_of
 from ..game_code.dol import Dol
 from ..game_code import item_restrictions as rule_code, versions
@@ -36,6 +37,8 @@ class Fe8DataSession:
         self._listeners: list[Callable[[object], None]] = []
         #: run after every save (the workspace re-indexes: records may have been added or removed)
         self.on_saved: list[Callable[[], None]] = []
+        #: the per-game table operations the shared pages use (game_adapter.py)
+        self.adapter = PorDataAdapter(self)
         self.load()
 
     @property
@@ -148,6 +151,7 @@ class Fe10DataSession:
         self.dirty = False
         self._listeners: list[Callable[[object], None]] = []
         self.on_saved: list[Callable[[], None]] = []
+        self.adapter = RdDataAdapter(self)
         self.load()
 
     @property

@@ -19,7 +19,7 @@ from ...formats import event_flags as ef
 from ...formats import extended_flags as xf
 from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
-from ...games import Game
+from ...game_profile import SAVE_UNITS
 from .. import theme
 from ..shell import Page
 from ..widgets import ScrollFrame, info, section_header
@@ -182,7 +182,7 @@ class SaveEditorPage(Page):
     def __init__(self, shell):
         super().__init__(shell)
         self._rd_editor = None
-        if self.project.game is Game.RADIANT_DAWN:
+        if not self.project.profile.supports(SAVE_UNITS):
             from .saves_fe10 import Fe10SaveEditor
 
             self._rd_editor = Fe10SaveEditor(self, shell)

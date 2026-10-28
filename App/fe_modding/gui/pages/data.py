@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import AI, DATA_TABLES, GAME_DATA, SCRIPTS, files_root_of
+from ...game_profile import AI, DATA_WORKSPACE, SCRIPTS, files_root_of
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
@@ -53,7 +53,8 @@ class GameDataPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
-        self._fe10 = not self.project.profile.supports(GAME_DATA) and self.project.profile.supports(DATA_TABLES)
+        # one table editor per game until Game Data converges on the tabbed workspace (parity plan, Phase 6)
+        self._fe10 = not self.project.profile.supports(DATA_WORKSPACE)
         self._hub = None
         self._supports = None
         self._flags = None

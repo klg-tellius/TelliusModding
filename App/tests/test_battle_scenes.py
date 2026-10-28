@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from fe_modding.formats.fe8data import BattleTerrainRow
+from fe_modding import game_adapter
 from fe_modding.gui import battle_scene_editor as bse
 
 ROWS = [BattleTerrainRow("Map6", ["map01_woods", "map01_plain"]),
@@ -104,7 +105,7 @@ class Fe10BattleSceneTests(unittest.TestCase):
                                        changed=lambda source: None)
         self.log = []
         self.panel = _fe10_panel(self.session, self.log)
-        self.names = mock.patch.object(bse.fe10data, "battle_scenery_names", return_value=["bgA", "bgB"])
+        self.names = mock.patch.object(game_adapter.fe10data, "battle_scenery_names", return_value=["bgA", "bgB"])
         self.names.start()
 
     def tearDown(self):
@@ -122,7 +123,7 @@ class Fe10BattleSceneTests(unittest.TestCase):
             calls.append((index, terrain, scenery))
             return data + b"!"
 
-        with mock.patch.object(bse.fe10data, "set_battle_scenery", side_effect=set_scenery):
+        with mock.patch.object(game_adapter.fe10data, "set_battle_scenery", side_effect=set_scenery):
             bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", [None, "bgA", "bgA"])], "edit")
         self.assertEqual(calls, [(0, 0, 0xFFFF), (0, 1, 0)])
         self.assertEqual(self.session.data, b"data!!")

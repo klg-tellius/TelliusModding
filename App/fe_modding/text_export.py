@@ -37,9 +37,7 @@ import json
 import shutil
 from pathlib import Path
 from typing import Callable, Optional
-from .game_profile import files_root_of
-
-from .games import Game
+from .game_profile import files_root_of, profile_of
 
 SKIP_KEYS = {"offset", "address"}
 MARKER = ".tellius_text_export"
@@ -156,7 +154,7 @@ def _messages(project, out: Path) -> list[Path]:
     from .formats import fe10_message, game_text, message
 
     files = files_root_of(project)
-    fe10 = project.game == Game.RADIANT_DAWN
+    fe10 = profile_of(project).message_dialect == "fe10"
 
     def readable(text: str) -> str:  # message.py reads bytes as cp437; show the game's own characters
         return game_text.decode(text.encode(message.ENCODING))
@@ -175,7 +173,7 @@ def _scripts(project, out: Path) -> list[Path]:
     from .formats.cmb import decompile, read_cmb_path
 
     files = files_root_of(project)
-    extension = ".fe10s" if project.game == Game.RADIANT_DAWN else ".fe9s"
+    extension = f".{profile_of(project).script_dialect}s"
     written = []
     for path in sorted((files / "Scripts").glob("*.cmb")):
         source = decompile(read_cmb_path(path))
@@ -217,28 +215,23 @@ def _zdbx(project, out: Path) -> list[Path]:
     return written
 
 
-PARTS: tuple[tuple[str, str], ...] = (
-    ("FE8Data", "Characters, classes, items, skills, chapters and the other FE8Data tables"),
-    ("deployments", "Deployments of every chapter map"),
-    ("shops", "Shops"),
-    ("messages", "Messages"),
-    ("scripts", "Event scripts (decompiled)"),
-    ("sound", "Music and sound-effect cues"),
-    ("faces", "Face table"),
-    ("zdbx", "Battle-engine DBX tables"),
-)
-
-FE10_PARTS: tuple[tuple[str, str], ...] = (
-    ("FE10Data", "Characters, classes, items, skills and the other FE10Data tables"),
-    ("FE10Growth", "Character level-stat tables"),
-    ("messages", "Messages"),
-    ("scripts", "Event scripts (decompiled)"),
-)
+PART_LABELS: dict[str, str] = {
+    "FE8Data": "Characters, classes, items, skills, chapters and the other FE8Data tables",
+    "FE10Data": "Characters, classes, items, skills and the other FE10Data tables",
+    "FE10Growth": "Character level-stat tables",
+    "deployments": "Deployments of every chapter map",
+    "shops": "Shops",
+    "messages": "Messages",
+    "scripts": "Event scripts (decompiled)",
+    "sound": "Music and sound-effect cues",
+    "faces": "Face table",
+    "zdbx": "Battle-engine DBX tables",
+}
 
 
 def parts_for(project) -> tuple[tuple[str, str], ...]:
-    """The semantic exports implemented for the project's game."""
-    return FE10_PARTS if project.game == Game.RADIANT_DAWN else PARTS
+    """The semantic exports implemented for the project's game, as ``(name, label)``."""
+    return tuple((name, PART_LABELS[name]) for name in profile_of(project).text_export_parts)
 
 
 def export_project(project, dest: Path, parts: Optional[set[str]] = None,
