@@ -32,6 +32,7 @@ from ... import chapter_phase_ops, chapters, hub, hub_creation, script_sources
 from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
 from ...game_code import chapter_flow, chapter_jump, chapter_parts
+from ...game_code.rd_story import chapter_record_id
 from ...formats.cmb.catalog import TRIGGERS
 from ...game_profile import CHAPTERS, disc_root_of, profile_of
 from ...project_index import difficulty_name
@@ -1207,7 +1208,7 @@ class ChapterPage(Page):
             ttk.Label(body, text=f"The story flow can't be edited: {why}", style="Muted.TLabel").pack(anchor="w")
             ttk.Frame(body, style="Page.TFrame", height=20).pack()
             return
-        canonical = "CFINAL" if self._chapter == "final" else "C" + self._chapter.upper()
+        canonical = chapter_record_id(self._chapter)
         inverse = {cid: number for number, cid in story.chapter_ids.items()}
         chapter = inverse.get(canonical)
         if chapter is None:

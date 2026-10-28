@@ -349,6 +349,12 @@ def chapter_number_map(fe10data_bytes: bytes) -> dict[int, str]:
             if record.values["cid"] and not record.values["cid"].startswith("T")}
 
 
+def chapter_record_id(chapter_id: str) -> str:
+    """ChapterData ID of a chapter page's id: ``0101`` -> ``C0101``, ``0407e`` -> ``C0407e`` (the suffix
+    stays lower case), ``final`` -> ``CFINAL``."""
+    return "CFINAL" if chapter_id.lower() == "final" else "C" + chapter_id
+
+
 def retail_next(chapter: int) -> int | None:
     """Retail's visible successor after attached hidden Part 4 transition records."""
     if chapter in (32, 35, 38, 41, 44, 47):

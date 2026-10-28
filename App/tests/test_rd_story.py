@@ -28,6 +28,13 @@ class RetailSequenceTests(unittest.TestCase):
         self.assertEqual(armies[50], rd_story.Army.MAIN)
 
 
+class ChapterRecordIdTests(unittest.TestCase):
+    def test_chapter_page_ids_name_their_chapter_data_records(self):
+        self.assertEqual(rd_story.chapter_record_id("0101"), "C0101")
+        self.assertEqual(rd_story.chapter_record_id("0407e"), "C0407e")  # the suffix stays lower case
+        self.assertEqual(rd_story.chapter_record_id("final"), "CFINAL")
+
+
 class ValidationTests(unittest.TestCase):
     def setUp(self):
         self.story = object.__new__(rd_story.StorySequence)
