@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import tools
+from .game_files import GameFiles, LegacyFiles
 from .formats import gcdisc, lz10, pak
 from .exceptions import ProjectError
 from .game_profile import GameProfile, game_for_disc_id
@@ -73,6 +74,7 @@ class ModProject:
     version: str = ""
     credits: str = ""  # free text: who made or allowed what; goes into patches
     last_build_warning: Optional[str] = field(default=None, repr=False, compare=False)
+    _files: Optional[GameFiles] = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def project_file(self) -> Path:
@@ -86,6 +88,13 @@ class ModProject:
     def profile(self) -> GameProfile:
         """Where this game keeps its files and which features the app has for it."""
         return game_profile(self.game)
+
+    @property
+    def files(self) -> GameFiles:
+        """The project's game files: every read and write of a disc file goes through this."""
+        if self._files is None:
+            self._files = LegacyFiles(self.extracted_dir, self.originals_dir)
+        return self._files
 
     @property
     def files_dir(self) -> Path:
@@ -146,63 +155,34 @@ class ModProject:
         overwrote them, at the same relative paths (created on demand)."""
         return self.directory / ORIGINALS_DIR
 
-    def _original_of(self, path: Path) -> Optional[Path]:
-        try:
-            relative = Path(path).resolve().relative_to(self.extracted_dir.resolve())
-        except ValueError:
-            return None
-        return self.originals_dir / relative
+    def _extracted_path(self, relative: str) -> Path:
+        return self.extracted_dir / relative
 
     def write_keeping_original(self, path: Path | str, data: bytes) -> None:
-        """Write ``data`` to ``path`` (a file under ``extracted/``), first
-        copying the current file to :attr:`originals_dir` unless a copy is
-        already there - so the copy stays the file as extracted however
-        many times it is replaced."""
-        path = Path(path)
-        original = self._original_of(path)
-        if original is not None and path.is_file() and not original.exists():
-            original.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, original)
-        path.write_bytes(data)
+        """Write ``data`` to ``path`` (a file under ``extracted/``) through :attr:`files`, which
+        keeps the file as extracted however many times it is replaced."""
+        self.files.write(Path(path), data)
 
     def extracted_bytes(self, path: Path | str) -> Optional[bytes]:
-        """``path`` (under ``extracted/``) as extracted: its kept original when an edit replaced
-        it, else the file itself; None when neither exists."""
-        path = Path(path)
-        original = self._original_of(path)
-        for candidate in (original, path):
-            if candidate is not None and candidate.is_file():
-                return candidate.read_bytes()
-        return None
+        """``path`` (under ``extracted/``) as extracted; None when the disc had no such file."""
+        files = self.files
+        return files.vanilla(Path(path))
 
     def is_added_file(self, path: Path | str) -> Optional[bool]:
-        """Whether ``path`` (a file under ``files/``) is one the mod added, absent
-        from the source disc's file table (the extracted ``sys/fst.bin``, which a
-        build never rewrites); None when that table isn't there."""
-        fst = self.files_dir.parent / "sys" / "fst.bin"
-        try:
-            relative = Path(path).resolve().relative_to(self.files_dir.resolve()).as_posix()
-            disc = set(gcdisc.read_fst_paths(fst.read_bytes()))
-        except (OSError, ValueError):
-            return None
-        return relative not in disc if disc else None
+        """Whether ``path`` (a file under ``files/``) is one the mod added, absent from the source
+        disc; None when that cannot be told."""
+        return self.files.is_added(Path(path))
 
     def originals_in(self, folder: Path | str) -> list[Path]:
-        """The extracted files directly in ``folder`` that have a kept
-        original (their paths under ``extracted/``)."""
-        original_folder = self._original_of(Path(folder))
-        if original_folder is None or not original_folder.is_dir():
-            return []
-        return [Path(folder) / p.name for p in sorted(original_folder.iterdir()) if p.is_file()]
+        """The extracted files directly in ``folder`` that the mod replaced (their paths under
+        ``extracted/``)."""
+        files = self.files
+        return [self._extracted_path(rel) for rel in files.modified_in(Path(folder))]
 
     def restore_original(self, path: Path | str) -> None:
-        """Put the kept original of ``path`` back and drop the copy."""
-        path = Path(path)
-        original = self._original_of(path)
-        if original is None or not original.is_file():
+        """Put the file as extracted back."""
+        if not self.files.revert(Path(path)):
             raise ProjectError(f"No kept original for {path}.")
-        shutil.copy2(original, path)
-        original.unlink()
 
     @property
     def has_extracted_files(self) -> bool:
