@@ -26,7 +26,7 @@ from typing import Callable, Optional
 from ..exceptions import ModdingError, ProjectError
 from ..project import ModProject, sanitize_folder_name
 from ..project_index import ProjectIndex
-from .. import emulator, patch
+from .. import config, emulator, patch
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -537,6 +537,58 @@ class Shell(ttk.Frame):
             return
         self.run_task(f"Extracting {project.source_iso} …", project.extract,
                       lambda _r: self._on_extracted())
+
+    # -- layout conversion -------------------------------------------------------------------------
+    LAYOUT_OFFER_DECLINED = "layout_offer_declined"
+
+    def offer_layout_conversion(self) -> None:
+        """Once per project (until accepted): offer to move a layout-1 project to shared vanilla
+        files with only the mod's files in the project."""
+        project = self.project
+        if project.is_overlay or not self.extracted:
+            return
+        declined = config.load_setting(self.LAYOUT_OFFER_DECLINED, []) or []
+        if str(project.directory) in declined:
+            return
+        if messagebox.askyesno(
+                "Share the vanilla files?",
+                "This project keeps a whole copy of the game's files. It can keep only the files the "
+                "mod changes instead, and read the rest from one vanilla copy shared by every project "
+                "of this disc (the edits stay as they are; the old folders are kept until you delete "
+                "them).\n\nConvert the project now? You can also do it later from Disc & Patch.",
+                parent=self):
+            self.convert_layout()
+        else:
+            config.save_setting(self.LAYOUT_OFFER_DECLINED, [*declined, str(project.directory)])
+
+    def convert_layout(self) -> None:
+        if self.project.is_overlay or self._task_running:
+            return
+        if not self.confirm_unsaved(" and won't be converted", "convert without them."):
+            return
+        from .. import layout_migration
+        project = self.project
+        self.run_task("Converting the project to shared vanilla files …",
+                      lambda: layout_migration.convert(project, progress=lambda text: None),
+                      self._on_converted)
+
+    def _on_converted(self, plan) -> None:
+        self.index = None
+        self.refresh_extracted_state()
+        self._refresh_home()
+        lines = [plan.describe(), *plan.warnings,
+                 "The old extracted/ and originals/ folders are in .layout1-backup; delete them from "
+                 "Disc & Patch once the project builds and plays."]
+        messagebox.showinfo("Project converted", "\n\n".join(lines), parent=self)
+
+    def delete_layout_backup(self) -> None:
+        from .. import layout_migration
+        if not layout_migration.has_backup(self.project):
+            return
+        if messagebox.askyesno("Delete the old copy?", "Delete .layout1-backup (the project's files from "
+                               "before the conversion)? This cannot be undone.", icon="warning", parent=self):
+            layout_migration.delete_backup(self.project)
+            self._refresh_home()
 
     def use_input_folder(self) -> None:
         """Layout 2: read the vanilla files from a folder the user already extracted."""

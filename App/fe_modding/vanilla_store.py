@@ -233,24 +233,34 @@ def ensure_store(disc_image: Path | str, *, wii: bool,
     root = store_root()
     root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".extract-", dir=root) as temporary:
-        entry = Path(temporary) / "entry"
-        tree = entry / "disc"
+        tree = Path(temporary) / "disc"
         tools.extract_disc(disc_image, tree, overwrite=True, wii=wii)
-        key = store_key(tree)
-        existing = get_store(key)
-        if existing is not None and not existing.verify():
-            return existing
-        check_tree(tree, wii=wii)
-        manifest = describe_tree(tree, progress)
-        _set_read_only(tree, True)
-        _refresh_times(tree, manifest)
-        write_atomic(entry / MANIFEST, (json.dumps(manifest, indent=1) + "\n").encode("utf-8"))
-        final = root / key
-        if final.exists():
-            delete_store_files(final)
-        os.replace(entry, final)
+        return register_tree(tree, wii=wii, source_image=disc_image, progress=progress)
+
+
+def register_tree(tree: Path, *, wii: bool, source_image: Optional[Path] = None,
+                  progress: Optional[Callable[[int, int], None]] = None) -> VanillaStore:
+    """Make the complete extracted disc ``tree`` (a folder inside the store root, which it is
+    moved out of) a store, unless one for that disc exists and is intact already."""
+    root = store_root()
+    key = store_key(tree)
+    existing = get_store(key)
+    if existing is not None and not existing.verify():
+        return existing
+    check_tree(tree, wii=wii)
+    manifest = describe_tree(tree, progress)
+    _set_read_only(tree, True)
+    _refresh_times(tree, manifest)
+    entry = tree.parent / f".entry-{key}"
+    entry.mkdir()
+    os.replace(tree, entry / "disc")
+    write_atomic(entry / MANIFEST, (json.dumps(manifest, indent=1) + "\n").encode("utf-8"))
+    final = root / key
+    if final.exists():
+        delete_store_files(final)
+    os.replace(entry, final)
     store = VanillaStore(key=key, root=final / "disc", disc_id=manifest["disc_id"], revision=manifest["revision"],
-                         adopted=False, source_image=str(disc_image))
+                         adopted=False, source_image=str(source_image) if source_image is not None else None)
     _register(store)
     return store
 
