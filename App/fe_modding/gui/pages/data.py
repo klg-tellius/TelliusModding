@@ -16,10 +16,12 @@ page), edits the affinity bonus table and the support conversations
 
 from __future__ import annotations
 
+import tkinter as tk
 from tkinter import ttk
 
 from ...game_profile import AI, DATA_WORKSPACE, SCRIPTS, files_root_of
 from .flags import FlagsPanel
+from ..battle_scene_editor import BattleScenePanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
 from ..fe10_data_editor import TAB_KEYS as FE10_TAB_KEYS, TAB_TITLES as FE10_TAB_TITLES, Fe10DataEditor
@@ -30,7 +32,7 @@ from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
-        "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}
+        "battle_scenery": "Battle scenery", "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}
 #: key -> (icon, description) of the hub tiles.
 TILES = {
     "classes": ("♞", "Stats, weapon ranks, innate skills, movement and build"),
@@ -38,13 +40,15 @@ TILES = {
     "skills": ("✦", "Parameters, icon and who can have each skill"),
     "terrain": ("▦", "Movement cost per movement type, bonuses, healing"),
     "chapters": ("⚑", "Files, objectives per difficulty, music, scenes, enemy levels"),
+    "battle_scenery": ("⛰", "Battle background per map and terrain type"),
     "general": ("≡", "Difficulty constants, army groups, battle skies"),
     "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
     "flags": ("⚐", "The 96 named script flags: campaign and chapter"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
         "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
-SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "chapters", "general", "supports")),
+SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "chapters", "battle_scenery", "general",
+                            "supports")),
             ("Scripts and AI", ("flags", "ai")),
             ("Images", ("rect_images",)))
 
@@ -60,6 +64,8 @@ class GameDataPage(Page):
         self._supports = None
         self._flags = None
         self._rect_images = None
+        self._group_strip = None
+        self._scenery = None
         if self._fe10:
             self._editor = Fe10DataEditor(self, self.project, shell.changelog, session=shell.session,
                                           navigate=shell.navigate, toolbar_parent=self)
@@ -90,6 +96,9 @@ class GameDataPage(Page):
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])
             session.subscribe(self._on_session_changed)
+        self._scenery = self._build_scenery(self._editor._notebook) if session.available else None
+        if self._scenery is not None:
+            self._editor._notebook.add(self._scenery, text=TABS["battle_scenery"])
         self._flags = FlagsPanel(self._editor._notebook, shell)
         self._editor._notebook.add(self._flags, text=TABS["flags"])
         self._ai = CpDataPanel(self._editor._notebook, self.project, shell.changelog,
@@ -97,6 +106,25 @@ class GameDataPage(Page):
         self._editor._notebook.add(self._ai, text=TABS["ai"])
         self._rect_images = RectImagesPanel(self._editor._notebook, self.project, shell.changelog, shell)
         self._editor._notebook.add(self._rect_images, text=TABS["rect_images"])
+
+    def _build_scenery(self, parent) -> ttk.Frame:
+        """Battle scenery: the chapter page's Battle scenes panel, with a picker for the map."""
+        frame = ttk.Frame(parent, style="Page.TFrame")
+        bar = ttk.Frame(frame, style="Page.TFrame", padding=(16, 8, 16, 0))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Map").pack(side="left")
+        maps = sorted({row.map_name for row in self.shell.session.adapter.battle_scenery_rows() if row.map_name})
+        var = tk.StringVar(value=maps[0] if maps else "")
+        box = ttk.Combobox(bar, textvariable=var, values=maps, width=24)
+        box.pack(side="left", padx=(8, 0))
+        ttk.Label(bar, text="Each chapter's Battle scenes tab shows the same row for its own map; type a map "
+                            "folder to give it a row.", style="Muted.TLabel").pack(side="left", padx=(12, 0))
+        panel = BattleScenePanel(frame, self.project, self.shell.changelog, session_provider=lambda: self.shell.session)
+        panel.pack(fill="both", expand=True)
+        box.bind("<<ComboboxSelected>>", lambda e: panel.select_map(var.get().strip() or None))
+        box.bind("<Return>", lambda e: panel.select_map(var.get().strip() or None))
+        panel.select_map(var.get() or None)
+        return frame
 
     def _build_hub(self) -> ScrollFrame:
         scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
@@ -111,18 +139,20 @@ class GameDataPage(Page):
         if not self.shell.session.available:
             ttk.Label(scroll.body, text=self.shell.session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
         if self._fe10:
-            for title, keys in FE10_SECTIONS:
+            def tiles(title, keys):
                 section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
                 grid = CardGrid(scroll.body, card_width=280)
                 grid.pack(fill="x")
                 for key in keys:
                     icon, description = FE10_TILES[key]
-                    label = "Rect RIDs" if key == "rect_images" else FE10_TAB_TITLES[key]
-                    grid.add(key, Card(grid, title=label, subtitle=description, icon=icon, width=280,
+                    grid.add(key, Card(grid, title=self._fe10_title(("data", key)), subtitle=description,
+                                       icon=icon, width=280,
                                        on_click=lambda k=key: self.shell.navigate((self.kind, k))))
                 grid.done()
+
+            tiles(data_file, FE10_DATA_TILES)
             if self.project.profile.supports(SCRIPTS):
-                section_header(scroll.body, "Scripts").pack(anchor="w", pady=(12, 8))
+                section_header(scroll.body, "Scripts and AI").pack(anchor="w", pady=(12, 8))
                 grid = CardGrid(scroll.body, card_width=280)
                 grid.pack(fill="x")
                 grid.add("flags", Card(grid, title=TABS["flags"], icon="⚐", width=280,
@@ -134,6 +164,7 @@ class GameDataPage(Page):
                                         subtitle=description,
                                         on_click=lambda: self.shell.navigate((self.kind, "ai"))))
                 grid.done()
+            tiles("Images", ("rect_images",))
             return scroll
         available = self._tab_widgets()
         for title, keys in SECTIONS:
@@ -223,6 +254,8 @@ class GameDataPage(Page):
         widgets = {key: tabs[i] for i, key in enumerate(TAB_KEYS) if i < len(tabs)}
         if self._supports is not None:
             widgets["supports"] = self._supports
+        if self._scenery is not None:
+            widgets["battle_scenery"] = self._scenery
         widgets["flags"] = self._flags
         widgets["ai"] = self._ai
         widgets["rect_images"] = self._rect_images
@@ -236,7 +269,7 @@ class GameDataPage(Page):
             return True
         self._show_hub(False)
         tab = self._tab = route[1]
-        if tab in ("supports", "flags", "ai", "rect_images"):
+        if tab in ("supports", "battle_scenery", "flags", "ai", "rect_images"):
             widget = self._tab_widgets().get(tab)
             if widget is not None:
                 self._editor._notebook.select(widget)
@@ -259,6 +292,7 @@ class GameDataPage(Page):
 
     def _show_fe10(self, route) -> bool:
         """Present FE10 tables through this shared page; only the form adapter differs."""
+        self._show_group_strip("")
         if len(route) > 1 and route[1] == "rect_images":
             if self._rect_images is None:
                 self._rect_images = RectImagesPanel(self, self.project, self.shell.changelog, self.shell)
@@ -288,12 +322,14 @@ class GameDataPage(Page):
             return True
         if self._flags is not None:
             self._flags.pack_forget()
-        if len(route) < 2 or route[1] not in FE10_PAGE_TABS:
+        if len(route) < 2 or (route[1] not in FE10_PAGE_TABS and route[1] not in FE10_GROUPS):
             self._show_hub(True)
             return True
+        tab = FE10_GROUPS[route[1]][0] if route[1] in FE10_GROUPS else route[1]
         self._show_hub(False)
+        self._show_group_strip(tab)
         self._editor.pack(fill="both", expand=True)
-        self._editor.select_tab(route[1])
+        self._editor.select_tab(tab)
         if len(route) > 2 and route[2]:
             self._editor.select_record(str(route[2]))
         else:
@@ -325,9 +361,25 @@ class GameDataPage(Page):
 
     @staticmethod
     def _fe10_title(route):
-        if len(route) > 1 and route[1] in ("flags", "ai", "rect_images"):
+        if len(route) > 1 and route[1] in ("flags", "ai", "rect_images", "general"):
             return TABS[route[1]]
         return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
+
+    def _show_group_strip(self, tab: str) -> None:
+        """The General and Supports tiles hold several tables: a strip above the editor switches
+        between them (Path of Radiance shows the same tables as sections of one tab)."""
+        if self._group_strip is not None:
+            self._group_strip.destroy()
+            self._group_strip = None
+        group = next((g for g, tabs in FE10_GROUPS.items() if tab in tabs), None)
+        if group is None:
+            return
+        self._group_strip = ttk.Frame(self, style="Page.TFrame", padding=(8, 4, 8, 0))
+        self._group_strip.pack(fill="x", before=self._editor)
+        for key in FE10_GROUPS[group]:
+            ttk.Button(self._group_strip, text=FE10_TAB_TITLES[key],
+                       style="Accent.TButton" if key == tab else "TButton",
+                       command=lambda k=key: self.shell.navigate((self.kind, k))).pack(side="left", padx=(0, 6))
 
 
 FE10_TILES = {
@@ -337,7 +389,8 @@ FE10_TILES = {
     "skills": ("✦", "Capacity, icon, effects and who can or cannot have each skill"),
     "chapters": ("⚑", "Files, objectives per difficulty, scenes, weather, lord"),
     "terrain": ("▦", "Bonuses, healing, step effects and movement costs per type"),
-    "supports": ("♥", "Support speed between every pair of characters"),
+    "supports": ("♥", "Support speeds, bonds, affinity bonuses and affinity pairs"),
+    "general": ("≡", "Difficulty constants and army groups"),
     "bonds": ("∞", "Bond pairs and their bonus"),
     "affinities": ("☯", "Attack, defense, hit and avoid per affinity"),
     "affinity_pairs": ("⚭", "Values between two affinities"),
@@ -349,11 +402,10 @@ FE10_TILES = {
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
     "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
-FE10_SECTIONS = (("Units and items", ("classes", "items", "skills", "growth")),
-                 ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
-                 ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
-                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm")),
-                 ("Images", ("rect_images",)))
+#: Radiant Dawn's tiles, in Path of Radiance's order; General and Supports each hold several tables.
+FE10_DATA_TILES = ("classes", "items", "skills", "growth", "terrain", "chapters", "battle_scenery", "general",
+                   "supports", "triangle", "biorhythm")
+FE10_GROUPS = {"general": ("difficulty", "groups"), "supports": ("supports", "bonds", "affinities", "affinity_pairs")}
 FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
 
 

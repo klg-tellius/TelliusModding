@@ -280,26 +280,13 @@ class CharacterForm(ttk.Frame):
         self._vars["weapon_ranks"] = _Ranks()
 
     def _open_map_model(self, aid: str) -> None:
-        from ..formats import anim_registry
-        from ..game_profile import PATH_OF_RADIANCE_PROFILE
-
         aid = aid.strip()
         if not aid:
             fe8 = self._session.fe8
             c = fe8.characters[self._index]
             cls = next((k for k in fe8.classes if k.jid == c.jid), None)
             aid = cls.aid if cls is not None and cls.aid else ""
-        try:
-            records = anim_registry.read_anim_registry_path(
-                PATH_OF_RADIANCE_PROFILE.path(files_root_of(self._project), "anim_data"))
-        except Exception:  # noqa: BLE001
-            records = []
-        folder = next((r.class_folder.rstrip("/") for r in records if r.base_aid == aid), None)
-        if folder is None:
-            messagebox.showinfo("Map model", f"No map model folder is registered for {aid or 'this AID'}.",
-                                parent=self)
-            return
-        self._navigate(("asset", "models", f"ymu/{folder}"))
+        open_map_model(self, self._project, self._navigate, aid)
 
     def _entry(self, parent, row: int, column: int, field: str, value, width: int) -> None:
         var = tk.StringVar(value=str(value))
@@ -384,3 +371,18 @@ class CharacterForm(ttk.Frame):
         self._save_button.configure(state="normal" if dirty else "disabled")
         self._status.configure(text="Unsaved changes in FE8Data.bin" if dirty else "",
                                style="Warn.TLabel" if dirty else "Muted.TLabel")
+
+
+def open_map_model(parent: tk.Misc, project, navigate: Callable[[tuple], None], aid: str) -> None:
+    """Open the map model of animation set ``aid`` in Assets › 3D Models, on either game."""
+    from .. import model_slots
+
+    try:
+        records = model_slots.map_model_records(project)
+    except Exception:  # noqa: BLE001 - the registry is missing or unreadable
+        records = []
+    folder = next((r.class_folder.rstrip("/") for r in records if r.base_aid == aid), None)
+    if folder is None:
+        messagebox.showinfo("Map model", f"No map model folder is registered for {aid or 'this AID'}.", parent=parent)
+        return
+    navigate(("asset", "models", f"ymu/{folder}"))

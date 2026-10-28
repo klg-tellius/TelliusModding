@@ -15,27 +15,35 @@ from ...exceptions import ModdingError
 from ...game_code.catalog import CATALOG, Patch, Session, State, Tunable
 from ...game_code.dol import Dol
 from ...game_code.editor import CodeEditor
-from ...game_code.entries import G_BATTLE, G_GROWTH, G_PROCS, PROCS, SCALE_DENOMINATOR, STATS
+from ...game_code.entries import G_BATTLE, G_GROWTH, G_PROCS, PROC_ROWS, SCALE_DENOMINATOR, STATS
+from ...game_code.entries_fe10 import PROC_ROWS as RD_PROC_ROWS
 from ...game_code import three_tier_data
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
 from ...game_profile import disc_root_of, files_root_of
 
+#: Group notes where a Radiant Dawn build's group says something else than Path of Radiance's.
+RD_GROUP_NOTES = {
+    "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field; settings "
+                    "that need an instruction replaced install and remove it automatically.",
+    "Experience and growth": "Combat-award rules. The award cap is applied after Paragon and Blossom.",
+    G_GROWTH: "How many points a level-up gives: each stat rolls its growth rate (+1 per 100% and per "
+              "success), plus the route choice, Blossom rerolls and the BEXP target. Radiant Dawn has no "
+              "fixed-growth mode.",
+    G_PROCS: "A skill's chance is its formula (for example Skill / 2) times the multiplier, plus the bonus; "
+             "the game caps it at 100. Below the grid: skill conditions, bonuses and always-activate "
+             "patches.",
+    "Laguz transformation": "Laguz transformation constants.",
+    "Triangle Attack": "Who can take part in the two Triangle Attack skills.",
+    "Random numbers": "Boot-time seeds for the battle/script and general-purpose random-number generators.",
+    "Gold and forge": "Wallet and forge constants. Display-safe bounds are enforced by the editor.",
+    "Promotion": "Promotion-item and automatic-promotion rules. Tier and scripted restrictions remain active.",
+}
+#: Builds whose groups take RD_GROUP_NOTES first.
+RD_VERSIONS = ("RFEE01",)
+
 GROUP_NOTES = {
     "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field.",
-    "Radiant Dawn combat": "Verified RFEE01 battle-engine constants. Settings that need a local instruction "
-                             "replacement install and remove it automatically.",
-    "Radiant Dawn experience": "Combat-award rules recovered from RFEE01. The award cap is applied after "
-                                 "Paragon and Blossom.",
-    "Radiant Dawn growth": "RFEE01 random-growth payouts, route selection, Blossom rolls and the native "
-                            "BEXP target. Ordinary levels have no PoR-style fixed-growth accumulator.",
-    "Radiant Dawn skills": "Verified RFEE01 skill conditions, bonuses and behavior patches.",
-    "Radiant Dawn transformation": "Verified RFEE01 laguz transformation constants.",
-    "Radiant Dawn Triangle Attack": "RFEE01 eligibility rules for the two native Triangle Attack skills.",
-    "Radiant Dawn random numbers": "Boot-time seeds for RFEE01's battle/script and general-purpose random-number generators.",
-    "Radiant Dawn economy": "Verified RFEE01 wallet, forge and economy constants. Display-safe bounds are enforced by the editor.",
-    "Radiant Dawn promotion": "Native RFEE01 promotion-item and automatic-promotion rules. Tier and scripted restrictions remain active.",
-    "Radiant Dawn rules": "Other verified RFEE01 executable rules.",
     G_PROCS: "A skill's chance is its formula (for example Skill / 2) times the multiplier, plus the bonus; "
              "the game caps it at 100. Deathblow only has a multiplier: its chance is 0 unless the hit "
              "is a critical.",
@@ -48,6 +56,27 @@ GROUP_NOTES = {
                    "at the start of the next chapter. Not yet tried in game: whether every army's units can be "
                    "moved by the player, and how the computer plays your own army.",
 }
+
+
+def _proc_rows(entries) -> list:
+    """The Skill activation grid of a group: (skill, activates on, scale tunable, bonus tunable or None)
+    for each row of either game whose scale tunable the group holds."""
+    by_id = {e.id: e for e in entries}
+    return [(name, formula, by_id[scale], by_id.get(bonus) if bonus else None)
+            for name, formula, scale, bonus in (*PROC_ROWS, *RD_PROC_ROWS) if scale in by_id]
+
+
+def _growth_columns(entries) -> list:
+    """The Level-up growth grid of a group: (column label, eight tunables in STATS order) per growth mode
+    the group has (Path of Radiance: random and fixed; Radiant Dawn: random)."""
+    by_id = {e.id: e for e in entries}
+    columns = []
+    for kind, label in (("random", "Random mode: gain per success"), ("fixed", "Fixed mode: gain per level")):
+        for prefix in ("growth.", "rd.growth."):
+            column = [by_id.get(f"{prefix}{kind}.{i}") for i in range(len(STATS))]
+            if all(column):
+                columns.append((label, column))
+    return columns
 
 
 class _Row:
@@ -344,28 +373,37 @@ class CodePage(Page):
             if not shown:
                 continue
             section_header(body, group).pack(anchor="w", pady=(24, 4))
-            if group in GROUP_NOTES:
-                ttk.Label(body, text=GROUP_NOTES[group], style="Muted.TLabel", wraplength=720,
+            notes = RD_GROUP_NOTES if editor.version.code in RD_VERSIONS else {}
+            note = notes.get(group) or GROUP_NOTES.get(group)
+            if note:
+                ttk.Label(body, text=note, style="Muted.TLabel", wraplength=720,
                           justify="left").pack(anchor="w", pady=(0, 8))
             panel = ttk.Frame(body, style="Surface.TFrame", padding=18)
             panel.pack(fill="x")
-            if group == G_PROCS:
-                self._proc_table(panel)
+            procs = _proc_rows(shown)
+            growth = _growth_columns(shown)
+            if procs:
+                # the scale/bonus grid, then the group's other entries (Radiant Dawn's skill patches)
+                self._proc_table(panel, procs)
+                gridded = {id(e) for row in procs for e in row[2:] if e is not None}
+                for entry in (e for e in shown if id(e) not in gridded):
+                    ttk.Separator(panel).pack(fill="x", pady=10)
+                    self._entry_row(panel, entry)
             elif group == G_BATTLE:
                 self._style_row(panel)
                 for entry in shown:
                     if isinstance(entry, Tunable):
                         ttk.Separator(panel).pack(fill="x", pady=10)
                         self._entry_row(panel, entry)
-            elif group == G_GROWTH:
-                plain = [e for e in shown if not e.id.startswith(("growth.random.", "growth.fixed."))
-                         or e.id.startswith("growth.fixed_")]
+            elif growth:
+                gridded = {id(e) for _label, column in growth for e in column}
+                plain = [e for e in shown if id(e) not in gridded]
                 for i, entry in enumerate(plain):
                     if i:
                         ttk.Separator(panel).pack(fill="x", pady=10)
                     self._entry_row(panel, entry)
                 ttk.Separator(panel).pack(fill="x", pady=10)
-                self._growth_table(panel)
+                self._growth_table(panel, growth)
             else:
                 for i, entry in enumerate(shown):
                     if i:
@@ -428,32 +466,32 @@ class CodePage(Page):
         style.box.pack(side="left")
         self._rows.append(style)
 
-    def _proc_table(self, parent: tk.Misc) -> None:
+    def _proc_table(self, parent: tk.Misc, procs: list) -> None:
         grid = ttk.Frame(parent, style="Surface.TFrame")
         grid.pack(fill="x")
         for column, label in enumerate(("Skill", "Activates on", "Multiplier", "Bonus %")):
             ttk.Label(grid, text=label, style="SurfaceCaption.TLabel").grid(
                 row=0, column=column, sticky="w", padx=(0, 18), pady=(0, 6))
-        for r, (key, name, _sid, formula, _sites, has_bonus) in enumerate(PROCS, start=1):
+        for r, (name, formula, scale_entry, bonus_entry) in enumerate(procs, start=1):
             ttk.Label(grid, text=name, style="Surface.TLabel").grid(row=r, column=0, sticky="w", padx=(0, 18), pady=3)
             ttk.Label(grid, text=formula, style="SurfaceMuted.TLabel").grid(row=r, column=1, sticky="w", padx=(0, 18))
-            scale = _Row(self, grid, CATALOG.entries[f"proc.{key}.scale"], factor=1 / SCALE_DENOMINATOR)
+            scale = _Row(self, grid, scale_entry, factor=1 / SCALE_DENOMINATOR)
             scale.box.grid(row=r, column=2, sticky="w", padx=(0, 18))
             self._rows.append(scale)
-            if has_bonus:
-                bonus = _Row(self, grid, CATALOG.entries[f"proc.{key}.bonus"])
+            if bonus_entry is not None:
+                bonus = _Row(self, grid, bonus_entry)
                 bonus.box.grid(row=r, column=3, sticky="w")
                 self._rows.append(bonus)
 
-    def _growth_table(self, parent: tk.Misc) -> None:
+    def _growth_table(self, parent: tk.Misc, columns: list) -> None:
         grid = ttk.Frame(parent, style="Surface.TFrame")
         grid.pack(fill="x")
-        for column, label in enumerate(("Stat", "Random mode: gain per success", "Fixed mode: gain per level")):
+        for column, label in enumerate(("Stat", *(label for label, _entries in columns))):
             ttk.Label(grid, text=label, style="SurfaceCaption.TLabel").grid(
                 row=0, column=column, sticky="w", padx=(0, 28), pady=(0, 6))
         for r, stat in enumerate(STATS, start=1):
             ttk.Label(grid, text=stat, style="Surface.TLabel").grid(row=r, column=0, sticky="w", padx=(0, 28), pady=3)
-            for column, kind in ((1, "random"), (2, "fixed")):
-                row = _Row(self, grid, CATALOG.entries[f"growth.{kind}.{r - 1}"])
+            for column, (_label, entries) in enumerate(columns, start=1):
+                row = _Row(self, grid, entries[r - 1])
                 row.box.grid(row=r, column=column, sticky="w", padx=(0, 28))
                 self._rows.append(row)

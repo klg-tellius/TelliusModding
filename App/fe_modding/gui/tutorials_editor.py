@@ -1,4 +1,5 @@
-"""Tutorials editor: ``tut_data_en.bin`` (see :mod:`fe_modding.formats.tut_data`).
+"""Tutorials editor: the tutorial lists of :attr:`GameProfile.tutorial_files` (``tut_data_en.bin``;
+Radiant Dawn's ``Tutorial/tut_data_<n|h>[_en].bin``, the same layout), see :mod:`fe_modding.formats.tut_data`.
 
 Each tutorial is a row of the in-game tutorial list: its title message, the script function that
 plays it, the group it falls under in each of the list's three sort modes (chapter, category,
@@ -19,8 +20,6 @@ from .editor_panel import EditorPanel
 from .message_reference import message_texts, preview
 from ..game_profile import files_root_of
 
-#: The file each build reads (the US game loads the English list).
-FILE_NAMES = ("tut_data_en.bin", "tut_data.bin")
 #: Tutorial ids are bits of the party's 128-bit unlocked/learned masks.
 MAX_ID = 127
 
@@ -33,7 +32,11 @@ class TutorialsEditor(EditorPanel):
         self._project = project
         self._changelog = changelog
         folder = files_root_of(project)
-        self._path = next((folder / n for n in FILE_NAMES if (folder / n).is_file()), folder / FILE_NAMES[0])
+        #: label -> path of each tutorial list on the disc (the first is the one shown first)
+        self._files = {label: folder / rel for label, rel in project.profile.tutorial_files if (folder / rel).is_file()}
+        first = project.profile.tutorial_files[0][1]
+        self._path = next(iter(self._files.values()), folder / first)
+        self._flag_names = project.profile.tutorial_flag_names
         self._data: Optional[td.TutData] = None
         self._texts: dict[str, str] = {}
         self._index: Optional[int] = None
@@ -50,6 +53,12 @@ class TutorialsEditor(EditorPanel):
                                        state="disabled")
         self._save_button.pack(side="left")
         ttk.Button(bar, text="Revert", command=self._revert).pack(side="left", padx=(6, 0))
+        if len(self._files) > 1:
+            ttk.Label(bar, text="List").pack(side="left", padx=(16, 4))
+            self._file_var = tk.StringVar(value=next(iter(self._files)))
+            box = ttk.Combobox(bar, textvariable=self._file_var, values=list(self._files), state="readonly", width=20)
+            box.pack(side="left")
+            box.bind("<<ComboboxSelected>>", lambda e: self._switch_file())
         self._status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._status.pack(side="left", padx=(10, 0))
         ttk.Label(self, style="Muted.TLabel", wraplength=1000, justify="left", padding=(8, 2), text=(
@@ -101,7 +110,7 @@ class TutorialsEditor(EditorPanel):
         ttk.Label(flags, text="unlocked").grid(row=0, column=1, padx=6)
         ttk.Label(flags, text="learned").grid(row=0, column=2, padx=6)
         self._flags: list[tuple[tk.BooleanVar, tk.BooleanVar]] = []
-        for i, name in enumerate(td.DIFFICULTIES):
+        for i, name in enumerate(self._flag_names):
             ttk.Label(flags, text=f"  {name}").grid(row=i + 1, column=0, sticky="w")
             pair = (tk.BooleanVar(), tk.BooleanVar())
             for c, var in enumerate(pair):
@@ -113,6 +122,16 @@ class TutorialsEditor(EditorPanel):
         ttk.Button(buttons, text="Remove", command=self._remove).pack(side="left")
 
     # -- data -------------------------------------------------------------------------------
+    def _switch_file(self) -> None:
+        path = self._files[self._file_var.get()]
+        if path == self._path:
+            return
+        if self._dirty and not self._confirm_discard():
+            self._file_var.set(next(label for label, p in self._files.items() if p == self._path))
+            return
+        self._path = path
+        self._load()
+
     def _load(self) -> None:
         self._texts = message_texts(self._project)
         try:

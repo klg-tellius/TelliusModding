@@ -1,5 +1,5 @@
-"""Project check for Radiant Dawn: broken references in ``FE10Data.cms`` / ``FE10Growth.cms`` and
-chapter files that are missing.
+"""Project check for Radiant Dawn: broken references in ``FE10Data.cms`` / ``FE10Growth.cms``,
+chapter files that are missing, and the same deployment, script and shop checks as Path of Radiance.
 
 The same :class:`validator.Issue` rows as the Path of Radiance check (:mod:`validator`), with routes
 into the Radiant Dawn Game Data page. An untouched retail extraction reports no errors; what the
@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from . import chapters
 from .exceptions import ProjectError
-from .formats import fe10data, fe10growth
+from .formats import dispo, fe10data, fe10growth
 from .project import ModProject
-from .validator import ERROR, WARNING, Issue, Report, _duplicates
+from .validator import (ERROR, SEVERITIES, WARNING, Issue, Report, _check_script_globals, _check_scripts,
+                        _check_shops, _duplicates)
 from .game_profile import files_root_of
 
 WHERE = "FE10Data.cms"
@@ -21,6 +23,13 @@ WHERE = "FE10Data.cms"
 #: (their map folders are lmapNN) and CFINAL (bmapFINAL). The game never loads those files, so a
 #: missing one there is a warning; anywhere else it is an error.
 RETAIL_MISSING_FILES = frozenset({f"C040{n}{s}" for n in range(1, 7) for s in "ab"} | {"CFINAL"})
+#: Retail deployments that name a missing record: (map folder, section, ID). ``PID_TIBARN_EV`` is a unit
+#: of a 3-15 event map with no character record in the retail database.
+RETAIL_MISSING_DEPLOYED = frozenset({("emap0315a", "emap0315a_ed01_c", "PID_TIBARN_EV")})
+#: Deployment fields that name a record: (field, table, what the message calls it).
+_DISPO_REFERENCES = (("pid", "character", "is"), ("jid", "class", "has class"),
+                     *((f"item{i}", "item", "carries") for i in range(7)),
+                     *((f"skill{i}", "skill", "has skill") for i in range(5)))
 #: List entries of these prefixes must name a record of the table.
 _PREFIX_TABLE = {"PID_": "character", "JID_": "class", "IID_": "item", "SID_": "skill"}
 
@@ -125,6 +134,43 @@ def _check_chapter_files(project: ModProject, db: fe10data.Fe10Data, issues: lis
                                 f"{owner}'s message file is not on the disc (no {messages}.m in any language).", route))
 
 
+def _check_deployments(project: ModProject, known: dict, issues: list) -> None:
+    """Every unit of every ``zmap/<folder>/dispos_<diff>.bin`` names records that exist. A label's
+    ``/`` suffix (``IID_HERB/D``, an item the unit drops; ``/L``, ``/S``, ``/F``) is a flag, not part
+    of the ID."""
+    zmap = files_root_of(project) / "zmap"
+    for path in sorted(zmap.glob("*/dispos_*.bin")) if zmap.is_dir() else []:
+        folder, at = path.parent.name, f"zmap/{path.parent.name}/{path.name}"
+        chapter = chapters.chapter_of_map_folder(folder)
+        route = ("chapter", chapter) if chapter else ()
+        area = f"Chapter {chapter}" if chapter else "Deployments"
+        try:
+            doc = dispo.parse_dispo(path.read_bytes())
+        except Exception as exc:  # noqa: BLE001
+            issues.append(Issue(ERROR, area, at, f"The file could not be read ({exc}).", route))
+            continue
+        # one row per missing ID and file: a renamed class would otherwise give one per unit
+        missing: dict = {}
+        for section in doc.sections:
+            for index, unit in enumerate(section.units):
+                for field, kind, verb in _DISPO_REFERENCES:
+                    value = unit[dispo.FIELD[field]]
+                    label = value.partition("/")[0] if isinstance(value, str) else None
+                    if label and label not in known[kind]:
+                        retail = (folder, section.name, label) in RETAIL_MISSING_DEPLOYED
+                        missing.setdefault((verb, label, retail), []).append((section.name, index + 1))
+        for (verb, label, retail), units in missing.items():
+            if len(units) == 1:
+                text = f"section {units[0][0]}, unit {units[0][1]} {verb} {label}, which does not exist."
+            else:
+                names = ", ".join(dict.fromkeys(name for name, _ in units))
+                text = f"{len(units)} units name {label}, which does not exist (sections {names})."
+            if retail:
+                issues.append(Issue(WARNING, area, at, text + " The retail data has it too.", route))
+            else:
+                issues.append(Issue(ERROR, area, at, text, route))
+
+
 def validate_fe10_project(project: ModProject) -> Report:
     try:
         data = project.read_logical("game_data")
@@ -136,10 +182,16 @@ def validate_fe10_project(project: ModProject) -> Report:
         growth = None
     issues = validate_fe10data(data, growth)
     try:
-        _check_chapter_files(project, fe10data.read_fe10data(data), issues)
+        db = fe10data.read_fe10data(data)
     except Exception:  # noqa: BLE001 - the database problem is already reported
-        pass
-    return Report(issues)
+        return Report(issues)
+    known = {kind: _ids(db, kind) for kind in ("character", "class", "item", "skill")}
+    _check_chapter_files(project, db, issues)
+    _check_deployments(project, known, issues)
+    _check_scripts(project, set().union(*known.values()), issues)
+    _check_script_globals(project, issues)
+    _check_shops(project, known["item"], issues)
+    return Report(sorted(issues, key=lambda i: (SEVERITIES.index(i.severity), i.area, i.where, i.message)))
 
 
 def summary(issues: Iterable[Issue]) -> str:

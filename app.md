@@ -59,6 +59,32 @@ The form edits the chapter's `FE8Data.bin` record. Its Normal objective slots ar
 
 Hard and Maniac each store three overrides: fields 0, 1 and 2 replace Normal slots 0, 1 and 3. Normal slot 2 is the shared defeat condition. An empty override keeps the Normal text. The music and background fields open their selected cue or resource in Assets › Music or Assets › Backgrounds. Save chapter data with **Save FE8Data.bin**.
 
+## Characters and Game Data on both games
+
+`game_adapter.py` gives each game's session the table operations the shared pages use, so the Characters and Game Data pages hold no game checks:
+
+- **Excel**: `excel_io.export_fe10` / `import_fe10` write one sheet per `FE10Data.cms` table (Characters, Classes, Items, Skills, Terrain) from the table's own field list, label lists as comma-separated text. Each row names its record by `index` and its id; only cells that differ are written, and nothing is written when any row fails. The Characters page and the RD Game Data tables reach them through `session.adapter.export_excel` / `import_excel`, like Path of Radiance's `export_fe8` sheets.
+- **Supports tab**: one `gui/support_editor.CharacterSupportsPanel` over `supports_model.py` (`session.adapter.supports_model`). `PorSupports` has C/B/A thresholds, Add/Remove partner, bond effect and value and one conversation button per rank; `RdSupports` edits each character's RelianceData entries (Flag, Speed: every supporter lists all the others, so partners are not added), the KiznaData bond bonus, and opens Assets › Conversation Lists for support talks.
+- **Filter chips**: `adapter.categories(kind)`. Radiant Dawn classes are First / Second / Third tier by the tier skills `SID_HIGHER` / `SID_HIGHEST`, and Laguz by the sound class `SFXC_ALIZE`; items go by weapon type.
+- **Hub**: both games list the data tiles in the same order. Radiant Dawn's General (Difficulty constants, Army groups) and Supports (Supports, Bonds, Affinities, Affinity pairs) tiles each hold several tables, switched by a strip above the table. Path of Radiance has a Battle scenery tile: the chapter page's Battle scenes panel with a map picker.
+- The RD character form has Path of Radiance's **Open** buttons; `character_form.open_map_model` finds an AID's map-model folder through `model_slots.map_model_records` on either game.
+
+Colour variants, the weapon triangle and the biorhythm table are still per game (see `workspace/por-rd-parity-audit.md`).
+
+## Assets on both games
+
+- **Tutorials**: `GameProfile.tutorial_files` names each tutorial list (`tut_data_en.bin`; Radiant Dawn's `Tutorial/tut_data_<n|h>[_en].bin`, the same `formats/tut_data.py` layout), and the editor shows a **List** picker when there are several. `tutorial_flag_names` labels the four start-flag slots (Radiant Dawn's are Slot 1-4 until their difficulties are checked).
+- **Battle Weapons**: `battle_weapons_viewer.battle_weapons_panel` picks the page for `GameProfile.battle_dialect`. Path of Radiance edits `xwp/*.dbx` in `zdbx.cmp`; Radiant Dawn edits the `FE10BWeapon` rows of `FE10Battle.cms` (`formats/fe10_battle_weapons.py`: type, model, hit, critical, weapon and target effects) with the same list, form, preview and Restore original. RD rows are edited, not added.
+- **Visual Effects**: **Remove added effect** works on both games (`effects.remove_registry_record`). Path of Radiance refuses a record another one chains to, and the game's own records stay protected.
+- **Animation Data**: one **Edit…** button. Path of Radiance edits a record's model folder, blend weight and per-army texture numbers (`anim_registry.build_anim_registry`); Radiant Dawn edits a model's variant byte.
+
+## Tools on both games
+
+- **Check**: Radiant Dawn runs Path of Radiance's deployment, script, script-global and shop checks (`validator_fe10.validate_fe10_project` calls the same `validator._check_scripts`, `_check_script_globals` and `_check_shops`). Deployments are the loose `zmap/<folder>/dispos_<diff>.bin` files; every unit's character, class, seven items and five skills must exist, and a label's `/` suffix (`IID_HERB/D`, a dropped item) is a flag, not part of the ID. Both games have a 32-slot script global table (RFEE01 `init_script_tables(0x20, 0x300)`).
+- **Export as text**: Radiant Dawn exports deployments, shops and sound as well. Which layout a part reads comes from the profile: a `{diff}` in `GameProfile.deployment` means loose per-difficulty files, `shop_dir`/`shop_file` name the shop files, and a `sound_data` logical file means the cue registry (`sound/bgm_cues.tsv`, `sfx_cues.tsv`) plus the BRSAR's sounds (`brsar_sounds.tsv`).
+- **Game Code**: Radiant Dawn's groups carry Path of Radiance's names (Combat rules, Skill activation, Level-up growth, ...) and `CATALOG.groups_for` lists both games' groups in one order. The Skill activation grid is built from `PROC_ROWS` (one tuple per skill in `entries.py` and `entries_fe10.py`) and the Level-up growth grid from the `growth.<mode>.<n>` / `rd.growth.<mode>.<n>` tunables the build has, so Radiant Dawn gets the same grids (random mode only: it has no fixed growth). `RD_GROUP_NOTES` holds the notes whose wording differs.
+- **Saves**: Radiant Dawn's save codec reads ITBL, the save's own name tables (`SaveRecord.id_tables`, `id_of`): the Convoy tab names items through it, and shows a forged item's name. Units and flags are not decoded yet (`research/rd/SAVE_NOTES.md`), so the page keeps its Overview, Convoy, Sections and Raw tabs.
+
 ## Chapter dialogue, scenery and forge controls
 
 In Path of Radiance's Dialogue tab, the layout picker shows English names. The editor converts the chosen name back to the game's layout ID when saving; a raw ID can still be entered for an unknown layout. The compact layout and background dropdowns on the two toolbar rows update their matching actions in the message; a missing action is added at the start. **Search…** opens a visual background picker. The step form and preview's initial context offer the same background choices. The Actions menu is one searchable list.

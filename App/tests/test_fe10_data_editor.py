@@ -17,7 +17,7 @@ from fe_modding.games import Game
 from fe_modding.gui.changelog import ChangeLog
 from fe_modding.gui.fe10_data_editor import Fe10DataEditor
 from fe_modding.gui.fe8_session import Fe10DataSession
-from fe_modding.gui.pages.data import FE10_SECTIONS, GameDataPage
+from fe_modding.gui.pages.data import FE10_DATA_TILES, GameDataPage
 from fe_modding.gui.widgets import SaveDiscardBar
 from fe_modding.project import ModProject
 from tests.test_fe10data import _container
@@ -87,21 +87,25 @@ class RecordRouteTests(unittest.TestCase):
         self.assertTrue(Fe10DataEditor.dirty.fget(editor))
         self.assertFalse(Fe10DataEditor.shares_fe8_session)
 
-    def test_growth_excel_actions_are_visible_only_on_growth_table(self):
+    def test_excel_actions_follow_the_tables_with_a_sheet(self):
+        from fe_modding.game_adapter import RdDataAdapter
+
         export, import_ = Mock(), Mock()
+        adapter = RdDataAdapter(SimpleNamespace(data=b"", fe10=None))
         editor = SimpleNamespace(
-            _tab="characters", _growth_data=b"growth",
+            _tab="chapters", _growth_data=b"growth", _db=object(), _adapter=lambda: adapter,
             _growth_export_button=export, _growth_import_button=import_,
         )
-        Fe10DataEditor._sync_growth_excel_buttons(editor)
+        Fe10DataEditor._sync_growth_excel_buttons(editor)  # chapters: no sheet
         export.pack_forget.assert_called_once_with()
         import_.pack_forget.assert_called_once_with()
         export.pack.assert_not_called()
 
-        editor._tab = "growth"
-        Fe10DataEditor._sync_growth_excel_buttons(editor)
-        export.pack.assert_called_once_with(side="left", padx=(6, 0))
-        import_.pack.assert_called_once_with(side="left", padx=(6, 0))
+        for tab in ("growth", "classes", "items", "terrain"):
+            export.reset_mock()
+            editor._tab = tab
+            Fe10DataEditor._sync_growth_excel_buttons(editor)
+            export.pack.assert_called_once_with(side="left", padx=(6, 0))
 
 
 @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to exercise the shared RD record browser")
@@ -173,7 +177,7 @@ class SharedBrowserCorpusTests(unittest.TestCase):
             page = GameDataPage(shell)
             self.assertTrue(page._fe10)
             self.assertEqual(page.panels(), [page._editor, page._ai])
-            self.assertFalse(any("characters" in keys for _heading, keys in FE10_SECTIONS))
+            self.assertNotIn("characters", FE10_DATA_TILES)
             self.assertIsInstance(page._editor.toolbar, SaveDiscardBar)
             self.assertEqual(page._editor._browser._tile_width, 230)
             self.assertEqual(page._editor._add_button.cget("text"), "New…")

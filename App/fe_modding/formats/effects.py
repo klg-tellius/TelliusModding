@@ -220,6 +220,20 @@ def update_rd_registry_record(
     return lz10.compress(raw)
 
 
+def remove_registry_record(registry: bytes, name: str, game: Game = Game.PATH_OF_RADIANCE) -> bytes:
+    """Remove one registry row (compressed bytes for RD), refusing a row another one still names:
+    a Path of Radiance chain target, a Radiant Dawn child effect."""
+    if game is Game.RADIANT_DAWN:
+        return remove_rd_registry_record(registry, name)
+    records = effect_registry.read_effect_registry(registry)
+    if all(r.eid_name != name for r in records):
+        raise EffectError(f"{name} is not in the registry.")
+    users = [r.eid_name for r in records if r.next_in_chain == name and r.eid_name != name]
+    if users:
+        raise EffectError(f"{name} is chained from {', '.join(users)}: change those first.")
+    return effect_registry.build_effect_registry([r for r in records if r.eid_name != name])
+
+
 def remove_rd_registry_record(registry: bytes, name: str) -> bytes:
     """Remove one RD registry row, refusing live child references."""
     raw = lz10.decompress(registry)

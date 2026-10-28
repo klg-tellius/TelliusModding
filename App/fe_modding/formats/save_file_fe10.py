@@ -12,6 +12,10 @@ the result big-endian.  Data records contain the native tagged stream
 keeps the stream in place: edits replace bytes inside a decoded section and
 all unrecognised/reserved bytes survive unchanged.
 
+``ITBL`` is the save's own name tables (:meth:`SaveRecord.id_tables`): the other sections name
+characters, classes, items and skills by their number in these lists, so a save stays readable after the
+database is reordered.
+
 Research reference: ``research/rd/SAVE_NOTES.md``.
 """
 
@@ -35,10 +39,17 @@ DATA_MAGIC = b"FE10ADAT"
 SYSTEM_VERSION = 0x20061002
 DATA_VERSION = 0x20060920
 FORMAT_VERSION = 0x11
+FORGE_TAIL = 8  # bytes after a forged item's name
 CRC_OFFSET = 0x18
 HEADER_SIZE = 0x40
 REGULAR_BASE = SYSTEM_SIZE
 CHECKPOINT_BASE = SYSTEM_SIZE + COPIES_PER_BANK * BLOCK_SIZE  # 0x94000
+
+#: ITBL's lists in file order: (name, ID prefix the file leaves out, number of the first entry).
+#: Written by RFEE01 0x80242920; the four AI lists are CP_ATKSEQ/MOVSEQ/HEALSEQ/MTYPE_LIST.
+ITBL_LISTS = (("character", "PID_", 1), ("class", "JID_", 1), ("item", "IID_", 1), ("skill", "SID_", 0),
+              ("attack_sequence", "SEQ_", 0), ("move_sequence", "SEQ_", 0), ("heal_sequence", "SEQ_", 0),
+              ("move_type", "MTYPE_", 0))
 
 # The final on-disc tag is the four bytes DEBU; the executable's source string is DEBUG.
 STREAM_TAGS = (b"ITBL", b"BMST", b"MDST", b"UNIP", b"SOKO", b"FGPT", b"T  T",
@@ -78,10 +89,11 @@ class SaveSection:
 
 @dataclass(frozen=True)
 class ConvoyItem:
-    """One serialized SOKO item slot.
+    """One serialized SOKO item slot (RFEE01 0x80111d68).
 
-    Ordinary and empty slots are four bytes. Forged items have a confirmed 32-byte suffix which
-    is retained verbatim; its individual fields are not exposed until their meanings are closed.
+    Ordinary and empty slots are four bytes: the item number (ITBL ``item``) and the state word.
+    A forged item (state bit 0x20) follows them with its name, NUL-terminated, and eight bytes,
+    kept verbatim here (their fields are not exposed until their meanings are checked).
     """
 
     slot: int
@@ -93,6 +105,11 @@ class ConvoyItem:
     @property
     def forged(self) -> bool:
         return bool(self.item_number and self.state & 0x20)
+
+    @property
+    def forged_name(self) -> str:
+        """The name the player gave a forged item ("" for others)."""
+        return self.forge_data[:-FORGE_TAIL - 1].decode("shift_jis", errors="replace") if self.forged else ""
 
     @property
     def size(self) -> int:
@@ -231,7 +248,10 @@ class SaveRecord:
                 raise ValueError(f"SOKO ends in convoy slot {slot + 1}")
             item_number, state = struct.unpack_from(">HH", data, cursor)
             forged = bool(item_number and state & 0x20)
-            end = cursor + (36 if forged else 4)
+            end = cursor + 4
+            if forged:
+                name_end = data.find(b"\0", end)
+                end = len(data) + 1 if name_end < 0 else name_end + 1 + FORGE_TAIL
             if end > len(data):
                 raise ValueError(f"SOKO forged item in slot {slot + 1} is truncated")
             items.append(ConvoyItem(slot, cursor, item_number, state,
@@ -255,6 +275,33 @@ class SaveRecord:
         if item_number == 0:
             state = 0
         self.replace_section_bytes("SOKO", item.offset, struct.pack(">HH", item_number, state))
+
+    def id_tables(self) -> dict[str, list[str]]:
+        """ITBL as full IDs: ``{"character": ["PID_IKE", ...], "item": [...], ...}`` (see ITBL_LISTS)."""
+        data = self.section_bytes("ITBL")
+        tables, cursor = {}, 0
+        for name, prefix, _first in ITBL_LISTS:
+            if cursor + 4 > len(data):
+                raise ValueError(f"ITBL ends before its {name} list")
+            count = _u32(data, cursor)
+            cursor += 4
+            names = []
+            for _ in range(count):
+                end = data.find(b"\0", cursor)
+                if end < 0:
+                    raise ValueError(f"ITBL's {name} list is truncated")
+                names.append(prefix + data[cursor:end].decode("shift_jis", errors="replace"))
+                cursor = end + 1
+            tables[name] = names
+        if cursor != len(data):
+            raise ValueError(f"ITBL has {len(data) - cursor} unexpected trailing byte(s)")
+        return tables
+
+    def id_of(self, table: str, number: int) -> Optional[str]:
+        """The ID a section's ``number`` names in ITBL list ``table``; None when out of range."""
+        first = next(f for name, _prefix, f in ITBL_LISTS if name == table)
+        names = self.id_tables()[table]
+        return names[number - first] if 0 <= number - first < len(names) else None
 
     def _bmst_value(self, relative_offset: int, size: int) -> int:
         data = self.section_bytes("BMST")
