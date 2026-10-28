@@ -18,6 +18,7 @@ from . import fe10_rect, lz10, message, tpl
 from .fe10_conversation import Frame
 from .fe10_faces import FaceLibrary
 from .fe9_font import GameFont
+from ..game_files import as_path
 
 SCENE_SIZE = (640, 480)
 WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
@@ -33,7 +34,7 @@ class Fe10ConversationAssets:
         """``wide``: the 16:9 assets (``Face/wide``, ``_w`` fonts and layouts). They use the same
         640x480 coordinates, with art squeezed horizontally that the console stretches back; show
         the rendered frame stretched to 854x480 (:data:`WIDE_SIZE`)."""
-        self.files = Path(files_dir)
+        self.files = as_path(files_dir)
         self.prefix = language_prefix
         self.wide = wide
         self._layouts = self._backgrounds = self._font = self._names = None

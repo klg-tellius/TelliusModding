@@ -92,10 +92,10 @@ def chapter_paths(project: ModProject, chapter_id: str) -> ChapterPaths:
     folder = profile.map_folder(chapter_id)
     return ChapterPaths(
         chapter_id=chapter_id,
-        dialogue=files.path(profile.mess_path(FILES, chapter_id)),
-        script=files.path(profile.script_path(FILES, chapter_id)),
-        deployment=files.path(profile.deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))),
-        map=files.path(game_path("zmap", folder, "map.cmp")),
+        dialogue=files.find(profile.mess_path(FILES, chapter_id)),
+        script=files.find(profile.script_path(FILES, chapter_id)),
+        deployment=files.find(profile.deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))),
+        map=files.find(game_path("zmap", folder, "map.cmp")),
     )
 
 
@@ -118,7 +118,7 @@ def phase_paths(project: ModProject, folder: str) -> tuple[Optional[Path], Optio
     """``(dispos.cmp, map.cmp)`` of one map folder, None where missing."""
     files = files_of(project)
     deployment = profile_of(project).deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))
-    return files.path(deployment), files.path(game_path("zmap", folder, "map.cmp"))
+    return files.find(deployment), files.find(game_path("zmap", folder, "map.cmp"))
 
 
 def chapter_of_map_folder(folder: str) -> Optional[str]:
@@ -142,7 +142,7 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
         if loose is not None:
             texts = {key: m.text for key, m in _common_messages(loose).items()}
         else:
-            system_cmp = (files_of(project).path(logical_rel_of(project, "system_archive"))
+            system_cmp = (files_of(project).find(logical_rel_of(project, "system_archive"))
                           if profile_of(project).has_file("system_archive") else None)
             texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None else {}
     except Exception:  # noqa: BLE001 - titles are presentation only
@@ -174,7 +174,7 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
     try:
         records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
         files = files_of(project)
-        path = next((p for p in (files.path(game_path("Mess", n)) for n in ("e_common.m", "common.m"))
+        path = next((p for p in (files.find(game_path("Mess", n)) for n in ("e_common.m", "common.m"))
                      if p is not None and p.is_file()), None)
         texts = {}
         if path is not None:
@@ -191,7 +191,7 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
 
 
 def _common_messages_path(project: ModProject) -> Optional[Path]:
-    path = files_of(project).path(logical_rel_of(project, "common_mess"))
+    path = files_of(project).find(logical_rel_of(project, "common_mess"))
     return path if path is not None and path.is_file() else None
 
 
@@ -368,7 +368,7 @@ WAR_RECORD_KEYS = ("MED_CHAP{:02d}_TAG", "MED_CHAP{:02d}_TITLE", "MED_DIED_CHAP{
 
 
 def _ending_messages_path(project: ModProject) -> Optional[Path]:
-    path = files_of(project).path(game_path("Mess", "ending.m"))
+    path = files_of(project).find(game_path("Mess", "ending.m"))
     return path if path is not None and path.is_file() else None
 
 
@@ -446,7 +446,7 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
     shops: dict[Path, bytes] = {}
     files = files_of(project)
     for name in shop.DIFFICULTY_FILES.values():
-        path = files.path(game_path("shop", name))
+        path = files.find(game_path("shop", name))
         if path is None or not path.is_file():
             continue
         doc = shop.parse_shop(path.read_bytes())
@@ -576,7 +576,7 @@ def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow)
     shops: dict[Path, bytes] = {}
     files = files_of(project)
     for name in shop.DIFFICULTY_FILES.values():
-        path = files.path(game_path("shop", name))
+        path = files.find(game_path("shop", name))
         if path is None or not path.is_file():
             continue
         doc = shop.parse_shop(path.read_bytes())
@@ -622,7 +622,7 @@ def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow)
     removed = []
     for rel in assets:
         if files.exists(rel):
-            removed.append(files.target(rel))
+            removed.append(files.at(rel))
             files.remove(rel)
     return RemovedChapterPlan(data, removed, shops, common)
 

@@ -180,6 +180,13 @@ class GameFiles:
         """``path`` as a :class:`GamePath` (``files.at("files")`` is the disc's file tree)."""
         return GamePath(self, self.rel(path))
 
+    def find(self, path: RelPath) -> Optional["GamePath"]:
+        """``path`` as a :class:`GamePath` when it exists, else None. What to hand out and keep:
+        a GamePath reads whichever real file is current, where a real path from :meth:`path`
+        would go on naming the vanilla file after the mod replaced it."""
+        rel = self.rel(path)
+        return GamePath(self, rel) if self.exists(rel) else None
+
     def path(self, path: RelPath) -> Optional[Path]:
         """The real file or folder to read for ``path``; None when there is none."""
         raise NotImplementedError

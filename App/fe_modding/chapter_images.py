@@ -118,7 +118,7 @@ def _template(files, folder: str, names: list[str]) -> Optional[bytes]:
     return None
 
 
-def chapter_name_images(files, chapter: int, title: str, template_chapter: int) -> dict[Path, bytes]:
+def chapter_name_images(files, chapter: int, title: str, template_chapter: int) -> dict:
     """The strip and title card files of ``chapter`` (keyed by where they are written), drawn
     from ``title`` on copies of ``template_chapter``'s. ``files`` is a project's file layer (or a
     ``files/`` folder). Missing templates or font give fewer files."""
@@ -130,10 +130,10 @@ def chapter_name_images(files, chapter: int, title: str, template_chapter: int) 
     result = {}
     strip = _template(files, STRIP_FOLDER, [strip_name(template_chapter), strip_name(1)])
     if strip is not None:
-        result[files.target(game_path(STRIP_FOLDER, strip_name(chapter)))] = _replace(strip, render_strip(font, title))
+        result[files.at(game_path(STRIP_FOLDER, strip_name(chapter)))] = _replace(strip, render_strip(font, title))
     card = _template(files, CARD_FOLDER, [card_name(template_chapter), card_name(1)])
     if card is not None:
-        result[files.target(game_path(CARD_FOLDER, card_name(chapter)))] = _replace(card, render_card(font, title))
+        result[files.at(game_path(CARD_FOLDER, card_name(chapter)))] = _replace(card, render_card(font, title))
     return result
 
 
@@ -200,7 +200,7 @@ def render_fe10_card(font, title: str, size=(480, 160)) -> Image.Image:
 
 
 def fe10_title_card(files, chapter_id: str, title: str, prefix: str = "e_",
-                    template_id: str = "0101", truetype=None) -> Optional[tuple[Path, bytes]]:
+                    template_id: str = "0101", truetype=None) -> Optional[tuple]:
     """(path to write, file bytes) of chapter ``chapter_id``'s title card drawn from ``title`` on
     a copy of its own card (else ``template_id``'s), or None without a template or the font.
     ``files`` is a project's file layer (or a ``files/`` folder); ``truetype`` (a font file path)
@@ -211,5 +211,5 @@ def fe10_title_card(files, chapter_id: str, title: str, prefix: str = "e_",
     if template is None or (truetype is None and font_data is None):
         return None
     font = truetype if truetype is not None else fe9_font.GameFont(lz10.decompress(font_data))
-    return (files.target(game_path(FE10_CARD_FOLDER, fe10_card_name(chapter_id, prefix))),
+    return (files.at(game_path(FE10_CARD_FOLDER, fe10_card_name(chapter_id, prefix))),
             _replace(template, render_fe10_card(font, title)))

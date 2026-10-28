@@ -36,6 +36,7 @@ from ..game_profile import PATH_OF_RADIANCE_PROFILE
 from ..formats import battle_params, battle_weapons, icons, zdbx
 from .staging import BattleParams, UnitParams
 from .units import Combatant
+from ..game_files import as_path
 
 #: Weapon prefixes to try for an item weapon type, best first; ``ranged`` for distance 2+.
 WEAPON_PREFIXES = {
@@ -92,7 +93,7 @@ class BattleAssets:
     """The battle tables of one project (``zdbx.cmp``) and its ``files/`` folder."""
 
     def __init__(self, files_dir: Path, zdbx_data: bytes):
-        self.files_dir = Path(files_dir)
+        self.files_dir = as_path(files_dir)
         self.zdbx_data = zdbx_data
         self.tables = dict(zdbx.read_zdbx_files(zdbx_data)) if zdbx_data else {}
         job = self.tables.get(zdbx.JOB_LIST)

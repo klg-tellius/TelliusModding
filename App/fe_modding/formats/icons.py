@@ -40,6 +40,7 @@ from typing import Optional
 from PIL import Image
 
 from . import tpl
+from ..game_files import as_path
 
 ICON_TPL = Path("window") / "icon.tpl"
 
@@ -49,7 +50,7 @@ COLUMNS = 32
 
 
 def icon_path(files_dir: Path) -> Path:
-    return Path(files_dir) / ICON_TPL
+    return as_path(files_dir) / ICON_TPL
 
 
 def item_cell(icon: int) -> int:
@@ -149,7 +150,7 @@ def _find_case_insensitive(folder: Path, name: str) -> Optional[Path]:
 
 
 def _resolve(files_dir: Path, relative: str) -> Optional[Path]:
-    path = Path(files_dir)
+    path = as_path(files_dir)
     for part in relative.replace("\\", "/").split("/"):
         if not part:
             continue

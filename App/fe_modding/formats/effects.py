@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import effect_registry, lz10, pak
+from ..game_files import as_path
 
 REGISTRY_FILE = "FE8Effect.bin"
 PACK_DIR = "yme"
@@ -42,16 +43,16 @@ class EffectEntry:
 
 
 def registry_path(files_dir: Path) -> Path:
-    return Path(files_dir) / REGISTRY_FILE
+    return as_path(files_dir) / REGISTRY_FILE
 
 
 def pack_path(files_dir: Path, name: str) -> Path:
-    return Path(files_dir) / PACK_DIR / f"{name}.cmp"
+    return as_path(files_dir) / PACK_DIR / f"{name}.cmp"
 
 
 def list_effects(files_dir: Path) -> list[EffectEntry]:
     """Every registered effect plus every pack with no registry record, by name."""
-    files_dir = Path(files_dir)
+    files_dir = as_path(files_dir)
     reg = registry_path(files_dir)
     records = effect_registry.read_effect_registry(reg.read_bytes()) if reg.exists() else []
     packs = {p.stem for p in (files_dir / PACK_DIR).glob("EID_*.cmp")}

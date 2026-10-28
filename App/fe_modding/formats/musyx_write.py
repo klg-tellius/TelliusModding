@@ -28,6 +28,7 @@ import numpy as np
 from . import dsp_adpcm, gcfesnd
 from .musyx import (FX_ENTRY_SIZE, GROUP_HEADER_SIZE, GROUP_TYPE_FX, SDIR_END_ID, SDIR_RECORD_SIZE,
                     FxEntry, MusyxError, SoundBanks)
+from ..game_files import as_path
 
 OP_START = 0x10
 ADPCM_INFO_SIZE = 0x28
@@ -284,7 +285,7 @@ def add_sound(sound_dir: Path | str, bank_name: str, group_id: int, pcm: list[in
     """Build the new bank files holding one new sound. Returns the ids used
     and ``{file name: new bytes}`` for the bank's .sdir/.samp/.pool/.proj
     (nothing is written)."""
-    sound_dir = Path(sound_dir)
+    sound_dir = as_path(sound_dir)
     banks = SoundBanks(sound_dir)
     if not any(b.name == bank_name for b in banks.banks):
         raise MusyxError(f"No bank {bank_name}.")
@@ -306,7 +307,7 @@ def add_cue(sound_dir: Path | str, name: str, bank_name: str, group_id: int, pcm
             flags: int = 0, volume: int = 127, pan: int = 64, extra: bytes = bytes([30, 0, 0, 0]),
             range_value: int = 200) -> tuple[NewSound, dict[str, bytes]]:
     """Everything needed to add a new ``SFX_*`` cue playing ``pcm``."""
-    sound_dir = Path(sound_dir)
+    sound_dir = as_path(sound_dir)
     gcfesnd.validate_sfx_name(name)
     bin_data = (sound_dir / "gcfesnd.bin").read_bytes()
     sound, files = add_sound(sound_dir, bank_name, group_id, pcm, sample_rate, volume=127, pan=64)
@@ -320,7 +321,7 @@ def replace_cue(sound_dir: Path | str, cue_name: str, pcm: list[int], sample_rat
     """Give an existing cue its own new sound. The new FX entry joins the
     group the cue's old sound came from (so it is loaded in the same places),
     copying that entry's settings; other cues sharing the old sound keep it."""
-    sound_dir = Path(sound_dir)
+    sound_dir = as_path(sound_dir)
     bin_data = (sound_dir / "gcfesnd.bin").read_bytes()
     cue = next((c for c in gcfesnd.read_sfx_cues(bin_data) if c.name == cue_name), None)
     if cue is None:

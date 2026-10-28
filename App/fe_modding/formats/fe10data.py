@@ -37,6 +37,7 @@ from typing import Optional, Sequence
 
 from . import fe8data
 from .fe8data import HEADER_SIZE
+from ..game_files import as_path
 
 STAT_NAMES = ("HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res")
 #: An item's stat-bonus block: the eight stats, then movement and weight, then two unused bytes.
@@ -608,7 +609,7 @@ def message_names(mess_dir: Path) -> dict[str, str]:
     from . import message
 
     for name in ("e_common.m", "common.m"):
-        path = Path(mess_dir) / name
+        path = as_path(mess_dir) / name
         if path.is_file():
             try:
                 return {message_key(m.speaker): m.text.split("\n", 1)[0] for m in message.read_messages_path(path)}

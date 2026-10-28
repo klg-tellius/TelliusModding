@@ -25,6 +25,7 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import weapon_from_item
 from ..formats import effect_registry, effects as effects_fmt
 from . import battle_stage
+from ..game_files import as_path
 
 #: The camera preview's fight: Ike with an Iron Sword against a level-1 Fighter with an Iron Axe.
 PREVIEW_UNITS = (("PID_IKE", "Ike", "IID_IRONSWORD"), ("JID_FIGHTER", "Fighter", "IID_IRONAXE"))
@@ -52,7 +53,7 @@ class BattlePlayer(ttk.Frame):
 
     def __init__(self, parent: tk.Misc, files: Path, rules, fe8):
         super().__init__(parent)
-        self._files = Path(files)
+        self._files = as_path(files)
         self._rules, self._fe8 = rules, fe8
         self._cache = battle_stage.SetCache()
         self._assets: Optional[sa.BattleAssets] = None

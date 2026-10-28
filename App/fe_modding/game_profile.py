@@ -22,6 +22,7 @@ from typing import Mapping, Optional
 
 from .formats.fe9_font import FONT_FILES, FONT_FILES_FE10
 from .games import Game
+from .game_files import as_path
 
 
 @dataclass(frozen=True)
@@ -110,11 +111,11 @@ class GameProfile:
 
     def path(self, files_dir: Path | str, name: str) -> Path:
         """Where logical file ``name`` lives, given the ``extracted/files`` folder."""
-        return Path(files_dir) / self.logical(name).path
+        return as_path(files_dir) / self.logical(name).path
 
     def path_or_none(self, files_dir: Path | str, name: str) -> Optional[Path]:
         """:meth:`path`, or None when this game has no such logical file."""
-        return Path(files_dir) / self.files[name].path if name in self.files else None
+        return as_path(files_dir) / self.files[name].path if name in self.files else None
 
     def file_label(self, name: str) -> str:
         """Short file name for UI text (``FE8Data.bin`` / ``FE10Data.cms``); falls back to ``name``."""
@@ -128,11 +129,11 @@ class GameProfile:
 
     def script_path(self, files_dir: Path | str, chapter_id: str) -> Path:
         key = self.chapter_key(chapter_id)
-        return Path(files_dir) / self.chapter_script.format(id=key)
+        return as_path(files_dir) / self.chapter_script.format(id=key)
 
     def mess_path(self, files_dir: Path | str, chapter_id: str) -> Path:
         key = self.chapter_key(chapter_id)
-        return Path(files_dir) / self.chapter_mess.format(id=key)
+        return as_path(files_dir) / self.chapter_mess.format(id=key)
 
     def chapter_sort_key(self, chapter_id: str) -> tuple:
         """Story order of chapter ids: by number, then suffix (``0407a`` after ``0406``); ``final`` last."""
@@ -144,10 +145,10 @@ class GameProfile:
         return self.map_dir.format(id=self.chapter_key(chapter_id))
 
     def deployment_path(self, files_dir: Path | str, folder: str, difficulty: str = "") -> Path:
-        return Path(files_dir) / "zmap" / folder / self.deployment.format(diff=difficulty)
+        return as_path(files_dir) / "zmap" / folder / self.deployment.format(diff=difficulty)
 
     def shop_folder(self, files_dir: Path | str) -> Path:
-        return Path(files_dir) / self.shop_dir
+        return as_path(files_dir) / self.shop_dir
 
     def shop_path(self, files_dir: Path | str, difficulty: str) -> Path:
         return self.shop_folder(files_dir) / self.shop_file.format(diff=difficulty)
