@@ -48,6 +48,8 @@ class MainWindow(tk.Tk):
         self._build_menu()
         for key in ("<Control-k>", "<Control-K>"):
             self.bind(key, lambda e: self._shell.on_search_key(e) if self._shell else None)
+        for key in ("<Control-s>", "<Control-S>"):
+            self.bind(key, lambda e: self._save_all())
         self.bind("<F5>", lambda e: self._shell and self._shell.open_play_chapter())
         self.bind("<Control-F5>", lambda e: self._shell and self._shell.play())
         self.bind("<Alt-Left>", lambda e: self._shell and self._shell.back())
@@ -65,6 +67,9 @@ class MainWindow(tk.Tk):
         file_menu = tk.Menu(menubar, tearoff=False)
         file_menu.add_command(label="New Project...", command=self._new_project)
         file_menu.add_command(label="Open Project...", command=self._open_project)
+        file_menu.add_separator()
+        file_menu.add_command(label="Save all", accelerator="Ctrl+S", command=self._save_all)
+        file_menu.add_command(label="Reload project", command=self._reload_project)
         file_menu.add_separator()
         file_menu.add_command(label="Close Project", command=self._close_project)
         file_menu.add_separator()
@@ -156,6 +161,38 @@ class MainWindow(tk.Tk):
         chosen = filedialog.askdirectory(title="Open Project Folder", parent=self)
         if chosen:
             self._load_project(Path(chosen))
+
+    def _save_all(self) -> None:
+        if self._shell is None:
+            return
+        names = self._shell.unsaved(flush=True)
+        if not names:
+            self._shell.set_status("Nothing to save")
+            return
+        failed = self._shell.save_all()
+        saved = [name for name in names if name not in failed]
+        if failed:
+            self._shell.set_status("Could not save " + ", ".join(failed))
+        else:
+            self._shell.set_status("Saved " + ", ".join(saved))
+
+    def _reload_project(self) -> None:
+        """Read the project back from disk (after editing its files outside the app) and
+        return to the page that was open."""
+        if self._shell is None or self._project is None:
+            return
+        if not self._shell.confirm_unsaved(" and reloading reads the files back from disk",
+                                           "reload anyway (the changes are lost)."):
+            return
+        route = self._shell.route
+        try:
+            project = ModProject.load(self._project.directory)
+        except ProjectError as exc:
+            messagebox.showerror("Could not reload project", str(exc), parent=self)
+            return
+        self._activate_project(project)
+        if self._shell is not None and route is not None and route != ("home",):
+            self._shell.navigate(route)
 
     def _load_project(self, directory: Path) -> None:
         if not self._confirm_leave_project():

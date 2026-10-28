@@ -13,14 +13,14 @@ import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
-from .. import chapters, map_props
+from .. import chapters, map_props, mesh_reduce
 from ..formats import map_file
 from . import map_scene
 from .editor_panel import EditorPanel
-from .model_viewer import _ModelPreview, load_named_model_set
+from .model_viewer import _ModelPreview
 from .widgets import info
 
 ALL_MAPS = "All maps"
@@ -104,6 +104,9 @@ class PropBrowser(ttk.Frame):
         paned.add(right, weight=1)
         self._preview = _ModelPreview(right)
         self._preview.pack(fill="both", expand=True)
+        # a prop is looked at as it stands on the map: animated, without its bones drawn over it
+        # ("Show skeleton" brings them back)
+        self._preview.set_show_skeleton(False)
         self._preview.show(None, "Select a prop to preview it.")
 
     # -- catalog -----------------------------------------------------------------------
@@ -235,12 +238,12 @@ class PropBrowser(ttk.Frame):
         try:
             files = self.files_of(info)
             data = map_file.read_map_bytes(files["map.bin"])
-            loaded = load_named_model_set(files, info.name, label=f"{info.map_name}/{info.name}",
-                                          map_projection=map_scene.compute_map_texture_projection(info.name, data))
+            loaded = map_scene.load_map_prop(files, data, info.name, label=f"{info.map_name}/{info.name}")
         except Exception as exc:  # noqa: BLE001
             self._preview.show(None, f"Could not load {info.name}: {exc}")
             return
         self._preview.show(loaded, "No model data.")
+        self._preview.play_first_animation()
 
     def _activate(self) -> None:
         info = self.selected()
@@ -278,6 +281,8 @@ class MapObjectsPanel(EditorPanel):
         top.pack(fill="x", pady=(0, 6))
         self._export = ttk.Button(top, text="Export .glb...", state="disabled", command=lambda: self.browser.export_selected())
         self._export.pack(side="left")
+        self._import = ttk.Button(top, text="Import .glb...", state="disabled", command=self._import_glb)
+        self._import.pack(side="left", padx=(6, 0))
         info(top, "Every prop of every chapter map. To use one on another map, open that chapter's Build tab, "
                   "choose Place prop and Add from another map...").pack(side="left", padx=(10, 0))
         self._form = ttk.LabelFrame(self, text="Object definition (affects every placement of it on the map)", padding=8)
@@ -321,6 +326,8 @@ class MapObjectsPanel(EditorPanel):
     def _selected(self, prop: Optional[map_props.PropInfo]) -> None:
         self._info = prop
         self._export.configure(state="normal" if prop is not None else "disabled")
+        if hasattr(self, "_import"):
+            self._import.configure(state="normal" if prop is not None else "disabled")
         self._apply_button.configure(state="normal" if prop is not None else "disabled")
         if prop is None:
             for var in self._vars.values():
@@ -375,6 +382,74 @@ class MapObjectsPanel(EditorPanel):
         if written and self._changelog is not None:
             self._changelog.append(prop.name, f"Edited object definition in {', '.join(written)}")
         self._form_status.configure(text=f"Saved in {len(written)} map(s): {', '.join(written)}" if written else "Nothing written.")
+        self.browser.scan()
+
+    def _import_glb(self) -> None:
+        """Import a new/replacement prop into the selected row's map.
+
+        The catalog supplies the destination map; the import owns mesh
+        reduction and world scale here instead of on the chapter Build tab.
+        """
+        target = self._info
+        if target is None:
+            return
+        chosen = filedialog.askopenfilename(
+            title=f"Import a prop into {target.map_name}",
+            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")], parent=self)
+        if not chosen:
+            return
+        path = Path(chosen)
+        default = "".join(c if c.isalnum() else "_" for c in path.stem)
+        name = simpledialog.askstring(
+            "Prop name", "Object name (an existing name replaces its model):",
+            initialvalue=default, parent=self)
+        if not name:
+            return
+        try:
+            gltf_data = path.read_bytes()
+            triangles = mesh_reduce.glb_triangle_count(gltf_data, path.parent)
+            if triangles < 1:
+                raise ValueError("The glTF contains no triangles.")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read prop", str(exc), parent=self)
+            return
+        triangle_target = simpledialog.askinteger(
+            "Triangle count",
+            f"The model has {triangles:,} triangles. Maximum triangles to keep (same value keeps all):",
+            initialvalue=triangles, minvalue=1, maxvalue=max(1, triangles), parent=self)
+        if triangle_target is None:
+            return
+        scale_tiles = simpledialog.askfloat(
+            "Prop scale", "Width of the prop's widest horizontal side in tiles (0 keeps its current scale):",
+            initialvalue=0.0, minvalue=0.0, maxvalue=100.0, parent=self)
+        if scale_tiles is None:
+            return
+        warnings = []
+        try:
+            if triangle_target < triangles:
+                reduced = mesh_reduce.reduce_glb(gltf_data, triangle_target, path.parent)
+                gltf_data = reduced.glb
+                warnings.append(
+                    f"Reduced from {reduced.triangles_before:,} to {reduced.triangles_after:,} triangles.")
+                warnings.extend(reduced.warnings)
+            entries, files = map_props.read_map_container(target.path)
+            loop = True
+            if map_props._has_skin_and_animation(gltf_data, path.parent):
+                loop = messagebox.askyesno(
+                    "Animated prop", "The glTF is animated. Loop the animation (No: play it once)?", parent=self)
+            warnings.extend(map_props.import_prop(
+                entries, files, gltf_data, name, path.parent, loop=loop,
+                scale_tiles=scale_tiles or None))
+            map_props.write_map_container(self._project, target.path, entries, files)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import prop", str(exc), parent=self)
+            return
+        if self._changelog is not None:
+            self._changelog.append(f"{target.map_name}/{name}", f"Imported map object from {path.name}")
+        message = f"Imported {name} into {target.map_name}."
+        if warnings:
+            message += "\n\n" + "\n".join(warnings)
+        messagebox.showinfo("Prop imported", message, parent=self)
         self.browser.scan()
 
     def cleanup(self) -> None:

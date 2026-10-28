@@ -3,7 +3,7 @@ from __future__ import annotations
 import re, zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
-from .formats import dispo, fe8data
+from .formats import dispo, fe8data, fe10growth
 MAIN='http://schemas.openxmlformats.org/spreadsheetml/2006/main'; REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships'; PKG='http://schemas.openxmlformats.org/package/2006/relationships'; CT='http://schemas.openxmlformats.org/package/2006/content-types'
 ET.register_namespace('',MAIN); ET.register_namespace('r',REL)
 _STAT_NAMES = tuple(name.lower() for name in fe8data.STAT_NAMES)
@@ -27,7 +27,7 @@ _UNIT_FLAG_COLUMNS=(('autolevel',dispo.FLAG_AUTOLEVEL),('hold_position',dispo.FL
 _ITEM_FLAG_COLUMNS=(('drops',dispo.ITEM_FLAG_DROP),('ignore_first_playthrough',dispo.ITEM_FLAG_RING))
 
 
-def _dispo_columns():
+def _dispo_columns(dialect='fe9'):
  """Export columns: the record's fields in a readable form. Weapons are items 1-4,
  other items 5-8 (the slots the game uses); unread fields are left out."""
  cols=[]
@@ -43,10 +43,18 @@ def _dispo_columns():
   cols.append((name,('field',i)))
   if name=='faction':
    cols+=[(flag_name,('bit',dispo.FIELD['flags'],mask)) for flag_name,mask in _UNIT_FLAG_COLUMNS]
+ if dialect=='fe10':
+  cols.append(('use_fe10growth_stats',('bit',dispo.FE10_GROWTH_FLAGS_FIELD,
+                                        dispo.FE10_GROWTH_TABLE)))
  return cols
 
 
 DISPO_COLUMNS=_dispo_columns()
+
+
+def dispo_columns(dialect='fe9'):
+ """Readable deployment columns for one game's unit-record layout."""
+ return _dispo_columns(dialect)
 def _ref(r,c):
  o=''
  while c: c,rem=divmod(c-1,26); o=chr(65+rem)+o
@@ -134,6 +142,87 @@ def read_workbook(path):
     rows.append(vals)
    result[sheet.attrib['name']]=rows
   return result
+
+
+FE10_GROWTH_SHEET='Growth'
+FE10_GROWTH_COLUMNS=('index','pid','level',*fe10growth.STAT_NAMES)
+
+
+def export_fe10_growth(path,data):
+ """Export every FE10Growth internal-level line to one editable worksheet."""
+ rows=[list(FE10_GROWTH_COLUMNS)]
+ for record in fe10growth.read_growth(data):
+  for line,stats in enumerate(record.lines):
+   rows.append([record.index,record.pid,record.level_of(line),*stats])
+ write_workbook(path,{FE10_GROWTH_SHEET:rows})
+
+
+def import_fe10_growth(path,data):
+ """Import FE10Growth stat lines atomically.
+
+ Shared physical lines may appear once for each alias record in an exported
+ workbook. Unchanged aliases are ignored; conflicting edits to the same shared
+ line are rejected instead of depending on worksheet order.
+ """
+ sheets=read_workbook(path)
+ rows=sheets.get(FE10_GROWTH_SHEET)
+ if not rows:
+  return data,[f'Expected a {FE10_GROWTH_SHEET} worksheet with a header row.'],0
+ cols={str(v).strip().casefold():i for i,v in enumerate(rows[0]) if v is not None}
+ required=('index','pid','level')
+ missing=[field for field in required if field not in cols]
+ stat_columns=[(i,name,cols.get(name.casefold())) for i,name in enumerate(fe10growth.STAT_NAMES)]
+ if missing:
+  return data,[f'{FE10_GROWTH_SHEET}: missing {", ".join(missing)} column(s)'],0
+ if not any(column is not None for _i,_name,column in stat_columns):
+  return data,[f'{FE10_GROWTH_SHEET}: no editable stat columns found'],0
+
+ records=fe10growth.read_growth(data)
+ seen=set(); changes={}; errors=[]
+ for rn,row in enumerate(rows[1:],2):
+  if not any(v not in (None,'') for v in row):
+   continue
+  try:
+   index=_num(row[cols['index']] if cols['index']<len(row) else None,'index')
+   level=_num(row[cols['level']] if cols['level']<len(row) else None,'level')
+   if index is None or not 0<=index<len(records):
+    raise ValueError(f'unknown growth record index {index}')
+   record=records[index]
+   pid=str(row[cols['pid']] if cols['pid']<len(row) else '').strip()
+   if pid != record.pid:
+    raise ValueError(f'index {index} is {record.pid}, not {pid or "blank"}')
+   if level is None or not record.first<=level<=record.last:
+    raise ValueError(f'{record.pid} has levels {record.first}-{record.last}, not {level}')
+   identity=(index,level)
+   if identity in seen:
+    raise ValueError(f'duplicate record {index}, level {level}')
+   seen.add(identity)
+   original=record.lines[level-record.first]
+   proposed=list(original)
+   for stat_index,stat,column in stat_columns:
+    if column is None or column>=len(row) or row[column] in (None,''):
+     continue
+    value=_num(row[column],stat)
+    if value is None or not 0<=value<=255:
+     raise ValueError(f'{stat} must be between 0 and 255')
+    proposed[stat_index]=value
+   if proposed==original:
+    continue
+   address=record.lines_at+fe10growth.LINE_SIZE*(level-record.first)
+   previous=changes.get(address)
+   if previous is not None and previous!=proposed:
+    raise ValueError(f'conflicting edits to a stat line shared with another record')
+   changes[address]=proposed
+  except (ValueError,TypeError,IndexError,KeyError) as exc:
+   errors.append(f'{FE10_GROWTH_SHEET} row {rn}: {exc}')
+ if errors:
+  return data,errors,0
+ out=bytearray(data)
+ for address,stats in changes.items():
+  out[address:address+fe10growth.LINE_SIZE]=bytes(stats)
+ return bytes(out),[],len(changes)
+
+
 def export_fe8(path,data,docs=None,only=None):
  if only is not None and only not in FE8_SHEETS:
   raise ValueError(f'Unsupported Excel sheet: {only}')
@@ -146,15 +235,16 @@ def export_fe8(path,data,docs=None,only=None):
  if data and only in (None,'Terrain'):
   sheets['Terrain']=[['index',*TERRAIN_FIELDS]]+[[t.index,t.name,t.name_key,t.avoid,t.defense,t.resistance,*t.alt_bonus,t.heal,t.flag7,*t.move_costs] for t in fe8data.read_terrain_types(data)]
  if docs:
-  headers=['section','unit_index','linked_label',*(name for name,_how in DISPO_COLUMNS)]
   for name,doc in docs.items():
+   columns=dispo_columns(doc.dialect)
+   headers=['section','unit_index','linked_label',*(field for field,_how in columns)]
    rows=[headers]
    for s in doc.sections:
-    if s.is_link: rows.append([s.name,'',s.header,*(['']*len(DISPO_COLUMNS))])
+    if s.is_link: rows.append([s.name,'',s.header,*(['']*len(columns))])
     else:
      for i,u in enumerate(s.units):
       rows.append([s.name,i,'',*(u[how[1]] if how[0]=='field' else ('yes' if u[how[1]]&how[2] else '')
-                                 for _name,how in DISPO_COLUMNS)])
+                                 for _field,how in columns)])
    sheets['Dispo '+name.removeprefix('dispos_').removesuffix('.bin')]=rows
  write_workbook(path,sheets)
 def _pointer(v):
@@ -203,6 +293,7 @@ def import_fe8(path,data,docs=None,only=None):
    except (StopIteration,ValueError,TypeError,IndexError,KeyError) as e: errors.append(f'{name} row {rn}: {e or "unknown index"}')
  if docs:
   for name,doc in docs.items():
+   columns=dispo_columns(doc.dialect)
    rows=sheets.get('Dispo '+name.removeprefix('dispos_').removesuffix('.bin')); cols={str(v).strip().casefold():i for i,v in enumerate(rows[0])} if rows else {}
    for rn,row in enumerate(rows[1:],2) if rows else []:
     try:
@@ -213,8 +304,10 @@ def import_fe8(path,data,docs=None,only=None):
      else:
       u=s.units[int(i)]
       for fi,field in enumerate(DISPO_FIELDS):  # raw columns (older exports)
-       if field in cols and cols[field]<len(row) and row[cols[field]] not in ('',None): u[fi]=_pointer(row[cols[field]]) if fi in dispo.POINTER_FIELDS else _num(row[cols[field]],field)
-      for field,how in DISPO_COLUMNS:
+       if field in cols and cols[field]<len(row) and row[cols[field]] not in ('',None):
+        pointer=fi in dispo.POINTER_FIELDS and not (doc.dialect=='fe10' and fi==dispo.FE10_GROWTH_FLAGS_FIELD)
+        u[fi]=_pointer(row[cols[field]]) if pointer else _num(row[cols[field]],field)
+      for field,how in columns:
        if field not in cols or field in DISPO_FIELDS:
         continue
        v=row[cols[field]] if cols[field]<len(row) else None

@@ -99,17 +99,20 @@ def in_cave(address: int, length: int = 1) -> bool:
     return CAVE_ADDRESS <= address and address + length <= CAVE_ADDRESS + CAVE_SIZE
 
 
-KINDS = {"imm16s": 2, "imm16u": 2, "u8": 1, "s8": 1, "u16": 2, "u32": 4, "f32": 4, "lis_addi": 4}
+KINDS = {"imm16s": 2, "imm16neg": 2, "imm16u": 2, "u8": 1, "s8": 1, "u16": 2, "u32": 4, "f32": 4,
+         "lis_addi": 4, "lis_addi8": 4}
 
 
 @dataclass(frozen=True)
 class Field:
     """A number held at ``address``.
 
-    ``imm16s``/``imm16u`` are the low halfword of an instruction (signed / unsigned); the
-    instruction's other half, ``expect`` (the two high bytes), is checked before every access.
+    ``imm16s``/``imm16u`` are the low halfword of an instruction (signed / unsigned), while
+    ``imm16neg`` stores the negative of the setting in a signed immediate. The instruction's
+    other half, ``expect`` (the two high bytes), is checked before every access.
     ``lis_addi`` is a 32-bit constant built by ``lis rD,hi`` + ``addi rD,rD,lo`` at ``address``
-    and ``address + 4``; ``expect`` is the high halves of both instructions.
+    and ``address + 4``; ``lis_addi8`` has one unrelated instruction between them and places the
+    ``addi`` at ``address + 8``. ``expect`` is the high halves of both relevant instructions.
     The other kinds are big-endian data words."""
     address: int
     kind: str
@@ -124,6 +127,8 @@ class Field:
     def span(self) -> int:
         if self.kind == "lis_addi":
             return 8
+        if self.kind == "lis_addi8":
+            return 12
         return 4 if self.kind.startswith("imm16") else self.width
 
 
@@ -153,6 +158,7 @@ class Tunable:
     unit: str = ""
     requires: tuple[Patch, ...] = ()     # patches (hooks, stubs) that must be on for the value to act
     choices: tuple[str, ...] = ()        # names for the values minimum..maximum (shown as a list)
+    checkbox: bool = False               # present a 0/1 value as one checkbox
 
 
 Entry = Patch | Tunable
@@ -212,10 +218,13 @@ class Session:
 
     def _sites(self, entry: Entry) -> tuple:
         """This version's sites; when the entry has none for it, the signature-carrying sites of
-        another version (located by signature only, see :meth:`_foreign`)."""
+        another version of the same game (located by signature only, see :meth:`_foreign`)."""
         if self.version is not None and self.version.code in entry.versions:
             return tuple(entry.versions[self.version.code])
-        for sites in entry.versions.values():
+        family = self.version.family if self.version is not None else None
+        for code, sites in entry.versions.items():
+            if family is not None and code[:1] != family:
+                continue
             if sites and all(s.signature is not None for s in sites):
                 return tuple(sites)
         return ()
@@ -276,8 +285,9 @@ class Session:
         seen = self._try_read(address, f.span)
         if seen is None:
             return False
-        if f.kind == "lis_addi":
-            return not f.expect or seen[0:2] + seen[4:6] == f.expect
+        if f.kind in ("lis_addi", "lis_addi8"):
+            low_at = 8 if f.kind == "lis_addi8" else 4
+            return not f.expect or seen[0:2] + seen[low_at:low_at + 2] == f.expect
         return not f.expect or seen[:len(f.expect)] == f.expect
 
     # patches
@@ -322,6 +332,8 @@ class Session:
         raw = self.dol.read(address, f.span)
         if f.kind == "imm16s":
             return struct.unpack(">h", raw[2:])[0]
+        if f.kind == "imm16neg":
+            return -struct.unpack(">h", raw[2:])[0]
         if f.kind == "imm16u":
             return struct.unpack(">H", raw[2:])[0]
         if f.kind == "u8":
@@ -332,23 +344,30 @@ class Session:
             return struct.unpack(">H", raw)[0]
         if f.kind == "u32":
             return struct.unpack(">I", raw)[0]
-        if f.kind == "lis_addi":
-            return (struct.unpack(">H", raw[2:4])[0] << 16) + struct.unpack(">h", raw[6:8])[0]
+        if f.kind in ("lis_addi", "lis_addi8"):
+            low_at = 8 if f.kind == "lis_addi8" else 4
+            return ((struct.unpack(">H", raw[2:4])[0] << 16)
+                    + struct.unpack(">h", raw[low_at + 2:low_at + 4])[0])
         return struct.unpack(">f", raw)[0]
 
     def _pack(self, f: Field, address: int, value: float) -> bytes:
         if f.kind.startswith("imm16"):
-            fmt = ">h" if f.kind == "imm16s" else ">H"
-            return self.dol.read(address, 2) + struct.pack(fmt, int(value))
+            signed = f.kind in ("imm16s", "imm16neg")
+            stored = -int(value) if f.kind == "imm16neg" else int(value)
+            return self.dol.read(address, 2) + struct.pack(">h" if signed else ">H", stored)
         if f.kind == "f32":
             return struct.pack(">f", value)
         if f.kind == "s8":
             return struct.pack(">b", int(value))
-        if f.kind == "lis_addi":
+        if f.kind in ("lis_addi", "lis_addi8"):
             low = int(value) & 0xFFFF
             low -= 0x10000 if low & 0x8000 else 0
             high = ((int(value) - low) >> 16) & 0xFFFF
             raw = self.dol.read(address, 8)
+            if f.kind == "lis_addi8":
+                raw = self.dol.read(address, 12)
+                return (raw[0:2] + struct.pack(">H", high) + raw[4:10]
+                        + struct.pack(">h", low))
             return raw[0:2] + struct.pack(">H", high) + raw[4:6] + struct.pack(">h", low)
         return int(value).to_bytes(f.width, "big")
 
@@ -427,6 +446,26 @@ class Catalog:
     def groups(self) -> dict[str, list[Entry]]:
         grouped: dict[str, list[Entry]] = {}
         for entry in self.entries.values():
+            grouped.setdefault(entry.group, []).append(entry)
+        return grouped
+
+    def entries_for(self, version: GameVersion | str | None) -> list[Entry]:
+        """Entries belonging to ``version``'s game, in registration order.
+
+        Entries are owned by the family of the version keys in their site map.
+        This keeps the existing declarations compact while ensuring a PoR
+        signature is never offered to, or searched inside, an RD executable.
+        """
+        if version is None:
+            return []
+        code = version.code if isinstance(version, GameVersion) else str(version)
+        family = code[:1]
+        return [entry for entry in self.entries.values()
+                if any(site_code[:1] == family for site_code in entry.versions)]
+
+    def groups_for(self, version: GameVersion | str | None) -> dict[str, list[Entry]]:
+        grouped: dict[str, list[Entry]] = {}
+        for entry in self.entries_for(version):
             grouped.setdefault(entry.group, []).append(entry)
         return grouped
 

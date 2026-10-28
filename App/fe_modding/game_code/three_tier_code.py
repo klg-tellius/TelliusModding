@@ -191,9 +191,12 @@ def edits_for(version: str) -> tuple[Edit, ...]:
         Edit(CROWN_DESCRIPTOR, bytes(16), _word(CROWN_PREDICATE) + _word(0x01010000)
              + _word(0) + _word(handler)),
         Edit(CROWN_NAME, bytes(len(b"IID_MASTERCROWN_UFX\x00")), b"IID_MASTERCROWN_UFX\x00"),
+        # r0 is the only free register here, and a D-form load based on r0 reads address 0 +
+        # offset: build the full address in r0 and load it with the indexed form instead.
         _stub(CROWN_LEVEL_CHECK, AUTO_MODE, [
             ppc.lwz(0, 0x1BC, 31), ppc.andi_(0, 0, 4), ("eq", "first"),
-            ppc.lis(0, 0x8000), ppc.lbz(0, CROWN_MIN_LEVEL & 0xFFFF, 0),
+            ppc.lis(0, CROWN_MIN_LEVEL >> 16), ppc.ori(0, 0, CROWN_MIN_LEVEL & 0xFFFF),
+            ppc.lbzx(0, 0, 0),
             ("b", can + 0x9C),
             "first", ppc.li(0, 10), ("b", can + 0x9C),
         ]),
@@ -216,10 +219,10 @@ PATCH = CATALOG.add(Patch(
     versions={version: edits_for(version) for version in _SITES},
 ))
 AUTO_SETTING = CATALOG.add(Tunable(
-    "promotion.third_tier_crown_only", "Promotion", "Third tier: Crown only (0 = auto + Crown)",
+    "promotion.third_tier_crown_only", "Promotion", "Third tier: Crown only",
     "When set to 1, tier-two units stop at level 20 until a Master Crown is used.",
     default=0, minimum=0, maximum=1,
-    versions={version: (Field(AUTO_MODE, "u8"),) for version in _SITES}, requires=(PATCH,),
+    versions={version: (Field(AUTO_MODE, "u8"),) for version in _SITES}, requires=(PATCH,), checkbox=True,
 ))
 CROWN_LEVEL_SETTING = CATALOG.add(Tunable(
     "promotion.crown_min_level", "Promotion", "Master Crown minimum level",

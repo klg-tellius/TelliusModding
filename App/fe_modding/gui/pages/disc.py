@@ -11,7 +11,6 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 
 from ... import patch, text_export
-from ...games import Game
 from ..mod_details_dialog import ModDetailsDialog
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
@@ -54,12 +53,11 @@ class DiscPage(Page):
         self._create_patch_card(row).pack(side="left", fill="both", expand=True, padx=(0, 12))
         self._apply_patch_card(row).pack(side="left", fill="both", expand=True)
 
-        if project.game == Game.PATH_OF_RADIANCE:
-            section_header(body, "Version control").pack(anchor="w", pady=(28, 10))
-            row = ttk.Frame(body, style="Page.TFrame")
-            row.pack(fill="x")
-            self._text_export_card(row).pack(side="left", fill="both", expand=True, padx=(0, 12))
-            ttk.Frame(row, style="Page.TFrame").pack(side="left", fill="both", expand=True)
+        section_header(body, "Version control").pack(anchor="w", pady=(28, 10))
+        row = ttk.Frame(body, style="Page.TFrame")
+        row.pack(fill="x")
+        self._text_export_card(row).pack(side="left", fill="both", expand=True, padx=(0, 12))
+        ttk.Frame(row, style="Page.TFrame").pack(side="left", fill="both", expand=True)
 
     def _panel(self, parent: tk.Misc, title: str, text: str) -> ttk.Frame:
         frame = ttk.Frame(parent, style="Surface.TFrame", padding=18)
@@ -131,10 +129,15 @@ class DiscPage(Page):
         return frame
 
     def _text_export_card(self, parent: tk.Misc) -> ttk.Frame:
+        if self.project.profile.message_dialect == "fe10":
+            contents = ("Writes the decoded game data as text files to keep in version control (git) and compare "
+                        "between versions: FE10Data tables, growth tables, messages and decompiled scripts.")
+        else:
+            contents = ("Writes the game data as text files to keep in version control (git) and compare "
+                        "between versions: FE8Data tables, deployments, shops, messages, decompiled scripts, "
+                        "sound cues, the face table and the DBX tables.")
         frame = self._panel(parent, "Export as text",
-                            "Writes the game data as text files to keep in version control (git) and compare "
-                            "between versions: FE8Data tables, deployments, shops, messages, decompiled scripts, "
-                            "sound cues, the face table and the DBX tables.")
+                            contents)
         self._caption(frame, "Export only: the game's own files stay the ones the app edits and builds. Each "
                       "export replaces the folder's previous one.")
         self._export_status = tk.StringVar(value="")

@@ -19,6 +19,7 @@ from ...formats import event_flags as ef
 from ...formats import extended_flags as xf
 from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
+from ...games import Game
 from .. import theme
 from ..shell import Page
 from ..widgets import ScrollFrame, info, section_header
@@ -180,6 +181,13 @@ class SaveEditorPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
+        self._rd_editor = None
+        if self.project.game is Game.RADIANT_DAWN:
+            from .saves_fe10 import Fe10SaveEditor
+
+            self._rd_editor = Fe10SaveEditor(self, shell)
+            self._rd_editor.pack(fill="both", expand=True)
+            return
         head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
         head.pack(fill="x")
         title = ttk.Frame(head, style="Page.TFrame")
@@ -247,12 +255,16 @@ class SaveEditorPage(Page):
 
     # -- routing ----------------------------------------------------------------------
     def show(self, route) -> bool:
+        if self._rd_editor is not None:
+            return True
         if len(route) > 1 and route[1] in TABS:
             self._tab = route[1]
             self._notebook.select(list(TABS).index(self._tab))
         return True
 
     def crumbs(self, route):
+        if self._rd_editor is not None:
+            return [("Tools", ("tools",)), ("Radiant Dawn saves", None)]
         return [("Tools", ("tools",)), ("Saves", ("saves",)), (TABS[self._tab], None)]
 
     def history_label(self, route):

@@ -12,8 +12,11 @@ from prepare_extended_flag_playtest import (
     inspect_project, RuntimeState,
     write_script, script_sources,
 )
-from fe_modding import chapters, hub_creation
+from fe_modding import chapter_images, chapters, hub_creation
 from fe_modding.formats import lz10, map_file, pak, dispo
+from fe_modding.game_code.dol import Dol
+from fe_modding.game_code.extended_flag_candidate import build_candidate
+from fe_modding.game_code.extended_flag_installation import RECEIPT_NAME, _restore, receipt_for
 
 
 def repair_hub_opening(project, setup, layout):
@@ -52,7 +55,8 @@ def main():
     args = parser.parse_args()
     root = args.root.resolve()
     records = json.loads((root / "builds.json").read_text(encoding="utf-8"))
-    evidence = root / "evidence" / datetime.now().strftime("before-r7-%Y%m%d-%H%M%S")
+    revision = max(record.get("fixture_revision", 1) for record in records) + 1
+    evidence = root / "evidence" / datetime.now().strftime(f"before-r{revision}-%Y%m%d-%H%M%S")
     evidence.mkdir(parents=True, exist_ok=False)
     shutil.copy2(root / "builds.json", evidence / "builds.json")
     previous_verification = root / "verification.json"
@@ -63,19 +67,34 @@ def main():
         if region not in ("GFEE01", "GFEP01", "GFEJ01"):
             raise ValueError("Unexpected test region")
         project = ModProject.load(root / region)
+        layout = FlagLayout.from_json((project.directory / MANIFEST_NAME).read_text(encoding="utf-8"))
+        configuration = hub.saved_setup(project)
+        setup = hub.setup_from(configuration) if configuration else None
         status = inspect_project(project)
         if status.state != RuntimeState.MATCHING:
-            raise ValueError(f"{region}: candidate differs from verified installation: {status}")
+            # A new generator revision cannot validate the previous experimental
+            # section byte-for-byte. Restore its guarded retail inputs from the
+            # old receipt, then atomically replace it with the current candidate.
+            executable = project.extracted_dir / "sys/main.dol"
+            receipt_path = project.directory / RECEIPT_NAME
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            original = _restore(Dol.open(executable), receipt)
+            candidate = build_candidate(original, region, layout,
+                                        hub_chapter=setup.chapter if setup else None)
+            executable.write_bytes(candidate.executable)
+            receipt_path.write_text(receipt_for(candidate, layout), encoding="utf-8")
+            status = inspect_project(project)
+            if status.state != RuntimeState.MATCHING:
+                raise ValueError(f"{region}: refreshed runtime failed verification: {status}")
         saved = evidence / region
         saved.mkdir()
         shutil.copy2(project.directory / "test-build.json", saved / "test-build.json")
+        shutil.copy2(project.extracted_dir / "sys/main.dol", saved / "main.dol")
+        shutil.copy2(project.directory / RECEIPT_NAME, saved / RECEIPT_NAME)
         for path in (project.directory / "DolphinUser").rglob("*.gci"):
             target = saved / path.relative_to(project.directory)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
-        layout = FlagLayout.from_json((project.directory / MANIFEST_NAME).read_text(encoding="utf-8"))
-        configuration = hub.saved_setup(project)
-        setup = hub.setup_from(configuration) if configuration else None
         if not setup:
             print(f"{region}: no hub; existing runtime-only image retained", flush=True)
             continue
@@ -101,6 +120,11 @@ def main():
         project.write_keeping_original(paths.map, hub.entrance_markers(project, paths.map, setup))
         print(f"{region}: applying test conveniences and syncing boot archive", flush=True)
         apply_test_quality_of_life(project, setup, layout)
+        # Redraw the hub's file-menu and title-card pictures: before revision 9 the Japanese ones were
+        # drawn with bigkana.gcf, which has no ASCII, so they showed a row of dashes.
+        title = chapters.chapter_display_title(f"{setup.chapter:02d}", chapters.chapter_titles(project))
+        for path, data in chapter_images.chapter_name_images(project.files_dir, setup.chapter, title, 1).items():
+            project.write_keeping_original(path, data)
         changed = sync_boot_archive(project)
         if inspect_project(project).state != RuntimeState.MATCHING:
             raise ValueError("Runtime integrity check failed after test edits")
@@ -110,7 +134,7 @@ def main():
         verify_packaged_executable(image, (project.extracted_dir / "sys/main.dol").read_bytes(), region)
         with image.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        record.update(sha256=digest, fixture_revision=7, animation_speed=2.0,
+        record.update(sha256=digest, fixture_revision=revision, animation_speed=2.0,
                       return_position_before_fade=True,
                       avatar_ai_fix=True,
                       avatar_class_fix=True,
@@ -121,14 +145,14 @@ def main():
                       boot_archive_synced=changed, in_game_verified=False)
         (project.directory / "test-build.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         (root / "builds.json").write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
-        print(f"{region}: revision 7 ready; memory card unchanged", flush=True)
+        print(f"{region}: revision {revision} ready; memory card unchanged", flush=True)
     print(f"Original test evidence copied to {evidence}")
     (root / "verification.json").write_text(json.dumps({
-        "fixture_revision": 7, "in_game_tested": False,
+        "fixture_revision": revision, "in_game_tested": False,
         "images": [{"region": r["region"], "fixture_revision": r["fixture_revision"], "packaged_executable_matches": True,
                     "boot_archive_synced": r["boot_archive_synced"], "sha256": r["sha256"]}
                    for r in records],
-        "full_dolphin_image_verification": "Not repeated for revision 7",
+        "full_dolphin_image_verification": f"Not repeated for revision {revision}",
     }, indent=2) + "\n", encoding="utf-8")
 
 

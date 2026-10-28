@@ -179,6 +179,13 @@ class Context:
             gains[i] = max(0, min(gains[i], room))
         unit.stats = bytes(gains)
         unit.hp = min(job.stat_caps[0], job.base_stats[0] + person.stat_bonus[0] + gains[0])
+        # Weapon ranks too: the cheat save's late-game ranks (Soren at S in all three anima)
+        # would otherwise survive the reclass and hide what a promotion grants.
+        thresholds = dict(sf.WEAPON_RANKS)
+        ranks = [max(thresholds.get(c, 0) for c in pair)
+                 for pair in zip((job.weapon_ranks or "")[:8].ljust(8, "-"),
+                                 (person.weapon_ranks or "")[:8].ljust(8, "-"))]
+        unit.weapon_exp = bytes(ranks)
 
     def set_items(self, unit: sf.UnitRecord, iids: list[str]) -> None:
         """Replace the inventory: weapons from slot 1, other items from slot 5 (the game's unit screen

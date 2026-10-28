@@ -28,7 +28,7 @@ Every piece of text the game draws, from dialogue to menu labels, comes from one
     <tr><td>0</td><td>system</td><td><code>Fonts/system.cms</code> (<a class="wl" href="../lz10/">LZ10</a>)</td><td>3,988</td><td>The general UI font: full Japanese character set plus ASCII</td></tr>
     <tr><td>1</td><td>fe_font</td><td><code>Fonts/fe_font.gcf</code></td><td>95</td><td>The invented Tellius alphabet: calligraphic letters mapped onto the ASCII codes, so ordinary text in this font renders in the in-world script</td></tr>
     <tr><td>2</td><td>talk</td><td><code>Fonts/talk.gcf</code></td><td>4,005</td><td>The dialogue font: same character set as system, slightly taller</td></tr>
-    <tr><td>3</td><td>bigkana</td><td><code>Fonts/bigkana.gcf</code></td><td>95</td><td>Large Latin serif (the name dates from the Japanese release)</td></tr>
+    <tr><td>3</td><td>bigkana</td><td><code>Fonts/bigkana.gcf</code></td><td>95</td><td>Large Latin serif (the name dates from the Japanese release). The Japanese file holds 109 glyphs: large kana and digits only</td></tr>
     <tr><td>4</td><td>alpha</td><td><code>Fonts/alpha.gcf</code></td><td>77</td><td>Large condensed sans-serif: letters, digits and a little punctuation</td></tr>
   </tbody></table>
 </div>

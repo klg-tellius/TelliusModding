@@ -38,6 +38,8 @@ The menu bar:
 | Menu | Entry | What it does |
 | --- | --- | --- |
 | **File** | **New Project...** / **Open Project...** | Make a project from a disc image / open a project folder ([Install the app and create a project](01-install-create-project.md)) |
+| | **Save all** (Ctrl+S) | Save every editor with unsaved edits |
+| | **Reload project** | Read the project back from disk (after editing its files outside the app) and return to the open page; asks about unsaved edits |
 | | **Close Project** | Back to the start screen; asks about unsaved edits |
 | | **Apply patch to a disc...** | Apply a patch file to a clean disc, without a project ([Share a patch](61-share-a-patch.md)) |
 | | **Exit** | Close the app |
@@ -49,16 +51,17 @@ The menu bar:
 | **Settings** | **Preferences...** | Theme, Dolphin and Blender locations, the Blender terrain add-on |
 | | **Disc and media tools...** | Download WIT and FFmpeg |
 
-On the top bar, the 💿 button opens **Disc & Patch** and ⚙ opens **Preferences**.
+On the top bar, **Disc & build** opens **Disc & Patch** and **Settings** opens **Preferences**.
 
 Shortcuts:
 
 | Where | Key | Effect |
 | --- | --- | --- |
 | Main window | **Ctrl+K** | Search palette (not inside a text box, where Ctrl+K belongs to the box) |
+| | **Ctrl+S** | Save all (the Dialogue tab's text box keeps Ctrl+S for its own save) |
 | | **F5** / **Ctrl+F5** | Play a chapter / build and play |
 | | **Alt+Left** / **Alt+Right** | Back / Forward |
-| Search palette | **↑** **↓**, **Enter**, **Esc** | Pick, open, close |
+| Search palette | **↑** **↓**, **Enter**, **Esc** | Pick, open, close (the **✕** button or a click outside also closes it) |
 | Script tab | **Ctrl+Space** | Completion list for the word before the cursor (it also opens as you type) |
 | | **Enter** or **Tab** in the list, **Esc** | Put the call in / close the list |
 | | **Ctrl+F**, **F3**, **Shift+F3** | **Search code**, next match, previous match |

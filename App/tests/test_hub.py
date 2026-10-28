@@ -18,6 +18,15 @@ from tests.test_chapter_flow import MiniPPC, PARTY, RETAIL_DIR, _code
 
 
 class HubRouterTests(unittest.TestCase):
+    def test_generated_ground_rotates_image_uvs_for_the_map_basis(self):
+        from fe_modding import hub_creation
+        from fe_modding.formats import gs_file
+
+        ground = gs_file.read_gs(hub_creation._flat_model(2, 3, 0, 0))
+        scale = 1 << ground.uv_frac
+        self.assertEqual(ground.positions, [(0, 0, 0), (20480, 0, 0), (20480, 0, 30720), (0, 0, 30720)])
+        self.assertEqual(ground.uvs, [(scale, scale), (0, scale), (0, 0), (scale, 0)])
+
     def setUp(self):
         self.code = _code("GFEE01")
         for edit in hub_flow.HUB_PATCH.versions["GFEE01"]:
@@ -154,6 +163,24 @@ class HubScriptTests(unittest.TestCase):
 
 
 class HubCreationTests(unittest.TestCase):
+    def test_hub_avatar_can_be_retargeted_without_moving_it(self):
+        from tests.dispo_fixture import build_minimal_dispo_bytes
+        document = dispo.parse_dispo(build_minimal_dispo_bytes((b"bmap33_avatar_c",)))
+        unit = dispo.new_unit_values()
+        unit[dispo.FIELD["pid"]] = "PID_OLD"
+        unit[dispo.FIELD["jid"]] = "JID_OLD"
+        unit[dispo.FIELD["pos_x"]], unit[dispo.FIELD["pos_y"]] = 7, 9
+        document.section("bmap33_avatar_c").units = [unit]
+        archive = lz10.compress(pak.pack_pak([("dispos_c.bin", dispo.build_dispo(document))]))
+
+        changed = hub._retarget_avatar_bytes(archive, "PID_OLD", "PID_NEW", "JID_NEW")
+        raw = lz10.decompress(changed)
+        result = dispo.parse_dispo(pak.read_pak_file_content(raw, pak.read_pak_entries(raw)[0]))
+        avatar = result.section("bmap33_avatar_c").units[0]
+        self.assertEqual((avatar[dispo.FIELD["pid"]], avatar[dispo.FIELD["jid"]]),
+                         ("PID_NEW", "JID_NEW"))
+        self.assertEqual((avatar[dispo.FIELD["pos_x"]], avatar[dispo.FIELD["pos_y"]]), (7, 9))
+
     def test_avatar_deployment_clears_copied_units(self):
         from fe_modding import chapters, hub_creation
         from fe_modding.formats import dispo, lz10, pak

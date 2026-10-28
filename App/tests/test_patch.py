@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -90,6 +91,39 @@ class PatchTests(unittest.TestCase):
         with self.assertRaises(patch.PatchError):
             patch.apply_patch(self.dest, self.target)
         self.assertFalse((self.target.parent / "escape.bin").exists())
+
+    def test_radiant_dawn_patch_round_trip(self):
+        for root in (self.base, self.mod, self.target):
+            _write(root, "sys/boot.bin", b"RFEE01\x00\x01" + bytes(0x438))
+            _write(root, "disc/header.bin", b"wii")
+            for name in ("ticket.bin", "tmd.bin", "cert.bin"):
+                _write(root, name, name.encode("ascii"))
+        summary = patch.create_patch(self.base, self.mod, self.dest, game=Game.RADIANT_DAWN,
+                                     name="RD Test")
+        self.assertFalse(summary.empty)
+        self.assertEqual(patch.read_patch(self.dest).game, Game.RADIANT_DAWN)
+        patch.apply_patch(self.dest, self.target)
+        self.assertEqual((self.target / "files/edit.bin").read_bytes(), b"modded!")
+        self.assertEqual((self.target / "disc/header.bin").read_bytes(), b"wii")
+
+    def test_apply_radiant_dawn_patch_extracts_wii_partition_and_builds_wbfs(self):
+        for root in (self.base, self.mod):
+            _write(root, "sys/boot.bin", b"RFEE01\x00\x01" + bytes(0x438))
+        patch.create_patch(self.base, self.mod, self.dest, game=Game.RADIANT_DAWN)
+        disc = self.dest.with_suffix(".rvz")
+        disc.write_bytes(b"rvz")
+        output = self.dest.with_suffix(".wbfs")
+
+        def extract(_source, tree, **kwargs):
+            import shutil
+            shutil.copytree(self.base, tree)
+            self.assertTrue(kwargs["wii"])
+
+        with mock.patch.object(patch.tools, "extract_disc", side_effect=extract) as extraction, \
+                mock.patch.object(patch, "build_image", return_value=None) as build:
+            self.assertIsNone(patch.apply_patch_to_disc(self.dest, disc, output))
+        extraction.assert_called_once()
+        build.assert_called_once_with(Game.RADIANT_DAWN, mock.ANY, output, overwrite=True)
 
 
 class PatcherTests(unittest.TestCase):

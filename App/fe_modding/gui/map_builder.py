@@ -116,11 +116,42 @@ ZONE_KINDS = {"Area - a unit enters": script_zones.AREA, "Location - a unit acts
 NEW_FUNCTION = "New function"
 
 
+#: Terrain colours by category: passable ground is light and green to tan, water blue,
+#: mountains brown, walls and other impassable tiles dark grey, doors orange, chests gold and
+#: goal or healing tiles magenta/cyan. Keys are the game's terrain names without the variant
+#: digit (``平地２`` is ``平地``), so every variant of a terrain gets the same colour.
+TERRAIN_CATEGORIES = {
+    "plain": ((124, 179, 66), ("平地", "山道", "草原")),
+    "floor": ((188, 170, 132), ("床", "石畳", "階段", "台座")),
+    "bridge": ((161, 125, 92), ("橋", "橋蓋", "船")),
+    "sand": ((222, 196, 120), ("砂漠", "海岸")),
+    "snow": ((222, 232, 242), ("雪原",)),
+    "forest": ((46, 125, 50), ("茂み", "林", "森")),
+    "rough": ((107, 112, 52), ("沼",)),
+    "mountain": ((121, 85, 72), ("崖", "岩", "山")),
+    "water": ((30, 136, 229), ("川", "海", "堀", "池", "水路")),
+    "impassable": ((66, 66, 70), ("移動不可", "屋根", "木", "壁", "柵", "小物", "建物", "廃墟", "穴", "遺跡",
+                                  "柱", "土嚢", "噴水", "花壇", "落石")),
+    "siege": ((120, 64, 64), ("アーチ", "投石器")),
+    "door": ((239, 108, 0), ("扉", "壊れる扉", "城門")),
+    "chest": ((255, 193, 7), ("宝箱",)),
+    "objective": ((216, 27, 96), ("制圧", "到達", "離脱", "防衛", "訪問")),
+    "heal": ((0, 172, 193), ("玉座", "回復", "城", "砦", "光の茂み", "光の守り")),
+}
+_TERRAIN_COLORS = {name: rgb for rgb, names in TERRAIN_CATEGORIES.values() for name in names}
+_VARIANT_DIGITS = "0123456789０１２３４５６７８９"
+
+
 def _terrain_color(name: str) -> tuple[int, int, int]:
     if not name:
         return (37, 37, 37)
-    hue = (sum(name.encode("utf-8")) * 0.61803398875) % 1.0
-    r, g, b = colorsys.hls_to_rgb(hue, 0.45, 0.55)
+    known = _TERRAIN_COLORS.get(name.rstrip(_VARIANT_DIGITS))
+    if known is not None:
+        return known
+    # a terrain this table doesn't know: a muted colour of its own, the same for every variant
+    base = name.rstrip(_VARIANT_DIGITS)
+    hue = (sum(base.encode("utf-8")) * 0.61803398875) % 1.0
+    r, g, b = colorsys.hls_to_rgb(hue, 0.45, 0.35)
     return int(r * 255), int(g * 255), int(b * 255)
 
 
@@ -271,7 +302,8 @@ class _BuildCanvas(tk.Canvas):
         if self.show["terrain"] and self.terrain is not None:
             colors = np.array([[_terrain_color(self.terrain[x][y]) for x in range(w)] for y in range(h)], dtype=np.uint8)
             overlay = Image.fromarray(colors, "RGB").resize(size, Image.NEAREST)
-            base = overlay if base is None else Image.blend(base, overlay, 0.45)
+            # mostly opaque, so one terrain reads as one colour whatever the map image shows under it
+            base = overlay if base is None else Image.blend(base, overlay, 0.8)
         if self.show["heights"] and self.heights is not None:
             values = np.array(self.heights, dtype=float).T  # rows are y
             low, high = float(values.min()), float(values.max())
@@ -552,7 +584,10 @@ class MapBuilder(EditorPanel):
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
         ttk.Button(top, text="Save Chapter", command=self._save).pack(side="left")
-        ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play).pack(side="left", padx=(6, 0))
+        from ..game_profile import PLAYTHROUGH, profile_of
+        can_play = profile_of(self._project).supports(PLAYTHROUGH)
+        ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play,
+                   state="normal" if can_play else "disabled").pack(side="left", padx=(6, 0))
         self._undo_button = ttk.Button(top, text="Undo", command=self._do_undo, state="disabled")
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
@@ -716,7 +751,6 @@ class MapBuilder(EditorPanel):
         self._prop_angle = tk.StringVar(value="0°")
         ttk.Combobox(row, textvariable=self._prop_angle, values=list(ANGLES), state="readonly", width=6).pack(side="left", padx=(6, 0))
         ttk.Button(frame, text="Add from another map...", command=self._add_prop_from_map).pack(anchor="w", pady=(6, 0))
-        ttk.Button(frame, text="Import prop .glb...", command=self._import_prop).pack(anchor="w", pady=(4, 0))
         self._tool_frames["prop"] = frame
 
         frame = ttk.Frame(parent)
@@ -1653,7 +1687,10 @@ class MapBuilder(EditorPanel):
             section = self._target_section()
         docs_now = {v: self._deploy.document(v) for v in self._deploy.variants()}
         template_section = docs_now[current].section(section)
-        template = list(template_section.units[0]) if template_section.units else dispo.new_unit_values()
+        template = (template_section.units[0].clone()
+                    if template_section.units and isinstance(template_section.units[0], dispo.DispoUnitValues)
+                    else list(template_section.units[0]) if template_section.units
+                    else dispo.new_unit_values(docs_now[current].dialect))
         for f in range(3, 16):  # items and skills belong to the template's character
             template[f] = 0
         for f in range(40, 48):
@@ -2752,7 +2789,7 @@ class MapBuilder(EditorPanel):
         def edit(docs):
             docs[variant].section(section_name).units[index][field] = value
 
-        name = dispo.field_name(field) or f"field {field}"
+        name = dispo.field_name_for(field, self._deploy.document(variant).dialect) or f"field {field}"
         return self._edit_units(edit, f"{variant} {section_name}[{index}]: {name} = {value}")
 
     def label_choices(self) -> dict[str, list[str]]:
@@ -2767,6 +2804,10 @@ class MapBuilder(EditorPanel):
         doc = self._deploy.document(variant) if variant else None
         section = doc.section(section_name) if doc else None
         return section.units[index] if section is not None and 0 <= index < len(section.units) else None
+
+    def raw_dialect(self, variant: str | None) -> str:
+        doc = self._deploy.document(variant) if variant else None
+        return doc.dialect if doc is not None else "fe9"
 
     def select_unit(self, difficulty: str, section_name: str, index: int) -> None:
         """Show one unit (deep links): difficulty letter (n/h/m/c) of its
@@ -3083,10 +3124,11 @@ class _RawFieldsDialog(tk.Toplevel):
     def _fill(self) -> None:
         self._tree.delete(*self._tree.get_children())
         unit = self._builder.raw_unit(*self._key)
+        dialect = self._builder.raw_dialect(self._key[0])
         for i, value in enumerate(unit or ()):
-            name = dispo.field_name(i)
+            name = dispo.field_name_for(i, dialect)
             self._tree.insert("", "end", iid=str(i), values=(f"{i} ({name})" if name else f"{i} (unread)",
-                                                              dispo.describe_field(i, value)))
+                                                              dispo.describe_field_for(i, value, dialect)))
 
     def _navigate(self, pid: str) -> None:
         self.destroy()
@@ -3101,6 +3143,7 @@ class _RawFieldsDialog(tk.Toplevel):
             return
         field = int(selection[0])
         dialog = _FieldEditDialog(self, field, unit[field], self._builder.label_choices(),
+                                  dialect=self._builder.raw_dialect(self._key[0]),
                                   on_navigate_to_character=self._navigate)
         self.wait_window(dialog)
         if dialog.result is None or dialog.result == unit[field]:

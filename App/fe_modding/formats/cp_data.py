@@ -62,8 +62,41 @@ import struct
 from dataclasses import dataclass, field as dataclass_field
 from typing import NamedTuple, Optional, Union
 
-from .common import HEADER_SIZE, decode_str, read_cstring_table
+from .common import HEADER_SIZE, decode_str, encode_str, read_cstring_table
 from .cp_ops import OPS
+
+
+@dataclass(frozen=True)
+class Dialect:
+    """The parts of the CP resource layout that differ between the games.
+
+    Path of Radiance stores seven words per instruction (``op a..f``).
+    Radiant Dawn stores ten (``op a..i``), moves the script-name word in the
+    header from ``e`` to ``f``, and renames the four id-list sections.
+    """
+
+    name: str
+    entry_words: int
+    header_name_slot: str
+    id_lists: tuple[tuple[str, str], ...]
+
+    @property
+    def id_list_map(self) -> dict[str, str]:
+        return dict(self.id_lists)
+
+
+FE9 = Dialect("fe9", 7, "e", (
+    ("ATK_SEQID_LIST", "attack"),
+    ("MOV_SEQID_LIST", "move"),
+    ("HEAL_SEQID_LIST", "heal"),
+    ("MTYPE_TABLEID_LIST", "mtype"),
+))
+FE10 = Dialect("fe10", 10, "f", (
+    ("CP_ATKSEQ_LIST", "attack"),
+    ("CP_MOVSEQ_LIST", "move"),
+    ("CP_HEALSEQ_LIST", "heal"),
+    ("CP_MTYPE_LIST", "mtype"),
+))
 
 
 class SectionRef(NamedTuple):
@@ -82,18 +115,13 @@ _LABEL_CODEC = "shift_jis"
 #: opcode -> (short name, summary); the full typed description is :mod:`cp_ops`.
 OPCODES: dict[int, tuple[str, str]] = {op: (spec.key, spec.summary) for op, spec in OPS.items()}
 
-OP_ENTRY_WORDS = 7
+OP_ENTRY_WORDS = FE9.entry_words
 OP_ENTRY_BYTES = 4 * OP_ENTRY_WORDS
 SCRIPT_HEADER_ENTRIES = 2
 
 # -- section kinds --------------------------------------------------------------------
 
-ID_LISTS = {
-    "ATK_SEQID_LIST": "attack",
-    "MOV_SEQID_LIST": "move",
-    "HEAL_SEQID_LIST": "heal",
-    "MTYPE_TABLEID_LIST": "mtype",
-}
+ID_LISTS = FE9.id_list_map
 HEAD_SECTION = "CP_DataHead"
 STEAL_SECTION = "TBL_STEALITEMS"
 MTYPE_WORDS = 6
@@ -138,8 +166,10 @@ class Section:
 @dataclass
 class CpDocument:
     sections: list[Section]
-    pool: list[str]  # label strings in file order (pool is rebuilt compactly on build)
+    pool: list[str]  # label strings in file order (kept losslessly; new labels append on build)
     header_tail: bytes = bytes(16)  # header bytes 0x10..0x1F, all zero in vanilla
+    leading_words: list[Value] = dataclass_field(default_factory=list)
+    # FE10 has an unnamed two-word data header before its first named section.
 
     def section(self, name: str) -> Optional[Section]:
         for s in self.sections:
@@ -187,19 +217,20 @@ def parse_cp_data(data: bytes) -> CpDocument:
             raise ValueError(f"Pointer at {offset:#x} points at neither a section nor a label")
         return value
 
+    leading_words = [word(o) for o in range(0, addresses[0], 4)] if addresses else []
     sections = []
     for i, address in enumerate(addresses):
         end = addresses[i + 1] if i + 1 < len(addresses) else pool_start
         sections.append(Section(name_of[address], [word(o) for o in range(address, end, 4)]))
-    return CpDocument(sections, pool, data[0x10:HEADER_SIZE])
+    return CpDocument(sections, pool, data[0x10:HEADER_SIZE], leading_words)
 
 
 def build_cp_data(doc: CpDocument) -> bytes:
     """Lay a document out as a cp_data file. Sections keep the document's order;
-    the pool keeps the labels still used, in order, then new ones in order of
+    the pool keeps its original labels in order, then new ones in order of
     first use."""
     addresses: dict[str, int] = {}
-    body_words: list[Value] = []
+    body_words: list[Value] = list(doc.leading_words)
     for section in doc.sections:
         if section.name in addresses:
             raise ValueError(f"Two sections are called {section.name}")
@@ -207,8 +238,10 @@ def build_cp_data(doc: CpDocument) -> bytes:
         body_words += section.words
 
     used = list(dict.fromkeys(w for w in body_words if isinstance(w, str)))
-    in_use = set(used)
-    pool_labels = [label for label in doc.pool if label in in_use]
+    # Preserve the original pool, including its two currently unreferenced RD
+    # labels. Besides making an untouched resource byte-identical, this avoids
+    # silently discarding developer labels whose runtime purpose is unknown.
+    pool_labels = list(dict.fromkeys(doc.pool))
     kept = set(pool_labels)
     pool_labels += [label for label in used if label not in kept]
 
@@ -231,11 +264,11 @@ def build_cp_data(doc: CpDocument) -> bytes:
             value = offsets[value]
         body += struct.pack(">I", value & 0xFFFFFFFF)
 
-    ordered = sorted(doc.sections, key=lambda s: s.name.encode("ascii"))
+    ordered = sorted(doc.sections, key=lambda s: encode_str(s.name))
     names, name_offsets = bytearray(), []
     for section in ordered:
         name_offsets.append(len(names))
-        names += section.name.encode("ascii") + b"\x00"
+        names += encode_str(section.name) + b"\x00"
     table = b"".join(struct.pack(">II", addresses[s.name], o) for s, o in zip(ordered, name_offsets))
 
     pool_end = HEADER_SIZE + pool_start + len(pool)
@@ -252,9 +285,11 @@ def _signed(value: int) -> int:
 
 @dataclass
 class Entry:
-    """One 28-byte script entry. ``a``..``f`` are the words at +4..+0x18;
-    ``e`` and ``f`` may be labels or section pointers (PID/IID/SID names,
-    ``TBL_*`` tables), the others numbers."""
+    """One script entry: 28 bytes in FE9 or 40 bytes in FE10.
+
+    FE9 uses ``op a..f``. FE10 retains those fields and adds ``g..i``;
+    pointers occur in different slots in its opcode dialect.
+    """
 
     op: int
     a: Value = 0
@@ -263,16 +298,24 @@ class Entry:
     d: Value = 0
     e: Value = 0
     f: Value = 0
+    g: Value = 0
+    h: Value = 0
+    i: Value = 0
 
-    def words(self) -> list[Value]:
-        return [self.op & 0xFFFFFFFF, self.a, self.b, self.c, self.d, self.e, self.f]
+    def words(self, dialect: Dialect = FE9) -> list[Value]:
+        values = [self.op & 0xFFFFFFFF, self.a, self.b, self.c, self.d,
+                  self.e, self.f, self.g, self.h, self.i]
+        return values[:dialect.entry_words]
 
     @classmethod
-    def from_words(cls, words: list[Value]) -> "Entry":
+    def from_words(cls, words: list[Value], dialect: Optional[Dialect] = None) -> "Entry":
+        dialect = dialect or ({FE9.entry_words: FE9, FE10.entry_words: FE10}.get(len(words)))
+        if dialect is None or len(words) != dialect.entry_words:
+            raise ValueError(f"AI entry has {len(words)} words; expected 7 (FE9) or 10 (FE10)")
         op = words[0]
         if isinstance(op, int):
             op = _signed(op)
-        return cls(op, *words[1:7])
+        return cls(op, *words[1:dialect.entry_words])
 
     @property
     def op_name(self) -> str:
@@ -289,9 +332,9 @@ class Script:
     header_extra: list[Value] = dataclass_field(default_factory=list)  # unused header words, kept as read
 
 
-def is_script_section(section: Section) -> bool:
-    return (section.name.startswith("SEQ_") and len(section.words) >= 2 * OP_ENTRY_WORDS
-            and len(section.words) % OP_ENTRY_WORDS == 0
+def is_script_section(section: Section, dialect: Dialect = FE9) -> bool:
+    return (section.name.startswith("SEQ_") and len(section.words) >= 2 * dialect.entry_words
+            and len(section.words) % dialect.entry_words == 0
             and section.words[0] == 0xFFFFFFFE)
 
 
@@ -299,22 +342,25 @@ def is_heal_section(section: Section) -> bool:
     return section.name.startswith("SEQ_") and len(section.words) == HEAL_WORDS and isinstance(section.words[0], str)
 
 
-def read_script(section: Section) -> Script:
-    if not is_script_section(section):
+def read_script(section: Section, dialect: Dialect = FE9) -> Script:
+    if not is_script_section(section, dialect):
         raise ValueError(f"{section.name} is not an AI script")
-    entries = [Entry.from_words(section.words[i:i + OP_ENTRY_WORDS])
-               for i in range(0, len(section.words), OP_ENTRY_WORDS)]
+    entries = [Entry.from_words(section.words[i:i + dialect.entry_words], dialect)
+               for i in range(0, len(section.words), dialect.entry_words)]
     header, ident, body = entries[0], entries[1], entries[2:]
-    if header.op != -2 or ident.op != -1 or header.e != section.words[5]:
+    if (header.op != -2 or ident.op != -1
+            or getattr(header, dialect.header_name_slot) != section.name):
         raise ValueError(f"{section.name}: bad script header")
     return Script(section.name, int(ident.a), body)
 
 
-def write_script(section: Section, script: Script) -> None:
-    section.words = ([0xFFFFFFFE, 0, 0, 0, 0, script.name, 0]
-                     + [0xFFFFFFFF, script.script_id, 0, 0, 0, 0, 0])
+def write_script(section: Section, script: Script, dialect: Dialect = FE9) -> None:
+    header = Entry(-2)
+    setattr(header, dialect.header_name_slot, script.name)
+    ident = Entry(-1, script.script_id)
+    section.words = header.words(dialect) + ident.words(dialect)
     for entry in script.entries:
-        section.words += entry.words()
+        section.words += entry.words(dialect)
 
 
 def script_labels(script: Script) -> list[int]:
@@ -412,33 +458,37 @@ def _id_list(doc: CpDocument, list_name: str) -> list[str]:
     return [str(w) for w in read_list(section)] if section else []
 
 
-def attack_scripts(doc: CpDocument) -> list[str]:
-    return _id_list(doc, "ATK_SEQID_LIST")
+def _list_name(dialect: Dialect, kind: str) -> str:
+    return next(name for name, value in dialect.id_lists if value == kind)
 
 
-def move_scripts(doc: CpDocument) -> list[str]:
-    return _id_list(doc, "MOV_SEQID_LIST")
+def attack_scripts(doc: CpDocument, dialect: Dialect = FE9) -> list[str]:
+    return _id_list(doc, _list_name(dialect, "attack"))
 
 
-def heal_records(doc: CpDocument) -> list[str]:
-    return _id_list(doc, "HEAL_SEQID_LIST")
+def move_scripts(doc: CpDocument, dialect: Dialect = FE9) -> list[str]:
+    return _id_list(doc, _list_name(dialect, "move"))
 
 
-def mtype_tables(doc: CpDocument) -> list[str]:
-    return _id_list(doc, "MTYPE_TABLEID_LIST")
+def heal_records(doc: CpDocument, dialect: Dialect = FE9) -> list[str]:
+    return _id_list(doc, _list_name(dialect, "heal"))
 
 
-def id_problems(doc: CpDocument) -> list[str]:
+def mtype_tables(doc: CpDocument, dialect: Dialect = FE9) -> list[str]:
+    return _id_list(doc, _list_name(dialect, "mtype"))
+
+
+def id_problems(doc: CpDocument, dialect: Dialect = FE9) -> list[str]:
     """Where a record's stored id disagrees with its position in its id list."""
     problems = []
-    for list_name, kind in ID_LISTS.items():
+    for list_name, kind in dialect.id_lists:
         for index, name in enumerate(_id_list(doc, list_name)):
             section = doc.section(name)
             if section is None:
                 problems.append(f"{list_name}[{index}] names a missing section {name}")
                 continue
             if kind in ("attack", "move"):
-                stored = read_script(section).script_id
+                stored = read_script(section, dialect).script_id
             elif kind == "heal":
                 stored = read_heal(section).record_id
             else:

@@ -1,9 +1,10 @@
-"""Visual effects page: every ``EID_*`` effect of ``FE8Effect.bin`` plus any
+"""Visual effects page: every registered ``EID_*`` effect plus any
 unregistered ``yme/`` pack, rendered with the 3D model preview (an effect is
 an ordinary skeleton + mesh + animation + texture pack, see ``formats/effects.py``).
 
 An effect's whole pack can be replaced from another ``.cmp``, its texture can
-be replaced from an image, and a new effect can be added (``effect_add_dialog.py``).
+be replaced from an image, and a new effect can be added (``effect_add_dialog.py``). Radiant Dawn
+uses the same workflows plus its four parameters, two child links and numeric aliases.
 The preview shows the raw animation only; in-game timing and sequencing of the
 effects are not decoded."""
 
@@ -20,6 +21,7 @@ from PIL import Image, ImageTk
 
 from ..formats import animation, effect_registry, effects, gs_file, skeleton, tpl
 from ..exceptions import ProjectError
+from ..games import Game
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -45,6 +47,7 @@ class EffectsViewer(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._files = project.extracted_dir / "files"
+        self._read_only = False
         self._entries: list[effects.EffectEntry] = []
         self._by_iid: dict[str, effects.EffectEntry] = {}
         self._particle_layout: animation.ParticleTableLayout | None = None
@@ -91,7 +94,9 @@ class EffectsViewer(EditorPanel):
         self._detail.pack(anchor="w", pady=(2, 6))
         actions = ttk.Frame(right)
         actions.pack(fill="x", pady=(0, 6))
-        ttk.Button(actions, text="Add effect...", command=self._add).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        self._add_btn = ttk.Button(actions, text="Add effect...", command=self._add,
+                                   state="disabled" if self._read_only else "normal")
+        self._add_btn.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
         self._replace_btn = ttk.Button(actions, text="Replace pack...", command=self._replace_pack, state="disabled")
         self._replace_btn.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
         self._part_btn = ttk.Button(actions, text="Replace part...", command=self._replace_part, state="disabled")
@@ -104,6 +109,8 @@ class EffectsViewer(EditorPanel):
         self._registry_btn.grid(row=1, column=2, sticky="ew", padx=2, pady=2)
         self._restore_btn = ttk.Button(actions, text="Restore original", command=self._restore, state="disabled")
         self._restore_btn.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        self._remove_btn = ttk.Button(actions, text="Remove added effect", command=self._remove, state="disabled")
+        self._remove_btn.grid(row=2, column=1, columnspan=2, sticky="ew", padx=2, pady=2)
         for column in range(3):
             actions.columnconfigure(column, weight=1)
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=520, justify="left")
@@ -124,13 +131,14 @@ class EffectsViewer(EditorPanel):
 
     # -- list -----------------------------------------------------------------
     def _load(self) -> None:
-        if not effects.registry_path(self._files).exists():
-            self._count.config(text=f"{effects.REGISTRY_FILE} not found. Extract the project first.")
+        registry = effects.registry_path(self._files, self._project.game)
+        if not registry.exists():
+            self._count.config(text=f"{registry.name} not found. Extract the project first.")
             return
         try:
-            self._entries = effects.list_effects(self._files)
+            self._entries = effects.list_effects(self._files, self._project.game)
         except Exception as exc:  # noqa: BLE001 - corrupt registry: say so instead of a blank page
-            self._count.config(text=f"Could not read {effects.REGISTRY_FILE}: {exc}")
+            self._count.config(text=f"Could not read {registry.name}: {exc}")
             return
         self._refresh()
 
@@ -144,12 +152,13 @@ class EffectsViewer(EditorPanel):
                 continue
             if mode == "Registered" and not e.registered or mode == "Unregistered" and e.registered:
                 continue
-            if mode == "Chained" and not e.next_in_chain:
+            if mode == "Chained" and not (e.next_in_chain or e.child_effects):
                 continue
             self._by_iid[e.name] = e
             status = ("registered" if e.registered else "unregistered") + ("" if e.has_pack else ", no pack")
+            chain = e.next_in_chain or ", ".join(e.child_effects)
             self._tree.insert("", "end", iid=e.name, values=(
-                e.name, e.category if e.registered else "", e.next_in_chain or "", status))
+                e.name, e.category if e.registered else "", chain, status))
         self._count.config(text=f"{len(self._by_iid)} of {len(self._entries)} effects")
 
     def _selected(self) -> effects.EffectEntry | None:
@@ -169,13 +178,28 @@ class EffectsViewer(EditorPanel):
         self._particle_layout = None
         self._particle_data = None
         self._particle_btn.config(state="disabled")
-        self._replace_btn.config(state="normal")
-        self._part_btn.config(state="normal" if entry.has_pack else "disabled")
-        self._texture_btn.config(state="normal" if entry.has_pack else "disabled")
-        self._register_btn.config(state="disabled" if entry.registered else "normal")
-        self._registry_btn.config(state="normal" if entry.registered else "disabled")
-        self._restore_btn.config(state="normal" if self._has_original(entry) else "disabled")
-        lines = [f"Registry flags: {entry.flags:#010x}" if entry.registered else "Not in FE8Effect.bin"]
+        writable = not self._read_only
+        self._replace_btn.config(state="normal" if writable else "disabled")
+        self._part_btn.config(state="normal" if writable and entry.has_pack else "disabled")
+        self._texture_btn.config(state="normal" if writable and entry.has_pack else "disabled")
+        self._register_btn.config(state="normal" if writable and not entry.registered else "disabled")
+        self._registry_btn.config(state="normal" if writable and entry.registered else "disabled")
+        self._restore_btn.config(state="normal" if writable and self._has_original(entry) else "disabled")
+        removable = (self._project.game is Game.RADIANT_DAWN and entry.registered
+                     and not self._is_vanilla_registry_entry(entry.name))
+        self._remove_btn.config(state="normal" if removable else "disabled")
+        registry_name = effects.REGISTRY_FILES[self._project.game]
+        lines = [f"Registry flags: {entry.flags:#010x}" if entry.registered else f"Not in {registry_name}"]
+        if entry.description:
+            lines.append(f"Description: {entry.description}")
+        if entry.sound_group:
+            lines.append(f"Sound: {entry.sound_group}")
+        if self._project.game is Game.RADIANT_DAWN and entry.registered:
+            lines.append("Parameters +0C..+0F: " + ", ".join(map(str, entry.parameter_bytes)))
+            if entry.numeric_ids:
+                lines.append("Numeric effect IDs: " + ", ".join(map(str, entry.numeric_ids)))
+            if entry.child_effects:
+                lines.append("Child effects: " + ", ".join(entry.child_effects))
         if entry.next_in_chain:
             lines.append(f"Chains to {entry.next_in_chain}")
         self._show_textures({})
@@ -202,7 +226,7 @@ class EffectsViewer(EditorPanel):
                 if particles is not None:
                     self._particle_layout = particles
                     self._particle_data = ga_data
-                    self._particle_btn.config(state="normal")
+                    self._particle_btn.config(state="normal" if writable else "disabled")
                     count = len(particles.emitters)
                     stages = sum(emitter.stage_count for emitter in particles.emitters)
                     lines.append(f"Particle emitters: {count} ({stages} stages)")
@@ -293,6 +317,15 @@ class EffectsViewer(EditorPanel):
     def _has_original(self, entry: effects.EffectEntry) -> bool:
         return self._pack_file(entry) in self._project.originals_in(self._pack_file(entry).parent)
 
+    def _is_vanilla_registry_entry(self, name: str) -> bool:
+        path = effects.registry_path(self._files, self._project.game)
+        original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
+        source = original if original.is_file() else path
+        try:
+            return name in effects.registry_names(source.read_bytes(), self._project.game)
+        except Exception:  # noqa: BLE001 - a corrupt original is protected, never made removable
+            return True
+
     # -- editing --------------------------------------------------------------
     def _after_edit(self, name: str, message: str) -> None:
         self._load()
@@ -323,6 +356,9 @@ class EffectsViewer(EditorPanel):
                                             initialvalue=f"0x{entry.flags:08X}", parent=self)
         if flags_text is None:
             return
+        if self._project.game is Game.RADIANT_DAWN:
+            self._edit_rd_registry(entry, flags_text)
+            return
         chain_text = simpledialog.askstring("Effect registry", "Next effect in chain (blank for none):",
                                             initialvalue=entry.next_in_chain or "", parent=self)
         if chain_text is None:
@@ -343,6 +379,56 @@ class EffectsViewer(EditorPanel):
                 raise ValueError("The chain would contain a cycle.")
             self._project.write_keeping_original(path, effect_registry.build_effect_registry(records))
         except (OSError, ValueError, StopIteration, IndexError) as exc:
+            messagebox.showerror("Effect registry", str(exc), parent=self)
+            return
+        self._changelog.append("Visual effects", f"Edited registry entry {entry.name}")
+        self._after_edit(entry.name, f"Edited registry entry {entry.name}.")
+
+    def _edit_rd_registry(self, entry: effects.EffectEntry, flags_text: str) -> None:
+        description = simpledialog.askstring(
+            "Effect registry", "Description:", initialvalue=entry.description, parent=self)
+        if description is None:
+            return
+        parameters = simpledialog.askstring(
+            "Effect registry", "Four parameter bytes (0-255, comma-separated):",
+            initialvalue=", ".join(map(str, entry.parameter_bytes)), parent=self)
+        if parameters is None:
+            return
+        children = simpledialog.askstring(
+            "Effect registry", "Up to two child EIDs (comma-separated; blank for none):",
+            initialvalue=", ".join(entry.child_effects), parent=self)
+        if children is None:
+            return
+        sound = simpledialog.askstring(
+            "Effect registry", "Sound group (blank for none):",
+            initialvalue=entry.sound_group or "", parent=self)
+        if sound is None:
+            return
+        aliases = simpledialog.askstring(
+            "Effect registry", "Numeric effect IDs (comma-separated; blank for none):",
+            initialvalue=", ".join(map(str, entry.numeric_ids)), parent=self)
+        if aliases is None:
+            return
+        try:
+            flags = int(flags_text.strip(), 0)
+            if not 0 <= flags <= 0xFFFFFFFF:
+                raise ValueError("Flags must be a 32-bit unsigned number.")
+            values = tuple(int(value.strip(), 0) for value in parameters.split(",") if value.strip())
+            if len(values) != 4 or any(not 0 <= value <= 255 for value in values):
+                raise ValueError("Enter exactly four parameter bytes from 0 to 255.")
+            child_names = tuple(value.strip() for value in children.split(",") if value.strip())
+            if len(child_names) > 2:
+                raise ValueError("An RD effect has at most two child effects.")
+            child_slots = (child_names + (None, None))[:2]
+            numeric_ids = tuple(int(value.strip(), 0) for value in aliases.split(",") if value.strip())
+            path = effects.registry_path(self._files, self._project.game)
+            rebuilt = effects.update_rd_registry_record(
+                path.read_bytes(), entry.name, description=description, flags=flags,
+                parameter_bytes=values, child_effects=child_slots,
+                sound_group=sound.strip() or None, numeric_ids=numeric_ids,
+            )
+            self._project.write_keeping_original(path, rebuilt)
+        except (OSError, ValueError, effects.EffectError) as exc:
             messagebox.showerror("Effect registry", str(exc), parent=self)
             return
         self._changelog.append("Visual effects", f"Edited registry entry {entry.name}")
@@ -445,3 +531,28 @@ class EffectsViewer(EditorPanel):
             return
         self._changelog.append("Visual effects", f"Restored {entry.name}")
         self._after_edit(entry.name, f"Restored {entry.name}.")
+
+    def _remove(self) -> None:
+        entry = self._selected()
+        if entry is None or self._project.game is not Game.RADIANT_DAWN:
+            return
+        if self._is_vanilla_registry_entry(entry.name):
+            messagebox.showerror("Remove effect", "The game's original registry rows are protected.", parent=self)
+            return
+        if not messagebox.askyesno(
+                "Remove added effect", f"Remove {entry.name} from FE10Effect.cms and delete its added pack?",
+                parent=self):
+            return
+        registry = effects.registry_path(self._files, self._project.game)
+        pack = self._pack_file(entry)
+        try:
+            rebuilt = effects.remove_rd_registry_record(registry.read_bytes(), entry.name)
+            self._project.write_keeping_original(registry, rebuilt)
+            original = self._project.originals_dir / pack.relative_to(self._project.extracted_dir)
+            if pack.is_file() and not original.exists():
+                pack.unlink()
+        except (OSError, ValueError, effects.EffectError) as exc:
+            messagebox.showerror("Remove effect", str(exc), parent=self)
+            return
+        self._changelog.append("Visual effects", f"Removed added effect {entry.name}")
+        self._load()

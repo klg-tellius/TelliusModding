@@ -137,7 +137,7 @@ Do not repaint terrain to compensate for an unintended height or exit rule. Corr
 | **Fill a rectangle** | Off: paint visited tiles. On: fill the inclusive rectangle between drag corners. | Preview and inspect with Props hidden; rectangle fill can overpaint around irregular shapes. |
 | Right-click tile | Samples that tile's terrain type into the selector. | The selector changes and the grid remains unmodified. |
 | **Map image** layer | Shows the rendered/top-down map backdrop. | Turn it off when artwork hides the terrain overlay. |
-| **Terrain** layer | Colors cells by terrain internal name. | Keep it on while painting and after reload. |
+| **Terrain** layer | Colors cells by terrain category, the same color for every variant of a terrain: green Plain, tan Floor and Stairs, sand Desert and Coast, dark green Thicket, brown Cliff and Rock, blue water, dark grey walls and other impassable tiles, orange doors and gates, gold chests, magenta objective tiles, cyan healing tiles (Throne, Fort, Castle, Heal). | Keep it on while painting and after reload. |
 | **Heights** layer | Shades height information; redder means higher. | A route may be closed by heights even when terrain is passable. |
 | **Grid** layer | Shows tile boundaries used by terrain and unit coordinates. | Keep it on when matching a prop footprint. |
 | **Props** layer | Shows placed scenery. | Toggle off to inspect terrain beneath a prop; props do not supply general path blocking. |

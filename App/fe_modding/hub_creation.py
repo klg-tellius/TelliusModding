@@ -81,7 +81,11 @@ def _flat_model(width: int, height: int, texture_id: int, white_id: int,
     points = ((x0, 0.0, z0), (x1, 0.0, z0), (x1, 0.0, z1), (x0, 0.0, z1))
     normal = ((0.0, 1.0, 0.0),) * 3
     u, v = (float(width), float(height)) if tiled else (1.0, 1.0)
-    uv = ((0.0, 0.0), (u, 0.0), (u, v), (0.0, v))
+    # The map renderer's ground basis faces the opposite way from image-space.
+    # Rotate the UV rectangle so an imported picture is not shown upside-down
+    # and backwards in game.  Keep the texture itself untouched so reopening
+    # and applying the current image does not rotate it a second time.
+    uv = ((u, v), (0.0, v), (0.0, 0.0), (u, 0.0))
     triangle = gltf_import.ImportedTriangle
     rgba = tuple(channel / 255.0 for channel in color) + (1.0,)
     scene = gltf_import.ImportedScene(

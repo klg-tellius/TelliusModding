@@ -11,7 +11,7 @@ from ..widgets import Card, CardGrid, ScrollFrame
 #: (title, icon, description, route), in hub order.
 TOOLS = [
     ("Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", ("asset", "battle_sim")),
-    ("Saves", "◫", "Open a .gci save and edit its units, convoy, forges and flags", ("saves",)),
+    ("Saves", "◫", "Edit Path of Radiance .gci or Radiant Dawn Dolphin NAND saves", ("saves",)),
     ("Check", "✓", "Find broken references and missing files before the game does", ("check",)),
     ("Game Code", "⌘", "Patches and tunable constants written into sys/main.dol", ("code",)),
 ]

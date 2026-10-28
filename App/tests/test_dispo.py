@@ -133,6 +133,38 @@ class DispoDocumentTests(unittest.TestCase):
         dispo.move_unit(unit, 10, 4)
         self.assertEqual(unit[F["pos_x"]:F["pos2_y"] + 1], [10, 4, 8, 4])
 
+    def test_fe10_growth_table_creation_flag_round_trips(self):
+        doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
+        doc.dialect = "fe10"
+        for section in doc.sections:
+            section.units = [dispo.DispoUnitValues(unit, raw=bytes(dispo.FE10_RECORD_SIZE))
+                             for unit in section.units]
+        unit = doc.section("SECA").units[0]
+        unit[dispo.FE10_GROWTH_FLAGS_FIELD] = dispo.FE10_GROWTH_TABLE | 0x0002
+
+        data = dispo.build_dispo(doc)
+        parsed = dispo.parse_dispo(data)
+        rebuilt = parsed.section("SECA").units[0]
+
+        self.assertEqual(parsed.dialect, "fe10")
+        self.assertIn(dispo.FE10_GROWTH_FLAGS_FIELD, dispo.supported_fields(parsed))
+        self.assertEqual(rebuilt[dispo.FE10_GROWTH_FLAGS_FIELD], 0x0402)
+        self.assertEqual(dispo.field_name_for(dispo.FE10_GROWTH_FLAGS_FIELD, "fe10"), "growth_flags")
+        self.assertIsNone(dispo.field_name_for(dispo.FE10_GROWTH_FLAGS_FIELD, "fe9"))
+        self.assertIn("Use FE10Growth stats", dispo.describe_field_for(
+            dispo.FE10_GROWTH_FLAGS_FIELD, 0x0402, "fe10"))
+        self.assertEqual(dispo.build_dispo(parsed), data)
+
+    def test_fe10_growth_table_creation_flag_range_is_checked(self):
+        doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
+        doc.dialect = "fe10"
+        for section in doc.sections:
+            section.units = [dispo.DispoUnitValues(unit, raw=bytes(dispo.FE10_RECORD_SIZE))
+                             for unit in section.units]
+        doc.section("SECA").units[0][dispo.FE10_GROWTH_FLAGS_FIELD] = 0x10000
+        with self.assertRaisesRegex(ValueError, "growth flags"):
+            dispo.build_dispo(doc)
+
 
 class DispoCounterpartTests(unittest.TestCase):
     def _doc(self, letter, pids):

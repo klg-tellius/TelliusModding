@@ -163,6 +163,15 @@ class ProjectExtractTests(unittest.TestCase):
             with self.assertRaises(ProjectError):
                 project.set_source(Path(tmp) / "x.zip")
 
+    def test_radiant_dawn_build_uses_wit_and_wbfs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = ModProject.create(Path(tmp), "RD Build", Game.RADIANT_DAWN)
+            _make_layout(project.extracted_dir, wii=True)
+            with mock.patch.object(tools, "build_disc") as build:
+                output = project.build()
+            self.assertEqual(output, project.build_dir / "RD Build.wbfs")
+            build.assert_called_once_with(project.extracted_dir, output, overwrite=True)
+
 
 if __name__ == "__main__":
     unittest.main()

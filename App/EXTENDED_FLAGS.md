@@ -258,15 +258,35 @@ correct regional function boundaries or safe patch sites**.
    edits; the editor does not guess their target scope. Vanilla/engine/hub flags
    cannot use these extended rename/delete operations.
    Remaining editor work includes visual UI checks. Save-capacity error presentation still needs validation at every
-   caller. Production activation remains blocked for all three regions.
-6. **Dolphin validation is not done.** Verify cold save/reload and hub round trips
-   in all three regions, the chapter-17 sequence (`C18` internally), two new local
+   caller. Production activation is approved for USA and Europe; Japan remains gated.
+6. **Dolphin validation passed for USA and Europe.** Japan's checkpoint was
+   confirmed to contain all 80 local probe bits, but its resume sequence cleared
+   them after deserialization. The JP-only reset hook now preserves restored
+   local values for multipart modes 5-7 and checkpoint mode 8, while fresh
+   chapter mode 4 still clears them. The revision-8 JP hub ISO still lost them
+   on Suspend: that build compared the party resume point (`party+0x54`) with 8,
+   but a Suspend block keeps the value its chapter was entered with there (1, 2,
+   4-7 in all 70 sampled checkpoints; only the block header `+0x65` says 8). The
+   guard now reads the loaded block's `+0x65` through the file menu's MemoryCard
+   object (JP `0x80365CE0`: `+0` buffer, 0 once closed; `+4` block) and keeps
+   party resume points 5-7 for multipart. A revision-9 JP hub ISO needs the repeat
+   suspend/resume and hub round-trip test before Japanese approval; inspect the
+   card after suspending and before resuming, since resuming consumes the copy.
+   Revision 9 still read every probe as CLEAR after a resume, campaign included.
+   Hook tracing in Dolphin (2026-10-27) showed the card-read restore ran twice
+   but never copied the record: the Japanese game marks the Suspend copy used
+   (save kind `+0x60` = 1) in memory before deserializing it, and the validator
+   accepted only kinds 2 and 3. It now accepts 1-3 (the card-open guard still
+   skips kind 1 on the card, where those copies are partial). Revision 10 passed
+   in Dolphin: hub WRITE, Suspend, cold restart, resume, READ = all 100 campaign
+   and all 80 local flags SET. Chapter 17's four parts also completed there. Validation
+   covers cold save/reload and hub round trips in each approved region, the
+   chapter-17 sequence (`C18` internally), two new local
    flags, a fixture exceeding vanilla capacity, and safe over-capacity refusal.
    `tools/prepare_extended_flag_playtest.py` now prepares isolated experimental
    CISO images and Dolphin profiles without enabling production installation.
-   It refuses an existing output directory. US/EU fixtures activate an added hub
-   after the prologue; JP contains runtime probes only because its ChapterData
-   editor is read-only. Manual Visit probes in C01 and the US/EU hub write, read
+   It refuses an existing output directory. All three regional fixtures can
+   activate an added hub after the prologue. Manual Visit probes in C01 and the hub write, read
    and clear 100 campaign plus 80 chapter flags. Other ordinary story chapters
    have two extra local registrations. No probe initializes its state automatically.
    `tools/inspect_extended_flag_playtest.py` reads isolated GCI saves without
@@ -283,15 +303,15 @@ correct regional function boundaries or safe patch sites**.
    startup and ChapterData inside system.cmp shadowed edited loose files. Revision
    2 syncs/verifies the boot archive, preserves the test UUID/cards, and adds 2x
    animations plus turn-one automatic victory in connected test chapters. The
-   corrected build still needs in-game confirmation. Regression coverage now
+   corrected builds were subsequently tested successfully in USA and Europe. Regression coverage now
    checks the archive copies, not only the loose files or packaged DOL.
 
-`game_code/extended_flags.py` intentionally has no approved regional patch edits
-and is not registered in the production patch catalog. The project-level guard
+`game_code/extended_flags.py` approves USA and Europe and keeps Japan gated. It
+is not registered as a fixed-byte production patch because installation is
+generated from the project's layout. The project-level guard
 rejects opted-in projects before writes instead of silently compiling extended
 registrations into an unpatched game. It also verifies executable/manifest/receipt
-agreement for approved regions; the approval set remains empty until the above
-work passes.
+agreement for approved regions.
 
 ## Verification
 

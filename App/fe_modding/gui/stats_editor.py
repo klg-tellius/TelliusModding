@@ -80,13 +80,14 @@ from .. import excel_io
 from ..formats.fe9_message_scene import to_display
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
 from ..game_code.dol import DolError
+from ..games import Game
 from ..project import ModProject
 from . import record_actions, theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
 from . import message_reference
-from .widgets import ScrollFrame, TileBrowser, info, tip
+from .widgets import SaveDiscardBar, ScrollFrame, TileBrowser, info, tip
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]
@@ -479,19 +480,17 @@ class StatsEditor(EditorPanel):
 
     # -- layout ---------------------------------------------------------------
     def _build_widgets(self) -> None:
-        top = ttk.Frame(self, padding=(8, 8, 8, 0))
+        top = SaveDiscardBar(
+            self, save_text="Save FE8Data.bin", on_save=self._save, on_discard=self._revert,
+            help_text="Fields apply when you leave them; Save writes FE8Data.bin and the build copies it into "
+                      "system.cmp.")
         top.pack(fill="x")
-        self._save_button = ttk.Button(top, text="Save FE8Data.bin", style="Accent.TButton", command=self._save,
-                                       state="disabled")
-        self._save_button.pack(side="left")
-        self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
-        self._revert_button.pack(side="left", padx=(6, 0))
-        self._excel_export_button = ttk.Button(top, text="Export Excel…", command=self._export_excel)
-        self._excel_import_button = ttk.Button(top, text="Import Excel…", command=self._import_excel)
-        self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
-        self._status_label.pack(side="left", padx=(10, 0))
-        info(top, "Fields apply when you leave them; Save writes FE8Data.bin and the build copies it into "
-                  "system.cmp.").pack(side="right")
+        self._toolbar = top
+        self._save_button = top.save_button
+        self._revert_button = top.discard_button
+        self._excel_export_button = ttk.Button(top.actions, text="Export Excel…", command=self._export_excel)
+        self._excel_import_button = ttk.Button(top.actions, text="Import Excel…", command=self._import_excel)
+        self._status_label = top.status
 
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=8, pady=8)
@@ -760,6 +759,14 @@ class StatsEditor(EditorPanel):
             form.add(entry, f"{title} {name}", var, lambda i=i: str(read(i)),
                      lambda data, v, i=i: apply(data, i, _number(v, low, high)))
 
+    def _army_colours(self, jid: Optional[str]) -> None:
+        """Recolour one army's battle and map textures of a class (colour_variant_dialog)."""
+        if not jid:
+            return
+        self.flush()
+        from .colour_variant_dialog import open_colour_variant
+        open_colour_variant(self, self._project, self._session, self._changelog, jid=jid)
+
     def _open_map_model(self, aid: str) -> None:
         """Open a class's map model (its AID's ymu/ folder) in Assets › 3D Models."""
         from ..formats import anim_registry
@@ -853,6 +860,13 @@ class StatsEditor(EditorPanel):
                     link=self._open_map_model if self._navigate is not None else None)
         pointer_row("Innate weapon", "innate_weapon", "IID", "Laguz: the attack of the transformed unit.",
                     link=self.select_item)
+        if self._project.game is Game.PATH_OF_RADIANCE:
+            ttk.Button(parent, text="Army colours…", command=lambda: self._army_colours(cls().jid)).grid(
+                row=row, column=1, sticky="w", pady=(4, 2))
+            info(parent, "Recolour how one army shows this class in battle and on the map (blue enemy "
+                         "myrmidons). Units with a texture line of their own keep theirs.").grid(
+                row=row, column=2, columnspan=4, sticky="w", padx=(8, 0))
+            row += 1
 
         self._heading(parent, "Weapon ranks", row, help_text=(
             "- cannot use, * usable without a fixed rank, else the starting rank letter. A rank string no other "

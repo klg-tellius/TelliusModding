@@ -44,7 +44,7 @@ from ..map_editor import MapEditor
 from ..script_editor import ScriptEditor
 from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
-from ..widgets import Card, CardGrid, Link, ScrollFrame, info, section_header
+from ..widgets import Card, CardGrid, Link, ScrollFrame, fold_toggle, info, section_header
 
 TABS = ["overview", "build", "map_settings", "chapter_data", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
@@ -64,10 +64,37 @@ def open_flow(project) -> tuple[chapter_flow.ChapterFlow | None, str]:
     return (flow, "") if flow.available else (None, flow.unavailable_reason)
 
 
+def open_rd_story(project):
+    """The RFEE01 story model with its ChapterData number/ID mapping."""
+    from ...game_code.editor import CodeEditor
+    from ...game_code.rd_story import StorySequence, chapter_number_map
+    try:
+        ids = chapter_number_map(project.read_logical("game_data"))
+        story = StorySequence(CodeEditor(project.extracted_dir, project.write_keeping_original), ids)
+    except (OSError, ModdingError, ValueError) as exc:
+        return None, f"Could not open the Radiant Dawn story data: {exc}"
+    return (story, "") if story.available else (None, story.unavailable_reason)
+
+
 def _flow_label(chapter: int, titles: dict) -> str:
     if chapter == chapter_flow.GAME_CLEARED:
         return "32 · Ending"
     return f"{chapter:02d} · {chapters.chapter_display_title(f'{chapter:02d}', titles)}"
+
+
+def _fallback_story_order(project, chapter_ids) -> list[str]:
+    """Retail order when this game's editable story-flow table is unavailable.
+
+    Path of Radiance uses small numeric chapter ids and has several non-story
+    records in the same namespace.  Radiant Dawn's ids already encode their
+    story order (``0101``, ``0407a``, ``final``), so none of them can be fed to
+    the FE9-only integer/range test.
+    """
+    profile = profile_of(project)
+    if profile.chapter_id_width == 2:
+        return [cid for cid in chapter_ids
+                if cid.isdigit() and 1 <= int(cid) <= chapter_flow.LAST_RETAIL_STORY]
+    return sorted(chapter_ids, key=profile.chapter_sort_key)
 
 
 def _part_folders(project, chapter_id: str, phases, source: str | None = None) -> dict[str, int]:
@@ -153,12 +180,24 @@ class ChaptersHub(Page):
                                         on_click=command))
         self._actions.done()
 
-        flow, _why = open_flow(self.project)
+        is_rd = profile_of(self.project).script_dialect == "fe10"
+        rd_story, _rd_why = open_rd_story(self.project) if is_rd else (None, "")
+        flow, _why = (None, "") if is_rd else open_flow(self.project)
         by_id = {c.id: c for c in index.chapters}
-        if flow is not None:
+        army_by_id = {}
+        if rd_story is not None:
+            order = [cid.removeprefix("C").lower() for number in rd_story.order()
+                     if (cid := rd_story.chapter_ids.get(number)) and cid != "CFINAL"]
+            if "final" in by_id:
+                order.append("final")
+            army_by_id = {cid.removeprefix("C").lower(): rd_story.effective_army(number)
+                          for number, cid in rd_story.chapter_ids.items()}
+            if "CFINAL" in rd_story.chapter_ids.values():
+                army_by_id["final"] = rd_story.effective_army(55)
+        elif flow is not None:
             order = [f"{n:02d}" for n in flow.order()]
         else:  # no story flow to read: the retail story
-            order = [c for c in by_id if 1 <= int(c) <= chapter_flow.LAST_RETAIL_STORY]
+            order = _fallback_story_order(self.project, by_id)
         position = {cid: n for n, cid in enumerate((c for c in order if c in by_id), 1)}
         story = sorted((c for c in index.chapters if c.id in position), key=lambda c: position[c.id])
         other = [c for c in index.chapters if c.id not in position]
@@ -179,6 +218,8 @@ class ChaptersHub(Page):
                         structure.append((f"{len(parts)} parts", "accent_bg"))
                 if not c.has_map:
                     structure.append(("no map", "chip_named"))
+                if army := army_by_id.get(c.id):
+                    structure.append((army.label, "accent_bg"))
                 key = (c.id, c.title)
                 self._keys[key] = True
                 grid.add(key, Card(grid, title=c.title,
@@ -305,6 +346,10 @@ class ChaptersHub(Page):
         self.shell.navigate(("chapter", f"{chapter:02d}", "build", "hub"))
 
     def _add_chapter(self) -> None:
+        if profile_of(self.project).script_dialect == "fe10":
+            messagebox.showinfo("Add chapter", "Radiant Dawn chapter creation needs its main.dol chapter-flow "
+                                "table before a copied chapter can be made reachable.", parent=self)
+            return
         ids = chapters.list_chapter_ids(self.project)
         session = self.shell.session
         if not ids or not session.available:
@@ -351,6 +396,11 @@ class ChaptersHub(Page):
 
 
     def _new_campaign(self) -> None:
+        if profile_of(self.project).script_dialect == "fe10":
+            messagebox.showinfo("New campaign", "Radiant Dawn campaign creation needs its main.dol chapter-flow "
+                                "table. Map, deployment, dialogue, script and shop editing are available now.",
+                                parent=self)
+            return
         from ... import campaign
         from ..campaign_dialog import NewCampaignDialog
         from ...formats import fe8data
@@ -410,6 +460,29 @@ class ChaptersHub(Page):
             self.shell.navigate(("chapter", f"{result.chapter_ids[0]:02d}"))
 
     def _story_order(self) -> None:
+        if profile_of(self.project).script_dialect == "fe10":
+            from ..campaign_dialog import RDStoryOrderDialog
+            story, why = open_rd_story(self.project)
+            if story is None:
+                messagebox.showerror("Story order", f"The story order can't be edited ({why}).", parent=self)
+                return
+            titles = chapters.chapter_titles(self.project)
+            labels = {}
+            for number, cid in story.chapter_ids.items():
+                shown = "final" if cid == "CFINAL" else cid.removeprefix("C").lower()
+                labels[number] = f"{shown} · {chapters.chapter_display_title(shown, titles)}"
+            dialog = RDStoryOrderDialog(self, story.steps(), labels)
+            self.wait_window(dialog)
+            if dialog.result is None:
+                return
+            try:
+                result = story.set_steps(dialog.result)
+            except (ValueError, OSError, ModdingError) as exc:
+                messagebox.showerror("Story order", str(exc), parent=self)
+                return
+            self.shell.changelog.append("Story order", result)
+            self._build()
+            return
         from ... import campaign
         from ..campaign_dialog import StoryOrderDialog
 
@@ -450,6 +523,7 @@ class ChapterPage(Page):
         self._phase_by_label: dict[str, str] = {}
         self._difficulty = "n"
         self._ids: list[str] = []
+        self._folded: dict = {}  # Overview sections and groups folded by the user, kept across chapters
 
         header = ttk.Frame(self, style="Page.TFrame", padding=(28, 6, 28, 8))
         header.pack(fill="x")
@@ -715,7 +789,7 @@ class ChapterPage(Page):
         self._update_phase_steps()
         self._update_phase_status()
         self._remove_phase_button.configure(
-            state="normal" if folder and folder != f"bmap{int(self._chapter):02d}" else "disabled")
+            state="normal" if folder and folder != profile_of(self.project).map_folder(self._chapter) else "disabled")
         self._battle.select_map(folder)
         if self._chapter is not None:
             self._chapter_data.show_chapter(self._chapter, folder)
@@ -941,10 +1015,14 @@ class ChapterPage(Page):
     def _play_in_dolphin(self) -> None:
         if self._chapter is None:
             return
+        from ...game_profile import PLAY
+        if not profile_of(self.project).supports(PLAY):
+            messagebox.showinfo("Play in Dolphin", profile_of(self.project).unavailable(PLAY), parent=self)
+            return
         dialog = PlayChapterDialog(self, self._title_of(self._chapter))
         self.wait_window(dialog)
         if dialog.result is not None:
-            self.shell.play_chapter(int(self._chapter), dialog.result)
+            self.shell.play_chapter(self._chapter, dialog.result)
 
     def _title_of(self, chapter_id) -> str:
         index = self.shell.index
@@ -1046,9 +1124,12 @@ class ChapterPage(Page):
 
     def _render_flow(self, body) -> None:
         """Where the chapter sits in the story: what leads to it and what comes next."""
-        chapter = int(self._chapter)
         head = section_header(body, "Story flow", "")
         head.pack(fill="x", pady=(0, 8))
+        if profile_of(self.project).script_dialect == "fe10":
+            self._render_rd_flow(body)
+            return
+        chapter = int(self._chapter)
         flow, why = open_flow(self.project)
         if flow is None:
             ttk.Label(body, text=f"The story flow can't be edited: {why}", style="Muted.TLabel").pack(anchor="w")
@@ -1118,6 +1199,67 @@ class ChapterPage(Page):
             ttk.Label(box, text=note, style="SurfaceMuted.TLabel", wraplength=820, justify="left").pack(
                 anchor="w", pady=(6, 0))
 
+    def _render_rd_flow(self, body) -> None:
+        """RFEE01 story position and the chapter's logical persistent army."""
+        from ...game_code.rd_story import ARMY_RUNTIME_READY, Army, ChapterStep
+        story, why = open_rd_story(self.project)
+        if story is None:
+            ttk.Label(body, text=f"The story flow can't be edited: {why}", style="Muted.TLabel").pack(anchor="w")
+            ttk.Frame(body, style="Page.TFrame", height=20).pack()
+            return
+        canonical = "CFINAL" if self._chapter == "final" else "C" + self._chapter.upper()
+        inverse = {cid: number for number, cid in story.chapter_ids.items()}
+        chapter = inverse.get(canonical)
+        if chapter is None:
+            ttk.Label(body, text="This chapter has no ChapterData story record.", style="Muted.TLabel").pack(anchor="w")
+            ttk.Frame(body, style="Page.TFrame", height=20).pack()
+            return
+        box = ttk.Frame(body, style="Surface.TFrame", padding=(14, 10))
+        box.pack(fill="x", pady=(0, 20))
+        before = story.predecessors(chapter)
+        after = story.next_of(chapter)
+        line = ttk.Frame(box, style="Surface.TFrame")
+        line.pack(fill="x", pady=(0, 7))
+        ttk.Label(line, text="Played after:", style="SurfaceHeading.TLabel").pack(side="left")
+        ttk.Label(line, text=(story.chapter_ids.get(before[0], str(before[0])) if len(before) == 1 else
+                              "start of story" if not before else "multiple chapters"),
+                  style="SurfaceMuted.TLabel").pack(side="left", padx=(8, 0))
+        line = ttk.Frame(box, style="Surface.TFrame")
+        line.pack(fill="x", pady=(0, 7))
+        ttk.Label(line, text="Next chapter:", style="SurfaceHeading.TLabel").pack(side="left")
+        ttk.Label(line, text=story.chapter_ids.get(after, "end of story") if after is not None else "end of story",
+                  style="SurfaceMuted.TLabel").pack(side="left", padx=(8, 0))
+        line = ttk.Frame(box, style="Surface.TFrame")
+        line.pack(fill="x")
+        ttk.Label(line, text="Army:", style="SurfaceHeading.TLabel").pack(side="left")
+        configured = story.configured_army(chapter)
+        effective = story.effective_army(chapter)
+        choices = {army.label: army for army in Army}
+        var = tk.StringVar(value=configured.label)
+        combo = ttk.Combobox(line, textvariable=var, values=list(choices),
+                             state="readonly" if ARMY_RUNTIME_READY else "disabled", width=23)
+        combo.pack(side="left", padx=(8, 0))
+
+        def set_army(_event=None):
+            steps = [ChapterStep(step.chapter, step.chapter_id, choices[var.get()])
+                     if isinstance(step, ChapterStep) and step.chapter == chapter else step
+                     for step in story.steps()]
+            try:
+                result = story.set_steps(steps)
+            except (ValueError, OSError, ModdingError) as exc:
+                messagebox.showerror("Could not change the chapter army", str(exc), parent=self)
+            else:
+                self.shell.changelog.append("Story order", result)
+                self._render_overview()
+
+        combo.bind("<<ComboboxSelected>>", set_army)
+        ttk.Label(box, text=f"Effective army: {effective.label if effective else 'unresolved'}",
+                  style="SurfaceMuted.TLabel").pack(anchor="w", pady=(7, 0))
+        if not ARMY_RUNTIME_READY:
+            ttk.Label(box, text="Army switching is locked until force-slot persistence and moved division prompts "
+                                 "pass RFEE01 runtime validation.", style="SurfaceMuted.TLabel",
+                      wraplength=800, justify="left").pack(anchor="w", pady=(4, 0))
+
     def _set_next(self, chapter: int, nxt: int) -> None:
         flow, why = open_flow(self.project)
         try:
@@ -1159,6 +1301,10 @@ class ChapterPage(Page):
     def _render_cast(self, body, index) -> None:
         head = section_header(body, "Cast", self._phase or "")
         head.pack(fill="x", pady=(0, 8))
+        section = ttk.Frame(body, style="Page.TFrame")
+        section.pack(fill="x")
+        fold_toggle(head, section, self._folded, ("cast",), fill="x")
+        body = section
         if self._phase is None:
             ttk.Label(body, text="This chapter has no map folder.", style="Muted.TLabel").pack(anchor="w")
             return
@@ -1192,6 +1338,7 @@ class ChapterPage(Page):
                  ).pack(side="right")
             grid = CardGrid(body, card_width=230, gap=8)
             grid.pack(fill="x")
+            fold_toggle(row, grid, self._folded, ("cast", section), fill="x")
             for i, unit in enumerate(members):
                 character = index.by_pid.get(unit.pid)
                 name = character.name if character and character.name else unit.pid
@@ -1212,15 +1359,23 @@ class ChapterPage(Page):
         head = section_header(body, "Dialogue", f"{len(messages)} messages")
         head.pack(fill="x", pady=(28, 8))
         Link(head, "Open Dialogue ›", lambda: self.shell.navigate(("chapter", self._chapter, "dialogue"))).pack(side="right")
+        section = ttk.Frame(body, style="Page.TFrame")
+        section.pack(fill="x")
+        fold_toggle(head, section, self._folded, ("dialogue",), fill="x")
         groups: dict[str, list] = {}
         for msg_id, text in messages:
             groups.setdefault(_message_group(msg_id), []).append((msg_id, text))
         for group, items in groups.items():
-            box = ttk.Frame(body, style="Surface.TFrame", padding=(14, 10))
+            box = ttk.Frame(section, style="Surface.TFrame", padding=(14, 10))
             box.pack(fill="x", pady=(0, 8))
-            ttk.Label(box, text=f"{group}  ({len(items)})", style="SurfaceHeading.TLabel").pack(anchor="w", pady=(0, 4))
+            title = ttk.Frame(box, style="Surface.TFrame")
+            title.pack(fill="x")
+            ttk.Label(title, text=f"{group}  ({len(items)})", style="SurfaceHeading.TLabel").pack(side="left")
+            lines = ttk.Frame(box, style="Surface.TFrame")
+            lines.pack(fill="x", pady=(4, 0))
+            fold_toggle(title, lines, self._folded, ("dialogue", group), bg_token="surface", fill="x", pady=(4, 0))
             for msg_id, text in items:
-                line = ttk.Frame(box, style="Surface.TFrame")
+                line = ttk.Frame(lines, style="Surface.TFrame")
                 line.pack(fill="x")
                 Link(line, msg_id, lambda m=msg_id: self.shell.navigate(("chapter", self._chapter, "dialogue", m)),
                      bg_token="surface").pack(side="left")
@@ -1232,10 +1387,13 @@ class ChapterPage(Page):
         head = section_header(body, "Script", f"{len(functions)} functions, {len(events)} named or triggered")
         head.pack(fill="x", pady=(28, 8))
         Link(head, "Open Script ›", lambda: self.shell.navigate(("chapter", self._chapter, "script"))).pack(side="right")
+        section = ttk.Frame(body, style="Page.TFrame")
+        section.pack(fill="x")
+        fold_toggle(head, section, self._folded, ("script",), fill="x")
         if not functions:
-            ttk.Label(body, text="No script for this chapter.", style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(section, text="No script for this chapter.", style="Muted.TLabel").pack(anchor="w")
             return
-        box = ttk.Frame(body, style="Surface.TFrame", padding=(14, 10))
+        box = ttk.Frame(section, style="Surface.TFrame", padding=(14, 10))
         box.pack(fill="x")
         for i, (name, kind) in enumerate(events):
             trigger = TRIGGERS.get(kind)

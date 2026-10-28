@@ -258,6 +258,7 @@ class VM:
     def _return(self, value) -> bool:
         self.run.frames.pop()
         if not self.run.frames:
+            self.run.result = value
             return True
         self.run.frames[-1].stack.append(value)
         return False
@@ -269,7 +270,7 @@ class VM:
         del frame.stack[len(frame.stack) - argc:]
         from . import natives
 
-        handler = natives.HANDLERS.get(name)
+        handler = natives.handler(self.world, name)
         if handler is not None:
             frame.stack.append(_s32(handler(self, list(args))))
             return

@@ -57,8 +57,8 @@ class HubTool(ttk.Frame):
         self._storage_box.bind("<<ComboboxSelected>>", lambda e: self._storage_changed())
         info(storage_row, "Extended gives the hub its own saved storage and frees vanilla flag slots. "
                          "Initial installation or migration requires a fresh playthrough. Existing saves "
-                         "are not converted. Extended installation remains unavailable until regional "
-                         "in-game validation passes.").pack(side="left", padx=(6, 0))
+                         "are not converted. Availability is checked for the project's game region.").pack(
+            side="left", padx=(6, 0))
 
         row = ttk.Frame(self)
         row.pack(fill="x", pady=(8, 0))
@@ -76,8 +76,10 @@ class HubTool(ttk.Frame):
             "(move it with the Select tool) and must not appear in any other chapter. Hub events automatically "
             "refresh it after every action, including Wait, so it can move and act repeatedly in one player "
             f"phase. The game's maximum effective Movement is {fe8data.MAX_MOVEMENT}; no special skill is needed.").pack(side="left")
-        self._avatar = ttk.Label(row, text="", style="Muted.TLabel")
-        self._avatar.pack(side="left", padx=(6, 0))
+        self._avatar_choice = tk.StringVar()
+        self._avatar_box = ttk.Combobox(row, textvariable=self._avatar_choice, state="readonly", width=34)
+        self._avatar_box.pack(side="left", padx=(6, 0))
+        self._avatar_box.bind("<<ComboboxSelected>>", lambda e: self._avatar_changed())
 
         row = ttk.Frame(self)
         row.pack(fill="x", pady=(4, 0))
@@ -141,13 +143,22 @@ class HubTool(ttk.Frame):
             return False
         self.data = data
         installed = hub.saved_setup(project)
-        storage = data.get("storage") or (installed.get("storage", "vanilla") if installed else "extended")
+        from ..game_code.extended_flags import EXTENDED_FLAGS_PATCH
+        from ..game_code.versions import read_boot_code
+        extended_available = read_boot_code(project.extracted_dir) in EXTENDED_FLAGS_PATCH.versions
         if installed and installed.get("storage") == "extended":
             storage = "extended"
+        elif installed:
+            storage = installed.get("storage", "vanilla")
+        else:
+            storage = data.get("storage") or ("extended" if extended_available else "vanilla")
+        if storage == "extended" and not extended_available and not (
+                installed and installed.get("storage") == "extended"):
+            storage = "vanilla"
         self.data["storage"] = storage
         self._storage.set(storage.title())
         self._storage_box.configure(values=("Extended",) if installed and installed.get("storage") == "extended"
-                                    else ("Extended", "Vanilla"))
+                                    else ("Extended", "Vanilla") if extended_available else ("Vanilla",))
         self.data.setdefault("destinations", [])
         self.current = None
         self.placing = None
@@ -170,7 +181,25 @@ class HubTool(ttk.Frame):
             paths = chapters.chapter_paths(project, cid)
             if paths.script is not None and paths.map is not None and paths.deployment is not None:
                 self._choices[self._label(cid)] = int(cid)
-        self._avatar.configure(text=f"{self._builder.character_name(data['avatar_pid'])} ({data['avatar_pid']})")
+        used_elsewhere = set()
+        for cid in ids:
+            if not cid.isdigit() or int(cid) == data["chapter"]:
+                continue
+            for folder in chapters.chapter_phases(project, cid):
+                deployment, _map = chapters.phase_paths(project, folder)
+                if deployment is not None:
+                    used_elsewhere.update(hub._deployment_pids(deployment)[0])
+        self._avatar_choices = {
+            f"{self._builder.character_name(c.pid)} ({c.pid})": c.pid
+            for c in fe8data.read_fe8data(session.data).characters
+            if c.pid and c.pid.startswith("PID_") and c.jid
+            and (c.pid == data["avatar_pid"] or c.pid not in used_elsewhere)
+        } if session is not None and getattr(session, "available", False) else {
+            data["avatar_pid"]: data["avatar_pid"]
+        }
+        self._avatar_box.configure(values=list(self._avatar_choices))
+        self._avatar_choice.set(next((label for label, pid in self._avatar_choices.items()
+                                      if pid == data["avatar_pid"]), data["avatar_pid"]))
         self._fill()
         return True
 
@@ -223,6 +252,16 @@ class HubTool(ttk.Frame):
         chapter = self._activation_choices.get(self._activation.get())
         if chapter is not None and chapter != self.data["activation_chapter"]:
             self.data["activation_chapter"] = chapter
+            self._save()
+
+    def _avatar_changed(self) -> None:
+        """Keep the new avatar in the draft; installation retargets the hub's
+        sole player deployment and generated opening atomically."""
+        if self.data is None:
+            return
+        pid = self._avatar_choices.get(self._avatar_choice.get())
+        if pid is not None and pid != self.data["avatar_pid"]:
+            self.data["avatar_pid"] = pid
             self._save()
 
     def _edit_ground(self) -> None:

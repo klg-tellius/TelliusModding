@@ -42,7 +42,10 @@ from .cp_ops import (BY_NAME, COMPARISON_CODES, COMPARISONS, HANDLED_OPS, NAME_K
                      REGISTER_COUNT, RESULT_CODES, RESULT_NAMES, TABLE_KINDS, Field, OpSpec)
 
 U32 = 0xFFFFFFFF
-SLOTS = "abcdef"
+# The raw form is the lossless common denominator. FE9 leaves g..i at zero;
+# FE10 needs all nine operand words even before an opcode has a structured
+# dialect-specific spelling.
+SLOTS = "abcdefghi"
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\Z")
 _NUMBER = re.compile(r"[-+]?(0[xX][0-9a-fA-F]+|\d+(\.\d*)?|\.\d+)\Z")
 #: ops after which a COMPARE on r0 reads a result code
@@ -134,8 +137,8 @@ def _threat_text(b: int) -> str:
 
 # -- decompile -------------------------------------------------------------------------------
 
-def _structured(entry: Entry, previous: Optional[Entry]) -> str:
-    spec = OPS.get(entry.op)
+def _structured(entry: Entry, previous: Optional[Entry], ops: dict[int, OpSpec] = OPS) -> str:
+    spec = ops.get(entry.op)
     if spec is None or spec.form == "header":
         raise _Unrepresentable
     used = {f.slot for f in spec.fields}
@@ -206,11 +209,14 @@ def generic_source(entry: Entry) -> str:
     return f"op({', '.join(args)})"
 
 
-def entry_source(entry: Entry, previous: Optional[Entry] = None) -> str:
+def entry_source(entry: Entry, previous: Optional[Entry] = None, force_raw: bool = False,
+                 ops: dict[int, OpSpec] = OPS) -> str:
     """One entry as one line of readable source."""
+    if force_raw:
+        return generic_source(entry)
     try:
-        text = _structured(entry, previous)
-        if _parse_line(text) != _normalised(entry):
+        text = _structured(entry, previous, ops)
+        if _parse_line(text, ops) != _normalised(entry):
             raise _Unrepresentable
     except (_Unrepresentable, _Error, ValueError):
         return generic_source(entry)
@@ -224,20 +230,22 @@ def _normalised(entry: Entry) -> Entry:
                  *(norm(getattr(entry, s)) for s in SLOTS))
 
 
-def decompile(script: Script, kind: str = "") -> str:
+def decompile(script: Script, kind: str = "", force_raw: bool = False,
+              ops: dict[int, OpSpec] = OPS) -> str:
     """A script as readable source, one line per entry."""
     title = f"{kind} script, " if kind else ""
     lines = [f"# {script.name} - {title}id {script.script_id}"]
-    lines += entry_lines(script.entries)
+    lines += entry_lines(script.entries, force_raw=force_raw, ops=ops)
     return "\n".join(lines) + "\n"
 
 
-def entry_lines(entries: list[Entry]) -> list[str]:
+def entry_lines(entries: list[Entry], force_raw: bool = False,
+                ops: dict[int, OpSpec] = OPS) -> list[str]:
     """One source line per entry. A COMPARE reads result code names when the
     last non-COMPARE entry before it leaves codes in r0."""
     lines, context = [], None
     for entry in entries:
-        lines.append(entry_source(entry, context))
+        lines.append(entry_source(entry, context, force_raw=force_raw, ops=ops))
         if entry.op != 1:
             context = entry
     return lines
@@ -489,19 +497,19 @@ def _build_call(spec: OpSpec, args: list[str], reg: Optional[int]) -> Entry:
     return Entry(spec.op, *(words[s] for s in SLOTS))
 
 
-def _parse_line(text: str) -> Optional[Entry]:
+def _parse_line(text: str, ops: dict[int, OpSpec] = OPS) -> Optional[Entry]:
     text = text.strip()
     if not text:
         return None
     m = re.fullmatch(r"L(\d+)\s*:", text)
     if m:
-        return Entry(0, 0, OPS[0].b_default, int(m.group(1)))
+        return Entry(0, 0, ops[0].b_default, int(m.group(1)))
     m = re.fullmatch(r"goto\s+(\S+)", text)
     if m:
-        return Entry(4, 0, OPS[4].b_default, 0, _convert(_token(m.group(1)), "label", "goto"))
+        return Entry(4, 0, ops[4].b_default, 0, _convert(_token(m.group(1)), "label", "goto"))
     m = re.fullmatch(r"if\s+(not\s+)?found\s*:\s*goto\s+(\S+)", text)
     if m:
-        return Entry(6, 0 if m.group(1) else 1, OPS[6].b_default, 0, _convert(_token(m.group(2)), "label", "goto"))
+        return Entry(6, 0 if m.group(1) else 1, ops[6].b_default, 0, _convert(_token(m.group(2)), "label", "goto"))
     m = re.fullmatch(r"if\s+r(\d+)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*:\s*goto\s+(\S+)", text)
     if m:
         value = _convert(_token(m.group(3)), "int", "the compared value")
@@ -523,10 +531,11 @@ def _parse_line(text: str) -> Optional[Entry]:
         words = {s: 0 for s in SLOTS}
         for key, value in keywords.items():
             if key not in SLOTS:
-                raise _Error(f"op() takes a, b, c, d, e, f - not {key}")
+                raise _Error(f"op() takes a, b, c, d, e, f, g, h, i - not {key}")
             words[key] = _convert(_token(value), "any", key)
         return Entry(op, *(words[s] for s in SLOTS))
-    spec = BY_NAME.get(name)
+    by_name = {spec.name: spec for spec in ops.values() if spec.form != "header"}
+    spec = by_name.get(name)
     if spec is None:
         raise _Error(f"unknown function {name}()")
     if spec.form not in ("call", "assign"):
@@ -537,14 +546,16 @@ def _parse_line(text: str) -> Optional[Entry]:
 
 
 def compile_source(source: str, names: Optional[Names] = None,
-                   fallthrough: Optional[dict[int, str]] = None, check: bool = True) -> CompileResult:
+                   fallthrough: Optional[dict[int, str]] = None, check: bool = True,
+                   handled_ops: Optional[set[int] | frozenset[int]] = None,
+                   ops: dict[int, OpSpec] = OPS) -> CompileResult:
     """Readable source -> script entries (without the two header entries).
     ``fallthrough`` maps the labels the game would find past the end of the
     script (see :func:`fallthrough_labels`) to the section holding them."""
     entries, lines, diagnostics = [], [], []
     for number, raw in enumerate(source.splitlines(), 1):
         try:
-            entry = _parse_line(_strip_comment(raw))
+            entry = _parse_line(_strip_comment(raw), ops)
         except _Error as exc:
             diagnostics.append(Diagnostic(number, "error", str(exc)))
             continue
@@ -555,7 +566,7 @@ def compile_source(source: str, names: Optional[Names] = None,
             entries.append(entry)
             lines.append(number)
     if check:
-        diagnostics += check_entries(entries, lines, names, fallthrough)
+        diagnostics += check_entries(entries, lines, names, fallthrough, handled_ops, ops)
     diagnostics.sort(key=lambda d: (d.line, d.severity != "error"))
     return CompileResult(entries, lines, diagnostics)
 
@@ -567,7 +578,9 @@ def _jump_targets(entry: Entry) -> list[int]:
 
 
 def check_entries(entries: list[Entry], lines: Optional[list[int]] = None,
-                  names: Optional[Names] = None, fallthrough: Optional[dict[int, str]] = None) -> list[Diagnostic]:
+                  names: Optional[Names] = None, fallthrough: Optional[dict[int, str]] = None,
+                  handled_ops: Optional[set[int] | frozenset[int]] = None,
+                  ops: dict[int, OpSpec] = OPS) -> list[Diagnostic]:
     """Problems the game would trip on, and suspicious values."""
     lines = lines or [0] * len(entries)
     out: list[Diagnostic] = []
@@ -585,11 +598,13 @@ def check_entries(entries: list[Entry], lines: Optional[list[int]] = None,
             else:
                 labels[entry.c] = line
     for entry, line in zip(entries, lines):
-        spec = OPS.get(entry.op)
-        if entry.op not in HANDLED_OPS:
+        spec = ops.get(entry.op)
+        active_handlers = frozenset(ops) if handled_ops is None and ops is not OPS else (
+            HANDLED_OPS if handled_ops is None else handled_ops)
+        if entry.op not in active_handlers:
             out.append(Diagnostic(line, "error", f"opcode {entry.op} has no handler in the game"))
             continue
-        if spec.form == "header":
+        if spec is not None and spec.form == "header":
             out.append(Diagnostic(line, "error", f"opcode {entry.op} only belongs in the script header"))
         for target in _jump_targets(entry):
             if target not in labels and fallthrough and target in fallthrough:
@@ -599,7 +614,8 @@ def check_entries(entries: list[Entry], lines: Optional[list[int]] = None,
             elif target not in labels:
                 out.append(Diagnostic(line, "error", f"label L{target} doesn't exist: the game would run off the "
                                                      "end of the script looking for it"))
-        out += _check_fields(entry, spec, line, names)
+        if spec is not None:
+            out += _check_fields(entry, spec, line, names)
     last = entries[-1]
     if last.op not in _ENDINGS:
         out.append(Diagnostic(lines[-1], "warning", "the script doesn't end with end(), stop() or goto: the game "
@@ -664,10 +680,11 @@ def field_text(value: Value) -> str:
     return _hex_or_int(value)
 
 
-def signature(name: str) -> Optional[str]:
-    spec = BY_NAME.get(name)
+def signature(name: str, ops: dict[int, OpSpec] = OPS) -> Optional[str]:
+    by_name = {spec.name: spec for spec in ops.values() if spec.form != "header"}
+    spec = by_name.get(name)
     if name == "op":
-        return "op(opcode, a=, b=, c=, d=, e=, f=)  - any entry, word by word"
+        return "op(opcode, a=, b=, c=, d=, e=, f=, g=, h=, i=)  - any entry, word by word"
     if spec is None or spec.form not in ("call", "assign"):
         return None
     params = []
@@ -681,26 +698,27 @@ def signature(name: str) -> Optional[str]:
     return f"{prefix}{spec.name}({', '.join(params)})  - {spec.summary}"
 
 
-def function_names() -> list[str]:
-    return sorted(n for n, s in BY_NAME.items() if s.form in ("call", "assign")) + ["op"]
+def function_names(ops: dict[int, OpSpec] = OPS) -> list[str]:
+    return sorted(s.name for s in ops.values() if s.form in ("call", "assign")) + ["op"]
 
 
-def statement_templates() -> list[tuple[str, str]]:
+def statement_templates(ops: dict[int, OpSpec] = OPS) -> list[tuple[str, str]]:
     """(label, text) pairs for an 'insert' menu."""
     out = [("label", "L1:"), ("goto", "goto L1"), ("if found", "if found: goto L1"),
            ("if not found", "if not found: goto L1"), ("compare", "if r0 == 0: goto L1")]
-    for name in function_names():
+    by_name = {spec.name: spec for spec in ops.values() if spec.form != "header"}
+    for name in function_names(ops):
         if name == "op":
             continue
-        spec = BY_NAME[name]
+        spec = by_name[name]
         required = [f"{f.name}=" for f in spec.fields if f.default is None and not (spec.form == "assign" and f.slot == "a")]
         call = f"{name}({', '.join(required)})"
         out.append((name, f"r0 = {call}" if spec.form == "assign" else call))
     return out
 
 
-def field_kind_at(name: str, keyword: str) -> Optional[str]:
-    spec = BY_NAME.get(name)
+def field_kind_at(name: str, keyword: str, ops: dict[int, OpSpec] = OPS) -> Optional[str]:
+    spec = next((s for s in ops.values() if s.name == name and s.form != "header"), None)
     if spec is None:
         return None
     for f in spec.fields:
@@ -709,7 +727,8 @@ def field_kind_at(name: str, keyword: str) -> Optional[str]:
     return None
 
 
-def fallthrough_labels(sections: list, script_name: str, limit: int = 0x100) -> dict[int, str]:
+def fallthrough_labels(sections: list, script_name: str, limit: int = 0x100,
+                       entry_words: int = 7) -> dict[int, str]:
     """Labels the game's label search would find after the end of the script
     ``script_name``: it reads on, entry by entry, through the sections that
     follow it in the file. ``sections`` is the document's section list."""
@@ -722,21 +741,21 @@ def fallthrough_labels(sections: list, script_name: str, limit: int = 0x100) -> 
     for section in sections[index + 1:]:
         words += section.words
         owners += [section.name] * len(section.words)
-        if len(words) >= 7 * limit:
+        if len(words) >= entry_words * limit:
             break
-    start = len(sections[index].words) % 7  # entries stay 7-word aligned from the script's start
-    start = (7 - start) % 7
-    for i in range(start, len(words) - 6, 7):
+    start = len(sections[index].words) % entry_words
+    start = (entry_words - start) % entry_words
+    for i in range(start, len(words) - entry_words + 1, entry_words):
         if words[i] == 0 and isinstance(words[i + 3], int) and words[i + 3] not in found:
             found[words[i + 3]] = owners[i]
     return found
 
 
-def roundtrip_problems(scripts: Iterable[Script]) -> list[str]:
+def roundtrip_problems(scripts: Iterable[Script], ops: dict[int, OpSpec] = OPS) -> list[str]:
     """Scripts whose readable source doesn't compile back to the same entries."""
     problems = []
     for script in scripts:
-        result = compile_source(decompile(script), check=False)
+        result = compile_source(decompile(script, ops=ops), check=False, ops=ops)
         if result.errors or result.entries != [_normalised(e) for e in script.entries]:
             problems.append(script.name)
     return problems

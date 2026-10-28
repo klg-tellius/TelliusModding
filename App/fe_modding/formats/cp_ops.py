@@ -1,8 +1,8 @@
-"""The AI script opcodes of ``cp_data.bin`` - what every one of the 52
-handlers does and what its entry fields mean.
+"""The FE9/FE10 AI opcodes - what every handler does and what its entry
+fields mean.
 
-An AI script entry is 7 words ``op a b c d e f`` (see :mod:`cp_data`). The
-engine (``cp_run_attack_script_step`` / ``cp_run_move_script_step``) reads
+An FE9 entry is 7 words ``op a b c d e f``; an FE10 entry is 10 words through
+``i`` (see :mod:`cp_data`). The FE9 engine reads
 the entry at the unit's program counter, then:
 
 * if ``b`` is non-zero, copies it into ``cp_move_threat_limit``
@@ -55,14 +55,14 @@ from typing import Optional
 # tiles      tile list section pointer (same (x << 16) | y format as a route)
 # any        whatever the word holds
 NAME_KINDS = ("pid", "jid", "iid", "sid", "seq", "name")
-TABLE_KINDS = ("pid_table", "route", "tiles")
+TABLE_KINDS = ("pid_table", "table", "route", "tiles")
 
 NO_LIMIT = 0xFFFF
 
 
 @dataclass(frozen=True)
 class Field:
-    slot: str  # entry word: "a".."f"
+    slot: str  # entry word: "a".."i"
     name: str  # keyword in the readable language
     kind: str
     default: object  # value left out of readable code; None = always written
@@ -286,6 +286,162 @@ _LIST: list[OpSpec] = [
 
 OPS: dict[int, OpSpec] = {spec.op: spec for spec in _LIST}
 BY_NAME: dict[str, OpSpec] = {spec.name: spec for spec in _LIST if spec.form != "header"}
+FE9_OPS = OPS
+
+# RFEE01's complete engine table. Until an opcode has a handler-confirmed
+# structured FE10 spec, cp_ai_lang deliberately represents it as lossless
+# op(..., a=..i=..) source rather than borrowing FE9 semantics.
+FE10_HANDLED_OPS = frozenset((
+    -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8,
+    100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118,
+    119, 120, 121, 122, 123, 124,
+    200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218,
+    219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229,
+    500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 600, 601, 602, 1000, 1001, 1002,
+))
+
+# RFEE01's handler-confirmed readable catalog.  These specs intentionally use
+# the engine descriptor names: unlike FE9, they map directly to the 82-row
+# table at 0x8036A780.  Reserved words remain available through op(...).
+_FE10_NAMES = {
+    -2: "name", -1: "index", 0: "label", 1: "if", 2: "call", 3: "change",
+    4: "branch", 5: "pokeevent", 6: "ifdone", 7: "cancel", 8: "ifmoved",
+    100: "personatk", 101: "allunitatk", 102: "noattack", 103: "nomoveatk",
+    104: "alljobatk", 105: "allunitrod", 106: "nomoverod", 107: "allunitsteal",
+    108: "nomovesteal", 109: "paramattack", 110: "allunitskill", 111: "nomoveskill",
+    112: "allunitshoot", 113: "allunitrock", 114: "forcerock", 115: "allunittackle",
+    116: "allunitatk_direct", 117: "allunitcrossfire", 118: "allunitatk_teammove",
+    119: "allunitatk_flying", 120: "allunitatk_ondst", 121: "allunitrod_ondst",
+    122: "allunitatk_netuzo", 123: "allunitrescue", 124: "allunitforcerescue",
+    200: "pointmove", 201: "personmove", 202: "nomove", 203: "nearestjobmove",
+    204: "lootermove", 205: "safetymove", 206: "nearestunitmove",
+    207: "nearestunivemovenocost", 208: "runawaymove", 209: "eventmove",
+    210: "randommove", 211: "escapemove", 212: "breakmove", 213: "terrainmove",
+    214: "terraingroupmove", 215: "talkmove", 216: "routemove",
+    217: "nearestunitmoveindirect", 218: "talknomove", 219: "teamcommandermove",
+    220: "attackableunitmove", 221: "flyingunitmove", 222: "returnmove",
+    223: "detachunitmove", 224: "nearestunitrescuemove",
+    225: "nearestunitforcerescuemove", 226: "nearesttorchmove",
+    227: "randomrewarpmove", 228: "safetyrewarpmove", 229: "nearestunitstealmove",
+    500: "checkinvade", 501: "checklycanthrope", 502: "useitem", 503: "usetrapitem",
+    504: "checkhp", 505: "checkreadytolycanthrope", 506: "checkbeastpoint",
+    507: "metamorphose", 508: "checklinkunit", 509: "checkdistance",
+    600: "adjustido", 601: "adjustteamido", 602: "restoreido",
+    1000: "ret", 1001: "end", 1002: "yield",
+}
+
+
+def _rf(slot: str, name: str, kind: str, default=0, help_text: str = "") -> Field:
+    return Field(slot, name, kind, default, help_text or name.replace("_", " "))
+
+
+_FE10_FIELDS = {
+    -2: (_rf("f", "name", "seq", None),),
+    -1: (_rf("a", "id", "int", None),),
+    0: (_rf("c", "label", "label", None),),
+    1: (_rf("a", "reg", "reg"), _rf("b", "cmp", "cmp", None), _rf("c", "value", "int"),
+        _rf("d", "target", "label", None)),
+    2: (_rf("a", "chance", "percent"), _rf("e", "payload_e", "any"),
+        _rf("f", "function", "name", None), _rf("g", "payload_g", "any"),
+        _rf("h", "payload_h", "any"), _rf("i", "payload_i", "any")),
+    3: tuple(_rf(slot, f"slot{n}", "seq" if n < 3 else "name") for n, slot in enumerate("fghi")),
+    4: (_rf("d", "target", "label", None),),
+    5: (_rf("a", "reg", "reg"), _rf("c", "kind", "int"), _rf("e", "flags", "any")),
+    6: (_rf("a", "found", "bool", None), _rf("d", "target", "label", None)),
+    8: (_rf("a", "moved", "bool", None), _rf("d", "target", "label", None)),
+    1000: (_rf("d", "resume", "label"),), 1001: (_rf("d", "resume", "label"),),
+}
+
+for _op in (100, 101, 103, 105, 106, 107, 108, 110, 111, 112, 113, 115, 116,
+            117, 120, 121, 122, 123, 124):
+    _FE10_FIELDS[_op] = (_rf("a", "chance", "percent"), _rf("e", "flags", "any"),
+                         _rf("f", "targets", "table"))
+_FE10_FIELDS.update({
+    100: (_rf("a", "chance", "percent"), _rf("e", "flags", "any"), _rf("f", "target", "name")),
+    104: (_rf("a", "chance", "percent"), _rf("c", "selector", "int"),
+          _rf("e", "flags", "any"), _rf("f", "jid", "jid")),
+    110: _FE10_FIELDS[110] + (_rf("g", "sid", "sid"),),
+    111: _FE10_FIELDS[111] + (_rf("g", "sid", "sid"),),
+    114: (_rf("f", "tiles", "tiles"),),
+    117: _FE10_FIELDS[117] + (_rf("c", "coordination", "int"),),
+    118: (_rf("a", "chance", "percent"), _rf("c", "team", "int")),
+    119: (_rf("a", "chance", "percent"), _rf("c", "team", "int")),
+    122: _FE10_FIELDS[122] + (_rf("g", "resource", "name"),),
+    200: (_rf("a", "near", "int"), _rf("c", "coordinate", "any"), _rf("e", "flags", "any")),
+    201: (_rf("e", "flags", "any"), _rf("f", "pid", "pid")),
+    203: (_rf("c", "selector", "int"), _rf("e", "flags", "any"), _rf("f", "jid", "jid")),
+    204: (_rf("c", "tries", "int"), _rf("e", "flags", "any")),
+    206: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    207: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    209: (_rf("a", "reg", "reg"), _rf("c", "kind", "int"), _rf("e", "flags", "any")),
+    212: (_rf("e", "flags", "any"),),
+    215: (_rf("e", "flags", "any"), _rf("f", "pid", "pid")),
+    216: (_rf("a", "near", "int"), _rf("c", "budget", "int"), _rf("e", "flags", "any"),
+          _rf("f", "route", "route")),
+    217: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    218: (_rf("f", "pid", "pid"),),
+    219: (_rf("e", "flags", "any"),),
+    220: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    221: (_rf("c", "team", "int"), _rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    222: (_rf("a", "near", "int"), _rf("e", "flags", "any")),
+    223: (_rf("c", "mode", "int"), _rf("e", "flags", "any"), _rf("f", "targets", "table"),
+          _rf("g", "detach_targets", "table")),
+    224: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    225: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    226: (_rf("a", "reg", "reg"), _rf("c", "mode", "int"), _rf("e", "flags", "any")),
+    227: (_rf("a", "chance", "percent"), _rf("f", "tiles", "tiles")),
+    228: (_rf("a", "chance", "percent"), _rf("f", "tiles", "tiles")),
+    229: (_rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    500: (_rf("a", "reg", "reg"), _rf("b", "range", "fixed", None), _rf("e", "flags", "any"),
+          _rf("f", "targets", "table")),
+    501: (_rf("a", "reg", "reg"),),
+    502: (_rf("f", "iid", "iid"),),
+    503: (_rf("c", "direction", "int"), _rf("f", "iid", "iid")),
+    504: (_rf("c", "hp_reg", "reg"), _rf("d", "percent_reg", "reg")),
+    505: (_rf("c", "reg", "reg"),),
+    506: (_rf("c", "gauge_reg", "reg"), _rf("d", "percent_reg", "reg")),
+    508: (_rf("a", "reg", "reg"), _rf("e", "flags", "any"), _rf("f", "targets", "table")),
+    509: (_rf("a", "radius", "int"), _rf("b", "result_reg", "reg", None),
+          _rf("c", "coordinate", "any"), _rf("e", "flags", "any")),
+    600: (_rf("a", "reg", "reg"), _rf("c", "change", "int"), _rf("e", "flags", "any")),
+    601: (_rf("a", "reg", "reg"), _rf("e", "flags", "any")),
+    602: (_rf("a", "reg", "reg"),),
+})
+
+
+def _fe10_form(op: int) -> str:
+    if op in (-2, -1):
+        return "header"
+    if op == 0:
+        return "label"
+    if op == 1:
+        return "compare"
+    if op == 4:
+        return "goto"
+    if op == 6:
+        return "if_found"
+    if op in (5, 209, 226, 500, 501, 508, 600, 601, 602):
+        return "assign"
+    return "call"
+
+
+def _fe10_b_default(op: int) -> int:
+    if op in (1, 500, 509):
+        return 0
+    if op == 508:
+        return 1
+    if 0 <= op <= 8 or 100 <= op <= 229:
+        return NO_LIMIT
+    return 0
+
+
+FE10_OPS: dict[int, OpSpec] = {
+    op: OpSpec(op, f"CP_{name.upper()}", name, _fe10_form(op),
+               f"RFEE01 CP_{name.upper()} (handler-confirmed)", _FE10_FIELDS.get(op, ()),
+               b_default=_fe10_b_default(op))
+    for op, name in _FE10_NAMES.items()
+}
+FE10_BY_NAME: dict[str, OpSpec] = {spec.name: spec for spec in FE10_OPS.values() if spec.form != "header"}
 NOP_OPS = (102, 109, 202, 208, 213, 214)
 HANDLED_OPS = frozenset(OPS)
 

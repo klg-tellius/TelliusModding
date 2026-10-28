@@ -20,7 +20,7 @@ verification: ["source-reviewed", "unknown"]
 ---
 # Replace a terrain mesh safely
 
-**Route:** Assets → Map Models (or 3D Models → `zmap/<map>`)
+**Route:** Assets → Map Models
 
 ## What you will make
 
@@ -82,7 +82,7 @@ These choices are independent. “Keep map texturing” does not move tactical h
 
 ### 1. Export and archive the reference
 
-Open **Assets → 3D Models**, select the exact `zmap/<map>` terrain entry, and export it as GLB. Keep an untouched copy. If the exporter writes `<name>_mask.png`, keep it beside the reference.
+Open **Assets → Map Models**, select the exact `zmap/<map>` terrain entry, and export it as GLB. Keep an untouched copy. If the exporter writes `<name>_mask.png`, keep it beside the reference.
 
 The mask spans **640 model units**, or 128 tiles, from the terrain corner: X runs right and Z runs across the map. Black favors the first atlas UV sample and white favors the second. Grey blends them.
 

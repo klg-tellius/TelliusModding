@@ -30,7 +30,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
-from ..formats import fe8data
+from ..formats import fe10data, fe8data
 from ..project import ModProject
 from .changelog import ChangeLog
 from .widgets import ScrollFrame, section_header, tip
@@ -329,6 +329,9 @@ class BattleScenePanel(ttk.Frame):
         session = self._session()
         if session is None:
             return []
+        if getattr(session, "fe10", None) is not None:
+            return [fe8data.BattleTerrainRow(record.values.get("map"), list(record.lists.get("scenery", [])))
+                    for record in session.fe10.tables.get("battle_scenery", [])]
         try:
             return fe8data.read_battle_terrain(session.data)
         except (KeyError, ValueError, struct.error):
@@ -336,7 +339,20 @@ class BattleScenePanel(ttk.Frame):
 
     def _write(self, rows: list[fe8data.BattleTerrainRow], log_text: str) -> None:
         session = self._session()
-        session.data = fe8data.write_battle_terrain(session.data, rows)
+        if getattr(session, "fe10", None) is not None:
+            current = session.fe10.tables.get("battle_scenery", [])
+            if len(rows) != len(current):
+                raise ValueError("Adding Radiant Dawn battle-scenery rows is not decoded yet.")
+            data = session.data
+            for i, (row, record) in enumerate(zip(rows, current)):
+                if row.map_name != record.values.get("map"):
+                    raise ValueError("Renaming Radiant Dawn battle-scenery rows is not decoded yet.")
+                for terrain, (new, old) in enumerate(zip(row.scenes, record.lists.get("scenery", []))):
+                    if new != old:
+                        data = fe10data.set_battle_scenery(data, i, terrain, new)
+            session.data = data
+        else:
+            session.data = fe8data.write_battle_terrain(session.data, rows)
         session.changed(self)
         self._changelog.append("FE8Data.bin", log_text)
 
@@ -349,6 +365,11 @@ class BattleScenePanel(ttk.Frame):
         """Each terrain type's display name and ``TerrainData`` name, in column order."""
         if session is None:
             return [], []
+        if getattr(session, "fe10", None) is not None:
+            types = session.fe10.tables.get("terrain", [])
+            keys = [record.values.get("name") or "" for record in types]
+            return ([self._map_editor.terrain_label(key) for key in keys] if self._map_editor is not None else keys,
+                    keys)
         try:
             types = fe8data.read_terrain_types(session.data)
         except (KeyError, ValueError, IndexError, struct.error):

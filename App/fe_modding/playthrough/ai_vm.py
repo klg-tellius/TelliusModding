@@ -43,6 +43,7 @@ from typing import Optional
 
 from ..formats import cp_data
 from ..formats.cp_ai_lang import entry_source
+from ..formats.cp_ops import FE10_OPS, FE9_OPS
 from . import ai_actions, combat, movement, triggers
 from .actions import Act, apply as apply_command, can_shove
 from .state import AiTurn, GameState, SimUnit, hostile
@@ -69,13 +70,13 @@ RANKING_SIZE = 12
 class Program:
     """A script's entries followed by whatever the label search would read after it."""
 
-    def __init__(self, entries: list, owners: list, name: str):
+    def __init__(self, entries: list, owners: list, name: str, ops=FE9_OPS):
         self.entries, self.owners, self.name = entries, owners, name
         self.lines = []
         previous = None
         for e in entries:
             try:
-                self.lines.append(entry_source(e, previous))
+                self.lines.append(entry_source(e, previous, ops=ops))
             except Exception:  # noqa: BLE001 - garbage words read past the end
                 self.lines.append(f"op({e.op})")
             if e.op != 1:
@@ -104,23 +105,26 @@ def program(world: World, name) -> Optional[Program]:
         if name in names:
             index = names.index(name)
             section = doc.sections[index]
-            if cp_data.is_script_section(section):
-                script = cp_data.read_script(section)
+            dialect = world.dialect.cp
+            ops = FE10_OPS if dialect is cp_data.FE10 else FE9_OPS
+            width = dialect.entry_words
+            if cp_data.is_script_section(section, dialect):
+                script = cp_data.read_script(section, dialect)
                 entries, owners = list(script.entries), [name] * len(script.entries)
                 words, word_owners = [], []
                 for s in doc.sections[index + 1:]:
                     words += s.words
                     word_owners += [s.name] * len(s.words)
-                    if len(words) >= 7 * MAX_ENTRIES:
+                    if len(words) >= width * MAX_ENTRIES:
                         break
-                skip = (7 - len(section.words) % 7) % 7
-                for i in range(skip, len(words) - 6, 7):
+                skip = (width - len(section.words) % width) % width
+                for i in range(skip, len(words) - (width - 1), width):
                     try:
-                        entries.append(cp_data.Entry.from_words(words[i:i + 7]))
+                        entries.append(cp_data.Entry.from_words(words[i:i + width], dialect))
                     except Exception:  # noqa: BLE001
                         break
                     owners.append(word_owners[i])
-                result = Program(entries, owners, name)
+                result = Program(entries, owners, name, ops)
     cache[name] = result
     return result
 
@@ -447,6 +451,9 @@ class AiStep(ai_actions.ActionRoutines):
         handler = getattr(self, f"_op_{entry.op}", None)
         before = t.pc
         if handler is None:
+            if self.world.dialect.name == "fe10":
+                raise RuntimeError(f"Unsupported RFEE01 AI opcode {entry.op} at {where}: {line}. "
+                                   "Add its handler-confirmed runtime behavior before this chapter can continue.")
             self.emit(f"{where}: {line}  - not simulated", line=line)
             t.pc += 1
             return
@@ -980,6 +987,86 @@ class AiStep(ai_actions.ActionRoutines):
         except ValueError as exc:
             self.state.emit("warn", f"AI action failed ({exc}); the unit waits")
             unit.done = True
+
+
+def _fe10_if_moved(self, e, prog):
+    moved = bool(self.turn.candidate and self.turn.candidate.get("dest") != self.unit.tile)
+    if moved == bool(e.a):
+        return self._jump(prog, e.d)
+    return f"moved = {int(moved)}"
+
+
+def _fe10_rescue(self, e, prog):
+    allies = [u for u in self.state.living() if u.uid != self.unit.uid
+              and not self.world.hostile(self.unit.faction, u.faction) and u.rescue_partner is None]
+    reach = self._tiles(False)
+    for ally in allies:
+        spot = next((tile for tile in reach if movement.distance(tile, ally.tile) == 1), None)
+        if spot is not None:
+            self._register({"action": "rescue", "dest": spot, "target": ally.uid,
+                            "text": f"rescue {self.world.name(ally.pid)}"})
+            return self.turn.candidate["text"]
+    return "nobody to rescue"
+
+
+def _fe10_check_hp(self, e, prog):
+    self.turn.registers[int(e.c) & 3] = self.unit.hp
+    self.turn.registers[int(e.d) & 3] = self.unit.hp * 100 // max(1, self.unit.stats[0])
+    return "HP registers updated"
+
+
+def _fe10_check_gauge(self, e, prog):
+    self.turn.registers[int(e.c) & 3] = self.unit.laguz_gauge
+    self.turn.registers[int(e.d) & 3] = min(100, self.unit.laguz_gauge * 100 // 30)
+    return f"gauge = {self.unit.laguz_gauge}"
+
+
+def _fe10_transform(self, e, prog):
+    self.unit.transformed = not self.unit.transformed
+    return "transformed" if self.unit.transformed else "reverted"
+
+
+def _fe10_linked(self, e, prog):
+    value = int(self.unit.rescue_partner is not None)
+    self.turn.registers[int(e.a) & 3] = value
+    return f"linked = {value}"
+
+
+def _fe10_yield(self, e, prog):
+    return self._end(e, prog)
+
+
+# Handler-confirmed FE10 opcodes that share an existing action primitive.  The
+# distinct opcode remains visible in logs and corpus audits; only its tactical
+# primitive is shared here.
+AiStep._op_8 = _fe10_if_moved
+for _op in (117, 118, 119, 120, 122):
+    setattr(AiStep, f"_op_{_op}", AiStep._op_101)
+AiStep._op_121 = AiStep._op_105
+AiStep._op_123 = AiStep._op_124 = _fe10_rescue
+for _op in (220, 221, 223, 224, 225, 229):
+    setattr(AiStep, f"_op_{_op}", AiStep._op_206)
+AiStep._op_219 = AiStep._op_201
+AiStep._op_222 = AiStep._op_200
+AiStep._op_226 = AiStep._op_209
+AiStep._op_227 = AiStep._op_210
+AiStep._op_228 = AiStep._op_205
+AiStep._op_503 = AiStep._op_502
+AiStep._op_504 = _fe10_check_hp
+AiStep._op_505 = _fe10_check_gauge
+AiStep._op_506 = _fe10_check_gauge
+AiStep._op_507 = _fe10_transform
+AiStep._op_508 = _fe10_linked
+AiStep._op_509 = AiStep._op_500
+AiStep._op_601 = AiStep._op_600
+AiStep._op_602 = AiStep._op_600
+AiStep._op_1002 = _fe10_yield
+
+
+def unsupported_fe10_opcodes() -> list[int]:
+    """FE10 engine-table rows without a runtime method (empty at release)."""
+    from ..formats.cp_ops import FE10_OPS
+    return [op for op in FE10_OPS if op >= 0 and not hasattr(AiStep, f"_op_{op}")]
 
 
 def step(world: World, state: GameState, turn: AiTurn) -> bool:

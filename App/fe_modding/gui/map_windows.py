@@ -148,10 +148,13 @@ class MapObjectsWindow(_Window):
 
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        self._form = ttk.Frame(body, padding=(12, 0, 0, 0), width=380)
-        self._form.pack(side="right", fill="y")
-        self._form.pack_propagate(False)
-        self._form.grid_propagate(False)
+        # the form scrolls, so a short window does not cut its buttons off
+        form_host = ttk.Frame(body, width=400)
+        form_host.pack(side="right", fill="y")
+        form_host.pack_propagate(False)
+        form_scroll = ScrollFrame(form_host, padding=(12, 0, 4, 8))
+        form_scroll.pack(fill="both", expand=True)
+        self._form = form_scroll.body
         left = ttk.Frame(body)
         left.pack(side="left", fill="both", expand=True)
         self._tree = ttk.Treeview(left, columns=[c[0] for c in self.COLUMNS], show="headings", selectmode="browse")
@@ -308,8 +311,10 @@ class MapObjectsWindow(_Window):
         dialog = tk.Toplevel(self)
         dialog.title(f"Object flags — {obj.filename}")
         dialog.transient(self)
-        frame = ttk.Frame(dialog, padding=12)
-        frame.pack(fill="both", expand=True)
+        # four groups in a 2 x 2 grid, scrolling when the screen is too short for them
+        scroll = ScrollFrame(dialog, padding=12)
+        scroll.pack(fill="both", expand=True)
+        frame = scroll.body
         ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
@@ -317,7 +322,7 @@ class MapObjectsWindow(_Window):
         if self.map.verified_us_map_layout:
             for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
                 group = ttk.LabelFrame(frame, text=title, padding=6)
-                group.grid(row=1, column=column, sticky="nw", padx=(0, 6))
+                group.grid(row=1 + column // 2, column=column % 2, sticky="nsew", padx=(0, 6), pady=(0, 6))
                 for row, (mask, label) in enumerate(controls):
                     var = tk.BooleanVar(value=bool(getattr(obj, field) & mask))
                     ttk.Checkbutton(group, text=label, variable=var).grid(row=row, column=0, sticky="w")
@@ -328,7 +333,7 @@ class MapObjectsWindow(_Window):
         info(frame, "These flags belong to the object definition and affect every placement. "
                     "Every bit has its own control; reserved and ignored bits should normally be preserved. "
                     "The footprint test also depends on map flags and runtime state.").grid(
-            row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         def apply() -> None:
             if not self.map.verified_us_map_layout:
@@ -353,7 +358,11 @@ class MapObjectsWindow(_Window):
 
         ttk.Button(frame, text="Apply", command=apply,
                    state="normal" if self.map.verified_us_map_layout else "disabled").grid(
-                       row=3, column=0, sticky="w", pady=(10, 0))
+                       row=4, column=0, sticky="w", pady=(10, 0))
+        frame.update_idletasks()
+        width = min(frame.winfo_reqwidth() + 24, dialog.winfo_screenwidth() - 80)
+        height = min(frame.winfo_reqheight() + 8, dialog.winfo_screenheight() - 120)
+        dialog.geometry(f"{width}x{height}")
         dialog.grab_set()
 
     def _apply(self) -> None:

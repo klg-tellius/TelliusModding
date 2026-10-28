@@ -46,7 +46,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .. import tools
 from ..exceptions import ModdingError
-from ..formats import gcfesnd, stm
+from ..formats import brsar, brstm, fe10_sound, gcfesnd, lz10, stm
+from ..games import Game
 from ..media_references import executable_bgm_cues, front_end_track_cues
 from ..project import ModProject
 from .changelog import ChangeLog
@@ -73,11 +74,13 @@ class MusicEditor(EditorPanel):
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
         self._project = project
+        self._fe10 = project.game == Game.RADIANT_DAWN
         self._changelog = changelog
         self._current_path: Path | None = None
         self._current_audio: stm.StmAudio | None = None
         self._playback_wav: Path | None = None
         self._task_running = False
+        self._rd_streams: dict[str, str] | None = None
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_music_"))
         self._native_bgm_cues = executable_bgm_cues(self._project.extracted_dir / "sys" / "main.dol")
 
@@ -149,6 +152,9 @@ class MusicEditor(EditorPanel):
         self._cue_label.pack(side="left", padx=(6, 0))
         self._new_cue_button = ttk.Button(cue_row, text="New cue…", command=self._new_cue, state="disabled")
         self._new_cue_button.pack(side="left", padx=(8, 0))
+        self._repoint_button = ttk.Button(cue_row, text="Repoint cue…", command=self._repoint_cue,
+                                          state="disabled")
+        self._repoint_button.pack(side="left", padx=(6, 0))
         self._remove_cue_button = ttk.Button(cue_row, text="Remove cue", command=self._remove_cue, state="disabled")
         self._remove_cue_button.pack(side="left", padx=(6, 0))
 
@@ -162,7 +168,19 @@ class MusicEditor(EditorPanel):
     # -- data loading ---------------------------------------------------------
     def _load_track_list(self) -> None:
         sound_dir = self._project.extracted_dir / "files" / "Sound"
-        self._all_files = sorted(sound_dir.glob("*.stm")) if sound_dir.exists() else []
+        folder = sound_dir / "strm" if self._fe10 else sound_dir
+        pattern = "*.brstm" if self._fe10 else "*.stm"
+        files = sorted(folder.glob(pattern)) if folder.exists() else []
+        # RD's stream folder also holds hundreds of voiced lines.  Music is
+        # identified by the retail BGM naming convention; cue joins below
+        # retain the symbolic BGM names shown to users.
+        if self._fe10:
+            streams = self._rd_sound_map()
+            referenced = {Path(streams.get(cue.resource, "")).name.casefold()
+                          for cue in self._rd_cues() if cue.name.startswith("BGM_")}
+            self._all_files = [path for path in files if path.name.casefold() in referenced]
+        else:
+            self._all_files = files
         self._apply_filter("")
 
         if not self._all_files:
@@ -181,6 +199,23 @@ class MusicEditor(EditorPanel):
 
     def select_cue(self, cue_name: str) -> bool:
         """Open the Sound/*.stm file named by a BGM cue in gcfesnd.bin."""
+        if self._fe10:
+            try:
+                cue = next(item for item in self._rd_cues() if item.name == cue_name)
+            except (OSError, ValueError, StopIteration):
+                return False
+            external = self._rd_sound_map().get(cue.resource)
+            path = next((item for item in self._all_files
+                         if external and item.name.casefold() == Path(external).name.casefold()), None)
+            if path is None:
+                return False
+            self._apply_filter("")
+            index = self._filtered_files.index(path)
+            self._file_list.selection_set(index)
+            self._file_list.activate(index)
+            self._file_list.see(index)
+            self._on_file_selected()
+            return True
         catalog = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
         try:
             cue = gcfesnd.find_cue(gcfesnd.read_bgm_cues_path(catalog), cue_name)
@@ -213,7 +248,7 @@ class MusicEditor(EditorPanel):
 
         self._run_task(
             f"Decoding {self._current_path.name} ...",
-            lambda: stm.read_stm_path(self._current_path),
+            lambda: brstm.read_brstm_path(self._current_path) if self._fe10 else stm.read_stm_path(self._current_path),
             on_success=self._on_track_loaded,
         )
 
@@ -234,9 +269,32 @@ class MusicEditor(EditorPanel):
 
     # -- music cues ------------------------------------------------------------
     def _catalog(self) -> Path:
-        return self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        name = "sound_data_en.cms" if self._fe10 else "gcfesnd.bin"
+        return self._project.extracted_dir / "files" / "Sound" / name
+
+    @staticmethod
+    def _rd_key(value: str) -> str:
+        value = Path(value).stem.casefold().removeprefix("strm_").removeprefix("fe10_")
+        value = value.removesuffix("_32k").replace("dark_knight", "dknight").replace("dheginhansea", "dhegin")
+        return "".join(character for character in value if character.isalnum())
+
+    def _rd_cues(self):
+        return fe10_sound.read_sound_data(lz10.decompress(self._catalog().read_bytes()))
+
+    def _rd_sound_map(self) -> dict[str, str]:
+        if self._rd_streams is None:
+            path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+            archive = brsar.read_brsar(path.read_bytes())
+            self._rd_streams = {sound.name: sound.external_path for sound in archive.sounds
+                                if sound.external_path}
+        return self._rd_streams
 
     def _cues_of(self, path: Path) -> list[gcfesnd.BgmCue]:
+        if self._fe10:
+            streams = self._rd_sound_map()
+            return [cue for cue in self._rd_cues()
+                    if cue.name.startswith("BGM_") and streams.get(cue.resource, "").casefold().endswith(
+                        "/" + path.name.casefold())]
         try:
             cues = gcfesnd.read_bgm_cues_path(self._catalog())
         except (OSError, gcfesnd.GcfesndError, ValueError):
@@ -244,6 +302,8 @@ class MusicEditor(EditorPanel):
         return [c for c in cues if c.path.rsplit("/", 1)[-1].lower() == path.stem.lower()]
 
     def _added_cues(self, cues: list[gcfesnd.BgmCue]) -> list[gcfesnd.BgmCue]:
+        if self._fe10:
+            return []
         original = self._project.extracted_bytes(self._catalog())
         try:
             retail = {c.name for c in gcfesnd.read_bgm_cues(original)} if original else set()
@@ -256,7 +316,10 @@ class MusicEditor(EditorPanel):
             return
         cues = self._cues_of(self._current_path)
         self._cue_label.config(text=", ".join(c.name for c in cues) or "none: the game cannot play this track yet")
-        self._new_cue_button.config(state="normal" if self._catalog().is_file() else "disabled")
+        self._new_cue_button.config(state="disabled" if self._fe10 else
+                                    ("normal" if self._catalog().is_file() else "disabled"))
+        self._repoint_button.config(state="normal" if self._fe10 and self._rd_resources_for(self._current_path)
+                                    else "disabled")
         self._remove_cue_button.config(state="normal" if self._added_cues(cues) else "disabled")
         native = sorted(c.name for c in cues if c.name in self._native_bgm_cues)
         if native:
@@ -265,6 +328,10 @@ class MusicEditor(EditorPanel):
             self._status_label.config(text=f"Hardcoded in main.dol: {', '.join(native)}.{suffix}")
 
     def _add_cue(self, path: Path, name: str) -> bool:
+        if self._fe10:
+            messagebox.showinfo("New music cue", "Adding new Radiant Dawn BRSAR resources is not enabled yet. "
+                                "Existing cues can be repointed through decoded sound data.", parent=self)
+            return False
         try:
             data = self._catalog().read_bytes()
             data = gcfesnd.add_bgm_cue(data, name, f"sound/{path.stem}")
@@ -274,6 +341,44 @@ class MusicEditor(EditorPanel):
             return False
         self._changelog.append(name, f"Added music cue for {path.name}")
         return True
+
+    def _rd_resources_for(self, path: Path) -> list[str]:
+        if not self._fe10:
+            return []
+        streams = self._rd_sound_map()
+        return list(dict.fromkeys(cue.resource for cue in self._rd_cues()
+                                  if streams.get(cue.resource, "").casefold().endswith(
+                                      "/" + path.name.casefold())))
+
+    def _repoint_cue(self) -> None:
+        if not self._fe10 or self._current_path is None:
+            return
+        targets = self._rd_resources_for(self._current_path)
+        if not targets:
+            messagebox.showinfo("Repoint music cue", "This stream has no matching registered STRM resource.",
+                                parent=self)
+            return
+        cues = [cue for cue in self._rd_cues() if cue.name.startswith("BGM_")]
+        initial = self._cues_of(self._current_path)
+        name = simpledialog.askstring("Repoint music cue", "Existing BGM_ cue name:",
+                                      initialvalue=initial[0].name if initial else "BGM_", parent=self)
+        if not name:
+            return
+        name = name.strip().upper()
+        if name not in {cue.name for cue in cues}:
+            messagebox.showerror("Repoint music cue", f"{name} is not an existing BGM cue.", parent=self)
+            return
+        resource = targets[0]
+        try:
+            data = lz10.decompress(self._catalog().read_bytes())
+            changed = fe10_sound.repoint_cue(data, name, resource)
+            self._project.write_logical("sound_data", changed)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Repoint music cue", str(exc), parent=self)
+            return
+        self._changelog.append(name, f"Repointed music cue to {resource}")
+        self._status_label.config(text=f"{name} now plays {self._current_path.name}.")
+        self._show_cues()
 
     def _new_cue(self) -> None:
         if self._current_path is None:
@@ -331,7 +436,7 @@ class MusicEditor(EditorPanel):
         if not chosen:
             return
         try:
-            stm.stm_to_wav_path(self._current_audio, chosen)
+            (brstm.brstm_to_wav_path if self._fe10 else stm.stm_to_wav_path)(self._current_audio, chosen)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not export", str(exc), parent=self)
             return
@@ -355,6 +460,10 @@ class MusicEditor(EditorPanel):
         self._changelog.append(self._current_path.stem, "Replaced audio track")
 
     def _add_new_track(self) -> None:
+        if self._fe10:
+            messagebox.showinfo("New track", "Adding a new Radiant Dawn track also requires a new BRSAR stream "
+                                "entry and is not enabled yet. Replace an existing track instead.", parent=self)
+            return
         sound_dir = self._project.extracted_dir / "files" / "Sound"
         if not sound_dir.exists():
             messagebox.showerror("No Sound folder", "Extract the project first.", parent=self)
@@ -385,6 +494,10 @@ class MusicEditor(EditorPanel):
     def _delete_track(self) -> None:
         path = self._current_path
         if path is None:
+            return
+        if self._fe10:
+            messagebox.showinfo("Remove track", "Retail Radiant Dawn streams cannot be removed until BRSAR "
+                                "resource rebuilding is enabled. Replace the stream instead.", parent=self)
             return
         catalog = path.parent / "gcfesnd.bin"
         try:
@@ -488,7 +601,7 @@ class MusicEditor(EditorPanel):
                     return None
 
         try:
-            audio = stm.wav_path_to_stm_audio(chosen)
+            audio = (brstm.wav_path_to_brstm_audio if self._fe10 else stm.wav_path_to_stm_audio)(chosen)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read WAV", str(exc), parent=self)
             return None
@@ -513,8 +626,13 @@ class MusicEditor(EditorPanel):
             return
 
         def work():
-            data = stm.write_stm(audio)
-            dest_path.write_bytes(data)
+            if self._fe10:
+                if not dest_path.exists():
+                    raise ValueError("A BRSTM template is required for a new stream")
+                data = brstm.write_brstm(audio, dest_path.read_bytes())
+            else:
+                data = stm.write_stm(audio)
+            self._project.write_keeping_original(dest_path, data)
             return audio
 
         self._run_task(f"Encoding (~{est_seconds:.0f}s expected)...", work, on_success=on_success)

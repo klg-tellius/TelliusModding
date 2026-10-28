@@ -64,6 +64,19 @@ class FE9_UL_layers(bpy.types.UIList):
             row.prop(item, "slopes", text="", icon="IPO_EXPO" if item.slopes else "IPO_LINEAR", emboss=False)
             row.prop(item, "visible", text="", icon="HIDE_OFF" if item.visible else "HIDE_ON", emboss=False)
 
+    def filter_items(self, context, data, propname):
+        """Shown as in an art app: the top of the list covers the layers below it and the base
+        layer is at the bottom. The stored order (base first, each layer painted over the ones
+        before it) does not change."""
+        items = getattr(data, propname)
+        if self.filter_name:
+            flags = bpy.types.UI_UL_list.filter_items_by_name(
+                self.filter_name, self.bitflag_filter_item, items, "name", reverse=self.use_filter_invert)
+        else:
+            flags = [self.bitflag_filter_item] * len(items)
+        count = len(items)
+        return flags, [count - 1 - i for i in range(count)]
+
 
 def _kit_or_cancel(operator, context) -> bool:
     if kit.kit_data(context.scene) is None:
@@ -172,14 +185,15 @@ class FE9_OT_remove_layer(bpy.types.Operator):
 class FE9_OT_move_layer(bpy.types.Operator):
     bl_idname = "tellius.move_layer"
     bl_label = "Move Layer"
-    bl_description = "Layers lower in the list are painted over the ones above them"
+    bl_description = "Layers higher in the list are painted over the ones below them"
     bl_options = {"REGISTER", "UNDO"}
     up: BoolProperty(default=True)
 
     def execute(self, context):
         scene = context.scene
         index = scene.fe9_layer_index
-        target = index - 1 if self.up else index + 1
+        # the list shows the stored order reversed: up the list is later in the stored order
+        target = index + 1 if self.up else index - 1
         if index == 0 or target < 1 or target >= len(scene.fe9_layers):
             return {"CANCELLED"}
         scene.fe9_layers.move(index, target)

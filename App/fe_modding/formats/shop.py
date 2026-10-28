@@ -41,6 +41,7 @@ Value = Union[int, str]
 
 _LABEL_CODEC = "shift_jis"  # the author label of shopitem_n.bin is Japanese
 _SECTION_NAME_RE = re.compile(r"^([WIF])SHOP_ITEMS_C(\d+)$")
+_SECTION_NAME_FE10_RE = re.compile(r"^([WIF])SHOP_ITEMS_C(\d{4}[a-z]?)$", re.IGNORECASE)
 
 SHOP_KINDS = ("W", "I", "F")
 SHOP_KIND_NAMES = {"W": "Armory", "I": "Vendor", "F": "Forge"}
@@ -63,16 +64,32 @@ FORGE_DEFAULT_ITEMS = (
     "IID_IRONBOW", None, "IID_STEELBOW", "IID_SILVERBOW", None, None, None, None, None,
     None, None, None, None, None, "IID_FIRE", "IID_THUNDER", "IID_WIND", "IID_LIGHTNING",
 )
+FE10_FORGE_ROWS = 6
+FE10_FORGE_BASES = (*FORGE_BASES, "MDV_D")
+FE10_FORGE_ROW_NAMES = ("Swords", "Lances", "Axes", "Bows", "Knives", "Magic")
+FE10_FORGE_FAMILIES = ("MIK_SW", "MIK_LA", "MIK_AX", "MIK_BW", "MIK_KN", "MIK_MG")
+FE10_FORGE_DEFAULT_ITEMS = (
+    "IID_IRONSWORD", "IID_DELICATESWORD", "IID_STEELSWORD", "IID_SILVERSWORD", None, None, None, None, None, None,
+    "IID_IRONLANCE", "IID_DELICATELANCE", "IID_STEELLANCE", "IID_SILVERLANCE", "IID_HANDSPEAR", None, None, None, None, None,
+    "IID_IRONAXE", None, "IID_STEELAXE", "IID_SILVERAXE", "IID_HANDAXE", None, None, None, None, None,
+    "IID_IRONBOW", None, "IID_STEELBOW", "IID_SILVERBOW", None, None, None, None, None, None,
+    "IID_IRONKNIFE", None, "IID_STEELKNIFE", "IID_SILVERKNIFE", None, None, None, None, None, None,
+    None, None, None, None, None, "IID_FIRE", "IID_THUNDER", "IID_WIND", "IID_LIGHT", "IID_WORM",
+)
 
 
-def section_name(kind: str, chapter: int) -> str:
-    return f"{kind}SHOP_ITEMS_C{chapter:02d}"
+def section_name(kind: str, chapter: Union[int, str]) -> str:
+    key = f"{chapter:02d}" if isinstance(chapter, int) else str(chapter)
+    return f"{kind}SHOP_ITEMS_C{key}"
 
 
-def parse_section_name(name: str) -> tuple[Optional[str], Optional[int]]:
+def parse_section_name(name: str) -> tuple[Optional[str], Optional[Union[int, str]]]:
     """``WSHOP_ITEMS_C07`` -> ``("W", 7)``; ``(None, None)`` for any other name."""
     match = _SECTION_NAME_RE.match(name)
-    return (match.group(1), int(match.group(2))) if match else (None, None)
+    if not match:
+        return None, None
+    key = match.group(2)
+    return match.group(1), (key.lower() if len(key) >= 4 or key[-1:].isalpha() else int(key))
 
 
 @dataclass
@@ -83,13 +100,16 @@ class ShopSection:
 
     name: str
     items: list[Value] = dataclass_field(default_factory=list)
+    metadata: list[int] = dataclass_field(default_factory=list)
+    raw_words: list[Value] = dataclass_field(default_factory=list)
+    dialect: str = "fe9"
 
     @property
     def kind(self) -> Optional[str]:
         return parse_section_name(self.name)[0]
 
     @property
-    def chapter(self) -> Optional[int]:
+    def chapter(self) -> Optional[Union[int, str]]:
         return parse_section_name(self.name)[1]
 
     @property
@@ -103,6 +123,7 @@ class ShopDocument:
     sections: list[ShopSection]  # file order
     labels: list[str]  # label pool order
     header_tail: bytes  # header words 4-7, kept as they are
+    dialect: str = "fe9"
 
     def section(self, name: str) -> Optional[ShopSection]:
         return next((s for s in self.sections if s.name == name), None)
@@ -146,19 +167,31 @@ def parse_shop(data: bytes) -> ShopDocument:
     first = addresses[0] if addresses else pool_start
     prelude = [word(o) for o in range(HEADER_SIZE, first, 4)]
     name_of = {address + HEADER_SIZE: decode_str(names.get(offset, b"")) for address, offset in entries}
+    dialect = "fe10" if any(name.startswith("SHOP_PERSON_") for name in name_of.values()) else "fe9"
     sections = []
     for i, address in enumerate(addresses):
         end = addresses[i + 1] if i + 1 < len(addresses) else pool_start
         words = [word(o) for o in range(address, end, 4)]
-        section = ShopSection(name=name_of[address])
-        if section.is_forge:
+        section = ShopSection(name=name_of[address], dialect=dialect)
+        if section.kind == "F":
+            if dialect == "fe10" and len(words) % 3:
+                raise ValueError(f"Section {section.name} isn't a table of forge triples")
             section.items = words
-        else:
+        elif section.kind in ("W", "I") and dialect == "fe10":
+            if not words or words[-1] != 0 or (len(words) - 1) % 2:
+                raise ValueError(f"Section {section.name} isn't a terminated Radiant Dawn item list")
+            records = words[:-1]
+            section.items = records[::2]
+            section.metadata = [int(records[2 * j + 1]) for j in range(len(records) // 2)]
+        elif section.kind in ("W", "I"):
             if not words or words[-1] != 0 or 0 in words[:-1]:
                 raise ValueError(f"Section {section.name} isn't a zero-terminated list")
             section.items = words[:-1]
+        else:
+            section.raw_words = words
         sections.append(section)
-    return ShopDocument(prelude=prelude, sections=sections, labels=labels, header_tail=data[0x10:HEADER_SIZE])
+    return ShopDocument(prelude=prelude, sections=sections, labels=labels,
+                        header_tail=data[0x10:HEADER_SIZE], dialect=dialect)
 
 
 def build_shop(doc: ShopDocument) -> bytes:
@@ -169,14 +202,23 @@ def build_shop(doc: ShopDocument) -> bytes:
     body_words: list[Value] = list(doc.prelude)
     addresses: dict[str, int] = {}
     for section in doc.sections:
-        if section.is_forge and len(section.items) % 2:
-            raise ValueError(f"Forge section {section.name} has an odd number of words")
-        if not section.is_forge and 0 in section.items:
+        forge_width = 3 if doc.dialect == "fe10" else 2
+        if section.is_forge and len(section.items) % forge_width:
+            raise ValueError(f"Forge section {section.name} has an invalid word count")
+        if section.kind in ("W", "I") and 0 in section.items:
             raise ValueError(f"Section {section.name} has an empty entry")
         addresses[section.name] = HEADER_SIZE + 4 * len(body_words)
-        body_words += section.items
-        if not section.is_forge:
+        if section.kind in ("W", "I") and doc.dialect == "fe10":
+            for i, item in enumerate(section.items):
+                body_words += [item, section.metadata[i] if i < len(section.metadata) else 0]
             body_words.append(0)
+        elif section.kind in ("W", "I"):
+            body_words += section.items
+            body_words.append(0)
+        elif section.is_forge:
+            body_words += section.items
+        else:
+            body_words += section.raw_words
     if len(addresses) != len(doc.sections):
         raise ValueError("Two sections have the same name")
 
@@ -217,22 +259,32 @@ def build_shop(doc: ShopDocument) -> bytes:
 
 def forge_cells(section: ShopSection) -> list[tuple[Value, Value]]:
     """A forge section's (item or 0, base tag) pairs, row by row."""
+    if section.dialect == "fe10":
+        return [(section.items[i + 2], section.items[i + 1]) for i in range(0, len(section.items), 3)]
     return [(section.items[i], section.items[i + 1]) for i in range(0, len(section.items), 2)]
 
 
 def set_forge_item(section: ShopSection, cell: int, item: Value) -> None:
     """Put ``item`` (an IID, or 0 for none) in one cell, keeping its base tag."""
-    if not section.is_forge or not 0 <= 2 * cell < len(section.items):
+    width, item_offset = (3, 2) if section.dialect == "fe10" else (2, 0)
+    if not section.is_forge or not 0 <= width * cell < len(section.items):
         raise ValueError(f"No forge cell {cell} in {section.name}")
-    section.items[2 * cell] = item or 0
+    section.items[width * cell + item_offset] = item or 0
+
+
+def forge_layout(dialect: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[Optional[str], ...]]:
+    """(row names, base tags, default items) for a game's forge table."""
+    if dialect == "fe10":
+        return FE10_FORGE_ROW_NAMES, FE10_FORGE_BASES, FE10_FORGE_DEFAULT_ITEMS
+    return FORGE_ROW_NAMES, FORGE_BASES, FORGE_DEFAULT_ITEMS
 
 
 # -- chapters -------------------------------------------------------------------------
 
-def add_chapter(doc: ShopDocument, chapter: int, template: Optional[int] = None) -> None:
+def add_chapter(doc: ShopDocument, chapter: Union[int, str], template: Optional[Union[int, str]] = None) -> None:
     """Give ``chapter`` (0-99) its three sections, copied from ``template``'s
     (empty armory/vendor and an empty forge table when there is none)."""
-    if not 0 <= chapter <= 99:
+    if isinstance(chapter, int) and not 0 <= chapter <= 99:
         raise ValueError("The game formats the chapter as two digits: 0-99.")
     if any(doc.shop(kind, chapter) for kind in SHOP_KINDS):
         raise ValueError(f"Chapter {chapter:02d} already has shops.")
@@ -240,22 +292,36 @@ def add_chapter(doc: ShopDocument, chapter: int, template: Optional[int] = None)
         source = doc.shop(kind, template) if template is not None else None
         if source is not None:
             items = list(source.items)
+        elif kind == "F" and doc.dialect == "fe10":
+            items = [word for family in FE10_FORGE_FAMILIES for base in FE10_FORGE_BASES
+                     for word in (family, base, 0)]
         elif kind == "F":
             items = [w for base in FORGE_BASES * FORGE_ROWS for w in (0, base)]
         else:
             items = []
-        new = ShopSection(name=section_name(kind, chapter), items=items)
+        new = ShopSection(name=section_name(kind, chapter), items=items, dialect=doc.dialect)
         # after the last section of the same kind, keeping each kind's run together
         same = [i for i, s in enumerate(doc.sections) if s.kind == kind]
         doc.sections.insert(same[-1] + 1 if same else len(doc.sections), new)
+    if doc.dialect == "fe10":
+        person_name = f"SHOP_PERSON_C{chapter}"
+        if not any(section.name == person_name for section in doc.sections):
+            template_name = f"SHOP_PERSON_C{template}" if template is not None else ""
+            source = next((section for section in doc.sections if section.name == template_name), None)
+            raw = list(source.raw_words) if source is not None else [0]
+            at = next((i for i, section in enumerate(doc.sections)
+                       if section.name.startswith(("WSHOP_", "ISHOP_", "FSHOP_"))), len(doc.sections))
+            doc.sections.insert(at, ShopSection(person_name, raw_words=raw, dialect="fe10"))
 
 
-def remove_chapter(doc: ShopDocument, chapter: int) -> int:
+def remove_chapter(doc: ShopDocument, chapter: Union[int, str]) -> int:
     """Remove every armory, vendor and forge section for ``chapter``.
 
     Returns the number of sections removed. Missing sections are harmless so
     partially-created chapters can be cleaned up too.
     """
     before = len(doc.sections)
-    doc.sections[:] = [section for section in doc.sections if section.chapter != chapter]
+    person_name = f"SHOP_PERSON_C{chapter}" if doc.dialect == "fe10" else ""
+    doc.sections[:] = [section for section in doc.sections
+                       if section.chapter != chapter and section.name != person_name]
     return before - len(doc.sections)

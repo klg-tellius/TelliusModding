@@ -167,7 +167,14 @@ def _access(base: int, party: int, operation: str, original: int, first_word: in
     return program
 
 
-def _zero_ranges(base: int, party: int, operation: str, original: int, first_word: int) -> list:
+#: JP MemoryCard object of the file menu (retail ``r13 - 0x6AC0``; US ``0x803682F0``): ``+0`` the open
+#: card buffer (0 once ``memory_card_close`` frees it), ``+4`` the loaded block, whose ``+0x65`` is the
+#: resume point ``resume_game_from_save_data`` switches on (8 = Suspend).
+JP_CARD = 0x80365CE0
+
+
+def _zero_ranges(base: int, party: int, operation: str, original: int, first_word: int,
+                 *, preserve_resume_locals: bool = False) -> list:
     bits = base + RECORD_OFFSET + xf.HEADER.size
     live = base + LIVE_OFFSET
     if operation == "flag_init":
@@ -175,9 +182,26 @@ def _zero_ranges(base: int, party: int, operation: str, original: int, first_wor
     elif operation == "flag_clear_playthrough":
         ranges = [(bits, xf.PAYLOAD_SIZE), (live + 128, 32), (base + SNAPSHOT_OWNER_OFFSET, 4)]
     else:
+        # Retail resets chapter flags while rebuilding a map.  On JP, unlike
+        # US/EU, the checkpoint deserializer runs before that reset and is not
+        # called again afterwards.  Preserve restored values for multipart
+        # resumes (party resume point 5-7) and for a Suspend being resumed:
+        # the loaded block's header says 8, while its party resume point keeps
+        # the value the chapter was entered with (1, 2, 4-7, never 8).  A fresh
+        # chapter (4, card closed) still clears them.  Registration masks are
+        # always rebuilt by the chapter script.
         ranges = [(bits + xf.HUB_BYTES + 128, 32), (live + 128, 32)]
     program = [*_address(6, party + 0xB4), ppc.cmplw(3, 6), ("ne", "original"), ppc.li(4, 0)]
+    if operation == "flag_reset_locals" and preserve_resume_locals:
+        program += [*_address(6, party + 0x54), ppc.lbz(6, 0, 6)]
+        for mode in (5, 6, 7):
+            program += [ppc.cmpwi(6, mode), ("eq", "registrations")]
+        program += [*_address(6, JP_CARD), ppc.lwz(7, 0, 6), ppc.cmpwi(7, 0), ("eq", "clear"),
+                    ppc.lwz(6, 4, 6), ppc.cmpwi(6, 0), ("eq", "clear"),
+                    ppc.lbz(6, 0x65, 6), ppc.cmpwi(6, 8), ("eq", "registrations")]
     for i, (start, size) in enumerate(ranges):
+        if operation == "flag_reset_locals" and preserve_resume_locals:
+            program += ["clear" if i == 0 else "registrations"]
         program += [*_address(5, start), ppc.li(6, size // 4), f"zero{i}", ppc.stw(4, 0, 5),
                     ppc.addi(5, 5, 4), ppc.addi(6, 6, -1), ppc.cmpwi(6, 0), ("ne", f"zero{i}")]
     return program + ["original", first_word, ("b", original + 4)]
@@ -288,7 +312,8 @@ def build_core(dol: Dol, version: str, layout: xf.FlagLayout, *, base: int = BAS
             programs[name] = [*_address(4, end), ppc.cmplw(3, 4), ("ge", "store"),
                               ppc.mr(3, 4), "store", first, ppc.BLR]
         elif name in ("flag_init", "flag_reset_locals", "flag_clear_playthrough"):
-            programs[name] = _zero_ranges(base, party, name, address, first)
+            programs[name] = _zero_ranges(base, party, name, address, first,
+                                           preserve_resume_locals=version == "GFEJ01")
         else:
             programs[name] = _access(base, party, name, address, first)
         edits.append(Edit(address, first.to_bytes(4, "big"),

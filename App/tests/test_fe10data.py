@@ -173,6 +173,13 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(ike.values["pid"], "PID_IKE")
         self.assertEqual(len(ike.lists["partners"]), 71)
         self.assertEqual(ike.lists["partners"][1], ("PID_ENA", 0, 2))
+        self.assertEqual(fe10data.DIFFICULTY_ROW_NAMES, (
+            "Kill EXP base", "Action EXP base", "Kill EXP multiplier (%)",
+            "Action EXP multiplier (%)", "Second-tier effective-level adjustment",
+            "Third-tier effective-level adjustment", "Animalize effective-level adjustment",
+            "Boss target kill EXP bonus", "Steal-skill target kill EXP bonus",
+            "Weapon EXP multiplier (%)",
+        ))
 
     def test_fixed_table_edits(self):
         out = fe10data.patch_field(self.data, "chapter", 1, "lord", "PID_IKE")

@@ -20,6 +20,10 @@ tier 1. The Master Crown works only on tier 2, from level 10 by default.
 Tier 2 can also promote automatically at level 20 by default. Set **Third
 tier: Crown only** to 1 to disable that automatic promotion, or change
 **Master Crown minimum level** in Game Code. Tier 3 has a normal level-20 cap.
+Builds before 2026-10-27 crashed with an emulator error at `0x80002DD8` when a
+tier-2 unit used the Crown: the level-gate stub loaded the minimum level with a
+load based on r0, which PowerPC reads as address 0 plus the offset. Re-enable the
+patch (or rebuild) to pick up the fixed stub.
 The displayed effective level is offset by 20 for tier 2 and 40 for tier 3.
 
 The Crown is a distinct item record and effect, initially cloned from the

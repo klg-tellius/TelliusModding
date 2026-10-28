@@ -174,6 +174,8 @@ def _notify() -> None:
 def _configure_styles(root: tk.Tk) -> None:
     style = ttk.Style(root)
     bg, fg = color("bg"), color("fg")
+    if sv_ttk is None:
+        _configure_fallback(style)
     style.configure("Muted.TLabel", foreground=color("muted"))
     style.configure("Faint.TLabel", foreground=color("faint"))
     style.configure("Title.TLabel", font=font("title"))
@@ -199,3 +201,37 @@ def _configure_styles(root: tk.Tk) -> None:
         style.configure(f"{name}.TRadiobutton", background=color(token))
     style.configure("Page.TFrame", background=bg)
     style.configure("Treeview", rowheight=26)
+
+
+def _configure_fallback(style: ttk.Style) -> None:
+    """Colour stock ``clam`` in the palette; it otherwise keeps black text on grey."""
+    bg, fg, field, border = color("bg"), color("fg"), color("field"), color("border")
+    style.configure(".", background=bg, foreground=fg, fieldbackground=field, bordercolor=border,
+                    lightcolor=color("surface"), darkcolor=bg, troughcolor=color("surface_alt"),
+                    selectbackground=color("accent_bg"), selectforeground=fg, insertcolor=fg,
+                    arrowcolor=fg)
+    style.map(".", foreground=[("disabled", color("faint"))],
+              background=[("disabled", bg)])
+    for widget in ("TButton", "TMenubutton", "TCheckbutton", "TRadiobutton"):
+        style.configure(widget, background=color("surface"), foreground=fg)
+        style.map(widget, background=[("pressed", color("nav_active")), ("active", color("surface_hover"))],
+                  foreground=[("disabled", color("faint"))])
+    for widget in ("TEntry", "TCombobox", "TSpinbox"):
+        style.configure(widget, fieldbackground=field, foreground=fg, insertcolor=fg)
+        style.map(widget, fieldbackground=[("readonly", field), ("disabled", bg)],
+                  foreground=[("disabled", color("faint"))])
+    style.configure("TLabelframe", background=bg, bordercolor=border)
+    style.configure("TLabelframe.Label", background=bg, foreground=fg)
+    style.configure("TNotebook", background=bg, bordercolor=border)
+    style.configure("TNotebook.Tab", background=color("surface_alt"), foreground=fg)
+    style.map("TNotebook.Tab", background=[("selected", color("surface"))])
+    style.configure("Treeview", background=field, fieldbackground=field, foreground=fg)
+    style.map("Treeview", background=[("selected", color("accent_bg"))], foreground=[("selected", fg)])
+    style.configure("Treeview.Heading", background=color("surface"), foreground=fg)
+    root = style.master
+    if root is not None:
+        # the Combobox drop-down list is a classic Listbox
+        root.option_add("*TCombobox*Listbox.background", field)
+        root.option_add("*TCombobox*Listbox.foreground", fg)
+        root.option_add("*TCombobox*Listbox.selectBackground", color("accent_bg"))
+        root.option_add("*TCombobox*Listbox.selectForeground", fg)

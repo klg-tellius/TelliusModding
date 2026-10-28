@@ -50,12 +50,13 @@ class BattlePlayer(ttk.Frame):
     """A note line, the staged fight and its playback controls: the body of
     :class:`BattleWindow`, also embedded by the Battle Cameras page."""
 
-    def __init__(self, parent: tk.Misc, files: Path, rules, fe8):
+    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, *, project=None, provider=None):
         super().__init__(parent)
         self._files = Path(files)
         self._rules, self._fe8 = rules, fe8
+        self._provider = provider or (battle_sim.provider_for(project) if project is not None else None)
         self._cache = battle_stage.SetCache()
-        self._assets: Optional[sa.BattleAssets] = None
+        self._assets = None
         self._camera: Optional[battle_camera.GameCamera] = None
         self._effects: dict = {}
         self._effect_records = None
@@ -63,12 +64,17 @@ class BattlePlayer(ttk.Frame):
         self.top.pack(fill="x")
         self._note = ttk.Label(self.top, text="", style="Muted.TLabel")
         self._note.pack(side="left", fill="x", expand=True)
-        self.view = battle_stage.StageView(self)
+        self.view = battle_stage.StageView(
+            self, aspect=16.0 / 9.0 if getattr(self._provider, "game", "") == "fe10" else battle_camera.ASPECT)
         self.view.pack(fill="both", expand=True)
 
     # -- assets -----------------------------------------------------------------------------------
-    def assets(self) -> sa.BattleAssets:
+    def assets(self):
         if self._assets is None:
+            if self._provider is not None:
+                self._provider.validate()
+                self._assets = getattr(self._provider, "assets", self._provider)
+                return self._assets
             try:
                 self._assets = sa.BattleAssets.from_files(self._files)
             except Exception:  # noqa: BLE001 - a damaged zdbx.cmp: no models, nothing to play
@@ -93,13 +99,17 @@ class BattlePlayer(ttk.Frame):
             return None
         if eid not in self._effects:
             try:
-                if self._effect_records is None:
-                    registry = self._files / "FE8Effect.bin"
-                    self._effect_records = effect_registry.read_effect_registry(registry.read_bytes()) \
-                        if registry.is_file() else []
-                names = effect_registry.chain(self._effect_records, eid)
-                self._effects[eid] = battle_stage.load_effect_chain(
-                    effects_fmt.pack_path(self._files, name) for name in names)
+                assets = self.assets()
+                if hasattr(assets, "effect_paths"):
+                    paths = assets.effect_paths(eid)
+                else:
+                    if self._effect_records is None:
+                        registry = self._files / "FE8Effect.bin"
+                        self._effect_records = effect_registry.read_effect_registry(registry.read_bytes()) \
+                            if registry.is_file() else []
+                    names = effect_registry.chain(self._effect_records, eid)
+                    paths = tuple(effects_fmt.pack_path(self._files, name) for name in names)
+                self._effects[eid] = battle_stage.load_effect_chain(paths) if paths else None
             except Exception:  # noqa: BLE001 - a broken effect pack is skipped
                 self._effects[eid] = None
         return self._effects[eid]
@@ -130,8 +140,11 @@ class BattlePlayer(ttk.Frame):
                 if path is not None else None
             stage = battle_stage.BattleStage(units3d, scene, self._effect, assets.battle_params(),
                                              assets.foot_effect(scenery))
-            camera = self._camera.with_packs(assets.camera_packs([a.code for a in found])) \
-                if self._camera is not None else None
+            if hasattr(assets, "camera"):
+                camera = assets.camera(distance, found)
+            else:
+                camera = self._camera.with_packs(assets.camera_packs([a.code for a in found])) \
+                    if self._camera is not None else None
             stage.set_log(log, distance, camera)
             if camera_script is not None and camera is not None:
                 camera = battle_camera.GameCamera({**camera.scripts, camera_script.name: camera_script},
@@ -165,13 +178,15 @@ class BattlePlayer(ttk.Frame):
 
 
 class BattleWindow(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, title: str = "Battle"):
+    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, title: str = "Battle", *,
+                 project=None, provider=None):
         super().__init__(parent)
         self.title(title)
-        self.geometry("880x760")
+        game = getattr(provider, "game", "") or getattr(getattr(project, "profile", None), "script_dialect", "")
+        self.geometry("1100x720" if game == "fe10" else "880x760")
         self.minsize(480, 420)
         self.transient(parent.winfo_toplevel())
-        self.player = BattlePlayer(self, files, rules, fe8)
+        self.player = BattlePlayer(self, files, rules, fe8, project=project, provider=provider)
         self.player.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.top, self.view = self.player.top, self.player.view
         self.protocol("WM_DELETE_WINDOW", self.close)

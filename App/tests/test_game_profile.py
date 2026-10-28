@@ -7,7 +7,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding import games
-from fe_modding.game_profile import (AI, GAME_DATA, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE, SHOPS,
+from fe_modding.game_profile import (AI, AUDIO, CHAPTERS, GAME_DATA, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE, SAVES, SHOPS, VIDEO,
                                      files_dir_of, game_for_disc_id, get_profile, logical_path_of, profile_of)
 from fe_modding.games import Game
 
@@ -34,6 +34,8 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(PATH_OF_RADIANCE_PROFILE.path(files, "battle_data"), files / "zdbx.cmp")
         self.assertEqual(RADIANT_DAWN_PROFILE.path(files, "battle_data"), files / "FE10Battle.cms")
         self.assertEqual(RADIANT_DAWN_PROFILE.path(files, "ai_data"), files / "Cp" / "cp_data.cms")
+        self.assertEqual(RADIANT_DAWN_PROFILE.path(files, "sound_data"), files / "Sound" / "sound_data_en.cms")
+        self.assertEqual(RADIANT_DAWN_PROFILE.path(files, "sound_archive"), files / "Sound" / "sound_us.brsar")
         self.assertTrue(RADIANT_DAWN_PROFILE.logical("game_data").compressed)
         self.assertFalse(PATH_OF_RADIANCE_PROFILE.logical("game_data").compressed)
         self.assertEqual(RADIANT_DAWN_PROFILE.file_label("game_data"), "FE10Data.cms")
@@ -67,7 +69,12 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(GAME_DATA))
         self.assertFalse(RADIANT_DAWN_PROFILE.supports(GAME_DATA))
         self.assertEqual(RADIANT_DAWN_PROFILE.unavailable(SHOPS), "Shop editing is not available for Radiant Dawn yet.")
-        self.assertIn("AI editing", RADIANT_DAWN_PROFILE.unavailable(AI))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(AI))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(CHAPTERS))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(SHOPS))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(AUDIO))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(VIDEO))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(SAVES))
 
     def test_disc_ids(self):
         self.assertIs(game_for_disc_id("GFEE01"), Game.PATH_OF_RADIANCE)
@@ -127,6 +134,18 @@ class ChapterKeyTests(unittest.TestCase):
         self.assertEqual(_chapter_key("00"), "0")
         self.assertEqual(_chapter_key("0407A"), _chapter_key("0407a"))
         self.assertEqual(_chapter_key("final"), "final")
+
+    def test_chapters_page_fallback_order_accepts_radiant_dawn_ids(self):
+        from fe_modding.gui.pages.chapters import _fallback_story_order
+
+        rd_project = SimpleNamespace(profile=RADIANT_DAWN_PROFILE)
+        ids = ["final", "0407a", "0102", "0101"]
+        self.assertEqual(_fallback_story_order(rd_project, ids),
+                         ["0101", "0102", "0407a", "final"])
+
+        por_project = SimpleNamespace(profile=PATH_OF_RADIANCE_PROFILE)
+        self.assertEqual(_fallback_story_order(por_project, ["01", "31", "32", "90", "bonus"]),
+                         ["01", "31"])
 
 
 if __name__ == "__main__":

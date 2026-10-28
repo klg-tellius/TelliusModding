@@ -8,6 +8,8 @@ from typing import Optional
 from ..formats import cp_data, map_file, message
 from ..formats.cmb.binary import read_cmb
 from ..game_profile import PATH_OF_RADIANCE_PROFILE
+from .dialect import dialect_for
+from .tactical_data import adapt
 from . import setup
 from .world import World
 
@@ -49,7 +51,7 @@ def chapter_script(files: Path, script_path: Optional[Path], source: Optional[st
         return base
 
 
-def load_messages(files: Path, chapter_stem: Optional[str]) -> dict:
+def load_messages(files: Path, chapter_stem: Optional[str], dialect: str = "fe9") -> dict:
     out = {}
     names = ["common.m"] + ([f"{chapter_stem.lower()}.m"] if chapter_stem else [])
     for name in names:
@@ -58,13 +60,25 @@ def load_messages(files: Path, chapter_stem: Optional[str]) -> dict:
             continue
         try:
             for m in message.read_messages_path(path):
-                out.setdefault(m.speaker, m.text)
+                key, text = m.speaker, m.text
+                if dialect == "fe10":
+                    key = key.encode("cp437").decode("cp932", errors="replace")
+                out.setdefault(key, text)
         except Exception:  # noqa: BLE001 - a broken message file only loses its texts
             continue
     return out
 
 
-def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents, fe8, script=None,
+def _logical_bytes(files: Path, profile, name: str) -> bytes:
+    entry = profile.logical(name)
+    data = (files / entry.path).read_bytes()
+    if entry.compressed:
+        from ..formats import lz10
+        data = lz10.decompress(data)
+    return data
+
+
+def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents, fe8=None, data=None, profile=None, script=None,
                difficulty: str = "n", names: Optional[dict] = None, chapter_stem: Optional[str] = None,
                problems: Optional[list] = None) -> World:
     """``files`` is the extracted disc's ``files/`` folder; ``documents`` the
@@ -72,6 +86,19 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
     None); ``chapter_stem`` its file stem (``C05``), which names the chapter's
     message file (``Mess/c05.m``)."""
     problems = problems if problems is not None else []
+    dialect = dialect_for(profile)
+    profile = profile or dialect.profile
+    if data is None:
+        data = fe8
+    if data is None:
+        raw = _logical_bytes(files, profile, "game_data")
+        if dialect.name == "fe10":
+            from ..formats import fe10data
+            data = fe10data.read_fe10data(raw)
+        else:
+            from ..formats import fe8data
+            data = fe8data.read_fe8data(raw)
+    tactical = adapt(data)
     cap = map_data.capacity
     scripts, script_names = [], []
     if script is not None:
@@ -85,24 +112,27 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
         except Exception as exc:  # noqa: BLE001
             problems.append(f"startup.cmb could not be read: {exc}")
     cp = None
-    cp_path = PATH_OF_RADIANCE_PROFILE.path(files, "ai_data")  # the playthrough is Path of Radiance only
+    cp_path = profile.path(files, "ai_data")
     if cp_path.exists():
         try:
-            cp = cp_data.parse_cp_data(cp_path.read_bytes())
+            cp = cp_data.parse_cp_data(_logical_bytes(files, profile, "ai_data"))
         except Exception as exc:  # noqa: BLE001
             problems.append(f"cp_data.bin could not be read ({exc}): the AI uses its built-in fallback")
     world = World(
         width=cap.x_size, height=cap.y_size, terrain=terrain_grid or [[""] * cap.y_size for _ in range(cap.x_size)],
-        terrain_types=list(terrain_types or []), fe8=fe8, link=link_grid(map_data), playable=playable_area(map_data),
-        scripts=scripts, script_names=script_names, cp=cp, messages=load_messages(files, chapter_stem),
+        terrain_types=list(terrain_types or []), fe8=data, tactical_data=tactical, profile=profile, dialect=dialect,
+        link=link_grid(map_data), playable=playable_area(map_data),
+        scripts=scripts, script_names=script_names, cp=cp, messages=load_messages(files, chapter_stem, dialect.name),
         groups=setup.groups(documents), difficulty=difficulty, names=dict(names or {}),
     )
-    fe8_path = PATH_OF_RADIANCE_PROFILE.path(files, "game_data")
-    if fe8_path.exists():
+    game_path = profile.path(files, "game_data")
+    if game_path.exists():
         try:
-            from ..formats import fe8data
-
-            world.game_data = fe8data.read_game_data(fe8_path.read_bytes())  # the EXP constants
+            if dialect.name == "fe9":
+                from ..formats import fe8data
+                world.game_data = fe8data.read_game_data(_logical_bytes(files, profile, "game_data"))
+            else:
+                world.game_data = dict(tactical.difficulty)
         except Exception as exc:  # noqa: BLE001
             problems.append(f"GameData could not be read ({exc}): EXP uses the retail Normal values")
     return world

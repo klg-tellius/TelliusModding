@@ -14,16 +14,19 @@ LZ10-compressed through the project (keeping the extracted file in ``originals/`
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
-from typing import Optional
+from pathlib import Path
+from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Callable, Optional
 
+from .. import excel_io
 from ..exceptions import ProjectError
 from ..formats import fe10data, fe10growth, fe10_message
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from .fe8_session import Fe10DataSession
 from . import message_reference
-from .widgets import ScrollFrame
+from .widgets import SaveDiscardBar, ScrollFrame, TileBrowser
 
 TAB_KEYS = ("characters", "classes", "items", "skills", "growth", "chapters", "terrain", "battle_scenery",
             "supports", "groups", "bonds", "affinities", "affinity_pairs", "triangle", "difficulty", "biorhythm")
@@ -63,11 +66,20 @@ def read_names(project: ModProject) -> dict[str, str]:
 
 class Fe10DataEditor(EditorPanel):
     display_name = "FE10Data.cms"
+    # ``dirty`` below reports only FE10Growth.cms when a shared session is present. The shell
+    # reports/saves FE10Data.cms through that session, so this panel must remain eligible for
+    # Save All when its separate growth file changed.
+    shares_fe8_session = False
 
-    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
+    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog,
+                 session: Fe10DataSession | None = None,
+                 navigate: Optional[Callable[[tuple], None]] = None,
+                 toolbar_parent: tk.Misc | None = None):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
+        self._session = session
+        self._navigate = navigate
         self._dirty = False
         self._data = b""
         self._db: Optional[fe10data.Fe10Data] = None
@@ -81,14 +93,19 @@ class Fe10DataEditor(EditorPanel):
         self._vars: dict[str, tk.StringVar] = {}
         self._shown: tuple = ()  # (tab, index) the form shows
         self._choice_cache: dict[tuple, list[str]] = {}
-        self._build()
+        self._build(toolbar_parent)
         self._load()
+        if self._session is not None:
+            self._session.subscribe(self._on_session_changed)
 
     # -- data ---------------------------------------------------------------------------------
     def _load(self) -> None:
         try:
-            self._data = self._project.read_logical("game_data")
-            self._db = fe10data.read_fe10data(self._data)
+            if self._session is not None and self._session.fe10 is not None:
+                self._data, self._db = self._session.data, self._session.fe10
+            else:
+                self._data = self._project.read_logical("game_data")
+                self._db = fe10data.read_fe10data(self._data)
         except (ProjectError, ValueError, KeyError, IndexError) as exc:
             self._db = None
             self._status.configure(text=str(exc))
@@ -116,13 +133,18 @@ class Fe10DataEditor(EditorPanel):
 
     @property
     def dirty(self) -> bool:
-        return self._dirty or self._growth_dirty
+        # The shared FE10Data session is reported/saved separately by Shell.
+        return self._growth_dirty if self._session is not None else self._dirty or self._growth_dirty
+
+    def _has_unsaved(self) -> bool:
+        return self._growth_dirty or (self._session.dirty if self._session is not None else self._dirty)
 
     def _replace_growth(self, data: bytes, what: str) -> None:
         self._growth_data = data
         self._growth = self._growth_records()
         self._growth_dirty = True
         self._save_button.configure(state="normal")
+        self._revert_button.configure(state="normal")
         self._status.configure(text=f"{what} (unsaved)")
         self._changelog.append("FE10Growth.cms", what)
 
@@ -131,15 +153,30 @@ class Fe10DataEditor(EditorPanel):
         self._data = data
         self._db = fe10data.read_fe10data(data)
         self._choice_cache.clear()
-        self._dirty = True
+        if self._session is not None:
+            self._session.replace(data, self)
+            self._data, self._db = self._session.data, self._session.fe10
+        else:
+            self._dirty = True
         self._save_button.configure(state="normal")
+        self._revert_button.configure(state="normal")
         self._status.configure(text=f"{what} (unsaved)")
         self._changelog.append("FE10Data.cms", what)
 
     def save(self) -> None:
         saved = []
+        if self._session is not None and self._session.dirty:
+            try:
+                self._session.save()
+            except OSError as exc:
+                messagebox.showerror("Could not save FE10Data.cms", str(exc), parent=self)
+                return
+            self._data, self._db = self._session.data, self._session.fe10
+            saved.append("FE10Data.cms")
         for dirty_attr, logical, data_attr, label in (("_dirty", "game_data", "_data", "FE10Data.cms"),
                                                       ("_growth_dirty", "growth_data", "_growth_data", "FE10Growth.cms")):
+            if logical == "game_data" and self._session is not None:
+                continue
             if not getattr(self, dirty_attr):
                 continue
             try:
@@ -151,11 +188,49 @@ class Fe10DataEditor(EditorPanel):
             saved.append(label)
             self._changelog.append(label, "Saved the game data tables")
         if saved:
-            self._save_button.configure(state="disabled")
+            self._save_button.configure(state="normal" if self._has_unsaved() else "disabled")
+            self._revert_button.configure(state="normal" if self._has_unsaved() else "disabled")
             self._status.configure(text=f"Saved {' and '.join(saved)}.")
+
+    def _on_session_changed(self, source) -> None:
+        if source is self or self._session is None or self._session.fe10 is None:
+            return
+        self._data, self._db = self._session.data, self._session.fe10
+        self._choice_cache.clear()
+        if self.winfo_exists():
+            self._refresh_list()
+            self._save_button.configure(state="normal" if self._has_unsaved() else "disabled")
+            self._revert_button.configure(state="normal" if self._has_unsaved() else "disabled")
 
     def _confirm_discard(self) -> bool:
         return messagebox.askyesno("Unsaved changes", "Discard the unsaved game data changes?", parent=self)
+
+    def _revert(self) -> None:
+        labels = [self._project.profile.file_label("game_data")]
+        if self._growth_dirty:
+            labels.append(self._project.profile.file_label("growth_data"))
+        if not messagebox.askyesno(
+                "Discard unsaved edits?",
+                f"Put {' and '.join(labels)} back as they were last saved? This discards every unsaved edit "
+                "to the Radiant Dawn game-data tables.", icon="warning", parent=self):
+            return
+        if self._session is not None:
+            if self._session.dirty:
+                self._session.revert()
+            self._data, self._db = self._session.data, self._session.fe10
+        elif self._dirty:
+            self._data = self._project.read_logical("game_data")
+            self._db = fe10data.read_fe10data(self._data)
+            self._dirty = False
+        if self._growth_dirty:
+            self._growth_data = self._project.read_logical("growth_data")
+            self._growth = self._growth_records()
+            self._growth_dirty = False
+        self._choice_cache.clear()
+        self._refresh_list()
+        self._save_button.configure(state="disabled")
+        self._revert_button.configure(state="disabled")
+        self._status.configure(text="Unsaved edits discarded", style="Muted.TLabel")
 
     def _title_card(self) -> None:
         """Draw the selected chapter's title card from its title (Radiant Dawn's window/title cards)."""
@@ -177,41 +252,35 @@ class Fe10DataEditor(EditorPanel):
             self._status.configure(text=f"Wrote {written.name}.")
 
     # -- layout -------------------------------------------------------------------------------
-    def _build(self) -> None:
-        top = ttk.Frame(self, padding=(8, 8, 8, 0))
+    def _build(self, toolbar_parent: tk.Misc | None = None) -> None:
+        label = self._project.profile.file_label("game_data")
+        top = SaveDiscardBar(
+            toolbar_parent or self, save_text=f"Save {label}", on_save=self.save, on_discard=self._revert,
+            help_text=f"Fields apply when you leave them; Save writes {label}.")
+        self._toolbar = top
         top.pack(fill="x")
-        self._heading = ttk.Label(top, text="", style="Heading.TLabel")
-        self._heading.pack(side="left")
-        self._save_button = ttk.Button(top, text="Save", style="Accent.TButton", command=self.save, state="disabled")
-        self._save_button.pack(side="right")
-        self._remove_button = ttk.Button(top, text="Remove", command=self._remove_record)
-        self._add_button = ttk.Button(top, text="New (copy of selected)...", command=self._add_record)
-        self._card_button = ttk.Button(top, text="Title card...", command=self._title_card)
-        search = ttk.Frame(self, padding=(8, 6, 8, 0))
-        search.pack(fill="x")
-        ttk.Label(search, text="Search").pack(side="left")
-        self._query = tk.StringVar()
-        ttk.Entry(search, textvariable=self._query).pack(side="left", fill="x", expand=True, padx=(6, 0))
-        self._query.trace_add("write", lambda *_: self._refresh_list())
-        self._status = ttk.Label(self, text="", style="Muted.TLabel", padding=(8, 4))
-        self._status.pack(anchor="w")
+        self._save_button = top.save_button
+        self._revert_button = top.discard_button
+        self._status = top.status
+        self._growth_export_button = ttk.Button(
+            top.actions, text="Export Excel…", command=self._export_growth_excel)
+        self._growth_import_button = ttk.Button(
+            top.actions, text="Import Excel…", command=self._import_growth_excel)
+        self._browser = TileBrowser(self, "records", self._open_record)
+        self._browser.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+        self._add_button = ttk.Button(self._browser.actions, text="New…",
+                                      command=self._add_record)
+        self._remove_button = ttk.Button(self._browser.record_actions, text="Remove",
+                                         command=self._remove_record)
+        self._card_button = ttk.Button(self._browser.record_actions, text="Title card...",
+                                       command=self._title_card)
+        self._form = ScrollFrame(self._browser.detail, padding=(16, 8, 16, 16))
+        self._form.pack(fill="both", expand=True)
 
-        body = ttk.PanedWindow(self, orient="horizontal")
-        body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        left = ttk.Frame(body)
-        body.add(left, weight=2)
-        self._tree = ttk.Treeview(left, columns=("id", "name"), show="headings", selectmode="browse")
-        self._tree.heading("id", text="ID")
-        self._tree.heading("name", text="Name")
-        self._tree.column("id", width=200)
-        self._tree.column("name", width=160)
-        scroll = ttk.Scrollbar(left, command=self._tree.yview)
-        self._tree.configure(yscrollcommand=scroll.set)
-        self._tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        self._tree.bind("<<TreeviewSelect>>", lambda _e: self._on_select())
-        self._form = ScrollFrame(body, padding=(12, 0, 0, 0))
-        body.add(self._form, weight=3)
+    @property
+    def toolbar(self) -> ttk.Frame:
+        """The save/discard strip, optionally hosted by the shared Game Data page."""
+        return self._toolbar
 
     # -- list ---------------------------------------------------------------------------------
     @property
@@ -221,21 +290,83 @@ class Fe10DataEditor(EditorPanel):
     def select_tab(self, tab: str) -> None:
         if tab not in TAB_KEYS:
             return
+        changed = tab != self._tab
         self._tab = tab
+        self._sync_growth_excel_buttons()
         self._refresh_list()
+        if changed:
+            self._browser.show_grid()
+
+    def _sync_growth_excel_buttons(self) -> None:
+        for button in (self._growth_export_button, self._growth_import_button):
+            button.pack_forget()
+        if self._tab == "growth" and self._growth_data:
+            self._growth_export_button.pack(side="left", padx=(6, 0))
+            self._growth_import_button.pack(side="left", padx=(6, 0))
+
+    def _export_growth_excel(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Export FE10Growth stats", defaultextension=".xlsx",
+            filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            excel_io.export_fe10_growth(path, self._growth_data)
+            self._status.configure(text=f"Exported {Path(path).name}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_growth_excel(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self, title="Import FE10Growth stats",
+            filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            data, errors, changed = excel_io.import_fe10_growth(path, self._growth_data)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            if not changed:
+                self._status.configure(text=f"Imported {Path(path).name}; no stat lines changed")
+                return
+            self._replace_growth(data, f"Imported {changed} stat line(s) from {Path(path).name}")
+            self._refresh_list()
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
 
     def select_record(self, record_id: str) -> None:
         if self._db is None:
             return
         for r in self._table(self.kind):
-            if r.id == record_id:
+            if r.id == record_id or str(r.index) == record_id:
                 self._selected[self._tab] = r.index
                 self._refresh_list()
+                self._browser.select(r.index, notify=False)
+                self._browser.show_detail()
+                self._show_record(r.index)
                 return
+
+    def show_records(self) -> None:
+        """Show the current table's shared tile browser rather than a stale detail."""
+        self._browser.show_grid()
+
+    def record_title(self, tab: str, record_id: str) -> str:
+        """Human-readable breadcrumb for a deep-linked record."""
+        kind = KIND_OF_TAB.get(tab)
+        if self._db is None or kind is None:
+            return record_id
+        for r in self._table(kind):
+            if r.id == record_id or str(r.index) == record_id:
+                return self._record_name(r) or self._record_label(r)
+        return record_id
 
     @staticmethod
     def _record_label(r: fe10data.Record) -> str:
-        if r.kind in ("difficulty", "biorhythm"):
+        if r.kind == "difficulty":
+            return (fe10data.DIFFICULTY_ROW_NAMES[r.index]
+                    if r.index < len(fe10data.DIFFICULTY_ROW_NAMES) else f"Row {r.index + 1}")
+        if r.kind == "biorhythm":
             return f"Row {r.index + 1}"
         if r.kind in ("bond", "affinity_pair", "triangle"):
             other = r.values.get("partner") or r.values.get("against") or ""
@@ -250,42 +381,40 @@ class Fe10DataEditor(EditorPanel):
 
     def _refresh_list(self) -> None:
         file_key = "growth_data" if self.kind == "growth" else "game_data"
-        for button in (self._remove_button, self._add_button, self._card_button):
+        self._browser.set_noun(TAB_TITLES[self._tab].lower())
+        for button in (self._add_button, self._remove_button, self._card_button):
             button.pack_forget()
-        if self.kind == "chapter":
-            self._card_button.pack(side="right", padx=(0, 6))
         if self.kind in fe10data.ADDABLE_KINDS:
-            self._remove_button.pack(side="right", padx=(0, 6))
-            self._add_button.pack(side="right", padx=(0, 6))
-        self._heading.configure(text=f"{TAB_TITLES[self._tab]} ({self._project.profile.file_label(file_key)})")
-        self._tree.delete(*self._tree.get_children())
+            self._add_button.pack(side="left", padx=(14, 0))
+            self._remove_button.pack(side="left", padx=(6, 0))
+        if self.kind == "chapter":
+            self._card_button.pack(side="left", padx=(6, 0))
         if self._db is None:
+            self._browser.set_entries([])
             return
-        query = self._query.get().strip().lower()
-        shown = 0
-        for r in self._table(self.kind):
-            name = self._record_name(r)
-            if query and query not in (r.id or "").lower() and query not in name.lower():
-                continue
-            self._tree.insert("", "end", iid=str(r.index), values=(self._record_label(r), name))
-            shown += 1
-        if not self._dirty:
-            self._status.configure(text=f"{shown} of {len(self._table(self.kind))} records")
+        records = self._table(self.kind)
+        labels = [f"{self._record_name(r) or self._record_label(r)}  ·  {self._record_label(r)}" for r in records]
+        haystacks = [f"{r.id or ''} {self._record_name(r)} {self._project.profile.file_label(file_key)}"
+                     for r in records]
+        self._browser.set_entries(labels, haystacks)
         index = self._selected.get(self._tab)
-        if index is not None and self._tree.exists(str(index)):
-            self._tree.selection_set(str(index))
-            self._tree.see(str(index))
+        if index is not None and 0 <= index < len(records):
+            self._browser.select(index, notify=False)
             if self._shown != (self._tab, index):
                 self._show_record(index)
         elif self._shown != (self._tab, None):
+            self._browser.show_grid()
             self._show_record(None)
 
-    def _on_select(self) -> None:
-        selection = self._tree.selection()
-        index = int(selection[0]) if selection else None
+    def _open_record(self, index: int) -> None:
         self._selected[self._tab] = index
         if self._shown != (self._tab, index):
             self._show_record(index)
+        if self._navigate is not None:
+            r = self._table(self.kind)[index]
+            token = r.id or str(index)
+            route = ("data", self._tab, token)
+            self._navigate(route)
 
     # -- form ---------------------------------------------------------------------------------
     def _choices(self, key: str) -> list[str]:
@@ -413,6 +542,10 @@ class Fe10DataEditor(EditorPanel):
             else:
                 widget = ttk.Entry(frame, textvariable=var, width=10)
             widget.grid(row=row, column=1, sticky="w", pady=2)
+            if d.key == "icon" and self.kind in ("item", "skill") and self._navigate is not None:
+                ttk.Button(frame, text="Edit icon ›", command=lambda field_var=var, kind=self.kind:
+                           self._navigate(("asset", "icons", f"{kind}:{field_var.get()}"))).grid(
+                               row=row, column=2, sticky="w", padx=(8, 0), pady=2)
             if prefix:
                 shown = tk.StringVar()
                 def show_text(*_args, source=var, target=shown):
@@ -629,8 +762,10 @@ class Fe10DataEditor(EditorPanel):
     def _growth_editor(self, body, r: fe10data.Record) -> None:
         shared = fe10growth.sharing(self._growth_data, r.index)
         note = (f"Absolute stats at each internal level (tier 1: 1-20, tier 2: 21-40, tier 3: 41-60), "
-                f"levels {r.values['first']}-{r.values['last']}. A unit's starting stats come from its "
-                "Characters record, not from here; what the game uses these lines for is not known yet.")
+                f"levels {r.values['first']}-{r.values['last']}. A deployment unit uses this table when "
+                "Use FE10Growth stats is enabled for it; otherwise its starting stats come from its "
+                "class bases and Characters record. The selected internal level is capped at this "
+                "record's last level.")
         if len(shared) > 1:
             note += f" Shared with records {', '.join(str(i) for i in shared if i != r.index)}."
         ttk.Label(body, text=note, style="Muted.TLabel", wraplength=560, justify="left").pack(anchor="w", pady=(0, 6))
