@@ -11,7 +11,7 @@ from fe_modding.formats import dispo, fe8data, lz10, pak, save_file as sf
 from fe_modding.game_code import entries  # noqa: F401  (registers the whole catalog)
 from fe_modding.game_code.catalog import CATALOG
 from fe_modding.game_code.editor import CodeEditor
-from fe_modding.game_profile import files_root_of
+from fe_modding.game_profile import disc_root_of, files_root_of
 
 #: Victory script appended to a chapter when a scenario asks for an automatic win.
 AUTO_WIN = ('\n# Session playtest: automatic victory\n'
@@ -85,7 +85,7 @@ class Context:
     @property
     def code(self) -> CodeEditor:
         if self._editor is None:
-            self._editor = CodeEditor(self.project.extracted_dir, self.project.write_keeping_original,
+            self._editor = CodeEditor(disc_root_of(self.project), self.project.write_keeping_original,
                                       self.project.extracted_bytes)
         return self._editor
 

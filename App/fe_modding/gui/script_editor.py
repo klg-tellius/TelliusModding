@@ -35,6 +35,7 @@ from . import theme
 from .code_editor import CodeEditor
 from .editor_panel import EditorPanel
 from .widgets import info, tip
+from ..game_files import as_path
 
 SOURCES_DIR = script_sources.SOURCES_DIR
 _BUILTINS = ["printf", "streq", "strne", "lit", "strofs", "extern"]
@@ -229,7 +230,7 @@ class ScriptEditor(EditorPanel):
         """The chapter page switched chapter. An open shared script (startup.cmb)
         stays open; picking "This chapter" in the File box then opens the new one."""
         previous_chapter = self._chapter_path
-        self._chapter_path = Path(path) if path is not None and Path(path).exists() else None
+        self._chapter_path = as_path(path) if path is not None and as_path(path).exists() else None
         showing_shared = self._current_path is not None and self._current_path != previous_chapter
         self._fill_file_choices()
         if showing_shared or self._chapter_path is None or self._chapter_path == self._current_path:
@@ -240,7 +241,7 @@ class ScriptEditor(EditorPanel):
 
     def open_file(self, path: Path) -> bool:
         """Show ``path`` (a chapter or shared script). False if the user kept unsaved edits."""
-        path = Path(path)
+        path = as_path(path)
         if path == self._current_path:
             return True
         if not self.confirm_navigate_away():
@@ -263,7 +264,7 @@ class ScriptEditor(EditorPanel):
     def reload_if_open(self, path: Path) -> None:
         """``path`` was rewritten elsewhere (the Flags page): show the new file
         if it is open here without unsaved edits."""
-        if self._current_path is not None and Path(path) == self._current_path and not self._dirty:
+        if self._current_path is not None and as_path(path) == self._current_path and not self._dirty:
             self._load(self._current_path)
 
     # -- the chapter script, for the Build tab's map zones -----------------------

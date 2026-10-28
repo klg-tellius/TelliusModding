@@ -16,6 +16,7 @@ from .formats.extended_flags import FlagLayout, FlagCompileContext, HUB_ALIASES
 from .formats.cmb import compile_source
 from .formats.cmb.parser import parse
 from .game_profile import disc_root_of, files_root_of, sys_root_of
+from .game_files import LegacyFiles, as_path, files_of
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ def prepare_project_update(project, layout: FlagLayout) -> HubProjectUpdate:
     dependencies = {}
 
     def snapshot(path):
-        path = Path(path)
+        path = as_path(path)
         if path not in dependencies:
             dependencies[path] = path.read_bytes() if path.exists() else None
         return dependencies[path]
@@ -215,17 +216,38 @@ def commit_project_update(project, update: HubProjectUpdate):
     if region not in EXTENDED_FLAGS_PATCH.versions:
         raise ProjectError(UNAVAILABLE_REASON)
     update.verify_unchanged()
-    changes = list(update.changes)
-    dependencies = list(update.dependencies)
+    files = files_of(project)
+
+    def game_rel(path):
+        try:
+            return files.rel(path)
+        except ProjectError:
+            return None   # a project file beside the game files (manifest, receipt...)
+
+    # The transaction reads and writes real files in the project folder: a game file goes where
+    # the layer writes it (extracted/ or output/). An output copy that does not exist yet has no
+    # "before": rolling back removes it, which leaves the vanilla file showing again.
+    changes, dependencies, written = [], [], []
     for change in update.changes:
-        original = project._original_of(change.path)
-        if original is None or change.before is None:
-            continue
-        kept = original.read_bytes() if original.exists() else None
-        dependencies.append((original, kept))
-        if kept is None:
-            changes.insert(0, PreparedFile(original, None, change.before))
+        rel = game_rel(change.path)
+        target = files.target(rel) if rel is not None else Path(change.path)
+        changes.append(PreparedFile(target, change.before if target.exists() else None, change.after))
+        if rel is not None:
+            written.append(rel)
+            if isinstance(files, LegacyFiles) and change.before is not None:
+                original = files.originals / rel   # layout 1 keeps the file as extracted
+                kept = original.read_bytes() if original.exists() else None
+                dependencies.append((original, kept))
+                if kept is None:
+                    changes.insert(0, PreparedFile(original, None, change.before))
+    for path, before in update.dependencies:
+        rel = game_rel(path)
+        target = files.target(rel) if rel is not None else Path(path)
+        if target.exists() or rel is None:
+            dependencies.append((target, before))
     commit(project.directory, changes, dependencies, validate=update.verify_unchanged)
+    for rel in written:
+        files.note_written(rel)
     from .script_sources import CompileContext
     CompileContext._cache.clear()
 
@@ -270,7 +292,7 @@ def _prepare_hub_update(project, setup, layout, *, reconfigure, migration=None):
 
     def snapshot(path):
         if path is not None:
-            path = Path(path)
+            path = as_path(path)
             if path not in dependencies:
                 dependencies[path] = path.read_bytes() if path.exists() else None
         return dependencies.get(path)

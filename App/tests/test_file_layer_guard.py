@@ -22,22 +22,29 @@ LAYER = frozenset({
     "fe_modding/game_files.py",
     "fe_modding/vanilla_store.py",
     "fe_modding/project.py",
+    "fe_modding/layout_migration.py",
 })
 
-#: Modules not moved to the layer yet (Phase 4 of the overlay plan). Only ever shrinks.
-NOT_YET_MOVED = frozenset({
+#: Tools that read a plain extracted disc given on the command line, not a project.
+RETAIL_TREE_TOOLS = frozenset({
     "tools/audit_regional_difficulty.py",
     "tools/build_hub_infinite_action_test.py",
     "tools/manifest_3d_unknowns.py",
-    "tools/prepare_extended_flag_playtest.py",
     "tools/profile_gs_texture_fields.py",
-    "tools/session_playtest/build.py",
-    "tools/session_playtest/context.py",
+    "tools/verify_conversations.py",
+})
+
+#: Test fixtures that build a layout-1 project from a clean extraction on purpose (copy it into
+#: extracted/, snapshot and revert it, read Dolphin run trees).
+LAYOUT1_FIXTURES = frozenset({
+    "tools/prepare_extended_flag_playtest.py",
     "tools/session_playtest/harness.py",
     "tools/session_playtest/run.py",
     "tools/update_extended_flag_playtest.py",
-    "tools/verify_conversations.py",
 })
+
+#: Modules not moved to the layer yet. Only ever shrinks.
+NOT_YET_MOVED = frozenset()
 
 
 def _sources():
@@ -52,7 +59,7 @@ class FileLayerGuardTests(unittest.TestCase):
     def test_game_files_are_reached_through_the_layer(self):
         offenders = []
         for rel, path in _sources():
-            if rel in LAYER or rel in NOT_YET_MOVED:
+            if rel in LAYER or rel in RETAIL_TREE_TOOLS or rel in LAYOUT1_FIXTURES or rel in NOT_YET_MOVED:
                 continue
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
                 if FORBIDDEN.search(line.split("#", 1)[0]):

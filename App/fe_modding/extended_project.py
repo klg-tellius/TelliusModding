@@ -13,6 +13,7 @@ from .game_code.extended_flag_installation import (
 )
 from .game_code.versions import read_boot_code
 from .game_profile import disc_root_of, sys_root_of
+from .game_files import as_path
 
 
 def prepare_runtime_update(project, layout: FlagLayout, sources=None):
@@ -22,11 +23,11 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
         raise ValueError(f"Cannot update extended project: {status.state.value}: {status.detail}")
     layout.require_compatible(status.layout)
     inventories = project_inventories(project)
-    changes = {Path(path): text for path, text in (sources or {}).items()}
+    changes = {as_path(path): text for path, text in (sources or {}).items()}
     dependencies, outputs = {}, {}
 
     def snapshot(path):
-        path = Path(path)
+        path = as_path(path)
         if path not in dependencies:
             dependencies[path] = path.read_bytes() if path.exists() else None
         return dependencies[path]

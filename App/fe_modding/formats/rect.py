@@ -727,8 +727,7 @@ def read_rect_file(path: Path | str) -> RectFile:
 
 
 def write_rect_file(doc: RectFile, path: Path | str) -> None:
-    with open(path, "wb") as stream:
-        stream.write(doc.build())
+    as_path(path).write_bytes(doc.build())
 
 
 # -- compatibility with the first version of this module -------------------------

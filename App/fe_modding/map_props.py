@@ -388,7 +388,7 @@ def map_paths(disc: Path) -> list[Path]:
 
 def map_props_info(path: Path) -> list[PropInfo]:
     """The props of one ``map.cmp``, cached until the file changes."""
-    path = Path(path)
+    path = as_path(path)
     stat = path.stat()
     stamp = (stat.st_mtime_ns, stat.st_size)
     cached = _catalog_cache.get(path)

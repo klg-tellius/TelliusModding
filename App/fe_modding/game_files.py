@@ -295,6 +295,10 @@ class GameFiles:
         """Make sure an (empty) folder exists where edits go."""
         raise NotImplementedError
 
+    def note_written(self, path: RelPath) -> None:
+        """Record a file written to :meth:`target` by something other than the layer (the
+        extended-flag transaction journal), as :meth:`write` records its own writes."""
+
     # -- what changed --------------------------------------------------------------------------------
     def is_modified(self, path: RelPath) -> bool:
         """Whether the mod replaced or added ``path``."""
@@ -994,6 +998,12 @@ class OverlayFiles(GameFiles):
         rel = self.rel(folder)
         (self.output / rel).mkdir(parents=True, exist_ok=True)
         self._unremove(rel)
+
+    def note_written(self, path: RelPath) -> None:
+        rel = self.rel(path)
+        if (self.output / rel).is_file():
+            self._record_base(rel)
+            self._unremove(rel)
 
     def is_modified(self, path: RelPath) -> bool:
         return (self.output / self.rel(path)).is_file()
