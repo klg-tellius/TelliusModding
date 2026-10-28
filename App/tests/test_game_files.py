@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -218,6 +220,62 @@ class OverlayContractTests(ContractMixin, unittest.TestCase):
         self.files.write("files/mess/c01.m", b"back")
         self.assertEqual(self.files.listdir("files/mess"), ["c01.m"])
         self.assertEqual(self.files.changes().removed, ["files/mess/common.m"])
+
+
+class DiscTreeTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._cleanup)
+        self.root = Path(self._tmp.name)
+        _make_tree(self.root / "input")
+        (self.root / "input" / "files" / "empty").mkdir()
+        for path in (self.root / "input").rglob("*"):
+            if path.is_file():
+                os.chmod(path, stat.S_IREAD)
+        self.files = OverlayFiles(self.root / "input", self.root / "p" / "output", self.root / "p" / "overlay.json")
+        self.stage = self.root / "p" / "build" / "stage"
+
+    def _cleanup(self):
+        for path in self.root.rglob("*"):
+            if path.is_file():
+                os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+        self._tmp.cleanup()
+
+    def _staged(self):
+        return {p.relative_to(self.stage).as_posix(): p.read_bytes() for p in self.stage.rglob("*")
+                if p.is_file() and p.name != game_files.STAGE_STATE}
+
+    def test_stage_is_the_merged_tree_and_follows_edits(self):
+        self.files.write("files/FE8Data.bin", b"edited")
+        self.files.write("files/added.bin", b"new")
+        self.files.remove("files/mess/c01.m")
+        tree = self.files.disc_tree(self.stage)
+        expected = {rel: data for rel, data in DISC.items() if rel != "files/mess/c01.m"}
+        expected.update({"files/FE8Data.bin": b"edited", "files/added.bin": b"new", "sys/fst.bin": b"fst"})
+        self.assertEqual(self._staged(), expected)
+        self.assertTrue((tree / "files" / "empty").is_dir())
+
+        self.files.write("files/FE8Data.bin", b"edited again")
+        self.files.revert("files/mess/c01.m")
+        self.files.revert("files/added.bin")
+        self.files.disc_tree(self.stage)
+        expected.update({"files/FE8Data.bin": b"edited again", "files/mess/c01.m": b"c01"})
+        del expected["files/added.bin"]
+        self.assertEqual(self._staged(), expected)
+
+    def test_refreshing_keeps_the_vanilla_files_read_only(self):
+        self.files.disc_tree(self.stage)
+        self.files.remove("files/mess/common.m")
+        self.files.write("files/FE8Data.bin", b"edited")
+        self.files.disc_tree(self.stage)
+        for rel in ("files/mess/common.m", "files/FE8Data.bin"):
+            self.assertFalse(os.stat(self.root / "input" / rel).st_mode & stat.S_IWRITE, rel)
+            self.assertEqual((self.root / "input" / rel).read_bytes(), DISC[rel])
+
+    def test_legacy_tree_is_its_own_folder(self):
+        _make_tree(self.root / "extracted")
+        legacy = LegacyFiles(self.root / "extracted", self.root / "originals")
+        self.assertEqual(legacy.disc_tree(self.stage), self.root / "extracted")
 
 
 class WriteAtomicTests(unittest.TestCase):

@@ -2,7 +2,9 @@
 
 A store is one extracted disc (``sys/``, ``files/`` and, for Wii, ``disc/`` plus the partition's
 ``ticket.bin``/``tmd.bin``/``cert.bin``) and a ``vanilla.json`` describing it: disc ID, revision and
-each file's size, modification time and SHA-1. Projects in the input/output layout read their
+each file's size, modification time and SHA-1. An app-made store is ``<store root>/<key>/disc/``
+with the description beside it in ``<store root>/<key>/vanilla.json``; an adopted folder's
+description is kept at the same place, so the disc tree holds the disc's files only. Projects in the input/output layout read their
 unchanged files from it (:class:`~fe_modding.game_files.OverlayFiles`).
 
 Two kinds:
@@ -58,8 +60,7 @@ class VanillaStore:
 
     @property
     def manifest_path(self) -> Path:
-        """Kept beside an adopted folder's tree in the store root, so the user's folder is untouched."""
-        return (store_root() / self.key / MANIFEST) if self.adopted else self.root / MANIFEST
+        return store_root() / self.key / MANIFEST
 
     def manifest(self) -> dict:
         try:
@@ -197,7 +198,7 @@ def check_tree(tree: Path, *, wii: bool) -> None:
 def describe_tree(tree: Path, progress: Optional[Callable[[int, int], None]] = None) -> dict:
     """``vanilla.json`` for ``tree``: every file's size, modification time and SHA-1."""
     disc_id, revision = _disc_header(tree)
-    names = [rel for rel in _walk_files(tree) if rel != MANIFEST]
+    names = list(_walk_files(tree))
     files = {}
     for index, rel in enumerate(names):
         info = (tree / rel).stat()
@@ -232,7 +233,8 @@ def ensure_store(disc_image: Path | str, *, wii: bool,
     root = store_root()
     root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".extract-", dir=root) as temporary:
-        tree = Path(temporary) / "disc"
+        entry = Path(temporary) / "entry"
+        tree = entry / "disc"
         tools.extract_disc(disc_image, tree, overwrite=True, wii=wii)
         key = store_key(tree)
         existing = get_store(key)
@@ -242,12 +244,12 @@ def ensure_store(disc_image: Path | str, *, wii: bool,
         manifest = describe_tree(tree, progress)
         _set_read_only(tree, True)
         _refresh_times(tree, manifest)
-        write_atomic(tree / MANIFEST, (json.dumps(manifest, indent=1) + "\n").encode("utf-8"))
+        write_atomic(entry / MANIFEST, (json.dumps(manifest, indent=1) + "\n").encode("utf-8"))
         final = root / key
         if final.exists():
             delete_store_files(final)
-        os.replace(tree, final)
-    store = VanillaStore(key=key, root=final, disc_id=manifest["disc_id"], revision=manifest["revision"],
+        os.replace(entry, final)
+    store = VanillaStore(key=key, root=final / "disc", disc_id=manifest["disc_id"], revision=manifest["revision"],
                          adopted=False, source_image=str(disc_image))
     _register(store)
     return store

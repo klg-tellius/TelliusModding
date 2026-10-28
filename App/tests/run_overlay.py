@@ -92,7 +92,11 @@ def install() -> None:
     for name in ("copy", "copy2", "copyfile", "copytree", "move"):
         _wrap(shutil, name, f"shutil.{name}", 1)
 
+    real_files = project_module.ModProject.files
+
     def files(self):
+        if self.layout == project_module.LAYOUT_OVERLAY:
+            return real_files.fget(self)    # already in the input/output layout
         if self._files is None:
             INPUTS.add(os.path.normcase(os.path.abspath(self.extracted_dir)))
             self._files = game_files.OverlayFiles(self.extracted_dir, self.directory / "output",

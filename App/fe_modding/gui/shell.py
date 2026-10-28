@@ -530,7 +530,7 @@ class Shell(ttk.Frame):
         project = self.project
         if not project.source_iso:
             return
-        if self.extracted and not messagebox.askyesno(
+        if self.extracted and not project.is_overlay and not messagebox.askyesno(
                 "Re-extract the disc?",
                 "Extracting again overwrites the extracted files with the disc's own, "
                 "so edits made to them are replaced.\n\nContinue?", icon="warning", parent=self):
@@ -538,8 +538,19 @@ class Shell(ttk.Frame):
         self.run_task(f"Extracting {project.source_iso} …", project.extract,
                       lambda _r: self._on_extracted())
 
+    def use_input_folder(self) -> None:
+        """Layout 2: read the vanilla files from a folder the user already extracted."""
+        chosen = filedialog.askdirectory(
+            title="Choose the extracted game folder (the one holding sys and files, or DATA)", parent=self)
+        if not chosen:
+            return
+        self.run_task("Checking the extracted files …", lambda: self.project.use_input_folder(chosen),
+                      lambda _r: self._on_extracted())
+
     def _on_extracted(self) -> None:
-        self.set_status(f"Extracted into {self.project.extracted_dir}")
+        project = self.project
+        self.set_status(f"Vanilla files: {project.input_root}" if project.is_overlay
+                        else f"Extracted into {project.disc_tree()}")
         warning = self.project.disc_mismatch_warning()
         if warning:
             messagebox.showwarning("Wrong game?", warning, parent=self)
@@ -596,7 +607,7 @@ class Shell(ttk.Frame):
 
         def work():
             project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
-            return emulator.prepare_chapter_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+            return emulator.prepare_chapter_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                                 chapter_id, difficulty)
         self.run_task(f"Preparing chapter {chapter_id:02d} for Dolphin …", work, self._launch)
 
@@ -615,7 +626,7 @@ class Shell(ttk.Frame):
 
         def work():
             project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
-            return emulator.prepare_save_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+            return emulator.prepare_save_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                              gci_name, gci)
 
         def started(result) -> None:
@@ -671,14 +682,15 @@ class Shell(ttk.Frame):
             filetypes=[("Tellius patches", f"*{patch.PATCH_EXTENSION}")])
         if not dest:
             return
-        self.run_task("Creating patch (extracting the source disc to compare) …",
+        self.run_task("Creating patch …" if project.is_overlay else
+                      "Creating patch (extracting the source disc to compare) …",
                       lambda: patch.create_project_patch(project, dest), lambda s: self._on_patch_created(dest, s))
 
     def _on_patch_created(self, dest: str, summary) -> None:
         self.last_patch = f"Last patch: {dest} - {summary.describe()}"
         self.set_status(f"Created {dest}")
         if summary.empty:
-            messagebox.showinfo("Empty patch", "The extracted files are identical to the source disc's, "
+            messagebox.showinfo("Empty patch", "The project's files are identical to the source disc's, "
                                 "so the patch changes nothing.", parent=self)
         else:
             messagebox.showinfo("Patch created", f"{dest}\n\n{summary.describe()}", parent=self)

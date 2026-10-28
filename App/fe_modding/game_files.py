@@ -314,6 +314,94 @@ class GameFiles:
     def changes(self) -> Changes:
         raise NotImplementedError
 
+    # -- the whole tree ------------------------------------------------------------------------------
+    def disc_tree(self, stage: Path) -> Path:
+        """A real folder holding the whole disc as it is now (``sys/``, ``files/``...), for tools
+        that read a folder: the disc builders and Dolphin. ``stage`` is where one is kept when the
+        layout has none of its own; it is refreshed, not rebuilt, on each call. Nothing may write
+        into it."""
+        raise NotImplementedError
+
+
+STAGE_STATE = ".stage.json"
+
+
+def _unlink_staged(path: Path, shared: Optional[str]) -> None:
+    """Remove a staged file. A hard link to a read-only vanilla file is read-only too and cannot
+    be unlinked on Windows; clearing the flag clears it on the shared file as well, so it is set
+    again on ``shared`` (the file the link was made from) afterwards."""
+    try:
+        path.unlink()
+        return
+    except PermissionError:
+        pass
+    mode = path.stat().st_mode
+    os.chmod(path, mode | 0o200)
+    try:
+        path.unlink()
+    finally:
+        if shared and os.path.exists(shared):
+            os.chmod(shared, mode)
+
+
+def stage_tree(entries: dict[str, Path], folders: set[str], stage: Path) -> Path:
+    """Make ``stage`` hold exactly ``entries`` (relative path -> real file) and ``folders``: each
+    file a hard link to its source when the volume allows, else a copy. A staged file already
+    linked to (or copied from, same size and time) its source is kept, so a refresh after a few
+    edits touches only those files."""
+    stage = Path(stage)
+    stage.mkdir(parents=True, exist_ok=True)
+    state_path = stage / STAGE_STATE
+    try:
+        previous = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        previous = {}
+    state: dict[str, list] = {}
+    present = set(_walk_files(stage)) - {STAGE_STATE}
+    linkable = True
+    for rel, source in sorted(entries.items()):
+        target = stage / rel
+        src = os.stat(source)
+        if rel in present:
+            dst = os.stat(target)
+            same_inode = (dst.st_ino, dst.st_dev) == (src.st_ino, src.st_dev) and dst.st_ino != 0
+            same_copy = (previous.get(rel) == [str(source), src.st_size, src.st_mtime_ns]
+                         and dst.st_size == src.st_size)
+            if same_inode or same_copy:
+                state[rel] = [str(source), src.st_size, src.st_mtime_ns]
+                continue
+            _unlink_staged(target, (previous.get(rel) or [None])[0])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if linkable:
+            try:
+                os.link(source, target)
+            except OSError:
+                linkable = False   # another volume (or no links): copy from here on
+        if not linkable:
+            shutil.copy2(source, target)
+            os.chmod(target, os.stat(target).st_mode | 0o200)
+        state[rel] = [str(source), src.st_size, src.st_mtime_ns]
+    for rel in sorted(present - set(entries)):
+        _unlink_staged(stage / rel, (previous.get(rel) or [None])[0])
+    for rel in sorted(folders):
+        (stage / rel).mkdir(parents=True, exist_ok=True)
+    keep = {str(PurePosixPath(rel).parent) for rel in entries} | set(folders)
+    keep |= {"/".join(rel.split("/")[:i]) for rel in keep for i in range(1, rel.count("/") + 1)}
+    for folder, _dirs, _names in sorted(os.walk(stage), key=lambda item: -len(item[0])):
+        rel = Path(folder).relative_to(stage).as_posix()
+        if rel != "." and rel not in keep and not os.listdir(folder):
+            os.rmdir(folder)
+    write_atomic(state_path, json.dumps(state).encode("utf-8"))
+    return stage
+
+
+def _walk_dirs(root: Path) -> Iterator[str]:
+    if not root.is_dir():
+        return
+    for folder, dirs, _names in os.walk(root):
+        for name in dirs:
+            yield (Path(folder) / name).relative_to(root).as_posix()
+
 
 class _WriteOnClose(io.BytesIO):
     """What :meth:`GamePath.open` returns for writing: the bytes go through the layer on close."""
@@ -715,6 +803,9 @@ class LegacyFiles(GameFiles):
         prefix = f"{base}/" if base else ""
         return [prefix + p.name for p in sorted(kept.iterdir()) if p.is_file()]
 
+    def disc_tree(self, stage: Path) -> Path:
+        return self.root   # the tree edits are made in is complete as it is
+
     def changes(self) -> Changes:
         replaced = [rel for rel in _walk_files(self.originals) if (self.root / rel).is_file()]
         disc = self._disc_paths() or {}
@@ -937,6 +1028,12 @@ class OverlayFiles(GameFiles):
                 removed.add(rel)
         removed = {r for r in removed if not (self.output / r).is_file()}
         return Changes(replaced, added, sorted(removed))
+
+    def disc_tree(self, stage: Path) -> Path:
+        entries = {rel: self.path(rel) for rel in self.iter_files("")}
+        folders = {rel for rel in _walk_dirs(self.input) if not self._removed_by(rel)}
+        folders |= set(_walk_dirs(self.output))
+        return stage_tree(entries, folders, stage)
 
     def base_hashes(self) -> dict[str, str]:
         """SHA-1 of the input file each replaced file was made from."""

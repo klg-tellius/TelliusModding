@@ -78,7 +78,8 @@ def profile(game: Game):
 def read_disc_id(disc_dir: Path | str) -> str:
     """The six-character disc ID (``GFEE01``, ``RFEE01``...) from ``sys/boot.bin`` of an extracted
     disc, or ``""`` when it is missing or too short."""
-    boot = Path(disc_dir) / "sys" / "boot.bin"
+    from .game_files import as_path
+    boot = as_path(disc_dir) / "sys" / "boot.bin"
     try:
         with boot.open("rb") as f:
             header = f.read(6)

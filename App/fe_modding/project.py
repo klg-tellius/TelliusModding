@@ -20,16 +20,24 @@ from .formats import gcdisc, lz10, pak
 from .exceptions import ProjectError
 from .game_profile import GameProfile, game_for_disc_id
 from .games import Game, get_game_info, profile as game_profile, read_disc_id, read_image_disc_id
-from .game_files import GameFiles, GamePath, LegacyFiles
+from .game_files import OVERLAY_FILE, GameFiles, GamePath, LegacyFiles, OverlayFiles
 
 PROJECT_FILENAME = "project.json"
 
 # Subfolders created inside every new project directory.
 SOURCE_DIR = "source"       # disc images copied in by older versions (new projects record the path)
-EXTRACTED_DIR = "extracted"  # unpacked game files, ready to edit
-BUILD_DIR = "build"          # repacked output (ISO/WBFS ready to run)
-ORIGINALS_DIR = "originals"  # first copies of extracted files an import overwrote
+EXTRACTED_DIR = "extracted"  # layout 1: unpacked game files, edited in place
+ORIGINALS_DIR = "originals"  # layout 1: first copies of extracted files an import overwrote
+OUTPUT_DIR = "output"        # layout 2: only the files the mod replaced or added
+BUILD_DIR = "build"          # repacked output (ISO/WBFS ready to run), staged disc trees
 PROJECT_SUBDIRS = (EXTRACTED_DIR, BUILD_DIR)
+
+#: Layout 1 keeps a whole extracted disc in the project and edits it in place. Layout 2 reads the
+#: vanilla files from a shared, read-only store (``vanilla_store``) and keeps only the mod's own
+#: files in ``output/`` (the Paragon-style input/output layout).
+LAYOUT_EXTRACTED = 1
+LAYOUT_OVERLAY = 2
+STAGE_DIR = "stage"          # under build/: the merged disc tree that building and Dolphin read
 
 _INVALID_FOLDER_CHARS = re.compile(r'[<>:"/\\|?*]')
 
@@ -73,6 +81,8 @@ class ModProject:
     author: str = ""
     version: str = ""
     credits: str = ""  # free text: who made or allowed what; goes into patches
+    layout: int = LAYOUT_EXTRACTED
+    input_key: Optional[str] = None      # layout 2: the vanilla store the project reads
     last_build_warning: Optional[str] = field(default=None, repr=False, compare=False)
     _files: Optional[GameFiles] = field(default=None, init=False, repr=False, compare=False)
 
@@ -93,8 +103,40 @@ class ModProject:
     def files(self) -> GameFiles:
         """The project's game files: every read and write of a disc file goes through this."""
         if self._files is None:
-            self._files = LegacyFiles(self.extracted_dir, self.originals_dir)
+            if self.layout == LAYOUT_OVERLAY:
+                root = self.input_root
+                self._files = OverlayFiles(root if root is not None else self.directory / ".no-input",
+                                           self.output_dir, self.directory / OVERLAY_FILE)
+            else:
+                self._files = LegacyFiles(self.extracted_dir, self.originals_dir)
         return self._files
+
+    @property
+    def is_overlay(self) -> bool:
+        return self.layout == LAYOUT_OVERLAY
+
+    @property
+    def input_store(self):
+        """Layout 2: the vanilla store the project reads, or None when it is not set or gone."""
+        if not self.input_key:
+            return None
+        from . import vanilla_store
+        return vanilla_store.get_store(self.input_key)
+
+    @property
+    def input_root(self) -> Optional[Path]:
+        store = self.input_store
+        return store.root if store is not None else None
+
+    @property
+    def output_dir(self) -> Path:
+        """Layout 2: the mod's own files, at their disc paths (``output/files/...``)."""
+        return self.directory / OUTPUT_DIR
+
+    def disc_tree(self) -> Path:
+        """A real folder holding the whole disc as it is now, for the disc builders and Dolphin:
+        ``extracted/`` itself, or the merged tree staged in ``build/stage`` (layout 2)."""
+        return self.files.disc_tree(self.build_dir / STAGE_DIR)
 
     @property
     def files_root(self) -> GamePath:
@@ -201,7 +243,44 @@ class ModProject:
 
     @property
     def has_extracted_files(self) -> bool:
+        """Whether the game's files are there to edit (extracted, or the vanilla store found)."""
+        if self.is_overlay:
+            return self.files.has_files
         return self.extracted_dir.exists() and any(self.extracted_dir.iterdir())
+
+    def _set_input(self, store) -> None:
+        self.input_key = store.key
+        self._files = None
+        self.save()
+        from .formats import game_text
+        game_text.use_for_extraction(self.files.at(""))
+
+    def use_input_folder(self, folder: Path | str):
+        """Layout 2: read the vanilla files from a folder the user already extracted (Dolphin's
+        "Extract Entire Disc", WIT...), registered in place as a store. Returns the store."""
+        from . import vanilla_store
+        store = vanilla_store.adopt_folder(folder, wii=self.profile.wii)
+        warning = self._mismatch_message(store.disc_id)
+        if warning and game_for_disc_id(store.disc_id) is not None:
+            raise ProjectError(warning)
+        self._set_input(store)
+        return store
+
+    def input_problems(self) -> list[str]:
+        """Layout 2: what is wrong with the vanilla files, empty when nothing: the store is gone or
+        changed, or files the mod replaced were made from other vanilla files than these."""
+        if not self.is_overlay:
+            return []
+        store = self.input_store
+        if store is None:
+            return ["The vanilla files this project reads are not available. Extract the disc again "
+                    "or choose the extracted folder."]
+        problems = store.verify()
+        hashes = store.file_hashes()
+        for rel, sha1 in self.files.base_hashes().items():
+            if rel in hashes and hashes[rel] != sha1:
+                problems.append(f"{rel}: the mod's file was made from another version of it")
+        return problems
 
     def set_source(self, disc_image: Path | str) -> Path:
         """Record a disc image as the project's source, by its absolute path (it is not copied).
@@ -227,11 +306,17 @@ class ModProject:
         return disc_image
 
     def extract(self, *, overwrite: bool = True) -> Path:
-        """Extract the source disc image into the project's extracted/ folder."""
+        """Extract the source disc image: into the project's extracted/ folder (layout 1), or into
+        the shared vanilla store unless that disc is already there (layout 2). Returns the tree."""
         if self.source_path is None:
             raise ProjectError("No source disc image set for this project yet.")
         if self.source_missing:
             raise ProjectError(f"The source disc image is no longer at {self.source_path}. Choose it again.")
+        if self.is_overlay:
+            from . import vanilla_store
+            store = vanilla_store.ensure_store(self.source_path, wii=self.profile.wii)
+            self._set_input(store)
+            return store.root
         tools.extract_disc(self.source_path, self.extracted_dir, overwrite=overwrite, wii=self.profile.wii)
         return self.extracted_dir
 
@@ -249,7 +334,7 @@ class ModProject:
         """A warning when the extracted disc is not the project's game (e.g. a Radiant Dawn disc in
         a Path of Radiance project), from the disc ID in ``sys/boot.bin``; None when it matches or
         there is no ID to read."""
-        disc_id = read_disc_id(self.extracted_dir)
+        disc_id = read_disc_id(self.files.at(""))
         return self._mismatch_message(disc_id) if disc_id else None
 
     def source_mismatch_warning(self) -> Optional[str]:
@@ -261,7 +346,7 @@ class ModProject:
         return self._mismatch_message(disc_id) if disc_id else None
 
     def build(self, *, overwrite: bool = True) -> Path:
-        """Rebuild a disc image from the project's extracted/ folder."""
+        """Build a disc image of the project's files as they are now (:meth:`disc_tree`)."""
         from .game_code.extended_flags import require_project_runtime
         require_project_runtime(self)
         if not self.has_extracted_files:
@@ -274,7 +359,7 @@ class ModProject:
             from .chapters import ensure_name_images
             ensure_name_images(self)       # before the sync: nothing it writes is in system.cmp
             self.sync_system_archive()
-        self.last_build_warning = build_image(self.game, self.extracted_dir, dest, overwrite=overwrite)
+        self.last_build_warning = build_image(self.game, self.disc_tree(), dest, overwrite=overwrite)
         return dest
 
     def sync_system_archive(self) -> list[str]:
@@ -294,14 +379,14 @@ class ModProject:
         files, changed = [], []
         for entry in entries:
             content = pak.read_pak_file_content(unpacked, entry)
-            loose = self.extracted_dir / "files" / entry.name
+            loose = self.files_root / entry.name
             if loose.is_file() and loose.read_bytes() != content:
                 content = loose.read_bytes()
                 changed.append(entry.name)
             files.append((entry.name, content))
         if changed:
             packed = pak.pack_pak(files, [entry.reserved for entry in entries])
-            self.write_keeping_original(path, lz10.compress(packed))
+            path.write_bytes(lz10.compress(packed))
         return changed
 
     def to_dict(self) -> dict:
@@ -315,6 +400,7 @@ class ModProject:
             "author": self.author,
             "version": self.version,
             "credits": self.credits,
+            **({"layout": self.layout, "input": self.input_key} if self.is_overlay else {}),
         }
 
     def save(self) -> None:
@@ -329,8 +415,10 @@ class ModProject:
         name: str,
         game: Game,
         description: str = "",
+        layout: int = LAYOUT_EXTRACTED,
     ) -> "ModProject":
-        """Create a new project as a subfolder of ``parent_directory``.
+        """Create a new project as a subfolder of ``parent_directory``, in ``layout`` (the app
+        makes new projects in :data:`LAYOUT_OVERLAY`).
 
         Raises ProjectError if the target folder already exists and is not empty.
         """
@@ -349,10 +437,10 @@ class ModProject:
             raise ProjectError(f"'{directory}' already exists and is not empty.")
 
         directory.mkdir(parents=True, exist_ok=True)
-        for sub in PROJECT_SUBDIRS:
+        for sub in (PROJECT_SUBDIRS if layout == LAYOUT_EXTRACTED else (OUTPUT_DIR, BUILD_DIR)):
             (directory / sub).mkdir(parents=True, exist_ok=True)
 
-        project = cls(name=name, game=game, directory=directory, description=description)
+        project = cls(name=name, game=game, directory=directory, description=description, layout=layout)
         project.save()
         return project
 
@@ -375,8 +463,7 @@ class ModProject:
             raise ProjectError(f"Project file '{project_file}' has an invalid or missing game id.") from exc
 
         from .formats import game_text
-        game_text.use_for_extraction(directory / "extracted")
-        return cls(
+        project = cls(
             name=data.get("name", directory.name),
             game=game,
             directory=directory,
@@ -387,4 +474,10 @@ class ModProject:
             author=data.get("author", ""),
             version=data.get("version", ""),
             credits=data.get("credits", ""),
+            layout=int(data.get("layout", LAYOUT_EXTRACTED)),
+            input_key=data.get("input"),
         )
+        if project.layout not in (LAYOUT_EXTRACTED, LAYOUT_OVERLAY):
+            raise ProjectError(f"Project file '{project_file}' uses a layout this version cannot open.")
+        game_text.use_for_extraction(project.files.at(""))
+        return project

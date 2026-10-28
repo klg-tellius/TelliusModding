@@ -26,10 +26,6 @@ LAYER = frozenset({
 
 #: Modules not moved to the layer yet (Phase 4 of the overlay plan). Only ever shrinks.
 NOT_YET_MOVED = frozenset({
-    "fe_modding/emulator.py",
-    "fe_modding/gui/pages/disc.py",
-    "fe_modding/gui/shell.py",
-    "fe_modding/patch.py",
     "tools/audit_regional_difficulty.py",
     "tools/build_hub_infinite_action_test.py",
     "tools/manifest_3d_unknowns.py",

@@ -150,7 +150,7 @@ def chapter_position(fe8data: bytes, chapter_id: int) -> int:
     raise EmulatorError(f"Chapter {chapter_id:02d} has no ChapterData record.")
 
 
-def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str, chapter_id: int, difficulty: int) -> Path:
+def prepare_chapter_run(disc_dir: Path | str, run_dir: Path | str, chapter_id: int, difficulty: int) -> Path:
     """Make ``run_dir`` a disc tree that boots into chapter ``chapter_id`` (a ``ChapterData`` id)
     on ``difficulty`` (a ``chapter_jump.DIFFICULTIES`` value) with a fresh army; returns its
     ``sys/main.dol`` for Dolphin. ``FE8Data.bin`` is read from disk, as the game will read it
@@ -160,17 +160,17 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str, chapter_
     from .game_code.dol import Dol, DolError
     from .game_code.versions import identify, read_boot_code
 
-    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
-    source_sys, files = extracted_dir / "sys", extracted_dir / "files"
+    disc_dir, run_dir = Path(disc_dir), Path(run_dir)
+    source_sys, files = disc_dir / "sys", disc_dir / "files"
     if not (source_sys / "main.dol").is_file() or not files.is_dir():
-        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    detected = detect_from_extracted(extracted_dir)
+        raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(disc_dir)
     if detected is not None and not profile(detected).supports(PLAY):
         raise EmulatorError(profile(detected).unavailable(PLAY))
     position = chapter_position(profile(detected or Game.PATH_OF_RADIANCE).path(files, "game_data").read_bytes(),
                                 chapter_id)
     dol = Dol.open(source_sys / "main.dol")
-    version = identify(dol, read_boot_code(extracted_dir)).version
+    version = identify(dol, read_boot_code(disc_dir)).version
     if version is None:
         raise EmulatorError("This main.dol is not a supported Path of Radiance build.")
     try:
@@ -178,7 +178,7 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str, chapter_
     except (DolError, ValueError) as exc:
         raise EmulatorError(f"Could not patch main.dol for the jump: {exc}") from exc
 
-    return _copy_run_tree(extracted_dir, run_dir, bytes(dol.data))
+    return _copy_run_tree(disc_dir, run_dir, bytes(dol.data))
 
 
 def save_card_config(card_dir: Path | str) -> tuple[str, ...]:
@@ -188,33 +188,33 @@ def save_card_config(card_dir: Path | str) -> tuple[str, ...]:
             f"Dolphin.Core.GCIFolderAPathOverride={Path(card_dir).resolve()}")
 
 
-def _copy_run_tree(extracted_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
+def _copy_run_tree(disc_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
     sys_dir = run_dir / "sys"
     sys_dir.mkdir(parents=True, exist_ok=True)
-    for item in (extracted_dir / "sys").iterdir():
+    for item in (disc_dir / "sys").iterdir():
         if item.is_file() and item.name != "main.dol":
             shutil.copyfile(item, sys_dir / item.name)
     (sys_dir / "main.dol").write_bytes(main_dol)
-    _link_directory(run_dir / "files", extracted_dir / "files")
+    _link_directory(run_dir / "files", disc_dir / "files")
     return sys_dir / "main.dol"
 
 
-def prepare_save_run(extracted_dir: Path | str, run_dir: Path | str, gci_name: str, gci: bytes) -> tuple[Path, Path]:
+def prepare_save_run(disc_dir: Path | str, run_dir: Path | str, gci_name: str, gci: bytes) -> tuple[Path, Path]:
     """Make ``run_dir`` a disc tree booting the project's own ``main.dol`` plus a GCI folder
     (``run_dir/card_a``) holding only ``gci`` (saved as ``gci_name``). Returns the
     ``sys/main.dol`` for Dolphin and the card folder for :func:`save_card_config`. The folder
     is emptied first; whatever the game saves during the run stays there, never in the
     original save file."""
-    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
-    if not (extracted_dir / "sys" / "main.dol").is_file() or not (extracted_dir / "files").is_dir():
-        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    detected = detect_from_extracted(extracted_dir)
+    disc_dir, run_dir = Path(disc_dir), Path(run_dir)
+    if not (disc_dir / "sys" / "main.dol").is_file() or not (disc_dir / "files").is_dir():
+        raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(disc_dir)
     if detected is not None and not profile(detected).supports(PLAY):
         raise EmulatorError(profile(detected).unavailable(PLAY))
     name = Path(gci_name).name
     if not name.lower().endswith(".gci"):
         name += ".gci"
-    dol = _copy_run_tree(extracted_dir, run_dir, (extracted_dir / "sys" / "main.dol").read_bytes())
+    dol = _copy_run_tree(disc_dir, run_dir, (disc_dir / "sys" / "main.dol").read_bytes())
     card = run_dir / CARD_FOLDER
     card.mkdir(parents=True, exist_ok=True)
     for old in card.iterdir():
