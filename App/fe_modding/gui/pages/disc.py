@@ -76,6 +76,9 @@ class DiscPage(Page):
         frame = self._panel(parent, "Source disc", project.source_iso or "No disc image chosen yet.")
         self._caption(frame, "Extracted into " + str(project.extracted_dir) if shell.extracted
                       else "Not extracted yet.")
+        if project.source_missing:
+            self._caption(frame, f"The disc image is no longer at {project.source_path}. Choose it again "
+                          "to extract or make a patch; the extracted files keep working without it.")
         buttons = ttk.Frame(frame, style="Surface.TFrame")
         buttons.pack(anchor="w")
         ttk.Button(buttons, text="Choose disc image…", command=shell.set_source,

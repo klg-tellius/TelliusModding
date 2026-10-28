@@ -145,5 +145,35 @@ class LogicalFileTests(unittest.TestCase):
         self.assertIsNone(project.source_mismatch_warning())
 
 
+    def test_set_source_records_the_path_without_copying(self):
+        project = ModProject.create(self.parent, "Mod", Game.PATH_OF_RADIANCE)
+        iso = self.parent / "disc.iso"
+        iso.write_bytes(b"GFEE01" + bytes(64))
+        self.assertEqual(project.set_source(iso), iso.resolve())
+        self.assertFalse((project.directory / "source").exists())
+        loaded = ModProject.load(project.directory)
+        self.assertEqual(loaded.source_path, iso.resolve())
+        self.assertEqual(loaded.source_iso, "disc.iso")
+        self.assertFalse(loaded.source_missing)
+
+    def test_older_projects_keep_their_copied_disc(self):
+        project = ModProject.create(self.parent, "Old", Game.PATH_OF_RADIANCE)
+        copy = project.directory / "source" / "disc.iso"
+        copy.parent.mkdir()
+        copy.write_bytes(b"x")
+        project.source_iso = "disc.iso"
+        project.save()
+        self.assertEqual(ModProject.load(project.directory).source_path, copy)
+
+    def test_extract_reports_a_moved_disc(self):
+        project = ModProject.create(self.parent, "Moved", Game.PATH_OF_RADIANCE)
+        iso = self.parent / "disc.iso"
+        iso.write_bytes(b"x")
+        project.set_source(iso)
+        iso.unlink()
+        self.assertTrue(project.source_missing)
+        with self.assertRaisesRegex(ProjectError, "no longer at"):
+            project.extract()
+
 if __name__ == "__main__":
     unittest.main()

@@ -24,11 +24,11 @@ from .games import Game, get_game_info, profile as game_profile, read_disc_id, r
 PROJECT_FILENAME = "project.json"
 
 # Subfolders created inside every new project directory.
-SOURCE_DIR = "source"       # the original disc image(s) the project was built from
+SOURCE_DIR = "source"       # disc images copied in by older versions (new projects record the path)
 EXTRACTED_DIR = "extracted"  # unpacked game files, ready to edit
 BUILD_DIR = "build"          # repacked output (ISO/WBFS ready to run)
 ORIGINALS_DIR = "originals"  # first copies of extracted files an import overwrote
-PROJECT_SUBDIRS = (SOURCE_DIR, EXTRACTED_DIR, BUILD_DIR)
+PROJECT_SUBDIRS = (EXTRACTED_DIR, BUILD_DIR)
 
 _INVALID_FOLDER_CHARS = re.compile(r'[<>:"/\\|?*]')
 
@@ -67,7 +67,8 @@ class ModProject:
     directory: Path
     description: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    source_iso: Optional[str] = None
+    source_iso: Optional[str] = None     # file name of the source disc image, shown in the app
+    source_image: Optional[str] = None   # its absolute path; None for projects with a copy in source/
     author: str = ""
     version: str = ""
     credits: str = ""  # free text: who made or allowed what; goes into patches
@@ -118,10 +119,18 @@ class ModProject:
 
     @property
     def source_path(self) -> Optional[Path]:
-        """Absolute path to the source disc image, if one has been set."""
+        """Absolute path to the source disc image, if one has been set: the recorded path, or for
+        projects made by older versions the copy in ``source/``. The image may have moved since."""
+        if self.source_image:
+            return Path(self.source_image)
         if not self.source_iso:
             return None
         return self.directory / SOURCE_DIR / self.source_iso
+
+    @property
+    def source_missing(self) -> bool:
+        """Whether a source disc image is set but no longer where it was recorded."""
+        return self.source_path is not None and not self.source_path.is_file()
 
     @property
     def extracted_dir(self) -> Path:
@@ -200,10 +209,10 @@ class ModProject:
         return self.extracted_dir.exists() and any(self.extracted_dir.iterdir())
 
     def set_source(self, disc_image: Path | str) -> Path:
-        """Copy a disc image into the project's source/ folder and record it.
+        """Record a disc image as the project's source, by its absolute path (it is not copied).
 
-        Returns the new path inside the project. Raises ProjectError if the
-        extension isn't one the bundled tool can read for this game.
+        Returns that path. Raises ProjectError if the extension isn't one the
+        bundled tool can read for this game.
         """
         disc_image = Path(disc_image)
         if not disc_image.is_file():
@@ -216,20 +225,18 @@ class ModProject:
                 f"{self.game_info.display_name}. Supported: {', '.join(allowed)}."
             )
 
-        source_dir = self.directory / SOURCE_DIR
-        source_dir.mkdir(parents=True, exist_ok=True)
-        dest = source_dir / disc_image.name
-        if dest.resolve() != disc_image.resolve():
-            shutil.copy2(disc_image, dest)
-
-        self.source_iso = dest.name
+        disc_image = disc_image.resolve()
+        self.source_iso = disc_image.name
+        self.source_image = str(disc_image)
         self.save()
-        return dest
+        return disc_image
 
     def extract(self, *, overwrite: bool = True) -> Path:
         """Extract the source disc image into the project's extracted/ folder."""
         if self.source_path is None:
             raise ProjectError("No source disc image set for this project yet.")
+        if self.source_missing:
+            raise ProjectError(f"The source disc image is no longer at {self.source_path}. Choose it again.")
         tools.extract_disc(self.source_path, self.extracted_dir, overwrite=overwrite, wii=self.profile.wii)
         return self.extracted_dir
 
@@ -309,6 +316,7 @@ class ModProject:
             "description": self.description,
             "created_at": self.created_at,
             "source_iso": self.source_iso,
+            "source_image": self.source_image,
             "author": self.author,
             "version": self.version,
             "credits": self.credits,
@@ -380,6 +388,7 @@ class ModProject:
             description=data.get("description", ""),
             created_at=data.get("created_at", ""),
             source_iso=data.get("source_iso"),
+            source_image=data.get("source_image"),
             author=data.get("author", ""),
             version=data.get("version", ""),
             credits=data.get("credits", ""),

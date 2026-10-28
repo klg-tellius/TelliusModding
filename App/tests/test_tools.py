@@ -147,9 +147,9 @@ class ProjectExtractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for game, wii in ((Game.RADIANT_DAWN, True), (Game.PATH_OF_RADIANCE, False)):
                 project = ModProject.create(Path(tmp), f"p{wii}", game)
-                disc = project.directory / "source" / ("d.wbfs" if wii else "d.iso")
+                disc = Path(tmp) / ("d.wbfs" if wii else "d.iso")
                 disc.write_bytes(b"x")
-                project.source_iso = disc.name
+                project.set_source(disc)
                 with mock.patch.object(tools, "extract_disc") as extract:
                     project.extract()
                 self.assertEqual(extract.call_args.kwargs["wii"], wii)
