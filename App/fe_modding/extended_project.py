@@ -12,6 +12,7 @@ from .game_code.extended_flag_installation import (
     inspect_project, RuntimeState, RECEIPT_NAME, rebuild_installed, receipt_for,
 )
 from .game_code.versions import read_boot_code
+from .game_profile import sys_root_of
 
 
 def prepare_runtime_update(project, layout: FlagLayout, sources=None):
@@ -36,9 +37,9 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
     if previous != status.layout:
         raise ValueError("Manifest changed during update preparation")
     receipt = snapshot(receipt_path).decode("utf-8")
-    executable = project.extracted_dir / "sys" / "main.dol"
+    executable = sys_root_of(project) / "main.dol"
     original = snapshot(executable)
-    snapshot(project.extracted_dir / "sys" / "boot.bin")
+    snapshot(sys_root_of(project) / "boot.bin")
     snapshot(project.directory / "hub.json")
     startup = script_sources.startup_path(project)
     paths = {path: None for path in script_sources.shared_scripts(project)}

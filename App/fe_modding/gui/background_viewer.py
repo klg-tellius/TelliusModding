@@ -31,6 +31,7 @@ from ..formats import rect, tpl
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 PREVIEW_MAX_SIZE = (480, 300)
 THUMB_SIZE = (120, 74)
@@ -141,7 +142,7 @@ class BackgroundViewer(EditorPanel):
 
     def _load_rect_doc(self) -> None:
         self._rect_doc = None
-        path = self._project.extracted_dir / "files" / "s" / "rect.bin"
+        path = files_root_of(self._project) / "s" / "rect.bin"
         try:
             if path.exists():
                 self._rect_doc = rect.read_rect_file(path)
@@ -197,7 +198,7 @@ class BackgroundViewer(EditorPanel):
         self._write_rect_doc(f"Edited {resource.name}")
 
     def _write_rect_doc(self, note: str) -> bool:
-        path = self._project.extracted_dir / "files" / "s" / "rect.bin"
+        path = files_root_of(self._project) / "s" / "rect.bin"
         try:
             rect.write_rect_file(self._rect_doc, path)
         except Exception as exc:  # noqa: BLE001
@@ -232,7 +233,7 @@ class BackgroundViewer(EditorPanel):
             if len({image.size for image in images}) != 1:
                 first = images[0].size
                 images = [image.resize(first, Image.LANCZOS) for image in images]
-            rect.add_background(self._rect_doc, self._project.extracted_dir / "files", name, images)
+            rect.add_background(self._rect_doc, files_root_of(self._project), name, images)
         except Exception as exc:  # noqa: BLE001
             self._load_rect_doc()  # drop the half-added resource
             messagebox.showerror("Could not add background", str(exc), parent=self)
@@ -250,7 +251,7 @@ class BackgroundViewer(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_background_list(self) -> None:
-        background_dir = self._project.extracted_dir / "files" / "s"
+        background_dir = files_root_of(self._project) / "s"
         self._all_files = sorted(p for p in background_dir.glob("*") if p.is_file()) if background_dir.exists() else []
 
         self._names_by_file: dict[str, str] = {}

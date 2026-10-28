@@ -38,6 +38,7 @@ from ..playthrough.simulation import ACTION, INPUT, LINE, MESSAGE, PHASE, UNIT, 
 from ..playthrough.state import FACTION_NAMES, PLAYER, AiTurn, MessageShow, ScriptRun
 from .map_builder import FACTION_COLORS, _BuildCanvas, _dim
 from .map_windows import _Window
+from ..game_profile import files_root_of
 
 GRANULARITIES = (("Line (instruction, message page, AI entry)", LINE), ("Message page", MESSAGE),
                  ("Action", ACTION), ("AI unit", UNIT), ("Phase", PHASE), ("Until my turn", INPUT))
@@ -77,7 +78,7 @@ class PlaythroughWindow(_Window):
         self.minsize(900, 560)
         self._builder = builder
         self._project = builder._project
-        self._files = self._project.extracted_dir / "files"
+        self._files = files_root_of(self._project)
         self.empty_text = "Open a chapter with a map."
         self.sim: Optional[Simulation] = None
         self._selected: Optional[int] = None

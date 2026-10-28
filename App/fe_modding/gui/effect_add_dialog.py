@@ -12,6 +12,7 @@ from typing import Callable
 from ..formats import effects
 from ..project import ModProject
 from .changelog import ChangeLog
+from ..game_profile import files_root_of
 
 CLONE, FILE, KEEP = "clone", "file", "keep"
 
@@ -32,7 +33,7 @@ class EffectAddDialog(tk.Toplevel):
         self.transient(parent.winfo_toplevel())
         self.resizable(False, False)
         self._project, self._changelog, self._on_done = project, changelog, on_done
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._entries = entries
         self._registered = [e.name for e in entries if e.registered]
         self._effect_name = tk.StringVar(value=preset.name if preset else "EID_")

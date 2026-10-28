@@ -43,6 +43,7 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
 from .widgets import ScrollFrame
+from ..game_profile import files_root_of
 
 #: Weapon types the simulator offers (staves are filtered out by might).
 COMBAT_WEAPON_TYPES = ("sword", "lance", "axe", "bow", "knife", "flame", "thunder", "wind", "rod", "fang")
@@ -65,7 +66,7 @@ class _Names:
             return ""
         if self._texts is None:
             profile = profile_of(self._project)
-            path = profile.path(self._project.extracted_dir / "files", "system_archive") \
+            path = profile.path(files_root_of(self._project), "system_archive") \
                 if profile.has_file("system_archive") else None
             try:
                 self._texts = fe8data.read_message_texts(path) if path is not None and path.exists() else {}
@@ -453,7 +454,7 @@ class BattleSimulator(EditorPanel):
                  session: Fe8DataSession | None = None):
         super().__init__(parent, padding=12)
         self._project = project
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._session = session or Fe8DataSession(project, changelog)
         self.names = _Names(project)
         self.rules = rules_fe9.Fe9Rules()

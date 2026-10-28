@@ -20,6 +20,7 @@ from ..game_code.dol import Dol
 from ..game_code import item_restrictions as rule_code, versions
 from ..project import ModProject
 from .changelog import ChangeLog
+from ..game_profile import sys_root_of
 
 
 class Fe8DataSession:
@@ -80,7 +81,7 @@ class Fe8DataSession:
         """Write the file (keeping the extracted one in ``originals/``). Raises OSError."""
         rules = item_rules.read_item_rules(self.data)
         item_rules.validate_item_rules(self.data, rules)
-        dol_path = self.project.extracted_dir / "sys" / "main.dol"
+        dol_path = sys_root_of(self.project) / "main.dol"
         old_dol = dol_path.read_bytes() if dol_path.is_file() else None
         patched_dol = None
         if old_dol is not None:

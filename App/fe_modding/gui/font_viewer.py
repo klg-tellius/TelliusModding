@@ -28,6 +28,7 @@ from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 USES = {
     "system": "Menus, status, forecast, shops, tutorials, nameplates",
@@ -75,7 +76,7 @@ class FontViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._fonts = [(name, self._files / rel)
                        for name, rel in fe9_font.resolve_font_files(self._files, profile_of(project).font_files)
                        if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]

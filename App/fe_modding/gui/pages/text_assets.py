@@ -24,6 +24,7 @@ from ..editor_panel import EditorPanel
 from ..script_editor import ScriptEditor
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 from .chapters import open_script
+from ...game_profile import files_root_of
 
 
 def _chapter_file_re(project, extension: str) -> re.Pattern:
@@ -39,7 +40,7 @@ def _chapter_key(chapter_id: str) -> str:
 def message_files(project) -> list[tuple[Path, str | None]]:
     """``(path, chapter id or None)`` of every ``Mess/*.m``: chapters' in
     chapter order, then the others by name."""
-    folder = project.extracted_dir / "files" / "Mess"
+    folder = files_root_of(project) / "Mess"
     ids = set(chapters.list_chapter_ids(project))
     return _ordered(project, folder.glob("*.m") if folder.is_dir() else (), _chapter_file_re(project, "m"), ids)
 

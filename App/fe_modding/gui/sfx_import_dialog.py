@@ -24,6 +24,7 @@ from .. import tools
 from ..formats import gcfesnd, musyx, musyx_write
 from ..project import ModProject
 from .changelog import ChangeLog
+from ..game_profile import files_root_of
 
 AUDIO_TYPES = [("Audio files", "*.wav *.mp3 *.ogg *.flac *.m4a *.aac *.wma"), ("All files", "*.*")]
 LONG_SECONDS = 10.0
@@ -43,7 +44,7 @@ class SfxImportDialog(tk.Toplevel):
         self._changelog = changelog
         self._replace = replace_cue
         self._on_done = on_done
-        self._sound_dir = project.extracted_dir / "files" / "Sound"
+        self._sound_dir = files_root_of(project) / "Sound"
         self._scratch = Path(tempfile.mkdtemp(prefix="tellius_sfxin_"))
         self._rate = 0
         self._pcm: list[int] = []

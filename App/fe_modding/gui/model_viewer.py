@@ -128,7 +128,7 @@ from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, zdbx
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_path_of
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of
 from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
@@ -136,6 +136,7 @@ from .editor_panel import EditorPanel
 from .terrain_paint_dialogs import (AtlasSwatchesDialog, NewMapKitDialog, PaintImportOptions, PaintKitDialog,
                                     WaterImportOptions, add_texturing_tab, add_water_tab)
 from .widgets import info, tip
+from ..game_profile import files_root_of
 
 
 @dataclass(frozen=True)
@@ -256,7 +257,7 @@ class GridOverlay:
 
 
 def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
-    files_dir = project.extracted_dir / "files"
+    files_dir = files_root_of(project)
     sets: list[tuple[str, Path]] = []
 
     ymu_dir = files_dir / "ymu"
@@ -314,7 +315,7 @@ def create_new_map_file(project: ModProject, source: Path, folder_name: str) -> 
     source = Path(source)
     if not source.is_file() or source.name.lower() != "map.cmp" or not is_map_container(source):
         raise ValueError("Pick an existing zmap map.cmp as the template.")
-    root = project.files_dir / "zmap"
+    root = files_root_of(project) / "zmap"
     destination_dir = root / name
     # Check case-insensitively as projects may later be moved to a
     # case-insensitive filesystem even when authored elsewhere.
@@ -2724,7 +2725,7 @@ class _NewSlotDialog(tk.Toplevel):
         self._project = project
         self._battle = label.startswith("zu/")
         self._source = label.split("/", 1)[1]
-        fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+        fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
         self._characters = {c.pid: c for c in fe8.characters if c.pid}
         jids = sorted({c.jid for c in fe8.classes if c.jid})
 
@@ -2819,7 +2820,7 @@ class _ModelTablesDialog(tk.Toplevel):
         self.geometry("900x560")
         self._project = project
         self._on_change = on_change
-        fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+        fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
         self._characters = {c.pid: c for c in fe8.characters if c.pid}
         self._classes = {c.jid: c for c in fe8.classes if c.jid}
         notebook = ttk.Notebook(self)
@@ -2991,7 +2992,7 @@ class _ModelTablesDialog(tk.Toplevel):
         for key, texture in model_slots.battle_textures(self._project, code).items():
             label = f"{key} ({ARMY_KEYS[key]})" if key in ARMY_KEYS else key
             self._tex_tree.insert("", "end", iid=key, values=(label, texture))
-        folder = self._project.extracted_dir / "files" / "zu" / code
+        folder = files_root_of(self._project) / "zu" / code
         self._tex_name_box.config(values=sorted(p.stem for p in folder.glob("*.tpl")))
         vanilla = code in model_slots.vanilla_battle_codes(self._project)
         self._remove_code_button.config(state="disabled" if vanilla else "normal")
@@ -5538,7 +5539,7 @@ class ModelViewer(EditorPanel):
         if file_dialog.result is None:
             return
         folder_name, _source_label, source_path = file_dialog.result
-        zmap_root = self._project.files_dir / "zmap"
+        zmap_root = files_root_of(self._project) / "zmap"
         if zmap_root.is_dir() and any(
             child.name.casefold() == folder_name.casefold() for child in zmap_root.iterdir()
         ):

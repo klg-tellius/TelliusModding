@@ -8,6 +8,7 @@ from .dol import Dol, DolError
 from .extended_flag_metadata import REVISION, read_metadata
 from .extended_flag_runtime import BASE, RECORD_OFFSET
 from ..formats.extended_flags import FlagLayout, HEADER, MANIFEST_NAME
+from ..game_profile import sys_root_of
 
 RECEIPT_NAME = "extended_flags_installation.json"
 
@@ -139,7 +140,7 @@ def inspect_project(project):
         receipt_path = project.directory / RECEIPT_NAME
         layout = FlagLayout.from_json(manifest.read_text(encoding="utf-8")) if manifest.exists() else None
         receipt = receipt_path.read_text(encoding="utf-8") if receipt_path.exists() else None
-        executable = project.extracted_dir / "sys" / "main.dol"
+        executable = sys_root_of(project) / "main.dol"
         if not executable.exists():
             return RuntimeStatus(RuntimeState.ABSENT, "Project executable is missing")
         status = inspect_runtime(Dol.open(executable), read_boot_code(project.extracted_dir), layout, receipt)

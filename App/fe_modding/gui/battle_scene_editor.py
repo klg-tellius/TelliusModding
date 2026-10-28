@@ -34,6 +34,7 @@ from ..formats import fe8data
 from ..project import ModProject
 from .changelog import ChangeLog
 from .widgets import ScrollFrame, section_header, tip
+from ..game_profile import files_root_of
 
 #: How many decoded scenes the browser keeps, so stepping back and forth is instant.
 PREVIEW_CACHE_SIZE = 6
@@ -43,7 +44,7 @@ PREVIEW_DELAY_MS = 200
 
 def scene_models(project: ModProject) -> dict[str, Path]:
     """Battle-scene name (the ``zbg/`` folder) -> its pack, the first ``.cmp`` in the folder."""
-    zbg = project.extracted_dir / "files" / "zbg"
+    zbg = files_root_of(project) / "zbg"
     found: dict[str, Path] = {}
     if zbg.is_dir():
         for folder in sorted(p for p in zbg.iterdir() if p.is_dir()):

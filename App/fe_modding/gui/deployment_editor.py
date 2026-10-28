@@ -33,6 +33,7 @@ from ..project import ModProject
 from . import dispo_widgets
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 
 class DeploymentEditor(EditorPanel):
@@ -334,7 +335,7 @@ class DeploymentEditor(EditorPanel):
     def group_keys(self) -> list:
         """The project's ``GroupData`` army keys (read once)."""
         if self._group_keys is None:
-            self._group_keys = dispo_widgets.read_group_keys(self._project.extracted_dir / "files")
+            self._group_keys = dispo_widgets.read_group_keys(files_root_of(self._project))
         return self._group_keys
 
     def _selected_section_name(self) -> str | None:

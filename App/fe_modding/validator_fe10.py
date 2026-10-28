@@ -14,6 +14,7 @@ from .exceptions import ProjectError
 from .formats import fe10data, fe10growth
 from .project import ModProject
 from .validator import ERROR, WARNING, Issue, Report, _duplicates
+from .game_profile import files_root_of
 
 WHERE = "FE10Data.cms"
 #: Retail chapter records whose script or map the disc does not have: the Part 4 "a/b" records
@@ -109,7 +110,7 @@ def validate_fe10data(data: bytes, growth: Optional[bytes] = None) -> list[Issue
 
 
 def _check_chapter_files(project: ModProject, db: fe10data.Fe10Data, issues: list) -> None:
-    files = project.files_dir
+    files = files_root_of(project)
     mess_files = {p.name.lower() for p in (files / "Mess").glob("*.m")} if (files / "Mess").is_dir() else set()
     for r in db.table("chapter"):
         route, owner = ("data", "chapters", r.id), r.id or f"chapter {r.index}"

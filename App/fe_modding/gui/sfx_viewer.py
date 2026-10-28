@@ -29,6 +29,7 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .sfx_import_dialog import SfxImportDialog
 from .widgets import list_buttons, tip
+from ..game_profile import files_root_of
 
 try:
     import winsound
@@ -147,7 +148,7 @@ class SfxViewer(EditorPanel):
             shutil.rmtree(self._scratch_dir, ignore_errors=True)
 
     def _load(self) -> None:
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         if not path.exists():
             self._count.config(text="Sound/gcfesnd.bin not found. Extract the project first.")
             return
@@ -246,7 +247,7 @@ class SfxViewer(EditorPanel):
 
     def _original_cue_names(self) -> set[str]:
         """The cues of gcfesnd.bin as extracted (its kept original, else the file itself)."""
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
         try:
             return {c.name for c in gcfesnd.read_sfx_cues_path(original if original.is_file() else path)}
@@ -265,7 +266,7 @@ class SfxViewer(EditorPanel):
                                    "nothing.", icon="warning", parent=self):
             return
         self._stop()
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         try:
             self._project.write_keeping_original(path, gcfesnd.remove_sfx_cue(path.read_bytes(), cue.name))
         except (OSError, gcfesnd.GcfesndError) as exc:

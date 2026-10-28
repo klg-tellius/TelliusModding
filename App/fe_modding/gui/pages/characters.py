@@ -23,6 +23,7 @@ from ..shell import Page, plain_text
 from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header
 from ..widgets import info as help_mark
+from ...game_profile import files_root_of
 
 CATEGORY_CHIPS = {PLAYABLE: "chip_playable", NAMED: "chip_named", GENERIC: "chip_generic"}
 TABS = ["stats", "supports", "look", "appearances", "scripts"]
@@ -237,7 +238,7 @@ class CharacterPage(Page):
         data_page = self.shell.existing_page("data")
         if data_page is not None:
             return data_page.support_conversation_ids()
-        return read_conversation_ids(self.project.extracted_dir / "files" / "Mess" / "yell.m")
+        return read_conversation_ids(files_root_of(self.project) / "Mess" / "yell.m")
 
     def _on_session_changed(self, source) -> None:
         try:

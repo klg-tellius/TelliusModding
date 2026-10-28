@@ -30,6 +30,7 @@ import json
 import shutil
 from pathlib import Path
 from typing import Callable, Optional
+from .game_profile import files_root_of
 
 SKIP_KEYS = {"offset", "address"}
 MARKER = ".tellius_text_export"
@@ -188,7 +189,7 @@ def export_project(project, dest: Path, parts: Optional[set[str]] = None,
                    progress: Optional[Callable[[str], None]] = None) -> tuple[list[Path], list[str]]:
     """Write the text export to ``dest`` (the parts' folders are replaced) and
     return ``(written files, problems)``."""
-    files = project.extracted_dir / "files"
+    files = files_root_of(project)
     dest = Path(dest)
     marker = dest / MARKER
     if dest.is_dir() and any(dest.iterdir()) and not marker.is_file():

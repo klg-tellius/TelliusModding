@@ -17,6 +17,7 @@ from ..game_profile import profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 FILE_LABEL = "FE10Conversation.cms"
 
@@ -57,7 +58,7 @@ class Fe10ConversationLists(EditorPanel):
             return ""
         if self._names is None:
             self._names = {}
-            folder = self._project.extracted_dir / "files" / "Mess"
+            folder = files_root_of(self._project) / "Mess"
             for name in ("common.m", "e_common.m"):
                 path = folder / name
                 if path.is_file():

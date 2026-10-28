@@ -33,6 +33,7 @@ from .formats import anim_registry, dispo, fe8data, game_text, lz10, message, pa
 from .formats.fe9_portraits import read_face_table
 from .game_profile import CHAPTERS, GAME_DATA, profile_of
 from .project import ModProject
+from .game_profile import files_root_of
 
 PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
 CATEGORY_LABELS = {PLAYABLE: "Playable", NAMED: "Named NPCs & bosses", GENERIC: "Generic"}
@@ -130,7 +131,7 @@ class ProjectIndex:
 
     def __init__(self, project: ModProject):
         self.project = project
-        self.files = project.extracted_dir / "files"
+        self.files = files_root_of(project)
         game_text.use_for_extraction(project.extracted_dir)
         self.profile = profile_of(project)
         self._lock = threading.Lock()

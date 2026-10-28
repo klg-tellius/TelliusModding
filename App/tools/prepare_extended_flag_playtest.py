@@ -27,6 +27,7 @@ from fe_modding.game_code.extended_flag_container import container_name
 from fe_modding.games import Game
 from fe_modding.project import ModProject
 from tools.build_hub_infinite_action_test import patched_executable
+from fe_modding.game_profile import files_root_of
 
 CAMPAIGN = [f"XFT_CAMPAIGN_{i:03d}" for i in range(100)]
 LOCALS = [f"XFT_LOCAL_{i:03d}" for i in range(80)]
@@ -56,7 +57,7 @@ def sync_boot_archive(project):
     changed = project.sync_system_archive()
     packed = lz10.decompress(project.logical_path("system_archive").read_bytes())
     for entry in pak.read_pak_entries(packed):
-        path = project.files_dir / entry.name
+        path = files_root_of(project) / entry.name
         if path.is_file() and path.read_bytes() != pak.read_pak_file_content(packed, entry):
             raise ValueError(f"Boot archive still contains a stale copy: {entry.name}")
     return changed

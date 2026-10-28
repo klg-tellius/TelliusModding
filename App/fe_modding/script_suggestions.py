@@ -30,6 +30,7 @@ from typing import Callable, Iterable, Optional
 from . import chapters
 from .game_profile import profile_of
 from .project import ModProject
+from .game_profile import files_root_of
 
 
 @dataclass(frozen=True)
@@ -223,7 +224,7 @@ class ScriptSuggestions:
 
     @property
     def files(self) -> Path:
-        return self._project.extracted_dir / "files"
+        return files_root_of(self._project)
 
     def invalidate(self) -> None:
         self._cache.clear()

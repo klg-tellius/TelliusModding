@@ -18,6 +18,7 @@ from ..game_code.versions import identify, read_boot_code
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of, sys_root_of
 
 
 class SoundRoomTracksEditor(EditorPanel):
@@ -27,7 +28,7 @@ class SoundRoomTracksEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._path = project.extracted_dir / "sys" / "main.dol"
+        self._path = sys_root_of(project) / "main.dol"
         self._version: Optional[str] = None
         self._names: list[str] = []
         self._index: Optional[int] = None
@@ -94,7 +95,7 @@ class SoundRoomTracksEditor(EditorPanel):
         self._loading = True
         try:
             try:
-                cues = gcfesnd.read_bgm_cues_path(self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin")
+                cues = gcfesnd.read_bgm_cues_path(files_root_of(self._project) / "Sound" / "gcfesnd.bin")
                 self._name_box.config(values=sorted({c.name for c in cues}))
             except Exception:  # noqa: BLE001 - the suggestions are optional
                 self._name_box.config(values=[])

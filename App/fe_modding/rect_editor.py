@@ -11,6 +11,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 from . import rect_catalog
 from .formats import fe10_rect, message, rect
 from .games import Game
+from .game_profile import files_root_of
 
 
 @dataclass(frozen=True)
@@ -340,7 +341,7 @@ def describe(layer) -> str:
 
 
 def resolved_text(project, value: str) -> str | None:
-    path = project.files_dir / "Mess" / "common.m"
+    path = files_root_of(project) / "Mess" / "common.m"
     if not path.is_file():
         return None
     try:

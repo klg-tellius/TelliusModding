@@ -374,6 +374,11 @@ class GamePath(os.PathLike):
     def parent(self) -> "GamePath":
         return GamePath(self.files, self.rel.rsplit("/", 1)[0] if "/" in self.rel else "")
 
+    @property
+    def parents(self) -> tuple["GamePath", ...]:
+        parts = self.parts
+        return tuple(GamePath(self.files, "/".join(parts[:i])) for i in range(len(parts) - 1, -1, -1))
+
     def with_name(self, name: str) -> "GamePath":
         return self.parent / name
 
@@ -423,8 +428,12 @@ class GamePath(os.PathLike):
         return f"GamePath({self.rel!r})"
 
     def __eq__(self, other) -> bool:
+        """Equal to the same game file, and to the real path it reads from or writes to (so
+        code mixing the two, as dict keys or in lists, keeps working)."""
         if isinstance(other, GamePath):
             return other.files is self.files and other.rel.lower() == self.rel.lower()
+        if isinstance(other, Path):
+            return other == self.files.target(self.rel) or other == self.files.path(self.rel)
         return NotImplemented
 
     def __lt__(self, other) -> bool:
@@ -433,7 +442,7 @@ class GamePath(os.PathLike):
         return NotImplemented
 
     def __hash__(self) -> int:
-        return hash((id(self.files), self.rel.lower()))
+        return hash(self.files.target(self.rel))   # as the real path of the write target
 
     # -- reading -------------------------------------------------------------------------------------
     def exists(self) -> bool:
@@ -445,14 +454,25 @@ class GamePath(os.PathLike):
     def is_dir(self) -> bool:
         return self.files.is_dir(self.rel)
 
+    def is_symlink(self) -> bool:
+        return False
+
+    def _existing(self) -> Path:
+        """The real file, raising FileNotFoundError (an OSError, as :class:`~pathlib.Path` would)
+        when there is none."""
+        found = self.files.path(self.rel)
+        if found is None:
+            raise FileNotFoundError(2, "No such game file", self.rel)
+        return found
+
     def stat(self):
-        return self.files.require(self.rel).stat()
+        return self._existing().stat()
 
     def read_bytes(self) -> bytes:
-        return self.files.read(self.rel)
+        return self._existing().read_bytes()
 
     def read_text(self, encoding: Optional[str] = None, errors: Optional[str] = None) -> str:
-        return self.files.require(self.rel).read_text(encoding=encoding, errors=errors)
+        return self._existing().read_text(encoding=encoding, errors=errors)
 
     def iterdir(self) -> Iterator["GamePath"]:
         prefix = f"{self.rel}/" if self.rel else ""
@@ -501,7 +521,7 @@ class GamePath(os.PathLike):
     def open(self, mode: str = "r", buffering: int = -1, encoding: Optional[str] = None,
              errors: Optional[str] = None, newline: Optional[str] = None):
         if not any(flag in mode for flag in "wax+"):
-            return open(self.files.require(self.rel), mode, buffering, encoding, errors, newline)
+            return open(self._existing(), mode, buffering, encoding, errors, newline)
         initial = self.files.read(self.rel) if ("a" in mode or "+" in mode) and self.is_file() else b""
         raw = _WriteOnClose(self.files, self.rel, initial)
         if "b" in mode:
@@ -909,6 +929,14 @@ class OverlayFiles(GameFiles):
         return dict(self._load()["base"])
 
 
+def remove_tree(path) -> None:
+    """``shutil.rmtree`` for a real folder, or the layer's remove for a :class:`GamePath`."""
+    if isinstance(path, GamePath):
+        path.files.remove(path.rel)
+    else:
+        shutil.rmtree(path)
+
+
 def as_path(path) -> "Path | GamePath":
     """``Path(path)``, except that a :class:`GamePath` stays one (``Path()`` of it would give the
     real file and leave the layer). Use it where a function takes a folder as ``Path | str``."""
@@ -935,7 +963,10 @@ def files_of(project) -> GameFiles:
     files = getattr(project, "files", None)
     if isinstance(files, GameFiles):
         return files
-    extracted = Path(project.extracted_dir)
+    if getattr(project, "extracted_dir", None) is None and getattr(project, "files_dir", None) is not None:
+        extracted = Path(project.files_dir).parent    # a stand-in that only names its files/ folder
+    else:
+        extracted = Path(project.extracted_dir)
     originals = getattr(project, "originals_dir", None)
     return LegacyFiles(extracted, Path(originals) if originals else extracted.parent / "originals")
 

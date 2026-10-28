@@ -29,6 +29,7 @@ from . import map_scene
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .model_viewer import ModelPreviewDialog, load_named_model_set
+from ..game_profile import files_root_of
 
 
 class MapEditor(EditorPanel):
@@ -361,7 +362,7 @@ class MapEditor(EditorPanel):
 
     # -- terrain types (painted from the Build tab) --------------------------------------
     def _load_terrain_catalog(self) -> None:
-        files = self._project.extracted_dir / "files"
+        files = files_root_of(self._project)
         profile = profile_of(self._project)
         self._terrain_types: list[fe8data.TerrainType] = []
         self._terrain_labels: dict[str, str] = {}

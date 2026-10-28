@@ -17,6 +17,7 @@ from .. import terrain_kit
 from .. import terrain_paint as tp
 from .editor_panel import EditorPanel
 from .terrain_paint_dialogs import _square, _tile_image
+from ..game_profile import files_root_of
 
 
 @dataclass
@@ -251,7 +252,7 @@ class TilesetManager(EditorPanel):
             pass
 
     def _map_paths(self) -> list[tuple[str, Path]]:
-        root = self._project.files_dir / "zmap"
+        root = files_root_of(self._project) / "zmap"
         return [(f"zmap/{path.parent.name}", path) for path in sorted(root.glob("*/map.cmp"))] if root.is_dir() else []
 
     def _scan(self) -> None:
@@ -274,7 +275,7 @@ class TilesetManager(EditorPanel):
                 for data in groups.values()
             ]
             for saved in terrain_kit.project_tilesets(self._project.directory):
-                source = self._project.files_dir / "zmap" / saved.source_map / "map.cmp"
+                source = files_root_of(self._project) / "zmap" / saved.source_map / "map.cmp"
                 if source.is_file():
                     choices.append(_Choice(saved.name, saved.atlas, source, key=saved.key))
             choices.sort(key=lambda item: (item.key is None, item.label.casefold()))

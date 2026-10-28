@@ -264,6 +264,12 @@ def files_root_of(project):
     return files_of(project).at("files")
 
 
+def sys_root_of(project):
+    """The disc's ``sys/`` folder of a project as a ``GamePath``."""
+    from .game_files import files_of
+    return files_of(project).at("sys")
+
+
 def logical_game_path_of(project, name: str):
     """Logical file ``name`` of the project as a ``GamePath``."""
     from .game_files import files_of

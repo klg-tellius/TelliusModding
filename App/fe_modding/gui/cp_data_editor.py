@@ -42,6 +42,7 @@ from .changelog import ChangeLog
 from .code_editor import CodeEditor
 from .editor_panel import EditorPanel
 from .widgets import info, tip
+from ..game_profile import files_root_of
 
 FILE_NAME = "cp_data.bin"
 SOURCES_DIR = "ai_sources"
@@ -65,8 +66,8 @@ class CpDataPanel(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._session_provider = session_provider
-        self._path = (profile_of(project).path(project.extracted_dir / "files", "ai_data")
-                      if profile_of(project).supports(AI) else project.extracted_dir / "files" / FILE_NAME)
+        self._path = (profile_of(project).path(files_root_of(project), "ai_data")
+                      if profile_of(project).supports(AI) else files_root_of(project) / FILE_NAME)
         self._doc: Optional[cp.CpDocument] = None
         self._dirty = False
         self._loading = False

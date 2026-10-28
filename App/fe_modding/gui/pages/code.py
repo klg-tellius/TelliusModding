@@ -19,6 +19,7 @@ from ...game_code.entries import G_BATTLE, G_GROWTH, G_PROCS, PROCS, SCALE_DENOM
 from ...game_code import three_tier_data
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
+from ...game_profile import files_root_of
 
 GROUP_NOTES = {
     "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field.",
@@ -207,7 +208,7 @@ class CodePage(Page):
         old_data = session.data
         old_dirty = session.dirty
         new_data = three_tier_data.provision(old_data, version)
-        folder = self.project.extracted_dir / "files" / "Mess"
+        folder = files_root_of(self.project) / "Mess"
         names = {"GFEE01": {"common.m": "en"},
                  "GFEP01": {"common.m": "en", "d_common.m": "de",
                             "f_common.m": "fr", "i_common.m": "it", "s_common.m": "es"},

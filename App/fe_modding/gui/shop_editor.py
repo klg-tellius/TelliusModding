@@ -35,6 +35,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import info, tip
+from ..game_profile import files_root_of
 
 NONE_LABEL = "(none)"
 LIST_KINDS = ("W", "I")
@@ -52,7 +53,7 @@ class ShopEditor(EditorPanel):
         self._changelog = changelog
         self._index_provider = index_provider
         self._session_provider = session_provider
-        self._folder = profile_of(project).shop_folder(project.extracted_dir / "files")
+        self._folder = profile_of(project).shop_folder(files_root_of(project))
         self._docs: dict[str, shop.ShopDocument] = {}
         self._edited: set[str] = set()
         self._loaded = False
@@ -331,7 +332,7 @@ class ShopEditor(EditorPanel):
 
     def _icons(self) -> list:
         """The images of window/icon.tpl, re-read when the file changes."""
-        path = icons.icon_path(self._project.extracted_dir / "files")
+        path = icons.icon_path(files_root_of(self._project))
         try:
             stamp = path.stat().st_mtime_ns
         except OSError:

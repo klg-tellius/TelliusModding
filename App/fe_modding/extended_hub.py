@@ -15,6 +15,7 @@ from .formats import event_flags as ef
 from .formats.extended_flags import FlagLayout, FlagCompileContext, HUB_ALIASES
 from .formats.cmb import compile_source
 from .formats.cmb.parser import parse
+from .game_profile import files_root_of, sys_root_of
 
 
 @dataclass(frozen=True)
@@ -128,7 +129,7 @@ def _inventory(path):
 
 def project_inventories(project):
     return tuple((path, _inventory(path)) for path in
-                 (project.extracted_dir / "files" / name for name in ("Scripts", "Mess", "zmap")))
+                 (files_root_of(project) / name for name in ("Scripts", "Mess", "zmap")))
 
 
 def prepare_project_update(project, layout: FlagLayout) -> HubProjectUpdate:
@@ -175,9 +176,9 @@ def prepare_project_update(project, layout: FlagLayout) -> HubProjectUpdate:
         if path is not None:
             chapter_sources[int(cid)] = source(path)
     migration = prepare_migration(startup_source, chapter_sources, configuration, layout)
-    executable_path = project.extracted_dir / "sys" / "main.dol"
+    executable_path = sys_root_of(project) / "main.dol"
     snapshot(executable_path)
-    snapshot(project.extracted_dir / "sys" / "boot.bin")
+    snapshot(sys_root_of(project) / "boot.bin")
     editor = CodeEditor(project.extracted_dir)
     if editor.version is None:
         raise ValueError("Cannot identify the project's executable region")
@@ -289,9 +290,9 @@ def _prepare_hub_update(project, setup, layout, *, reconfigure, migration=None):
     if previous is not None:
         layout.require_compatible(FlagLayout.from_json(previous.decode("utf-8")))
     snapshot(project.logical_path("game_data"))
-    executable_path = project.extracted_dir / "sys" / "main.dol"
+    executable_path = sys_root_of(project) / "main.dol"
     snapshot(executable_path)
-    snapshot(project.extracted_dir / "sys" / "boot.bin")
+    snapshot(sys_root_of(project) / "boot.bin")
     startup = script_sources.startup_path(project)
     snapshot(startup)
     snapshot(script_sources.sidecar_path(project, startup))

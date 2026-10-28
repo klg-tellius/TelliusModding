@@ -44,6 +44,7 @@ from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 #: The item-icon number of an item record is the cell number minus this.
 ITEM_ICON_FIRST_CELL = icons.ITEM_FIRST_CELL
@@ -97,7 +98,7 @@ class IconViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._sheets = [s for s in SHEETS.get(project.game, []) if (self._files / s.path).is_file()]
         self._data: dict[Path, bytes] = {}  # decoded TPL bytes, edited in place until saved
         self._modified: set[Path] = set()

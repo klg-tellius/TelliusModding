@@ -20,6 +20,7 @@ from ..formats import fe8data
 from . import record_actions, message_reference
 from .fe8_session import Fe8DataSession
 from .widgets import tip
+from ..game_profile import files_root_of
 
 STAT_HELP = {
     "level": "Base level.", "build": "Constitution added to the class's (rescue and weight checks); can be negative.",
@@ -290,7 +291,7 @@ class CharacterForm(ttk.Frame):
             aid = cls.aid if cls is not None and cls.aid else ""
         try:
             records = anim_registry.read_anim_registry_path(
-                PATH_OF_RADIANCE_PROFILE.path(self._project.extracted_dir / "files", "anim_data"))
+                PATH_OF_RADIANCE_PROFILE.path(files_root_of(self._project), "anim_data"))
         except Exception:  # noqa: BLE001
             records = []
         folder = next((r.class_folder.rstrip("/") for r in records if r.base_aid == aid), None)

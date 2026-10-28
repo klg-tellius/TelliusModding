@@ -24,6 +24,7 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from . import message_reference
 from .widgets import ScrollFrame
+from ..game_profile import files_root_of
 
 TAB_KEYS = ("characters", "classes", "items", "skills", "growth", "chapters", "terrain", "battle_scenery",
             "supports", "groups", "bonds", "affinities", "affinity_pairs", "triangle", "difficulty", "biorhythm")
@@ -58,7 +59,7 @@ LIST_PREFIXES = {"skills": ("SID_",), "sounds": ("SFXC_",), "requirements": ("SF
 
 def read_names(project: ModProject) -> dict[str, str]:
     """Message key -> first line of its text, English when the disc has it."""
-    return fe10data.message_names(project.files_dir / "Mess")
+    return fe10data.message_names(files_root_of(project) / "Mess")
 
 
 class Fe10DataEditor(EditorPanel):
@@ -789,7 +790,7 @@ class _TitleCardDialog(tk.Toplevel):
         self.title(f"Title card of chapter {chapter_id}")
         self.transient(parent.winfo_toplevel())
         self._project, self._chapter, self._font = project, chapter_id, None
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         body = ttk.Frame(self, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="Title (from the chapter's title key):").pack(anchor="w")

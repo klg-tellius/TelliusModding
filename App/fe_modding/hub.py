@@ -21,6 +21,7 @@ from .game_code.dol import Dol
 from .game_code.editor import CodeEditor
 from .game_code.hub_flow import HUB_CONFIG, HUB_PATCH, HubFlow, validate_slots
 from .game_profile import profile_of
+from .game_profile import files_root_of
 
 CONFIG_NAME = "hub.json"
 START_MARK = "# BEGIN TELLIUS HUB SETUP"
@@ -37,8 +38,8 @@ def entrance_markers(project, map_path: Path, setup) -> bytes:
     if index is None:
         # Prefer the retail Arrive marker; use Seize if the project only has
         # early chapters. Copy all resources and remap shared texture indices.
-        candidates = sorted((project.files_dir / "zmap").glob("*/map.cmp"))
-        preferred = project.files_dir / "zmap/bmap18/map.cmp"
+        candidates = sorted((files_root_of(project) / "zmap").glob("*/map.cmp"))
+        preferred = files_root_of(project) / "zmap/bmap18/map.cmp"
         if preferred in candidates:
             candidates.remove(preferred)
             candidates.insert(0, preferred)

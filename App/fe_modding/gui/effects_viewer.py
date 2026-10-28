@@ -26,6 +26,7 @@ from .editor_panel import EditorPanel
 from .effect_add_dialog import EffectAddDialog
 from .model_viewer import _build_loaded_set, _load_model_set, _ModelPreview
 from .particle_editor import ParticleEditor
+from ..game_profile import files_root_of
 
 TEXTURE_THUMB = 112
 FILTERS = ("All", "Registered", "Unregistered", "Chained")
@@ -44,7 +45,7 @@ class EffectsViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._entries: list[effects.EffectEntry] = []
         self._by_iid: dict[str, effects.EffectEntry] = {}
         self._particle_layout: animation.ParticleTableLayout | None = None

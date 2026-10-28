@@ -52,6 +52,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import confirm_delete_added, list_buttons, tip
+from ..game_profile import files_root_of, sys_root_of
 
 try:
     import winsound
@@ -79,7 +80,7 @@ class MusicEditor(EditorPanel):
         self._playback_wav: Path | None = None
         self._task_running = False
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_music_"))
-        self._native_bgm_cues = executable_bgm_cues(self._project.extracted_dir / "sys" / "main.dol")
+        self._native_bgm_cues = executable_bgm_cues(sys_root_of(self._project) / "main.dol")
 
         self._build_widgets()
         self._load_track_list()
@@ -161,7 +162,7 @@ class MusicEditor(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_track_list(self) -> None:
-        sound_dir = self._project.extracted_dir / "files" / "Sound"
+        sound_dir = files_root_of(self._project) / "Sound"
         self._all_files = sorted(sound_dir.glob("*.stm")) if sound_dir.exists() else []
         self._apply_filter("")
 
@@ -181,7 +182,7 @@ class MusicEditor(EditorPanel):
 
     def select_cue(self, cue_name: str) -> bool:
         """Open the Sound/*.stm file named by a BGM cue in gcfesnd.bin."""
-        catalog = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        catalog = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         try:
             cue = gcfesnd.find_cue(gcfesnd.read_bgm_cues_path(catalog), cue_name)
         except (OSError, gcfesnd.GcfesndError, ValueError):
@@ -234,7 +235,7 @@ class MusicEditor(EditorPanel):
 
     # -- music cues ------------------------------------------------------------
     def _catalog(self) -> Path:
-        return self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        return files_root_of(self._project) / "Sound" / "gcfesnd.bin"
 
     def _cues_of(self, path: Path) -> list[gcfesnd.BgmCue]:
         try:
@@ -355,7 +356,7 @@ class MusicEditor(EditorPanel):
         self._changelog.append(self._current_path.stem, "Replaced audio track")
 
     def _add_new_track(self) -> None:
-        sound_dir = self._project.extracted_dir / "files" / "Sound"
+        sound_dir = files_root_of(self._project) / "Sound"
         if not sound_dir.exists():
             messagebox.showerror("No Sound folder", "Extract the project first.", parent=self)
             return

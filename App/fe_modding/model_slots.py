@@ -22,7 +22,8 @@ from pathlib import Path
 
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, zdbx
-from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_path_of, profile_of
+from .game_files import files_of
+from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, files_root_of, logical_game_path_of, profile_of
 from .project import ModProject
 
 AID_BASE_RE = re.compile(r"^AID_[A-Z0-9_]+$")
@@ -30,7 +31,7 @@ FOLDER_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 def _files(project: ModProject) -> Path:
-    return project.extracted_dir / "files"
+    return files_root_of(project)
 
 
 # The codecs below are Path of Radiance's (zdbx, FE8Anim, FE8Data): another game's file of the same
@@ -43,13 +44,14 @@ def _logical(project: ModProject, name: str) -> Path:
     feature = _LOGICAL_FEATURES.get(name)
     if feature is not None and not profile.supports(feature):
         raise ProjectError(profile.unavailable(feature))
-    return logical_path_of(project, name)
+    return logical_game_path_of(project, name)
 
 
 def _vanilla_bytes(project: ModProject, path: Path) -> bytes:
-    """The file as extracted: its kept original when an edit replaced it."""
-    original = project.originals_dir / path.relative_to(project.extracted_dir)
-    return (original if original.is_file() else path).read_bytes()
+    """The file as extracted (as it is now when the mod added it)."""
+    files = files_of(project)
+    data = files.vanilla(path)
+    return data if data is not None else files.read(path)
 
 
 # -- battle models --------------------------------------------------------------

@@ -87,6 +87,7 @@ from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
 from . import message_reference
 from .widgets import ScrollFrame, TileBrowser, info, tip
+from ..game_profile import files_root_of
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]
@@ -346,7 +347,7 @@ class StatsEditor(EditorPanel):
         if not key:
             return ""
         if self._texts is None:
-            system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
+            system_cmp = profile_of(self._project).path_or_none(files_root_of(self._project), "system_archive")
             try:
                 loose = message_reference.common_path(self._project)
                 self._texts = (message_reference.message_texts(self._project) if loose.is_file()
@@ -380,7 +381,7 @@ class StatsEditor(EditorPanel):
     # -- icons and weapon models ---------------------------------------------------
     @property
     def _files_dir(self) -> Path:
-        return self._project.extracted_dir / "files"
+        return files_root_of(self._project)
 
     def _icons(self) -> list:
         """The two images of window/icon.tpl, re-read when the file changes."""

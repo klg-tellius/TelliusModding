@@ -28,6 +28,7 @@ from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
+from ...game_profile import files_root_of
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain",
         "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}
@@ -72,7 +73,7 @@ class GameDataPage(Page):
                 on_dirty=lambda: session.changed(self._supports),
                 display_name=self._character_name,
                 make_dialogue_editor=lambda parent: DialogueEditor(parent, self.project, shell.changelog),
-                yell_path=self.project.extracted_dir / "files" / "Mess" / "yell.m",
+                yell_path=files_root_of(self.project) / "Mess" / "yell.m",
                 open_character=lambda pid: shell.navigate(("character", pid, "supports")),
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])

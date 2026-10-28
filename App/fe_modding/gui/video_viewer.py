@@ -59,6 +59,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import confirm_delete_added, list_buttons
+from ..game_profile import files_root_of, sys_root_of
 
 try:
     import winsound
@@ -84,7 +85,7 @@ class VideoViewer(EditorPanel):
         self._scrubbing = False
         self._task_running = False
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_video_"))
-        self._native_video_paths = executable_video_paths(self._project.extracted_dir / "sys" / "main.dol")
+        self._native_video_paths = executable_video_paths(sys_root_of(self._project) / "main.dol")
 
         self._build_widgets()
         self._load_video_list()
@@ -143,7 +144,7 @@ class VideoViewer(EditorPanel):
     # -- data loading ---------------------------------------------------------
     def _load_video_list(self) -> None:
         self._file_list.delete(0, "end")
-        movie_dir = self._project.extracted_dir / "files" / "Movie"
+        movie_dir = files_root_of(self._project) / "Movie"
         self._all_files = sorted(movie_dir.glob("*.thp")) if movie_dir.exists() else []
         for path in self._all_files:
             self._file_list.insert("end", path.stem)
@@ -414,7 +415,7 @@ class VideoViewer(EditorPanel):
         self._changelog.append(self._current_path.stem, "Replaced cutscene video")
 
     def _add_new_video(self) -> None:
-        movie_dir = self._project.extracted_dir / "files" / "Movie"
+        movie_dir = files_root_of(self._project) / "Movie"
         if not movie_dir.exists():
             messagebox.showerror("No Movie folder", "Extract the project first.", parent=self)
             return
@@ -462,7 +463,7 @@ class VideoViewer(EditorPanel):
         path = self._current_path
         if path is None:
             return
-        users = script_video_users(self._project.files_dir / "Scripts", path.name)
+        users = script_video_users(files_root_of(self._project) / "Scripts", path.name)
         native_path = f"movie/{path.name}".lower()
         if native_path in self._native_video_paths:
             users.insert(0, "main.dol (hardcoded path)")
