@@ -57,8 +57,9 @@ class RdAdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.adapter.export_excel("out.xlsx", "character")
 
-    def test_battle_background_names_are_not_folder_names(self):
-        self.assertFalse(self.adapter.scene_folders_named)
+    def test_maps_without_a_row_fight_on_one_backdrop(self):
+        self.assertEqual(self.adapter.no_row_scene, "bg魔法")
+        self.assertEqual(self.adapter.scene_models(SimpleNamespace()), {})  # no FE10Battle.cms to map names
 
 
 class PorAdapterTests(unittest.TestCase):
@@ -68,7 +69,7 @@ class PorAdapterTests(unittest.TestCase):
         self.assertEqual(adapter.excel_sheet("item"), "Items")
         self.assertIsNone(adapter.excel_sheet("skill"))
         self.assertTrue(adapter.can_start_empty)
-        self.assertTrue(adapter.scene_folders_named)
+        self.assertIsNone(adapter.no_row_scene)
         self.assertEqual(adapter.records("character"), [])
 
     def test_records_read_typed_entries(self):
@@ -81,9 +82,12 @@ class ScreenCapabilityTests(unittest.TestCase):
     """The purpose-built screens are capabilities: PoR has them, RD gets each as its phase lands."""
 
     def test_capabilities(self):
-        for feature in (CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS):
+        for feature in (CHARACTER_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), feature)
             self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature), feature)
+        # Phase 4: one Chapter data form on both games
+        self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(CHAPTER_RECORD_FORM))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(CHAPTER_RECORD_FORM))
 
     def test_converged_pages_hold_no_game_checks(self):
         pattern = re.compile(r'Game\.RADIANT_DAWN|Game\.PATH_OF_RADIANCE|getattr\([^)]*"fe10"'

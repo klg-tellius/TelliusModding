@@ -16,7 +16,7 @@ import struct
 from dataclasses import dataclass
 from typing import Optional
 
-from . import excel_io
+from . import chapter_form, excel_io
 from .formats import fe8data, fe10data
 from .formats.fe8data import BattleTerrainRow
 
@@ -36,8 +36,9 @@ class DataAdapter:
 
     #: Whether a new record may start empty (otherwise it must copy an existing one).
     can_start_empty = True
-    #: Whether the battle-background names are also the ``zbg/`` folder names (Radiant Dawn's are hashed).
-    scene_folders_named = True
+    #: The backdrop of a map with no battle-scenery row of its own, on every terrain type; None: such a
+    #: map uses the table's first row (Path of Radiance).
+    no_row_scene: Optional[str] = None
 
     def __init__(self, session) -> None:
         self.session = session
@@ -85,10 +86,41 @@ class DataAdapter:
         raise NotImplementedError
 
     def write_battle_scenery_rows(self, rows: list[BattleTerrainRow]) -> bytes:
-        """The file with ``rows`` written back. Raises ValueError for a change the game's table cannot hold."""
+        """The file with ``rows`` written back (rows may be appended). Raises ValueError for a change the
+        game's table cannot hold."""
         raise NotImplementedError
 
+    def new_scenery_row(self, map_name: str, terrain_count: int) -> BattleTerrainRow:
+        """A row for a map that had none, fighting where the map fought before."""
+        return BattleTerrainRow(map_name, [None] * terrain_count)
+
+    def scene_models(self, project) -> dict:
+        """Battle-background name -> its model pack (``zbg/<folder>/*.cmp``)."""
+        return zbg_packs(project)
+
     # -- chapters ---------------------------------------------------------------------------
+    #: Extra buttons of the Chapter data form (``"title_card"``: draw the title card from the title).
+    chapter_actions: tuple = ()
+
+    def chapter_records(self, chapter_id: Optional[str], map_name: Optional[str]) -> list[int]:
+        """The ``ChapterData`` records of a chapter page, the one using ``map_name`` first."""
+        raise NotImplementedError
+
+    def chapter_summary(self, index: int) -> tuple:
+        """``(title key, title text, script, id)`` of a record, for its label in pickers."""
+        raise NotImplementedError
+
+    def chapter_sections(self, index: int) -> list:
+        """The Chapter data form of a record: :class:`chapter_form.ChapterSection` items."""
+        raise NotImplementedError
+
+    def chapter_value(self, data: bytes, index: int, key: str) -> str:
+        raise NotImplementedError
+
+    def write_chapter_value(self, data: bytes, index: int, key: str, value) -> bytes:
+        """``data`` with one chapter field set. Raises ValueError with the reason when refused."""
+        raise NotImplementedError
+
     def chapter_templates(self, project) -> list[str]:
         """Chapter ids Add chapter can copy."""
         raise NotImplementedError
@@ -162,6 +194,31 @@ class PorDataAdapter(DataAdapter):
     def write_battle_scenery_rows(self, rows):
         return fe8data.write_battle_terrain(self.data, rows)
 
+    def chapter_records(self, chapter_id, map_name):
+        try:
+            records = fe8data.read_chapter_data(self.data)
+        except (KeyError, ValueError, struct.error):
+            return []
+        number = int(chapter_id) if chapter_id and chapter_id.isdigit() else None
+        found = [r.index for r in records if (r.chapter_id == number if number is not None
+                                              else bool(map_name and r.map_name == map_name))]
+        if number is not None and map_name:
+            found.sort(key=lambda i: records[i].map_name != map_name)
+        return found
+
+    def chapter_summary(self, index):
+        record = fe8data.read_chapter_data(self.data)[index]
+        return record.title_key, record.title_text, record.script, record.chapter_id
+
+    def chapter_sections(self, index):
+        return chapter_form.por_sections(self.data, index)
+
+    def chapter_value(self, data, index, key):
+        return chapter_form.por_value(data, index, key)
+
+    def write_chapter_value(self, data, index, key, value):
+        return chapter_form.por_write(data, index, key, value)
+
     def chapter_templates(self, project) -> list[str]:
         from . import chapters
         numbers = {r.chapter_id for r in fe8data.read_chapter_data(self.data)}
@@ -187,7 +244,9 @@ class RdDataAdapter(DataAdapter):
     """Radiant Dawn: ``FE10Data.cms`` through :mod:`formats.fe10data`."""
 
     can_start_empty = False
-    scene_folders_named = False
+    #: 8011d3a4 (the BattleTerrIndex lookup): a map name found in no row gets this fixed name; a map
+    #: with no name gets row 0; an empty cell (0xFFFF) uses the row's first cell.
+    no_row_scene = "bg魔法"
 
     def records(self, kind: str) -> list[EntityRow]:
         fe10 = self.session.fe10
@@ -219,22 +278,104 @@ class RdDataAdapter(DataAdapter):
 
     def write_battle_scenery_rows(self, rows):
         current = self._scenery_records()
-        if len(rows) != len(current):
-            raise ValueError("Adding Radiant Dawn battle-scenery rows is not decoded yet.")
+        if len(rows) < len(current):
+            raise ValueError("Radiant Dawn battle-scenery rows cannot be removed.")
         data = self.data
-        names = fe10data.battle_scenery_names(data)
-        index = {name: i for i, name in reversed(list(enumerate(names))) if name}
-        for i, (row, record) in enumerate(zip(rows, current)):
-            if row.map_name != record.values.get("map"):
+        known = self._backdrops()
+        for i, row in enumerate(rows):
+            if i < len(current) and row.map_name != current[i].values.get("map"):
                 raise ValueError("Renaming Radiant Dawn battle-scenery rows is not decoded yet.")
-            for terrain, (new, old) in enumerate(zip(row.scenes, record.lists.get("scenery", []))):
-                if new is not None and new not in index:
-                    raise ValueError(f"{new} is not a BattleTerrName entry; adding Radiant Dawn battle "
-                                     "backgrounds is not decoded yet.")
-                new = index[new] if new is not None else FE10_NO_SCENERY
-                if new != old:
-                    data = fe10data.set_battle_scenery(data, i, terrain, new)
+            if not row.scenes or row.scenes[0] is None:
+                raise ValueError(f"{row.map_name}: the first terrain type needs a backdrop (empty cells use it).")
+            if i < len(current):
+                old = current[i].lists.get("scenery", [])
+            else:
+                data, _index = fe10data.add_battle_scenery(data, 0, row.map_name)
+                old = fe10data.read_table(data, "battle_scenery")[i].lists.get("scenery", [])
+            for terrain, (new, was) in enumerate(zip(row.scenes, old)):
+                if new is None:
+                    value = FE10_NO_SCENERY
+                else:
+                    names = fe10data.battle_scenery_names(data)
+                    if new in names:
+                        value = names.index(new)
+                    elif known is None:
+                        raise ValueError(f"{new} is not in BattleTerrName, and FE10Battle.cms could not be read "
+                                         "to check it is a backdrop.")
+                    elif new not in known:
+                        raise ValueError(f"{new} is not a backdrop of FE10Battle.cms (FE10BMapData).")
+                    else:
+                        data, value = fe10data.add_battle_scenery_name(data, new)
+                if value != was:
+                    data = fe10data.set_battle_scenery(data, i, terrain, value)
         return data
+
+    def new_scenery_row(self, map_name, terrain_count):
+        return BattleTerrainRow(map_name, [self.no_row_scene] + [None] * (terrain_count - 1))
+
+    def _battle_file(self):
+        """FE10Battle.cms, parsed once per change of the file (None when missing or unreadable)."""
+        project = getattr(self.session, "project", None)
+        if project is None:
+            return None
+        try:
+            stamp = project.logical_path("battle_data").stat().st_mtime_ns
+        except OSError:
+            return None
+        cached = getattr(self, "_battle_cache", None)
+        if cached is None or cached[0] != stamp:
+            try:
+                from .formats import fe10_battle
+                document = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
+            except Exception:  # noqa: BLE001 - unreadable: names are not checked
+                document = None
+            self._battle_cache = cached = (stamp, document)
+        return cached[1]
+
+    def _backdrops(self) -> Optional[set]:
+        """The backdrop names FE10Battle.cms defines (None when it can't be read)."""
+        battle = self._battle_file()
+        return {m.map_name for m in battle.map_data} if battle is not None else None
+
+    def scene_models(self, project):
+        # a backdrop name is an FE10BMapData record whose first model's archive is its zbg/ folder
+        battle = self._battle_file()
+        if battle is None:
+            return {}
+        folders = zbg_packs(project)
+        found = {}
+        for record in battle.map_data:
+            model = next((m for m in record.model_indices if m is not None), None)
+            if model is not None and model < len(battle.map_models):
+                pack = folders.get(battle.map_models[model].archive_name)
+                if pack is not None:
+                    found[record.map_name] = pack
+        return found
+
+    chapter_actions = ("title_card",)
+
+    def chapter_records(self, chapter_id, map_name):
+        from .game_code.rd_story import chapter_record_id
+        records = self.session.fe10.tables.get("chapter", []) if self.session.fe10 is not None else []
+        cid = chapter_record_id(chapter_id) if chapter_id else None
+        found = [r.index for r in records if (r.values.get("cid") == cid if cid is not None
+                                              else bool(map_name and r.values.get("map") == map_name))]
+        if cid is not None and map_name:
+            found.sort(key=lambda i: records[i].values.get("map") != map_name)
+        return found
+
+    def chapter_summary(self, index):
+        values = self.session.fe10.tables["chapter"][index].values
+        return values.get("title"), None, values.get("script"), values.get("cid")
+
+    def chapter_sections(self, index):
+        return chapter_form.rd_sections(self.data, index)
+
+    def chapter_value(self, data, index, key):
+        return chapter_form.rd_value(data, index, key)
+
+    def write_chapter_value(self, data, index, key, value):
+        return chapter_form.rd_write(data, index, key, value)
 
     def chapter_templates(self, project) -> list[str]:
         from . import chapters_fe10
@@ -248,6 +389,20 @@ class RdDataAdapter(DataAdapter):
         from . import chapters_fe10
         plan = chapters_fe10.add_story_chapter(project, self.data, source_id, new_id, title, after, flow)
         return plan.fe10data, plan.warnings
+
+
+def zbg_packs(project) -> dict:
+    """``zbg/`` folder name -> its pack, the first ``.cmp`` in the folder."""
+    from .game_profile import files_root_of
+
+    zbg = files_root_of(project) / "zbg"
+    found = {}
+    if zbg.is_dir():
+        for folder in sorted(p for p in zbg.iterdir() if p.is_dir()):
+            pack = next(iter(sorted(folder.glob("*.cmp"))), None)
+            if pack is not None:
+                found[folder.name] = pack
+    return found
 
 
 def data_adapter(session) -> Optional[DataAdapter]:

@@ -1,4 +1,4 @@
-"""Game Data: classes, items, skills, terrain types, the general
+"""Game Data: classes, items, skills, terrain types, chapters, the general
 tables and supports (``FE8Data.bin``), the script flags and the AI scripts.
 
 The hub (route ``("data",)``) shows a tile per section, like Assets; a tile
@@ -29,7 +29,7 @@ from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
-TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain",
+TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain", "chapters": "Chapters",
         "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}
 #: key -> (icon, description) of the hub tiles.
 TILES = {
@@ -37,13 +37,14 @@ TILES = {
     "items": ("⚔", "Weapons, staves and items: combat, price, effects, bonuses"),
     "skills": ("✦", "Parameters, icon and who can have each skill"),
     "terrain": ("▦", "Movement cost per movement type, bonuses, healing"),
+    "chapters": ("⚑", "Files, objectives per difficulty, music, scenes, enemy levels"),
     "general": ("≡", "Difficulty constants, army groups, battle skies"),
     "supports": ("♥", "Support pairs, affinity bonuses and support conversations"),
     "flags": ("⚐", "The 96 named script flags: campaign and chapter"),
     "ai": ("⌬", "Enemy AI scripts (cp_data.bin): readable script editor"),
         "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
-SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "general", "supports")),
+SECTIONS = (("game_data", ("classes", "items", "skills", "terrain", "chapters", "general", "supports")),
             ("Scripts and AI", ("flags", "ai")),
             ("Images", ("rect_images",)))
 
@@ -73,7 +74,6 @@ class GameDataPage(Page):
         style.layout("Tabless.TNotebook.Tab", [])  # the hub picks the section, not a tab strip
         style.configure("Tabless.TNotebook", borderwidth=0)
         self._editor._notebook.configure(style="Tabless.TNotebook")
-        self._editor._notebook.hide(TAB_KEYS.index("chapters"))
         self._editor._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._tab = "classes"
         session = shell.session
@@ -251,6 +251,10 @@ class GameDataPage(Page):
                 self._editor.select_item(route[2])
             elif tab == "skills":
                 self._editor.select_skill(route[2])
+            elif tab == "chapters":
+                records = self.shell.session.adapter.chapter_records(f"{int(route[2]):02d}", None)                     if str(route[2]).isdigit() else []
+                if records:
+                    self._editor.select_chapter(records[0])
         return True
 
     def _show_fe10(self, route) -> bool:

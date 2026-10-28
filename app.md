@@ -42,9 +42,13 @@ Radiant Dawn graphics use the shared TPL and 3D pipelines. Assets › Portraits 
 
 Radiant Dawn event scripts (the `scripts` feature, `GameProfile.script_dialect == "fe10"`): the `.cmb` layout is Path of Radiance's, and `formats/cmb` handles both bytecodes through a `Dialect` (`model.FE9` / `model.FE10`, read from the compiler build stamp at header +0x18). Radiant Dawn's `localCall` index is one or two bytes, and its compiler emits six more instructions (`inc`, `dec`, `dup`, `ret0`, `ret1`, `assign`); the compiler reproduces its idioms (assignments without `pop`, `return 0/1` as `ret0/ret1`, `ret0` epilogues for callable functions, `switch`/`case` chains, `x++`), so every vanilla script decompiles and compiles back byte for byte. The language gains `switch` and `++`/`--`, which compile only for Radiant Dawn. `catalog.load_externs(dialect)` and `catalog.triggers(dialect)` give each game's natives (`externs_fe10.json`: 656 natives, each described, plus startup.cmb's helpers) and trigger kinds (Radiant Dawn adds rescue, give/take, move-through and epilogue triggers and changes the base-conversation one), and `event_flags.flag_table(dialect)` the flag table (128 slots). Chapter pages open a chapter's script, Assets › Scripts opens every script in the script editor, and Game Data › Flags shows its campaign and chapter flags (a Radiant Dawn save's flags are not decoded yet).
 
-## Path of Radiance chapter objectives
+## Chapter data
 
-The **Chapter data** tab edits the chapter's `FE8Data.bin` record. Its Normal objective slots are:
+The **Chapter data** tab is one form on both games (the `chapter_record_form` feature). `chapter_form.py` describes a record's fields once per game, the session's adapter (`session.adapter.chapter_sections`, `chapter_value`, `write_chapter_value`) reads and writes them, and `gui/stats_editor.py`'s `ChapterRecordPanel` and Game Data › Chapters build the same sections from that description: Identity and files, Objectives (text keys), Scenes, then Path of Radiance's Enemy levels and trial grades or Radiant Dawn's Parties (gold account, convoy and the bytes not named yet). Radiant Dawn adds **Title card…** (drawn from the title) and keeps each record's ID and number unique, since the game looks records up by them. **‹ All chapters** opens Game Data › Chapters on the record, on both games.
+
+### Path of Radiance chapter objectives
+
+The form edits the chapter's `FE8Data.bin` record. Its Normal objective slots are:
 
 | Slot | Label | Text key prefix |
 | --- | --- | --- |
@@ -60,6 +64,8 @@ Hard and Maniac each store three overrides: fields 0, 1 and 2 replace Normal slo
 In Path of Radiance's Dialogue tab, the layout picker shows English names. The editor converts the chosen name back to the game's layout ID when saving; a raw ID can still be entered for an unknown layout. The compact layout and background dropdowns on the two toolbar rows update their matching actions in the message; a missing action is added at the start. **Search…** opens a visual background picker. The step form and preview's initial context offer the same background choices. The Actions menu is one searchable list.
 
 On **Battle scenes**, the first `BattleTerrData` row is a shared fallback. In retail data that row is named `Map6`; this is its stored map name, not a separate mode. A map with no row uses it for every terrain type, and an empty cell in a custom map row inherits that terrain type's entry from the first row. Editing the shared row affects every map that relies on it.
+
+Radiant Dawn's `BattleTerrIndex` works differently (the lookup at `8011d3a4` in RFEE01): a map found in no row fights in front of one fixed backdrop, `bg魔法`, on every terrain type, and row 0 is `bmap00`'s own row. An empty cell uses its row's first cell, so the first cell always needs a backdrop. **Give … its own row** adds a row that starts as `bg魔法` with every other cell empty, so nothing changes until a cell is edited. A backdrop is an `FE10BMapData` record of `FE10Battle.cms`, whose first `FE10BMapModel` names its `zbg/` folder (`bg0101街` is `zbg/bg0101twn`); `RdDataAdapter.scene_models` maps the names, so the scene browser previews them. Thirteen of the 119 backdrops are missing from the retail `BattleTerrName` (`bg汎用02森林` and the other generic ones). Picking one appends it to `BattleTerrName` (`fe10data.add_battle_scenery_name`): the list has no count, the game indexes it directly. A name that is not an `FE10BMapData` record is refused.
 
 On **Shops**, the forge grid has five weapon-family rows and nine fixed base columns. Each cell selects the item offered for that family and base on the selected chapter and difficulty; **(none)** removes that option. Changing a cell does not change the item's stats or price. **Save Shops** writes the selected difficulty's shop file.
 
