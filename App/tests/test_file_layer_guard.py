@@ -22,7 +22,6 @@ LAYER = frozenset({
     "fe_modding/game_files.py",
     "fe_modding/vanilla_store.py",
     "fe_modding/project.py",
-    "fe_modding/layout_migration.py",
 })
 
 #: Tools that read a plain extracted disc given on the command line, not a project.

@@ -10,7 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, ttk
 
-from ... import layout_migration, patch, text_export
+from ... import patch, text_export
 from ...games import Game
 from ..mod_details_dialog import ModDetailsDialog
 from ..shell import Page
@@ -99,15 +99,8 @@ class DiscPage(Page):
                        state="disabled" if shell.task_running else "normal").pack(side="left", padx=(8, 0))
             self._caption(frame, "The vanilla files are shared by every project of this disc and never "
                           "changed; this project's edits are only in its output folder.", pady=(8, 0))
-            if layout_migration.has_backup(project):
-                ttk.Button(frame, text="Delete the old copy…", command=shell.delete_layout_backup,
-                           state="disabled" if shell.task_running else "normal").pack(anchor="w", pady=(8, 0))
         elif shell.extracted:
             self._caption(frame, "Re-extracting overwrites the extracted files with the disc's.", pady=(8, 0))
-            ttk.Button(frame, text="Convert to shared vanilla files…", command=shell.convert_layout,
-                       state="disabled" if shell.task_running else "normal").pack(anchor="w", pady=(8, 0))
-            self._caption(frame, "Keeps only the files the mod changes in the project and reads the rest "
-                          "from one vanilla copy shared by every project of this disc.", pady=(4, 0))
         return frame
 
     def _build_card(self, parent: tk.Misc) -> ttk.Frame:

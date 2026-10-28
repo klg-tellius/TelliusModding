@@ -180,7 +180,6 @@ class MainWindow(tk.Tk):
                             asset_tools=tuple((key, label) for key, label, *_rest in ASSET_TOOLS))
         self._shell.pack(fill="both", expand=True)
         self._shell.navigate(("home",))
-        self._shell.after(400, self._shell.offer_layout_conversion)
         self.title(f"{project.name} - Tellius Modding")
 
     def _confirm_leave_project(self) -> bool:
