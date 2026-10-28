@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -282,8 +283,8 @@ class LegacyFiles(GameFiles):
             return None
         if self._fst_cache is None or self._fst_cache[0] != stamp:
             try:
-                names = gcdisc.read_fst_paths(fst.read_bytes())
-            except (OSError, ValueError):
+                names = gcdisc.read_fst_sizes(fst.read_bytes())
+            except (OSError, ValueError, struct.error):
                 return None
             self._fst_cache = (stamp, frozenset(f"{FILES}/{n}" for n in names))
         return self._fst_cache[1] or None

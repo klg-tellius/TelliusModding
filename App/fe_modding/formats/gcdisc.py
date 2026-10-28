@@ -122,6 +122,20 @@ def _read_fst_order(fst: bytes) -> list[str]:
 read_fst_paths = _read_fst_order
 
 
+def read_fst_sizes(fst: bytes) -> dict[str, int]:
+    """Every file (not directory) of a retail fst.bin with its size, by '/'-joined path relative
+    to files/, in entry order. The size word is the same on GameCube and Wii discs."""
+    if len(fst) < FST_ENTRY_SIZE:
+        return {}
+    paths = _read_fst_order(fst)
+    sizes = {}
+    for i, path in enumerate(paths, start=1):
+        word, _, length = struct.unpack_from(">III", fst, i * FST_ENTRY_SIZE)
+        if not word >> 24:
+            sizes[path] = length
+    return sizes
+
+
 def _build_tree(files_dir: Path, retail_order: list[str]) -> _Node:
     rank = {path.lower(): i for i, path in enumerate(retail_order)}
 

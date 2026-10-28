@@ -22,8 +22,8 @@ DISC = {
 }
 
 
-def fake_fst_paths(_data):
-    return [rel[len("files/"):] for rel in DISC if rel.startswith("files/")]
+def fake_fst_sizes(_data):
+    return {rel[len("files/"):]: len(data) for rel, data in DISC.items() if rel.startswith("files/")}
 
 
 class ContractMixin:
@@ -33,7 +33,7 @@ class ContractMixin:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        patcher = mock.patch.object(gcdisc, "read_fst_paths", fake_fst_paths)
+        patcher = mock.patch.object(gcdisc, "read_fst_sizes", fake_fst_sizes)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.files = self.make()
