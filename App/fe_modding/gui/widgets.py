@@ -121,6 +121,25 @@ def info(parent: tk.Misc, text: str, *, bg_token: str = "") -> tk.Label:
     return tip(label, text)
 
 
+class SaveDiscardBar(ttk.Frame):
+    """Shared editor toolbar for save/discard actions, status, and compact help."""
+
+    def __init__(self, parent: tk.Misc, *, save_text: str, on_save: Callable[[], None],
+                 on_discard: Callable[[], None], help_text: str):
+        super().__init__(parent, padding=(8, 8, 8, 0))
+        self.save_button = ttk.Button(self, text=save_text, style="Accent.TButton",
+                                      command=on_save, state="disabled")
+        self.save_button.pack(side="left")
+        self.discard_button = ttk.Button(self, text="Discard unsaved edits", command=on_discard,
+                                         state="disabled")
+        self.discard_button.pack(side="left", padx=(6, 0))
+        self.actions = ttk.Frame(self)
+        self.actions.pack(side="left")
+        self.status = ttk.Label(self, text="", style="Muted.TLabel")
+        self.status.pack(side="left", padx=(10, 0))
+        info(self, help_text).pack(side="right")
+
+
 # -- scrolling ------------------------------------------------------------------
 
 class ScrollFrame(ttk.Frame):
@@ -286,6 +305,38 @@ def section_header(parent: tk.Misc, text: str, detail: str = "") -> ttk.Frame:
     if detail:
         ttk.Label(row, text=detail, style="Muted.TLabel").pack(side="left", padx=(10, 0), pady=(4, 0))
     return row
+
+
+def fold_toggle(header: tk.Misc, content: tk.Misc, folded: dict, key, *, bg_token: str = "bg",
+                **pack) -> tk.Label:
+    """Put a ▾/▸ toggle at the start of ``header`` that hides or shows ``content``, a widget packed
+    in the same parent right after ``header`` (``pack`` holds its pack options). ``folded[key]``
+    keeps the state, so a re-render comes back folded the same way."""
+    first = header.pack_slaves()[:1]
+    arrow = tk.Label(header, cursor="hand2", font=theme.font("body"), padx=0, pady=0, width=2, anchor="w")
+    arrow.pack(side="left", before=first[0]) if first else arrow.pack(side="left")
+    tip(arrow, "Fold or unfold")
+
+    def paint() -> None:
+        arrow.configure(background=theme.color(bg_token), foreground=theme.color("muted"))
+
+    def apply() -> None:
+        closed = folded.get(key, False)
+        arrow.configure(text="▸" if closed else "▾")
+        if closed:
+            content.pack_forget()
+        else:
+            content.pack(after=header, **pack)
+
+    def toggle(_event=None) -> None:
+        folded[key] = not folded.get(key, False)
+        apply()
+
+    arrow.bind("<Button-1>", toggle)
+    paint()
+    theme.on_change(arrow, paint)
+    apply()
+    return arrow
 
 
 class Chip(tk.Label):
@@ -484,9 +535,10 @@ class PortraitCache:
     background thread; ``request(fid, size, callback)`` calls back on the UI
     thread with a PhotoImage, or never when the face can't be drawn."""
 
-    def __init__(self, root: tk.Misc, disc_dir: Path):
+    def __init__(self, root: tk.Misc, disc_dir: Path, game=None):
         self._root = root
         self._extracted = disc_dir
+        self._game = game
         self._assets = None
         self._assets_failed = False
         self._photos: dict[tuple[str, int], ImageTk.PhotoImage] = {}
@@ -532,13 +584,29 @@ class PortraitCache:
     def _render(self, fid: str, size: int) -> Optional[Image.Image]:
         if self._assets is None and not self._assets_failed:
             try:
-                from ..formats.fe9_conversation_assets import ConversationAssets
-                self._assets = ConversationAssets(self._extracted)
+                from ..games import Game
+                if self._game == Game.RADIANT_DAWN:
+                    from ..formats.fe10_faces import FaceLibrary
+                    self._assets = FaceLibrary(self._extracted / "files")
+                else:
+                    from ..formats.fe9_conversation_assets import ConversationAssets
+                    self._assets = ConversationAssets(self._extracted)
             except Exception:  # noqa: BLE001 - no portraits, no thumbnails
                 self._assets_failed = True
         if self._assets is None:
             return None
         try:
+            from ..games import Game
+            if self._game == Game.RADIANT_DAWN:
+                found = self._assets.lookup(fid)
+                if found is None:
+                    return None
+                image = self._assets.compose(fid)
+                if image is None:
+                    return None
+                return _square_thumbnail(image, size)
+            if fid not in self._assets.faces:
+                self._assets.refresh()  # a face added since (Portraits, colour variants)
             face = self._assets.face(fid)
             image = face.compose()
         except Exception:  # noqa: BLE001
@@ -583,6 +651,21 @@ def face_thumbnail(image: Image.Image, record, size: int) -> Image.Image:
     top = min(max(0, top), image.height - side)
     crop = image.crop((left, top, left + side, top + side))
     return crop.resize((size, size), Image.LANCZOS)
+
+
+def _square_thumbnail(image: Image.Image, size: int) -> Image.Image:
+    """Centre-crop an RD portrait, keeping its full height when it is wide.
+
+    Face-part coordinates describe where the game overlays a mouth, not a
+    reliable thumbnail focal point.  Anchoring the crop to them could push a
+    large face almost entirely outside the card; a geometric centre crop
+    consistently removes the two sides instead.
+    """
+    image = image.convert("RGBA")
+    side = min(image.width, image.height)
+    left = (image.width - side) // 2
+    top = (image.height - side) // 2
+    return image.crop((left, top, left + side, top + side)).resize((size, size), Image.LANCZOS)
 
 
 # -- record browser ------------------------------------------------------------------
@@ -716,6 +799,16 @@ class TileBrowser(ttk.Frame):
             else:
                 self._filter()
             self._entry.focus_set()
+
+    def set_noun(self, noun: str) -> None:
+        """Update the table noun used by counts and the return-to-grid action."""
+        self._noun = noun
+        self._nav.winfo_children()[0].configure(text=f"‹ All {noun}")
+        self._filter()
+
+    def show_detail(self) -> None:
+        """Reveal the detail already selected by a route without invoking its pick callback."""
+        self._show_detail()
 
     def _show_detail(self) -> None:
         if self._mode != "detail":

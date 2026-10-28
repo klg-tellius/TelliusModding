@@ -29,7 +29,7 @@ class World:
     height: int
     terrain: list  # [x][y] terrain-type name (``map_file.terrain_grid``)
     terrain_types: list  # fe8data.TerrainType, engine order
-    fe8: fe8data.Fe8Data
+    fe8: object  # compatibility alias for older callers; TacticalData.raw for FE9
     link: Optional[list] = None  # [x][y] composed link status (``map_file.compose_link_status_grid``), None = all open
     playable: Optional[tuple] = None  # (x0, x1, y0, y1): the area inside the map's border, x1/y1 exclusive
     scripts: list = field(default_factory=list)  # cmb ScriptFile, the chapter's first, then startup.cmb
@@ -41,22 +41,47 @@ class World:
     names: dict = field(default_factory=dict)  # PID_ -> display name
     item_names: dict = field(default_factory=dict)  # IID_ -> display name
     game_data: dict = field(default_factory=dict)  # fe8data.read_game_data: row -> (Normal, Hard, Maniac, Easy)
+    profile: object = None
+    tactical_data: object = None
+    dialect: object = None
 
     def exp_constants(self) -> Optional[dict]:
         """The difficulty's GameData EXP values (``calculate_battle_exp``), or None without GameData."""
         if not self.game_data:
             return None
-        column = {"n": 0, "h": 1, "m": 2}.get(self.difficulty, 0)
+        # FE10Data stores Easy, Normal, Hard, Maniac.  FE8Data stores its
+        # established Normal, Hard, Maniac, Easy ordering.
+        column = ({"n": 1, "h": 2, "m": 3, "e": 0} if self.dialect.name == "fe10"
+                  else {"n": 0, "h": 1, "m": 2, "e": 3}).get(self.difficulty, 0)
         return {name: values[column] for name, values in self.game_data.items()}
 
     def __post_init__(self) -> None:
-        self.rules = Fe9Rules(self.fe8.skills)
+        from .dialect import dialect_for
+        from .tactical_data import adapt
+
+        self.dialect = dialect_for(self.dialect or self.profile)
+        self.profile = self.profile or self.dialect.profile
+        self.tactical_data = adapt(self.tactical_data or self.fe8)
+        # Keep the public alias on FE9 so existing extensions and fixtures are unchanged.
+        self.fe8 = self.tactical_data.raw
+        if self.dialect.name == "fe10":
+            from ..battle_sim.rules_fe10 import Fe10Rules
+            self.rules = Fe10Rules(self.tactical_data.skills, self.tactical_data.difficulty)
+        else:
+            self.rules = Fe9Rules(self.tactical_data.skills)
         self.terrain_by_name: dict = {}
         for t in self.terrain_types:
             self.terrain_by_name.setdefault(t.name, t)
-        self.characters = {c.pid: c for c in self.fe8.characters if c.pid}
-        self.classes = {c.jid: c for c in self.fe8.classes if c.jid}
-        self.items = {i.iid: i for i in self.fe8.items if i.iid}
+        self.characters = {c.pid: c for c in self.tactical_data.characters if c.pid}
+        self.classes = {c.jid: c for c in self.tactical_data.classes if c.jid}
+        self.items = {i.iid: i for i in self.tactical_data.items if i.iid}
+
+    @property
+    def army(self):
+        return self.dialect.army
+
+    def hostile(self, a: int, b: int) -> bool:
+        return self.army.hostile(a, b)
 
     # -- map ------------------------------------------------------------------------------------
     def inside(self, x: int, y: int) -> bool:
@@ -124,5 +149,5 @@ class World:
 
     def custom_item_allowed(self, unit, item: fe8data.ItemEntry) -> bool:
         """Additional FE9 item rule, using the unit's current class and skills."""
-        rule = self.fe8.item_rules.get(item.iid)
+        rule = self.tactical_data.item_rules.get(item.iid)
         return rule is None or rule_matches(rule, unit.pid, unit.jid, set(unit.skills))

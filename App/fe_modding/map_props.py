@@ -178,6 +178,7 @@ def import_prop(
     name: str,
     base_dir: Path | None = None,
     loop: bool = True,
+    scale_tiles: float | None = None,
 ) -> list[str]:
     """Add the glTF as prop ``name``, or replace prop ``name``'s model when
     it exists. Updates ``entries``/``files`` (the unpacked ``map.cmp``) in
@@ -202,6 +203,10 @@ def import_prop(
             warnings.append(f"Material {material.name} renamed {material.name}_mesh.")
             material.name += "_mesh"
     animated = _has_skin_and_animation(gltf_data, base_dir)
+    if scale_tiles is not None and scale_tiles <= 0:
+        raise gltf_import.GltfImportError("The prop size must be greater than zero tiles.")
+    if animated and scale_tiles is not None:
+        raise gltf_import.GltfImportError("Tile-size scaling is currently available for static props only.")
     ga_bytes = None
     if animated:
         build, skeleton_bytes, ga_bytes, more = _animated_build(gltf_data, name, base_dir, loop)
@@ -211,6 +216,19 @@ def import_prop(
                 material.name += "_mesh"
         _place_images(files, build.gs, build.images, 0)
     else:
+        if scale_tiles is not None:
+            points = [p for triangles in scene.triangles.values() for triangle in triangles
+                      for p in triangle.positions]
+            span = max(max(p[0] for p in points) - min(p[0] for p in points),
+                       max(p[2] for p in points) - min(p[2] for p in points)) if points else 0.0
+            if span <= 0:
+                raise gltf_import.GltfImportError("The prop has no horizontal size to scale.")
+            factor = scale_tiles * map_file.TILE_UNITS / span
+            for triangles in scene.triangles.values():
+                for triangle in triangles:
+                    triangle.positions = tuple(tuple(value * factor for value in point)
+                                               for point in triangle.positions)
+            warnings.append(f"Scaled the prop's widest side to {scale_tiles:g} tiles.")
         base = len(tpl.read_tpl_image_info(io.BytesIO(files[texpack_name(files)])))
         build = gltf_import.build_static_gs(scene, bone=0, name=name, tex_id_base=base)
         warnings += build.warnings

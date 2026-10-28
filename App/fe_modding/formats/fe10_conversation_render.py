@@ -9,6 +9,7 @@ background rects (``s/rect.bin``) and the dialogue font (``Fonts/talk.cms``). Th
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -25,6 +26,8 @@ WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
 PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
+_TEXT_PALETTE = {b"RFEE01": 0x80383158}
+_COLOR_CODE = re.compile(r"#C([0-9A-Fa-f]{2})|#c")
 
 
 class Fe10ConversationAssets:
@@ -39,6 +42,7 @@ class Fe10ConversationAssets:
         self.wide = wide
         self._layouts = self._backgrounds = self._font = self._names = None
         self._faces = None
+        self._colors: dict[int, tuple[int, int, int, int]] = {}
         self._textures: dict[tuple[str, int], Image.Image] = {}
 
     @property
@@ -120,6 +124,24 @@ class Fe10ConversationAssets:
                 break
         return canvas
 
+    def text_color(self, index: int) -> tuple[int, int, int, int]:
+        """RFEE01's 40-entry RGBA palette used by the glyph renderer's ``#Cxx`` markup."""
+        if not 0 <= index < 40:
+            raise ValueError(f"Text color {index:02X} is outside RFEE01's palette")
+        if index not in self._colors:
+            from ..game_code.dol import Dol
+
+            root = self.files.parent
+            boot = root / "sys" / "boot.bin"
+            game_id = boot.read_bytes()[:6] if boot.is_file() else b"RFEE01"
+            try:
+                address = _TEXT_PALETTE[game_id]
+            except KeyError:
+                raise ValueError(f"No RD text palette for {game_id.decode('ascii', 'replace')}") from None
+            dol = Dol.open(root / "sys" / "main.dol")
+            self._colors[index] = tuple(dol.read(address + 4 * index, 4))
+        return self._colors[index]
+
 
 def _last_lines(text: str, lines: int) -> str:
     return "\n".join(text.split("\n")[-lines:])
@@ -135,7 +157,51 @@ def _plain(display: str) -> str:
             depth -= 1
         elif not depth:
             out.append(char)
-    return "".join(out)
+    return _COLOR_CODE.sub("", "".join(out))
+
+
+def _styled_lines(display: str, assets: Fe10ConversationAssets, keep: int) -> list[list[tuple[str, tuple]]]:
+    """Visible text split into colour runs, preserving the colour active before the last lines."""
+    plain, depth = [], 0
+    for char in display:
+        if char == "<":
+            depth += 1
+        elif char == ">" and depth:
+            depth -= 1
+        elif not depth:
+            plain.append(char)
+    text = "".join(plain)
+    default = (255, 255, 255, 255)
+    color = previous = default
+    lines: list[list[tuple[str, tuple]]] = [[]]
+    at = 0
+    for match in _COLOR_CODE.finditer(text):
+        chunk = text[at:match.start()]
+        for i, piece in enumerate(chunk.split("\n")):
+            if i:
+                lines.append([])
+            if piece:
+                lines[-1].append((piece, color))
+        if match.group(1) is not None:
+            previous, color = color, assets.text_color(int(match.group(1), 16))
+        else:
+            color, previous = previous, color
+        at = match.end()
+    for i, piece in enumerate(text[at:].split("\n")):
+        if i:
+            lines.append([])
+        if piece:
+            lines[-1].append((piece, color))
+    return lines[-keep:]
+
+
+def _draw_styled(font: GameFont, image: Image.Image, display: str, xy: tuple[int, int],
+                 assets: Fe10ConversationAssets, lines: int, line_height: int) -> None:
+    for row, runs in enumerate(_styled_lines(display, assets, lines)):
+        x = xy[0]
+        for text, color in runs:
+            font.draw(image, text, (x, xy[1] + row * line_height), color=color, line_height=line_height)
+            x += font.measure(text)
 
 
 def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
@@ -176,7 +242,7 @@ def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
             if speaker:
                 _name(draw, image, assets, font, assets.character_name(speaker), tx, by - 14)
             if font:
-                font.draw(image, text, (tx, ty), line_height=28)
+                _draw_styled(font, image, box.text, (tx, ty), assets, 3, 28)
     else:
         for actor in frame.actors:
             if not actor.visible or not 0 <= actor.position < len(seats):
@@ -202,7 +268,7 @@ def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
             if 0 <= speaker_index < len(frame.cast):
                 _name(draw, image, assets, font, assets.character_name(frame.cast[speaker_index]), tx, ty - 40)
             if font:
-                font.draw(image, _last_lines(_plain(box.text), lines), (tx, ty), line_height=line_height)
+                _draw_styled(font, image, box.text, (tx, ty), assets, lines, line_height)
     return image
 
 

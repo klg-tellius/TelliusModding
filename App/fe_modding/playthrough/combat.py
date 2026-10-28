@@ -78,7 +78,10 @@ def combatant(world: World, unit: SimUnit, item=None) -> Combatant:
         name=world.name(unit.pid), pid=unit.pid, jid=unit.jid, aid=_aid(world, unit), level=unit.level,
         stats=list(unit.stats), hp=unit.hp, build=unit.build, skills=list(unit.skills),
         categories=frozenset(unit.categories), weapon=weapon_from_item(item) if item is not None else None,
-        boss=unit.boss,
+        boss=unit.boss, tier=unit.tier, effective_level=unit.effective_level, exp=unit.exp,
+        weapon_ranks=dict(unit.weapon_ranks), wexp=dict(unit.wexp), biorhythm=unit.biorhythm,
+        authority=unit.authority, laguz_gauge=unit.laguz_gauge, transformed=unit.transformed,
+        royal="SID_ROYAL" in unit.skills, status=unit.status,
     )
     t = world.terrain_at(unit.x, unit.y)
     if t is not None:
@@ -90,11 +93,20 @@ def _aid(world: World, unit: SimUnit) -> Optional[str]:
     char = world.characters.get(unit.pid)
     cls = world.classes.get(unit.jid)
     if char is not None:
+        if world.tactical_data.game == "fe10":
+            # The four character AIDs follow the unit's class tier/form.  A
+            # missing specialization deliberately falls through to the class
+            # AID and FE10BAnimData's PID/JID resolver.
+            field = f"aid_{max(1, min(int(getattr(unit, 'tier', 1)), 4))}"
+            aid = getattr(char, field, None) or getattr(char, "aid_1", None)
+            if aid:
+                return aid
         promoted = cls is not None and unit.jid != char.jid  # as battle_sim.units.from_character
-        aid = char.aid_promoted if promoted and char.aid_promoted else char.aid_unpromoted
+        aid_promoted = getattr(char, "aid_promoted", None)
+        aid = aid_promoted if promoted and aid_promoted else getattr(char, "aid_unpromoted", None)
         if aid:
             return aid
-    return cls.aid if cls is not None else None
+    return getattr(cls, "aid", None) if cls is not None else None
 
 
 def forecast(world: World, attacker: SimUnit, defender: SimUnit, item, distance: int):
@@ -120,20 +132,55 @@ def fight(world: World, state: GameState, attacker: SimUnit, defender: SimUnit, 
     for side, (unit, index, weapon) in enumerate(((attacker, item_index, item), (defender, di, ditem))):
         if index is None or weapon is None:
             continue
-        magic = weapon.weapon_type in MAGIC_TYPES
-        used = sum(1 for s in log.strikes if s.side == side and (s.hit or magic))
+        if world.dialect.name == "fe10":
+            logged = log.attacker if side == 0 else log.defender
+            start = a.weapon.durability if side == 0 and a.weapon else d.weapon.durability if d.weapon else None
+            used = max(0, (start or 0) - (logged.weapon.durability or 0)) if logged.weapon else 0
+        else:
+            magic = weapon.weapon_type in MAGIC_TYPES
+            used = sum(1 for s in log.strikes if s.side == side and (s.hit or magic))
         _use(world, state, unit, index, used)
+        if world.dialect.name == "fe10":
+            made = sum(1 for strike in log.strikes if strike.side == side)
+            multiplier = int((world.exp_constants() or {}).get("weapon_exp_multiplier", 100))
+            gained = max(0, int(getattr(weapon, "wexp", 0)) * made * multiplier // 100)
+            if gained:
+                key = getattr(weapon, "weapon_type", "") or "weapon"
+                unit.wexp[key] = unit.wexp.get(key, 0) + gained
+    if world.dialect.name == "fe10":
+        _update_rd_gauge(world, attacker)
+        _update_rd_gauge(world, defender)
     exp = 0
     player = attacker if attacker.faction == 0 else defender
     if player.faction == 0 and player.hp > 0:  # a fallen unit gains nothing
         other = defender if player is attacker else attacker
         dealt = any(s.side == (0 if player is attacker else 1) and s.damage for s in log.strikes)
-        exp = battle_exp(player, other, dealt, other.hp <= 0, world.exp_constants())
+        if world.dialect.name == "fe10":
+            side = 0 if player is attacker else 1
+            exp = world.rules.battle_exp(log.attacker if side == 0 else log.defender,
+                                         log.defender if side == 0 else log.attacker,
+                                         dealt=dealt, killed=other.hp <= 0,
+                                         constants=world.exp_constants())
+        else:
+            exp = battle_exp(player, other, dealt, other.hp <= 0, world.exp_constants())
     state.emit("battle", f"{world.name(attacker.pid)} attacks {world.name(defender.pid)} ({how})\n" + log.text(),
                attacker=attacker.uid, defender=defender.uid, distance=distance, log=log, exp=exp)
     if exp:
         gain_exp(world, state, player, exp)
     return log
+
+
+def _update_rd_gauge(world: World, unit: SimUnit) -> None:
+    """Apply PersonData's per-battle gauge delta and retail 0..30 boundary."""
+    char = world.characters.get(unit.pid)
+    values = getattr(char, "gauge", ()) if char is not None else ()
+    if len(values) != 4 or "SID_ROYAL" in unit.skills:
+        return
+    unit.laguz_gauge = max(0, min(30, unit.laguz_gauge + values[3 if unit.transformed else 1]))
+    if unit.transformed and unit.laguz_gauge == 0:
+        unit.transformed = False
+    elif not unit.transformed and unit.laguz_gauge >= 30:
+        unit.transformed = True
 
 
 def _use(world: World, state: GameState, unit: SimUnit, index: int, used: int) -> None:

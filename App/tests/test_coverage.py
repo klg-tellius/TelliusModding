@@ -146,6 +146,26 @@ class ParticleLayoutTest(unittest.TestCase):
 
 
 class Fe10ContainerTest(unittest.TestCase):
+    def test_compressed_cp_data_uses_its_phase_four_codec(self):
+        from fe_modding.formats import cp_data, lz10
+
+        document = cp_data.CpDocument(
+            [cp_data.Section("CP_ATKSEQ_LIST", ["SEQ_TEST", 0]),
+             cp_data.Section("SEQ_TEST", [0] * 20)],
+            [],
+            leading_words=[0, 0],
+        )
+        compressed = lz10.compress(cp_data.build_cp_data(document))
+        report = Report()
+        Walker(report).child("Cp/cp_data.cms", compressed)
+
+        self.assertEqual(report.formats["lz10"].failures, [])
+        totals = report.formats["cp_data"]
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[DECODED], len(lz10.decompress(compressed)))
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+        self.assertNotIn("fe10 container", report.formats)
+
     def test_decompressed_cms_container_is_walked(self):
         import struct
 

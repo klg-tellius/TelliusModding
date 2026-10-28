@@ -11,13 +11,14 @@ folders that were never wired into the GUI:
 - ``files/etc/*.tpl``/``*.cms`` - shared misc art (cursor, icons, menu backgrounds)
 - ``files/gmap/*.tpl``/``*.cms`` - world map art
 - ``files/zu/**/*.tpl`` - equipment appearance (armor/weapon-on-character sprites)
+- ``files/sky/*/*.cmp`` and ``files/zbg/*/*.cmp`` - one TPL embedded in an LZ10 pack
 
 ``zu`` also holds region-variant ``.pak`` archives (``amr1_ja.pak`` etc.) -
 those are a different container (more images packed inside, not a single TPL)
 and are deliberately out of scope here; only the flat ``.tpl`` files directly
 under each ``zu/*/`` folder are covered.
 
-``ImageArchiveViewer`` is the shared base for all six panels below - factored
+``ImageArchiveViewer`` is the shared base for all eight panels below - factored
 out of ``background_viewer.py`` (still the template to read first) since six
 near-identical panels are being added in one pass; unlike this app's four
 chapter-scoped editors (which grew independently and stay deliberately
@@ -26,11 +27,12 @@ unshared), this is real, current duplication worth factoring once.
 both are already validated end-to-end against real disc rebuilds, and
 rebasing them onto this new class isn't worth the regression risk.
 
-Every subclass just supplies ``display_name``, ``empty_message``, and
+Most subclasses just supply ``display_name``, ``empty_message``, and
 ``_iter_files()``; decode/encode dispatch (raw vs. LZ10, by file extension -
-``.cms`` is compressed, everything else here is a raw TPL) lives once in the
+``.cms`` is compressed, everything else there is a raw TPL) lives once in the
 base class, so a folder mixing both (``window``, ``etc``, ``gmap``) works
-without any per-folder special-casing.
+without any per-folder special-casing. ``PackedTextureViewer`` overrides that
+dispatch for the archive-wrapped sky and scenery textures.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 
 from ..formats import lz10, tpl
+from ..formats.packed_texture import read_packed_tpl, replace_packed_tpl
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -75,6 +78,9 @@ class ImageArchiveViewer(EditorPanel):
     # -- subclass hooks -------------------------------------------------------
     def _iter_files(self) -> list[Path]:
         raise NotImplementedError
+
+    def _file_label(self, path: Path) -> str:
+        return path.name
 
     @staticmethod
     def _is_compressed(path: Path) -> bool:
@@ -145,10 +151,10 @@ class ImageArchiveViewer(EditorPanel):
 
     def _apply_filter(self, query: str) -> None:
         query = query.strip().lower()
-        self._filtered_files = [p for p in self._all_files if query in p.name.lower()]
+        self._filtered_files = [p for p in self._all_files if query in self._file_label(p).lower()]
         self._file_list.delete(0, "end")
         for path in self._filtered_files:
-            self._file_list.insert("end", path.name)
+            self._file_list.insert("end", self._file_label(path))
 
     def _on_file_selected(self) -> None:
         selection = self._file_list.curselection()
@@ -250,8 +256,9 @@ class ImageArchiveViewer(EditorPanel):
             return
         self._dirty = False
         self._save_button.config(state="disabled")
-        self._status_label.config(text=f"Saved {self._current_path.name}")
-        self._changelog.append(self._current_path.name, "Saved (image replaced)")
+        label = self._file_label(self._current_path)
+        self._status_label.config(text=f"Saved {label}")
+        self._changelog.append(label, "Saved (image replaced)")
 
     def _confirm_discard(self) -> bool:
         return messagebox.askyesno(
@@ -270,7 +277,8 @@ class IllustrationViewer(ImageArchiveViewer):
     empty_message = "No illustration files found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(files_root_of(self._project) / "illust", ".tpl")
+        # FE10 stores its 172 illustration textures as LZ10-wrapped TPLs.
+        return _sorted_files(files_root_of(self._project) / "illust", ".tpl", ".cms")
 
 
 class EndingViewer(ImageArchiveViewer):
@@ -314,3 +322,32 @@ class EquipmentViewer(ImageArchiveViewer):
         # a different container (multiple packed images, not a single TPL)
         # that's out of scope here; only the flat .tpl files are covered.
         return _sorted_files(files_root_of(self._project) / "zu", ".tpl")
+
+
+class PackedTextureViewer(ImageArchiveViewer):
+    """Images stored as the sole TPL member of an LZ10 pack."""
+
+    def _file_label(self, path: Path) -> str:
+        return path.parent.name
+
+    def _decode(self, _path: Path, raw: bytes) -> bytes:
+        return read_packed_tpl(raw)
+
+    def _encode(self, path: Path, tpl_bytes: bytes) -> bytes:
+        return replace_packed_tpl(path.read_bytes(), tpl_bytes)
+
+
+class SkyGraphicsViewer(PackedTextureViewer):
+    display_name = "Battle Skies"
+    empty_message = "No battle-sky texture packs found.\nExtract the project first."
+
+    def _iter_files(self) -> list[Path]:
+        return _sorted_files(files_root_of(self._project) / "sky", ".cmp")
+
+
+class BattleSceneryGraphicsViewer(PackedTextureViewer):
+    display_name = "Battle Scenery Textures"
+    empty_message = "No battle-scenery texture packs found.\nExtract the project first."
+
+    def _iter_files(self) -> list[Path]:
+        return _sorted_files(files_root_of(self._project) / "zbg", ".cmp")

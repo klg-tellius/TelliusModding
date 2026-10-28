@@ -28,6 +28,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from ..formats import dispo, lz10, pak
+from ..game_profile import files_root_of, profile_of, disc_root_of
 from .. import excel_io
 from ..project import ModProject
 from . import dispo_widgets
@@ -131,7 +132,17 @@ class DeploymentEditor(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:
-        self._chapter_paths = sorted(files_root_of(self._project).glob("zmap/*/dispos.cmp"))
+        profile = profile_of(self._project)
+        if "{diff}" in profile.deployment:
+            zmap = files_root_of(self._project) / "zmap"
+            self._chapter_paths = []
+            for folder in sorted(zmap.iterdir()) if zmap.is_dir() else []:
+                choices = [profile.deployment_path(files_root_of(self._project), folder.name, diff)
+                           for diff in profile.deployment_difficulties]
+                if path := next((candidate for candidate in choices if candidate.is_file()), None):
+                    self._chapter_paths.append(path)
+        else:
+            self._chapter_paths = sorted(disc_root_of(self._project).glob("**/zmap/*/dispos.cmp"))
         self._chapter_list.delete(0, "end")
         for path in self._chapter_paths:
             self._chapter_list.insert("end", path.parent.name)
@@ -152,10 +163,20 @@ class DeploymentEditor(EditorPanel):
 
         path = self._chapter_paths[selection[0]]
         try:
-            decompressed = lz10.decompress(path.read_bytes())
-            entries = pak.read_pak_entries(decompressed)
-            contents = {e.name: pak.read_pak_file_content(decompressed, e) for e in entries}
-            docs = {name: dispo.parse_dispo(data) for name, data in contents.items() if name.startswith("dispos_")}
+            profile = profile_of(self._project)
+            if "{diff}" in profile.deployment:
+                contents = {}
+                for diff in profile.deployment_difficulties:
+                    sibling = profile.deployment_path(files_root_of(self._project), path.parent.name, diff)
+                    if sibling.is_file():
+                        contents[sibling.name] = sibling.read_bytes()
+                entries = []
+                docs = {name: dispo.parse_dispo(data) for name, data in contents.items()}
+            else:
+                decompressed = lz10.decompress(path.read_bytes())
+                entries = pak.read_pak_entries(decompressed)
+                contents = {e.name: pak.read_pak_file_content(decompressed, e) for e in entries}
+                docs = {name: dispo.parse_dispo(data) for name, data in contents.items() if name.startswith("dispos_")}
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read chapter", str(exc), parent=self)
             return
@@ -240,10 +261,15 @@ class DeploymentEditor(EditorPanel):
             return
         self._add_unit_button.config(state="normal")
         self._delete_unit_button.config(state="normal")
-        for index, value in enumerate(unit):
-            name = dispo.field_name(index)
+        doc = self._docs.get(self._current_variant)
+        fields = dispo.supported_fields(doc) if doc is not None else range(len(unit))
+        for index in sorted(fields):
+            value = unit[index]
+            dialect = doc.dialect if doc is not None else "fe9"
+            name = dispo.field_name_for(index, dialect)
             label = f"{index} ({name})" if name else f"{index} (unread)"
-            self._field_tree.insert("", "end", iid=str(index), values=(label, dispo.describe_field(index, value)))
+            self._field_tree.insert("", "end", iid=str(index),
+                                    values=(label, dispo.describe_field_for(index, value, dialect)))
 
     def _show_unit(self, section_name: str, index: int) -> None:
         iid = next((i for i, key in self._unit_index.items() if key == (section_name, index)), None)
@@ -318,7 +344,8 @@ class DeploymentEditor(EditorPanel):
             return
         field_index = int(selection[0])
         choices = dispo.labels_by_prefix(self._docs.values())
-        dialog = _FieldEditDialog(self, field_index, unit[field_index], choices,
+        dialect = self._docs[self._current_variant].dialect
+        dialog = _FieldEditDialog(self, field_index, unit[field_index], choices, dialect=dialect,
                                   on_navigate_to_character=self._on_navigate_to_character)
         self.wait_window(dialog)
         if dialog.result is None:
@@ -329,7 +356,7 @@ class DeploymentEditor(EditorPanel):
         def edit(docs):
             docs[variant].section(section_name).units[index][field_index] = value
 
-        name = dispo.field_name(field_index) or f"field {field_index}"
+        name = dispo.field_name_for(field_index, dialect) or f"field {field_index}"
         self.apply(edit, f"{variant} {section_name}[{index}]: {name} = {value}", [variant])
 
     def group_keys(self) -> list:
@@ -385,7 +412,7 @@ class DeploymentEditor(EditorPanel):
         ):
             return
         try:
-            dispo.add_unit(self._docs[variant], section_name, list(unit))
+            dispo.add_unit(self._docs[variant], section_name, unit)
         except ValueError as exc:
             messagebox.showerror("Could not add unit", str(exc), parent=self)
             return
@@ -461,16 +488,23 @@ class DeploymentEditor(EditorPanel):
             contents = dict(self._pak_contents)
             for variant in self._edited:
                 contents[variant] = dispo.build_dispo(self._docs[variant])
-            files = [(entry.name, contents[entry.name]) for entry in self._pak_entries]
-            reserved = [self._pak_reserved[entry.name] for entry in self._pak_entries]
-            new_compressed = lz10.compress(pak.pack_pak(files, reserved))
-            self._project.write_keeping_original(self._current_path, new_compressed)
+            profile = profile_of(self._project)
+            if "{diff}" in profile.deployment:
+                for variant in self._edited:
+                    target = self._current_path.parent / variant
+                    self._project.write_keeping_original(target, contents[variant])
+            else:
+                files = [(entry.name, contents[entry.name]) for entry in self._pak_entries]
+                reserved = [self._pak_reserved[entry.name] for entry in self._pak_entries]
+                new_compressed = lz10.compress(pak.pack_pak(files, reserved))
+                self._project.write_keeping_original(self._current_path, new_compressed)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not save chapter", str(exc), parent=self)
             return False
         self._pak_contents = contents
         self._dirty = False
-        self._status_label.config(text=f"Saved {self._current_path.parent.name}/dispos.cmp")
+        label = "deployment files" if "{diff}" in profile_of(self._project).deployment else "dispos.cmp"
+        self._status_label.config(text=f"Saved {self._current_path.parent.name}/{label}")
         self._changelog.append(self._current_path.parent.name, "Saved deployment")
         self._notify()
         return True
@@ -515,22 +549,27 @@ class _FieldEditDialog(tk.Toplevel):
     variants use, or 0 for none), checkboxes for the unit flags and the item
     flags, a list for the army, and a number for the rest."""
 
-    def __init__(self, parent: tk.Misc, index: int, value, choices: dict[str, list[str]], on_navigate_to_character=None):
+    def __init__(self, parent: tk.Misc, index: int, value, choices: dict[str, list[str]], *,
+                 dialect: str = "fe9", on_navigate_to_character=None):
         super().__init__(parent)
-        name = dispo.field_name(index)
+        name = dispo.field_name_for(index, dialect)
         self.title(f"Edit field {index} ({name})" if name else f"Edit field {index}")
         self.resizable(False, False)
         self.result = None
         self._index = index
-        self._pointer = index in dispo.POINTER_FIELDS
+        growth_flags = dialect == "fe10" and index == dispo.FE10_GROWTH_FLAGS_FIELD
+        self._pointer = index in dispo.POINTER_FIELDS and not growth_flags
         offset, size, signed = dispo.FIELD_LAYOUT[index]
-        self._range = (-(2 ** (size * 8 - 1)), 2 ** (size * 8 - 1) - 1) if signed else (0, 2 ** (size * 8) - 1)
+        self._range = ((0, 0xFFFF) if growth_flags else
+                       ((-(2 ** (size * 8 - 1)), 2 ** (size * 8 - 1) - 1)
+                        if signed else (0, 2 ** (size * 8) - 1)))
         self._flags: dispo_widgets.FlagChecks | None = None
 
         frame = ttk.Frame(self, padding=12)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text=dispo.FIELD_HELP.get(index, ""), wraplength=360, justify="left").pack(anchor="w")
-        ttk.Label(frame, text=f"Current value: {dispo.describe_field(index, value)}",
+        ttk.Label(frame, text=dispo.field_help_for(index, dialect), wraplength=360,
+                  justify="left").pack(anchor="w")
+        ttk.Label(frame, text=f"Current value: {dispo.describe_field_for(index, value, dialect)}",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
 
         self._var = tk.StringVar(value=str(value))
@@ -539,6 +578,9 @@ class _FieldEditDialog(tk.Toplevel):
             options = choices.get(prefix, []) if prefix else sorted(label for labels in choices.values() for label in labels)
             ttk.Label(frame, text="Label (type any label, or 0 for none):", style="Muted.TLabel").pack(anchor="w")
             ttk.Combobox(frame, textvariable=self._var, values=options, width=36).pack(fill="x", pady=(0, 8))
+        elif growth_flags:
+            self._flags = dispo_widgets.FlagChecks(frame, value, dispo.FE10_GROWTH_FLAG_BITS, show_help=True)
+            self._flags.pack(anchor="w", pady=(0, 8))
         elif index == dispo.FIELD["flags"]:
             self._flags = dispo_widgets.FlagChecks(frame, value, dispo.FLAG_BITS, show_help=True)
             self._flags.pack(anchor="w", pady=(0, 8))

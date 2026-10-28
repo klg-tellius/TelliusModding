@@ -1,13 +1,11 @@
 """The native functions event scripts call (``externCall``), as the simulator
 models them. Behaviour follows the archive's ``script-functions`` article.
 
-Unit handles are :attr:`SimUnit.uid` (0 = no unit). Forces: 0 player,
-1 enemy, 2 allied, 3 other, 5 player reserve (modelled as an off-map player
-unit), 6 dead. Calls that only animate, wait, move the camera or play sound
-return 0 at once and are logged as ``script`` output; any other name the
-simulator doesn't model returns 0 with a warning, as the game does for a
-name nobody registered. ``startup.cmb`` helpers are not here: they are
-script functions and run as bytecode.
+Unit handles are :attr:`SimUnit.uid` (0 = no unit). Calls that only animate,
+wait, move the camera or play sound return their classified neutral value and
+are logged. An unclassified RFEE01 call stops with an actionable diagnostic;
+it is never silently treated as a zero-valued stateful call. ``startup.cmb``
+helpers are script functions and run as bytecode.
 """
 
 from __future__ import annotations
@@ -15,7 +13,12 @@ from __future__ import annotations
 from . import combat, setup
 from .state import ENEMY, PLAYER, MessageShow, SimUnit
 
-HANDLERS: dict = {}
+SHARED_HANDLERS: dict = {}
+FE9_HANDLERS: dict = {}
+FE10_HANDLERS: dict = {}
+# Compatibility name for extensions and existing tests. Shared handlers are
+# never silently replaced by a game-specific implementation.
+HANDLERS = SHARED_HANDLERS
 
 #: Natives that only present something (camera, sound, fades, images, waits...): no effect on play.
 PRESENTATION_PREFIXES = (
@@ -45,6 +48,50 @@ def native(*names):
     return register
 
 
+def handler(world, name: str):
+    specific = FE10_HANDLERS if world.dialect.name == "fe10" else FE9_HANDLERS
+    return specific.get(name) or SHARED_HANDLERS.get(name)
+
+
+def classification(world, name: str) -> str:
+    """Return ``stateful``, ``presentation`` or ``unclassified`` for an extern."""
+    if handler(world, name) is not None:
+        return "stateful"
+    if name in PRESENTATION_RESULTS or name.startswith(PRESENTATION_PREFIXES):
+        return "presentation"
+    return "unclassified"
+
+
+def audit_scripts(world) -> dict[str, list[str]]:
+    """Statically classify externs used by every loaded chapter/helper script.
+
+    Scanning all named functions is a conservative superset of the transitive
+    graph from tactical entry points and includes the loaded ``startup.cmb``.
+    """
+    from ..formats.cmb.build_catalog import walk_calls
+    from ..formats.cmb.decompiler import Decompiler
+
+    exported = {fn.id_string for script in world.scripts for fn in script.functions if fn.id_string}
+    known = {fn.id_string: fn.num_args for script in world.scripts for fn in script.functions if fn.id_string}
+    result = {"stateful": [], "presentation": [], "unclassified": []}
+    for script in world.scripts:
+        decompiler = Decompiler(script, known)
+        calls = []
+        walk_calls(decompiler.module().functions, calls)
+        for call in calls:
+            name = call.name
+            if not isinstance(name, str) or (not call.extern and name in decompiler.names.def_set):
+                continue
+            if name in exported or name in ("streq", "strne"):
+                continue
+            kind = classification(world, name)
+            if name not in result[kind]:
+                result[kind].append(name)
+    for names in result.values():
+        names.sort()
+    return result
+
+
 def unmodelled(vm, name: str, args: list) -> int:
     shown = f"{name}({', '.join(repr(a) for a in args)})"
     if name in PRESENTATION_RESULTS:
@@ -55,6 +102,9 @@ def unmodelled(vm, name: str, args: list) -> int:
     if name.startswith(PRESENTATION_PREFIXES):
         vm.state.emit("script", shown)
         return 0
+    if vm.world.dialect.name == "fe10":
+        raise RuntimeError(f"Unsupported state-changing RFEE01 native: {shown}. "
+                           "Classify it as presentation-only or add an FE10 runtime handler.")
     vm.state.emit("warn", f"Not simulated: {shown} -> 0")
     return 0
 
@@ -768,6 +818,35 @@ def _terrain(vm, a):
     return t.index if t is not None else 0
 
 
+@native("SetSight")
+def _set_sight(vm, a):
+    vm.state.sight = max(0, int(a[0])) if a else 0
+    vm.state.emit("script", f"Sight radius = {vm.state.sight}")
+    return 1
+
+
+@native("MapGetSight")
+def _get_sight(vm, a):
+    return vm.state.sight
+
+
+@native("BuildInstTorch")
+def _torch(vm, a):
+    tile = (int(a[0]), int(a[1]))
+    duration = max(1, int(a[3]) if len(a) > 3 else 1)
+    vm.state.sight_sources[tile] = duration
+    vm.state.emit("script", f"Torch lit at {tile}")
+    return 1
+
+
+@native("BuildInstExtinction")
+def _extinction(vm, a):
+    tile = (int(a[0]), int(a[1]))
+    vm.state.sight_sources.pop(tile, None)
+    vm.state.emit("script", f"Torch extinguished at {tile}")
+    return 1
+
+
 @native("UnitGetMoveCost")
 def _move_cost(vm, a):
     unit = _unit(vm, a[0])
@@ -836,3 +915,10 @@ def _netuzo(vm, a):
         return 0
     vm.insert(Combat(attacker.uid, defender.uid, index, max(1, d)))
     return 1
+
+
+# Explicit dialect registries make ownership inspectable even where the two
+# retail handlers currently share a Python primitive.
+FE9_HANDLERS.update({name: SHARED_HANDLERS[name] for name in ("NetuzoBattle",)})
+FE10_HANDLERS.update({name: SHARED_HANDLERS[name] for name in
+                      ("SetSight", "MapGetSight", "BuildInstTorch", "BuildInstExtinction")})

@@ -10,6 +10,7 @@ from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
 from ..formats.fe9_message_scene import layout_from_label, layout_label
+from . import theme
 from .scene_editor import _Picker, _Thumbnails, background_names, layout_labels
 
 
@@ -102,10 +103,15 @@ class FE9ConversationPreview(ttk.Frame):
         self._canvas.bind("<Configure>", lambda event: self._schedule_render())
         self._canvas.bind("<Button-1>", lambda event: self._next())
         self._diagnostics = tk.Text(self, height=3, wrap="word", font=("Segoe UI", 9), borderwidth=0,
-                                   background="#f4f4f4", foreground="#824718", state="disabled")
+                                   state="disabled")
         self._diagnostics.pack(fill="x", pady=(3, 0))
+        self._paint_diagnostics()
+        theme.on_change(self._diagnostics, self._paint_diagnostics)
         self.bind("<Destroy>", self._destroyed)
         self._reload()
+
+    def _paint_diagnostics(self):
+        self._diagnostics.configure(background=theme.color("surface_alt"), foreground=theme.color("warn"))
 
     def _destroyed(self, event):
         if event.widget is self:

@@ -4,7 +4,7 @@ from pathlib import Path
 from fe_modding.formats.extended_flags import FlagLayout, ExtendedState, HUB_ALIASES
 from fe_modding.formats.event_flags import flag_hash
 from fe_modding.game_code.dol import Dol, DolError
-from fe_modding.game_code.extended_flag_runtime import build_core, LIVE_OFFSET, BASE
+from fe_modding.game_code.extended_flag_runtime import build_core, JP_CARD, LIVE_OFFSET, BASE
 from fe_modding.game_code.extended_flag_sites import PARTY, SITES, SKILL_TEST
 from tests.ppc_flag_cpu import CPU
 
@@ -106,6 +106,32 @@ class NativeFlagTests(unittest.TestCase):
                 self.call("flag_init")
                 self.call("flag_set", "Aa")
                 self.assertEqual(self.call("flag_get", "Aa")[1], 0)
+
+    def test_checkpoint_and_multipart_resumes_preserve_local_values(self):
+        # (party resume point, card buffer open, loaded block's resume point, kept). A Suspend
+        # block's party resume point is the chapter's entry value, never 8: only its header says 8.
+        code = "GFEJ01"
+        block = 0x80500000
+        for party_mode, card_open, header_mode, kept in (
+                (4, False, 0, False),     # fresh chapter, card closed
+                (4, False, 8, False),     # stale block pointer after memory_card_close
+                (4, True, 4, False),      # loading a chapter-start file save
+                (4, True, 8, True),       # resuming a Suspend made in a chapter entered fresh
+                (1, True, 8, True),       # ... in a chapter entered from the base
+                (5, False, 0, True), (6, False, 0, True), (7, False, 0, True)):    # multipart
+            with self.subTest(party_mode=party_mode, card_open=card_open, header_mode=header_mode):
+                self.setup_region(code)
+                self.call("flag_register_local", "Visited")
+                self.call("flag_set", "Visited")
+                self.cpu.write(PARTY[code] + 0x54, party_mode, 1)
+                self.cpu.write(JP_CARD, 0x80480000 if card_open else 0, 4)
+                self.cpu.write(JP_CARD + 4, block, 4)
+                self.cpu.write(block + 0x65, header_mode, 1)
+                self.call("flag_reset_locals")
+                # The reset always clears registration state. Re-register
+                # exactly as the chapter startup script does before reading.
+                self.call("flag_register_local", "Visited")
+                self.assertEqual(self.call("flag_get", "Visited")[1], int(kept))
 
     def test_hub_aliases_use_no_legacy_storage_and_foreign_tables_fall_back(self):
         for code in SITES:

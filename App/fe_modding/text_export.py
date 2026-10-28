@@ -1,4 +1,4 @@
-"""Export a Path of Radiance project's game data as text, for version control
+"""Export a Tellius project's game data as text, for version control
 and diffs (Disc & Patch › **Export as text…**).
 
 One folder, rewritten on each export, in a stable order so two exports of
@@ -17,6 +17,13 @@ nearly the same project differ only where the data does:
 - ``faces.tsv``: the face table;
 - ``zdbx/``: every battle-engine DBX table, as UTF-8 text.
 
+Radiant Dawn exports the decoded portions of that game instead:
+
+- ``FE10Data/``: every editable database table as semantic JSON;
+- ``FE10Growth/characters.json``: the per-level stat lines;
+- ``messages/``: message bytecode in the editor's readable ``<...>`` notation;
+- ``scripts/*.fe10s``: event scripts decompiled with the FE10 dialect.
+
 Export only: the binary files stay the source of truth. Each part is
 optional; a part that cannot be read is listed in the returned problems
 instead of stopping the export.
@@ -31,6 +38,8 @@ import shutil
 from pathlib import Path
 from typing import Callable, Optional
 from .game_profile import files_root_of
+
+from .games import Game
 
 SKIP_KEYS = {"offset", "address"}
 MARKER = ".tellius_text_export"
@@ -82,6 +91,35 @@ def _fe8data(files: Path, out: Path) -> list[Path]:
     return written
 
 
+def _semantic_record(record) -> dict:
+    """An FE10 record without binary offsets/pointers, suitable for stable diffs."""
+    row = {key: value for key, value in record.values.items() if key != "block"}
+    row.update(record.lists)
+    if record.bonuses is not None:
+        row["bonuses"] = record.bonuses
+    return row
+
+
+def _fe10data(project, out: Path) -> list[Path]:
+    from .formats import fe10data
+
+    database = fe10data.read_fe10data(project.read_logical("game_data"))
+    return [_write_json(out / "FE10Data" / f"{kind}.json",
+                        [_semantic_record(record) for record in database.table(kind)])
+            for kind in fe10data.ALL_KINDS]
+
+
+def _fe10growth(project, out: Path) -> list[Path]:
+    from .formats import fe10growth
+
+    records = fe10growth.read_growth(project.read_logical("growth_data"))
+    rows = [{"pid": record.pid, "first": record.first, "last": record.last,
+             "levels": {str(record.level_of(i)): dict(zip(fe10growth.STAT_NAMES, stats))
+                        for i, stats in enumerate(record.lines)}}
+            for record in records]
+    return [_write_json(out / "FE10Growth" / "characters.json", rows)]
+
+
 def _deployments(files: Path, out: Path) -> list[Path]:
     from .formats import dispo, lz10, pak
 
@@ -114,8 +152,11 @@ def _shops(files: Path, out: Path) -> list[Path]:
     return written
 
 
-def _messages(files: Path, out: Path) -> list[Path]:
-    from .formats import game_text, message
+def _messages(project, out: Path) -> list[Path]:
+    from .formats import fe10_message, game_text, message
+
+    files = files_root_of(project)
+    fe10 = project.game == Game.RADIANT_DAWN
 
     def readable(text: str) -> str:  # message.py reads bytes as cp437; show the game's own characters
         return game_text.decode(text.encode(message.ENCODING))
@@ -124,19 +165,22 @@ def _messages(files: Path, out: Path) -> list[Path]:
     for path in sorted((files / "Mess").glob("*.m")):
         lines = []
         for m in message.read_messages_path(path):
-            lines.append(f"## {readable(m.speaker)}\n{readable(m.text)}\n")
+            body = fe10_message.to_display(m.text) if fe10 else readable(m.text)
+            lines.append(f"## {readable(m.speaker)}\n{body}\n")
         written.append(_write_text(out / "messages" / f"{path.stem}.txt", "\n".join(lines)))
     return written
 
 
-def _scripts(files: Path, out: Path) -> list[Path]:
+def _scripts(project, out: Path) -> list[Path]:
     from .formats.cmb import decompile, read_cmb_path
 
+    files = files_root_of(project)
+    extension = ".fe10s" if project.game == Game.RADIANT_DAWN else ".fe9s"
     written = []
     for path in sorted((files / "Scripts").glob("*.cmb")):
         source = decompile(read_cmb_path(path))
         source = source[0] if isinstance(source, tuple) else source
-        written.append(_write_text(out / "scripts" / f"{path.stem}.fe9s", source))
+        written.append(_write_text(out / "scripts" / f"{path.stem}{extension}", source))
     return written
 
 
@@ -184,6 +228,18 @@ PARTS: tuple[tuple[str, str], ...] = (
     ("zdbx", "Battle-engine DBX tables"),
 )
 
+FE10_PARTS: tuple[tuple[str, str], ...] = (
+    ("FE10Data", "Characters, classes, items, skills and the other FE10Data tables"),
+    ("FE10Growth", "Character level-stat tables"),
+    ("messages", "Messages"),
+    ("scripts", "Event scripts (decompiled)"),
+)
+
+
+def parts_for(project) -> tuple[tuple[str, str], ...]:
+    """The semantic exports implemented for the project's game."""
+    return FE10_PARTS if project.game == Game.RADIANT_DAWN else PARTS
+
 
 def export_project(project, dest: Path, parts: Optional[set[str]] = None,
                    progress: Optional[Callable[[str], None]] = None) -> tuple[list[Path], list[str]]:
@@ -200,12 +256,13 @@ def export_project(project, dest: Path, parts: Optional[set[str]] = None,
                       encoding="utf-8", newline="\n")
     runners = {
         "FE8Data": lambda: _fe8data(files, dest), "deployments": lambda: _deployments(files, dest),
-        "shops": lambda: _shops(files, dest), "messages": lambda: _messages(files, dest),
-        "scripts": lambda: _scripts(files, dest), "sound": lambda: _sound(files, dest),
+        "FE10Data": lambda: _fe10data(project, dest), "FE10Growth": lambda: _fe10growth(project, dest),
+        "shops": lambda: _shops(files, dest), "messages": lambda: _messages(project, dest),
+        "scripts": lambda: _scripts(project, dest), "sound": lambda: _sound(files, dest),
         "faces": lambda: _faces(files, dest), "zdbx": lambda: _zdbx(project, dest),
     }
     written, problems = [], []
-    for name, label in PARTS:
+    for name, label in parts_for(project):
         if parts is not None and name not in parts:
             continue
         if progress is not None:

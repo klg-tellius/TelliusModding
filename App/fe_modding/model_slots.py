@@ -16,12 +16,14 @@ character record points at that ID (``aid_unpromoted``/``aid_promoted`` in
 from __future__ import annotations
 
 import re
-from dataclasses import replace
+import shutil
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .exceptions import ProjectError
-from .formats import anim_registry, fe8data, zdbx
-from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, files_root_of, logical_game_path_of, profile_of
+from .formats import anim_registry, fe8data, fe10_anim, fe10_battle, fe10data, lz10, zdbx
+from .games import Game
+from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_game_path_of, profile_of, files_root_of
 from .project import ModProject
 from .game_files import files_of, remove_tree
 
@@ -53,6 +55,12 @@ def _vanilla_bytes(project: ModProject, path: Path) -> bytes:
     return data if data is not None else files.read(path)
 
 
+def _vanilla_logical(project: ModProject, name: str) -> bytes:
+    path = project.logical_path(name)
+    data = _vanilla_bytes(project, path)
+    return lz10.decompress(data) if project.profile.logical(name).compressed else data
+
+
 # -- battle models --------------------------------------------------------------
 
 def _read_zdbx(project: ModProject) -> dict[str, bytes]:
@@ -65,6 +73,11 @@ def _write_zdbx(project: ModProject, files: dict[str, bytes]) -> None:
 
 def battle_model_codes(project: ModProject) -> list[str]:
     """Codes with both a ``zu/`` folder and a ``zu/<code>.dbx`` table."""
+    if project.game is Game.RADIANT_DAWN:
+        battle = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
+        folder = _files(project) / "zu"
+        return sorted(unit.model_name for unit in battle.unit_texture_sets
+                      if (folder / unit.model_name).is_dir())
     tables = {name[3:-4] for name in _read_zdbx(project) if name.startswith("zu/") and not name.endswith("_prm.dbx")}
     folder = _files(project) / "zu"
     return sorted(code for code in tables if (folder / code).is_dir())
@@ -72,6 +85,46 @@ def battle_model_codes(project: ModProject) -> list[str]:
 
 def clone_battle_model(project: ModProject, source_code: str, new_code: str) -> list[Path]:
     """Copy ``zu/<source_code>/`` to ``zu/<new_code>/`` with its tables; return the new files."""
+    if project.game is Game.RADIANT_DAWN:
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,16}", new_code):
+            raise ProjectError("An RD battle model code uses 1-16 letters, digits or underscore.")
+        source = _files(project) / "zu" / source_code
+        dest = _files(project) / "zu" / new_code
+        if not source.is_dir():
+            raise ProjectError(f"No battle model {source_code!r}.")
+        if dest.exists():
+            raise ProjectError(f"The battle model {new_code!r} already exists.")
+        data = project.read_logical("battle_data")
+        battle = fe10_battle.read_fe10_battle(data)
+        unit_index = next((i for i, unit in enumerate(battle.unit_texture_sets)
+                           if unit.model_name == source_code), None)
+        if unit_index is None:
+            raise ProjectError(f"No FE10BUnit row for {source_code!r}.")
+        source_description = dict(battle.table("FE10BUnit").records[unit_index].strings).get(0, source_code)
+        selector_index = next((i for i, record in enumerate(battle.table("FE10BAnimData").records)
+                               if dict(record.strings).get(12) == source_description), None)
+        if selector_index is None:
+            raise ProjectError(f"No battle selector for {source_code!r}.")
+        selector = dict(battle.table("FE10BAnimData").records[selector_index].strings)
+        description = f"Editor model {new_code}"
+        try:
+            data, _unit = fe10_battle.clone_unit_model(
+                data, unit_index, new_code, description)
+            data, _selector = fe10_battle.clone_battle_selector(
+                data, selector_index, description, aid=selector.get(0),
+                pid=selector.get(4), jid=selector.get(8))
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(str(exc)) from exc
+        shutil.copytree(source, dest)
+        old_texture = dest / f"{source_code}.tpl"
+        if old_texture.is_file() and source_code != new_code:
+            old_texture.rename(dest / f"{new_code}.tpl")
+        try:
+            project.write_logical("battle_data", data)
+        except Exception:
+            shutil.rmtree(dest)
+            raise
+        return sorted(path for path in dest.rglob("*") if path.is_file())
     if not zdbx.MODEL_CODE_RE.match(new_code):
         raise ProjectError(f"A model code is 4 lowercase letters or digits (got {new_code!r}).")
     source = _files(project) / "zu" / source_code
@@ -103,6 +156,25 @@ def clone_battle_model(project: ModProject, source_code: str, new_code: str) -> 
 def assign_battle_model(project: ModProject, code: str, *, jid: str | None = None,
                         pid: str | None = None, aid: str | None = None, comment: str = "") -> None:
     """Add or replace the job-list line selecting ``code`` (see ``zdbx.set_job_model``)."""
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("battle_data")
+        battle = fe10_battle.read_fe10_battle(data)
+        unit_index = next((i for i, unit in enumerate(battle.unit_texture_sets)
+                           if unit.model_name == code), None)
+        if unit_index is None:
+            raise ProjectError(f"No battle model {code!r}.")
+        description = dict(battle.table("FE10BUnit").records[unit_index].strings).get(0)
+        selector_index = next((i for i, record in enumerate(battle.table("FE10BAnimData").records)
+                               if dict(record.strings).get(12) == description), None)
+        if selector_index is None:
+            raise ProjectError(f"No battle selector for {code!r}.")
+        try:
+            data = fe10_battle.update_battle_selector(
+                data, selector_index, aid=aid, pid=pid, jid=jid)
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(str(exc)) from exc
+        project.write_logical("battle_data", data)
+        return
     tables = _read_zdbx(project)
     if f"zu/{code}.dbx" not in tables:
         raise ProjectError(f"No battle model {code!r}.")
@@ -146,6 +218,9 @@ def remove_job_line(project: ModProject, key: str) -> None:
 
 
 def vanilla_battle_codes(project: ModProject) -> set[str]:
+    if project.game is Game.RADIANT_DAWN:
+        return {unit.model_name for unit in
+                fe10_battle.read_fe10_battle(_vanilla_logical(project, "battle_data")).unit_texture_sets}
     tables = zdbx.read_zdbx_files(_vanilla_bytes(project, _logical(project, "battle_data")))
     return {name[3:-4] for name, _data in tables if name.startswith("zu/") and not name.endswith("_prm.dbx")}
 
@@ -158,6 +233,24 @@ def remove_battle_model(project: ModProject, code: str) -> int:
     Returns the number of job-list lines changed. Vanilla models refuse."""
     if code in vanilla_battle_codes(project):
         raise ProjectError(f"{code!r} is one of the game's own battle models.")
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("battle_data")
+        battle = fe10_battle.read_fe10_battle(data)
+        unit_index = next((i for i, unit in enumerate(battle.unit_texture_sets)
+                           if unit.model_name == code), None)
+        if unit_index is None:
+            raise ProjectError(f"No battle model {code!r}.")
+        description = dict(battle.table("FE10BUnit").records[unit_index].strings).get(0)
+        selector_indices = [i for i, record in enumerate(battle.table("FE10BAnimData").records)
+                            if dict(record.strings).get(12) == description]
+        for selector_index in reversed(selector_indices):
+            data = fe10_battle.remove_battle_selector(data, selector_index)
+        data = fe10_battle.remove_unit_model(data, unit_index)
+        project.write_logical("battle_data", data)
+        folder = _files(project) / "zu" / code
+        if folder.is_dir():
+            shutil.rmtree(folder)
+        return len(selector_indices)
     tables = _read_zdbx(project)
     if f"zu/{code}.dbx" not in tables:
         raise ProjectError(f"No battle model {code!r}.")
@@ -186,7 +279,24 @@ def _anim_path(project: ModProject) -> Path:
     return _logical(project, "anim_data")
 
 
-def map_model_records(project: ModProject) -> list[anim_registry.AnimRecord]:
+@dataclass(frozen=True)
+class RdMapModelRecord:
+    aid_name: str
+    class_folder: str
+    model_index: int
+    texture_ids: tuple[int, int, int, int] = (0, 0, 0, 0)
+
+    @property
+    def base_aid(self) -> str:
+        return self.aid_name
+
+
+def map_model_records(project: ModProject) -> list[anim_registry.AnimRecord | RdMapModelRecord]:
+    if project.game is Game.RADIANT_DAWN:
+        document = fe10_anim.read_fe10_anim(project.read_logical("anim_data"))
+        return [RdMapModelRecord(header.aid_name, document.models[header.model_index].folder,
+                                 header.model_index)
+                for header in document.headers]
     return anim_registry.read_anim_registry(_anim_path(project).read_bytes())
 
 
@@ -198,6 +308,38 @@ def clone_map_model(project: ModProject, source_aid: str, new_aid: str, new_fold
     ``texture_ids`` replaces the four per-army texture numbers."""
     if not AID_BASE_RE.match(new_aid):
         raise ProjectError(f"An animation ID is AID_ followed by capitals, digits or _ (got {new_aid!r}).")
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("anim_data")
+        document = fe10_anim.read_fe10_anim(data)
+        source_index = next((i for i, header in enumerate(document.headers)
+                             if header.aid_name == source_aid), None)
+        if source_index is None:
+            raise ProjectError(f"No map model {source_aid!r}.")
+        if any(header.aid_name == new_aid for header in document.headers):
+            raise ProjectError(f"The animation ID {new_aid!r} already exists.")
+        source_header = document.headers[source_index]
+        source_folder = document.models[source_header.model_index].folder
+        folder = new_folder or new_aid.removeprefix("AID_").lower()
+        if not FOLDER_RE.match(folder):
+            raise ProjectError(f"A folder name is lowercase letters, digits or _ (got {folder!r}).")
+        source = _files(project) / "ymu" / source_folder.rstrip("/")
+        dest = _files(project) / "ymu" / folder
+        if not source.is_dir():
+            raise ProjectError(f"No ymu/{source_folder}/ model folder.")
+        if dest.exists():
+            raise ProjectError(f"ymu/{folder}/ already exists.")
+        try:
+            data, model_index = fe10_anim.clone_anim_model(data, source_header.model_index, folder)
+            data, _header_index = fe10_anim.clone_anim_header(data, source_index, new_aid, model_index)
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(str(exc)) from exc
+        shutil.copytree(source, dest)
+        try:
+            project.write_logical("anim_data", data)
+        except Exception:
+            shutil.rmtree(dest)
+            raise
+        return sorted(path for path in dest.rglob("*") if path.is_file())
     records = map_model_records(project)
     sources = [r for r in records if r.base_aid == source_aid]
     if not sources:
@@ -237,6 +379,9 @@ def set_map_textures(project: ModProject, base_aid: str, texture_ids: tuple[int,
 
 
 def vanilla_map_aids(project: ModProject) -> set[str]:
+    if project.game is Game.RADIANT_DAWN:
+        return {header.aid_name for header in
+                fe10_anim.read_fe10_anim(_vanilla_logical(project, "anim_data")).headers}
     return {r.base_aid for r in anim_registry.read_anim_registry(_vanilla_bytes(project, _anim_path(project)))}
 
 
@@ -247,6 +392,47 @@ def remove_map_model(project: ModProject, base_aid: str) -> list[str]:
     extracted value back. Returns what was changed. Vanilla IDs refuse."""
     if base_aid in vanilla_map_aids(project):
         raise ProjectError(f"{base_aid!r} is one of the game's own animation IDs.")
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("anim_data")
+        document = fe10_anim.read_fe10_anim(data)
+        header_index = next((i for i, header in enumerate(document.headers)
+                             if header.aid_name == base_aid), None)
+        if header_index is None:
+            raise ProjectError(f"No map model {base_aid!r}.")
+        model_index = document.headers[header_index].model_index
+        folder = document.models[model_index].folder
+        data = fe10_anim.remove_anim_header(data, header_index)
+        remaining = fe10_anim.read_fe10_anim(data)
+        if not any(header.model_index == model_index for header in remaining.headers):
+            data = fe10_anim.remove_anim_model(data, model_index)
+            remaining = fe10_anim.read_fe10_anim(data)
+        project.write_logical("anim_data", data)
+        changes = [f"Removed {base_aid} from FE10Anim.cms"]
+
+        path = project.logical_path("game_data")
+        current_data = project.read_logical("game_data")
+        current = fe10data.read_fe10data(current_data)
+        vanilla = fe10data.read_fe10data(_vanilla_logical(project, "game_data"))
+        for record in current.characters:
+            original = vanilla.characters[record.index] if record.index < len(vanilla.characters) else None
+            for field_name in ("aid_1", "aid_2", "aid_3", "aid_4"):
+                if record.values.get(field_name) == base_aid:
+                    value = original.values.get(field_name) if original else None
+                    current_data = fe10data.patch_field(
+                        current_data, "character", record.index, field_name, value)
+                    changes.append(f"{record.values.get('pid')} {field_name} back to {value or 'default'}")
+        if current_data != project.read_logical("game_data"):
+            project.write_logical("game_data", current_data)
+
+        vanilla_folders = {model.folder for model in
+                           fe10_anim.read_fe10_anim(_vanilla_logical(project, "anim_data")).models}
+        folder_path = _files(project) / "ymu" / folder.rstrip("/")
+        if (folder not in vanilla_folders
+                and not any(model.folder == folder for model in remaining.models)
+                and folder_path.is_dir()):
+            shutil.rmtree(folder_path)
+            changes.append(f"Deleted ymu/{folder}")
+        return changes
     records = map_model_records(project)
     removed = [r for r in records if r.base_aid == base_aid]
     if not removed:
@@ -287,6 +473,16 @@ def assign_map_model(project: ModProject, pid: str, aid: str | None, *, promoted
     """Point a character's unpromoted (or promoted) animation ID at ``aid``."""
     if aid is not None and not any(r.base_aid == aid for r in map_model_records(project)):
         raise ProjectError(f"No map model {aid!r}.")
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("game_data")
+        characters = fe10data.read_fe10data(data).characters
+        index = next((record.index for record in characters if record.values.get("pid") == pid), None)
+        if index is None:
+            raise ProjectError(f"No character {pid!r}.")
+        field_name = "aid_2" if promoted else "aid_1"
+        project.write_logical("game_data", fe10data.patch_field(
+            data, "character", index, field_name, aid))
+        return
     path = _logical(project, "game_data")
     data = path.read_bytes()
     characters = fe8data.read_fe8data(data).characters

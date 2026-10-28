@@ -232,6 +232,10 @@ class GaFooter:
     order: list[int] = field(default_factory=list)
     pad_word: int = 0
     trailing: bytes = b""  # bytes after the lead-in that no slot points at (the empty-footer variant)
+    # FE10 uses a compact 12-byte descriptor whose kind-specific block can
+    # point backwards into the animation. Its semantics are not decoded yet;
+    # preserving it verbatim still permits curve playback and lossless writes.
+    compact_raw: Optional[bytes] = None
 
 
 @dataclass
@@ -241,6 +245,10 @@ class GaAnimation:
     curves: list[AnimCurve] = field(repr=False)
     events: list[EventKey] = field(default_factory=list)
     footer: Optional[GaFooter] = None
+    # Opaque bytes between the final decoded keyframe and the footer (or
+    # EOF). FE10 effect/weapon animations can keep kind-specific payloads
+    # here even when their ordinary bone group count is zero.
+    body_trailing: bytes = b""
 
     def curves_for_bone(self, bone_index: int) -> list[AnimCurve]:
         return [c for c in self.curves if c.bone_index == bone_index]
@@ -519,6 +527,11 @@ def write_event_block(events: list[EventKey]) -> bytes:
 
 
 def _read_footer(data: bytes, footer_start: int) -> GaFooter:
+    if len(data) - footer_start < FOOTER_LEAD_IN_SIZE:
+        raw = data[footer_start:]
+        if len(raw) != 12:
+            raise AnimationError(f"Unknown compact footer size {len(raw)} (expected 12).")
+        return GaFooter(compact_raw=raw)
     slots = struct.unpack(f">{FOOTER_SLOTS}I", data[footer_start : footer_start + 36])
     (pad_word,) = struct.unpack(">I", data[footer_start + 36 : footer_start + 40])
     used = sorted((addr, slot) for slot, addr in enumerate(slots) if addr)
@@ -557,12 +570,15 @@ def read_animation(stream: BinaryIO, size: int) -> GaAnimation:
                 bone_of_curve[index] = group.bone_index
 
     curves = []
+    keyframes_end = keyframe_addr
     for i in range(curve_bytes // CURVE_RECORD_SIZE):
-        channel, scale_raw, end_frame, count, _unused, offset_words = struct.unpack_from(
+        channel, scale_raw, end_frame, count, offset_high, offset_low = struct.unpack_from(
             ">6H", data, table_addr + i * CURVE_RECORD_SIZE
         )
+        offset_words = (offset_high << 16) | offset_low
         start = keyframe_addr + offset_words * SAMPLE_SIZE
         keyframes = [Keyframe(*struct.unpack_from(">Hh", data, start + j * SAMPLE_SIZE)) for j in range(count)]
+        keyframes_end = max(keyframes_end, start + count * SAMPLE_SIZE)
         curves.append(
             AnimCurve(
                 bone_index=bone_of_curve[i],
@@ -575,7 +591,9 @@ def read_animation(stream: BinaryIO, size: int) -> GaAnimation:
 
     footer = _read_footer(data, header.footer_addr) if header.footer_addr else None
     events = read_event_block(footer.blocks[0]) if footer and footer.blocks[0] else []
-    return GaAnimation(header=header, groups=groups, curves=curves, events=events, footer=footer)
+    body_end = header.footer_addr or len(data)
+    return GaAnimation(header=header, groups=groups, curves=curves, events=events, footer=footer,
+                       body_trailing=data[keyframes_end:body_end])
 
 
 def read_animation_bytes(data: bytes) -> GaAnimation:
@@ -603,26 +621,32 @@ def write_animation(anim: GaAnimation) -> bytes:
         out += struct.pack(">4I", g.bone_index, g.channel_mask, g.first_curve, g.curve_count)
     keyframe_data = bytearray()
     for c in anim.curves:
+        offset_words = len(keyframe_data) // SAMPLE_SIZE
         out += struct.pack(
-            ">6H", c.channel, c.scale_shift << 8, c.end_frame, len(c.keyframes), 0, len(keyframe_data) // SAMPLE_SIZE
+            ">6H", c.channel, c.scale_shift << 8, c.end_frame, len(c.keyframes),
+            offset_words >> 16, offset_words & 0xFFFF
         )
         for kf in c.keyframes:
             keyframe_data += struct.pack(">Hh", kf.frame, kf.value)
     out += keyframe_data
+    out += anim.body_trailing
 
     footer_at = 0
     if anim.footer is not None:
         footer_at = len(out)
-        slots = [0] * FOOTER_SLOTS
-        body = bytearray()
-        for slot in anim.footer.order:
-            block = anim.footer.blocks[slot]
-            if block is None:
-                raise AnimationError(f"Footer slot {slot} is in the order list but has no block.")
-            slots[slot] = footer_at + FOOTER_LEAD_IN_SIZE + len(body)
-            body += block
-        out += struct.pack(f">{FOOTER_SLOTS}I", *slots) + struct.pack(">I", anim.footer.pad_word)
-        out += body + anim.footer.trailing
+        if anim.footer.compact_raw is not None:
+            out += anim.footer.compact_raw
+        else:
+            slots = [0] * FOOTER_SLOTS
+            body = bytearray()
+            for slot in anim.footer.order:
+                block = anim.footer.blocks[slot]
+                if block is None:
+                    raise AnimationError(f"Footer slot {slot} is in the order list but has no block.")
+                slots[slot] = footer_at + FOOTER_LEAD_IN_SIZE + len(body)
+                body += block
+            out += struct.pack(f">{FOOTER_SLOTS}I", *slots) + struct.pack(">I", anim.footer.pad_word)
+            out += body + anim.footer.trailing
 
     words[_W_FOOTER] = footer_at
     words[_W_GROUP_COUNT] = len(anim.groups)

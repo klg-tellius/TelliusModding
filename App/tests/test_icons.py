@@ -7,6 +7,7 @@ from PIL import Image
 
 from fe_modding.formats import icons
 from fe_modding.gui import model_viewer
+from fe_modding.game_profile import ICONS, RADIANT_DAWN_PROFILE
 
 
 def _sheet(width: int, height: int, size: int) -> Image.Image:
@@ -42,6 +43,9 @@ class IconCellTests(unittest.TestCase):
         self.assertEqual(icons.skill_icon(self.images, 20).getpixel((0, 0))[0], 19)
         self.assertEqual(icons.skill_icon(self.images, 33).getpixel((31, 31))[0], 32)  # second row
         self.assertEqual(icons.skill_icon(self.images, 1).size, (32, 32))
+
+    def test_radiant_dawn_icons_are_enabled(self):
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(ICONS))
 
 
 class WeaponModelTests(unittest.TestCase):

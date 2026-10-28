@@ -47,6 +47,8 @@ SCRIPTS = "scripts"            # chapter event scripts
 SHOPS = "shops"
 AI = "ai"                      # cp_data
 BATTLE_TABLES = "battle_tables"  # zdbx and the battle viewers
+BATTLE_DATA = "battle_data"      # native battle-data catalogue / structural browser
+BATTLE_CAMERAS = "battle_cameras"  # native battle-camera catalogue and preview
 ANIM = "anim"                  # map-model registry
 MODELS = "models"              # 3D model viewer / slots / rigs
 FONTS = "fonts"
@@ -57,15 +59,19 @@ VIDEO = "video"
 SAVES = "saves"
 GAME_CODE = "game_code"        # main.dol patches and tunables
 PLAY = "play"                  # Play in Dolphin / chapter jump
+PLAYTHROUGH = "playthrough"    # In-app tactical chapter runner
+BATTLE_SIM = "battle_sim"      # Forecast, simulation and rendered fight workflow
 PATCHES = "patches"            # .tpatch create / apply
 DISC = "disc"                  # extract / rebuild
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
-    SCRIPTS: "Script editing", SHOPS: "Shop editing", AI: "AI editing", BATTLE_TABLES: "Battle tables",
-    ANIM: "The map model registry", MODELS: "Model editing", FONTS: "Fonts", ICONS: "Icons",
+    SCRIPTS: "Script editing", SHOPS: "Shop editing", AI: "AI editing", BATTLE_TABLES: "Battle editors",
+    BATTLE_DATA: "Battle data", BATTLE_CAMERAS: "Battle cameras",
+    ANIM: "The map model registry", MODELS: "3D models", FONTS: "Fonts", ICONS: "Icons",
     EFFECTS: "Effects", AUDIO: "Audio editing", VIDEO: "Video editing", SAVES: "Save files",
-    GAME_CODE: "Game Code patches", PLAY: "Play in Dolphin", PATCHES: "Patches", DISC: "Disc extraction",
+    GAME_CODE: "Game Code patches", PLAY: "Play in Dolphin", PLAYTHROUGH: "In-app playthrough",
+    BATTLE_SIM: "Battle Simulator and rendered fights", PATCHES: "Patches", DISC: "Disc extraction",
 }
 
 
@@ -183,6 +189,9 @@ _RADIANT_DAWN_FILES = {
     "ai_data": LogicalFile("Cp/cp_data.cms", compressed=True),
     "common_mess": LogicalFile("Mess/common.m"),
     "startup_script": LogicalFile("Scripts/startup.cmb"),
+    "sound_data": LogicalFile("Sound/sound_data_en.cms", compressed=True),
+    "sound_archive": LogicalFile("Sound/sound_us.brsar"),
+    "soundroom": LogicalFile("soundroom.bin"),
 }
 
 PATH_OF_RADIANCE_PROFILE = GameProfile(
@@ -201,8 +210,8 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     shop_file="shopitem_{diff}.bin",
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h", "m"),
-    features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, ANIM, MODELS, FONTS,
-                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PATCHES, DISC}),
+    features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, BATTLE_DATA, BATTLE_CAMERAS, ANIM, MODELS, FONTS,
+                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
     font_files=FONT_FILES,
 )
 
@@ -223,7 +232,8 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_file="shopitem_{diff}.bin",
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
-    features=frozenset({DATA_TABLES, DIALOGUE, SCRIPTS, FONTS, PATCHES, DISC}),
+    features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
+                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
     message_dialect="fe10",
     script_dialect="fe10",
     name_hash_buckets=2027,

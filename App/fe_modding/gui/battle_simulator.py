@@ -37,11 +37,12 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
-from ..game_profile import files_root_of, profile_of
+from ..game_profile import profile_of, files_root_of
+from ..playthrough.tactical_data import adapt
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from .fe8_session import Fe8DataSession
+from .fe8_session import Fe10DataSession, Fe8DataSession
 from .widgets import ScrollFrame
 
 #: Weapon types the simulator offers (staves are filtered out by might).
@@ -121,6 +122,11 @@ class _Side(ttk.LabelFrame):
         self.boss = tk.BooleanVar(value=False)
         self.blessed = tk.BooleanVar(value=False)
         self.status = tk.BooleanVar(value=False)
+        self.tier = tk.IntVar(value=1)
+        self.biorhythm = tk.IntVar(value=0)
+        self.authority = tk.IntVar(value=0)
+        self.gauge = tk.IntVar(value=0)
+        self.transformed = tk.BooleanVar(value=False)
         self.skills: list[str] = []
         self.columnconfigure(1, weight=1)
         self.columnconfigure(3, weight=1)
@@ -180,6 +186,16 @@ class _Side(ttk.LabelFrame):
         flags.grid(row=7, column=0, columnspan=4, sticky="w", pady=(6, 0))
         for text, var in (("Boss", self.boss), ("Blessed armour", self.blessed), ("Status condition", self.status)):
             ttk.Checkbutton(flags, text=text, variable=var, command=self.sim.rerun).pack(side="left", padx=(0, 12))
+        if self.sim.profile.script_dialect == "fe10":
+            rd = ttk.Frame(self)
+            rd.grid(row=8, column=0, columnspan=4, sticky="w", pady=(6, 0))
+            for label, var, high in (("Tier", self.tier, 3), ("Biorhythm", self.biorhythm, 50),
+                                     ("Authority", self.authority, 5), ("Gauge", self.gauge, 100)):
+                ttk.Label(rd, text=label).pack(side="left", padx=(0, 3))
+                ttk.Spinbox(rd, from_=-50 if label == "Biorhythm" else 0, to=high, width=4,
+                            textvariable=var, command=self.sim.rerun).pack(side="left", padx=(0, 9))
+            ttk.Checkbutton(rd, text="Transformed", variable=self.transformed,
+                            command=self.sim.rerun).pack(side="left")
 
     def _combo(self, row: int, column: int, label: str, var, on_change, span: int = 1) -> ttk.Combobox:
         ttk.Label(self, text=label, width=8 if column == 0 else 0).grid(
@@ -245,33 +261,45 @@ class _Side(ttk.LabelFrame):
         """The class the unit levels in before any promotion: the character's own class, or in
         class mode the unpromoted class of the selected promoted one."""
         fe8 = self.sim.fe8
+        if fe8.game == "fe10":
+            char = self._character() if self.source.get() == "character" else None
+            return self._class_entry(char.jid) if char is not None else self._class_entry(_label_id(self.cls.get()))
         char = self._character() if self.source.get() == "character" else None
         if char is not None:
             return self._class_entry(char.jid)
         cls = self._class_entry(_label_id(self.cls.get()))
-        linked = bsu.linked_class(fe8, cls)
-        if bsu.class_kind(fe8, cls) == "Promoted" and bsu.promotion_of(fe8, linked) is cls:
+        linked = bsu.linked_class(fe8.raw, cls)
+        if bsu.class_kind(fe8.raw, cls) == "Promoted" and bsu.promotion_of(fe8.raw, linked) is cls:
             return linked
         return cls
 
     def _promotion_path(self) -> bool:
         """True when the unit levels in its start class, then promotes into the selected one."""
         start = self._start_class()
-        return (self.promoted.get() and start is not None and bsu.class_kind(self.sim.fe8, start) == "Unpromoted"
+        if self.sim.fe8.game == "fe10":
+            return bool(self.promoted.get() and start is not None and _label_id(self.cls.get()) != start.jid)
+        return (self.promoted.get() and start is not None and bsu.class_kind(self.sim.fe8.raw, start) == "Unpromoted"
                 and _label_id(self.cls.get()) not in (None, "", start.jid))
 
     def _class_selected(self) -> None:
         cls = self._class_entry(_label_id(self.cls.get()))
         start = self._start_class()
-        self.promoted.set(bsu.class_kind(self.sim.fe8, cls) == "Promoted")
-        if start is not None and bsu.class_kind(self.sim.fe8, start) == "Promoted":
+        if self.sim.fe8.game == "fe10":
+            self.promoted.set(bool(cls and getattr(cls, "demotes_to", None)))
+            self._unit_changed()
+            return
+        self.promoted.set(bsu.class_kind(self.sim.fe8.raw, cls) == "Promoted")
+        if start is not None and bsu.class_kind(self.sim.fe8.raw, start) == "Promoted":
             self.promoted.set(True)
         self._unit_changed()
 
     def _promotion_changed(self) -> None:
         """Switch to the start class's promotion, or back to the start class."""
         start = self._start_class()
-        target = bsu.promotion_of(self.sim.fe8, start) if self.promoted.get() else start
+        if self.sim.fe8.game == "fe10":
+            target = self._class_entry(getattr(start, "promotes_to", None)) if self.promoted.get() else start
+        else:
+            target = bsu.promotion_of(self.sim.fe8.raw, start) if self.promoted.get() else start
         if target is not None:
             self.cls.set(self.sim.names.cls(target))
         self._unit_changed()
@@ -301,11 +329,13 @@ class _Side(ttk.LabelFrame):
         self._clamp_levels()
         path = self._promotion_path()
         try:
+            if fe8.game == "fe10":
+                return fe8.combatant(char.pid, jid=jid) if char is not None else fe8.class_combatant(jid)
             if char is not None:
-                return battle_sim.from_character(fe8, char.pid, jid=jid, level=self.level.get(),
+                return battle_sim.from_character(fe8.raw, char.pid, jid=jid, level=self.level.get(),
                                                  promoted_at=self.promoted_at.get() if path else None)
             start = self._start_class()
-            return battle_sim.from_class(fe8, jid, level=self.level.get(),
+            return battle_sim.from_class(fe8.raw, jid, level=self.level.get(),
                                          promoted_from=start.jid if path else None,
                                          promoted_at=self.promoted_at.get())
         except KeyError:
@@ -314,8 +344,12 @@ class _Side(ttk.LabelFrame):
     def _refresh_promotion_controls(self) -> None:
         fe8 = self.sim.fe8
         start = self._start_class()
-        kind = bsu.class_kind(fe8, start)
-        can_promote = kind == "Unpromoted" and bsu.promotion_of(fe8, start) is not None
+        if fe8.game == "fe10":
+            kind = "Promoted" if start is not None and getattr(start, "demotes_to", None) else "Unpromoted"
+            can_promote = start is not None and getattr(start, "promotes_to", None) is not None
+        else:
+            kind = bsu.class_kind(fe8, start)
+            can_promote = kind == "Unpromoted" and bsu.promotion_of(fe8, start) is not None
         if kind == "Promoted":
             self.promoted.set(True)
         self._promoted_check.configure(state="normal" if can_promote else "disabled")
@@ -358,13 +392,20 @@ class _Side(ttk.LabelFrame):
         if not keep_class:
             self.level.set(char.level if char is not None else 1)
             self.promoted_at.set(bsu.MAX_LEVEL)
-            self.promoted.set(bsu.class_kind(fe8, self._class_entry(_label_id(self.cls.get()))) == "Promoted")
+            cls = self._class_entry(_label_id(self.cls.get()))
+            self.promoted.set(bool(getattr(cls, "demotes_to", None)) if fe8.game == "fe10" else
+                              bsu.class_kind(fe8.raw, cls) == "Promoted")
         self._refresh_promotion_controls()
         base = self._build()
         if base is None:
             return
         self._set_stats(base)
         self.skills = list(base.skills)
+        self.tier.set(getattr(base, "tier", 1))
+        self.biorhythm.set(getattr(base, "biorhythm", 0))
+        self.authority.set(getattr(base, "authority", 0))
+        self.gauge.set(getattr(base, "laguz_gauge", 0))
+        self.transformed.set(getattr(base, "transformed", False))
         self._base = base
         self._fill_skills()
         self._fill_weapons()
@@ -394,7 +435,9 @@ class _Side(ttk.LabelFrame):
     def _fill_weapons(self) -> None:
         fe8 = self.sim.fe8
         cls = next((c for c in fe8.classes if c.jid == _label_id(self.cls.get())), None)
-        ranks = fe8data.class_weapon_rank_map(cls) if cls is not None and not self.all_weapons.get() else None
+        ranks = (fe8data.class_weapon_rank_map(cls) if fe8.game == "fe9" else
+                 ({t for t in COMBAT_WEAPON_TYPES if t in (getattr(cls, "weapon_ranks", "") or "").lower()}
+                  if cls is not None else set())) if not self.all_weapons.get() else None
         items = [it for it in fe8.items
                  if it.iid and it.weapon_type in COMBAT_WEAPON_TYPES and (it.might or it.weapon_type != "rod")]
         if ranks is not None:
@@ -442,6 +485,13 @@ class _Side(ttk.LabelFrame):
             t = self.sim.terrains[terrain - 1]
             unit.terrain = (t.avoid, t.defense, t.resistance)
         unit.boss, unit.blessed_armor, unit.status_condition = self.boss.get(), self.blessed.get(), self.status.get()
+        if self.sim.fe8.game == "fe10":
+            unit.tier = max(1, min(3, int(self.tier.get())))
+            unit.effective_level = unit.level + (unit.tier - 1) * 20
+            unit.biorhythm = int(self.biorhythm.get())
+            unit.authority = max(0, int(self.authority.get()))
+            unit.laguz_gauge = max(0, int(self.gauge.get()))
+            unit.transformed = bool(self.transformed.get())
         return unit
 
 
@@ -450,11 +500,14 @@ class BattleSimulator(EditorPanel):
     uses_fe8_session = True
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog,
-                 session: Fe8DataSession | None = None):
+                 session: Fe8DataSession | Fe10DataSession | None = None):
         super().__init__(parent, padding=12)
         self._project = project
+        self.profile = project.profile
         self._files = files_root_of(project)
-        self._session = session or Fe8DataSession(project, changelog)
+        self._session = session or (Fe10DataSession(project, changelog)
+                                    if project.profile.script_dialect == "fe10" else Fe8DataSession(project, changelog))
+        self._tactical = None
         self.names = _Names(project)
         self.rules = rules_fe9.Fe9Rules()
         self.terrains: list = []
@@ -473,7 +526,7 @@ class BattleSimulator(EditorPanel):
         ttk.Label(head, text="Battle Simulator", style="Title.TLabel").pack(side="left")
         self._render_button = ttk.Button(head, text="Render fight", style="Accent.TButton", command=self._render)
         self._render_button.pack(side="right")
-        ttk.Label(self, text="Path of Radiance rules. Changes here stay in the simulator; nothing is written "
+        ttk.Label(self, text=f"{project.profile.display_name} rules. Changes here stay in the simulator; nothing is written "
                              "to the game.", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
@@ -509,7 +562,7 @@ class BattleSimulator(EditorPanel):
 
     @property
     def fe8(self):
-        return self._session.fe8
+        return self._tactical
 
     # -- layout ---------------------------------------------------------------------------------
     def _build_battle_bar(self, parent: tk.Misc) -> None:
@@ -581,8 +634,16 @@ class BattleSimulator(EditorPanel):
     # -- data -----------------------------------------------------------------------------------
     def _on_session_changed(self, _source) -> None:
         self._fill_sceneries()
-        if self._session.fe8 is None:
+        raw = getattr(self._session, "fe8", None) or getattr(self._session, "fe10", None)
+        if raw is None:
             self._set_log(self._session.unavailable_reason)
+            return
+        self._tactical = adapt(raw)
+        if self._tactical.game == "fe10":
+            self.rules = battle_sim.Fe10Rules(self.fe8.skills, self.fe8.difficulty)
+            self.terrains = list(self.fe8.terrain)
+            for side in self.sides:
+                side.fill()
             return
         try:
             game = fe8data.read_game_data(self._session.data)
@@ -598,7 +659,10 @@ class BattleSimulator(EditorPanel):
             side.fill()
 
     def _fill_sceneries(self) -> None:
-        names = list(sa.BattleAssets(self._files, b"").sceneries())
+        try:
+            names = list(battle_sim.provider_for(self._project).sceneries())
+        except Exception:  # noqa: BLE001 - an incomplete extraction simply has no scenery choices
+            names = list(sa.BattleAssets(self._files, b"").sceneries())
         self._scenery_box["values"] = [NO_SCENERY] + names
         if self.scenery.get() not in names:
             self.scenery.set(DEFAULT_SCENERY if DEFAULT_SCENERY in names else (names[0] if names else NO_SCENERY))
@@ -661,7 +725,8 @@ class BattleSimulator(EditorPanel):
                 seed = int(self.seed.get())
             except ValueError:
                 seed = sum(map(ord, self.seed.get()))
-            outcomes = battle_sim.RngOutcomes(seed)
+            rng = battle_sim.Fe10Rng(seed) if self.fe8.game == "fe10" else seed
+            outcomes = battle_sim.RngOutcomes(rng)
         self._log = battle_sim.simulate(units[0], units[1], rules=self.rules, outcomes=outcomes, distance=distance)
         self._distance = distance
         self._show(self._log)
@@ -713,7 +778,8 @@ class BattleSimulator(EditorPanel):
         from .battle_window import BattleWindow
 
         if self._window is None or not self._window.winfo_exists():
-            self._window = BattleWindow(self, self._files, self.rules, self.fe8, title="Battle Simulator - fight")
+            self._window = BattleWindow(self, self._files, self.rules, self.fe8.raw,
+                                        title="Battle Simulator - fight", project=self._project)
         scenery = self.scenery.get()
         self._window.play(self._log, self._distance, None if scenery == NO_SCENERY else scenery)
 

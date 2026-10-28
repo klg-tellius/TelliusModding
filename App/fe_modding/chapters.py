@@ -43,7 +43,7 @@ from typing import Optional
 
 from .formats import dispo, lz10, pak
 from .game_files import FILES, files_of, game_path
-from .game_profile import GAME_DATA, logical_rel_of, profile_of
+from .game_profile import GAME_DATA, logical_rel_of, profile_of, files_root_of
 from .project import ModProject
 
 def _chapter_file_re(project: ModProject):
@@ -99,18 +99,31 @@ def chapter_paths(project: ModProject, chapter_id: str) -> ChapterPaths:
     )
 
 
-_PHASE_FOLDER_RE = re.compile(r"^bmap(\d+)(?:_(\d+))?$", re.IGNORECASE)
+_PHASE_FOLDER_RE = re.compile(r"^bmap(\d+[a-z]?)(?:_(\d+))?$", re.IGNORECASE)
 
 
 def chapter_phases(project: ModProject, chapter_id: str) -> list[str]:
     """The chapter's map folders in play order: ``bmapNN`` first, then
     ``bmapNN_2``, ``bmapNN_3``... (a mid-chapter map change)."""
+    zmap = files_root_of(project) / "zmap"
+    if not zmap.is_dir():
+        return []
+    profile = profile_of(project)
+    if profile.chapter_id_width != 2:
+        base = profile.map_folder(chapter_id)
+        pattern = re.compile(rf"^{re.escape(base)}(?:_(\d+))?$", re.IGNORECASE)
+        phases = []
+        for folder in zmap.iterdir():
+            match = pattern.match(folder.name)
+            if folder.is_dir() and match:
+                phases.append((int(match.group(1) or 1), folder.name))
+        return [name for _n, name in sorted(phases)]
     phases = []
-    for rel in files_of(project).glob(game_path("zmap"), "*", dirs=True):
-        name = rel.rsplit("/", 1)[-1]
-        match = _PHASE_FOLDER_RE.match(name)
-        if match and int(match.group(1)) == int(chapter_id):
-            phases.append((int(match.group(2) or 1), name))
+    for folder in zmap.iterdir():
+        match = _PHASE_FOLDER_RE.match(folder.name)
+        if (folder.is_dir() and match and match.group(1).isdigit()
+                and int(match.group(1)) == int(chapter_id)):
+            phases.append((int(match.group(2) or 1), folder.name))
     return [name for _n, name in sorted(phases)]
 
 
@@ -124,7 +137,10 @@ def phase_paths(project: ModProject, folder: str) -> tuple[Optional[Path], Optio
 def chapter_of_map_folder(folder: str) -> Optional[str]:
     """``bmap06_2`` -> ``"06"``; None for folders that aren't chapter maps."""
     match = _PHASE_FOLDER_RE.match(folder)
-    return match.group(1).zfill(2) if match else None
+    if not match:
+        return None
+    chapter = match.group(1).lower()
+    return chapter.zfill(2) if chapter.isdigit() and len(chapter) < 4 else chapter
 
 
 def chapter_titles(project: ModProject) -> dict[str, str]:

@@ -26,6 +26,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
+from types import SimpleNamespace
 
 from PIL import ImageTk
 
@@ -69,6 +70,8 @@ class ShopEditor(EditorPanel):
         self._icon_stamp: Optional[int] = None
         self._icon_photos: dict[int, ImageTk.PhotoImage] = {}
         self._subscribed = None  # the FE8Data session whose changes re-read the prices
+        self._shop_dialect = "fe10" if profile_of(project).message_dialect == "fe10" else "fe9"
+        self._forge_rows, self._forge_bases, self._forge_defaults = shop.forge_layout(self._shop_dialect)
         self._build_widgets()
 
     # -- layout ---------------------------------------------------------------------------
@@ -160,32 +163,33 @@ class ShopEditor(EditorPanel):
         checks = ttk.Frame(forge)
         checks.pack(anchor="w", pady=(4, 0))
         self._forge_checks: dict[int, tuple[tk.BooleanVar, ttk.Checkbutton]] = {}
-        for r, row_name in enumerate(shop.FORGE_ROW_NAMES):
+        for r, row_name in enumerate(self._forge_rows):
             ttk.Label(checks, text=row_name).grid(row=r, column=0, sticky="w", padx=(0, 10), pady=1)
             column = 1
-            for c in range(len(shop.FORGE_BASES)):
-                cell = r * len(shop.FORGE_BASES) + c
-                if shop.FORGE_DEFAULT_ITEMS[cell] is None:
+            for c in range(len(self._forge_bases)):
+                cell = r * len(self._forge_bases) + c
+                if self._forge_defaults[cell] is None:
                     continue
                 var = tk.BooleanVar()
-                check = ttk.Checkbutton(checks, text=shop.FORGE_DEFAULT_ITEMS[cell], variable=var,
+                check = ttk.Checkbutton(checks, text=self._forge_defaults[cell], variable=var,
                                         command=lambda i=cell: self._toggle_forge(i))
                 check.grid(row=r, column=column, sticky="w", padx=(0, 12), pady=1)
                 self._forge_checks[cell] = (var, check)
                 column += 1
         grid = ttk.Frame(forge)
         self._forge_grid = grid
-        for c, base in enumerate(shop.FORGE_BASES):
-            ttk.Label(grid, text=shop.FORGE_BASE_NAMES[base]).grid(row=0, column=c + 1, sticky="w", padx=2)
+        for c, base in enumerate(self._forge_bases):
+            ttk.Label(grid, text=shop.FORGE_BASE_NAMES.get(base, base.removeprefix("MDV_"))).grid(
+                row=0, column=c + 1, sticky="w", padx=2)
         self._forge_vars: list[tk.StringVar] = []
         self._forge_boxes: list[ttk.Combobox] = []
-        for r, row_name in enumerate(shop.FORGE_ROW_NAMES):
+        for r, row_name in enumerate(self._forge_rows):
             ttk.Label(grid, text=row_name).grid(row=r + 1, column=0, sticky="w", padx=(0, 6), pady=1)
-            for c in range(len(shop.FORGE_BASES)):
+            for c in range(len(self._forge_bases)):
                 var = tk.StringVar()
                 box = ttk.Combobox(grid, textvariable=var, state="readonly", width=14)
                 box.grid(row=r + 1, column=c + 1, padx=2, pady=1)
-                cell = r * len(shop.FORGE_BASES) + c
+                cell = r * len(self._forge_bases) + c
                 box.bind("<<ComboboxSelected>>", lambda e, i=cell: self._set_forge(i))
                 self._forge_vars.append(var)
                 self._forge_boxes.append(box)
@@ -216,7 +220,14 @@ class ShopEditor(EditorPanel):
         session = self._session_provider()
         index = self._index_provider()
         names = getattr(index, "item_names", {}) or {}
-        items = session.fe8.items if session is not None and session.available else []
+        if session is not None and session.available and getattr(session, "fe8", None) is not None:
+            items = session.fe8.items
+        elif session is not None and session.available and getattr(session, "fe10", None) is not None:
+            items = [SimpleNamespace(iid=r.values.get("iid"), cost=r.values.get("price", 0),
+                                     uses=r.values.get("uses", 0), icon=r.values.get("icon", -1), record=r)
+                     for r in session.fe10.tables.get("item", [])]
+        else:
+            items = []
         if session is not None and session is not self._subscribed:
             session.subscribe(self._on_session_changed)
             self._subscribed = session
@@ -236,7 +247,7 @@ class ShopEditor(EditorPanel):
         for box in self._forge_boxes:
             box["values"] = [NONE_LABEL] + list(self._forge_labels.values())
         for cell, (_var, check) in self._forge_checks.items():
-            iid = shop.FORGE_DEFAULT_ITEMS[cell]
+            iid = self._forge_defaults[cell]
             check.configure(text=names.get(iid) or iid)
 
     def _label(self, value) -> str:
@@ -263,12 +274,19 @@ class ShopEditor(EditorPanel):
     def select_chapter(self, chapter_id: Optional[str]) -> None:
         if not self._loaded:
             self._load()
-        self._chapter = int(chapter_id) if chapter_id and chapter_id.isdigit() else None
+        if chapter_id and profile_of(self._project).message_dialect == "fe10":
+            self._chapter = chapter_id.lower()
+        else:
+            self._chapter = int(chapter_id) if chapter_id and chapter_id.isdigit() else None
         self._refresh_catalog()
         self._render()
 
     def _doc(self) -> Optional[shop.ShopDocument]:
         return self._docs.get(self._difficulty)
+
+    def _chapter_label(self, chapter=None) -> str:
+        value = self._chapter if chapter is None else chapter
+        return f"{value:02d}" if isinstance(value, int) else str(value or "")
 
     def _sections(self) -> dict[str, shop.ShopSection]:
         doc = self._doc()
@@ -288,16 +306,16 @@ class ShopEditor(EditorPanel):
         elif self._chapter is None:
             message = ""
         elif len(sections) < len(shop.SHOP_KINDS):
-            message = (f"Chapter {self._chapter:02d} has no shops in {shop.DIFFICULTY_FILES[self._difficulty]}: "
+            message = (f"Chapter {self._chapter_label()} has no shops in {shop.DIFFICULTY_FILES[self._difficulty]}: "
                        "the base shows an empty armory and vendor and the forge's built-in list.")
-            if self._chapter <= 99:
+            if isinstance(self._chapter, str) or self._chapter <= 99:
                 template = self._template_chapter()
-                self._add_button.configure(text=f"Add shops for chapter {self._chapter:02d}" + (
-                    f" (copy of chapter {template:02d})" if template is not None else ""))
+                self._add_button.configure(text=f"Add shops for chapter {self._chapter_label()}" + (
+                    f" (copy of chapter {self._chapter_label(template)})" if template is not None else ""))
                 self._add_button.pack(anchor="w", pady=(0, 6))
         else:
-            message = (f"Chapter {self._chapter:02d}'s base shops in {shop.DIFFICULTY_FILES[self._difficulty]} "
-                       f"(sections …_C{self._chapter:02d}). Easy uses the Normal file.")
+            message = (f"Chapter {self._chapter_label()}'s base shops in {shop.DIFFICULTY_FILES[self._difficulty]} "
+                       f"(sections …_C{self._chapter_label()}). Easy uses the Normal file.")
         self._message.configure(text=message)
         editable = len(sections) == len(shop.SHOP_KINDS)
         if editable:
@@ -391,7 +409,7 @@ class ShopEditor(EditorPanel):
     def _changed(self, difficulties, log_text: str) -> None:
         self._edited.update(difficulties)
         self._dirty = True
-        self._changelog.append(f"Chapter {self._chapter:02d}", log_text)
+        self._changelog.append(f"Chapter {self._chapter_label()}", log_text)
         self._render()
 
     def _where(self, kind: str) -> str:
@@ -422,6 +440,8 @@ class ShopEditor(EditorPanel):
         at = self._selected(kind)
         at = len(section.items) if at is None else at + 1
         section.items.insert(at, iid)
+        if section.dialect == "fe10":
+            section.metadata.insert(at, 0)
         self._pickers[kind].set("")
         self._changed([self._difficulty], f"{self._where(kind)}: added {iid}")
         self._select(kind, at)
@@ -432,6 +452,8 @@ class ShopEditor(EditorPanel):
         if section is None or index is None:
             return
         iid = section.items.pop(index)
+        if section.dialect == "fe10" and index < len(section.metadata):
+            section.metadata.pop(index)
         self._changed([self._difficulty], f"{self._where(kind)}: removed {iid}")
         self._select(kind, min(index, len(section.items) - 1))
 
@@ -442,6 +464,8 @@ class ShopEditor(EditorPanel):
             return
         items = section.items
         items[index], items[index + step] = items[index + step], items[index]
+        if section.dialect == "fe10" and index + step < len(section.metadata):
+            section.metadata[index], section.metadata[index + step] = section.metadata[index + step], section.metadata[index]
         self._changed([self._difficulty], f"{self._where(kind)}: moved {items[index + step]}")
         self._select(kind, index + step)
 
@@ -457,7 +481,7 @@ class ShopEditor(EditorPanel):
         cells = shop.forge_cells(section) if section else []
         for cell, (var, check) in self._forge_checks.items():
             item = cells[cell][0] if cell < len(cells) else None
-            default = shop.FORGE_DEFAULT_ITEMS[cell]
+            default = self._forge_defaults[cell]
             var.set(bool(item))
             name = self._item_name(default)
             if item and item != default:
@@ -469,7 +493,7 @@ class ShopEditor(EditorPanel):
         current = self._forge_vars[cell].get()
         if var.get():
             if current in ("", NONE_LABEL):
-                default = shop.FORGE_DEFAULT_ITEMS[cell]
+                default = self._forge_defaults[cell]
                 self._forge_vars[cell].set(self._forge_labels.get(default, default))
         else:
             self._forge_vars[cell].set(NONE_LABEL)
@@ -482,11 +506,12 @@ class ShopEditor(EditorPanel):
             return
         text = self._forge_vars[cell].get()
         iid = 0 if text == NONE_LABEL else self._by_forge_label.get(text, 0)
-        if section.items[2 * cell] == iid:
+        cells = shop.forge_cells(section)
+        if cell < len(cells) and cells[cell][0] == iid:
             return
         shop.set_forge_item(section, cell, iid)
-        row, base = divmod(cell, len(shop.FORGE_BASES))
-        where = f"{shop.FORGE_ROW_NAMES[row]} / {shop.FORGE_BASE_NAMES[shop.FORGE_BASES[base]]}"
+        row, base = divmod(cell, len(self._forge_bases))
+        where = f"{self._forge_rows[row]} / {shop.FORGE_BASE_NAMES.get(self._forge_bases[base], self._forge_bases[base])}"
         self._changed([self._difficulty], f"{self._where('F')}: {where} = {iid or 'none'}")
         if cell in self._forge_checks:
             self._sync_forge_checks()
@@ -499,6 +524,9 @@ class ShopEditor(EditorPanel):
         iid = section.items[index]
         session = self._session_provider()
         item = self._items.get(iid)
+        if self._shop_dialect == "fe10":
+            messagebox.showinfo("Edit price", "Radiant Dawn item prices are edited in Game Data › Items.", parent=self)
+            return
         if session is None or not session.available or item is None:
             messagebox.showerror("Edit price", f"{iid} isn't an item in FE8Data.bin.", parent=self)
             return
@@ -524,7 +552,7 @@ class ShopEditor(EditorPanel):
         self._render()
         self._select(kind, index)
 
-    def _template_chapter(self) -> Optional[int]:
+    def _template_chapter(self):
         doc = self._doc()
         chapters = [c for c in doc.chapters() if all(doc.shop(k, c) for k in shop.SHOP_KINDS)] if doc else []
         below = [c for c in chapters if c < (self._chapter or 0)]
@@ -543,8 +571,8 @@ class ShopEditor(EditorPanel):
         except ValueError as exc:
             messagebox.showerror("Add shops", str(exc), parent=self)
             return
-        source = f" from chapter {template:02d}" if template is not None else ""
-        self._changed(changed, f"Added shops for chapter {self._chapter:02d}{source}")
+        source = f" from chapter {self._chapter_label(template)}" if template is not None else ""
+        self._changed(changed, f"Added shops for chapter {self._chapter_label()}{source}")
 
     def _copy_to_difficulties(self) -> None:
         doc = self._doc()
@@ -553,7 +581,7 @@ class ShopEditor(EditorPanel):
             return
         names = " and ".join(shop.DIFFICULTY_NAMES[d] for d in others)
         if not messagebox.askyesno(
-                "Copy shops?", f"Replace chapter {self._chapter:02d}'s armory, vendor and forge in {names} "
+                "Copy shops?", f"Replace chapter {self._chapter_label()}'s armory, vendor and forge in {names} "
                                f"with the {shop.DIFFICULTY_NAMES[self._difficulty]} ones?", parent=self):
             return
         for difficulty in others:
@@ -564,7 +592,8 @@ class ShopEditor(EditorPanel):
                 source, dest = doc.shop(kind, self._chapter), target.shop(kind, self._chapter)
                 if source is not None and dest is not None:
                     dest.items = list(source.items)
-        self._changed(others, f"Copied chapter {self._chapter:02d} shops "
+                    dest.metadata = list(source.metadata)
+        self._changed(others, f"Copied chapter {self._chapter_label()} shops "
                               f"from {shop.DIFFICULTY_NAMES[self._difficulty]} to {names}")
 
     # -- save -------------------------------------------------------------------------------------

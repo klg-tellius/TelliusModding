@@ -107,7 +107,10 @@ class EffectAddDialog(tk.Toplevel):
                 effects.validate_pack(parts)
                 outputs[effects.pack_path(self._files, name)] = effects.build_effect_pack(
                     effects.rename_pack(parts, name))
-            outputs[registry_file] = effects.add_registry_record(registry, name, flags=flags)
+            outputs[registry_file] = effects.add_registry_record(
+                registry, name, flags=flags, game=self._project.game,
+                template_name=self._template.get(),
+            )
         except (effects.EffectError, OSError) as exc:
             messagebox.showerror("Visual effects", str(exc), parent=self)
             return
@@ -120,10 +123,4 @@ class EffectAddDialog(tk.Toplevel):
         self._on_done(name)
 
     def _template_flags(self, registry: bytes) -> int:
-        from ..formats import effect_registry
-
-        template = self._template.get()
-        for record in effect_registry.read_effect_registry(registry):
-            if record.eid_name == template:
-                return record.flags
-        return 0x00000500
+        return effects.registry_flags(registry, self._template.get(), self._project.game) or 0x00000500

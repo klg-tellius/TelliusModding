@@ -125,7 +125,7 @@ Boot the patched image in Dolphin (**File → Open** in Dolphin). Check what the
 | **Output** / **Browse…** | Apply a patch dialog | The new image. Asks before replacing an existing file. |
 | **Build patched disc** | Apply a patch dialog | Extracts, verifies, writes and packs. Warns when the image is larger than a disc. |
 | **Close** | Apply a patch dialog | Closes the dialog (waits for a running build). |
-| **Export as text…** | Version control | Writes the game data as text files (FE8Data tables, deployments, shops, messages, decompiled scripts, sound cues, the face table, the DBX tables) into a folder, to keep in git and compare between versions. Export only: it is not part of the patch and replaces the folder's previous export. |
+| **Export as text…** | Version control | Writes decoded game data into a folder, to keep in git and compare between versions. Path of Radiance exports FE8Data, deployments, shops, messages, scripts, sound, faces and DBX; Radiant Dawn exports FE10Data, FE10Growth, messages and scripts. Export only: it is not part of the patch and replaces the folder's previous export. |
 
 The player can also apply a patch with `python -m fe_modding.patch apply PATCH DISC OUTPUT`, or with `TelliusPatcher.exe`, a single program a mod author can ship next to the `.tpatch`.
 

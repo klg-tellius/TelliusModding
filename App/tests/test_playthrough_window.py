@@ -12,6 +12,7 @@ import tkinter as tk  # noqa: E402
 import test_playthrough as T  # noqa: E402
 from fe_modding.formats import cp_data, dispo, map_file, message  # noqa: E402
 from fe_modding.formats.cmb.binary import write_cmb  # noqa: E402
+from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE  # noqa: E402
 from fe_modding.playthrough import actions  # noqa: E402
 
 SOURCE = '''
@@ -69,7 +70,7 @@ class PlaythroughWindowTests(unittest.TestCase):
         builder._deploy = types.SimpleNamespace(variants=lambda: ["dispos_c.bin"], document=lambda v: doc)
         builder._script = types.SimpleNamespace(chapter_path=files / "Scripts" / "C01.cmb",
                                                 chapter_source=lambda: None, dirty=False)
-        builder._project = types.SimpleNamespace(extracted_dir=tmp)
+        builder._project = types.SimpleNamespace(extracted_dir=tmp, profile=PATH_OF_RADIANCE_PROFILE)
         builder._session_provider = lambda: types.SimpleNamespace(fe8=T._fe8())
         builder._index_provider = lambda: None
         builder._backdrop = None

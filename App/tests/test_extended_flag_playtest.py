@@ -46,6 +46,35 @@ class PlaytestTests(unittest.TestCase):
         for cid in (1, 33):
             self.assertNotIn("gf_complete", sources[Path(f"C{cid:02d}.cmb")])
 
+    def test_multipart_fast_finish_ends_the_current_part(self):
+        # Setting gf_complete in part 1 ran Chapter 17's final ending, whose UnitBreakup(Ike)
+        # read through a null partner. Each part must end on its own goal flag instead.
+        build = tool("prepare_extended_flag_playtest")
+        source = (
+            '@export\ndef Startup():\n    regist("C1")\n    regist("C2")\n    regist("S2")\n\n'
+            '@on_complete(flag="C1")\ndef func_1():\n    clr("C1")\n\n    Complete18(1)\n\n'
+            '@export\ndef Opening18_2():\n    set("S2")\n    if get("C1"):\n        set("Other")\n\n'
+            '@on_complete(flag="C2")\ndef func_2():\n    Complete18(2)\n\n'
+            '@export\ndef Opening18_3():\n    set("S3")\n\n'
+            '@on_complete(flag="gf_complete")\ndef func_3():\n    pass\n'
+            '\n# XFT automatic test victory\n@on_phase(turn_from=1, turn_to=1, phase="enemy")\n'
+            'def XftFinishAfterPlayerTurnOne():\n    set("gf_complete")\n')
+        self.assertEqual(build.part_goals(source, 18), [("S3", "gf_complete"), ("S2", "C2"), (None, "C1")])
+        setup = SimpleNamespace(destinations=[SimpleNamespace(chapter=18)])
+        sources = {Path("C18.cmb"): source}
+        with patch.object(build.script_sources, "chapter_script", side_effect=lambda _p, cid: Path(f"C{cid}.cmb")), \
+             patch.object(build.script_sources, "peek", side_effect=lambda _p, path: sources[path]), \
+             patch.object(build, "write_script", side_effect=lambda _p, path, text, _l: sources.__setitem__(path, text)), \
+             patch("fe_modding.game_code.editor.CodeEditor"):
+            build.apply_test_quality_of_life(SimpleNamespace(extracted_dir=Path("extracted")), setup, FlagLayout())
+        text = sources[Path("C18.cmb")]
+        self.assertEqual(text.count(build.VICTORY_MARKER), 1)
+        handler = text[text.index(build.VICTORY_MARKER):]
+        self.assertIn('    if get("S3"):\n        set("gf_complete")\n', handler)
+        self.assertIn('    elif get("S2"):\n        set("C2")\n', handler)
+        self.assertIn('    else:\n        set("C1")\n', handler)
+        compile_source(text)
+
     def test_boot_archive_uses_edited_startup_and_chapter_database(self):
         build = tool("prepare_extended_flag_playtest")
         from fe_modding.project import ModProject

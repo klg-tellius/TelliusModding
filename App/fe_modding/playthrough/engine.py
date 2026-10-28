@@ -26,7 +26,8 @@ from .state import (ENEMY, PHASE_ORDER, PLAYER, AiPhase, AiTurn, GameState, Mess
 from .world import World
 
 TRIGGER_NAMES = {1: "goal achieved", 2: "goal failed", 3: "before phase", 4: "zone", 5: "location", 6: "after phase",
-                 7: "after action", 8: "talk", 9: "battle", 10: "death (map)", 11: "death (battle)"}
+                 7: "after action", 8: "talk", 9: "battle", 10: "death (map)", 11: "death (battle)",
+                 17: "rescue", 18: "give/take", 19: "move-through", 20: "named support"}
 
 
 @dataclass
@@ -92,6 +93,11 @@ def _phase_start(world: World, state: GameState, task: PhaseStart) -> Step:
     phase = task.phase
     state.phase = phase
     state.canto = None
+    if phase == world.army.phase_order[0]:
+        for tile in list(state.sight_sources):
+            state.sight_sources[tile] -= 1
+            if state.sight_sources[tile] <= 0:
+                del state.sight_sources[tile]
     units = state.living(phase)
     if phase not in (PLAYER, ENEMY) and not units:
         _done(state, task, PhaseEnd(phase))
@@ -103,6 +109,15 @@ def _phase_start(world: World, state: GameState, task: PhaseStart) -> Step:
             if u.status_turns <= 0:
                 state.emit("action", f"{world.name(u.pid)} is no longer {u.status}", uid=u.uid)
                 u.status, u.status_turns = "", 0
+        if world.dialect.name == "fe10":
+            char = world.characters.get(u.pid)
+            gauge = getattr(char, "gauge", ()) if char is not None else ()
+            if len(gauge) == 4 and "SID_ROYAL" not in u.skills:
+                u.laguz_gauge = max(0, min(30, u.laguz_gauge + gauge[2 if u.transformed else 0]))
+                if u.transformed and u.laguz_gauge == 0:
+                    u.transformed = False
+                elif not u.transformed and u.laguz_gauge >= 30:
+                    u.transformed = True
         t = world.terrain_at(u.x, u.y)
         if t is not None and t.heal and u.hp < u.stats[0]:
             gain = min(u.stats[0] - u.hp, max(1, u.stats[0] * t.heal // 100))
@@ -123,7 +138,7 @@ def _phase_name(phase: int) -> str:
 
 
 def _phase_end(world: World, state: GameState, task: PhaseEnd) -> Step:
-    order = list(PHASE_ORDER)
+    order = list(world.army.phase_order)
     i = order.index(task.phase) if task.phase in order else 0
     nxt = order[(i + 1) % len(order)]
     if nxt == order[0]:
@@ -170,12 +185,20 @@ def _trigger(world: World, state: GameState, task: TriggerCheck) -> Step:
         return Step("trigger", f"Check {name} events", "none", task_done=True)
     t = found[0]
     task.cursor = triggers.index(world).index(t) + 1
-    if t.type in triggers.ONCE:
-        state.seen.add((t.script, t.function))
     ctx = dict(task.ctx)
     if "action" not in ctx and t.type == 5:
         ctx["action"] = t.params.get("action")
-    run = triggers.start(world, t.script, t.function, ctx=ctx)
+    condition_name = t.params.get("name") if world.dialect.name == "fe10" and t.type in (8, 9, 19, 20) else None
+    condition = (triggers.find_function(world, condition_name) if isinstance(condition_name, str)
+                 and state.flag_slot(condition_name) is None else None)
+    if condition is not None and condition != (t.script, t.function):
+        args = (ctx.get("x", 0), ctx.get("y", 0)) if t.type == 19 else ()
+        run = triggers.start(world, *condition, args=args, ctx=ctx)
+        run.then_event = (t.script, t.function, ctx, t.type in triggers.ONCE)
+    else:
+        if t.type in triggers.ONCE:
+            state.seen.add((t.script, t.function))
+        run = triggers.start(world, t.script, t.function, ctx=ctx)
     state.emit("trigger", f"{name} event: {run.name}")
     state.push_front(run)
     return Step("trigger", f"Check {name} events", run.name)
@@ -188,6 +211,11 @@ def _script(world: World, state: GameState, task: ScriptRun) -> Step:
     finished, where, inserted = event_vm.step(world, state, task)
     if finished:
         _done(state, task, *inserted)
+        if task.then_event is not None and task.result:
+            script, function, ctx, mark_once = task.then_event
+            if mark_once:
+                state.seen.add((script, function))
+            state.push_front(triggers.start(world, script, function, ctx=ctx))
         state.emit("script", f"{task.name} finished")
     else:
         state.push_front(*inserted)
@@ -225,6 +253,30 @@ def decode(text: str) -> str:
 
 
 def _message(world: World, state: GameState, task: MessageShow) -> Step:
+    if world.dialect.name == "fe10":
+        from ..formats import fe10_message
+        if not task.pages:
+            pages, current = [], []
+            for part in fe10_message.decompile(task.text):
+                if part.kind == "line":
+                    current.append(part.fields.get("text", ""))
+                if part.kind == "line" and "<wait>" in part.fields.get("end", ""):
+                    pages.append("".join(current).strip())
+                    current = []
+            if current or not pages:
+                pages.append("".join(current).strip())
+            task.pages = pages
+        if task.page >= len(task.pages):
+            _done(state, task)
+            return Step("message", task.title, "(end)", task_done=True)
+        text = task.pages[task.page]
+        task.page += 1
+        state.emit("message", text, msg_id=task.msg_id, page=task.page, pages=len(task.pages), raw=task.text,
+                   dialect="fe10")
+        finished = task.page >= len(task.pages)
+        if finished:
+            _done(state, task)
+        return Step("message", task.title, f"page {task.page}/{len(task.pages)}", task_done=finished)
     timeline, pages = message_pages(task.text)
     if not task.pages:
         task.pages = pages

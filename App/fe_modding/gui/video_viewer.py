@@ -467,9 +467,12 @@ class VideoViewer(EditorPanel):
         native_path = f"movie/{path.name}".lower()
         if native_path in self._native_video_paths:
             users.insert(0, "main.dol (hardcoded path)")
+        protected = front_end_video_reason(path)
+        if not protected and native_path in self._native_video_paths:
+            protected = "It is referenced directly by main.dol. Replace it instead."
         if not confirm_delete_added(
             self, self._project, path, "video", users, allow_retail=True,
-            protected_reason=front_end_video_reason(path),
+            protected_reason=protected,
         ):
             return
         self._pause()

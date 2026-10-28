@@ -122,15 +122,14 @@ def collect_references(project, rid: str, paths: list[Path] | None = None) -> li
                         found.append(Reference("Dialogue", path, item.speaker))
             except Exception as exc:
                 found.append(Reference("Unreadable dialogue", path, str(exc)))
-    if not is_fe10(project):
-        sound = files_root_of(project) / "soundroom.bin"
-        if sound.is_file():
-            try:
-                for index, item in enumerate(soundroom.read_soundroom_path(sound)):
-                    if item.name == rid:
-                        found.append(Reference("Sound Room", sound, f"entry {index + 1}"))
-            except Exception as exc:
-                found.append(Reference("Unreadable Sound Room", sound, str(exc)))
+    sound = files_root_of(project) / "soundroom.bin"
+    if sound.is_file():
+        try:
+            for index, item in enumerate(soundroom.read_soundroom_path(sound)):
+                if item.name == rid:
+                    found.append(Reference("Sound Room", sound, f"entry {index + 1}"))
+        except Exception as exc:
+            found.append(Reference("Unreadable Sound Room", sound, str(exc)))
     return found
 
 
@@ -218,15 +217,15 @@ def prepare_rename(project, old: str, new: str, paths: list[Path] | None = None)
                        for item in items]
             if updated != items:
                 changes[path] = message.write_messages(updated, message.read_text_order_path(path))
-    if not is_fe10(project):
-        path = files_root_of(project) / "soundroom.bin"
-        if path.is_file():
-            entries = soundroom.read_soundroom_path(path)
-            if any(entry.name == old for entry in entries):
-                for entry in entries:
-                    if entry.name == old:
-                        entry.name = new
-                changes[path] = soundroom.build_soundroom(entries)
+    path = files_root_of(project) / "soundroom.bin"
+    if path.is_file():
+        source = path.read_bytes()
+        entries = soundroom.read_soundroom(source)
+        if any(entry.name == old for entry in entries):
+            for entry in entries:
+                if entry.name == old:
+                    entry.name = new
+            changes[path] = soundroom.build_soundroom(entries, source)
     return changes
 
 

@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..formats import fe8data, item_rules
-from ..game_profile import GAME_DATA, disc_root_of, sys_root_of
+from ..formats import fe8data, fe10data, item_rules
+from ..game_profile import DATA_TABLES, GAME_DATA, disc_root_of, sys_root_of
 from ..game_code.dol import Dol
 from ..game_code import item_restrictions as rule_code, versions
 from ..project import ModProject
@@ -124,6 +124,89 @@ class Fe8DataSession:
             if c.pid == pid:
                 return c.index
         return None
+
+    def _notify(self, source: object) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener(source)
+            except Exception:  # noqa: BLE001 - a dead view must not block the others
+                pass
+
+
+class Fe10DataSession:
+    """One in-memory ``FE10Data.cms`` shared by the RD Characters and Game Data pages."""
+
+    def __init__(self, project: ModProject, changelog: ChangeLog):
+        self.project = project
+        self.changelog = changelog
+        self.path = project.logical_path("game_data")
+        self.file_label = project.profile.file_label("game_data")
+        self.data: bytes = b""
+        self.fe8 = None  # compatibility: PoR-only callers can reject this session cleanly
+        self.fe10: Optional[fe10data.Fe10Data] = None
+        self.labels_by_prefix: dict[str, list[str]] = {}
+        self.dirty = False
+        self._listeners: list[Callable[[object], None]] = []
+        self.on_saved: list[Callable[[], None]] = []
+        self.load()
+
+    @property
+    def available(self) -> bool:
+        return self.fe10 is not None
+
+    @property
+    def unavailable_reason(self) -> str:
+        if not self.project.profile.supports(DATA_TABLES):
+            return self.project.profile.unavailable(DATA_TABLES)
+        return f"{self.file_label} not found. Extract the project first."
+
+    def load(self) -> None:
+        if not self.project.profile.supports(DATA_TABLES):
+            return
+        if self.path.exists():
+            self.data = self.project.read_logical("game_data")
+            self.reparse()
+            self.dirty = False
+
+    def reparse(self) -> None:
+        self.fe10 = fe10data.read_fe10data(self.data)
+        self.labels_by_prefix = {
+            prefix: fe10data.labels_with_prefix(self.data, prefix)
+            for prefix in ("PID_", "MPID_", "MNPID_", "FID_", "JID_", "SID_", "AID_")
+        }
+
+    def subscribe(self, listener: Callable[[object], None]) -> None:
+        self._listeners.append(listener)
+
+    def unsubscribe(self, listener: Callable[[object], None]) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
+    def changed(self, source: object = None) -> None:
+        self.reparse()
+        self.dirty = True
+        self._notify(source)
+
+    def save(self) -> None:
+        self.project.write_logical("game_data", self.data)
+        self.dirty = False
+        self.changelog.append(self.file_label, "Saved character/class/item/skill and related data")
+        self._notify(None)
+        for callback in list(self.on_saved):
+            callback()
+
+    def revert(self) -> None:
+        self.load()
+        self._notify(None)
+
+    def character_index(self, pid: str) -> Optional[int]:
+        if self.fe10 is None:
+            return None
+        return next((r.index for r in self.fe10.characters if r.values.get("pid") == pid), None)
+
+    def replace(self, data: bytes, source: object = None) -> None:
+        self.data = data
+        self.changed(source)
 
     def _notify(self, source: object) -> None:
         for listener in list(self._listeners):

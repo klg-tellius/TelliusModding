@@ -534,6 +534,32 @@ def _is_fe10_container(name: str, data: bytes) -> bool:
     return name.endswith(".cms#") and len(data) >= HEADER_SIZE and _u32(data, 0) == len(data)
 
 
+@handles("cp_data", lambda name, data: _base(name) == "cp_data.cms" and name.endswith("#"))
+def fe10_cp_data(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's decompressed CP resource.
+
+    This handler must precede the generic FE10-container handler: Phase 4 has a
+    lossless codec for the complete resource, so its records are decoded rather
+    than merely recognized as opaque labeled sections.
+    """
+    from . import cp_data
+
+    _roundtrip(cov, cp_data.build_cp_data(cp_data.parse_cp_data(cov.data)))
+    cov.fill(DECODED)
+
+
+@handles("fe10 sound data", lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
+         and name.endswith("#"))
+def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
+    from . import fe10_sound
+
+    hsdarc(cov)
+    for cue in fe10_sound.read_sound_data(cov.data):
+        start = HEADER_SIZE + cue.record_offset
+        cov.mark(start, 8, DECODED, f"{cue.name} name/resource")
+        cov.mark(start + 8, fe10_sound.RECORD_SIZE - 8, UNDECODED, f"{cue.name} parameters")
+
+
 @handles("fe10 container", _is_fe10_container)
 def fe10_container(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's decompressed ``.cms`` data files (``FE10Data``, ``FE10Anim``, ``cp_data``...):
@@ -598,8 +624,13 @@ def _roundtrip_handler(module: str, parse: str, build: str):
 
 handles("cp_data.bin", lambda n, d: _base(n) == "cp_data.bin")(_roundtrip_handler("cp_data", "parse_cp_data", "build_cp_data"))
 handles("shop", lambda n, d: _base(n).startswith("shopitem_"))(_roundtrip_handler("shop", "parse_shop", "build_shop"))
-handles("soundroom.bin", lambda n, d: _base(n) == "soundroom.bin")(
-    _roundtrip_handler("soundroom", "read_soundroom", "build_soundroom"))
+@handles("soundroom.bin", lambda n, d: _base(n) == "soundroom.bin")
+def soundroom_file(cov: FileCoverage, walker: Walker) -> None:
+    from . import soundroom
+
+    entries = soundroom.read_soundroom(cov.data)
+    _roundtrip(cov, soundroom.build_soundroom(entries, cov.data))
+    cov.fill(DECODED)
 
 
 @handles("facedata.bin", lambda name, data: _base(name) == "facedata.bin")
@@ -767,6 +798,25 @@ def stm_file(cov: FileCoverage, walker: Walker) -> None:
 
     stm.read_stm(io.BytesIO(cov.data))
     cov.fill(DECODED)
+
+
+@handles("brstm", lambda name, data: data[:4] == b"RSTM")
+def brstm_file(cov: FileCoverage, walker: Walker) -> None:
+    from . import brstm
+
+    brstm.read_info(cov.data)
+    cov.fill(DECODED)
+
+
+@handles("brsar", lambda name, data: data[:4] == b"RSAR")
+def brsar_file(cov: FileCoverage, walker: Walker) -> None:
+    from . import brsar
+
+    archive = brsar.read_brsar(cov.data)
+    cov.mark(0, 0x40, DECODED)
+    for section in archive.sections:
+        status = DECODED if section.magic == "SYMB" else UNDECODED
+        cov.mark(section.offset, section.size, status, f"BRSAR {section.magic}")
 
 
 @handles("thp", lambda name, data: data[:4] == b"THP\0")

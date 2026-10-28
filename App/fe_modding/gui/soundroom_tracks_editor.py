@@ -1,8 +1,8 @@
-"""Sound Room tracks editor: the 64 music cues of the Sound Room menu.
+"""Sound Room track ordering for Path of Radiance and Radiant Dawn.
 
-The list is a table in ``sys/main.dol`` (see :mod:`fe_modding.game_code.sound_room_tracks`), so
-it is saved into the executable; the Game Code page and the chapter pages edit the same file and
-reread it whenever they are shown. The pictures behind the menu are the Soundroom Images panel.
+Path of Radiance stores 64 cue names in ``sys/main.dol``. Radiant Dawn stores
+85 cue/unlock rows in ``soundroom.bin``. The pictures behind the menu are
+edited by the separate Soundroom Images panel.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Optional
 
-from ..formats import gcfesnd
+from ..formats import fe10_sound, gcfesnd, soundroom
+from ..formats.soundroom import SoundRoomTrack
+from ..games import Game
 from ..game_code import sound_room_tracks as tracks
 from ..game_code.dol import Dol
 from ..game_code.versions import identify, read_boot_code
@@ -27,10 +29,14 @@ class SoundRoomTracksEditor(EditorPanel):
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
         self._project = project
+        self._fe10 = project.game == Game.RADIANT_DAWN
         self._changelog = changelog
-        self._path = sys_root_of(project) / "main.dol"
+        self._path = (files_root_of(project) / "soundroom.bin" if self._fe10 else
+                      sys_root_of(project) / "main.dol")
         self._version: Optional[str] = None
         self._names: list[str] = []
+        self._unlocks: list[int] = []
+        self._source: bytes | None = None
         self._index: Optional[int] = None
         self._dirty = False
         self._loading = False
@@ -47,11 +53,14 @@ class SoundRoomTracksEditor(EditorPanel):
         ttk.Button(bar, text="Revert", command=self._revert).pack(side="left", padx=(6, 0))
         self._status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._status.pack(side="left", padx=(10, 0))
-        ttk.Label(self, style="Muted.TLabel", wraplength=1000, justify="left", padding=(8, 2), text=(
-            f"The {tracks.TRACK_COUNT} music cues listed in the Sound Room menu, in menu order. The list lives in "
-            "the game code (sys/main.dol) and always has 64 entries; the names share a fixed amount of space, so a "
-            "longer name needs shorter ones elsewhere (a track listed twice is stored once). Any BGM cue of "
-            "Sound/gcfesnd.bin works, including ones added on the Music page.")).pack(fill="x")
+        description = ("The 85 music cues in Radiant Dawn's soundroom.bin, in menu order. Each row keeps its "
+                       "retail unlock ID; the current codec can reorder or reuse the cue names already pooled in "
+                       "that file." if self._fe10 else
+                       f"The {tracks.TRACK_COUNT} music cues listed in the Sound Room menu, in menu order. The list "
+                       "lives in the game code (sys/main.dol) and always has 64 entries; the names share a fixed "
+                       "amount of space. Any BGM cue of Sound/gcfesnd.bin works.")
+        ttk.Label(self, style="Muted.TLabel", wraplength=1000, justify="left", padding=(8, 2),
+                  text=description).pack(fill="x")
 
         body = ttk.Frame(self, padding=8)
         body.pack(fill="both", expand=True)
@@ -94,6 +103,22 @@ class SoundRoomTracksEditor(EditorPanel):
     def _load(self) -> None:
         self._loading = True
         try:
+            if self._fe10:
+                try:
+                    catalog = self._project.read_logical("sound_data")
+                    cues = fe10_sound.read_sound_data(catalog)
+                    self._name_box.config(values=sorted(c.name for c in cues if c.name.startswith("BGM_ROOM_")))
+                    self._source = self._path.read_bytes()
+                    rd_tracks = soundroom.read_soundroom_tracks(self._source)
+                    self._names = [track.cue for track in rd_tracks]
+                    self._unlocks = [track.unlock_id for track in rd_tracks]
+                    self._version = "RFEE01"
+                except Exception as exc:  # noqa: BLE001
+                    self._source, self._version, self._names, self._unlocks = None, None, [], []
+                    self._status.config(text=f"Could not read the track list: {exc}")
+                self._set_dirty(False)
+                self._fill(0 if self._names else None)
+                return
             try:
                 cues = gcfesnd.read_bgm_cues_path(files_root_of(self._project) / "Sound" / "gcfesnd.bin")
                 self._name_box.config(values=sorted({c.name for c in cues}))
@@ -124,6 +149,9 @@ class SoundRoomTracksEditor(EditorPanel):
     def _show_space(self) -> None:
         if self._version is None:
             self._space.config(text="")
+            return
+        if self._fe10:
+            self._space.config(text=f"{len(self._names)} fixed Sound Room rows in soundroom.bin")
             return
         used, room = tracks.packed_size(self._names), tracks.capacity(self._version)
         self._space.config(text=f"Name space: {used} of {room} bytes", style="Warn.TLabel" if used > room
@@ -157,6 +185,11 @@ class SoundRoomTracksEditor(EditorPanel):
             messagebox.showerror("Invalid name", "A cue name is plain ASCII text, such as BGM_MAP01_ROOM.", parent=self)
             self._name_var.set(self._names[self._index])
             return
+        if self._fe10 and name not in tuple(self._name_box["values"]):
+            messagebox.showerror("Invalid name", "Choose one of soundroom.bin's existing BGM_ROOM_ cues.",
+                                 parent=self)
+            self._name_var.set(self._names[self._index])
+            return
         self._names[self._index] = name
         self._tree.item(str(self._index), values=(self._index + 1, name))
         self._set_dirty(True)
@@ -167,6 +200,8 @@ class SoundRoomTracksEditor(EditorPanel):
         if i is None or not 0 <= i + step < len(self._names):
             return
         self._names[i], self._names[i + step] = self._names[i + step], self._names[i]
+        if self._fe10:
+            self._unlocks[i], self._unlocks[i + step] = self._unlocks[i + step], self._unlocks[i]
         self._set_dirty(True)
         self._fill(i + step)
 
@@ -175,6 +210,16 @@ class SoundRoomTracksEditor(EditorPanel):
         if not self._names:
             return False
         try:
+            if self._fe10:
+                if self._source is None:
+                    raise ValueError("soundroom.bin was not loaded")
+                rd_tracks = [SoundRoomTrack(name, unlock) for name, unlock in zip(self._names, self._unlocks)]
+                data = soundroom.build_soundroom_tracks(self._source, rd_tracks)
+                self._project.write_keeping_original(self._path, data)
+                self._source = data
+                self._changelog.append("soundroom.bin", "Saved the Sound Room track list")
+                self._set_dirty(False)
+                return True
             dol, version = self._open()        # reread: other pages may have changed main.dol since
             tracks.write_tracks(dol, version, self._names)
             self._project.write_keeping_original(self._path, bytes(dol.data))

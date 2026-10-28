@@ -134,6 +134,11 @@ def choices(world: World, state: GameState, unit: SimUnit, dest: tuple) -> list:
 
     out = []
     others = [u for u in state.living() if u.uid != unit.uid]
+    if unit.faction == PLAYER and (state.sight or state.fog):
+        from .fog import can_see, visible_tiles
+        visible = visible_tiles(world, state)
+        others = [u for u in others if not world.hostile(unit.faction, u.faction)
+                  or can_see(world, state, u, visible)]
     for index, item in combat.weapon_items(world, unit):
         low, high = combat.item_range(unit, item)
         for other in others:
@@ -168,6 +173,13 @@ def choices(world: World, state: GameState, unit: SimUnit, dest: tuple) -> list:
             out.append(Choice("talk", other.uid, label=f"Talk to {world.name(other.pid)}"))
         if can_shove(world, state, unit, dest, other):
             out.append(Choice("shove", other.uid, label=f"Shove {world.name(other.pid)}"))
+        if world.dialect.name == "fe10" and not world.hostile(unit.faction, other.faction):
+            if unit.rescue_partner is None and other.rescue_partner is None and unit.build >= other.build:
+                out.append(Choice("rescue", other.uid, label=f"Rescue {world.name(other.pid)}"))
+            if unit.rescue_partner is not None and other.rescue_partner is None:
+                out.append(Choice("give", other.uid, label=f"Give carried unit to {world.name(other.pid)}"))
+            if unit.rescue_partner is None and other.rescue_partner is not None:
+                out.append(Choice("take", other.uid, label=f"Take carried unit from {world.name(other.pid)}"))
     for action_id, name in LOCATION_ACTIONS.items():
         if action_id in VILLAGE_ACTIONS and dest in state.visited:
             continue
@@ -206,7 +218,8 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
     spent = reach[dest][0]
     action = command.action
     target = state.units.get(command.target) if command.target is not None else None
-    if action in ("attack", "shove", "talk", "steal", "take_item") and (target is None or not target.on_map):
+    if action in ("attack", "shove", "talk", "steal", "take_item", "rescue", "give", "take") and \
+            (target is None or not target.on_map):
         raise CommandError(f"{action}: no target.")
     start, emitted = unit.tile, len(state.out)
     if dest != unit.tile:
@@ -222,6 +235,9 @@ def apply(world: World, state: GameState, command, *, by_ai: bool = False) -> No
     acted = action != "wait"
     left = unit.move - spent
     canto = left if acted and not by_ai and left > 0 and has_canto(world, unit) else 0
+    if world.dialect.name == "fe10":
+        for x, y in walked[1:]:
+            tasks.append(TriggerCheck(19, {"pid": unit.pid, "x": x, "y": y, "me": unit.uid}))
     tasks.append(AfterAction(unit.uid, canto, walked, target.uid if target is not None else None))
     unit.done = True
     state.push_front(*tasks)
@@ -264,6 +280,22 @@ def _act(world: World, state: GameState, unit: SimUnit, dest: tuple, action: str
     elif action == "talk":
         state.emit("action", f"{world.name(unit.pid)} talks to {world.name(target.pid)}")
         tasks.append(TriggerCheck(8, {"pid1": unit.pid, "pid2": target.pid, "me": unit.uid, "target": target.uid}))
+    elif action == "rescue":
+        if world.hostile(unit.faction, target.faction) or unit.rescue_partner is not None or target.rescue_partner is not None:
+            raise CommandError("That unit cannot be rescued.")
+        unit.rescue_partner, target.hidden = target.uid, True
+        state.emit("action", f"{world.name(unit.pid)} rescues {world.name(target.pid)}")
+        tasks.append(TriggerCheck(17, {"pid1": unit.pid, "pid2": target.pid, "me": unit.uid, "target": target.uid}))
+    elif action in ("give", "take"):
+        source, receiver = (unit, target) if action == "give" else (target, unit)
+        carried = state.units.get(source.rescue_partner) if source.rescue_partner is not None else None
+        if carried is None or receiver.rescue_partner is not None or world.hostile(source.faction, receiver.faction):
+            raise CommandError("There is no carried unit to transfer.")
+        source.rescue_partner, receiver.rescue_partner = None, carried.uid
+        state.emit("action", f"{world.name(unit.pid)} {action}s {world.name(carried.pid)} "
+                             f"{'to' if action == 'give' else 'from'} {world.name(target.pid)}")
+        tasks.append(TriggerCheck(18, {"pid1": source.pid, "pid2": receiver.pid, "pid3": carried.pid,
+                                       "me": unit.uid, "target": target.uid}))
     elif action in ACTION_IDS:
         action_id = ACTION_IDS[action]
         state.emit("action", f"{world.name(unit.pid)}: {action} at {dest}")

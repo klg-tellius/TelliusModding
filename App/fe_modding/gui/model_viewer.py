@@ -117,7 +117,7 @@ import tempfile
 import tkinter as tk
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import numpy as np
 from PIL import Image, ImageTk
@@ -127,8 +127,9 @@ from ..formats import model as model_fmt
 from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from .. import terrain_kit, terrain_paint
-from ..formats import anim_registry, fe8data, zdbx
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, files_root_of, logical_game_path_of
+from ..formats import anim_registry, fe8data, fe10data, zdbx
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of, files_root_of
+from ..games import Game
 from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
@@ -220,6 +221,7 @@ class _Triangle:
     cull: str = "back"  # the shape's GX cull mode (flags 0x1800): "back", "none" (both sides) or "front"
     shade: float = 1.0  # per-frame colour multiplier (battle magic fades units without fading effects)
     overlay: bool = False  # draw after the 3D scene without sharing its depth buffer
+    layer: str = ""  # a map scene's "water" or "land" (the viewer's mesh filter); "" elsewhere
 
 
 @dataclass
@@ -264,11 +266,15 @@ def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
         for pack_path in sorted(ymu_dir.glob("*/pack.cmp")):
             sets.append((f"ymu/{pack_path.parent.name}", pack_path))
 
-    # Battle models: zu/<code>/<code>_<weapon>.pak, one per weapon type, all
-    # holding the same body and skeleton; listed once per folder.
+    # Battle models. FE9 repeats the body/skeleton in each weapon ``.pak``;
+    # FE10 stores them once in ``pack.cmp`` and keeps animations in ``.pak``.
     zu_dir = files_root / "zu"
     if zu_dir.exists():
         for folder in sorted(p for p in zu_dir.iterdir() if p.is_dir()):
+            shared = folder / "pack.cmp"
+            if shared.is_file():
+                sets.append((f"zu/{folder.name}", shared))
+                continue
             paks = sorted(folder.glob(f"{folder.name}_*.pak"))
             if paks:
                 sets.append((f"zu/{folder.name}", paks[0]))
@@ -994,20 +1000,26 @@ def _load_model_set(label: str, container_path: Path, pending: dict[Path, bytes]
 
 
 def _is_battle_container(path: Path) -> bool:
-    """``zu/<code>/<code>_<weapon>.pak``: a battle model's uncompressed
-    pack (map models and scenery use LZ10-compressed ``.cmp`` packs)."""
-    return path.suffix.lower() == ".pak"
+    """A battle-model body container: FE9's weapon ``.pak`` or FE10's
+    shared ``zu/<code>/pack.cmp``."""
+    path = Path(path)
+    return path.suffix.lower() == ".pak" or (
+        path.name.casefold() == "pack.cmp" and path.parent.parent.name.casefold() == "zu")
+
+
+def _is_uncompressed_pack(path: Path) -> bool:
+    return Path(path).suffix.lower() == ".pak"
 
 
 def _unpack(path: Path, data: bytes) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
-    raw = data if _is_battle_container(path) else lz10.decompress(data)
+    raw = data if _is_uncompressed_pack(path) else lz10.decompress(data)
     entries = pak.read_pak_entries(raw)
     return entries, {e.name: pak.read_pak_file_content(raw, e) for e in entries}
 
 
 def _pack(path: Path, entries: list[pak.PakEntry], files: dict[str, bytes]) -> bytes:
     packed = pak.pack_pak([(e.name, files[e.name]) for e in entries], [e.reserved for e in entries])
-    return packed if _is_battle_container(path) else lz10.compress(packed)
+    return packed if _is_uncompressed_pack(path) else lz10.compress(packed)
 
 
 def _read_container(container_path: Path) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
@@ -1015,10 +1027,21 @@ def _read_container(container_path: Path) -> tuple[list[pak.PakEntry], dict[str,
 
 
 def _set_containers(container_path: Path) -> list[Path]:
-    """Every pack of the set: a battle model's weapon packs, else the one pack."""
-    if _is_battle_container(container_path):
+    """Every container that owns the set's body and skeleton."""
+    if _is_uncompressed_pack(container_path):
         return sorted(container_path.parent.glob(f"{container_path.parent.name}_*.pak"))
     return [container_path]
+
+
+def _animation_containers(container_path: Path) -> list[Path]:
+    """Archives holding a battle set's animations.
+
+    FE10's shared ``pack.cmp`` has the body and skeleton while sibling
+    ``.pak`` archives hold animations; FE9 keeps all three together.
+    """
+    if (_is_battle_container(container_path) and not _is_uncompressed_pack(container_path)):
+        return sorted(container_path.parent.glob("*.pak"))
+    return _set_containers(container_path)
 
 
 def _set_contents(
@@ -1048,7 +1071,7 @@ def _set_contents(
     if texture is not None:
         files[texture.name] = data(texture)
     animations = []
-    for pack_path in _set_containers(container_path):
+    for pack_path in _animation_containers(container_path):
         _e, pack_files = _unpack(pack_path, data(pack_path))
         animations += [(n, d) for n, d in pack_files.items() if Path(n).suffix.lower() == ".ga"]
     return files, animations
@@ -2187,8 +2210,9 @@ def replace_battle_rig_with_glb(container_path: Path, gltf_path: Path, *, new_ri
     Refused when the armature lacks one of the old rig's anchor bones, or
     when an imported animation lacks an event code the battle script waits
     for (``rig_contract.event_errors``)."""
-    paks = _set_containers(container_path)
-    _entries, files = _read_container(paks[0])
+    body_containers = _set_containers(container_path)
+    animation_containers = _animation_containers(container_path)
+    _entries, files = _read_container(body_containers[0])
     g_names = [n for n in files if Path(n).suffix.lower() == ".g"]
     if not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} has no skeleton.")
@@ -2217,7 +2241,7 @@ def replace_battle_rig_with_glb(container_path: Path, gltf_path: Path, *, new_ri
     reused: list[str] = []
     event_problems: list[str] = []
     cache: dict[tuple[str, bytes], tuple[bytes, list[str]]] = {}
-    for pack_path in paks:
+    for pack_path in animation_containers:
         _e, pack_files = _read_container(pack_path)
         weapon = pack_path.stem.rsplit("_", 1)[-1].lower()
         rebuilt = {}
@@ -2300,15 +2324,15 @@ def replace_battle_body_with_glb(
     material of the same name. ``skeleton_data`` and ``pack_animations``
     (per pack, file name -> ``.ga``) replace the rig too
     (:func:`replace_battle_rig_with_glb`)."""
-    paks = _set_containers(container_path)
-    _entries, files = _read_container(paks[0])
+    body_containers = _set_containers(container_path)
+    _entries, files = _read_container(body_containers[0])
     gs_names = [n for n in files if Path(n).suffix.lower() == ".gs"]
     g_names = [n for n in files if Path(n).suffix.lower() == ".g"]
     if len(gs_names) != 1 or not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} is not a battle model (one .gs and a .g).")
     original = gs_file.read_gs(files[gs_names[0]])
     parsed = []
-    for pack_path in paks:
+    for pack_path in _animation_containers(container_path):
         _e, pack_files = _read_container(pack_path)
         pack_files.update((pack_animations or {}).get(pack_path, {}))
         parsed += [animation.read_animation_bytes(d) for n, d in pack_files.items() if Path(n).suffix.lower() == ".ga"]
@@ -2382,12 +2406,20 @@ def replace_battle_body_with_glb(
             "next to it; camera, foot and root sockets carry no geometry either."
         )
     out: dict[Path, bytes] = {}
-    for pack_path in paks:
+    for pack_path in body_containers:
         entries, pack_files = _read_container(pack_path)
         pack_files[gs_names[0]] = gs_bytes
         if skeleton_data is not None:
             pack_files[g_names[0]] = skeleton_data
         pack_files.update((pack_animations or {}).get(pack_path, {}))
+        out[pack_path] = _pack(pack_path, entries, pack_files)
+    # FE10 keeps animations in sibling .pak archives rather than alongside
+    # the shared body/skeleton in pack.cmp.
+    for pack_path, replacements in (pack_animations or {}).items():
+        if pack_path in body_containers:
+            continue
+        entries, pack_files = _read_container(pack_path)
+        pack_files.update(replacements)
         out[pack_path] = _pack(pack_path, entries, pack_files)
     if new_tpl is not None:
         for path in variants:
@@ -2409,7 +2441,7 @@ def set_animations_by_pack(container_path: Path) -> list[tuple[str, str, bytes]]
     ``loose`` ones."""
     out: list[tuple[str, str, bytes]] = []
     if _is_battle_container(container_path):
-        for pack_path in _set_containers(container_path):
+        for pack_path in _animation_containers(container_path):
             _e, files = _read_container(pack_path)
             weapon = pack_path.stem.rsplit("_", 1)[-1]
             out += [(n, weapon, d) for n, d in files.items() if Path(n).suffix.lower() == ".ga"]
@@ -2626,7 +2658,8 @@ def _set_animation_output(container_path: Path, target: str, ga: bytes) -> dict[
     """The files to write so the set's animation ``target`` (a pack entry,
     in every weapon pack that holds it, or a loose file) becomes ``ga``."""
     out = {}
-    for pack_path in _set_containers(container_path):
+    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
+    for pack_path in containers:
         entries, files = _read_container(pack_path)
         if target in files:
             files[target] = ga
@@ -2641,7 +2674,8 @@ def _set_animation_output(container_path: Path, target: str, ga: bytes) -> dict[
 
 def set_animation_bytes(container_path: Path, target: str) -> bytes:
     """The current bytes of the set's animation ``target``."""
-    for pack_path in _set_containers(container_path):
+    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
+    for pack_path in containers:
         _e, files = _read_container(pack_path)
         if target in files:
             return files[target]
@@ -2669,35 +2703,42 @@ def replace_animation_with_glb(
     replaced file's events and loop settings unless the glTF carries its
     own. A battle model's animation is rewritten in the weapon pack that
     holds it."""
-    for pack_path in _set_containers(container_path):
+    # FE10 battle models split the rig (``pack.cmp``) from the weapon
+    # animation archives (sibling ``*.pak`` files). Keep the body archive
+    # as the source of the skeleton/mesh even when the target animation is
+    # found in a different archive.
+    _body_entries, body_files = _read_container(_set_containers(container_path)[0])
+    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
+    target_container = container_path
+    target_entries: list[pak.PakEntry] | None = None
+    target_files: dict[str, bytes] | None = None
+    for pack_path in containers:
         entries, files = _read_container(pack_path)
         if target in files:
-            container_path = pack_path
+            target_container, target_entries, target_files = pack_path, entries, files
             break
-    else:
-        entries, files = _read_container(container_path)
-    g_names = [n for n in files if Path(n).suffix.lower() == ".g"]
+    g_names = [n for n in body_files if Path(n).suffix.lower() == ".g"]
     if not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} has no skeleton.")
     loose = container_path.parent / target
-    if target in files:
-        template = files[target]
+    if target_files is not None:
+        template = target_files[target]
     elif loose.is_file():
         template = loose.read_bytes()
     else:
         raise gltf_import.GltfImportError(f"{target} is not an animation of this set.")
     ga, warnings = gltf_import.import_animation(
         gltf_path.read_bytes(),
-        files[g_names[0]],
+        body_files[g_names[0]],
         animation_name=gltf_animation,
         template=template,
         base_dir=gltf_path.parent,
     )
-    gs_names = [n for n in files if Path(n).suffix.lower() == ".gs"]
+    gs_names = [n for n in body_files if Path(n).suffix.lower() == ".gs"]
     if gs_names:
         excess = gltf_import.composite_range_excess(
-            gs_file.read_gs(files[gs_names[0]]),
-            skeleton.read_skeleton_file(files[g_names[0]]).bones,
+            gs_file.read_gs(body_files[gs_names[0]]),
+            skeleton.read_skeleton_file(body_files[g_names[0]]).bones,
             [animation.read_animation_bytes(ga)],
         )
         if excess is not None and excess > 1.0:
@@ -2706,10 +2747,13 @@ def replace_animation_with_glb(
                 "blended-vertex buffer holds; the game clamps them there. Re-import the body after the animation "
                 "to resize that range."
             )
-    if target not in files:
+    if target_files is None:
         return ModelImport({loose: ga}, warnings)
-    files[target] = ga
-    return ModelImport({container_path: _pack(container_path, entries, files)}, warnings)
+    target_files[target] = ga
+    assert target_entries is not None
+    return ModelImport(
+        {target_container: _pack(target_container, target_entries, target_files)}, warnings
+    )
 
 
 class _NewSlotDialog(tk.Toplevel):
@@ -2724,9 +2768,16 @@ class _NewSlotDialog(tk.Toplevel):
         self._project = project
         self._battle = label.startswith("zu/")
         self._source = label.split("/", 1)[1]
-        fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
-        self._characters = {c.pid: c for c in fe8.characters if c.pid}
-        jids = sorted({c.jid for c in fe8.classes if c.jid})
+        if project.game is Game.RADIANT_DAWN:
+            database = fe10data.read_fe10data(project.read_logical("game_data"))
+            self._characters = {record.values.get("pid"): record for record in database.characters
+                                if record.values.get("pid")}
+            jids = sorted({record.values.get("jid") for record in database.classes
+                           if record.values.get("jid")})
+        else:
+            fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
+            self._characters = {c.pid: c for c in fe8.characters if c.pid}
+            jids = sorted({c.jid for c in fe8.classes if c.jid})
 
         body = ttk.Frame(self, padding=10)
         body.pack(fill="both", expand=True)
@@ -2749,12 +2800,14 @@ class _NewSlotDialog(tk.Toplevel):
         pid_box = ttk.Combobox(body, textvariable=self._pid, values=sorted(self._characters), width=30)
         pid_box.bind("<<ComboboxSelected>>", lambda e: self._character_picked())
         if self._battle:
-            field("New model code", ttk.Entry(body, textvariable=self._new_name, width=12), "4 lowercase letters or digits")
+            hint = ("1-16 letters, digits or _" if project.game is Game.RADIANT_DAWN
+                    else "4 lowercase letters or digits")
+            field("New model code", ttk.Entry(body, textvariable=self._new_name, width=12), hint)
             field("Character", pid_box, "empty: the whole class")
             field("Class", ttk.Combobox(body, textvariable=self._jid, values=jids, width=30))
         else:
             bases = sorted({r.base_aid for r in model_slots.map_model_records(project)
-                            if r.class_folder == self._source + "/"})
+                            if r.class_folder.rstrip("/") == self._source})
             field("Copy animation ID", ttk.Combobox(body, textvariable=self._source_aid, values=bases,
                                                     state="readonly", width=30))
             if bases:
@@ -2773,8 +2826,11 @@ class _NewSlotDialog(tk.Toplevel):
 
     def _character_picked(self) -> None:
         character = self._characters.get(self._pid.get())
-        if character and self._battle and character.jid:
-            self._jid.set(character.jid)
+        if character and self._battle:
+            jid = (character.values.get("jid") if self._project.game is Game.RADIANT_DAWN
+                   else character.jid)
+            if jid:
+                self._jid.set(jid)
 
     def _ok(self) -> None:
         name, pid = self._new_name.get().strip(), self._pid.get().strip() or None
@@ -3558,6 +3614,35 @@ def import_review_rows(
     return rows, notes
 
 
+def validate_model_import(label: str, container_path: Path, outputs: dict[Path, bytes]) -> None:
+    """Fully reparse generated model outputs before the UI offers to write them.
+
+    This is intentionally independent of the preview: a preview failure used
+    to be informational and still left the Write button enabled.  Every pack
+    member produced by an importer is now decoded with its native codec, then
+    the joined set is loaded from the pending bytes as the final integration
+    check.  Unknown pack members are retained and do not need interpretation.
+    """
+    for path, data in outputs.items():
+        suffix = path.suffix.lower()
+        members: dict[str, bytes]
+        if suffix in {".cmp", ".pak"}:
+            _entries, members = _unpack(path, data)
+        else:
+            members = {path.name: data}
+        for name, blob in members.items():
+            member_suffix = Path(name).suffix.lower()
+            if member_suffix == ".g":
+                skeleton.read_skeleton_file(blob)
+            elif member_suffix == ".gs":
+                gs_file.read_gs(blob)
+            elif member_suffix == ".ga":
+                animation.read_animation_bytes(blob)
+            elif member_suffix == ".tpl":
+                tpl.read_tpl_image_info(io.BytesIO(blob))
+    _load_model_set(label + " (validated)", container_path, outputs)
+
+
 class _ImportReviewDialog(tk.Toplevel):
     """Everything an import would change, before it is written: a preview
     of the converted set, the figures of every changed file next to the
@@ -4024,6 +4109,14 @@ class _ModelCanvas(tk.Canvas):
         if self._view_span > 0.0:
             return height / self._view_span
         return (min(width, height) * FIT_FRACTION / self._extent) * self._zoom
+
+    def set_triangles(self, triangles: list[_Triangle]) -> None:
+        """Swap the static mesh (a filtered view of the same model) keeping the camera."""
+        self._triangles = triangles
+        self._animated_triangles = None
+        self._pose_arrays = None
+        self._gpu_model = None
+        self._schedule_redraw()
 
     def set_show_mesh(self, show: bool) -> None:
         """Toggle the mesh's visibility - the skeleton overlay (markers and
@@ -4617,6 +4710,13 @@ class _ModelPreview(ttk.Frame):
         ttk.Checkbutton(
             canvas_header, text="Show mesh", variable=self._show_mesh_var, command=self._on_show_mesh_toggled
         ).pack(side="left", padx=(0, 8))
+        # a map scene's water and land meshes, to look at one without the other
+        self._mesh_filter_var = tk.StringVar(value="All meshes")
+        self._mesh_filter = ttk.Combobox(canvas_header, textvariable=self._mesh_filter_var, width=12,
+                                         values=("All meshes", "Land only", "Water only"), state="disabled")
+        self._mesh_filter.pack(side="left", padx=(0, 8))
+        self._mesh_filter.bind("<<ComboboxSelected>>", lambda e: self._apply_mesh_filter())
+        tip(self._mesh_filter, "Map models: show only the terrain and props, or only the water surfaces and waves")
         self._show_particles_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             canvas_header, text="Show particles", variable=self._show_particles_var,
@@ -4745,6 +4845,15 @@ class _ModelPreview(ttk.Frame):
     def _top_down_view(self) -> None:
         self._canvas.top_down_view()
 
+    def _filtered_triangles(self) -> list[_Triangle]:
+        triangles = self._loaded.triangles if self._loaded is not None else []
+        wanted = {"Land only": "land", "Water only": "water"}.get(self._mesh_filter_var.get())
+        return triangles if wanted is None else [t for t in triangles if t.layer == wanted]
+
+    def _apply_mesh_filter(self) -> None:
+        if self._loaded is not None:
+            self._canvas.set_triangles(self._filtered_triangles())
+
     def _on_show_mesh_toggled(self) -> None:
         self._canvas.set_show_mesh(self._show_mesh_var.get())
 
@@ -4808,7 +4917,11 @@ class _ModelPreview(ttk.Frame):
 
         bone_names = {i: b.name for i, b in enumerate(loaded.bones)}
         bone_parents = {i: b.parent_index for i, b in enumerate(loaded.bones) if b.parent_index >= 0}
-        self._canvas.set_model(loaded.triangles, loaded.bone_markers, bone_parents, bone_names)
+        layered = any(t.layer for t in loaded.triangles)
+        self._mesh_filter.configure(state="readonly" if layered else "disabled")
+        if not layered:
+            self._mesh_filter_var.set("All meshes")
+        self._canvas.set_model(self._filtered_triangles(), loaded.bone_markers, bone_parents, bone_names)
         self._canvas.set_particles((), loaded.particle_materials)
         self._frame_scale.config(to=0, state="disabled")
         self._play_button.config(state="disabled")
@@ -4838,6 +4951,18 @@ class _ModelPreview(ttk.Frame):
                 self._anim_list.see(i)
                 self._on_animation_selected()
                 return
+
+    def play_first_animation(self) -> None:
+        """Select the loaded set's first animation and play it (a map prop's own ``.ga``)."""
+        if self._loaded is None or not self._loaded.animations:
+            return
+        self.select_animation(self._loaded.animations[0][0])
+        if self._current_animation is not None and not self._playing:
+            self._toggle_play()
+
+    def set_show_skeleton(self, show: bool) -> None:
+        self._show_skeleton_var.set(show)
+        self._canvas.set_show_skeleton(show)
 
     def _on_bone_selected(self) -> None:
         selection = self._bone_tree.selection()
@@ -5126,6 +5251,10 @@ class ModelViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
+        # Existing RD slots are safe to rewrite: their member names and CMS
+        # references do not move. New-slot/table operations remain gated on
+        # variable-size FE10Anim/FE10Battle rebuilding.
+        self._rd_structural_read_only = project.game is Game.RADIANT_DAWN and not self.map_only
         # New slot… and Model tables… write FE8Data.bin themselves (a character's animation ID);
         # the shared copy every other editor works on is saved before and reloaded after.
         self._session = session
@@ -5165,6 +5294,13 @@ class ModelViewer(EditorPanel):
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
         ttk.Label(left, text=self.list_heading).pack(anchor="w")
+        if self._rd_structural_read_only:
+            ttk.Label(
+                left,
+                text="Radiant Dawn slots can be imported, re-rigged, cloned and restored. The raw model-table "
+                     "management dialog remains Path of Radiance-specific.",
+                style="Muted.TLabel", wraplength=280, justify="left",
+            ).pack(anchor="w", pady=(3, 5))
 
         self._new_map_button = None
         self._new_map_file_button = None
@@ -5215,7 +5351,10 @@ class ModelViewer(EditorPanel):
             buttons, text="Restore original...", command=self._restore_originals, state="disabled"
         )
         self._new_slot_button = ttk.Button(buttons, text="New slot...", command=self._new_slot, state="disabled")
-        self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables)
+        self._remove_slot_button = ttk.Button(
+            buttons, text="Remove added slot...", command=self._remove_slot, state="disabled")
+        self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables,
+                                         state="disabled" if self._rd_structural_read_only else "normal")
         self._paint_kit_button = ttk.Button(
             buttons, text="Sculpt & paint kit...", command=self._export_paint_kit, state="disabled"
         )
@@ -5231,7 +5370,8 @@ class ModelViewer(EditorPanel):
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
-                                    self._tables_button, self._paint_kit_button, self._swatches_button)):
+                                    self._remove_slot_button, self._tables_button,
+                                    self._paint_kit_button, self._swatches_button)):
             # two per row: three cut labels such as "Import animation..." at the default pane width
             button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
         for column in range(2):
@@ -5257,8 +5397,8 @@ class ModelViewer(EditorPanel):
     # -- data loading ---------------------------------------------------------
     def _load_set_list(self) -> None:
         self._all_sets = _iter_model_sets(self._project)
-        if self.map_only:
-            self._all_sets = [item for item in self._all_sets if item[0].startswith("zmap/")]
+        # chapter maps are listed under Map Models only
+        self._all_sets = [item for item in self._all_sets if item[0].startswith("zmap/") == self.map_only]
         self._apply_filter("")
         self._empty_label.config(
             text="" if self._all_sets else "No .g/.gs/.ga model data found.\nExtract the project first."
@@ -5278,18 +5418,24 @@ class ModelViewer(EditorPanel):
         label, path = self._filtered_sets[selection[0]]
         self._export_button.config(state="normal")
         self._blend_button.config(state="normal")
+        writable = True
         # Scenery takes a static mesh, map and battle models a skinned body.
         self._import_button.config(
             text="Import .blend/.glb...",
-            state="normal" if label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")) else "disabled",
+            state="normal" if writable and label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")) else "disabled",
         )
-        self._import_anim_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._import_rig_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._kit_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._events_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._fit_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._restore_button.config(state="normal" if self._project.originals_in(path.parent) else "disabled")
-        self._new_slot_button.config(state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+        animatable = writable and label.startswith(("ymu/", "zu/"))
+        self._import_anim_button.config(state="normal" if animatable else "disabled")
+        self._import_rig_button.config(state="normal" if animatable else "disabled")
+        self._kit_button.config(state="normal" if writable and label.startswith(("ymu/", "zu/")) else "disabled")
+        self._events_button.config(state="normal" if animatable else "disabled")
+        self._fit_button.config(state="normal" if animatable else "disabled")
+        self._restore_button.config(
+            state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
+        self._new_slot_button.config(
+            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+        self._remove_slot_button.config(
+            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         paintable = "normal" if is_map_container(path) else "disabled"
         self._paint_kit_button.config(state=paintable)
         self._swatches_button.config(state=paintable)
@@ -6057,6 +6203,11 @@ class ModelViewer(EditorPanel):
         """Show the import review; on Write, write every output (keeping
         the files as extracted in the project's originals folder), log the
         change and reload the set."""
+        try:
+            validate_model_import(label, path, result.outputs)
+        except Exception as exc:  # noqa: BLE001 - invalid generated archives must never reach the write action
+            messagebox.showerror("Could not validate import", str(exc), parent=self)
+            return
         dialog = _ImportReviewDialog(self, title, label, path, result, animation_name=animation_name)
         self.wait_window(dialog)
         if not dialog.result:
@@ -6075,13 +6226,15 @@ class ModelViewer(EditorPanel):
         session = self._session
         if session is None or not getattr(session, "dirty", False):
             return True
-        if not messagebox.askyesno("Save FE8Data.bin?", "Model slots can change characters' animation IDs in "
-                                   "FE8Data.bin. Save its unsaved edits first?", parent=self):
+        project = getattr(self, "_project", None)
+        data_name = "FE10Data.cms" if project is not None and project.game is Game.RADIANT_DAWN else "FE8Data.bin"
+        if not messagebox.askyesno(f"Save {data_name}?", "Model slots can change characters' animation IDs in "
+                                   f"{data_name}. Save its unsaved edits first?", parent=self):
             return False
         try:
             session.save()
         except (OSError, ValueError) as exc:
-            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+            messagebox.showerror(f"Could not save {data_name}", str(exc), parent=self)
             return False
         return True
 
@@ -6121,6 +6274,53 @@ class ModelViewer(EditorPanel):
             _ModelTablesDialog(self, self._project, changed)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read the game data", str(exc), parent=self)
+
+    def _remove_slot(self) -> None:
+        selected = self._selected_set()
+        if selected is None or not self._game_data_saved():
+            return
+        label, _path = selected
+        try:
+            if label.startswith("zu/"):
+                code = label.split("/", 1)[1]
+                if code in model_slots.vanilla_battle_codes(self._project):
+                    raise ValueError("The game's original battle-model slots are protected.")
+                if not messagebox.askyesno(
+                        "Remove added model", f"Remove added battle model {label} and release its selector?",
+                        parent=self):
+                    return
+                changed = model_slots.remove_battle_model(self._project, code)
+                description = f"Removed added battle model {label} ({changed} selectors)"
+            elif label.startswith("ymu/"):
+                folder = label.split("/", 1)[1]
+                aids = sorted({record.base_aid for record in model_slots.map_model_records(self._project)
+                               if record.class_folder.rstrip("/") == folder
+                               and record.base_aid not in model_slots.vanilla_map_aids(self._project)})
+                if not aids:
+                    raise ValueError("The game's original map-model slots are protected.")
+                aid = aids[0]
+                if len(aids) > 1:
+                    aid = simpledialog.askstring(
+                        "Remove added model", "Animation ID to remove:\n" + ", ".join(aids),
+                        initialvalue=aid, parent=self)
+                    if aid is None:
+                        return
+                    if aid not in aids:
+                        raise ValueError(f"{aid} is not an added animation ID in {label}.")
+                if not messagebox.askyesno(
+                        "Remove added model", f"Remove {aid} and release every character using it?",
+                        parent=self):
+                    return
+                changes = model_slots.remove_map_model(self._project, aid)
+                description = f"Removed added map model {aid}: " + "; ".join(changes)
+            else:
+                return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not remove model", str(exc), parent=self)
+            return
+        self._reload_game_data()
+        self._changelog.append(label, description)
+        self._load_set_list()
 
     def _restore_originals(self) -> None:
         selected = self._selected_set()

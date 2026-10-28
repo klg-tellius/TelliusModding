@@ -120,5 +120,28 @@ class ThreeTierRetailTests(unittest.TestCase):
                 self.assertIn("MIID_MASTERCROWN", {entry.speaker for entry in entries})
 
 
+class CrownLevelCheckTests(unittest.TestCase):
+    """The Master Crown's level gate runs: it read address 0x2DF1 (an r0-based load) and crashed."""
+
+    def test_second_tier_reads_the_minimum_level_from_the_cave(self):
+        from fe_modding.game_code import three_tier_code as ttc
+        from tests.test_chapter_flow import MiniPPC
+
+        for version in ttc._SITES:
+            can = ttc._SITES[version][0]
+            code = {}
+            for edit in ttc.edits_for(version):
+                if edit.address == ttc.CROWN_LEVEL_CHECK:
+                    for i in range(0, len(edit.patched), 4):
+                        code[edit.address + i] = int.from_bytes(edit.patched[i:i + 4], "big")
+            unit = 0x80400000
+            for flags, expected in ((4, 13), (0, 10)):          # +0x1BC bit 2: already promoted
+                memory = {ttc.CROWN_MIN_LEVEL: 13, unit + 0x1BF: flags}
+                cpu = MiniPPC(code, memory)
+                cpu.r[31] = unit
+                self.assertEqual(cpu.run(ttc.CROWN_LEVEL_CHECK, {can + 0x9C}), can + 0x9C)
+                self.assertEqual(cpu.r[0], expected, (version, flags))
+
+
 if __name__ == "__main__":
     unittest.main()

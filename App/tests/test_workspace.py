@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from fe_modding import chapters
 from fe_modding.games import Game
+from fe_modding.game_profile import RADIANT_DAWN_PROFILE
 from fe_modding.project_index import ProjectIndex
 
 
@@ -40,6 +41,16 @@ class ChapterHelperTests(unittest.TestCase):
             project = _fake_project(Path(tmp))
             self.assertEqual(chapters.chapter_phases(project, "09"), ["bmap09", "bmap09_2", "bmap09_3", "bmap09_10"])
             self.assertEqual(chapters.chapter_phases(project, "11"), [])
+
+    def test_radiant_dawn_phase_folders_keep_part_chapter_and_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zmap = root / "files" / "zmap"
+            for name in ("bmap0407a", "bmap0407a_2", "bmap0407b", "bmap0101"):
+                (zmap / name).mkdir(parents=True)
+            project = SimpleNamespace(extracted_dir=root, profile=RADIANT_DAWN_PROFILE)
+            self.assertEqual(chapters.chapter_phases(project, "0407a"), ["bmap0407a", "bmap0407a_2"])
+            self.assertEqual(chapters.chapter_phases(project, "0407b"), ["bmap0407b"])
 
     def test_asset_file_lists(self):
         from fe_modding.gui.pages.text_assets import message_files, script_files

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import struct
 import sys
@@ -34,18 +35,63 @@ LOCALS = [f"XFT_LOCAL_{i:03d}" for i in range(80)]
 AVATAR = "PID_XFT_AVATAR"
 
 
+VICTORY_MARKER = "# XFT automatic test victory"
+_VICTORY_BLOCK = re.compile(r"\n?# XFT automatic test victory\n@on_phase\([^\n]*\)\ndef XftFinishAfterPlayerTurnOne\(\):\n"
+                            r"(?:    [^\n]*\n?)+")
+
+
+def part_goals(source, chapter):
+    """[(section flag, goal flag)] of a multipart chapter, last part first; [] for one part.
+
+    Part k (k >= 2) starts in ``Opening<chapter>_<k>``, whose first top-level ``set`` marks it
+    (C18: セクション２..４). Part k ends when the flag of the ``@on_complete`` handler that calls
+    ``Complete<chapter>(k)`` is set; the last part ends on ``gf_complete``, whose handler is the
+    whole chapter's ending (it assumes the earlier parts were played)."""
+    goals = {}
+    for flag, body in re.findall(r'@on_complete\(flag="([^"]+)"\)\ndef \w+\(\):\n((?:(?:    [^\n]*)?\n)+)', source):
+        if flag != "gf_complete":
+            for part in re.findall(rf"\bComplete{chapter}\((\d+)\)", body):
+                goals[int(part)] = flag
+    if not goals:
+        return []
+    sections = {}
+    for part, body in re.findall(rf"def Opening{chapter}_(\d+)\(\):\n((?:(?:    [^\n]*)?\n)+)", source):
+        first = re.search(r'^    set\("([^"]+)"\)', body, re.M)
+        if first:
+            sections[int(part)] = first.group(1)
+    last = max(goals) + 1
+    if any(part not in sections for part in range(2, last + 1)):
+        raise ValueError(f"C{chapter:02d}: a part opening has no section flag; cannot route the test victory")
+    return [(sections.get(part), goals.get(part, "gf_complete")) for part in range(last, 0, -1)]
+
+
+def victory_source(source, chapter):
+    """The automatic turn-one victory: ``gf_complete``, or the current part's goal flag."""
+    body = ""
+    goals = part_goals(source, chapter)
+    if not goals:
+        body = '    set("gf_complete")\n'
+    for i, (section, goal) in enumerate(goals):
+        if section is None:
+            body += f'    else:\n        set("{goal}")\n'
+        else:
+            body += f'    {"if" if i == 0 else "elif"} get("{section}"):\n        set("{goal}")\n'
+    return ('\n' + VICTORY_MARKER + '\n@on_phase(turn_from=1, turn_to=1, phase="enemy")\n'
+            'def XftFinishAfterPlayerTurnOne():\n' + body)
+
+
 def apply_test_quality_of_life(project, setup, layout):
     """Keep probe coordinates; shorten only the connected test battles."""
     if setup is not None:
         for destination in setup.destinations:
             path = script_sources.chapter_script(project, f"{destination.chapter:02d}")
             source = script_sources.peek(project, path)
-            marker = "# XFT automatic test victory"
-            if marker not in source:
-                source += ('\n' + marker + '\n'
-                           '@on_phase(turn_from=1, turn_to=1, phase="enemy")\n'
-                           'def XftFinishAfterPlayerTurnOne():\n    set("gf_complete")\n')
-                write_script(project, path, source, layout)
+            # Earlier builds always set gf_complete, which in a multipart chapter runs the final
+            # ending from part 1: replace that handler rather than keeping it.
+            base = _VICTORY_BLOCK.sub("", source)
+            updated = base + victory_source(base, destination.chapter)
+            if updated != source:
+                write_script(project, path, updated, layout)
     from fe_modding.game_code.editor import CodeEditor
     from fe_modding.game_code.catalog import CATALOG
     CodeEditor(project.extracted_dir).set_value(CATALOG.entries["anim.speed"], 2.0)

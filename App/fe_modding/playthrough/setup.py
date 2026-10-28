@@ -26,7 +26,7 @@ from .state import PLAYER, GameState, PhaseStart, Preparations, SimUnit
 from .world import World
 
 F = dispo.FIELD
-OPENING = ("Startup", "Opening0", "Opening1", "Opening2")
+OPENING = ("Startup", "Opening0", "Opening1", "Opening2")  # FE9 compatibility; use world.dialect.openings
 
 
 def groups(documents) -> dict:
@@ -47,8 +47,8 @@ def make_unit(world: World, record: list, group: str = "") -> SimUnit:
     char = world.characters.get(pid)
     jid = jid_field if isinstance(jid_field, str) else (char.jid if char is not None else "")
     try:
-        base = bsu.from_character(world.fe8, pid, jid=jid or None) if char is not None else \
-            bsu.from_class(world.fe8, jid)
+        base = world.tactical_data.combatant(pid, jid=jid or None) if char is not None else \
+            world.tactical_data.class_combatant(jid)
     except KeyError:
         base = bsu.Combatant(name=pid, pid=pid, jid=jid)
     cls = world.classes.get(jid)
@@ -74,12 +74,20 @@ def make_unit(world: World, record: list, group: str = "") -> SimUnit:
         if isinstance(sid, str) and sid not in skills:
             skills.append(sid)
     items = []
-    for i in range(8):
+    inventory_slots = 7 if world.dialect.name == "fe10" else 8
+    for i in range(inventory_slots):
         iid = record[F[f"item{i}"]]
         if isinstance(iid, str):
             item = world.items.get(iid)
             items.append([iid, item.uses if item is not None else 1, bool(int(record[F[f"item{i}_flag"]] or 0) & 1)])
     faction = int(record[F["faction"]] or 0)
+    tier = 1
+    if world.dialect.name == "fe10" and cls is not None:
+        tier = 1 + int(bool(getattr(cls, "demotes_to", None)))
+        previous = world.classes.get(getattr(cls, "demotes_to", None))
+        if previous is not None and getattr(previous, "demotes_to", None):
+            tier = 3
+    faction = faction if faction in world.army.names else (2 if faction > 1 else faction)
     return SimUnit(
         uid=0, pid=pid, jid=jid, faction=faction, x=int(record[F["pos_x"]]), y=int(record[F["pos_y"]]),
         level=level, stats=stats, hp=stats[0], build=base.build, move=cls.movement if cls is not None else 5,
@@ -88,6 +96,11 @@ def make_unit(world: World, record: list, group: str = "") -> SimUnit:
         seq_attack=record[F["seq_attack"]], seq_move=record[F["seq_move"]], seq_heal=record[F["seq_heal"]],
         mtype=record[F["mtype"]], ai_order=int(record[F["ai_order"]] or 0), flags=flags, group=group,
         boss=bool(flags & dispo.FLAG_COMMANDER) and faction != PLAYER,
+        team=faction, force=int(record[F["faction"]] or 0), tier=tier,
+        effective_level=level + (tier - 1) * 20,
+        biorhythm_type=int(getattr(char, "biorhythm", 255)) if char is not None else 255,
+        authority=int(getattr(char, "authority", 0)) if char is not None else 0,
+        laguz_gauge=0,
     )
 
 
@@ -174,7 +187,7 @@ def opening_tasks(world: World) -> list:
         tasks.append(triggers.start(world, *boot))
     if world.scripts:
         chapter = world.scripts[0]
-        for name in OPENING:
+        for name in world.dialect.openings:
             fn = chapter.function_by_name(name)
             if fn is not None:
                 tasks.append(triggers.start(world, 0, chapter.functions.index(fn)))
@@ -185,9 +198,13 @@ def initial_state(world: World, *, seed: int = 0, deploy_groups: tuple = ()) -> 
     """The state before the chapter's first step: the opening scripts queued,
     then the first player phase. ``deploy_groups`` are placed first (used when
     the chapter has no script, or to skip the opening)."""
-    from ..battle_sim import Fe9Rng
+    from ..battle_sim import Fe10Rng, Fe9Rng
+    from ..formats.event_flags import ENGINE_FLAGS
 
-    state = GameState(rng=Fe9Rng(seed))
+    rng = Fe10Rng(seed) if world.dialect.name == "fe10" else Fe9Rng(seed)
+    capacity = world.dialect.flag_slots
+    flags = [[name, False] for name in ENGINE_FLAGS] + [[None, False] for _ in range(capacity - len(ENGINE_FLAGS))]
+    state = GameState(rng=rng, flags=flags, flag_capacity=capacity)
     for group in deploy_groups:
         deploy(world, state, group, animate=False)
     state.out.clear()

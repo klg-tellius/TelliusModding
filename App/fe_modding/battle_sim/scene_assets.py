@@ -60,6 +60,9 @@ SKILL, SKILL_THROW = "奥義", "奥義投げ"
 class UnitAssets:
     code: Optional[str] = None
     pack: Optional[Path] = None  # one weapon pack of zu/<code>/ (the set loads all of them)
+    # RD keeps actor clips loose beside ymu/<model>/pack.cmp rather than in
+    # one pack.  FE9 leaves this empty and retains its packed-clip behavior.
+    animation_paths: tuple[Path, ...] = ()
     prefix: Optional[str] = None
     prefixes: list = field(default_factory=list)  # every prefix the model's table has
     roles: dict = field(default_factory=dict)  # role -> .ga stem, for ``prefix``

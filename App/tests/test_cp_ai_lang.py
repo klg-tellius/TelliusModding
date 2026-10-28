@@ -25,6 +25,13 @@ class OpcodeTableTests(unittest.TestCase):
             self.assertIn(spec.confidence, ("confirmed", "strong", "tentative"))
         self.assertEqual(len(cp_ops.BY_NAME), 50)  # all but the two header entries
 
+    def test_every_fe10_handler_has_a_dialect_specific_spec(self):
+        self.assertEqual(set(cp_ops.FE10_OPS), set(cp_ops.FE10_HANDLED_OPS))
+        self.assertEqual(len(cp_ops.FE10_BY_NAME), 80)  # all but the two header entries
+        for op, spec in cp_ops.FE10_OPS.items():
+            self.assertEqual(len({f.slot for f in spec.fields}), len(spec.fields), op)
+            self.assertTrue(all(f.slot in "abcdefghi" for f in spec.fields), op)
+
     def test_comparison_codes_match_the_handler(self):
         self.assertEqual(cp_ops.COMPARISONS, {0: ">", 1: ">=", 2: "==", 3: "<=", 4: "<", 5: "!="})
 
@@ -153,6 +160,30 @@ class VanillaScriptsTests(unittest.TestCase):
             cp.write_script(rebuilt.section(name), cp.Script(name, script.script_id,
                                                              lang.compile_source(lang.decompile(script)).entries))
         self.assertEqual(cp.build_cp_data(rebuilt), (Path(os.environ["FE9_EXTRACTED_FILES"]) / "cp_data.bin").read_bytes())
+
+
+@unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"),
+                     "set FE10_EXTRACTED_FILES to the extracted Radiant Dawn files folder")
+class VanillaFe10ScriptsTests(unittest.TestCase):
+    def test_every_vanilla_script_round_trips_without_op(self):
+        from fe_modding.formats import lz10
+        compressed = (Path(os.environ["FE10_EXTRACTED_FILES"]) / "Cp" / "cp_data.cms").read_bytes()
+        data = lz10.decompress(compressed)
+        doc = cp.parse_cp_data(data)
+        names = cp.attack_scripts(doc, cp.FE10) + cp.move_scripts(doc, cp.FE10)
+        scripts = [cp.read_script(doc.section(name), cp.FE10) for name in names]
+        self.assertEqual(len(scripts), 271)
+        self.assertEqual(lang.roundtrip_problems(scripts, cp_ops.FE10_OPS), [])
+        rebuilt = cp.parse_cp_data(data)
+        for name, script in zip(names, scripts):
+            source = lang.decompile(script, ops=cp_ops.FE10_OPS)
+            self.assertFalse(any(line.startswith("op(") for line in source.splitlines()), name)
+            fallthrough = lang.fallthrough_labels(doc.sections, name, entry_words=cp.FE10.entry_words)
+            result = lang.compile_source(source, fallthrough=fallthrough, handled_ops=cp_ops.FE10_HANDLED_OPS,
+                                         ops=cp_ops.FE10_OPS)
+            self.assertFalse(result.errors, (name, [str(d) for d in result.errors]))
+            cp.write_script(rebuilt.section(name), cp.Script(name, script.script_id, result.entries), cp.FE10)
+        self.assertEqual(cp.build_cp_data(rebuilt), data)
 
 
 if __name__ == "__main__":

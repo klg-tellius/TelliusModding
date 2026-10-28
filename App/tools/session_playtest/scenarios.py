@@ -306,7 +306,8 @@ def build_c3(ctx):
     # Warrior and the second promotion switches to the Berserker model.
     ctx.set_character("PID_BOLE", aid_promoted=None)
     three_tier_data.validate_chain(ctx.fe8, "JID_FIGHTER", "JID_WARRIOR", "JID_BERSERKER")
-    # Anima choice: Wind Sage offers Fire and Thunder in the promotion weapon picker.
+    # Anima choice: Wind Sage offers Fire and Thunder in the promotion weapon picker. The Wind classes,
+    # not Soren's own JID_MAGE (which already starts Fire and Thunder at E), so the grant is visible.
     ctx.set_class("JID_SAGE_W", weapon_ranks="----**C--")
     ctx.patch("promotion.three_tiers", "promotion.event_classes", "promotion.anima_weapon_choice",
               "combat.steal_ignores_speed", "support.full_bonus", "growth.force_random", "random.fixed_seed")
@@ -687,7 +688,8 @@ SCENARIOS: list[Scenario] = [
         checks=["Sothe's level-up gains are all 0 or 3 (forced random growth, 3 per success).",
                 "Steal is offered against the faster Fighter (vanilla: only slower units).",
                 "The Master Seal promotes Sothe to Assassin (vanilla refuses: Thief has SID_EVENTCC).",
-                "Soren promotes to Wind Sage, the picker offers Fire/Thunder, and Fire then shows rank E.",
+                "Soren promotes to Wind Sage (generic Sage model: the Wind classes have no Soren model), the picker "
+                "offers Fire/Thunder, and afterwards Fire shows rank E, Thunder none and Wind C (the Sage default).",
                 "The Master Crown turns Boyd into a Berserker (third tier), with no emulator error.",
                 "Ike gets a support bonus with Titania up to 6 tiles away, twice the usual amount.",
                 "Lethe's gauge number (next to her HP when the cursor is on her) goes up by 4 from turn 1 to turn 2 "
@@ -720,8 +722,10 @@ SCENARIOS: list[Scenario] = [
         "C6", "C. Game Code rules", "Battle-screen numbers (retest)",
         "battle.show_stats (the trailing '#C' fix) and anim.ally_npc_battles",
         build=build_c7, boot="chapter", chapter=4, anim_speed=None, minutes=5,
-        steps=[JUMP_NOTE, "Fight four or five battles with different units (include a counter-less archer hit)."],
-        checks=["Each fighter's Dmg / Hit / Crit prints on the battle screen and matches the map forecast.",
+        steps=[JUMP_NOTE, "Fight four or five battles with different units (include a counter-less archer hit).",
+               "End the turn and watch at least one enemy attacking you (an enemy-phase battle)."],
+        checks=["Each fighter's Dmg / Hit / Crit prints under its own HP window, on both sides, and matches the map forecast.",
+                "In the enemy-phase battle the numbers are still under the right fighters.",
                 "Nothing garbled after 'Crit'; no freeze over five battles.",
                 "A fighter that cannot counter shows dashes."]),
     Scenario(

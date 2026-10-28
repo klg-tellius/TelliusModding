@@ -113,6 +113,17 @@ class CardLoadTests(unittest.TestCase):
                 for i in range(32):
                     self.cpu.write(self.image.record_address + 156 + i, 0, 1)
 
+    def test_restore_accepts_a_suspend_already_marked_used(self):
+        # JP marks the Suspend copy used (save kind 1) in memory before deserializing it; the
+        # restore rejected kind 1, so campaign and local flags were lost on every resume.
+        for region in ("GFEE01", "GFEP01", "GFEJ01"):
+            self.setup_region(region)
+            raw = bytearray(self.block(size=0x6000))
+            for kind, restored in ((1, 1), (3, 1), (0, 0), (4, 0)):
+                raw[0x60] = kind
+                with self.subTest(region=region, kind=kind):
+                    self.assertEqual(self.call("card_restore", bytes(raw), size=0x6000), restored)
+
     def test_card_open_checks_all_blocks_before_retail_selection(self):
         for region in OPEN_SITES:
             for invalid in (False, True):

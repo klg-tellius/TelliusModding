@@ -38,6 +38,8 @@ class LaunchTests(unittest.TestCase):
     def test_command_line(self):
         self.assertEqual(emulator.command("D", "I"), ["D", "--exec=I", "--batch"])
         self.assertEqual(emulator.command("D", "I", batch=False, save_state="s.sav"), ["D", "--exec=I", "--save_state=s.sav"])
+        self.assertEqual(emulator.command("D", "I", user_dir="nand")[-1],
+                         "--user=" + str(Path("nand").resolve()))
 
     def test_launch_starts_the_process(self):
         started = []
@@ -89,3 +91,23 @@ class SaveRunTests(unittest.TestCase):
         self.assertEqual(config[0], "Dolphin.Core.SlotA=8")
         self.assertTrue(config[1].startswith("Dolphin.Core.GCIFolderAPathOverride="))
         self.assertEqual(emulator.command("D", "I", config=config)[-2:], ["--config=" + c for c in config])
+
+    def test_wii_save_uses_an_isolated_nand(self):
+        from fe_modding.formats.save_file_fe10 import FILE_NAME, FILE_SIZE
+
+        (self.extracted / "sys" / "boot.bin").write_bytes(b"RFEE01")
+        source = bytes([0xA5]) * FILE_SIZE
+        banner = b"banner"
+        original = self.run_dir.parent / FILE_NAME
+        original.parent.mkdir(parents=True, exist_ok=True)
+        original.write_bytes(b"original")
+        dol, user_dir = emulator.prepare_wii_save_run(self.extracted, self.run_dir, source, banner)
+        data_dir = user_dir / emulator.RFEE01_DATA_PATH
+        self.assertEqual(dol.read_bytes(), b"DOL")
+        self.assertEqual((data_dir / FILE_NAME).read_bytes(), source)
+        self.assertEqual((data_dir / "banner.bin").read_bytes(), banner)
+        self.assertEqual(original.read_bytes(), b"original")
+
+    def test_wii_save_rejects_wrong_size(self):
+        with self.assertRaisesRegex(emulator.EmulatorError, "RFEE01 save"):
+            emulator.prepare_wii_save_run(self.extracted, self.run_dir, b"short")
