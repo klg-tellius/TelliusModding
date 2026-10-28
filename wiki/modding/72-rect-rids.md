@@ -136,7 +136,7 @@ The page edits a rect file only when the app can rewrite it byte for byte; other
 
 ## Save, build, and revert
 
-**Add RID…**, **Rename RID…**, **Replace selected image…** and **Apply** write at once. Build to test. To undo, restore the rect file and its textures from `originals/` or your project copy.
+**Add RID…**, **Rename RID…**, **Replace selected image…** and **Apply** write at once. Build to test. To undo, restore the rect file and its textures to the originals or copy back your project copy.
 
 ## Limits and confidence
 

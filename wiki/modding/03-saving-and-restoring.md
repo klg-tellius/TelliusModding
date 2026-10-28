@@ -37,8 +37,8 @@ An edit goes through up to four steps:
 
 1. **Typed**: the value is in a field.
 2. **Applied**: **Apply** (in forms that have one) moves the form's values into the editor's copy of the file, in memory. Every page that shows the same file sees it at once. The status bar now names the file as unsaved.
-3. **Saved**: the editor's save button writes the file into `extracted/`. Before the first write of a file, the app copies the extracted original to `originals/` (only once: the copy stays the version from the disc however many times you save).
-4. **Built**: **Build disc** packs `extracted/` into a new image. A saved change is not in an image built before it.
+3. **Saved**: the editor's save button writes the file into the project's `output/` folder. The game's own file in the shared vanilla files is never written, so it stays the version from the disc however many times you save.
+4. **Built**: **Build disc** packs the vanilla files with `output/` laid over them into a new image. A saved change is not in an image built before it.
 
 Many pages share one file. The character, class, item, skill, terrain, general, support and chapter-data editors all edit one in-memory copy of `FE8Data.bin`: an applied edit on one of them is visible on the others, and one **Save FE8Data.bin** writes all of them.
 
@@ -136,7 +136,7 @@ When one task touches several owners (a new character placed in a chapter with a
 
 - On the character form, typed values are not applied until **Apply**; a value you typed but did not apply is lost when the form reloads. In Game Data there is no **Apply**: a field is applied when it loses focus (Tab, a click elsewhere, or a save).
 - An applied, unsaved edit is used by the Battle Simulator and Play, but not by a build: building asks to save first.
-- `originals/` keeps the file as extracted, not your previous save. Restoring it drops every save of that file, and **Re-extract** overwrites `extracted/` but leaves `originals/` as it was.
+- **Restore original** goes back to the file as extracted, not to your previous save: it deletes the mod's copy in `output/`, dropping every save of that file. **Re-extract** only remakes the vanilla files; `output/` stays.
 - The build copies `FE8Data.bin` and a few other loose files into `system.cmp`, the archive the game really reads. Edit the loose file; the build does the rest.
 
 ## Test matrix
@@ -159,12 +159,12 @@ When one task touches several owners (a new character placed in a chapter with a
 
 ## Save, build, and revert
 
-This whole lesson is about it: apply, save the owner, build to test, restore from `originals/` or from your project copy to revert.
+This whole lesson is about it: apply, save the owner, build to test, **Restore original** or copy back your project copy to revert.
 
 ## Limits and confidence
 
 - The apply/save/originals behaviour and the save prompts are source-reviewed; the walkthrough was run in the app on the practice project (app-tested).
-- `originals/` keeps one copy per file, the first one replaced. It is not a history: keep project copies or version control for that (**Disc & Patch › Export as text…** writes the data as text for git).
+- The vanilla file is the only earlier version the app keeps. It is not a history: keep project copies or version control for that (`output/` holds only the changed files, so it is small to copy; **Disc & Patch › Export as text…** writes the data as text for git).
 
 ## Related tutorials and references
 

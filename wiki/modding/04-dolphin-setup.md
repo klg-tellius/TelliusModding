@@ -33,7 +33,7 @@ You will tell the app where Dolphin is, build the unmodified practice project in
 
 ## How the editor fits together
 
-**Build disc** packs the project's `extracted/` folder into one image, `build/<project name>.ciso`. For Path of Radiance the app packs it itself (WIT is used for extraction and for Radiant Dawn). Before packing, it copies the loose files that the game reads from its `system.cmp` archive into that archive (`FE8Data.bin`, `FE8Anim.bin`, `FE8Effect.bin`, `cp_data.bin`, `s/rect.bin`, `window/rectdesc.bin`, `Scripts/startup.cmb`, `Face/facedata.bin`, three window textures, `Mess/common.m` and four fonts), and makes any missing chapter name images. Every build overwrites the same file.
+**Build disc** packs the project's files (the shared vanilla files with the project's `output/` laid over them, staged in `build/stage` as links, not copies) into one image, `build/<project name>.ciso`. For Path of Radiance the app packs it itself (WIT is used for extraction and for Radiant Dawn). Before packing, it copies the loose files that the game reads from its `system.cmp` archive into that archive (`FE8Data.bin`, `FE8Anim.bin`, `FE8Effect.bin`, `cp_data.bin`, `s/rect.bin`, `window/rectdesc.bin`, `Scripts/startup.cmb`, `Face/facedata.bin`, three window textures, `Mess/common.m` and four fonts), and makes any missing chapter name images. Every build overwrites the same file.
 
 A GameCube disc holds 1,459,978,240 bytes. A bigger image still runs in Dolphin, and the build warns you, but it would not run on a console or in loaders that check the size.
 
@@ -117,7 +117,7 @@ Press **F5** (**Play › Play chapter in Dolphin…**) away from a chapter page.
 
 | Control | What it does |
 | --- | --- |
-| **Build disc** | Packs `extracted/` into `build/<project name>.ciso`, after offering to save unsaved editors. Overwrites the previous image. |
+| **Build disc** | Packs the project's files into `build/<project name>.ciso`, after offering to save unsaved editors. Overwrites the previous image. |
 | **Build and play in Dolphin** (Ctrl+F5) | Builds, then starts Dolphin on the new image. Needs Dolphin to be found. |
 | *Output folder* | Where the image goes (the project's `build` folder). |
 | Size warning | Shown after a build when the image is bigger than a GameCube disc. |
