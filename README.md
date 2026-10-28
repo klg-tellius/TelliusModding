@@ -34,6 +34,8 @@ repository. Project setup, workspace features and known limitations are covered 
 ## Documentation
 
 - [Application architecture](app.md)
+- Feature notes (hub chapters, promotions, extended flags, item restrictions, particle and
+  dialogue editors, 3D pipeline status) are in [App/docs](App/docs/)
 
 The [Tellius Archive](https://klg-tellius.github.io/TelliusModding/) is a
 multi-page technical wiki published with GitHub Pages. Its Markdown sources are

@@ -85,7 +85,7 @@ letter at one or more positions. The promotion sequence scans the
 promoted class's rank string for `*` and offers those positions as new
 weapon choices. Position 7 is Staff and position 8 is Knife, confirmed by
 the executable's MCA_RD/MCA_KN menu keys and selection-result switch
-(PROMOTION_CHOICES.md). `*` is a selectable promotion option,
+(App/docs/PROMOTION_CHOICES.md). `*` is a selectable promotion option,
 not a fixed rank. Checked against
 ItemEntry.rank on the chance the two were the same small enum - they are
 NOT: real sword items span 0 (Iron) to 17 (Alondite, Ike's legendary
