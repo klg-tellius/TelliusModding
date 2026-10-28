@@ -133,6 +133,13 @@ class ContractMixin:
         folder = self.files.path("files")
         self.assertFalse([p for p in folder.rglob("*.tmp")])
 
+    def test_any_case_names_the_same_file(self):
+        self.files.write("FILES/MESS/C01.M", b"edited")
+        self.assertEqual(self.files.read("files/mess/c01.m"), b"edited")
+        self.assertEqual(self.files.changes().replaced, ["files/mess/c01.m"])
+        self.assertFalse(self.files.is_added("files/Mess/C01.m"))
+        self.assertEqual(self.files.listdir("files/mess"), ["c01.m", "common.m"])
+
 
 def _make_tree(root: Path) -> None:
     for rel, data in DISC.items():

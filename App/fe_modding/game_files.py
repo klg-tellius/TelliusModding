@@ -122,6 +122,32 @@ class GameFiles:
     #: Roots a :class:`~pathlib.Path` argument may be under, most specific first.
     roots: tuple[Path, ...] = ()
 
+    def _canonical(self, rel: str, trees: tuple[Path, ...]) -> str:
+        """``rel`` with each part spelled as the first of ``trees`` that has it spells it, so one
+        file has one name however its case was given (the file system ignores case, and the
+        game's own paths mix ``Mess`` and ``mess``). Folder listings are cached; a name the cache
+        lacks lists the folder again."""
+        if not rel:
+            return rel
+        cache = self.__dict__.setdefault("_names", {})
+        out: list[str] = []
+        for part in rel.split("/"):
+            key, real = part.lower(), None
+            for tree in trees:
+                folder = tree.joinpath(*out)
+                names = cache.get(folder)
+                if names is None or key not in names:
+                    try:
+                        names = {name.lower(): name for name in os.listdir(folder)}
+                    except OSError:
+                        names = {}
+                    cache[folder] = names
+                real = names.get(key)
+                if real is not None:
+                    break
+            out.append(real or part)
+        return "/".join(out)
+
     # -- paths ---------------------------------------------------------------------------------------
     def rel(self, path: RelPath) -> str:
         """The disc-relative POSIX path of ``path`` (a relative path, or a path under a root)."""
@@ -270,11 +296,12 @@ class LegacyFiles(GameFiles):
         self.root = Path(extracted)
         self.originals = Path(originals)
         self.roots = (self.originals, self.root)
-        self._fst_cache: Optional[tuple[float, frozenset[str]]] = None
+        self._fst_cache: Optional[tuple[float, dict[str, str]]] = None
 
-    def _disc_paths(self) -> Optional[frozenset[str]]:
-        """Disc-relative paths of the disc's files (``files/...`` from ``sys/fst.bin``, which a
-        build never rewrites); None when the table is missing or unreadable."""
+    def _disc_paths(self) -> Optional[dict[str, str]]:
+        """The disc's files (``files/...`` from ``sys/fst.bin``, which a build never rewrites) by
+        lower-cased path, the way the case-insensitive file system matches them; None when the
+        table is missing or unreadable."""
         from .formats import gcdisc
         fst = self.root / SYS / "fst.bin"
         try:
@@ -286,8 +313,11 @@ class LegacyFiles(GameFiles):
                 names = gcdisc.read_fst_sizes(fst.read_bytes())
             except (OSError, ValueError, struct.error):
                 return None
-            self._fst_cache = (stamp, frozenset(f"{FILES}/{n}" for n in names))
+            self._fst_cache = (stamp, {f"{FILES}/{n}".lower(): f"{FILES}/{n}" for n in names})
         return self._fst_cache[1] or None
+
+    def rel(self, path: RelPath) -> str:
+        return self._canonical(super().rel(path), (self.root, self.originals))
 
     def path(self, path: RelPath) -> Optional[Path]:
         real = self.root / self.rel(path)
@@ -368,12 +398,12 @@ class LegacyFiles(GameFiles):
         if not rel.startswith(f"{FILES}/"):
             return False   # sys/ files are fixed: the disc always has them
         disc = self._disc_paths()
-        return None if disc is None else rel not in disc
+        return None if disc is None else rel.lower() not in disc
 
     def is_removed(self, path: RelPath) -> bool:
         rel = self.rel(path)
-        disc = self._disc_paths() or frozenset()
-        return rel in disc and not (self.root / rel).exists()
+        disc = self._disc_paths() or {}
+        return rel.lower() in disc and not (self.root / rel).exists()
 
     def modified_in(self, folder: RelPath) -> list[str]:
         base = self.rel(folder)
@@ -385,10 +415,10 @@ class LegacyFiles(GameFiles):
 
     def changes(self) -> Changes:
         replaced = [rel for rel in _walk_files(self.originals) if (self.root / rel).is_file()]
-        disc = self._disc_paths() or frozenset()
-        present = set(self.iter_files(FILES))
-        added = sorted(present - disc) if disc else []
-        removed = sorted(disc - present)
+        disc = self._disc_paths() or {}
+        present = {rel.lower(): rel for rel in self.iter_files(FILES)}
+        added = sorted(rel for key, rel in present.items() if key not in disc) if disc else []
+        removed = sorted(rel for key, rel in disc.items() if key not in present)
         return Changes(sorted(replaced), added, removed)
 
 
@@ -404,6 +434,11 @@ class OverlayFiles(GameFiles):
         self.overlay_file = Path(overlay_file)
         self.roots = (self.output, self.input)
         self._state: Optional[dict] = None
+
+    def rel(self, path: RelPath) -> str:
+        """The relative path in the input's own spelling (``files/Mess`` whatever case it was
+        given in); parts the input lacks take the output's spelling."""
+        return self._canonical(super().rel(path), (self.input, self.output))
 
     # overlay.json: {"removed": [...], "base": {rel: sha1 of the input file it replaced}}
     def _load(self) -> dict:
