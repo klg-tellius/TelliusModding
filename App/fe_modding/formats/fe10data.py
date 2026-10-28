@@ -879,6 +879,25 @@ def set_battle_scenery(data: bytes, index: int, terrain: int, scenery: int) -> b
     return bytes(out)
 
 
+def add_battle_scenery(data: bytes, copy_of: int, map_name: str) -> tuple[bytes, int]:
+    """Append a BattleTerrIndex row for map folder ``map_name`` with row ``copy_of``'s backgrounds
+    (the map count, a u16 at +2, goes up by one); returns the file and the new row's index."""
+    records = _read_battle_scenery(data)
+    if any(r.values["map"] == map_name for r in records):
+        raise ValueError(f"{map_name} already has a battle-scenery row.")
+    source = records[copy_of]
+    block = bytearray(data[source.start:source.end])
+    struct.pack_into(">I", block, 0, 0)
+    data = insert_bytes(data, records[-1].end, bytes(block), [0])
+    out = bytearray(data)
+    start = fe8data.section_start(data, "BattleTerrIndex")
+    struct.pack_into(">H", out, start + 2, len(records) + 1)
+    data, ptr = _label_value(bytes(out), map_name)
+    out = bytearray(data)
+    fe8data._pack_pointer(out, _read_battle_scenery(data)[-1].start, ptr)
+    return bytes(out), len(records)
+
+
 # -- adding and removing records -------------------------------------------------------------------
 
 #: Tables whose records can be added and removed: the ones with a count word the engine loops on.
