@@ -10,6 +10,12 @@ chapters (including its processing of hidden ``C0401a``/``C0401b`` records),
 then applies an optional successor.  Chapters 56-79 bypass the unsafe retail
 lookup and use the successor table directly.
 
+The retail advance (``_ADVANCE``) walks records by index (``8010b0cc``: index
+times 0xB4); ``_SET_CHAPTER`` and the other 36 ChapterData users search by the
+record's number byte (+0x84, ``8010b094``).  Only the advance and its "previous
+chapter" twin (``80067fe8``, menu code) use the index, so a custom chapter's
+record may sit anywhere in the table: appended after the tutorials is fine.
+
 The remaining tables are the editor-owned story model.  They deliberately use
 logical army identities; raw force/convoy implementation belongs to the
 separate army-switch runtime and is not guessed here.
@@ -288,7 +294,7 @@ class StorySequence:
         elif chapters[-1].chapter != ENDING:
             problems.append("CFINAL must be the last chapter in the story order.")
         for step in chapters:
-            if not (0 <= step.chapter <= ENDING or CUSTOM_FIRST <= step.chapter <= CUSTOM_LAST):
+            if not is_story_number(step.chapter):
                 problems.append(f"{step.chapter_id} has no supported story number (0-55 or 56-79 custom).")
         if any(isinstance(step, (PartBoundaryStep, DivideArmiesStep)) and
                not any(isinstance(later, ChapterStep) for later in steps[i + 1:])
@@ -317,8 +323,6 @@ class StorySequence:
         if not self.available:
             raise ValueError(self.unavailable_reason)
         chapters = [step for step in steps if isinstance(step, ChapterStep)]
-        if not self.installed:
-            self.editor.session.set_patch(PATCH, True)
         successors = bytearray(0x100)
         armies = bytearray(0x100)
         flags = bytearray(0x100)
@@ -335,11 +339,39 @@ class StorySequence:
             elif isinstance(step, DivideArmiesStep):
                 following = next(later for later in steps[i + 1:] if isinstance(later, ChapterStep))
                 flags[following.chapter] |= FLAG_DIVIDE_ARMIES
+        self._store(successors, armies, flags)
+        return "updated Radiant Dawn story order"
+
+    def set_successors(self, changes: dict[int, int | None]) -> str:
+        """Give each chapter of ``changes`` a new next chapter (None: the retail one, or none for a
+        custom chapter, which takes it out of the story). The army and part tables are kept."""
+        if not self.available:
+            raise ValueError(self.unavailable_reason)
+        for chapter, following in changes.items():
+            if not is_story_number(chapter) or chapter == ENDING:
+                raise ValueError(f"Chapter number {chapter} cannot have a next chapter.")
+            if following is not None and (not is_story_number(following) or following == 0):
+                raise ValueError(f"Chapter number {following} cannot follow a chapter.")
+        successors = bytearray(self._table(SUCCESSORS, bytes(0x100)))
+        for chapter, following in changes.items():
+            retail = following is None or (chapter < CUSTOM_FIRST and following == retail_next(chapter))
+            successors[chapter] = 0 if retail else following
+        self._store(successors, self._table(ARMIES, _retail_armies()), self._table(FLAGS, _retail_flags()))
+        return ", ".join(f"after {chapter}: {following if following is not None else 'retail'}"
+                         for chapter, following in sorted(changes.items()))
+
+    def _store(self, successors: bytes, armies: bytes, flags: bytes) -> None:
+        if not self.installed:
+            self.editor.session.set_patch(PATCH, True)
         self.editor.session._write(SUCCESSORS, bytes(successors))
         self.editor.session._write(ARMIES, bytes(armies))
         self.editor.session._write(FLAGS, bytes(flags))
         self.editor.save()
-        return "updated Radiant Dawn story order"
+
+
+def is_story_number(chapter: int) -> bool:
+    """A retail story number (0-55) or a custom one (56-79)."""
+    return 0 <= chapter <= ENDING or CUSTOM_FIRST <= chapter <= CUSTOM_LAST
 
 
 def chapter_number_map(fe10data_bytes: bytes) -> dict[int, str]:

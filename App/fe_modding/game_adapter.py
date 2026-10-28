@@ -88,6 +88,25 @@ class DataAdapter:
         """The file with ``rows`` written back. Raises ValueError for a change the game's table cannot hold."""
         raise NotImplementedError
 
+    # -- chapters ---------------------------------------------------------------------------
+    def chapter_templates(self, project) -> list[str]:
+        """Chapter ids Add chapter can copy."""
+        raise NotImplementedError
+
+    def free_chapters(self, project) -> list[str]:
+        """Chapter ids a new chapter can take, first choice first."""
+        raise NotImplementedError
+
+    def default_chapter_title(self, chapter_id: str) -> str:
+        return f"Chapter {chapter_id}"
+
+    def add_story_chapter(self, project, source_id: str, new_id: str, title: str, after: Optional[str],
+                          flow) -> tuple[bytes, list[str]]:
+        """Copy ``source_id`` as chapter ``new_id`` (files written, ``after`` -> new chapter in
+        ``flow``, a :class:`~.game_code.story_flow.StoryFlow`). Returns the game-data file for the
+        session to save and the warnings."""
+        raise NotImplementedError
+
 
 class PorDataAdapter(DataAdapter):
     """Path of Radiance: ``FE8Data.bin`` through :mod:`formats.fe8data`."""
@@ -143,6 +162,26 @@ class PorDataAdapter(DataAdapter):
     def write_battle_scenery_rows(self, rows):
         return fe8data.write_battle_terrain(self.data, rows)
 
+    def chapter_templates(self, project) -> list[str]:
+        from . import chapters
+        numbers = {r.chapter_id for r in fe8data.read_chapter_data(self.data)}
+        return [c for c in chapters.list_chapter_ids(project) if c.isdigit() and int(c) in numbers]
+
+    def free_chapters(self, project) -> list[str]:
+        from . import chapters
+        used = [r.chapter_id for r in fe8data.read_chapter_data(self.data)]
+        return [f"{n:02d}" for n in chapters.free_chapter_ids(project, used)]
+
+    def default_chapter_title(self, chapter_id: str) -> str:
+        return f"Chapter {int(chapter_id)}"
+
+    def add_story_chapter(self, project, source_id, new_id, title, after, flow):
+        from . import chapters
+        plan = chapters.add_story_chapter(project, self.data, source_id, int(new_id), title,
+                                          int(after) if after is not None else None,
+                                          getattr(flow, "flow", None))
+        return plan.fe8data, plan.warnings
+
 
 class RdDataAdapter(DataAdapter):
     """Radiant Dawn: ``FE10Data.cms`` through :mod:`formats.fe10data`."""
@@ -196,6 +235,19 @@ class RdDataAdapter(DataAdapter):
                 if new != old:
                     data = fe10data.set_battle_scenery(data, i, terrain, new)
         return data
+
+    def chapter_templates(self, project) -> list[str]:
+        from . import chapters_fe10
+        return chapters_fe10.templates(project, self.data)
+
+    def free_chapters(self, project) -> list[str]:
+        from . import chapters_fe10
+        return chapters_fe10.free_chapters(project, self.data)
+
+    def add_story_chapter(self, project, source_id, new_id, title, after, flow):
+        from . import chapters_fe10
+        plan = chapters_fe10.add_story_chapter(project, self.data, source_id, new_id, title, after, flow)
+        return plan.fe10data, plan.warnings
 
 
 def data_adapter(session) -> Optional[DataAdapter]:

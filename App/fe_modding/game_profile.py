@@ -77,6 +77,12 @@ CHAPTER_RECORD_FORM = "chapter_record_form"  # Chapter › Chapter data: objecti
 SUPPORT_LIST = "support_list"  # per-partner support list with conversation links
 DATA_WORKSPACE = "data_workspace"  # Game Data as one tabbed workspace (supports, flags, AI, rect RIDs as tabs)
 SAVE_UNITS = "save_units"      # save editor with Units, Convoy, Forges, Map objects, Flags, System tabs
+CHAPTER_FLOW = "chapter_flow"  # editable story flow (game_code.story_flow) and Add chapter
+NEW_CAMPAIGN = "new_campaign"  # Chapters › New campaign (several chapters and characters at once)
+HUB = "hub"                    # Chapters › Create hub (a hub chapter with links to chapters)
+#: Several map folders per chapter (bmap06, bmap06_2: Opening18_N / Complete18 parts). Not on Radiant
+#: Dawn: its multi-map chapters are separate ChapterData records (0407a-e) and it has no part natives.
+MAP_PHASES = "map_phases"
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -91,6 +97,8 @@ FEATURE_LABELS = {
     CHARACTER_FORM: "The character form", CHAPTER_RECORD_FORM: "The chapter data form",
     SUPPORT_LIST: "The support partner list", DATA_WORKSPACE: "The Game Data workspace",
     SAVE_UNITS: "Save unit, convoy and forge editing",
+    CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
+    MAP_PHASES: "Map phases",
 }
 
 
@@ -234,7 +242,8 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, BATTLE_DATA, BATTLE_CAMERAS, ANIM, MODELS, FONTS,
                         ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
                         COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART,
-                        CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS}),
+                        CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS,
+                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES}),
     font_files=FONT_FILES,
     text_export_parts=("FE8Data", "deployments", "shops", "messages", "scripts", "sound", "faces", "zdbx"),
 )
@@ -258,7 +267,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
-                        MAP_DECODED}),
+                        MAP_DECODED, CHAPTER_FLOW}),
     # playthrough waits for the RFEE01 script runtime: chapter and startup scripts still call natives
     # it does not model (playthrough/natives.py stops on those rather than guessing).
     message_dialect="fe10",
