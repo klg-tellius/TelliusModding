@@ -538,6 +538,26 @@ class Shell(ttk.Frame):
         self.run_task(f"Extracting {project.source_iso} …", project.extract,
                       lambda _r: self._on_extracted())
 
+    def export_riivolution(self) -> None:
+        if not self.extracted or self._task_running:
+            return
+        if not self.confirm_unsaved(" and won't be exported", "export without them."):
+            return
+        from .. import riivolution
+        project = self.project
+
+        def done(result) -> None:
+            lines = [f"{len(result.files)} files and {len(result.memory)} main.dol memory patches in "
+                     f"{result.folder}.",
+                     "Copy what is in that folder to the root of the SD card (the riivolution folder and "
+                     "the mod's folder) and start the game from Riivolution, or put it in Dolphin's "
+                     "Load/Riivolution folder and use \"Start with Riivolution Patches\" on the game.",
+                     *result.warnings]
+            self.set_status(f"Exported for Riivolution to {result.folder}")
+            messagebox.showinfo("Riivolution export", "\n\n".join(lines), parent=self)
+
+        self.run_task("Exporting for Riivolution …", lambda: riivolution.export_project(project), done)
+
     def use_input_folder(self) -> None:
         """Layout 2: read the vanilla files from a folder the user already extracted."""
         chosen = filedialog.askdirectory(

@@ -139,6 +139,12 @@ class DiscPage(Page):
         self._caption(frame, who or "No author or version set yet.", pady=(4, 0))
         if shell.last_patch:
             self._caption(frame, shell.last_patch, pady=(8, 0))
+        if project.profile.wii and project.is_overlay:
+            ttk.Button(frame, text="Export for Riivolution…", command=shell.export_riivolution,
+                       state="normal" if shell.extracted and not shell.task_running else "disabled").pack(
+                anchor="w", pady=(12, 0))
+            self._caption(frame, "The changed files and main.dol patches as a Riivolution folder, to play "
+                          "on a Wii or in Dolphin from an unmodified disc.", pady=(4, 0))
         return frame
 
     def _apply_patch_card(self, parent: tk.Misc) -> ttk.Frame:
