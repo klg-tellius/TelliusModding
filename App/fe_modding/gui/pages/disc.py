@@ -106,7 +106,7 @@ class DiscPage(Page):
     def _build_card(self, parent: tk.Misc) -> ttk.Frame:
         project, shell = self.project, self.shell
         frame = self._panel(parent, "Build",
-                            f"Packs the extracted files into a {project.game_info.build_extension} disc image.")
+                            f"Packs the project's files into a {project.game_info.build_extension} disc image.")
         self._caption(frame, f"Output folder: {project.build_dir}")
         ttk.Button(frame, text="Build disc", style="Accent.TButton", command=shell.build,
                    state="normal" if shell.extracted and not shell.task_running else "disabled").pack(anchor="w")
