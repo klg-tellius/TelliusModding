@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_TABLES, CHAPTERS, EFFECTS,
-                             ICONS, MODELS, VIDEO, profile_of)
+from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_SKIES, BATTLE_TABLES, CHAPTERS,
+                             EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
 from ..animation_data_viewer import AnimationDataViewer
 from ..background_viewer import BackgroundViewer
 from ..fe10_camera_viewer import battle_camera_viewer
@@ -106,6 +106,18 @@ ASSET_FEATURES = {
 #: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
 #: and "not available" for a game without it.
 ASSET_FILES = {"conversation_lists": "conversation_data"}
+#: Tools for data only some games have (``GameProfile.features``): absent from the hub, search and
+#: routes on a game without it, rather than "not available".
+ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
+                 "tutorials": TUTORIALS, "staff_credits": STAFF_CREDITS}
+
+
+def tool_applies(project, key: str) -> bool:
+    """Whether the Assets tool ``key`` exists for this project's game."""
+    feature = ASSET_APPLIES.get(key)
+    return feature is None or profile_of(project).supports(feature)
+
+
 #: Tools that list files for other pages to open (they take the shell).
 LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
@@ -132,6 +144,8 @@ class AssetsHub(Page):
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")
             for key in keys:
+                if not tool_applies(shell.project, key):
+                    continue
                 if key in ASSET_FILES and not profile_of(shell.project).has_file(ASSET_FILES[key]):
                     continue
                 _k, label, icon, description, _cls = TOOLS_BY_KEY[key]
@@ -160,7 +174,7 @@ class AssetPage(Page):
 
     def show(self, route) -> bool:
         key = route[1] if len(route) > 1 else None
-        if key not in TOOLS_BY_KEY:
+        if key not in TOOLS_BY_KEY or not tool_applies(self.project, key):
             return False
         if key == "models" and len(route) > 2 and str(route[2]).startswith("zmap/"):
             # chapter maps live in Map Models only

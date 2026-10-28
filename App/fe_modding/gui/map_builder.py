@@ -585,10 +585,17 @@ class MapBuilder(EditorPanel):
         top = ttk.Frame(self, padding=(8, 6))
         top.pack(fill="x")
         ttk.Button(top, text="Save Chapter", command=self._save).pack(side="left")
-        from ..game_profile import PLAYTHROUGH, profile_of
-        can_play = profile_of(self._project).supports(PLAYTHROUGH)
-        ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play,
-                   state="normal" if can_play else "disabled").pack(side="left", padx=(6, 0))
+        from ..game_profile import MAP_DECODED, PLAYTHROUGH, profile_of
+        profile = profile_of(self._project)
+        missing = next((f for f in (PLAYTHROUGH, MAP_DECODED) if not profile.supports(f)), None)
+        play = ttk.Button(top, text="Play...", style="Accent.TButton", command=self.open_play,
+                          state="normal" if missing is None else "disabled")
+        play.pack(side="left", padx=(6, 0))
+        if missing == MAP_DECODED:
+            tip(play, f"The in-app playthrough needs the chapter's map, and {profile.display_name} maps "
+                      "aren't decoded yet.")
+        elif missing is not None:
+            tip(play, profile.unavailable(missing))
         self._undo_button = ttk.Button(top, text="Undo", command=self._do_undo, state="disabled")
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")

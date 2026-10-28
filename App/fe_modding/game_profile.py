@@ -63,6 +63,13 @@ PLAYTHROUGH = "playthrough"    # In-app tactical chapter runner
 BATTLE_SIM = "battle_sim"      # Forecast, simulation and rendered fight workflow
 PATCHES = "patches"            # .tpatch create / apply
 DISC = "disc"                  # extract / rebuild
+COLOUR_VARIANTS = "colour_variants"  # recoloured battle/map texture + portrait copies
+MAP_DECODED = "map_decoded"    # map.bin sections (capacity, grids, props) decoded for the Build canvas
+EXTENDED_FLAGS = "extended_flags"  # main.dol runtime for flags past the vanilla slots
+TUTORIALS = "tutorials"        # tutorial pages
+STAFF_CREDITS = "staff_credits"  # staff roll
+ENDING_ART = "ending_art"      # ending/ illustrations
+BATTLE_SKIES = "battle_skies"  # sky/ battle backdrops
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -72,6 +79,8 @@ FEATURE_LABELS = {
     EFFECTS: "Effects", AUDIO: "Audio editing", VIDEO: "Video editing", SAVES: "Save files",
     GAME_CODE: "Game Code patches", PLAY: "Play in Dolphin", PLAYTHROUGH: "In-app playthrough",
     BATTLE_SIM: "Battle Simulator and rendered fights", PATCHES: "Patches", DISC: "Disc extraction",
+    COLOUR_VARIANTS: "Colour variants", MAP_DECODED: "Map editing", EXTENDED_FLAGS: "Extended flags",
+    TUTORIALS: "Tutorials", STAFF_CREDITS: "Staff credits", ENDING_ART: "Ending art", BATTLE_SKIES: "Battle skies",
 }
 
 
@@ -211,7 +220,8 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h", "m"),
     features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, BATTLE_DATA, BATTLE_CAMERAS, ANIM, MODELS, FONTS,
-                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
+                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
+                        COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART}),
     font_files=FONT_FILES,
 )
 
@@ -233,7 +243,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
-                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
+                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES}),
     message_dialect="fe10",
     script_dialect="fe10",
     name_hash_buckets=2027,

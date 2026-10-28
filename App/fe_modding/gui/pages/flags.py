@@ -26,7 +26,7 @@ from typing import Optional
 
 from ... import chapters, flag_excel, script_sources
 from ...exceptions import ProjectError
-from ...game_profile import SAVES, profile_of
+from ...game_profile import EXTENDED_FLAGS, SAVES, profile_of
 from ...formats import event_flags as ef
 from ...formats.extended_flags import HUB_ALIASES, MANIFEST_NAME
 from ...formats.cmb import CompileError, compile_source, read_cmb
@@ -405,11 +405,15 @@ class _CampaignTab(ttk.Frame):
         ttk.Button(bar, text="Add campaign flag…", command=self._add).pack(side="left")
         self._storage = tk.StringVar(value="Extended")
         self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
-        self._bank.pack(side="left", padx=(6, 0))
+        extended = profile_of(page.project).supports(EXTENDED_FLAGS)
+        if extended:
+            self._bank.pack(side="left", padx=(6, 0))
         self._rename_button = ttk.Button(bar, text="Rename reserved slot…", command=self._rename, state="disabled")
         self._rename_button.pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(side="left", padx=(6, 0))
+        if extended:
+            ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+            ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(
+                side="left", padx=(6, 0))
         ttk.Button(bar, text="Open startup.cmb in the Script editor",
                    command=self._open_startup).pack(side="left", padx=(6, 0))
         self._budget = ttk.Label(bar, style="Muted.TLabel")
@@ -547,10 +551,14 @@ class _ChapterTab(ttk.Frame):
         ttk.Button(bar, text="Add chapter flag…", command=self._add).pack(side="left")
         self._storage = tk.StringVar(value="Extended")
         self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
-        self._bank.pack(side="left", padx=(6, 0))
+        extended = profile_of(page.project).supports(EXTENDED_FLAGS)
+        if extended:
+            self._bank.pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="Open in the Script editor", command=self._open).pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
-        ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(side="left", padx=(6, 0))
+        if extended:
+            ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+            ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(
+                side="left", padx=(6, 0))
         self._tree = _tree(self, {"bank": ("Storage", 80, False), "slot": ("Slot", 60, False), "name": ("Name", 260, False),
                                   "where": ("Registered in", 170, False), "uses": ("Used by", 420, True)})
         self._tree.bind("<Double-1>", lambda e: self._open())

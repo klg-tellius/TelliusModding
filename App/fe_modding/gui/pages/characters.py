@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ...formats import fe10data, fe10_message
-from ...game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, files_root_of
+from ...game_profile import CHAPTERS, COLOUR_VARIANTS, DATA_TABLES, GAME_DATA, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from ... import excel_io
 from .. import record_actions
@@ -542,11 +542,6 @@ class CharacterPage(Page):
         section_header(body, "Models", "what the game loads for this character").pack(anchor="w", pady=(24, 8))
         models = ttk.Frame(body, style="Surface.TFrame", padding=14)
         models.pack(fill="x")
-        if rd:
-            ttk.Label(models, text="Radiant Dawn model resolution is not decoded yet. This tab will use the same "
-                                   "model links and tools once Phase 6 lands.", style="SurfaceMuted.TLabel",
-                      wraplength=720, justify="left").pack(anchor="w")
-            return
         rows = [
             ("Battle model", info.class_name or info.jid, info.battle_model),
             ("Battle model, promoted", info.promoted_class_name or info.promoted_jid, info.promoted_battle_model),
@@ -570,11 +565,12 @@ class CharacterPage(Page):
         actions.pack(anchor="w", pady=(16, 0))
         ttk.Button(actions, text="Simulate a battle…", command=lambda: self.shell.navigate(
             ("asset", "battle_sim", info.pid))).pack(side="left")
-        ttk.Button(actions, text="Colour variant…", command=lambda: self._colour_variant(info.pid)).pack(
-            side="left", padx=(8, 0))
-        help_mark(actions, "A recoloured copy of this character's battle texture, map texture and portrait "
-                           "(a red Gatrie), used only by this character and the records you tick.").pack(
-            side="left", padx=(6, 0))
+        if self.project.profile.supports(COLOUR_VARIANTS):
+            ttk.Button(actions, text="Colour variant…", command=lambda: self._colour_variant(info.pid)).pack(
+                side="left", padx=(8, 0))
+            help_mark(actions, "A recoloured copy of this character's battle texture, map texture and portrait "
+                               "(a red Gatrie), used only by this character and the records you tick.").pack(
+                side="left", padx=(6, 0))
 
     def _colour_variant(self, pid: str) -> None:
         from ..colour_variant_dialog import open_colour_variant
