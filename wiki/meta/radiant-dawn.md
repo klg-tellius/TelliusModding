@@ -45,6 +45,12 @@ source_path: "meta/radiant-dawn.md"
 
   A chapter played on several maps is several records, one per map, in a row (`C0407a` to `C0407e`, and `C0401a`/`C0401b` on `lmap01`/`lmap02`). No chapter changes battle map mid-chapter the way Path of Radiance's numbered parts do. A script ends a branching chapter with `CompleteSubChapter(route)`. <span class="confidence confidence--confirmed">files</span>
 
+## Battle backdrops
+
+  `FE10Data.cms` gives each map a row of `BattleTerrIndex`: one backdrop number per terrain type, an index into the list `BattleTerrName` (`bg0101街`...). An empty cell (0xFFFF) uses the row's first cell. A map with no row of its own fights in front of `bg魔法` on every terrain type. Path of Radiance instead falls back to its first row. `BattleTerrName` has no count: the game reads entry *n* directly, so names can be appended. <span class="confidence confidence--confirmed">engine</span>
+
+  The name is a record of `FE10Battle.cms`'s `FE10BMapData`, whose first `FE10BMapModel` names the scenery folder in `zbg/` (`bg0101街` is `zbg/bg0101twn`). Of its 119 backdrops, 13 are missing from the retail `BattleTerrName`, so no row can name them yet, among them the generic `bg汎用01草原1`-`3` (plains), `bg汎用02森林` (forest) and `bg魔法` itself. <span class="confidence confidence--confirmed">files</span>
+
 ## Articles
 
 - [Message Format (Radiant Dawn)](../formats/rd-message-format.md): the byte-code that replaced the `$` commands, layouts and speech balloons.

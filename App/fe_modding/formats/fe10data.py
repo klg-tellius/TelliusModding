@@ -898,6 +898,22 @@ def add_battle_scenery(data: bytes, copy_of: int, map_name: str) -> tuple[bytes,
     return bytes(out), len(records)
 
 
+def add_battle_scenery_name(data: bytes, name: str) -> tuple[bytes, int]:
+    """Append ``name`` to BattleTerrName and return the file and its index. The executable indexes the
+    list with no count (8011d3a4 reads entry ``index * 4``), so the list may grow; the backdrop itself
+    is the FE10Battle.cms ``FE10BMapData`` record of that name."""
+    names = battle_scenery_names(data)
+    if name in names:
+        return data, names.index(name)
+    if len(names) >= 0xFFFF:
+        raise ValueError("BattleTerrName is full.")
+    data = insert_bytes(data, fe8data.section_start(data, "RelianceData"), bytes(4), [0])
+    data, ptr = _label_value(data, name)
+    out = bytearray(data)
+    fe8data._pack_pointer(out, fe8data.section_start(data, "BattleTerrName") + 4 * len(names), ptr)
+    return bytes(out), len(names)
+
+
 # -- adding and removing records -------------------------------------------------------------------
 
 #: Tables whose records can be added and removed: the ones with a count word the engine loops on.

@@ -1,7 +1,8 @@
 """The per-chapter Map settings and Chapter data tabs.
 
 Map settings edit the selected phase through Build's Undo/Redo and Save Chapter.
-Chapter data edits the shared FE8Data.bin session and has its own save control.
+Chapter data edits the shared game-data session (FE8Data.bin or FE10Data.cms) and has its own save
+control.
 """
 
 from __future__ import annotations
@@ -11,9 +12,6 @@ from tkinter import ttk
 from typing import Callable
 
 from .map_windows import MapSettingsForm
-from ..game_code.rd_story import chapter_record_id
-from ..game_profile import CHAPTER_RECORD_FORM
-from .fe10_data_editor import Fe10DataEditor
 from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame, info
 
@@ -48,17 +46,12 @@ class MapSettingsPanel(ttk.Frame):
 
 
 class ChapterDataPanel(ttk.Frame):
+    """Chapters › Chapter data: the chapter's ``ChapterData`` record in the same form on both games."""
+
     def __init__(self, parent: tk.Misc, builder, session_provider: Callable[[], object]) -> None:
         super().__init__(parent)
         self._chapter_record: ChapterRecordPanel | None = None
-        self._fe10_record: Fe10DataEditor | None = None
         session = session_provider()
-        if session.available and not builder.project.profile.supports(CHAPTER_RECORD_FORM):
-            self._fe10_record = Fe10DataEditor(self, builder.project, builder.changelog, session,
-                                               navigate=builder.navigate)
-            self._fe10_record.pack(fill="both", expand=True)
-            self._fe10_record.select_tab("chapters")
-            return
         scroll = ScrollFrame(self, padding=(16, 12))
         scroll.pack(fill="both", expand=True)
         if session.available:
@@ -69,20 +62,13 @@ class ChapterDataPanel(ttk.Frame):
             ttk.Label(scroll.body, text=session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
 
     def show_chapter(self, chapter_id: str, map_name: str | None) -> None:
-        if self._fe10_record is not None:
-            self._fe10_record.select_record(chapter_record_id(chapter_id))
-            return
         if self._chapter_record is not None:
-            self._chapter_record.show_chapter(int(chapter_id) if chapter_id.isdigit() else None, map_name)
+            self._chapter_record.show_chapter(chapter_id, map_name)
 
     def flush(self) -> None:
-        if self._fe10_record is not None:
-            self._fe10_record.focus_set()  # commits the active field's FocusOut binding
         if self._chapter_record is not None:
             self._chapter_record.flush()
 
     def cleanup(self) -> None:
-        if self._fe10_record is not None:
-            self._fe10_record.cleanup()
         if self._chapter_record is not None:
             self._chapter_record.cleanup()
