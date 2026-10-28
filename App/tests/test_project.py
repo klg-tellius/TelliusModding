@@ -76,22 +76,23 @@ class LogicalFileTests(unittest.TestCase):
         rd = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)
         por = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
         self.assertEqual(rd.profile.disc_id_prefix, "RFE")
-        self.assertEqual(rd.logical_path("game_data").real(), rd.extracted_dir / "files" / "FE10Data.cms")
-        self.assertEqual(por.logical_path("game_data").real(), por.extracted_dir / "files" / "FE8Data.bin")
+        self.assertEqual(rd.logical_path("game_data").rel, "files/FE10Data.cms")
+        self.assertEqual(por.logical_path("game_data").rel, "files/FE8Data.bin")
 
     def test_radiant_dawn_files_are_lz10_transparent(self):
         project = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)
         path = project.logical_path("game_data")
-        path.parent.mkdir(parents=True)
+        extracted = project.extracted_dir / "files" / "FE10Data.cms"   # as the disc had it
+        extracted.parent.mkdir(parents=True)
         payload = bytes(range(256)) * 8
-        path.write_bytes(lz10.compress(payload))
+        extracted.write_bytes(lz10.compress(payload))
         self.assertEqual(project.read_logical("game_data"), payload)
 
         project.write_logical("game_data", payload + b"edited")
         self.assertEqual(lz10.decompress(path.read_bytes()), payload + b"edited")
         self.assertEqual(project.read_logical("game_data"), payload + b"edited")
-        original = project.originals_dir / "files" / "FE10Data.cms"
-        self.assertEqual(lz10.decompress(original.read_bytes()), payload, "the extracted file is kept")
+        original = project.files.vanilla("files/FE10Data.cms")
+        self.assertEqual(lz10.decompress(original), payload, "the extracted file is kept")
 
     def test_path_of_radiance_files_are_stored_as_they_are(self):
         project = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)

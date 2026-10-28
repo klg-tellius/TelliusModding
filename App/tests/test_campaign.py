@@ -29,7 +29,7 @@ class CampaignTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.project = ModProject.create(Path(self._tmp.name), "C", Game.PATH_OF_RADIANCE)
-        self.files = self.project.extracted_dir / "files"
+        self.files = self.project.files_root
         for name in ("c00.m", "c01.m"):
             self._write(f"Mess/{name}", message.write_messages([]))
         self._write("Scripts/C01.cmb", b"")

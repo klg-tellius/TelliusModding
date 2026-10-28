@@ -88,7 +88,7 @@ class UnavailableStateTests(unittest.TestCase):
         from fe_modding.formats.cmb import compile_source, read_cmb, write_cmb
         from fe_modding.formats.cmb.model import FE10
 
-        scripts = self.project.files_dir / "Scripts"
+        scripts = self.project.files_root / "Scripts"
         scripts.mkdir(parents=True)
         path = scripts / "C0101.cmb"
         path.write_bytes(write_cmb(compile_source("def f(a):\n    a = 1\n    return 0\n", dialect=FE10).script))

@@ -212,33 +212,28 @@ class ModProject:
         overwrote them, at the same relative paths (created on demand)."""
         return self.directory / ORIGINALS_DIR
 
-    def _extracted_path(self, relative: str) -> Path:
-        return self.extracted_dir / relative
-
     def write_keeping_original(self, path: Path | str, data: bytes) -> None:
         """Write ``data`` to ``path`` (a file under ``extracted/``) through :attr:`files`, which
         keeps the file as extracted however many times it is replaced."""
-        self.files.write(Path(path), data)
+        self.files.write(path, data)
 
     def extracted_bytes(self, path: Path | str) -> Optional[bytes]:
         """``path`` (under ``extracted/``) as extracted; None when the disc had no such file."""
-        files = self.files
-        return files.vanilla(Path(path))
+        return self.files.vanilla(path)
 
     def is_added_file(self, path: Path | str) -> Optional[bool]:
         """Whether ``path`` (a file under ``files/``) is one the mod added, absent from the source
         disc; None when that cannot be told."""
-        return self.files.is_added(Path(path))
+        return self.files.is_added(path)
 
-    def originals_in(self, folder: Path | str) -> list[Path]:
-        """The extracted files directly in ``folder`` that the mod replaced (their paths under
-        ``extracted/``)."""
+    def originals_in(self, folder: Path | str) -> list[GamePath]:
+        """The game files directly in ``folder`` that the mod replaced (not added)."""
         files = self.files
-        return [self._extracted_path(rel) for rel in files.modified_in(Path(folder))]
+        return [files.at(rel) for rel in files.modified_in(folder)]
 
     def restore_original(self, path: Path | str) -> None:
         """Put the file as extracted back."""
-        if not self.files.revert(Path(path)):
+        if not self.files.revert(path):
             raise ProjectError(f"No kept original for {path}.")
 
     @property
