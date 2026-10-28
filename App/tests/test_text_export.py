@@ -35,7 +35,7 @@ class TextExportGuardTests(unittest.TestCase):
         self.assertEqual(written, [])
         # the single-file parts report their missing file; folder parts just export nothing
         self.assertEqual(sorted(p.split(':')[0] for p in problems),
-                         sorted(label for name, label in text_export.PARTS if name in ('FE8Data', 'sound', 'faces', 'zdbx')))
+                         sorted(text_export.PART_LABELS[name] for name in ('FE8Data', 'sound', 'faces', 'zdbx')))
         self.assertTrue((self.root / "out" / text_export.MARKER).is_file())
 
 

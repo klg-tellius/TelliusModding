@@ -12,6 +12,7 @@ from typing import Callable
 
 from .map_windows import MapSettingsForm
 from ..game_code.rd_story import chapter_record_id
+from ..game_profile import CHAPTER_RECORD_FORM
 from .fe10_data_editor import Fe10DataEditor
 from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame, info
@@ -52,7 +53,7 @@ class ChapterDataPanel(ttk.Frame):
         self._chapter_record: ChapterRecordPanel | None = None
         self._fe10_record: Fe10DataEditor | None = None
         session = session_provider()
-        if session.available and getattr(session, "fe10", None) is not None:
+        if session.available and not builder.project.profile.supports(CHAPTER_RECORD_FORM):
             self._fe10_record = Fe10DataEditor(self, builder.project, builder.changelog, session,
                                                navigate=builder.navigate)
             self._fe10_record.pack(fill="both", expand=True)

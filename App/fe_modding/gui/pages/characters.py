@@ -12,12 +12,12 @@ included. Game-specific codecs feed the same routes and page layout.
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from ...formats import fe10data, fe10_message
-from ...game_profile import CHAPTERS, COLOUR_VARIANTS, DATA_TABLES, GAME_DATA, files_root_of
+from ...formats import fe10_message
+from ...game_adapter import data_adapter
+from ...game_profile import CHAPTERS, CHARACTER_FORM, COLOUR_VARIANTS, GAME_DATA, SUPPORT_LIST, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
-from ... import excel_io
 from .. import record_actions
 from ..character_form import CharacterForm
 from ..fe10_character_form import Fe10CharacterForm, Fe10CharacterSupportsPanel
@@ -65,7 +65,6 @@ class CharactersHub(Page):
         self._query.trace_add("write", lambda *_: self._filter_changed())
         chips = ttk.Frame(self, style="Page.TFrame", padding=(28, 0, 28, 8))
         chips.pack(fill="x")
-        rd = self.project.profile.supports(DATA_TABLES) and not self.project.profile.supports(GAME_DATA)
         self._category = tk.StringVar(value=PLAYABLE)
         self._category_buttons = {}
         for value, label in ((PLAYABLE, "Playable"), (NAMED, "Named NPCs & bosses"), (GENERIC, "Generic"),
@@ -74,10 +73,11 @@ class CharactersHub(Page):
                                      style="Toggle.TButton", command=self._filter_changed)
             button.pack(side="left", padx=(0, 6))
             self._category_buttons[value] = button
-        if rd:
+        if data_adapter(shell.session).excel_sheet("character") is None:
             self._export_button.configure(state="disabled")
             self._import_button.configure(state="disabled")
-            reason = "Radiant Dawn character spreadsheets are not decoded yet; edit records in this shared page."
+            reason = (f"{self.project.profile.display_name} has no character spreadsheet layout yet; "
+                      "edit the records on each character's page.")
             tip(self._export_button, reason)
             tip(self._import_button, reason)
         self._count = ttk.Label(chips, text="", style="Muted.TLabel")
@@ -108,7 +108,7 @@ class CharactersHub(Page):
         if not path:
             return
         try:
-            excel_io.export_fe8(path, session.data, only="Characters")
+            data_adapter(session).export_excel(path, "character")
         except Exception as exc:
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
 
@@ -120,7 +120,7 @@ class CharactersHub(Page):
         if not path:
             return
         try:
-            data, _docs, errors = excel_io.import_fe8(path, session.data, only="Characters")
+            data, errors = data_adapter(session).import_excel(path, "character")
             if errors:
                 messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
                 return
@@ -132,33 +132,14 @@ class CharactersHub(Page):
             messagebox.showerror("Could not import Excel", str(exc), parent=self)
     def _new_character(self) -> None:
         session = self.shell.session
-        if getattr(session, "fe10", None) is not None:
-            characters = session.fe10.characters
-            template = simpledialog.askstring(
-                "New character", "PID of the character to copy:",
-                initialvalue=characters[0].id if characters else "", parent=self)
-            source = next((r.index for r in characters if r.id == template), None)
-            if source is None:
-                if template:
-                    messagebox.showerror("New character", f"{template} was not found.", parent=self)
-                return
-            new_id = simpledialog.askstring("New character", "ID for the copy:",
-                                            initialvalue="PID_", parent=self)
-            if not new_id or new_id == "PID_":
-                return
-            if any(r.id == new_id for r in characters):
-                messagebox.showerror("New character", f"{new_id} is already used.", parent=self)
-                return
-            data, _index = fe10data.add_record(session.data, "character", source, new_id)
-            session.replace(data, self)
-            self.shell.navigate(("character", new_id))
+        if not session.available:
             return
-        if session.fe8 is None:
-            return
-        labels = [f"{c.pid or '?'}  #{c.index}" for c in session.fe8.characters]
-        index = record_actions.add_record(self, session, "character", labels)
+        adapter = data_adapter(session)
+        rows = adapter.records("character")
+        index = record_actions.add_record(self, session, "character",
+                                          [f"{row.id or '?'}  #{row.index}" for row in rows])
         if index is not None:
-            self.shell.navigate(("character", session.fe8.characters[index].pid))
+            self.shell.navigate(("character", adapter.records("character")[index].id))
 
     def show(self, route) -> bool:
         if self._built_for is not self.shell.index:
@@ -258,7 +239,7 @@ class CharacterPage(Page):
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         stats = ScrollFrame(self._notebook, padding=(16, 12))
-        if getattr(shell.session, "fe10", None) is not None:
+        if not shell.project.profile.supports(CHARACTER_FORM):
             self._form = Fe10CharacterForm(
                 stats.body, shell.session,
                 on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
@@ -293,7 +274,7 @@ class CharacterPage(Page):
         self._support_save.pack(side="left")
         self._support_status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._support_status.pack(side="left", padx=(12, 0))
-        if getattr(session, "fe10", None) is not None:
+        if not self.project.profile.supports(SUPPORT_LIST):
             self._supports = Fe10CharacterSupportsPanel(
                 body, session, self._name_of,
                 lambda pid: self.shell.navigate(("character", pid, "supports")))
@@ -513,7 +494,6 @@ class CharacterPage(Page):
 
     def _render_look(self, info) -> None:
         body = self._look.body
-        rd = self.project.profile.supports(DATA_TABLES) and not self.project.profile.supports(GAME_DATA)
         for child in body.winfo_children():
             child.destroy()
         section_header(body, "Portrait").pack(anchor="w", pady=(0, 8))
@@ -535,7 +515,7 @@ class CharacterPage(Page):
             ttk.Button(text, text="Open in Portraits", command=lambda: self.shell.navigate(
                 ("asset", "portraits", stem))).pack(anchor="w")
         ttk.Label(text, text=("Replacing the normal portrait also updates its Face/wide twin by default."
-                              if rd else
+                              if self.project.profile.wii else
                               "Replacing the face file changes it for every character that uses this portrait."),
                   style="SurfaceCaption.TLabel", wraplength=520).pack(anchor="w", pady=(10, 0))
 
@@ -624,11 +604,7 @@ class CharacterPage(Page):
         mtree.bind("<Double-Button-1>", lambda e: self._open_message(mtree))
         mtree.bind("<Return>", lambda e: self._open_message(mtree))
         if not deployments and not messages:
-            text = ("Radiant Dawn appearances will populate here when its deployment codec joins the shared "
-                    "chapter index." if self.project.profile.supports(DATA_TABLES) and
-                    not self.project.profile.supports(CHAPTERS) else
-                    "Not found in any deployment file or chapter message.")
-            ttk.Label(top, text=text, style="Muted.TLabel", wraplength=760, justify="left").pack(anchor="w")
+            ttk.Label(top, text="Not found in any deployment file or chapter message.", style="Muted.TLabel", wraplength=760, justify="left").pack(anchor="w")
 
     def _render_scripts(self) -> None:
         if self._scripts_for == self._pid or self.shell.index is None:

@@ -23,14 +23,14 @@ other ``FE8Data.bin`` edit; **Save FE8Data.bin** writes them.
 
 from __future__ import annotations
 
-import struct
 import tkinter as tk
 from collections import Counter
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
-from ..formats import fe10data, fe8data
+from ..formats import fe8data
+from ..game_adapter import data_adapter
 from ..project import ModProject
 from .changelog import ChangeLog
 from .widgets import ScrollFrame, section_header, tip
@@ -329,42 +329,11 @@ class BattleScenePanel(ttk.Frame):
 
     def _rows(self) -> list[fe8data.BattleTerrainRow]:
         session = self._session()
-        if session is None:
-            return []
-        if getattr(session, "fe10", None) is not None:
-            # Radiant Dawn stores BattleTerrName indices (0xFFFF: none); the panel works with the names
-            names = fe10data.battle_scenery_names(session.data)
-            return [fe8data.BattleTerrainRow(record.values.get("map"),
-                                             [names[i] if i < len(names) else None
-                                              for i in record.lists.get("scenery", [])])
-                    for record in session.fe10.tables.get("battle_scenery", [])]
-        try:
-            return fe8data.read_battle_terrain(session.data)
-        except (KeyError, ValueError, struct.error):
-            return []
+        return data_adapter(session).battle_scenery_rows() if session is not None else []
 
     def _write(self, rows: list[fe8data.BattleTerrainRow], log_text: str) -> None:
         session = self._session()
-        if getattr(session, "fe10", None) is not None:
-            current = session.fe10.tables.get("battle_scenery", [])
-            if len(rows) != len(current):
-                raise ValueError("Adding Radiant Dawn battle-scenery rows is not decoded yet.")
-            data = session.data
-            names = fe10data.battle_scenery_names(data)
-            index = {name: i for i, name in reversed(list(enumerate(names))) if name}
-            for i, (row, record) in enumerate(zip(rows, current)):
-                if row.map_name != record.values.get("map"):
-                    raise ValueError("Renaming Radiant Dawn battle-scenery rows is not decoded yet.")
-                for terrain, (new, old) in enumerate(zip(row.scenes, record.lists.get("scenery", []))):
-                    if new is not None and new not in index:
-                        raise ValueError(f"{new} is not a BattleTerrName entry; adding Radiant Dawn battle "
-                                         "backgrounds is not decoded yet.")
-                    new = index[new] if new is not None else 0xFFFF
-                    if new != old:
-                        data = fe10data.set_battle_scenery(data, i, terrain, new)
-            session.data = data
-        else:
-            session.data = fe8data.write_battle_terrain(session.data, rows)
+        session.data = data_adapter(session).write_battle_scenery_rows(rows)
         session.changed(self)
         self._changelog.append(self._data_file, log_text)
 
@@ -377,18 +346,10 @@ class BattleScenePanel(ttk.Frame):
         """Each terrain type's display name and ``TerrainData`` name, in column order."""
         if session is None:
             return [], []
-        if getattr(session, "fe10", None) is not None:
-            types = session.fe10.tables.get("terrain", [])
-            keys = [record.values.get("name") or "" for record in types]
-            return ([self._map_editor.terrain_label(key) for key in keys] if self._map_editor is not None else keys,
-                    keys)
-        try:
-            types = fe8data.read_terrain_types(session.data)
-        except (KeyError, ValueError, IndexError, struct.error):
-            return [], []
+        keys = data_adapter(session).terrain_keys()
         if self._map_editor is not None:
-            return [self._map_editor.terrain_label(t.name) for t in types], [t.name for t in types]
-        return [t.name for t in types], [t.name for t in types]
+            return [self._map_editor.terrain_label(key) for key in keys], keys
+        return list(keys), keys
 
     def _tile_counts(self) -> Optional[Counter]:
         """Tiles per terrain-type name on the map, when the map editor holds this map."""
@@ -522,7 +483,8 @@ class BattleScenePanel(ttk.Frame):
         value = row.scenes[k]
         chosen = effective_scene(rows, self._map, k)
         # Radiant Dawn's zbg/ folders have hashed names, not the BattleTerrName ones
-        missing = (chosen and getattr(self._session(), "fe10", None) is None
+        session = self._session()
+        missing = (chosen and session is not None and data_adapter(session).scene_folders_named
                    and find_scene(self._scene_models(), chosen) is None)
         if missing:
             source = "first terrain scene: " if not value else ""

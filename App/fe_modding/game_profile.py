@@ -70,6 +70,13 @@ TUTORIALS = "tutorials"        # tutorial pages
 STAFF_CREDITS = "staff_credits"  # staff roll
 ENDING_ART = "ending_art"      # ending/ illustrations
 BATTLE_SKIES = "battle_skies"  # sky/ battle backdrops
+# Purpose-built screens a game gets once its data reaches them through the adapters (game_adapter.py);
+# until then the page shows that game's generic record view for the same feature.
+CHARACTER_FORM = "character_form"  # the Character › Stats form with Open buttons
+CHAPTER_RECORD_FORM = "chapter_record_form"  # Chapter › Chapter data: objectives, music, backgrounds
+SUPPORT_LIST = "support_list"  # per-partner support list with conversation links
+DATA_WORKSPACE = "data_workspace"  # Game Data as one tabbed workspace (supports, flags, AI, rect RIDs as tabs)
+SAVE_UNITS = "save_units"      # save editor with Units, Convoy, Forges, Map objects, Flags, System tabs
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -81,6 +88,9 @@ FEATURE_LABELS = {
     BATTLE_SIM: "Battle Simulator and rendered fights", PATCHES: "Patches", DISC: "Disc extraction",
     COLOUR_VARIANTS: "Colour variants", MAP_DECODED: "Map editing", EXTENDED_FLAGS: "Extended flags",
     TUTORIALS: "Tutorials", STAFF_CREDITS: "Staff credits", ENDING_ART: "Ending art", BATTLE_SKIES: "Battle skies",
+    CHARACTER_FORM: "The character form", CHAPTER_RECORD_FORM: "The chapter data form",
+    SUPPORT_LIST: "The support partner list", DATA_WORKSPACE: "The Game Data workspace",
+    SAVE_UNITS: "Save unit, convoy and forge editing",
 }
 
 
@@ -113,6 +123,8 @@ class GameProfile:
     name_hash_buckets: int = 509
     #: (font name, path under files/) of every game font, in the game's font order.
     font_files: tuple[tuple[str, str], ...] = ()
+    #: Parts of Disc & Patch › Export as text implemented for this game (``text_export.PART_LABELS`` keys).
+    text_export_parts: tuple[str, ...] = ()
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -221,8 +233,10 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h", "m"),
     features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, BATTLE_DATA, BATTLE_CAMERAS, ANIM, MODELS, FONTS,
                         ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
-                        COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART}),
+                        COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART,
+                        CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS}),
     font_files=FONT_FILES,
+    text_export_parts=("FE8Data", "deployments", "shops", "messages", "scripts", "sound", "faces", "zdbx"),
 )
 
 # Radiant Dawn: only what is decoded. Each phase of the parity plan switches features on.
@@ -243,11 +257,15 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
-                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES}),
+                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
+                        MAP_DECODED}),
+    # playthrough waits for the RFEE01 script runtime: chapter and startup scripts still call natives
+    # it does not model (playthrough/natives.py stops on those rather than guessing).
     message_dialect="fe10",
     script_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
+    text_export_parts=("FE10Data", "FE10Growth", "messages", "scripts"),
 )
 
 PROFILES: dict[Game, GameProfile] = {
