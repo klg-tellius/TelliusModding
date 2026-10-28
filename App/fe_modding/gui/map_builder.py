@@ -595,7 +595,8 @@ class MapBuilder(EditorPanel):
             tip(play, f"The in-app playthrough needs the chapter's map, and {profile.display_name} maps "
                       "aren't decoded yet.")
         elif missing is not None:
-            tip(play, profile.unavailable(missing))
+            tip(play, profile.unavailable(missing) + " Its event scripts call game functions the in-app "
+                      "runtime does not model yet.")
         self._undo_button = ttk.Button(top, text="Undo", command=self._do_undo, state="disabled")
         self._undo_button.pack(side="left", padx=(6, 0))
         self._redo_button = ttk.Button(top, text="Redo", command=self._do_redo, state="disabled")
