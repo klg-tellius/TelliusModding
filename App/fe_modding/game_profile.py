@@ -83,6 +83,7 @@ HUB = "hub"                    # Chapters › Create hub (a hub chapter with lin
 #: Several map folders per chapter (bmap06, bmap06_2: Opening18_N / Complete18 parts). Not on Radiant
 #: Dawn: its multi-map chapters are separate ChapterData records (0407a-e) and it has no part natives.
 MAP_PHASES = "map_phases"
+BATTLE_WEAPONS = "battle_weapons"  # Assets › Battle Weapons (xwp/ dbx tables or FE10BWeapon rows)
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -97,7 +98,7 @@ FEATURE_LABELS = {
     CHARACTER_FORM: "The character form", CHAPTER_RECORD_FORM: "The chapter data form",
     SUPPORT_LIST: "The support partner list", DATA_WORKSPACE: "The Game Data workspace",
     SAVE_UNITS: "Save unit, convoy and forge editing",
-    CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
+    BATTLE_WEAPONS: "Battle weapons", CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
     MAP_PHASES: "Map phases",
 }
 
@@ -126,6 +127,8 @@ class GameProfile:
     #: Event-script bytecode and catalogues (``formats/cmb``): "fe9" or "fe10" (a
     #: :class:`~fe_modding.formats.cmb.model.Dialect` name).
     script_dialect: str = "fe9"
+    #: Battle tables: ``zdbx`` (Path of Radiance's ``zdbx.cmp`` dbx files) or ``fe10`` (``FE10Battle.cms`` rows).
+    battle_dialect: str = "zdbx"
     #: Buckets of the engine's name hash (``message.engine_name_hash``): message IDs and container
     #: symbols that share a bucket and check value shadow each other.
     name_hash_buckets: int = 509
@@ -133,6 +136,11 @@ class GameProfile:
     font_files: tuple[tuple[str, str], ...] = ()
     #: Parts of Disc & Patch › Export as text implemented for this game (``text_export.PART_LABELS`` keys).
     text_export_parts: tuple[str, ...] = ()
+    #: (label, path under files/) of each tutorial list (``formats/tut_data.py``), the one the US game
+    #: loads first; Radiant Dawn has one per difficulty set.
+    tutorial_files: tuple[tuple[str, str], ...] = (("English", "tut_data_en.bin"), ("Japanese", "tut_data.bin"))
+    #: The names of a tutorial's four start-flag slots (``tut_data.DIFFICULTIES`` on Path of Radiance).
+    tutorial_flag_names: tuple[str, ...] = ("Normal", "Hard", "Maniac", "Easy")
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -243,7 +251,7 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
                         ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
                         COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART,
                         CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS,
-                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES}),
+                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES, BATTLE_WEAPONS}),
     font_files=FONT_FILES,
     text_export_parts=("FE8Data", "deployments", "shops", "messages", "scripts", "sound", "faces", "zdbx"),
 )
@@ -267,14 +275,19 @@ RADIANT_DAWN_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
-                        MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM}),
+                        MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS}),
     # playthrough waits for the RFEE01 script runtime: chapter and startup scripts still call natives
     # it does not model (playthrough/natives.py stops on those rather than guessing).
     message_dialect="fe10",
     script_dialect="fe10",
+    battle_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
-    text_export_parts=("FE10Data", "FE10Growth", "messages", "scripts"),
+    text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"),
+    tutorial_files=(("Normal, English", "Tutorial/tut_data_n_en.bin"), ("Hard, English", "Tutorial/tut_data_h_en.bin"),
+                    ("Normal, Japanese", "Tutorial/tut_data_n.bin"), ("Hard, Japanese", "Tutorial/tut_data_h.bin")),
+    # same record layout as Path of Radiance; which difficulty each slot stands for is not checked yet
+    tutorial_flag_names=("Slot 1", "Slot 2", "Slot 3", "Slot 4"),
 )
 
 PROFILES: dict[Game, GameProfile] = {

@@ -16,11 +16,11 @@ from tkinter import filedialog, messagebox, ttk
 
 from ...formats import fe10_message
 from ...game_adapter import data_adapter
-from ...game_profile import CHAPTERS, CHARACTER_FORM, COLOUR_VARIANTS, GAME_DATA, SUPPORT_LIST, files_root_of
+from ...game_profile import CHAPTERS, CHARACTER_FORM, COLOUR_VARIANTS, GAME_DATA, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from .. import record_actions
 from ..character_form import CharacterForm
-from ..fe10_character_form import Fe10CharacterForm, Fe10CharacterSupportsPanel
+from ..fe10_character_form import Fe10CharacterForm
 from ..shell import Page, plain_text
 from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header, tip
@@ -243,7 +243,7 @@ class CharacterPage(Page):
             self._form = Fe10CharacterForm(
                 stats.body, shell.session,
                 on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
-                on_open_character=self._open_character)
+                on_open_character=self._open_character, navigate=shell.navigate)
         else:
             self._form = CharacterForm(stats.body, shell.session,
                                        on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),
@@ -274,25 +274,28 @@ class CharacterPage(Page):
         self._support_save.pack(side="left")
         self._support_status = ttk.Label(bar, text="", style="Muted.TLabel")
         self._support_status.pack(side="left", padx=(12, 0))
-        if not self.project.profile.supports(SUPPORT_LIST):
-            self._supports = Fe10CharacterSupportsPanel(
-                body, session, self._name_of,
-                lambda pid: self.shell.navigate(("character", pid, "supports")))
-        else:
-            self._supports = CharacterSupportsPanel(
-                body,
-                get_data=lambda: session.data,
-                set_data=lambda b: setattr(session, "data", b),
-                on_dirty=lambda: session.changed(self._supports),
-                display_name=self._name_of,
-                conversation_ids=self._support_conversation_ids,
-                open_conversation=lambda pid, partner, rank: self.shell.page("data").open_support_conversation(
-                    pid, partner, rank),
-                open_character=lambda pid: self.shell.navigate(("character", pid, "supports")),
-            )
+        self._supports = CharacterSupportsPanel(
+            body,
+            get_data=lambda: session.data,
+            set_data=lambda b: setattr(session, "data", b),
+            on_dirty=lambda: session.changed(self._supports),
+            display_name=self._name_of,
+            conversation_ids=self._support_conversation_ids,
+            open_conversation=self._open_support_conversation,
+            open_character=lambda pid: self.shell.navigate(("character", pid, "supports")),
+            model=data_adapter(session).supports_model,
+        )
         self._supports.pack(fill="both", expand=True)
         session.subscribe(self._on_session_changed)
         self._refresh_support_status()
+
+    def _open_support_conversation(self, pid: str, partner: str, rank) -> None:
+        """A pair's support conversation of ``rank``; rank None: the game's support talks (Assets ›
+        Conversation Lists), which are not one message per pair and rank."""
+        if rank is None:
+            self.shell.navigate(("asset", "conversation_lists"))
+        else:
+            self.shell.page("data").open_support_conversation(pid, partner, rank)
 
     def _support_conversation_ids(self):
         data_page = self.shell.existing_page("data")

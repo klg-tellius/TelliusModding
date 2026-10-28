@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from . import chapter_form, excel_io
+from .supports_model import PorSupports, RdSupports
 from .formats import fe8data, fe10data
 from .formats.fe8data import BattleTerrainRow
 
@@ -64,6 +65,11 @@ class DataAdapter:
         Raises ValueError with the reason when the record cannot be added."""
         raise NotImplementedError
 
+    def categories(self, kind: str) -> Optional[tuple[list[str], list[str]]]:
+        """``(one category per record, the category order)`` for the filter chips of ``kind``
+        (``class``: tier or laguz, ``item``: weapon type), or None when the table has none."""
+        return None
+
     # -- Excel ------------------------------------------------------------------------------
     def excel_sheet(self, kind: str) -> Optional[str]:
         """The workbook sheet holding ``kind``, or None when this game has no Excel layout for it."""
@@ -97,6 +103,10 @@ class DataAdapter:
     def scene_models(self, project) -> dict:
         """Battle-background name -> its model pack (``zbg/<folder>/*.cmp``)."""
         return zbg_packs(project)
+
+    # -- supports ---------------------------------------------------------------------------
+    #: The Supports tab's model class (:mod:`supports_model`), built from the file's bytes.
+    supports_model = PorSupports
 
     # -- chapters ---------------------------------------------------------------------------
     #: Extra buttons of the Chapter data form (``"title_card"``: draw the title card from the title).
@@ -162,6 +172,16 @@ class PorDataAdapter(DataAdapter):
 
     def add_record(self, kind, new_id, copy_from):
         return fe8data.add_record(self.data, kind, new_id, copy_from)
+
+    def categories(self, kind):
+        fe8 = self.session.fe8
+        if fe8 is None:
+            return None
+        if kind == "class":
+            return [fe8data.class_category(c, fe8.classes) for c in fe8.classes], list(fe8data.CLASS_CATEGORIES)
+        if kind == "item":
+            return [fe8data.item_category(it) for it in fe8.items], list(fe8data.ITEM_CATEGORIES)
+        return None
 
     def excel_sheet(self, kind: str) -> Optional[str]:
         return self._SHEETS.get(kind)
@@ -254,12 +274,50 @@ class RdDataAdapter(DataAdapter):
             return []
         return [EntityRow(record.index, record.id) for record in fe10.tables.get(kind, [])]
 
+    #: Radiant Dawn's classes: laguz carry the SFXC_ALIZE sound class, promoted tiers a tier skill.
+    CLASS_CATEGORIES = ["First tier", "Second tier", "Third tier", "Laguz"]
+    #: weapon type -> chip, named like Path of Radiance's (``blow`` is the laguz strike).
+    ITEM_TYPES = {"sword": "Sword", "lance": "Lance", "axe": "Axe", "bow": "Bow", "knife": "Knife",
+                  "flame": "Fire", "thunder": "Thunder", "wind": "Wind", "light": "Light", "dark": "Dark",
+                  "rod": "Staff", "blow": "Laguz strike", "ballista": "Ballista", "item": "Item"}
+    ITEM_CATEGORIES = [*dict.fromkeys(ITEM_TYPES.values()), "Other"]
+
+    def categories(self, kind):
+        fe10 = self.session.fe10
+        if fe10 is None:
+            return None
+        if kind == "class":
+            def tier(record):
+                if "SFXC_ALIZE" in record.lists.get("sounds", []):
+                    return "Laguz"
+                skills = record.lists.get("skills", [])
+                return "Third tier" if "SID_HIGHEST" in skills else "Second tier" if "SID_HIGHER" in skills \
+                    else "First tier"
+            return [tier(r) for r in fe10.tables.get("class", [])], list(self.CLASS_CATEGORIES)
+        if kind == "item":
+            return ([self.ITEM_TYPES.get(r.values.get("weapon_type") or "", "Other")
+                     for r in fe10.tables.get("item", [])], list(self.ITEM_CATEGORIES))
+        return None
+
     def add_record(self, kind, new_id, copy_from):
         if copy_from is None:
             raise ValueError("A new Radiant Dawn record starts as a copy of an existing one: pick one to copy.")
         if new_id and self.index_of(kind, new_id) is not None:
             raise ValueError(f"{new_id} is already used.")
         return fe10data.add_record(self.data, kind, copy_from, new_id or None)
+
+    def excel_sheet(self, kind: str) -> Optional[str]:
+        return excel_io.FE10_SHEETS.get(kind)
+
+    def export_excel(self, path, kind: str) -> None:
+        if self.excel_sheet(kind) is None:
+            raise ValueError(f"No Excel sheet for {kind} records.")
+        excel_io.export_fe10(path, self.data, kind)
+
+    def import_excel(self, path, kind: str) -> tuple[bytes, list[str]]:
+        if self.excel_sheet(kind) is None:
+            raise ValueError(f"No Excel sheet for {kind} records.")
+        return excel_io.import_fe10(path, self.data, kind)
 
     def terrain_keys(self) -> list[str]:
         fe10 = self.session.fe10
@@ -353,6 +411,7 @@ class RdDataAdapter(DataAdapter):
         return found
 
     chapter_actions = ("title_card",)
+    supports_model = RdSupports
 
     def chapter_records(self, chapter_id, map_name):
         from .game_code.rd_story import chapter_record_id

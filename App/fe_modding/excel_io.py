@@ -368,3 +368,71 @@ def _import_terrain(rows,data):
     out=fe8data.patch_terrain_stats(out,index,bytes(block),own_block=len(fe8data.terrain_block_users(out,index))>1)
   except (ValueError,TypeError,IndexError) as e: errors.append(f'Terrain index {index}: {e}')
  return (data if errors else out),errors
+
+
+#: Radiant Dawn: one sheet per FE10Data.cms table, its columns the table's own fields (fe10data.field_defs).
+FE10_SHEETS={'character':'Characters','class':'Classes','item':'Items','skill':'Skills','terrain':'Terrain'}
+
+
+def _fe10_columns(kind):
+ """``(column, field key, field kind)``: the record's fields, then its label lists as comma-separated
+ text (skill lists hold mode/label pairs and stay out)."""
+ from .formats import fe10data
+ cols=[(d.key,d.key,d.kind) for d in fe10data.field_defs(kind)]
+ cols+=[(key,key,'list') for k,key in fe10data._LIST_COUNT if k==kind and kind!='skill']
+ return cols
+
+
+def export_fe10(path,data,kind):
+ """Export one FE10Data.cms table (``character``, ``class``, ``item``, ``skill``, ``terrain``)."""
+ from .formats import fe10data
+ cols=_fe10_columns(kind); rows=[['index',*(c for c,_k,_t in cols)]]
+ for record in fe10data.read_table(data,kind):
+  row=[record.index]
+  for _c,key,how in cols:
+   value=', '.join(record.lists.get(key,[])) if how=='list' else record.values.get(key)
+   row.append(value)
+  rows.append(row)
+ write_workbook(path,{FE10_SHEETS[kind]:rows})
+
+
+def import_fe10(path,data,kind):
+ """``(file, errors)`` from the sheet of ``kind``: each row names its record by ``index`` and its id,
+ and only the cells that differ from the file are written. Nothing is written when any row fails."""
+ from .formats import fe10data
+ name=FE10_SHEETS[kind]; sheets=read_workbook(path); rows=sheets.get(name)
+ if not rows:
+  return data,[f'Expected a {name} worksheet with a header row.']
+ header={str(v).strip().casefold():i for i,v in enumerate(rows[0]) if v is not None}
+ id_key=fe10data.ID_FIELD[kind]
+ if 'index' not in header:
+  return data,[f'{name}: missing index column']
+ cols=[(header[c.casefold()],key,how) for c,key,how in _fe10_columns(kind) if c.casefold() in header]
+ if not cols:
+  return data,[f'{name}: no editable columns found']
+ out=data; errors=[]; count=len(fe10data.read_table(data,kind))
+ for rn,row in enumerate(rows[1:],2):
+  if not any(v not in (None,'') for v in row): continue
+  try:
+   index=_num(row[header['index']] if header['index']<len(row) else None,'index')
+   if index is None or not 0<=index<count: raise ValueError(f'unknown record index {index}')
+   record=fe10data.record(out,kind,index)
+   if id_key in header:
+    named=row[header[id_key]] if header[id_key]<len(row) else None
+    if named not in (None,'') and str(named).strip()!=(record.values.get(id_key) or ''):
+     raise ValueError(f'index {index} is {record.values.get(id_key)}, not {named}')
+   for col,key,how in cols:
+    if key==id_key: continue
+    v=row[col] if col<len(row) else None
+    if how=='list':
+     new=[t for t in (str(v or '').replace(',',' ').split())]
+     if new!=record.lists.get(key,[]): out=fe10data.set_list(out,kind,index,key,new); record=fe10data.record(out,kind,index)
+     continue
+    if how=='label': new=str(v).strip() if v not in (None,'') else None
+    elif how=='f32': new=float(v) if v not in (None,'') else None
+    else: new=_num(v,key)
+    if new is None and how!='label': continue  # an empty number cell keeps the value
+    if new!=record.values.get(key):
+     out=fe10data.patch_field(out,kind,index,key,new); record=fe10data.record(out,kind,index)
+  except (ValueError,TypeError,IndexError,KeyError,OverflowError) as e: errors.append(f'{name} row {rn}: {e}')
+ return (data if errors else out),errors

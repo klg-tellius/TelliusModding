@@ -100,7 +100,7 @@ class Fe10SaveEditor(ttk.Frame):
                                          show="headings", selectmode="browse", height=14)
         for key, title, width in (("slot", "Slot", 60), ("item", "Item #", 75),
                                   ("name", "Item", 300), ("state", "State", 100),
-                                  ("forge", "Forged", 70)):
+                                  ("forge", "Forged", 140)):
             self._convoy_tree.heading(key, text=title)
             self._convoy_tree.column(key, width=width, stretch=key == "name")
         convoy_scroll = ttk.Scrollbar(convoy_frame, command=self._convoy_tree.yview)
@@ -261,12 +261,21 @@ class Fe10SaveEditor(ttk.Frame):
     def _item_name(self, number: int) -> str:
         if not number:
             return "(empty)"
+        # the save's own ITBL names the number; the project's database gives the display name
+        record = self._record()
+        try:
+            item_id = record.id_of("item", number) if record is not None else None
+        except ValueError:
+            item_id = None
         session = getattr(self.shell, "session", None)
         data = getattr(session, "fe10", None)
-        if data is None or not 0 < number <= len(data.items):
-            return f"#{number}"
-        values = data.items[number - 1].values
-        item_id = values.get("iid") or values.get("id") or f"#{number}"
+        record_values = next((r.values for r in data.items if r.id == item_id), None) if data and item_id else None
+        if record_values is None and data is not None and item_id is None and 0 < number <= len(data.items):
+            record_values = data.items[number - 1].values
+        if record_values is None:
+            return item_id or f"#{number}"
+        values = record_values
+        item_id = item_id or values.get("iid") or values.get("id") or f"#{number}"
         key = values.get("miid") or values.get("name") or values.get("name_key")
         index = getattr(self.shell, "index", None)
         title = index.text(key) if index is not None and getattr(index, "ready", False) and key else ""
@@ -287,7 +296,7 @@ class Fe10SaveEditor(ttk.Frame):
         for item in items:
             self._convoy_tree.insert("", "end", iid=str(item.slot),
                                      values=(item.slot + 1, item.item_number, self._item_name(item.item_number),
-                                             f"0x{item.state:04X}", "yes" if item.forged else ""))
+                                             f"0x{item.state:04X}", item.forged_name or ("yes" if item.forged else "")))
         if selected and self._convoy_tree.exists(selected[0]):
             self._convoy_tree.selection_set(selected[0])
         self._select_convoy()

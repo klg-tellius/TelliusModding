@@ -1,4 +1,6 @@
-"""Read-only animation-registry browser for both Tellius games."""
+"""Animation-registry browser for both Tellius games, with one Edit… button: a Path of Radiance
+``FE8Anim.bin`` record's folder, blend weight and per-army texture numbers, or a Radiant Dawn
+``FE10AnimData`` variant byte."""
 
 from __future__ import annotations
 
@@ -22,20 +24,18 @@ class AnimationDataViewer(EditorPanel):
         self._data = b""
         self._document: fe10_anim.Fe10Anim | None = None
         self._dirty = False
+        self._label = project.profile.file_label("anim_data")
 
         top = ttk.Frame(self, padding=8)
         top.pack(fill="x")
         ttk.Label(top, text=project.profile.file_label("anim_data"), font=("Segoe UI", 12, "bold")).pack(
             side="left")
-        ttk.Label(top, text=("Decoded dispatch fields are labeled; RD variant bytes are editable."
-                             if project.game is Game.RADIANT_DAWN else
-                             "Read-only registry view; unknown values remain raw."),
+        ttk.Label(top, text="Decoded fields are labeled and editable with Edit…; unknown values remain raw.",
                   style="Muted.TLabel").pack(side="left", padx=(12, 0))
         self._save_button = ttk.Button(top, text="Save", command=self.save, state="disabled")
         self._save_button.pack(side="right")
         ttk.Button(top, text="Discard changes", command=self._revert).pack(side="right", padx=(0, 6))
-        self._edit_button = ttk.Button(top, text="Edit model variant…", command=self._edit_variant,
-                                       state="disabled")
+        self._edit_button = ttk.Button(top, text="Edit…", command=self._edit, state="disabled")
         self._edit_button.pack(side="right", padx=(0, 6))
 
         body = ttk.PanedWindow(self, orient="horizontal")
@@ -92,9 +92,37 @@ class AnimationDataViewer(EditorPanel):
     def _row_selected(self) -> None:
         self._show_row()
         table = self._tables.selection()
-        enabled = (self._project.game is Game.RADIANT_DAWN and table
-                   and table[0] == "FE10AnimData" and self._rows.selection())
+        # Path of Radiance has one table of editable records; Radiant Dawn edits its model variants
+        enabled = table and self._rows.selection() and (self._document is None or table[0] == "FE10AnimData")
         self._edit_button.configure(state="normal" if enabled else "disabled")
+
+    def _edit(self) -> None:
+        if self._document is None:
+            self._edit_record()
+        else:
+            self._edit_variant()
+
+    def _edit_record(self) -> None:
+        """A Path of Radiance record's class folder, blend weight and texture numbers (one per army)."""
+        if not self._rows.selection():
+            return
+        index = int(self._rows.selection()[0])
+        record = self._por_records[index]
+        dialog = _RecordDialog(self, record)
+        self.wait_window(dialog)
+        if dialog.result is None or dialog.result == record:
+            return
+        records = list(self._por_records)
+        records[index] = dialog.result
+        self._data = anim_registry.build_anim_registry(records)
+        self._por_records = anim_registry.read_anim_registry(self._data)
+        self._dirty = True
+        self._save_button.configure(state="normal")
+        self._changelog.append(self._label, f"{record.aid_name}: edited the registry record")
+        self._show_table()
+        self._rows.selection_set(str(index))
+        self._row_selected()
+        self._status.configure(text="Animation record changed (unsaved).")
 
     def _edit_variant(self) -> None:
         if self._document is None or not self._rows.selection():
@@ -128,7 +156,7 @@ class AnimationDataViewer(EditorPanel):
         self._document = fe10_anim.read_fe10_anim(self._data)
         self._dirty = True
         self._save_button.configure(state="normal")
-        self._changelog.append("FE10Anim.cms",
+        self._changelog.append(self._label,
                                f"model #{model_index} {weapon}/{motion}: variant {current} -> {variant}")
         self._show_table()
         self._rows.selection_set(str(model_index))
@@ -141,12 +169,12 @@ class AnimationDataViewer(EditorPanel):
         try:
             self._project.write_logical("anim_data", self._data)
         except OSError as exc:
-            messagebox.showerror("Could not save FE10Anim.cms", str(exc), parent=self)
+            messagebox.showerror(f"Could not save {self._label}", str(exc), parent=self)
             return False
         self._dirty = False
         self._save_button.configure(state="disabled")
-        self._status.configure(text="Saved FE10Anim.cms.")
-        self._changelog.append("FE10Anim.cms", "Saved animation dispatch changes")
+        self._status.configure(text=f"Saved {self._label}.")
+        self._changelog.append(self._label, "Saved animation registry changes")
         return True
 
     def _revert(self) -> None:
@@ -246,3 +274,53 @@ class AnimationDataViewer(EditorPanel):
         self._detail.delete("1.0", "end")
         self._detail.insert("1.0", text)
         self._detail.configure(state="disabled")
+
+
+class _RecordDialog(tk.Toplevel):
+    """Edit one ``FE8Anim.bin`` record: ``result`` is the changed record, or None."""
+
+    def __init__(self, parent: tk.Misc, record: anim_registry.AnimRecord):
+        super().__init__(parent)
+        self.title(f"Edit {record.aid_name}")
+        self.transient(parent.winfo_toplevel())
+        self.result = None
+        self._record = record
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        self._folder = tk.StringVar(value=record.class_folder)
+        self._blend = tk.StringVar(value=str(record.blend_weight))
+        self._textures = [tk.StringVar(value=str(t)) for t in record.texture_ids]
+        rows = [("Model folder (ymu/)", ttk.Entry(body, textvariable=self._folder, width=24)),
+                ("Blend weight", ttk.Entry(body, textvariable=self._blend, width=6))]
+        rows += [(f"Texture number, {army}", ttk.Entry(body, textvariable=var, width=6))
+                 for army, var in zip(anim_registry.ARMIES, self._textures)]
+        for r, (label, widget) in enumerate(rows):
+            ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
+            widget.grid(row=r, column=1, sticky="w", padx=(8, 0), pady=2)
+        ttk.Label(body, style="Muted.TLabel", wraplength=360, justify="left", text=(
+            "Each army draws ymu/<folder>/tex_<number>.tpl. The blend weight is the animation cross-fade "
+            "(16 frames up to 20, 32 from 40).")).grid(row=len(rows), column=0, columnspan=2, sticky="w", pady=(8, 0))
+        buttons = ttk.Frame(body)
+        buttons.grid(row=len(rows) + 1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="OK", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 6))
+        self.grab_set()
+
+    def _ok(self) -> None:
+        from dataclasses import replace
+
+        folder = self._folder.get().strip()
+        if not folder:
+            messagebox.showerror("Edit record", "The record needs a model folder.", parent=self)
+            return
+        try:
+            blend = int(self._blend.get())
+            textures = tuple(int(v.get()) for v in self._textures)
+            if not 0 <= blend <= 255 or not all(0 <= t <= 255 for t in textures):
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Edit record", "The blend weight and texture numbers are 0-255.", parent=self)
+            return
+        self.result = replace(self._record, class_folder=folder if folder.endswith("/") else folder + "/",
+                              blend_weight=blend, texture_ids=textures)
+        self.destroy()

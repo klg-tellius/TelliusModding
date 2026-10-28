@@ -17,12 +17,14 @@ nearly the same project differ only where the data does:
 - ``faces.tsv``: the face table;
 - ``zdbx/``: every battle-engine DBX table, as UTF-8 text.
 
-Radiant Dawn exports the decoded portions of that game instead:
+Radiant Dawn exports the same parts where its files have them, with its own database files:
 
 - ``FE10Data/``: every editable database table as semantic JSON;
 - ``FE10Growth/characters.json``: the per-level stat lines;
+- ``deployments/``, ``shops/``: as above, from ``zmap/<folder>/dispos_<diff>.bin`` and ``Shop/``;
 - ``messages/``: message bytecode in the editor's readable ``<...>`` notation;
-- ``scripts/*.fe10s``: event scripts decompiled with the FE10 dialect.
+- ``scripts/*.fe10s``: event scripts decompiled with the FE10 dialect;
+- ``sound/``: the cue registry (``sound_data_en.cms``) and the BRSAR's sounds (TSV).
 
 Export only: the binary files stay the source of truth. Each part is
 optional; a part that cannot be read is listed in the returned problems
@@ -118,9 +120,21 @@ def _fe10growth(project, out: Path) -> list[Path]:
     return [_write_json(out / "FE10Growth" / "characters.json", rows)]
 
 
-def _deployments(files: Path, out: Path) -> list[Path]:
+def _deployments(project, out: Path) -> list[Path]:
     from .formats import dispo, lz10, pak
 
+    files, profile = files_root_of(project), profile_of(project)
+    if "{diff}" in profile.deployment:  # one loose dispos_<diff>.bin per difficulty (Radiant Dawn)
+        written = []
+        for path in sorted((files / "zmap").glob("*/" + profile.deployment.format(diff="*"))):
+            doc = dispo.parse_dispo(path.read_bytes())
+            fields = sorted(dispo.supported_fields(doc))
+            sections = [{"name": section.name,
+                         "units": [{(dispo.field_name_for(f, doc.dialect) or f"field_{f}"): unit[f] for f in fields}
+                                   for unit in section.units]}
+                        for section in doc.sections]
+            written.append(_write_json(out / "deployments" / path.parent.name / f"{path.stem}.json", sections))
+        return written
     written = []
     for cmp_path in sorted((files / "zmap").glob("*/dispos.cmp")):
         raw = lz10.decompress(cmp_path.read_bytes())
@@ -139,11 +153,12 @@ def _deployments(files: Path, out: Path) -> list[Path]:
     return written
 
 
-def _shops(files: Path, out: Path) -> list[Path]:
+def _shops(project, out: Path) -> list[Path]:
     from .formats import shop
 
+    profile = profile_of(project)
     written = []
-    for path in sorted((files / "shop").glob("shopitem_*.bin")):
+    for path in sorted(profile.shop_folder(files_root_of(project)).glob(profile.shop_file.format(diff="*"))):
         doc = shop.parse_shop(path.read_bytes())
         written.append(_write_json(out / "shops" / f"{path.stem}.json",
                                    {s.name: s.items for s in doc.sections}))
@@ -182,16 +197,40 @@ def _scripts(project, out: Path) -> list[Path]:
     return written
 
 
-def _sound(files: Path, out: Path) -> list[Path]:
+def _sound(project, out: Path) -> list[Path]:
     from .formats import gcfesnd
 
-    data = (files / "Sound" / "gcfesnd.bin").read_bytes()
+    if "sound_data" in profile_of(project).files:
+        return _fe10_sound(project, out)
+    data = (files_root_of(project) / "Sound" / "gcfesnd.bin").read_bytes()
     bgm = ["name\tpath\tvolume"] + [f"{c.name}\t{c.path}\t{(c.control_word >> 8) & 0xFF}"
                                     for c in gcfesnd.read_bgm_cues(data)]
     sfx = ["name\tsound_id\tvolume\tpan\tflags\trange"] + [
         f"{c.name}\t{c.sound_id}\t{c.volume}\t{c.pan}\t{c.flags}\t{c.range_value}" for c in gcfesnd.read_sfx_cues(data)]
     return [_write_text(out / "sound" / "bgm_cues.tsv", "\n".join(bgm) + "\n"),
             _write_text(out / "sound" / "sfx_cues.tsv", "\n".join(sfx) + "\n")]
+
+
+def _fe10_sound(project, out: Path) -> list[Path]:
+    """Radiant Dawn: the cue registry's cues (name, BRSAR sound, the seven undecoded words) and the
+    BRSAR's own sounds."""
+    from .formats import brsar, fe10_sound
+
+    cues = fe10_sound.read_sound_data(project.read_logical("sound_data"))
+    head = "\t".join(["name", "resource", *(f"word_{i}" for i in range(2, 9))])
+
+    def table(chosen) -> str:
+        rows = [head] + ["\t".join([c.name, c.resource, *(f"{w:#x}" for w in c.raw_words)]) for c in chosen]
+        return "\n".join(rows) + "\n"
+
+    archive = brsar.read_brsar(project.read_logical("sound_archive"))
+    sounds = ["\t".join(("name", "type", "volume", "priority", "file", "bank", "external_path"))] + [
+        "\t".join(str(v) for v in (s.name, s.sound_type, s.volume, s.player_priority, s.file_index,
+                                   "" if s.bank_index is None else s.bank_index, s.external_path or ""))
+        for s in archive.sounds]
+    return [_write_text(out / "sound" / "bgm_cues.tsv", table(c for c in cues if c.family == "BGM")),
+            _write_text(out / "sound" / "sfx_cues.tsv", table(c for c in cues if c.family != "BGM")),
+            _write_text(out / "sound" / "brsar_sounds.tsv", "\n".join(sounds) + "\n")]
 
 
 def _faces(files: Path, out: Path) -> list[Path]:
@@ -248,10 +287,10 @@ def export_project(project, dest: Path, parts: Optional[set[str]] = None,
     marker.write_text("Written by Tellius Modding's Export as text; its folders are replaced on each export.\n",
                       encoding="utf-8", newline="\n")
     runners = {
-        "FE8Data": lambda: _fe8data(files, dest), "deployments": lambda: _deployments(files, dest),
+        "FE8Data": lambda: _fe8data(files, dest), "deployments": lambda: _deployments(project, dest),
         "FE10Data": lambda: _fe10data(project, dest), "FE10Growth": lambda: _fe10growth(project, dest),
-        "shops": lambda: _shops(files, dest), "messages": lambda: _messages(project, dest),
-        "scripts": lambda: _scripts(project, dest), "sound": lambda: _sound(files, dest),
+        "shops": lambda: _shops(project, dest), "messages": lambda: _messages(project, dest),
+        "scripts": lambda: _scripts(project, dest), "sound": lambda: _sound(project, dest),
         "faces": lambda: _faces(files, dest), "zdbx": lambda: _zdbx(project, dest),
     }
     written, problems = [], []

@@ -51,6 +51,20 @@ source_path: "meta/radiant-dawn.md"
 
   The name is a record of `FE10Battle.cms`'s `FE10BMapData`, whose first `FE10BMapModel` names the scenery folder in `zbg/` (`bg0101街` is `zbg/bg0101twn`). Of its 119 backdrops, 13 are missing from the retail `BattleTerrName`, so no row can name them yet, among them the generic `bg汎用01草原1`-`3` (plains), `bg汎用02森林` (forest) and `bg魔法` itself. <span class="confidence confidence--confirmed">files</span>
 
+## Battle weapons
+
+  Path of Radiance gives each weapon a `xwp/<NAME>.dbx` table in `zdbx.cmp`. Radiant Dawn has one `FE10BWeapon` row per weapon in `FE10Battle.cms` (192 rows, 36 bytes each). Its string fields are, in order: a Japanese name, the weapon key (`IRONSWORD`; an arrow names its bow), the model (`xwp/<model>/`), the hit and critical-hit effects (`EID_K_ATTK1`, `EID_K_CRIT1`), the weapon's own effect (`EID_K_FIRE`), the effect on the target (`EID_K_HEAD_FIRE`), and on a few rows a magic class name. Byte +0x20 indexes `FE10BWeaponType`: no, sw, sp, ax, kn, ja (thrown lance), ha (hand axe), kt (thrown knife), ms (magic sword), mg (magic), bw (bow), bg (bowgun), cr (claw), br (breath), rd (staff), ar (arrow). <span class="confidence confidence--confirmed">files</span>
+
+## Tutorials
+
+  The tutorial lists use Path of Radiance's `tut_data` layout, one file per difficulty set: `Tutorial/tut_data_n_en.bin` and `tut_data_h_en.bin`, plus the Japanese `tut_data_n.bin` and `tut_data_h.bin`. Each entry has the same four start-flag slots as Path of Radiance's. Which difficulty each slot stands for has not been checked. <span class="confidence confidence--confirmed">files</span>
+
+## Saves
+
+  A save record is a stream of tagged sections: `ITBL`, `BMST`, `MDST`, `UNIP`, `SOKO`, `FGPT`, `T  T`, `RELD`, `KZND` and `DEBU`. `ITBL` holds eight name lists (characters, classes, items, skills, then the AI's attack, move and heal sequences and move types), each a count followed by the names without their `PID_`, `JID_`... prefix. The other sections name a record by its number in these lists, so the save carries its own copy of the names. Characters, classes and items count from 1, skills from 0. <span class="confidence confidence--confirmed">engine</span>
+
+  `UNIP` has 254 unit slots, `SOKO` the convoy's 316 items. An item is its number and a state word; a forged item adds its name and eight more bytes. The 128 script flags are in `BMST`. <span class="confidence confidence--confirmed">engine</span>
+
 ## Articles
 
 - [Message Format (Radiant Dawn)](../formats/rd-message-format.md): the byte-code that replaced the `$` commands, layouts and speech balloons.

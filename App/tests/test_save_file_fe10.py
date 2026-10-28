@@ -95,15 +95,35 @@ class Fe10SaveTests(unittest.TestCase):
         self.assertTrue(rebuilt.crc_ok)
 
     def test_forged_convoy_slot_is_preserved_but_read_only(self):
-        soko = struct.pack(">HH", 5, 0x20) + bytes(range(32)) + bytes((sf.CONVOY_SLOTS - 1) * 4)
+        # a forged item: number, state, its name (NUL-terminated) and eight bytes
+        soko = struct.pack(">HH", 5, 0x20) + b"Ike's Blade\0" + bytes(range(8)) + bytes((sf.CONVOY_SLOTS - 1) * 4)
         stream = (b"ITBL" + b"BMST" + bytes(20) + b"MDST" + b"UNIP" + bytes(508)
                   + b"SOKO" + soko + b"FGPT" + bytes(12) + b"T  T" + b"RELD" + bytes(4)
                   + b"KZND" + bytes(4) + b"DEBU" + bytes(8))
         candidate = sf.SaveRecord(record(sf.DATA_MAGIC, sf.DATA_VERSION, sf.BLOCK_SIZE, 1, stream),
                                   sf.SYSTEM_SIZE, index=0)
-        self.assertTrue(candidate.convoy_items()[0].forged)
+        forged = candidate.convoy_items()[0]
+        self.assertTrue(forged.forged)
+        self.assertEqual((forged.size, forged.forge_data), (4 + 12 + 8, b"Ike's Blade\0" + bytes(range(8))))
+        self.assertEqual(forged.forged_name, "Ike's Blade")
         with self.assertRaisesRegex(ValueError, "read-only"):
             candidate.set_convoy_item(0, 6, 0x20)
+
+    def test_itbl_names_the_numbers(self):
+        lists = [[b"IKE", b"MIST"], [b"BRAVE"], [b"IRONSWORD", b"VULNERARY"], [b"HERO"], [], [], [], [b"NORMAL"]]
+        itbl = b"".join(struct.pack(">I", len(names)) + b"".join(n + b"\0" for n in names) for names in lists)
+        stream = (b"ITBL" + itbl + b"BMST" + bytes(20) + b"MDST" + b"UNIP" + bytes(508)
+                  + b"SOKO" + struct.pack(">HH", 2, 1) + bytes((sf.CONVOY_SLOTS - 1) * 4) + b"FGPT" + bytes(12)
+                  + b"T  T" + b"RELD" + bytes(4) + b"KZND" + bytes(4) + b"DEBU" + bytes(8))
+        candidate = sf.SaveRecord(record(sf.DATA_MAGIC, sf.DATA_VERSION, sf.BLOCK_SIZE, 1, stream),
+                                  sf.SYSTEM_SIZE, index=0)
+        tables = candidate.id_tables()
+        self.assertEqual(tables["character"], ["PID_IKE", "PID_MIST"])
+        self.assertEqual(tables["move_type"], ["MTYPE_NORMAL"])
+        # characters, classes and items count from 1, skills from 0
+        self.assertEqual(candidate.id_of("item", candidate.convoy_items()[0].item_number), "IID_VULNERARY")
+        self.assertEqual((candidate.id_of("character", 1), candidate.id_of("skill", 0)), ("PID_IKE", "SID_HERO"))
+        self.assertIsNone(candidate.id_of("item", 0))
 
     def test_bad_checksum_is_reported(self):
         damaged = bytearray(self.data)
@@ -128,6 +148,10 @@ class Fe10RealSaveTests(unittest.TestCase):
             save = sf.SaveFile.from_bytes(path.read_bytes())
             self.assertEqual(sf.validate(save), [], str(path))
             self.assertEqual(save.to_bytes(), save.data, str(path))
+            for record in save.active_records():
+                tables = record.id_tables()  # reads ITBL to its last byte
+                self.assertEqual(tables["character"][0], "PID_IKE", str(path))
+                self.assertEqual(len(record.convoy_items()), sf.CONVOY_SLOTS, str(path))
 
 
 if __name__ == "__main__":
