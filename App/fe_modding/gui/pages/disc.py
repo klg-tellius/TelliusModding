@@ -72,8 +72,18 @@ class DiscPage(Page):
     def _source_card(self, parent: tk.Misc) -> ttk.Frame:
         project, shell = self.project, self.shell
         frame = self._panel(parent, "Source disc", project.source_iso or "No disc image chosen yet.")
-        self._caption(frame, "Extracted into " + str(project.extracted_dir) if shell.extracted
-                      else "Not extracted yet.")
+        if project.is_overlay:
+            self._caption(frame, (f"Vanilla files: {project.input_root}\nMod files: {project.output_dir}"
+                                  if shell.extracted else "No vanilla files yet: extract the disc, or use a folder "
+                                  "you already extracted (Dolphin's Extract Entire Disc, WIT)."))
+        else:
+            self._caption(frame, "Extracted into " + str(project.disc_tree()) if shell.extracted
+                          else "Not extracted yet.")
+        if project.source_missing:
+            self._caption(frame, f"The disc image is no longer at {project.source_path}. Choose it again "
+                          "to extract or make a patch; the extracted files keep working without it.")
+        for problem in project.input_problems()[:3]:
+            self._caption(frame, problem, pady=(0, 4), style="SurfaceWarn.TLabel")
         buttons = ttk.Frame(frame, style="Surface.TFrame")
         buttons.pack(anchor="w")
         ttk.Button(buttons, text="Choose disc image…", command=shell.set_source,
@@ -82,14 +92,19 @@ class DiscPage(Page):
                    style="TButton" if shell.extracted else "Accent.TButton", command=shell.extract,
                    state="normal" if project.source_iso and not shell.task_running else "disabled").pack(
             side="left", padx=(8, 0))
-        if shell.extracted:
+        if project.is_overlay:
+            ttk.Button(buttons, text="Use extracted folder…", command=shell.use_input_folder,
+                       state="disabled" if shell.task_running else "normal").pack(side="left", padx=(8, 0))
+            self._caption(frame, "The vanilla files are shared by every project of this disc and never "
+                          "changed; this project's edits are only in its output folder.", pady=(8, 0))
+        elif shell.extracted:
             self._caption(frame, "Re-extracting overwrites the extracted files with the disc's.", pady=(8, 0))
         return frame
 
     def _build_card(self, parent: tk.Misc) -> ttk.Frame:
         project, shell = self.project, self.shell
         frame = self._panel(parent, "Build",
-                            f"Packs the extracted files into a {project.game_info.build_extension} disc image.")
+                            f"Packs the project's files into a {project.game_info.build_extension} disc image.")
         self._caption(frame, f"Output folder: {project.build_dir}")
         ttk.Button(frame, text="Build disc", style="Accent.TButton", command=shell.build,
                    state="normal" if shell.extracted and not shell.task_running else "disabled").pack(anchor="w")
@@ -106,11 +121,15 @@ class DiscPage(Page):
         frame = self._panel(parent, "Create a patch",
                             f"A {patch.PATCH_EXTENSION} file holding only the files this mod changes, "
                             "to share instead of a whole disc image.")
-        self._caption(frame, "Compares the extracted files with a fresh extraction of the source disc, "
-                      "so the source disc image must still be in the project.")
+        if project.is_overlay:
+            self._caption(frame, "Holds the files in the project's output folder, checked against the "
+                          "vanilla files it was made from.")
+        else:
+            self._caption(frame, "Compares the extracted files with a fresh extraction of the source disc, "
+                          "so the source disc image must still be where it was chosen from.")
         ttk.Button(frame, text="Create patch…", style="Accent.TButton", command=shell.create_patch,
-                   state="normal" if shell.extracted and project.source_iso and not shell.task_running
-                   else "disabled").pack(anchor="w")
+                   state="normal" if shell.extracted and (project.source_iso or project.is_overlay)
+                   and not shell.task_running else "disabled").pack(anchor="w")
         ttk.Button(frame, text="Mod details…",
                    command=lambda: ModDetailsDialog(self, project, on_saved=self._render)).pack(
             anchor="w", pady=(8, 0))
@@ -118,6 +137,12 @@ class DiscPage(Page):
         self._caption(frame, who or "No author or version set yet.", pady=(4, 0))
         if shell.last_patch:
             self._caption(frame, shell.last_patch, pady=(8, 0))
+        if project.profile.wii and project.is_overlay:
+            ttk.Button(frame, text="Export for Riivolution…", command=shell.export_riivolution,
+                       state="normal" if shell.extracted and not shell.task_running else "disabled").pack(
+                anchor="w", pady=(12, 0))
+            self._caption(frame, "The changed files and main.dol patches as a Riivolution folder, to play "
+                          "on a Wii or in Dolphin from an unmodified disc.", pady=(4, 0))
         return frame
 
     def _apply_patch_card(self, parent: tk.Misc) -> ttk.Frame:

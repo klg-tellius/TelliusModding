@@ -28,12 +28,13 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 from ..formats import dispo, lz10, pak
-from ..game_profile import files_dir_of, profile_of
+from ..game_profile import files_root_of, profile_of, disc_root_of
 from .. import excel_io
 from ..project import ModProject
 from . import dispo_widgets
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 
 class DeploymentEditor(EditorPanel):
@@ -133,15 +134,15 @@ class DeploymentEditor(EditorPanel):
     def _load_chapter_list(self) -> None:
         profile = profile_of(self._project)
         if "{diff}" in profile.deployment:
-            zmap = files_dir_of(self._project) / "zmap"
+            zmap = files_root_of(self._project) / "zmap"
             self._chapter_paths = []
             for folder in sorted(zmap.iterdir()) if zmap.is_dir() else []:
-                choices = [profile.deployment_path(files_dir_of(self._project), folder.name, diff)
+                choices = [profile.deployment_path(files_root_of(self._project), folder.name, diff)
                            for diff in profile.deployment_difficulties]
                 if path := next((candidate for candidate in choices if candidate.is_file()), None):
                     self._chapter_paths.append(path)
         else:
-            self._chapter_paths = sorted(self._project.extracted_dir.glob("**/zmap/*/dispos.cmp"))
+            self._chapter_paths = sorted(disc_root_of(self._project).glob("**/zmap/*/dispos.cmp"))
         self._chapter_list.delete(0, "end")
         for path in self._chapter_paths:
             self._chapter_list.insert("end", path.parent.name)
@@ -166,7 +167,7 @@ class DeploymentEditor(EditorPanel):
             if "{diff}" in profile.deployment:
                 contents = {}
                 for diff in profile.deployment_difficulties:
-                    sibling = profile.deployment_path(files_dir_of(self._project), path.parent.name, diff)
+                    sibling = profile.deployment_path(files_root_of(self._project), path.parent.name, diff)
                     if sibling.is_file():
                         contents[sibling.name] = sibling.read_bytes()
                 entries = []
@@ -361,7 +362,7 @@ class DeploymentEditor(EditorPanel):
     def group_keys(self) -> list:
         """The project's ``GroupData`` army keys (read once)."""
         if self._group_keys is None:
-            self._group_keys = dispo_widgets.read_group_keys(self._project.extracted_dir / "files")
+            self._group_keys = dispo_widgets.read_group_keys(files_root_of(self._project))
         return self._group_keys
 
     def _selected_section_name(self) -> str | None:

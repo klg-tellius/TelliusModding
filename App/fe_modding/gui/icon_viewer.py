@@ -38,7 +38,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats import fe10data, fe8data, icons, lz10, tpl
-from ..game_profile import DATA_TABLES, GAME_DATA, profile_of
+from ..game_profile import DATA_TABLES, GAME_DATA, profile_of, files_root_of
 from ..games import Game
 from ..project import ModProject
 from . import theme
@@ -127,7 +127,7 @@ class IconViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._sheets = [s for s in SHEETS.get(project.game, []) if (self._files / s.path).is_file()]
         self._data: dict[Path, bytes] = {}  # decoded TPL bytes, edited in place until saved
         self._modified: set[Path] = set()

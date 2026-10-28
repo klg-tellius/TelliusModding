@@ -42,7 +42,7 @@ from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, lz10, pak, tpl, zdbx
 from .formats.fe9_portraits import large_face_id
 from .games import Game
-from .game_profile import logical_path_of
+from .game_profile import files_root_of, logical_game_path_of
 from .project import ModProject
 from .recolour import Recolour, recolour_tpl
 
@@ -136,8 +136,8 @@ class _Context:
         if project.game is not Game.PATH_OF_RADIANCE:
             raise ProjectError("Colour variants are only available for Path of Radiance projects.")
         self.project = project
-        self.files = project.extracted_dir / "files"
-        self.fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+        self.files = files_root_of(project)
+        self.fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
         self.characters = {c.pid: c for c in self.fe8.characters if c.pid}
         self.classes = {c.jid: c for c in self.fe8.classes if c.jid}
         self.records = model_slots.map_model_records(project)
@@ -270,7 +270,7 @@ def character_family(project: ModProject, pid: str) -> tuple[list[str], list[str
     name key and portrait) to give the variant too. Suggested are the ones
     also in the same class whose PID extends this one (``PID_GATRIE_EV``);
     the rest (generic soldiers share names) are offered unticked."""
-    fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+    fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
     main = next((c for c in fe8.characters if c.pid == pid), None)
     if main is None:
         raise ProjectError(f"No character {pid!r}.")
@@ -481,7 +481,7 @@ def apply_variant(project: ModProject, plan: VariantPlan, recolour: Recolour) ->
         records += [replace(by_fid[old], fid=new, filename=filename) for old, new, filename in plan.faces]
         portraits.save_faces(project, records)
     if plan.character_fids:
-        path = logical_path_of(project, "game_data")
+        path = logical_game_path_of(project, "game_data")
         data = path.read_bytes()
         index = {c.pid: c.index for c in fe8data.read_fe8data(data).characters if c.pid}
         for pid, fid in plan.character_fids:

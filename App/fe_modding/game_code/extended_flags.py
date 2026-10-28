@@ -30,7 +30,8 @@ def require_project_runtime(project) -> None:
     from .extended_flag_runtime import BASE
     from .dol import Dol
     from .versions import read_boot_code
-    extracted = getattr(project, "extracted_dir", project.directory / "extracted")
+    from ..game_files import files_of
+    extracted = files_of(project).at("")
     executable = extracted / "sys" / "main.dol"
     opted_in = path.exists() or (project.directory / RECEIPT_NAME).exists()
     if not opted_in and executable.exists():

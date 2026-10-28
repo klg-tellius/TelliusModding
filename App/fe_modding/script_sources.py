@@ -19,7 +19,7 @@ from .formats.cmb import CompileError, compile_source, decompile, read_cmb, writ
 from .formats.cmb.model import ScriptFile
 from .formats.cmb.parser import ParseError, parse
 from .exceptions import ProjectError
-from .game_profile import SCRIPTS, files_dir_of, profile_of
+from .game_profile import SCRIPTS, files_root_of, profile_of
 from .project import ModProject
 
 SOURCES_DIR = "script_sources"
@@ -33,7 +33,7 @@ def _require_scripts(project: ModProject) -> None:
 
 
 def scripts_dir(project: ModProject) -> Path:
-    return project.extracted_dir / "files" / "Scripts"
+    return files_root_of(project) / "Scripts"
 
 
 def startup_path(project: ModProject) -> Path:
@@ -108,7 +108,7 @@ def chapter_script(project: ModProject, chapter_id: str) -> Optional[Path]:
     profile = profile_of(project)
     if not profile.supports(SCRIPTS):
         return None
-    path = profile.script_path(files_dir_of(project), chapter_id)
+    path = profile.script_path(files_root_of(project), chapter_id)
     return path if path.exists() else None
 
 

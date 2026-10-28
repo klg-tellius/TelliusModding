@@ -12,12 +12,13 @@ from PIL import Image, ImageTk
 
 from ..formats import fe10_conversation, fe10_message
 from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, render
+from ..game_profile import files_root_of
 
 
 class Fe10ConversationPreview(ttk.Frame):
     def __init__(self, parent, project):
         super().__init__(parent)
-        self._files = Path(project.extracted_dir) / "files"
+        self._files = files_root_of(project)
         self._assets: dict[tuple[str, bool], Fe10ConversationAssets] = {}
         self._wide = tk.BooleanVar(value=False)
         self._prefix = "e_"

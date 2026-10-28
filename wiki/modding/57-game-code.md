@@ -154,7 +154,7 @@ Press **Reset** beside the field. The value returns to 4 and the card to *Vanill
 
 ## Save, build, and revert
 
-Changes are written immediately and logged in **Changes this session**; the first write keeps the retail `main.dol` in the project's `originals` folder. To revert one entry use **Reset**; to revert all use **Reset everything to vanilla**. Build the disc to test.
+Changes are written immediately to the project's `output/sys/main.dol` and logged in **Changes this session**; the retail `main.dol` stays in the shared vanilla files. To revert one entry use **Reset**; to revert all use **Reset everything to vanilla**. Build the disc to test.
 
 ## Limits and confidence
 

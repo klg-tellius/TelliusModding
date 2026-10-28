@@ -44,19 +44,20 @@ Download the Windows archive from the [release page](https://github.com/klg-tell
 <figcaption>Concept diagram, not an app screenshot. Source disc, project files and build output: extract once, save edits in the project, build a new image to test. Select the image to open it at full size.</figcaption>
 </figure>
 
-A project is one folder:
+A project is one folder that holds only what your mod changes. The game's own files are extracted once per disc into a shared **vanilla files** folder that every project of that disc reads and none of them changes:
 
 | Folder | What it holds |
 | --- | --- |
-| `project.json` | The project's name, game, mod details and the name of its source disc |
-| `source/` | A copy of your disc image, made by **Choose disc image…**. Your original image is never touched |
-| `extracted/` | The game's files, unpacked by **Extract**. Every editor reads and writes here |
-| `originals/` | The first copy of every extracted file an editor replaced, for **Restore original** |
-| `build/` | The disc images and patches you make |
+| `project.json` | The project's name, game, mod details, where its disc image is and which vanilla files it reads |
+| `output/` | Every file the mod replaced or added, at its place on the disc (`output/files/FE8Data.bin`...). Every editor writes here |
+| `overlay.json` | The disc files the mod removed, and which vanilla file each replaced file was made from |
+| `build/` | The disc images and patches you make, and `build/stage`, the whole disc as building and Dolphin see it |
+
+A file is read from `output/` when the mod changed it, else from the vanilla files. **Restore original** deletes the mod's copy, so the vanilla file shows again. The vanilla files are in the folder set in **Settings › Vanilla files** (keep it on the same drive as your projects, so building links the files instead of copying them).
 
 Two external tools do the disc work: **WIT** extracts and packs disc images, and **FFmpeg** (optional) converts audio and video for imports. The app downloads them on request; they are not part of the game.
 
-Until a project is extracted, only Home and Disc & Patch open: every other page is built from the extracted files.
+Until the project has vanilla files, only Home and Disc & Patch open: every other page is built from the game's files.
 
 ## Guided walkthrough
 
@@ -140,9 +141,10 @@ Before editing anything, run **Tools → Check → Run check** and note the resu
 | **Project name** | New Project | The project's name, also used for the folder and the built image's file name | Unique and descriptive |
 | **Create in** / **Browse…** | New Project | The parent folder; the project gets its own folder inside | A writable local folder that is backed up |
 | *Project folder:* | New Project | The folder that will be created | Must not exist yet, or be empty |
-| **Choose disc image…** | Disc & Patch › Source disc | Copies an image into `source/` and records it | Your clean disc. Keep it: patches are made by comparing with it |
-| **Extract** | Disc & Patch › Source disc | Unpacks the source disc into `extracted/` | Once, at the start |
-| **Re-extract** | Disc & Patch › Source disc (after extraction) | Unpacks the disc again over `extracted/`, after a warning | Only to throw away every edit and start over |
+| **Choose disc image…** | Disc & Patch › Source disc | Records where your clean disc image is (it is not copied) | Your clean disc, left where it is |
+| **Extract** | Disc & Patch › Source disc | Unpacks the disc into the shared vanilla files, or uses them when another project already did | Once, at the start |
+| **Use extracted folder…** | Disc & Patch › Source disc | Uses a folder you already extracted (Dolphin's *Extract Entire Disc*, WIT) as the vanilla files, where it is; its files become read-only | Instead of **Extract** |
+| **Re-extract** | Disc & Patch › Source disc (after extraction) | Extracts the disc again into the vanilla files; the mod's files in `output/` stay | When **Disc & Patch** reports the vanilla files missing or changed |
 
 ## Things to try next
 
@@ -152,10 +154,10 @@ Before editing anything, run **Tools → Check → Run check** and note the resu
 
 ## Interactions and precedence
 
-- The project uses its own copy in `source/`. Moving or deleting your original image afterwards does not matter; deleting `source/` does (patches need it).
-- **Re-extract** overwrites `extracted/` with the disc's files. Edits made since are lost, and `originals/` still holds the copies of the first versions.
+- The project records the image's place. Once extracted, the project works without it; only **Re-extract** needs it again (**Disc & Patch** says when it has moved).
+- The vanilla files are never written: a replaced file goes to `output/`. **Disc & Patch** warns when the vanilla files are missing, changed, or another version than the one the mod's files were made from.
 - The game chosen in **New Project** decides every editor's file formats. A Radiant Dawn disc in a Path of Radiance project gives a *Wrong game?* warning at **Choose disc image…** and after **Extract**.
-- Pages are built from the extracted files once they exist; until then the top bar sections are disabled.
+- Pages are built from the game's files once the project has vanilla files; until then the top bar sections are disabled.
 
 ## Test matrix
 
@@ -173,18 +175,18 @@ Before editing anything, run **Tools → Check → Run check** and note the resu
 | The app does not start after being moved | `_internal` was left behind | Put `TelliusModding.exe` back next to `_internal` |
 | **Extract** fails at once | WIT is missing | **Settings › Disc and media tools…**, then **Download missing tools** |
 | *'.xyz' is not a format the bundled tool can read* | An unsupported image type | Convert it to `.iso` with Dolphin |
-| Extraction stops part way | Not enough space, or the image is damaged | Free space on the project's drive; check the image in Dolphin |
+| Extraction stops part way | Not enough space, or the image is damaged | Free space on the vanilla files' drive; check the image in Dolphin |
 | Only Home and Disc & Patch after extraction | Extraction did not finish | Read the status bar message; press **Extract** again |
 
-Never press **Re-extract** to fix one broken file: it overwrites every edit and the evidence of what went wrong. Use the editor's **Restore original** instead ([Save changes and restore originals](03-saving-and-restoring.md)).
+To fix one broken file, use the editor's **Restore original** ([Save changes and restore originals](03-saving-and-restoring.md)): it drops the mod's copy of that file only.
 
 ## Save, build, and revert
 
-Nothing here needs saving: **Create Project** writes `project.json` and the folders, **Choose disc image…** copies the image, **Extract** writes `extracted/`. To revert to the start, copy your baseline folder back, or press **Re-extract**.
+Nothing here needs saving: **Create Project** writes `project.json` and the folders, **Choose disc image…** records the image, **Extract** writes the vanilla files. To revert to the start, copy your baseline project folder back, or empty `output/` and delete `overlay.json`.
 
 ## Limits and confidence
 
-- Project creation, folder naming, the source copy, extraction and the wrong-game check are source-reviewed, and this walkthrough was run in the app on a US disc (app-tested).
+- Project creation, folder naming, extraction and the wrong-game check are source-reviewed, and this walkthrough was run in the app on a US disc (app-tested). The shared vanilla files and `output/` were checked on a US disc (extract, build, patch); the screenshots still show the older Disc & Patch page.
 - The app reads and builds the disc's files; it does not give you the right to share them. Share patches, not disc images ([Package and share a mod](61-share-a-patch.md)).
 
 ## Related tutorials and references

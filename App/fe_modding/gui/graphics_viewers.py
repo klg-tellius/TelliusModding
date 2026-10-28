@@ -49,6 +49,7 @@ from ..formats.packed_texture import read_packed_tpl, replace_packed_tpl
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 PREVIEW_MAX_SIZE = (480, 300)
 THUMB_SIZE = (100, 74)
@@ -277,7 +278,7 @@ class IllustrationViewer(ImageArchiveViewer):
 
     def _iter_files(self) -> list[Path]:
         # FE10 stores its 172 illustration textures as LZ10-wrapped TPLs.
-        return _sorted_files(self._project.extracted_dir / "files" / "illust", ".tpl", ".cms")
+        return _sorted_files(files_root_of(self._project) / "illust", ".tpl", ".cms")
 
 
 class EndingViewer(ImageArchiveViewer):
@@ -285,7 +286,7 @@ class EndingViewer(ImageArchiveViewer):
     empty_message = "No ending art files found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.extracted_dir / "files" / "ending", ".tpl")
+        return _sorted_files(files_root_of(self._project) / "ending", ".tpl")
 
 
 class WindowGraphicsViewer(ImageArchiveViewer):
@@ -293,7 +294,7 @@ class WindowGraphicsViewer(ImageArchiveViewer):
     empty_message = "No UI graphics files found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.extracted_dir / "files" / "window", ".tpl", ".cms")
+        return _sorted_files(files_root_of(self._project) / "window", ".tpl", ".cms")
 
 
 class EtcGraphicsViewer(ImageArchiveViewer):
@@ -301,7 +302,7 @@ class EtcGraphicsViewer(ImageArchiveViewer):
     empty_message = "No misc graphics files found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.extracted_dir / "files" / "etc", ".tpl", ".cms")
+        return _sorted_files(files_root_of(self._project) / "etc", ".tpl", ".cms")
 
 
 class WorldMapViewer(ImageArchiveViewer):
@@ -309,7 +310,7 @@ class WorldMapViewer(ImageArchiveViewer):
     empty_message = "No world map files found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.extracted_dir / "files" / "gmap", ".tpl", ".cms")
+        return _sorted_files(files_root_of(self._project) / "gmap", ".tpl", ".cms")
 
 
 class EquipmentViewer(ImageArchiveViewer):
@@ -320,7 +321,7 @@ class EquipmentViewer(ImageArchiveViewer):
         # zu/ also holds region-variant .pak archives (amr1_ja.pak etc.) -
         # a different container (multiple packed images, not a single TPL)
         # that's out of scope here; only the flat .tpl files are covered.
-        return _sorted_files(self._project.extracted_dir / "files" / "zu", ".tpl")
+        return _sorted_files(files_root_of(self._project) / "zu", ".tpl")
 
 
 class PackedTextureViewer(ImageArchiveViewer):
@@ -341,7 +342,7 @@ class SkyGraphicsViewer(PackedTextureViewer):
     empty_message = "No battle-sky texture packs found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.files_dir / "sky", ".cmp")
+        return _sorted_files(files_root_of(self._project) / "sky", ".cmp")
 
 
 class BattleSceneryGraphicsViewer(PackedTextureViewer):
@@ -349,4 +350,4 @@ class BattleSceneryGraphicsViewer(PackedTextureViewer):
     empty_message = "No battle-scenery texture packs found.\nExtract the project first."
 
     def _iter_files(self) -> list[Path]:
-        return _sorted_files(self._project.files_dir / "zbg", ".cmp")
+        return _sorted_files(files_root_of(self._project) / "zbg", ".cmp")

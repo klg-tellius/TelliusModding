@@ -30,6 +30,7 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .sfx_import_dialog import SfxImportDialog
 from .widgets import list_buttons, tip
+from ..game_profile import files_root_of
 
 try:
     import winsound
@@ -155,8 +156,8 @@ class SfxViewer(EditorPanel):
 
     def _load(self) -> None:
         if self._fe10:
-            path = self._project.extracted_dir / "files" / "Sound" / "sound_data_en.cms"
-            archive_path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+            path = files_root_of(self._project) / "Sound" / "sound_data_en.cms"
+            archive_path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
             if not path.is_file() or not archive_path.is_file():
                 self._count.config(text="Radiant Dawn sound data not found. Extract the project first.")
                 return
@@ -176,7 +177,7 @@ class SfxViewer(EditorPanel):
                                           "existing waves can be replaced. New archive resources are not enabled yet.")
             self._refresh()
             return
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         if not path.exists():
             self._count.config(text="Sound/gcfesnd.bin not found. Extract the project first.")
             return
@@ -335,7 +336,7 @@ class SfxViewer(EditorPanel):
                 new_header, new_wave = rwsd.replace_wave(document, wave_index, replacement)
                 archive_bytes = brsar.replace_embedded_file(self._rd_archive, sound.file_index,
                                                              new_header, new_wave)
-                archive_path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+                archive_path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
                 self._project.write_keeping_original(archive_path, archive_bytes)
             except (OSError, ValueError) as exc:
                 messagebox.showerror("Replace sound effect", str(exc), parent=self)
@@ -363,10 +364,10 @@ class SfxViewer(EditorPanel):
 
     def _original_cue_names(self) -> set[str]:
         """The cues of gcfesnd.bin as extracted (its kept original, else the file itself)."""
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
-        original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
+        original = path.files.vanilla_path(path)
         try:
-            return {c.name for c in gcfesnd.read_sfx_cues_path(original if original.is_file() else path)}
+            return {c.name for c in gcfesnd.read_sfx_cues_path(original if original is not None else path)}
         except (OSError, gcfesnd.GcfesndError):
             return set()
 
@@ -386,7 +387,7 @@ class SfxViewer(EditorPanel):
                                    "nothing.", icon="warning", parent=self):
             return
         self._stop()
-        path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         try:
             self._project.write_keeping_original(path, gcfesnd.remove_sfx_cue(path.read_bytes(), cue.name))
         except (OSError, gcfesnd.GcfesndError) as exc:

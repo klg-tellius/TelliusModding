@@ -21,13 +21,14 @@ from PIL import Image
 from .formats import lz10, tpl
 from .formats.fe9_portraits import (FACE_BODY_SIZE, FaceRecord, build_face_cms, build_face_table,
                                     large_face_id, read_face_table)
+from .game_profile import files_root_of
 
 NAME_RE = re.compile(r"^[A-Z0-9_]{1,24}$")
 NO_POSITION = (-1, -1)
 
 
 def face_dir(project) -> Path:
-    return project.extracted_dir / "files" / "Face"
+    return files_root_of(project) / "Face"
 
 
 def face_table_path(project) -> Path:

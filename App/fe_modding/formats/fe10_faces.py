@@ -27,6 +27,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import fe8data, fe10data, lz10, tpl
+from ..game_files import as_path
 
 RECORD_SIZE = 48
 CUT_IN, BODY, MOUTHS, EYES_A, EYES_B, MENU = 0, 1, range(2, 8), range(8, 11), range(11, 14), 14
@@ -171,8 +172,8 @@ def remove_face_record(data: bytes, index: int) -> bytes:
 class FaceLibrary:
     """Faces of an extracted disc, looked up by cast name (``IKE``, ``L_IKE``) or FID."""
 
-    def __init__(self, files_dir: Path | str, wide: bool = False):
-        self._dir = Path(files_dir) / "Face"
+    def __init__(self, files_root: Path | str, wide: bool = False):
+        self._dir = as_path(files_root) / "Face"
         self._wide = wide
         data_path = (self._dir / "wide" / "facedata.bin") if wide else (self._dir / "facedata.bin")
         self.records = read_face_data(data_path.read_bytes()) if data_path.is_file() else []

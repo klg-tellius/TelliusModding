@@ -202,7 +202,7 @@ Shown on every chapter but the Prologue. Removes the record, the battle-scene ro
 
 - The flow, **Add Chapter** and **Delete chapter…** write their files at once. Build to test.
 - To undo an added chapter: **Delete chapter…**. To undo a flow change: set the **Next chapter:** back, or take the chapter out.
-- To undo everything at once: restore the project copy. `originals/` holds only the first extracted copy of each file, not your previous state.
+- To undo everything at once: restore the project copy. The vanilla files hold only the disc's version of each file, not your previous state.
 
 ## Limits and confidence
 

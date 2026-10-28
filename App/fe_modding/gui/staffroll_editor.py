@@ -15,6 +15,7 @@ from ..formats import staffroll
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import files_root_of
 
 #: The file each build plays (the US game loads only the NOA list).
 FILE_NAMES = ("staffroll_noa.bin", "staffroll.bin")
@@ -28,7 +29,7 @@ class StaffRollEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        folder = project.extracted_dir / "files" / "ending"
+        folder = files_root_of(project) / "ending"
         self._path = next((folder / n for n in FILE_NAMES if (folder / n).is_file()), folder / FILE_NAMES[0])
         self._roll: Optional[staffroll.StaffRoll] = None
         self._index: Optional[int] = None

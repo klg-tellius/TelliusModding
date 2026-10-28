@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ...formats import fe10data, fe10_message
-from ...game_profile import CHAPTERS, DATA_TABLES, GAME_DATA
+from ...game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from ... import excel_io
 from .. import record_actions
@@ -317,7 +317,7 @@ class CharacterPage(Page):
         data_page = self.shell.existing_page("data")
         if data_page is not None:
             return data_page.support_conversation_ids()
-        return read_conversation_ids(self.project.extracted_dir / "files" / "Mess" / "yell.m")
+        return read_conversation_ids(files_root_of(self.project) / "Mess" / "yell.m")
 
     def _on_session_changed(self, source) -> None:
         try:
@@ -661,7 +661,7 @@ class CharacterPage(Page):
                     self.shell.navigate(("chapter", ref.chapter_id, "script", ref.function))
                 else:
                     from .chapters import open_script
-                    path = self.project.profile.script_path(self.project.extracted_dir / "files", ref.chapter_id)
+                    path = self.project.profile.script_path(files_root_of(self.project), ref.chapter_id)
                     open_script(self.shell, path, ref.function, ref.chapter_id)
         tree.bind("<Double-Button-1>", open_selected)
         tree.bind("<Return>", open_selected)
@@ -698,7 +698,7 @@ class CharacterPage(Page):
             if self.project.profile.supports(CHAPTERS):
                 self.shell.navigate(("chapter", ref.chapter_id, "dialogue", ref.message_id))
                 return
-            path = self.project.profile.mess_path(self.project.extracted_dir / "files", ref.chapter_id)
+            path = self.project.profile.mess_path(files_root_of(self.project), ref.chapter_id)
             if self.shell.navigate(("asset", "conversations", path.name)):
                 panel = self.shell.page("asset")._panels["conversations"]
                 if panel._editor is not None:

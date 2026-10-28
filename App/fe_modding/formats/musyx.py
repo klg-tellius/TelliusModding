@@ -52,6 +52,7 @@ import numpy as np
 
 from . import dsp_adpcm, musyx_macro
 from .musyx_macro import AdsrTable
+from ..game_files import as_path
 
 BANKS = ("gcfesnd", "gcfesnd_etc", "gcfesnd_magic")
 SDIR_RECORD_SIZE = 32
@@ -363,7 +364,7 @@ class SoundBanks:
     """All three banks of a project's ``Sound`` folder."""
 
     def __init__(self, sound_dir: Path | str):
-        sound_dir = Path(sound_dir)
+        sound_dir = as_path(sound_dir)
         self.banks: list[Bank] = []
         self._pcm_cache: dict[tuple[str, int], np.ndarray] = {}
         for name in BANKS:

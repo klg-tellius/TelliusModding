@@ -37,6 +37,7 @@ import json
 import shutil
 from pathlib import Path
 from typing import Callable, Optional
+from .game_profile import files_root_of
 
 from .games import Game
 
@@ -154,7 +155,7 @@ def _shops(files: Path, out: Path) -> list[Path]:
 def _messages(project, out: Path) -> list[Path]:
     from .formats import fe10_message, game_text, message
 
-    files = project.extracted_dir / "files"
+    files = files_root_of(project)
     fe10 = project.game == Game.RADIANT_DAWN
 
     def readable(text: str) -> str:  # message.py reads bytes as cp437; show the game's own characters
@@ -173,7 +174,7 @@ def _messages(project, out: Path) -> list[Path]:
 def _scripts(project, out: Path) -> list[Path]:
     from .formats.cmb import decompile, read_cmb_path
 
-    files = project.extracted_dir / "files"
+    files = files_root_of(project)
     extension = ".fe10s" if project.game == Game.RADIANT_DAWN else ".fe9s"
     written = []
     for path in sorted((files / "Scripts").glob("*.cmb")):
@@ -244,7 +245,7 @@ def export_project(project, dest: Path, parts: Optional[set[str]] = None,
                    progress: Optional[Callable[[str], None]] = None) -> tuple[list[Path], list[str]]:
     """Write the text export to ``dest`` (the parts' folders are replaced) and
     return ``(written files, problems)``."""
-    files = project.extracted_dir / "files"
+    files = files_root_of(project)
     dest = Path(dest)
     marker = dest / MARKER
     if dest.is_dir() and any(dest.iterdir()) and not marker.is_file():

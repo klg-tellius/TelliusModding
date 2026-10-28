@@ -24,7 +24,7 @@ from typing import Iterable, Optional
 
 from . import chapters
 from .formats import dispo, fe8data, lz10, pak, shop, supports
-from .game_profile import DATA_TABLES, GAME_DATA, profile_of
+from .game_profile import DATA_TABLES, GAME_DATA, files_root_of, profile_of
 from .project import ModProject
 
 ERROR, WARNING = "error", "warning"
@@ -202,7 +202,7 @@ def _decompress_pak(path):
 
 
 def _check_chapter_files(project: ModProject, records, issues: list, titles: dict, reachable: Optional[set]) -> None:
-    files = project.extracted_dir / "files"
+    files = files_root_of(project)
     for r in records:
         if r.chapter_id >= FIRST_SPECIAL_CHAPTER:
             continue
@@ -229,7 +229,7 @@ def _check_chapter_files(project: ModProject, records, issues: list, titles: dic
 
 
 def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) -> None:
-    zmap = project.extracted_dir / "files" / "zmap"
+    zmap = files_root_of(project) / "zmap"
     for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
         folder = path.parent.name
         try:
@@ -274,7 +274,7 @@ def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) 
 
 
 def _check_scripts(project: ModProject, known: set, issues: list) -> None:
-    scripts = project.extracted_dir / "files" / "Scripts"
+    scripts = files_root_of(project) / "Scripts"
     for path in sorted(scripts.glob("*.cmb")) if scripts.is_dir() else []:
         try:
             blob = path.read_bytes()
@@ -296,7 +296,7 @@ def _check_script_globals(project: ModProject, issues: list) -> None:
     from .formats.cmb import read_cmb_path
     from .formats.cmb.compiler import GLOBAL_TABLE_SLOTS
 
-    scripts = project.extracted_dir / "files" / "Scripts"
+    scripts = files_root_of(project) / "Scripts"
     startup_path = scripts / "startup.cmb"
     if not startup_path.is_file():
         return
@@ -329,7 +329,7 @@ def _check_script_globals(project: ModProject, issues: list) -> None:
 
 
 def _check_shops(project: ModProject, iids: set, issues: list) -> None:
-    folder = profile_of(project).shop_folder(project.extracted_dir / "files")
+    folder = profile_of(project).shop_folder(files_root_of(project))
     for path in sorted(folder.glob("*.bin")) if folder.is_dir() else []:
         try:
             doc = shop.parse_shop(path.read_bytes())
@@ -352,7 +352,7 @@ def validate_project(project: ModProject, flow=None) -> Report:
         return validate_fe10_project(project)
     if not profile.supports(GAME_DATA):
         return Report([Issue(WARNING, "Project", profile.file_label("game_data"), profile.unavailable(GAME_DATA))])
-    fe8_path = project.extracted_dir / "files" / profile.logical("game_data").path
+    fe8_path = files_root_of(project) / profile.logical("game_data").path
     if not fe8_path.is_file():
         label = profile.file_label("game_data")
         return Report([Issue(ERROR, "Project", label, f"The project has no extracted {label}; extract the disc first.")])

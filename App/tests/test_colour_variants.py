@@ -92,7 +92,8 @@ class VariantProjectTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.project = ModProject.create(Path(tmp.name), "Variants", Game.PATH_OF_RADIANCE)
-        files = self.files = self.project.extracted_dir / "files"
+        files = self.project.extracted_dir / "files"
+        self.files = self.project.files_root
         data = _fe8data_with_header()
         data = fe8data.add_label(data, "AID_CLASSMODEL")
         data = fe8data.patch_class_field(data, 0, "aid", "AID_CLASSMODEL")

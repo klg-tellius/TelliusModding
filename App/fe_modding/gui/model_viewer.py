@@ -117,7 +117,7 @@ import tempfile
 import tkinter as tk
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import numpy as np
 from PIL import Image, ImageTk
@@ -128,7 +128,7 @@ from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, fe10data, zdbx
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_path_of
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of, files_root_of
 from ..games import Game
 from ..project import ModProject
 from . import gpu_renderer
@@ -258,17 +258,17 @@ class GridOverlay:
 
 
 def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
-    files_dir = project.extracted_dir / "files"
+    files_root = files_root_of(project)
     sets: list[tuple[str, Path]] = []
 
-    ymu_dir = files_dir / "ymu"
+    ymu_dir = files_root / "ymu"
     if ymu_dir.exists():
         for pack_path in sorted(ymu_dir.glob("*/pack.cmp")):
             sets.append((f"ymu/{pack_path.parent.name}", pack_path))
 
     # Battle models. FE9 repeats the body/skeleton in each weapon ``.pak``;
     # FE10 stores them once in ``pack.cmp`` and keeps animations in ``.pak``.
-    zu_dir = files_dir / "zu"
+    zu_dir = files_root / "zu"
     if zu_dir.exists():
         for folder in sorted(p for p in zu_dir.iterdir() if p.is_dir()):
             shared = folder / "pack.cmp"
@@ -280,12 +280,12 @@ def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
                 sets.append((f"zu/{folder.name}", paks[0]))
 
     # Chapter maps: zmap/<map>/map.cmp (terrain, water, props and map.bin).
-    zmap_dir = files_dir / "zmap"
+    zmap_dir = files_root / "zmap"
     if zmap_dir.exists():
         for cmp_path in sorted(zmap_dir.glob("*/map.cmp")):
             sets.append((f"zmap/{cmp_path.parent.name}", cmp_path))
 
-    zbg_dir = files_dir / "zbg"
+    zbg_dir = files_root / "zbg"
     if zbg_dir.exists():
         for folder in sorted(p for p in zbg_dir.iterdir() if p.is_dir()):
             for cmp_path in sorted(folder.glob("*.cmp")):
@@ -293,7 +293,7 @@ def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
 
     # Weapons: xwp/<name>/<name>.cmp, the equipped item's model in battle
     # (formats/icons.py), and xwp/forge/<name>_b.cmp for forged weapons.
-    xwp_dir = files_dir / "xwp"
+    xwp_dir = files_root / "xwp"
     if xwp_dir.exists():
         for folder in sorted(p for p in xwp_dir.iterdir() if p.is_dir()):
             for cmp_path in sorted(folder.glob("*.cmp")):
@@ -320,7 +320,7 @@ def create_new_map_file(project: ModProject, source: Path, folder_name: str) -> 
     source = Path(source)
     if not source.is_file() or source.name.lower() != "map.cmp" or not is_map_container(source):
         raise ValueError("Pick an existing zmap map.cmp as the template.")
-    root = project.files_dir / "zmap"
+    root = files_root_of(project) / "zmap"
     destination_dir = root / name
     # Check case-insensitively as projects may later be moved to a
     # case-insensitive filesystem even when authored elsewhere.
@@ -2775,7 +2775,7 @@ class _NewSlotDialog(tk.Toplevel):
             jids = sorted({record.values.get("jid") for record in database.classes
                            if record.values.get("jid")})
         else:
-            fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+            fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
             self._characters = {c.pid: c for c in fe8.characters if c.pid}
             jids = sorted({c.jid for c in fe8.classes if c.jid})
 
@@ -2875,7 +2875,7 @@ class _ModelTablesDialog(tk.Toplevel):
         self.geometry("900x560")
         self._project = project
         self._on_change = on_change
-        fe8 = fe8data.read_fe8data(logical_path_of(project, "game_data").read_bytes())
+        fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
         self._characters = {c.pid: c for c in fe8.characters if c.pid}
         self._classes = {c.jid: c for c in fe8.classes if c.jid}
         notebook = ttk.Notebook(self)
@@ -3047,7 +3047,7 @@ class _ModelTablesDialog(tk.Toplevel):
         for key, texture in model_slots.battle_textures(self._project, code).items():
             label = f"{key} ({ARMY_KEYS[key]})" if key in ARMY_KEYS else key
             self._tex_tree.insert("", "end", iid=key, values=(label, texture))
-        folder = self._project.extracted_dir / "files" / "zu" / code
+        folder = files_root_of(self._project) / "zu" / code
         self._tex_name_box.config(values=sorted(p.stem for p in folder.glob("*.tpl")))
         vanilla = code in model_slots.vanilla_battle_codes(self._project)
         self._remove_code_button.config(state="disabled" if vanilla else "normal")
@@ -5684,7 +5684,7 @@ class ModelViewer(EditorPanel):
         if file_dialog.result is None:
             return
         folder_name, _source_label, source_path = file_dialog.result
-        zmap_root = self._project.files_dir / "zmap"
+        zmap_root = files_root_of(self._project) / "zmap"
         if zmap_root.is_dir() and any(
             child.name.casefold() == folder_name.casefold() for child in zmap_root.iterdir()
         ):

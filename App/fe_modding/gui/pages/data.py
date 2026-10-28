@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import AI, DATA_TABLES, GAME_DATA, SCRIPTS
+from ...game_profile import AI, DATA_TABLES, GAME_DATA, SCRIPTS, files_root_of
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
@@ -84,7 +84,7 @@ class GameDataPage(Page):
                 on_dirty=lambda: session.changed(self._supports),
                 display_name=self._character_name,
                 make_dialogue_editor=lambda parent: DialogueEditor(parent, self.project, shell.changelog),
-                yell_path=self.project.extracted_dir / "files" / "Mess" / "yell.m",
+                yell_path=files_root_of(self.project) / "Mess" / "yell.m",
                 open_character=lambda pid: shell.navigate(("character", pid, "supports")),
             )
             self._editor._notebook.add(self._supports, text=TABS["supports"])

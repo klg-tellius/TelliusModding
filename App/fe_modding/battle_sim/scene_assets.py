@@ -36,6 +36,7 @@ from ..game_profile import PATH_OF_RADIANCE_PROFILE
 from ..formats import battle_params, battle_weapons, icons, zdbx
 from .staging import BattleParams, UnitParams
 from .units import Combatant
+from ..game_files import as_path
 
 #: Weapon prefixes to try for an item weapon type, best first; ``ranged`` for distance 2+.
 WEAPON_PREFIXES = {
@@ -94,8 +95,8 @@ def _text(data: Optional[bytes]) -> str:
 class BattleAssets:
     """The battle tables of one project (``zdbx.cmp``) and its ``files/`` folder."""
 
-    def __init__(self, files_dir: Path, zdbx_data: bytes):
-        self.files_dir = Path(files_dir)
+    def __init__(self, files_root: Path, zdbx_data: bytes):
+        self.files_root = as_path(files_root)
         self.zdbx_data = zdbx_data
         self.tables = dict(zdbx.read_zdbx_files(zdbx_data)) if zdbx_data else {}
         job = self.tables.get(zdbx.JOB_LIST)
@@ -103,16 +104,16 @@ class BattleAssets:
         self._weapons = icons.weapon_tables(zdbx.read_zdbx_archive(zdbx_data)) if zdbx_data else {}
 
     @classmethod
-    def from_files(cls, files_dir: Path) -> "BattleAssets":
-        path = PATH_OF_RADIANCE_PROFILE.path(files_dir, "battle_data")  # Path of Radiance only for now
-        return cls(files_dir, path.read_bytes() if path.is_file() else b"")
+    def from_files(cls, files_root: Path) -> "BattleAssets":
+        path = PATH_OF_RADIANCE_PROFILE.path(files_root, "battle_data")  # Path of Radiance only for now
+        return cls(files_root, path.read_bytes() if path.is_file() else b"")
 
     # -- models ---------------------------------------------------------------------------------
     def model_codes(self) -> list[str]:
         """Codes with a ``zu/<code>.dbx`` table and a ``zu/<code>/`` folder."""
         codes = {n[3:-4] for n in self.tables if n.startswith("zu/") and n.endswith(".dbx")
                  and not n.endswith("_prm.dbx")}
-        return sorted(c for c in codes if (self.files_dir / "zu" / c).is_dir())
+        return sorted(c for c in codes if (self.files_root / "zu" / c).is_dir())
 
     def model_for(self, unit: Combatant) -> Optional[str]:
         if not unit.jid:
@@ -131,7 +132,7 @@ class BattleAssets:
         if not found.code:
             found.notes.append("no battle model for this class in jobList.dbx")
         else:
-            folder = self.files_dir / "zu" / found.code
+            folder = self.files_root / "zu" / found.code
             lines = self.role_lines(found.code)
             found.prefixes = sorted({key.split("_", 1)[0] for key, _stem in lines})
             weapon_type = unit.weapon.weapon_type if unit.weapon else ""
@@ -161,7 +162,7 @@ class BattleAssets:
                             found.texture = path
                             break
         if unit.weapon is not None:
-            weapon = icons.weapon_model(self.files_dir, unit.weapon.iid, self._weapons)
+            weapon = icons.weapon_model(self.files_root, unit.weapon.iid, self._weapons)
             name = weapon.name if weapon is not None else unit.weapon.iid.removeprefix("IID_")
             if weapon is not None:
                 found.weapon_model = weapon.path
@@ -197,7 +198,7 @@ class BattleAssets:
         cameras and the tomes' ``xcam/magic`` ones (missing packs are left out)."""
         packs = []
         for folder in dict.fromkeys([*(c for c in codes if c), "magic"]):
-            path = self.files_dir / "xcam" / folder / "cam.cmp"
+            path = self.files_root / "xcam" / folder / "cam.cmp"
             if path.is_file():
                 packs.append(path.read_bytes())
         return packs
@@ -210,7 +211,7 @@ class BattleAssets:
     # -- scenery --------------------------------------------------------------------------------
     def sceneries(self) -> dict[str, Path]:
         """``zbg/`` folder name -> its first ``.cmp`` pack."""
-        zbg = self.files_dir / "zbg"
+        zbg = self.files_root / "zbg"
         found: dict[str, Path] = {}
         if zbg.is_dir():
             for folder in sorted(p for p in zbg.iterdir() if p.is_dir()):

@@ -78,7 +78,7 @@ from PIL import Image, ImageTk
 from ..formats import fe8data, icons, item_rules, zdbx
 from .. import excel_io
 from ..formats.fe9_message_scene import to_display
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, files_root_of, profile_of
 from ..game_code.dol import DolError
 from ..games import Game
 from ..project import ModProject
@@ -347,7 +347,7 @@ class StatsEditor(EditorPanel):
         if not key:
             return ""
         if self._texts is None:
-            system_cmp = profile_of(self._project).path_or_none(self._project.extracted_dir / "files", "system_archive")
+            system_cmp = profile_of(self._project).path_or_none(files_root_of(self._project), "system_archive")
             try:
                 loose = message_reference.common_path(self._project)
                 self._texts = (message_reference.message_texts(self._project) if loose.is_file()
@@ -381,7 +381,7 @@ class StatsEditor(EditorPanel):
     # -- icons and weapon models ---------------------------------------------------
     @property
     def _files_dir(self) -> Path:
-        return self._project.extracted_dir / "files"
+        return files_root_of(self._project)
 
     def _icons(self) -> list:
         """The two images of window/icon.tpl, re-read when the file changes."""

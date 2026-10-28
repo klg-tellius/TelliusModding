@@ -28,9 +28,9 @@ You will give the practice project a name, author, version and credits, turn it 
 
 ## Before you begin
 
-- Save every editor (the patch takes the extracted files as they are on disk; it asks about unsaved editors).
+- Save every editor (the patch takes the project's files as they are on disk; it asks about unsaved editors).
 - Run **Tools → Check** and fix what it reports ([Check a project and fix problems](05-check-project.md)).
-- Keep the project's source disc image: **Create patch…** extracts it again to compare. The project made in [lesson 1](01-install-create-project.md) has its copy in its `source` folder.
+- The disc image itself is not needed: **Create patch…** compares the project's `output/` with the shared vanilla files.
 - Build and play the release candidate in Dolphin once ([Set up Dolphin and build the game](04-dolphin-setup.md)).
 
 ## How the editor fits together
@@ -43,7 +43,7 @@ You will give the practice project a name, author, version and credits, turn it 
 <figcaption>Concept diagram, not an app screenshot. A release is tested from the recipient's starting point: clean disc, patch, patched disc. Select the image to open it at full size.</figcaption>
 </figure>
 
-A **patch** (`.tpatch`) is a zip file with a `manifest.json` and a `files/` folder. **Create patch…** extracts the source disc again, compares every file of your `extracted` folder with it, and stores each changed or added file whole, plus the list of removed ones. The manifest records the game, the base disc's ID and revision, the SHA-1 of every stored file and of every retail file it replaces, and your mod details.
+A **patch** (`.tpatch`) is a zip file with a `manifest.json` and a `files/` folder. **Create patch…** takes the files in the project's `output/`, leaves out any that are byte for byte the vanilla file, and stores each changed or added file whole, plus the list of removed ones from `overlay.json`. The manifest records the game, the base disc's ID and revision, the SHA-1 of every stored file and of every retail file it replaces, and your mod details.
 
 **Applying** a patch extracts the player's own disc, refuses it unless it is the same disc (same ID, and every file the patch replaces or removes matches the retail hash), writes the patch's files over the tree and packs a new disc image, exactly like a project build. The player never needs your project.
 
@@ -76,11 +76,11 @@ A patch stores whole files rather than byte differences because a build lays out
 </figure>
 
 1. Press **Create patch…** and save `Tutorial Practice.tpatch` in the project's `build` folder (the default).
-2. Wait for the status bar: the source disc is extracted to a temporary folder and compared. This takes a minute or two.
+2. Wait for the status bar: the files in `output/` are checked against the vanilla files and stored. This takes a few seconds.
 
 The message, repeated on the card as *Last patch:*, gives the content: here *3 replaced, 2 added, 0 removed (0.8 MiB)*. The three replaced files are `FE8Data.bin` (the new character), `Face/facedata.bin` (its face record) and `system.cmp`, the archive the game really reads those files from: the build copies the loose files into it, so it changes with them. The two added files are the new portrait, `Face/TGUARD.cms` and `Face/L_TGUARD.cms`.
 
-If the message says *Empty patch*, the extracted files are identical to the disc's: nothing was saved.
+If the message says *Empty patch*, the project's files are identical to the disc's: nothing was saved.
 
 ### 3. Apply it like a player
 
@@ -116,7 +116,8 @@ Boot the patched image in Dolphin (**File → Open** in Dolphin). Check what the
 | Control | Where | What it does |
 | --- | --- | --- |
 | **Mod details…** | Create a patch | Opens **Name**, **Author**, **Version**, **Description**, **Credits (who made or allowed what)**. Saved in `project.json`; shown when the patch is applied. |
-| **Create patch…** | Create a patch | Compares the extracted files with a fresh extraction of the source disc and writes the `.tpatch`. Disabled without a source disc or while a task runs. |
+| **Create patch…** | Create a patch | Writes the `.tpatch` from the project's `output/`, checked against the vanilla files it was made from. Disabled without vanilla files or while a task runs. |
+| **Export for Riivolution…** | Create a patch (Radiant Dawn only) | Writes `build/riivolution`: the changed files and an XML for Riivolution, with `main.dol` changes as memory patches. | See below. |
 | *Last patch:* | Create a patch | Path and content of the last patch made this session. |
 | **Apply patch…** | Apply a patch | Opens the patcher dialog over the project. |
 | **Patch** / **Browse…** | Apply a patch dialog | The `.tpatch`; its details appear under it. An unreadable patch shows the reason there. |
@@ -149,17 +150,26 @@ The player can also apply a patch with `python -m fe_modding.patch apply PATCH D
 | Baseline | **Create patch…** on an unmodified project | *Empty patch* |
 | Intended change | The practice project | *3 replaced, 2 added, 0 removed*; applying to the clean disc builds an image |
 | Boundary | Apply the patch to its own output image | Refused: the files no longer match the retail hashes |
-| Likely failure | **Create patch…** without the project's source disc | The button is disabled, or creation fails: the source disc is needed to compare |
+| Likely failure | **Create patch…** after the vanilla files were changed or forgotten | Creation stops and **Disc & Patch** lists the problem: **Re-extract**, then create the patch again |
 
 ## Troubleshooting
 
 | Symptom | Likely cause | What to do |
 | --- | --- | --- |
-| *Empty patch* | Nothing saved, or edits made outside `extracted` | Save the editors and try again |
+| *Empty patch* | Nothing saved, or edits made outside the app | Save the editors and try again |
 | The patch is much bigger than expected | Large media replaced (music, video), or a file rewritten by a tool | Look at the replaced list; restore originals you did not mean to change |
 | The player's disc is refused | Another region or revision, or an already modified disc | Ask for the clean disc the patch was made from (the dialog shows its ID) |
 | The patched image is oversized | Added media exceed a disc | Reduce the media; see [Replace a video and manage disc size](49-videos.md) |
 | The patched game behaves differently from your build | Unsaved editors when you made the patch | Create the patch again after saving, and test the patched image |
+
+## Radiant Dawn: play without building, with Riivolution
+
+Riivolution runs a Wii disc and reads files from the SD card in place of the disc's, so a Radiant Dawn mod can be played from an unmodified disc. **Export for Riivolution…** writes `build/riivolution/`:
+
+- `<mod>/files/...`: every file the mod replaced or added;
+- `riivolution/<mod>.xml`: the patch, with one option, *Enabled*, under *Tellius Modding*.
+
+Copy both folders to the root of the SD card and start the game from Riivolution, or put them in Dolphin's `Load/Riivolution` folder and use *Start with Riivolution Patches* on the game. `main.dol` cannot be replaced as a file: its changes become memory patches that carry the retail bytes, so Riivolution skips them on another version of the game. The export stops on a change memory patches cannot make (a moved or shrunk code section, a new entry point), and lists files the mod removed or other `sys/` files it changed, which Riivolution cannot change. Path of Radiance is a GameCube game, which Riivolution does not run: build an image or share a `.tpatch`.
 
 ## Save, build, and revert
 
@@ -170,6 +180,7 @@ The player can also apply a patch with `python -m fe_modding.patch apply PATCH D
 - Creating, reading and applying patches are source-reviewed, and the full path in this lesson ran in the app: patch created from the practice project and applied to its clean disc (app-tested).
 - Booting the patched image in Dolphin is the remaining check of this walkthrough.
 - A patch is tied to one disc ID and revision. There is no cross-region patch.
+- The Riivolution export is source-reviewed and tested on generated files; it has not been run on a Wii or in Dolphin yet.
 
 ## Related tutorials and references
 

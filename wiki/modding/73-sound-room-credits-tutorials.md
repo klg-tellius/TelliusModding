@@ -180,7 +180,7 @@ To add one: **Duplicate** a similar entry, give it a free **Id**, its own title 
 
 ## Save, build, and revert
 
-Each page has its own save and **Revert**. **Save tracks** writes `main.dol` at once; the others write their file. Build to test; restore a file from `originals/` or your project copy to undo.
+Each page has its own save and **Revert**. **Save tracks** writes `main.dol` at once; the others write their file. Build to test; restore a file to its original or copy back your project copy to undo.
 
 ## Limits and confidence
 

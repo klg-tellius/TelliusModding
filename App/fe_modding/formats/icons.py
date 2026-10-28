@@ -40,6 +40,7 @@ from typing import Optional
 from PIL import Image
 
 from . import tpl
+from ..game_files import as_path
 
 ICON_TPL = Path("window") / "icon.tpl"
 
@@ -48,8 +49,8 @@ SKILL_IMAGE, SKILL_CELL = 1, 32
 COLUMNS = 32
 
 
-def icon_path(files_dir: Path) -> Path:
-    return Path(files_dir) / ICON_TPL
+def icon_path(files_root: Path) -> Path:
+    return as_path(files_root) / ICON_TPL
 
 
 def item_cell(icon: int) -> int:
@@ -148,8 +149,8 @@ def _find_case_insensitive(folder: Path, name: str) -> Optional[Path]:
     return None
 
 
-def _resolve(files_dir: Path, relative: str) -> Optional[Path]:
-    path = Path(files_dir)
+def _resolve(files_root: Path, relative: str) -> Optional[Path]:
+    path = as_path(files_root)
     for part in relative.replace("\\", "/").split("/"):
         if not part:
             continue
@@ -159,7 +160,7 @@ def _resolve(files_dir: Path, relative: str) -> Optional[Path]:
     return path
 
 
-def weapon_model(files_dir: Path, iid: Optional[str], tables: dict[str, str]) -> Optional[WeaponModel]:
+def weapon_model(files_root: Path, iid: Optional[str], tables: dict[str, str]) -> Optional[WeaponModel]:
     """The model an item shows in battle, following its ``xwp/<NAME>.dbx``
     table; None when ``iid`` is not an item ID."""
     name = weapon_model_name(iid)
@@ -173,17 +174,17 @@ def weapon_model(files_dir: Path, iid: Optional[str], tables: dict[str, str]) ->
     if block is not None and block.get("folder") and block.get("model"):
         found.folder, found.model = block["folder"], block["model"]
         for suffix in (".cmp", ".pak"):
-            path = _resolve(files_dir, f"{found.folder}/{found.model}{suffix}")
+            path = _resolve(files_root, f"{found.folder}/{found.model}{suffix}")
             if path is not None and path.is_file():
                 found.path = path
                 break
     return found
 
 
-def forged_model_path(files_dir: Path, iid: Optional[str]) -> Optional[Path]:
+def forged_model_path(files_root: Path, iid: Optional[str]) -> Optional[Path]:
     """``xwp/forge/<name>_b.cmp``, the model of the item forged, or None."""
     name = weapon_model_name(iid)
     if name is None:
         return None
-    path = _resolve(files_dir, f"xwp/forge/{name}_b.cmp")
+    path = _resolve(files_root, f"xwp/forge/{name}_b.cmp")
     return path if path is not None and path.is_file() else None

@@ -24,7 +24,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..formats import dialogue_notation as notation, fe10_message, message
 from ..formats.fe9_message_scene import TEMPLATES, decompile, layout_from_label, layout_label, line_plain_text, to_display, to_raw
-from ..game_profile import DIALOGUE, profile_of
+from ..game_profile import DIALOGUE, files_root_of, profile_of
 from ..formats.fe9_conversation_context import resolve_context, context_after_message
 from ..formats.event_script import ScriptError, read_script_path
 from ..project import ModProject
@@ -638,7 +638,7 @@ class DialogueEditor(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:
-        self._chapter_paths = sorted(self._project.extracted_dir.glob("**/Mess/*.m"))
+        self._chapter_paths = sorted(files_root_of(self._project).glob("Mess/*.m"))
         self._chapter_list.delete(0, "end")
         for path in self._chapter_paths:
             self._chapter_list.insert("end", path.name)

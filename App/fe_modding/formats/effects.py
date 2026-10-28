@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import effect_registry, fe10_effect_registry, lz10, pak
+from ..game_files import as_path
 from ..games import Game
 
 REGISTRY_FILES = {
@@ -53,24 +54,24 @@ class EffectEntry:
         return (self.flags >> 24) & 0xFF
 
 
-def registry_path(files_dir: Path, game: Game = Game.PATH_OF_RADIANCE) -> Path:
-    return Path(files_dir) / REGISTRY_FILES[game]
+def registry_path(files_root: Path, game: Game = Game.PATH_OF_RADIANCE) -> Path:
+    return as_path(files_root) / REGISTRY_FILES[game]
 
 
-def pack_path(files_dir: Path, name: str) -> Path:
-    return Path(files_dir) / PACK_DIR / f"{name}.cmp"
+def pack_path(files_root: Path, name: str) -> Path:
+    return as_path(files_root) / PACK_DIR / f"{name}.cmp"
 
 
-def list_effects(files_dir: Path, game: Game = Game.PATH_OF_RADIANCE) -> list[EffectEntry]:
+def list_effects(files_root: Path, game: Game = Game.PATH_OF_RADIANCE) -> list[EffectEntry]:
     """Every registered effect plus every pack with no registry record, by name."""
-    files_dir = Path(files_dir)
-    reg = registry_path(files_dir, game)
+    files_root = as_path(files_root)
+    reg = registry_path(files_root, game)
     if game is Game.RADIANT_DAWN and reg.exists():
         rd_registry = fe10_effect_registry.read_fe10_effect_registry(lz10.decompress(reg.read_bytes()))
         records = rd_registry.records
     else:
         records = effect_registry.read_effect_registry(reg.read_bytes()) if reg.exists() else []
-    packs = {p.stem for p in (files_dir / PACK_DIR).glob("EID_*.cmp")}
+    packs = {p.stem for p in (files_root / PACK_DIR).glob("EID_*.cmp")}
     if game is Game.RADIANT_DAWN:
         out = [EffectEntry(
             r.eid_name, True, r.eid_name in packs, r.flags, None,

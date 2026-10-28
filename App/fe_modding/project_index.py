@@ -33,7 +33,7 @@ from .formats import (anim_registry, dispo, fe8data, fe10_anim, fe10_battle, fe1
                       fe10_message, game_text, lz10, message, pak, zdbx)
 from .formats.fe10_faces import read_face_data as read_fe10_face_data
 from .formats.fe9_portraits import read_face_table
-from .game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, profile_of
+from .game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, profile_of, disc_root_of, files_root_of
 from .project import ModProject
 
 PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
@@ -159,8 +159,8 @@ class ProjectIndex:
 
     def __init__(self, project: ModProject):
         self.project = project
-        self.files = project.extracted_dir / "files"
-        game_text.use_for_extraction(project.extracted_dir)
+        self.files = files_root_of(project)
+        game_text.use_for_extraction(disc_root_of(project))
         self.profile = profile_of(project)
         self._lock = threading.Lock()
         self.ready = False

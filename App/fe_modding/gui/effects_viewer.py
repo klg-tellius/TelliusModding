@@ -28,6 +28,7 @@ from .editor_panel import EditorPanel
 from .effect_add_dialog import EffectAddDialog
 from .model_viewer import _build_loaded_set, _load_model_set, _ModelPreview
 from .particle_editor import ParticleEditor
+from ..game_profile import files_root_of
 
 TEXTURE_THUMB = 112
 FILTERS = ("All", "Registered", "Unregistered", "Chained")
@@ -46,7 +47,7 @@ class EffectsViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._read_only = False
         self._entries: list[effects.EffectEntry] = []
         self._by_iid: dict[str, effects.EffectEntry] = {}
@@ -319,10 +320,10 @@ class EffectsViewer(EditorPanel):
 
     def _is_vanilla_registry_entry(self, name: str) -> bool:
         path = effects.registry_path(self._files, self._project.game)
-        original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
-        source = original if original.is_file() else path
         try:
-            return name in effects.registry_names(source.read_bytes(), self._project.game)
+            data = self._project.extracted_bytes(path)
+            return name in effects.registry_names(data if data is not None else path.read_bytes(),
+                                                  self._project.game)
         except Exception:  # noqa: BLE001 - a corrupt original is protected, never made removable
             return True
 
@@ -548,8 +549,7 @@ class EffectsViewer(EditorPanel):
         try:
             rebuilt = effects.remove_rd_registry_record(registry.read_bytes(), entry.name)
             self._project.write_keeping_original(registry, rebuilt)
-            original = self._project.originals_dir / pack.relative_to(self._project.extracted_dir)
-            if pack.is_file() and not original.exists():
+            if pack.is_file() and self._project.is_added_file(pack):
                 pack.unlink()
         except (OSError, ValueError, effects.EffectError) as exc:
             messagebox.showerror("Remove effect", str(exc), parent=self)

@@ -27,6 +27,7 @@ from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import info, tip
+from ..game_profile import files_root_of
 
 FILE_NAME = "soundroom.bin"
 PREVIEW_SIZE = (560, 420)
@@ -41,7 +42,7 @@ class SoundRoomEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._path = self._files / FILE_NAME
         self._entries: list[SoundRoomEntry] = []
         self._rects = None

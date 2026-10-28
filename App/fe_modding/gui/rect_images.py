@@ -13,6 +13,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .rect_detail import RectDetail
+from ..game_profile import files_root_of
 
 
 class RectImagesPanel(EditorPanel):
@@ -102,7 +103,7 @@ class RectImagesPanel(EditorPanel):
     def refresh(self, preferred_file: str | None = None, preferred_rid: str | None = None):
         current = preferred_file or self._file_var.get()
         paths = catalog.rect_paths(self._project)
-        self._paths = {path.relative_to(self._project.files_dir).as_posix(): path for path in paths}
+        self._paths = {path.relative_to(files_root_of(self._project)).as_posix(): path for path in paths}
         names = list(self._paths)
         self._file_box.configure(values=names)
         self._file_var.set(current if current in self._paths else names[0] if names else "")
@@ -232,7 +233,7 @@ class RectImagesPanel(EditorPanel):
         if not refs:
             self._refs_list.insert("end", "No references found")
         for ref in refs:
-            relative = ref.path.relative_to(self._project.files_dir).as_posix()
+            relative = ref.path.relative_to(files_root_of(self._project)).as_posix()
             self._refs_list.insert("end", f"{ref.kind}: {relative} — {ref.location}")
 
     def _select_image(self):
@@ -291,7 +292,7 @@ class RectImagesPanel(EditorPanel):
         try:
             refs = catalog.collect_references(self._project, old)
             changes = catalog.prepare_rename(self._project, old, new)
-            files = "\n".join(sorted(str(path.relative_to(self._project.files_dir)) for path in changes))
+            files = "\n".join(sorted(str(path.relative_to(files_root_of(self._project))) for path in changes))
             if not messagebox.askyesno("Rename RID",
                 f"Rename {old} to {new}?\n\n{len(refs)} references; {len(changes)} files will change:\n{files}",
                 parent=self):

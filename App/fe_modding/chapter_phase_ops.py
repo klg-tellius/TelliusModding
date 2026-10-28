@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import chapters, script_sources
 from .formats import dispo, fe8data, lz10, pak
 from .formats.cmb import source_tools
-from .game_profile import files_dir_of
+from .exceptions import ProjectError
+from .game_files import files_of, remove_tree
+from .game_profile import files_root_of
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ def plan_clone(project, chapter_id: str, source: str, game_data: bytes | None = 
     if source not in phases:
         raise ValueError(f"{source} is not a phase of chapter {chapter_id}.")
     target = next_folder(project, chapter_id)
-    zmap = files_dir_of(project) / "zmap"
+    zmap = files_root_of(project) / "zmap"
     origin, destination = zmap / source, zmap / target
     if destination.exists():
         raise ValueError(f"{target} already exists.")
@@ -93,7 +94,7 @@ def create_phase(clone: PhaseClone) -> None:
             path.write_bytes(data)
     except Exception:
         if root.is_dir() and root.resolve().parent == clone.zmap.resolve():
-            shutil.rmtree(root)
+            remove_tree(root)
         raise
 
 
@@ -125,16 +126,20 @@ def plan_remove(project, chapter_id: str, folder: str, source: str | None = None
         if any(row.map_name == folder for row in rows):
             updated = fe8data.write_battle_terrain(
                 game_data, [row for row in rows if row.map_name != folder])
-    return files_dir_of(project) / "zmap" / folder, updated
+    return files_root_of(project) / "zmap" / folder, updated
 
 
 def remove_phase(project, path: Path) -> None:
-    zmap = (files_dir_of(project) / "zmap").resolve()
-    if (not path.is_dir() or not re.fullmatch(r"bmap\d+_\d+", path.name, re.IGNORECASE)
-            or path.is_symlink() or path.parent.resolve() != zmap
-            or path.resolve().parent != zmap):
+    files = files_of(project)
+    try:
+        rel = files.rel(path)
+    except ProjectError:
+        rel = ""
+    folder, _, name = rel.rpartition("/")
+    if (folder.lower() != "files/zmap" or not re.fullmatch(r"bmap\d+_\d+", name, re.IGNORECASE)
+            or not files.is_dir(rel)):
         raise ValueError("Only a numbered secondary map phase inside this project's zmap can be removed.")
-    shutil.rmtree(path)
+    files.remove(rel)
 
 
 def next_part(source: str) -> int:

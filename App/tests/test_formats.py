@@ -2933,10 +2933,10 @@ class ProjectOriginalsTests(unittest.TestCase):
             pack.write_bytes(b"vanilla")
             project.write_keeping_original(pack, b"first import")
             project.write_keeping_original(pack, b"second import")
-            self.assertEqual(pack.read_bytes(), b"second import")
-            self.assertEqual(project.originals_in(folder), [pack])
+            self.assertEqual(project.files.read(pack), b"second import")
+            self.assertEqual(project.originals_in(folder), [project.files.at(pack)])
             project.restore_original(pack)
-            self.assertEqual(pack.read_bytes(), b"vanilla")
+            self.assertEqual(project.files.read(pack), b"vanilla")
             self.assertEqual(project.originals_in(folder), [])
 
 

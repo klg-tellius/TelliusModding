@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .dol import Dol
+from ..game_files import as_path
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,9 @@ class Identification:
     note: str = ""
 
 
-def read_boot_code(extracted_dir: Path | str) -> str | None:
+def read_boot_code(disc: Path | str) -> str | None:
     """Game code (``GFEE01``...) from ``sys/boot.bin``, or None."""
-    boot = Path(extracted_dir) / "sys" / "boot.bin"
+    boot = as_path(disc) / "sys" / "boot.bin"
     if not boot.is_file():
         return None
     header = boot.read_bytes()[:6]

@@ -32,9 +32,11 @@ def use_game_id(game_id: Optional[str]) -> None:
     _mode = _BY_GAME_ID.get((game_id or "")[:6], CP932)
 
 
-def use_for_extraction(extracted_dir: Path | str) -> None:
-    """Select the rules from ``sys/boot.bin`` of an extraction (``extracted/`` or its ``files/``)."""
-    root = Path(extracted_dir)
+def use_for_extraction(disc_dir: Path | str) -> None:
+    """Select the rules from ``sys/boot.bin`` of a disc tree (a project's ``files.at("")``, an
+    extracted folder, or its ``files/``)."""
+    from ..game_files import as_path
+    root = as_path(disc_dir)
     for boot in (root / "sys" / "boot.bin", root.parent / "sys" / "boot.bin"):
         try:
             use_game_id(boot.read_bytes()[:6].decode("ascii"))

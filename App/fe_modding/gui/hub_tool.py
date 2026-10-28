@@ -17,6 +17,7 @@ from ..formats import fe8data
 from ..game_code.chapter_flow import GAME_CLEARED
 from ..hub_creation import MAX_SIZE, MIN_SIZE
 from .widgets import info, tip
+from ..game_profile import disc_root_of
 
 LINK_COLOR = "#7bb85c"
 RETURN_COLOR = "#5fb3e6"
@@ -145,7 +146,7 @@ class HubTool(ttk.Frame):
         installed = hub.saved_setup(project)
         from ..game_code.extended_flags import EXTENDED_FLAGS_PATCH
         from ..game_code.versions import read_boot_code
-        extended_available = read_boot_code(project.extracted_dir) in EXTENDED_FLAGS_PATCH.versions
+        extended_available = read_boot_code(disc_root_of(project)) in EXTENDED_FLAGS_PATCH.versions
         if installed and installed.get("storage") == "extended":
             storage = "extended"
         elif installed:

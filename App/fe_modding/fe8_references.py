@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .formats import fe8data, lz10
-from .game_profile import profile_of
+from .game_profile import disc_root_of, profile_of
 from .project import ModProject
 
 
@@ -155,7 +155,7 @@ def _count(blob: bytes, label: str) -> int:
 
 def _game_files(project: ModProject) -> Iterable[tuple[str, Path, bool]]:
     """(display path, file, compressed) of every file that names records."""
-    root = project.extracted_dir
+    root = disc_root_of(project)
     files = root / "files"
     profile = profile_of(project)
     shops = profile.shop_folder(files)

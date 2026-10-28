@@ -12,6 +12,7 @@ from pathlib import Path
 from fe_modding.formats import save_file as sf
 
 from .harness import Scenario
+from fe_modding.game_profile import files_root_of
 
 US = "GFEE01"
 
@@ -246,7 +247,7 @@ def _check_tiles(ctx, folder: str, tiles, taken=frozenset()):
     from fe_modding import map_props
     from fe_modding.formats import map_file
 
-    _entries, files = map_props.read_map_container(ctx.project.extracted_dir / "files" / "zmap" / folder / "map.cmp")
+    _entries, files = map_props.read_map_container(files_root_of(ctx.project) / "zmap" / folder / "map.cmp")
     raw = next(v for k, v in files.items() if k.lower().endswith("map.bin"))
     data, grid = map_file.read_map_bytes(raw), map_file.terrain_grid(raw)
     buffer, cap = data.extra.grid_buffer, data.capacity
@@ -291,7 +292,7 @@ def build_c3(ctx):
 
     # Three tiers: Fighter -> Warrior -> Berserker; the Crown is a new item record.
     data = three_tier_data.provision(ctx.fe8, US)
-    common = ctx.project.extracted_dir / "files" / "Mess" / "common.m"
+    common = files_root_of(ctx.project) / "Mess" / "common.m"
     ctx.project.write_keeping_original(common, three_tier_data.provision_messages(common.read_bytes(), US, "en"))
     ctx.fe8 = data
     ctx.set_class("JID_WARRIOR", promotes_to="JID_BERSERKER")
@@ -433,7 +434,7 @@ def _recoloured_boyd(ctx):
 def build_d1_text(ctx):
     from fe_modding.formats import message
 
-    path = ctx.project.extracted_dir / "files" / "Mess" / "c01.m"
+    path = files_root_of(ctx.project) / "Mess" / "c01.m"
     order = message.read_text_order_path(path)
     entries = message.read_messages_path(path)
     for i, entry in enumerate(entries):
@@ -456,7 +457,7 @@ def build_d1_portrait(ctx):
 def build_d1_music(ctx):
     from fe_modding.formats import gcfesnd, stm
 
-    sound = ctx.project.extracted_dir / "files" / "Sound"
+    sound = files_root_of(ctx.project) / "Sound"
     audio = stm.read_stm_path(sound / "gcfe_bgm_btl_dknight_32k.stm")
     keep = audio.sample_rate * 30
     audio.channels = [channel[:keep] for channel in audio.channels]
@@ -473,7 +474,7 @@ def build_d1_map(ctx):
     from fe_modding import map_props
     from fe_modding.formats import map_file
 
-    path = ctx.project.extracted_dir / "files" / "zmap" / "bmap01" / "map.cmp"
+    path = files_root_of(ctx.project) / "zmap" / "bmap01" / "map.cmp"
     entries, files = map_props.read_map_container(path)
     data = map_file.read_map_bytes(next(v for k, v in files.items() if k.lower().endswith("map.bin")))
     names = [n for n in map_props.prop_names(files, data)]
@@ -499,9 +500,9 @@ def build_d2(ctx):
     import tempfile
     from fe_modding.gui import model_viewer
 
-    pack = ctx.project.extracted_dir / "files" / "zu" / "timt" / "timt_ax.pak"
+    pack = files_root_of(ctx.project) / "zu" / "timt" / "timt_ax.pak"
     if not pack.is_file():
-        pack = next((ctx.project.extracted_dir / "files" / "zu" / "timt").glob("*.pak"))
+        pack = next((files_root_of(ctx.project) / "zu" / "timt").glob("*.pak"))
     glb = model_viewer.export_set_glb(pack)
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "timt.glb"
@@ -517,7 +518,7 @@ def build_d2(ctx):
 def build_e1(ctx):
     from fe_modding.formats import soundroom
 
-    path = ctx.project.extracted_dir / "files" / "soundroom.bin"
+    path = files_root_of(ctx.project) / "soundroom.bin"
     entries = soundroom.read_soundroom_path(path)
     ctx.facts["pictures"] = len(entries)
     ctx.facts["first_picture"] = entries[-1].name if hasattr(entries[-1], "name") else str(entries[-1])

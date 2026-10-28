@@ -175,7 +175,7 @@ def rd_chapter_number(fe10data: bytes, chapter_id: str) -> int:
     raise EmulatorError(f"Chapter {chapter_id} has no ChapterData record.")
 
 
-def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str,
+def prepare_chapter_run(disc_dir: Path | str, run_dir: Path | str,
                         chapter_id: int | str, difficulty: int) -> Path:
     """Make ``run_dir`` a disc tree that boots into chapter ``chapter_id`` (a ``ChapterData`` id)
     on ``difficulty`` (a ``chapter_jump.DIFFICULTIES`` value) with a fresh army; returns its
@@ -187,11 +187,11 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str,
     from .game_code.versions import identify, read_boot_code
     from .formats import lz10
 
-    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
-    source_sys, files = extracted_dir / "sys", extracted_dir / "files"
+    disc_dir, run_dir = Path(disc_dir), Path(run_dir)
+    source_sys, files = disc_dir / "sys", disc_dir / "files"
     if not (source_sys / "main.dol").is_file() or not files.is_dir():
-        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    detected = detect_from_extracted(extracted_dir)
+        raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(disc_dir)
     if detected is not None and not profile(detected).supports(PLAY):
         raise EmulatorError(profile(detected).unavailable(PLAY))
     game = detected or Game.PATH_OF_RADIANCE
@@ -203,7 +203,7 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str,
     except (OSError, ValueError, IndexError, struct.error) as exc:
         raise EmulatorError(f"{game_data_path.name} could not be read ({exc}).") from exc
     dol = Dol.open(source_sys / "main.dol")
-    version = identify(dol, read_boot_code(extracted_dir)).version
+    version = identify(dol, read_boot_code(disc_dir)).version
     if version is None:
         raise EmulatorError("This main.dol is not a supported game build.")
     try:
@@ -215,7 +215,7 @@ def prepare_chapter_run(extracted_dir: Path | str, run_dir: Path | str,
     except (DolError, ValueError) as exc:
         raise EmulatorError(f"Could not patch main.dol for the jump: {exc}") from exc
 
-    return _copy_run_tree(extracted_dir, run_dir, bytes(dol.data))
+    return _copy_run_tree(disc_dir, run_dir, bytes(dol.data))
 
 
 def save_card_config(card_dir: Path | str) -> tuple[str, ...]:
@@ -225,42 +225,42 @@ def save_card_config(card_dir: Path | str) -> tuple[str, ...]:
             f"Dolphin.Core.GCIFolderAPathOverride={Path(card_dir).resolve()}")
 
 
-def _copy_run_tree(extracted_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
+def _copy_run_tree(disc_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
     sys_dir = run_dir / "sys"
     sys_dir.mkdir(parents=True, exist_ok=True)
-    for item in (extracted_dir / "sys").iterdir():
+    for item in (disc_dir / "sys").iterdir():
         if item.is_file() and item.name != "main.dol":
             shutil.copyfile(item, sys_dir / item.name)
     (sys_dir / "main.dol").write_bytes(main_dol)
-    _link_directory(run_dir / "files", extracted_dir / "files")
+    _link_directory(run_dir / "files", disc_dir / "files")
     # Wii DirectoryBlob needs the partition metadata beside ``sys`` and ``files``.  Different
     # extractors emit different subsets, so copy every known file that is present.
     for name in ("ticket.bin", "tmd.bin", "cert.bin", "h3.bin"):
-        source = extracted_dir / name
+        source = disc_dir / name
         if source.is_file():
             shutil.copyfile(source, run_dir / name)
-    disc = extracted_dir / "disc"
+    disc = disc_dir / "disc"
     if disc.is_dir():
         shutil.copytree(disc, run_dir / "disc", dirs_exist_ok=True)
     return sys_dir / "main.dol"
 
 
-def prepare_save_run(extracted_dir: Path | str, run_dir: Path | str, gci_name: str, gci: bytes) -> tuple[Path, Path]:
+def prepare_save_run(disc_dir: Path | str, run_dir: Path | str, gci_name: str, gci: bytes) -> tuple[Path, Path]:
     """Make ``run_dir`` a disc tree booting the project's own ``main.dol`` plus a GCI folder
     (``run_dir/card_a``) holding only ``gci`` (saved as ``gci_name``). Returns the
     ``sys/main.dol`` for Dolphin and the card folder for :func:`save_card_config`. The folder
     is emptied first; whatever the game saves during the run stays there, never in the
     original save file."""
-    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
-    if not (extracted_dir / "sys" / "main.dol").is_file() or not (extracted_dir / "files").is_dir():
-        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    detected = detect_from_extracted(extracted_dir)
+    disc_dir, run_dir = Path(disc_dir), Path(run_dir)
+    if not (disc_dir / "sys" / "main.dol").is_file() or not (disc_dir / "files").is_dir():
+        raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(disc_dir)
     if detected is not None and not profile(detected).supports(PLAY):
         raise EmulatorError(profile(detected).unavailable(PLAY))
     name = Path(gci_name).name
     if not name.lower().endswith(".gci"):
         name += ".gci"
-    dol = _copy_run_tree(extracted_dir, run_dir, (extracted_dir / "sys" / "main.dol").read_bytes())
+    dol = _copy_run_tree(disc_dir, run_dir, (disc_dir / "sys" / "main.dol").read_bytes())
     card = run_dir / CARD_FOLDER
     card.mkdir(parents=True, exist_ok=True)
     for old in card.iterdir():
@@ -270,7 +270,7 @@ def prepare_save_run(extracted_dir: Path | str, run_dir: Path | str, gci_name: s
     return dol, card
 
 
-def prepare_wii_save_run(extracted_dir: Path | str, run_dir: Path | str, save_data: bytes,
+def prepare_wii_save_run(disc_dir: Path | str, run_dir: Path | str, save_data: bytes,
                          banner: Optional[bytes] = None) -> tuple[Path, Path]:
     """Prepare a Radiant Dawn run with an isolated Dolphin user folder.
 
@@ -281,15 +281,15 @@ def prepare_wii_save_run(extracted_dir: Path | str, run_dir: Path | str, save_da
     """
     from .formats.save_file_fe10 import FILE_NAME, FILE_SIZE
 
-    extracted_dir, run_dir = Path(extracted_dir), Path(run_dir)
+    disc_dir, run_dir = Path(disc_dir), Path(run_dir)
     if len(save_data) != FILE_SIZE:
         raise EmulatorError(f"RFEE01 save must be 0x{FILE_SIZE:X} bytes, found 0x{len(save_data):X}.")
-    if not (extracted_dir / "sys" / "main.dol").is_file() or not (extracted_dir / "files").is_dir():
-        raise EmulatorError(f"{extracted_dir} has no sys/main.dol or files folder; extract the disc first.")
-    detected = detect_from_extracted(extracted_dir)
+    if not (disc_dir / "sys" / "main.dol").is_file() or not (disc_dir / "files").is_dir():
+        raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
+    detected = detect_from_extracted(disc_dir)
     if detected is not None and detected is not Game.RADIANT_DAWN:
         raise EmulatorError("An RFEE01 NAND save can only be played with a Radiant Dawn project.")
-    dol = _copy_run_tree(extracted_dir, run_dir, (extracted_dir / "sys" / "main.dol").read_bytes())
+    dol = _copy_run_tree(disc_dir, run_dir, (disc_dir / "sys" / "main.dol").read_bytes())
     user_dir = run_dir / WII_USER_FOLDER
     data_dir = user_dir / RFEE01_DATA_PATH
     data_dir.mkdir(parents=True, exist_ok=True)

@@ -75,10 +75,11 @@ def profile(game: Game):
     return get_profile(game)
 
 
-def read_disc_id(extracted_dir: Path | str) -> str:
+def read_disc_id(disc_dir: Path | str) -> str:
     """The six-character disc ID (``GFEE01``, ``RFEE01``...) from ``sys/boot.bin`` of an extracted
     disc, or ``""`` when it is missing or too short."""
-    boot = Path(extracted_dir) / "sys" / "boot.bin"
+    from .game_files import as_path
+    boot = as_path(disc_dir) / "sys" / "boot.bin"
     try:
         with boot.open("rb") as f:
             header = f.read(6)
@@ -87,11 +88,11 @@ def read_disc_id(extracted_dir: Path | str) -> str:
     return header.decode("ascii", "replace") if len(header) == 6 else ""
 
 
-def detect_from_extracted(extracted_dir: Path | str) -> Optional[Game]:
+def detect_from_extracted(disc_dir: Path | str) -> Optional[Game]:
     """Which supported game an extracted disc tree is, from the ID in ``sys/boot.bin``
     (``GFE*`` Path of Radiance, ``RFE*`` Radiant Dawn); None when it is neither."""
     from .game_profile import game_for_disc_id
-    return game_for_disc_id(read_disc_id(extracted_dir))
+    return game_for_disc_id(read_disc_id(disc_dir))
 
 
 #: Where the 6-character disc ID sits in each plain image format (None when it cannot be read cheaply).

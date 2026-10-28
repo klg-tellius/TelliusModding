@@ -535,9 +535,9 @@ class PortraitCache:
     background thread; ``request(fid, size, callback)`` calls back on the UI
     thread with a PhotoImage, or never when the face can't be drawn."""
 
-    def __init__(self, root: tk.Misc, extracted_dir: Path, game=None):
+    def __init__(self, root: tk.Misc, disc_dir: Path, game=None):
         self._root = root
-        self._extracted = extracted_dir
+        self._extracted = disc_dir
         self._game = game
         self._assets = None
         self._assets_failed = False

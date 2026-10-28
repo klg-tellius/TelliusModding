@@ -31,7 +31,7 @@ from types import SimpleNamespace
 from PIL import ImageTk
 
 from ..formats import fe8data, icons, shop
-from ..game_profile import SHOPS, profile_of
+from ..game_profile import SHOPS, files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -53,7 +53,7 @@ class ShopEditor(EditorPanel):
         self._changelog = changelog
         self._index_provider = index_provider
         self._session_provider = session_provider
-        self._folder = profile_of(project).shop_folder(project.extracted_dir / "files")
+        self._folder = profile_of(project).shop_folder(files_root_of(project))
         self._docs: dict[str, shop.ShopDocument] = {}
         self._edited: set[str] = set()
         self._loaded = False
@@ -349,7 +349,7 @@ class ShopEditor(EditorPanel):
 
     def _icons(self) -> list:
         """The images of window/icon.tpl, re-read when the file changes."""
-        path = icons.icon_path(self._project.extracted_dir / "files")
+        path = icons.icon_path(files_root_of(self._project))
         try:
             stamp = path.stat().st_mtime_ns
         except OSError:

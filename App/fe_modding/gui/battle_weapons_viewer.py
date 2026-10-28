@@ -11,6 +11,7 @@ from tkinter import messagebox, simpledialog
 
 from ..formats import battle_weapons as bw
 from .battle_table_viewer import BattleTableViewer, choice_label
+from ..game_profile import files_root_of
 
 
 class BattleWeaponsViewer(BattleTableViewer):
@@ -39,7 +40,7 @@ class BattleWeaponsViewer(BattleTableViewer):
         return bw.read_weapon(text)
 
     def model_of(self, name):
-        folder = self._project.files_dir / "xwp" / name.lower()
+        folder = files_root_of(self._project) / "xwp" / name.lower()
         pack = folder / f"{name.lower()}.cmp"
         if pack.is_file():
             return f"xwp/{name.lower()}", pack

@@ -13,6 +13,7 @@ from .battle_camera_viewer import BattleCameraViewer
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .model_viewer import _ModelPreview, _build_loaded_set
+from ..game_profile import files_root_of
 
 
 class Fe10CameraViewer(EditorPanel):
@@ -75,7 +76,7 @@ class Fe10CameraViewer(EditorPanel):
         self._preview.cleanup()
 
     def _load(self, data: bytes | None = None) -> None:
-        xcam = self._project.files_dir / "xcam"
+        xcam = files_root_of(self._project) / "xcam"
         try:
             if data is None:
                 data = self._project.read_logical("battle_data")
@@ -248,7 +249,7 @@ class Fe10CameraViewer(EditorPanel):
                     return None
                 if selected not in names:
                     raise ValueError(f"The glTF has no animation named {selected}.")
-            skeleton_data = (self._project.files_dir / "xcam" / "cam.g").read_bytes()
+            skeleton_data = (files_root_of(self._project) / "xcam" / "cam.g").read_bytes()
             ga, _warnings = gltf_import.import_animation(
                 source_data, skeleton_data, animation_name=selected,
                 template=template, base_dir=source_path.parent)
@@ -312,7 +313,7 @@ class Fe10CameraViewer(EditorPanel):
             rebuilt, _row = fe10_battle.clone_camera_file(
                 self._data, donor_row, name, description)
             animation.read_animation_bytes(ga)
-            path = self._project.files_dir / "xcam" / f"{name}.ga"
+            path = files_root_of(self._project) / "xcam" / f"{name}.ga"
             self._project.write_keeping_original(path, ga)
             self._project.write_logical("battle_data", rebuilt)
         except (OSError, ValueError, IndexError) as exc:
@@ -377,7 +378,7 @@ class Fe10CameraViewer(EditorPanel):
         if path is None:
             self._preview.show(None, "The registered test clip has no xcam .ga file.")
             return
-        xcam = self._project.files_dir / "xcam"
+        xcam = files_root_of(self._project) / "xcam"
         try:
             loaded = _build_loaded_set(
                 f"xcam/{name}",

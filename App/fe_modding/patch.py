@@ -10,8 +10,10 @@ relative to the retail disc, plus a ``manifest.json``:
   SHA-1 of the retail file it replaces), the retail files the mod removed
   (``remove``), the game, and the base disc's ID and revision.
 
-Applying one extracts the base disc, checks it is the disc the patch was
-made from (same disc ID, and every file the patch replaces or removes
+A project in the input/output layout makes its patch from what it records:
+its output files and removals, with the vanilla hashes of its store, so no
+disc is read again. Applying one extracts the base disc, checks it is the
+disc the patch was made from (same disc ID, and every file the patch replaces or removes
 matches the retail hash), writes the patch's files over the tree and packs
 it in the game's build format - the same path as building a project.
 
@@ -114,10 +116,10 @@ def _tree(root: Path) -> dict[str, Path]:
     return {p.relative_to(root).as_posix(): p for p in root.rglob("*") if p.is_file()}
 
 
-def disc_id(extracted_dir: Path | str) -> str:
+def disc_id(disc_dir: Path | str) -> str:
     """``GFEE01 rev 0``-style identity of an extracted disc, from sys/boot.bin
     (game code + maker code at 0x0, disc revision at 0x7)."""
-    boot = Path(extracted_dir) / "sys" / "boot.bin"
+    boot = Path(disc_dir) / "sys" / "boot.bin"
     if not boot.is_file():
         return ""
     header = boot.read_bytes()[:8]
@@ -140,8 +142,26 @@ def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *,
                  credits: str = "") -> PatchSummary:
     """Write a patch turning the extracted tree ``base_dir`` into ``mod_dir``. ``author``,
     ``version`` and ``credits`` are shown to whoever applies it."""
-    base_dir, mod_dir, dest = Path(base_dir), Path(mod_dir), Path(dest)
+    base_dir, mod_dir = Path(base_dir), Path(mod_dir)
     base, mod = _tree(base_dir), _tree(mod_dir)
+    replaced, added = [], []
+    for rel in sorted(mod):
+        if rel in base:
+            if not _same_file(base[rel], mod[rel]):
+                replaced.append((rel, mod[rel], _sha1(base[rel])))
+        else:
+            added.append((rel, mod[rel]))
+    removed = [(rel, _sha1(base[rel])) for rel in sorted(set(base) - set(mod))]
+    return _write_patch(dest, game, disc_id(base_dir), replaced, added, removed, name=name,
+                        description=description, author=author, version=version, credits=credits)
+
+
+def _write_patch(dest: Path | str, game: Game, base_disc: str, replaced: list[tuple[str, Path, str]],
+                 added: list[tuple[str, Path]], removed: list[tuple[str, str]], *, name: str,
+                 description: str, author: str, version: str, credits: str) -> PatchSummary:
+    """Write the patch archive: ``replaced`` is (path, mod file, SHA-1 of the base file),
+    ``added`` (path, mod file), ``removed`` (path, SHA-1 of the base file)."""
+    dest = Path(dest)
     summary = PatchSummary()
     manifest = {
         "format": "tellius-patch",
@@ -152,7 +172,7 @@ def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *,
         "author": author,
         "mod_version": version,  # "version" is the patch format's own
         "credits": credits,
-        "disc_id": disc_id(base_dir),
+        "disc_id": base_disc,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "replace": {}, "add": {}, "remove": {},
     }
@@ -160,19 +180,16 @@ def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *,
     partial = dest.with_name(dest.name + ".part")
     try:
         with zipfile.ZipFile(partial, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
-            for rel in sorted(mod):
-                path = mod[rel]
-                if rel in base:
-                    if _same_file(base[rel], path):
-                        continue
-                    manifest["replace"][rel] = {"sha1": _sha1(path), "base_sha1": _sha1(base[rel])}
-                    summary.replaced.append(rel)
-                else:
-                    manifest["add"][rel] = {"sha1": _sha1(path)}
-                    summary.added.append(rel)
+            for rel, path, base_sha1 in replaced:
+                manifest["replace"][rel] = {"sha1": _sha1(path), "base_sha1": base_sha1}
+                summary.replaced.append(rel)
                 archive.write(path, FILES_PREFIX + rel)
-            for rel in sorted(set(base) - set(mod)):
-                manifest["remove"][rel] = {"base_sha1": _sha1(base[rel])}
+            for rel, path in added:
+                manifest["add"][rel] = {"sha1": _sha1(path)}
+                summary.added.append(rel)
+                archive.write(path, FILES_PREFIX + rel)
+            for rel, base_sha1 in removed:
+                manifest["remove"][rel] = {"base_sha1": base_sha1}
                 summary.removed.append(rel)
             archive.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2))
         partial.replace(dest)
@@ -183,10 +200,13 @@ def create_patch(base_dir: Path | str, mod_dir: Path | str, dest: Path | str, *,
 
 
 def create_project_patch(project: ModProject, dest: Path | str) -> PatchSummary:
-    """Patch from the project's source disc to its current extracted files.
+    """Patch from the project's source disc to its current files.
 
-    Extracts the source disc again into a temporary folder beside the project
-    (the retail files an editor overwrote are not kept anywhere else)."""
+    A layout-2 project uses its recorded changes and its vanilla store. A layout-1 project
+    extracts the source disc again into a temporary folder beside the project (the retail
+    files an editor overwrote are not all kept anywhere else)."""
+    if project.is_overlay:
+        return _create_overlay_patch(project, dest)
     if project.source_path is None or not project.source_path.is_file():
         raise PatchError("The project's source disc image is missing - choose it again first.")
     if not project.has_extracted_files:
@@ -195,9 +215,29 @@ def create_project_patch(project: ModProject, dest: Path | str) -> PatchSummary:
     with tempfile.TemporaryDirectory(prefix=".patch_base_", dir=project.directory) as temp:
         base = Path(temp) / "disc"
         tools.extract_disc(project.source_path, base, overwrite=True, wii=project.profile.wii)
-        return create_patch(base, project.extracted_dir, dest, game=project.game,
+        return create_patch(base, project.disc_tree(), dest, game=project.game,
                             name=project.name, description=project.description, author=project.author,
                             version=project.version, credits=project.credits)
+
+
+def _create_overlay_patch(project: ModProject, dest: Path | str) -> PatchSummary:
+    problems = project.input_problems()
+    if problems:
+        raise PatchError("The vanilla files this project reads have problems:\n  " + "\n  ".join(problems[:10]))
+    project.sync_system_archive()
+    files, store = project.files, project.input_store
+    hashes = store.file_hashes()
+    changes = files.changes()
+    replaced = []
+    for rel in changes.replaced:
+        path = files.require(rel)
+        if _sha1(path) != hashes.get(rel):
+            replaced.append((rel, path, hashes[rel]))
+    added = [(rel, files.require(rel)) for rel in changes.added]
+    removed = [(rel, hashes[rel]) for rel in changes.removed if rel in hashes]
+    return _write_patch(dest, project.game, f"{store.disc_id} rev {store.revision}", replaced, added, removed,
+                        name=project.name, description=project.description, author=project.author,
+                        version=project.version, credits=project.credits)
 
 
 # -- reading and applying --------------------------------------------------------------------------

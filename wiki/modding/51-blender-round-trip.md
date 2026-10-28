@@ -59,7 +59,7 @@ Model-set prefixes identify different contracts:
 
 **Export .glb…** exports the selected set. **Import .glb…** replaces only the mesh/body contract appropriate to that set and preserves other resources where documented. Import conversion happens before writing. The **Import Review** shows the preview, current-versus-imported figures, proposed files, joint mappings, and warnings. Nothing changes until **Write files**.
 
-Written files go through the project backup mechanism, which keeps extracted originals. **Restore original…** becomes available when originals exist for that model folder.
+Written files go to the project's `output/`; the disc's versions stay in the vanilla files. **Restore original…** becomes available when the mod has replaced files in that model folder.
 
 ## Guided walkthrough
 
@@ -168,7 +168,7 @@ Do not combine these transitions into one first test.
 | **Rig kit…** | Exports reference `.glb`, checklist `.md`, and animation list `.json`. | Treat its anchors, weapons, animations, frames, and events as requirements. |
 | **Events…** | Edits animation event tracks. | Preserve gameplay-critical hit/swing/throw events and test timing in battle. |
 | **Fit new rig…** | Maps a different humanoid rig and retargets existing animations. | Review every bone mapping, generated fitted `.glb`, and dropped/added-bone warning. |
-| **Restore original…** | Restores extracted originals kept by prior writes. | Verify the exact selected set and compare figures after reload. |
+| **Restore original…** | Puts the disc's version of the replaced files back. | Verify the exact selected set and compare figures after reload. |
 | **New slot…** | Creates another supported model slot and associated mappings. | Use only after understanding the identity tables; it is not needed for a replacement. |
 | **Model tables…** | Opens model-resolution tables. | Use to diagnose or create class/character/weapon mappings separately from mesh import. |
 | **Show mesh** | Toggles rendered geometry. | Turn off to inspect skeleton placement. |
@@ -180,7 +180,7 @@ Do not combine these transitions into one first test.
 | Review **Changes** | Lists outputs and old/new resource figures. | Explain every changed file and every red/large difference before writing. |
 | Review **Joints** | Shows joint-to-bone matching for skinned imports. | Reject unintended or ambiguous mappings. |
 | Review **Warnings** | Combines budget analysis and importer warnings. | Treat warnings as test requirements; cancel when their consequence is unknown. |
-| **Write files** | Commits every reviewed output while retaining extracted originals. | Reopen the set and inspect the on-disk result. |
+| **Write files** | Writes every reviewed output to the project; the disc's versions stay available. | Reopen the set and inspect the on-disk result. |
 | **Cancel** | Closes review without writing. | Use whenever the conversion differs from the planned change. |
 
 ## Things to try next
@@ -223,11 +223,11 @@ For a rigged or battle asset, add rendered-fight and Dolphin tests covering idle
 | Preview works but game crashes or corrupts | Red budget figures, file size, blended buffer, unsupported feature | Reduce to/below a proven range and test each feature boundary in Dolphin. |
 | Import wants unrelated output files | Selected set and glTF contents | Cancel and export only the intended compatible objects/resources. |
 | Bow no longer bends correctly | Joint mapping, vertex groups, or renamed/deleted bow bones | Cancel the review and restore the exported armature and weights; the dedicated bow importer retains the existing skeleton and rebuilds composite geometry. |
-| Restore is unavailable | Whether this project has recorded originals for the folder | Restore the project checkpoint rather than overwriting more files. |
+| Restore is unavailable | Whether the mod replaced files in that folder (added files have no original) | Restore the project checkpoint rather than overwriting more files. |
 
 ## Save, build, and revert
 
-Conversion and review are non-writing until **Write files**. Writing changes every output listed in the review and keeps extracted originals through the project backup mechanism. Re-select the set to confirm the written result.
+Conversion and review are non-writing until **Write files**. Writing changes every output listed in the review; the disc's versions stay in the vanilla files. Re-select the set to confirm the written result.
 
 Use **Restore original…** for the exact set when available. Otherwise restore the saved project checkpoint. Build a new image for Dolphin; neither Blender export nor the app preview changes an older image.
 

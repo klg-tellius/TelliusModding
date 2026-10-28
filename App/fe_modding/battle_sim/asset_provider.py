@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import scene_assets as sa
 from .staging import BattleParams
+from ..game_profile import disc_root_of, files_root_of
 
 
 class BattleAssetError(ValueError):
@@ -54,7 +55,7 @@ class Fe10BattleAssetProvider(BattleAssetProvider):
     def __init__(self, project):
         from ..formats import fe10_anim, fe10_battle, fe10_effect_registry
         self.project = project
-        self.files = Path(project.extracted_dir) / "files"
+        self.files = Path(disc_root_of(project)) / "files"
         self.anim = fe10_anim.read_fe10_anim(project.read_logical("anim_data"))
         self.battle = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
         self.effects = fe10_effect_registry.read_fe10_effect_registry(project.read_logical("effect_data"))
@@ -255,4 +256,4 @@ class Fe10BattleAssetProvider(BattleAssetProvider):
 
 def provider_for(project) -> BattleAssetProvider:
     return Fe10BattleAssetProvider(project) if project.profile.script_dialect == "fe10" \
-        else Fe9BattleAssetProvider(project.extracted_dir / "files")
+        else Fe9BattleAssetProvider(files_root_of(project))

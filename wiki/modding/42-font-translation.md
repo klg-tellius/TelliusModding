@@ -200,7 +200,7 @@ Repeated characters are effectively one glyph request. Encoding, not Unicode ran
 - **Import** stages candidate data; it does not write immediately.
 - **Save** writes all pending fonts.
 - **Discard changes** clears all pending imports in the panel.
-- **Restore original file** restores the selected extracted font from project originals.
+- **Restore original file** puts the disc's version of the selected font back.
 - **Export sheets as PNG...** exports visual sheets for audit/reference; PNGs are not importable font definitions by themselves.
 
 ## Interactions and precedence

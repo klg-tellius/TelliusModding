@@ -20,6 +20,7 @@ from ..game_code.versions import identify, read_boot_code
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
+from ..game_profile import disc_root_of, files_root_of, sys_root_of
 
 
 class SoundRoomTracksEditor(EditorPanel):
@@ -30,8 +31,8 @@ class SoundRoomTracksEditor(EditorPanel):
         self._project = project
         self._fe10 = project.game == Game.RADIANT_DAWN
         self._changelog = changelog
-        self._path = (project.files_dir / "soundroom.bin" if self._fe10 else
-                      project.extracted_dir / "sys" / "main.dol")
+        self._path = (files_root_of(project) / "soundroom.bin" if self._fe10 else
+                      sys_root_of(project) / "main.dol")
         self._version: Optional[str] = None
         self._names: list[str] = []
         self._unlocks: list[int] = []
@@ -94,7 +95,7 @@ class SoundRoomTracksEditor(EditorPanel):
     # -- data -----------------------------------------------------------------------------
     def _open(self) -> tuple[Dol, str]:
         dol = Dol.open(self._path)
-        version = identify(dol, read_boot_code(self._project.extracted_dir)).version
+        version = identify(dol, read_boot_code(disc_root_of(self._project))).version
         if version is None or version.code not in tracks.LAYOUT:
             raise ValueError("This main.dol is not a known Path of Radiance build.")
         return dol, version.code
@@ -119,7 +120,7 @@ class SoundRoomTracksEditor(EditorPanel):
                 self._fill(0 if self._names else None)
                 return
             try:
-                cues = gcfesnd.read_bgm_cues_path(self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin")
+                cues = gcfesnd.read_bgm_cues_path(files_root_of(self._project) / "Sound" / "gcfesnd.bin")
                 self._name_box.config(values=sorted({c.name for c in cues}))
             except Exception:  # noqa: BLE001 - the suggestions are optional
                 self._name_box.config(values=[])

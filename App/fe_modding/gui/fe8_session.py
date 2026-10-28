@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from ..formats import fe8data, fe10data, item_rules
-from ..game_profile import DATA_TABLES, GAME_DATA
+from ..game_profile import DATA_TABLES, GAME_DATA, disc_root_of, sys_root_of
 from ..game_code.dol import Dol
 from ..game_code import item_restrictions as rule_code, versions
 from ..project import ModProject
@@ -80,12 +80,12 @@ class Fe8DataSession:
         """Write the file (keeping the extracted one in ``originals/``). Raises OSError."""
         rules = item_rules.read_item_rules(self.data)
         item_rules.validate_item_rules(self.data, rules)
-        dol_path = self.project.extracted_dir / "sys" / "main.dol"
+        dol_path = sys_root_of(self.project) / "main.dol"
         old_dol = dol_path.read_bytes() if dol_path.is_file() else None
         patched_dol = None
         if old_dol is not None:
             dol = Dol(old_dol)
-            ident = versions.identify(dol, versions.read_boot_code(self.project.extracted_dir))
+            ident = versions.identify(dol, versions.read_boot_code(disc_root_of(self.project)))
             if ident.version is None:
                 if any(not rule.empty for rule in rules.values()):
                     raise ValueError(ident.note or "Unsupported FE9 main.dol for item restrictions.")

@@ -37,7 +37,7 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
-from ..game_profile import profile_of
+from ..game_profile import profile_of, files_root_of
 from ..playthrough.tactical_data import adapt
 from ..project import ModProject
 from .changelog import ChangeLog
@@ -66,7 +66,7 @@ class _Names:
             return ""
         if self._texts is None:
             profile = profile_of(self._project)
-            path = profile.path(self._project.extracted_dir / "files", "system_archive") \
+            path = profile.path(files_root_of(self._project), "system_archive") \
                 if profile.has_file("system_archive") else None
             try:
                 self._texts = fe8data.read_message_texts(path) if path is not None and path.exists() else {}
@@ -504,7 +504,7 @@ class BattleSimulator(EditorPanel):
         super().__init__(parent, padding=12)
         self._project = project
         self.profile = project.profile
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._session = session or (Fe10DataSession(project, changelog)
                                     if project.profile.script_dialect == "fe10" else Fe8DataSession(project, changelog))
         self._tactical = None

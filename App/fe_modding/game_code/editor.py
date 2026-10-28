@@ -1,7 +1,7 @@
 """The project's ``sys/main.dol`` opened for editing: the model behind the Game Code page.
 
-Every change is written to disk at once (atomically), like the other editors, since building
-packages whatever is in ``extracted/``."""
+Every change is written at once (atomically, through the project's file layer when ``disc`` is a
+``GamePath``), like the other editors, since building packages the project's current files."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from .battle_window import GameFiles
 from .catalog import CATALOG, Entry, Patch, Session, State, Status, Tunable
 from .dol import Dol, DolError
 from .versions import Identification, identify, read_boot_code
+from ..game_files import GamePath, as_path
 
 
 def _format(value) -> str:
@@ -20,19 +21,22 @@ def _format(value) -> str:
 
 
 class CodeEditor:
-    def __init__(self, extracted_dir: Path | str, writer=None, original=None):
-        """``writer(path, data)`` saves a file (the project's keeps an original copy);
-        ``original(path)`` returns a file as extracted, or None (for patches that also edit files)."""
+    def __init__(self, disc: Path | str, writer=None, original=None):
+        """``disc`` is the disc tree (``sys/`` and ``files/``): a project's ``disc_root_of``, or
+        a plain extracted folder. ``writer(path, data)`` saves a file (the project's keeps the
+        vanilla file); ``original(path)`` returns a file as extracted, or None (for patches that
+        also edit files)."""
         self._writer = writer
         self._original = original
-        self.extracted_dir = Path(extracted_dir)
-        self.path = self.extracted_dir / "sys" / "main.dol"
+        self.disc = as_path(disc)
+        self.project_dir = self.disc.files.project_dir if isinstance(self.disc, GamePath) else self.disc.parent
+        self.path = self.disc / "sys" / "main.dol"
         self.dol = Dol.open(self.path)
         from .extended_flag_runtime import BASE
         from .extended_flag_installation import RECEIPT_NAME
         self._extended_owned = (self.dol.has_section_at(BASE) or
-                                (self.extracted_dir.parent / RECEIPT_NAME).exists())
-        self.identification: Identification = identify(self.dol, read_boot_code(self.extracted_dir))
+                                (self.project_dir / RECEIPT_NAME).exists())
+        self.identification: Identification = identify(self.dol, read_boot_code(self.disc))
         self.session = Session(self.dol, self.identification.version, self._retail_reader())
 
     def _retail_reader(self):
@@ -89,7 +93,7 @@ class CodeEditor:
                 self._writer(path, data)
             else:
                 path.write_bytes(data)
-        return GameFiles(self.extracted_dir, write, self._original or (lambda _path: None))
+        return GameFiles(self.disc, write, self._original or (lambda _path: None))
 
     def _patch_files(self, patch: Patch, enabled: bool) -> None:
         """The disc files a patch needs besides main.dol (installed again when already on)."""
@@ -146,7 +150,7 @@ class CodeEditor:
         if self._extended_owned:
             from .extended_flag_installation import inspect_runtime, RECEIPT_NAME, RuntimeState
             from ..formats.extended_flags import FlagLayout, MANIFEST_NAME
-            root = self.extracted_dir.parent
+            root = self.project_dir
             layout = FlagLayout.from_json((root / MANIFEST_NAME).read_text(encoding="utf-8"))
             receipt = (root / RECEIPT_NAME).read_text(encoding="utf-8")
             status = inspect_runtime(self.dol, self.version.code if self.version else None, layout, receipt)
@@ -154,6 +158,9 @@ class CodeEditor:
                 raise ValueError(f"This edit would invalidate the extended flag runtime: {status.detail}")
         if self._writer is not None:
             self._writer(self.path, bytes(self.dol.data))
+            return
+        if isinstance(self.path, GamePath):
+            self.path.write_bytes(bytes(self.dol.data))   # atomic in the layer
             return
         partial = self.path.with_name(self.path.name + ".part")
         try:

@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..exceptions import ProjectError
 from ..games import Game, all_games
-from ..project import ModProject, sanitize_folder_name
+from ..project import LAYOUT_OVERLAY, ModProject, sanitize_folder_name
 
 
 class NewProjectDialog(tk.Toplevel):
@@ -113,6 +113,7 @@ class NewProjectDialog(tk.Toplevel):
                 parent_directory=location,
                 name=name,
                 game=Game(self._game_var.get()),
+                layout=LAYOUT_OVERLAY,
             )
         except ProjectError as exc:
             messagebox.showerror("Could not create project", str(exc), parent=self)

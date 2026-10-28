@@ -44,7 +44,9 @@ def install_jump(ctx: Context, chapter: int, difficulty: str) -> None:
     from fe_modding.game_code.dol import Dol
     from fe_modding.game_code.versions import identify, read_boot_code
 
-    extracted = ctx.project.extracted_dir
+    from fe_modding.game_profile import disc_root_of
+
+    extracted = disc_root_of(ctx.project)
     path = extracted / "sys" / "main.dol"
     dol = Dol.open(path)
     version = identify(dol, read_boot_code(extracted)).version

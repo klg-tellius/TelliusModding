@@ -20,7 +20,7 @@ from .game_code.chapter_flow import ChapterFlow, FLOW_PATCH, GAME_CLEARED
 from .game_code.dol import Dol
 from .game_code.editor import CodeEditor
 from .game_code.hub_flow import HUB_CONFIG, HUB_PATCH, HubFlow, validate_slots
-from .game_profile import profile_of
+from .game_profile import disc_root_of, files_root_of, profile_of
 
 CONFIG_NAME = "hub.json"
 START_MARK = "# BEGIN TELLIUS HUB SETUP"
@@ -37,8 +37,8 @@ def entrance_markers(project, map_path: Path, setup) -> bytes:
     if index is None:
         # Prefer the retail Arrive marker; use Seize if the project only has
         # early chapters. Copy all resources and remap shared texture indices.
-        candidates = sorted((project.files_dir / "zmap").glob("*/map.cmp"))
-        preferred = project.files_dir / "zmap/bmap18/map.cmp"
+        candidates = sorted((files_root_of(project) / "zmap").glob("*/map.cmp"))
+        preferred = files_root_of(project) / "zmap/bmap18/map.cmp"
         if preferred in candidates:
             candidates.remove(preferred)
             candidates.insert(0, preferred)
@@ -402,7 +402,7 @@ def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) 
         if status.state != RuntimeState.MATCHING or current.get("storage") != "extended":
             raise ValueError("Reconfiguration requires a verified extended hub")
         extended_layout.require_compatible(status.layout)
-    editor = CodeEditor(project.extracted_dir, project.write_keeping_original)
+    editor = CodeEditor(disc_root_of(project), project.write_keeping_original)
     flow = ChapterFlow(editor)
     _validate_setup(project, setup, current, flow)
     deployment_path, _map = chapters.phase_paths(project, chapters.chapter_phases(project, f"{setup.chapter:02d}")[0])
@@ -598,7 +598,7 @@ def uninstall(project) -> dict:
         raise ValueError("Remove the extended flag runtime before deleting its hub chapter.")
 
     setup = setup_from(current)
-    editor = CodeEditor(project.extracted_dir, project.write_keeping_original)
+    editor = CodeEditor(disc_root_of(project), project.write_keeping_original)
     router = HubFlow(editor)
     if not router.installed:
         raise ValueError("The saved hub configuration exists, but its executable routing is not installed.")
@@ -655,7 +655,7 @@ def uninstall(project) -> dict:
     # Remove the router before restoring the hub chapter's normal successor; ChapterFlow protects
     # the managed hub entry while the router is present.
     router.remove()
-    flow = ChapterFlow(CodeEditor(project.extracted_dir, project.write_keeping_original))
+    flow = ChapterFlow(CodeEditor(disc_root_of(project), project.write_keeping_original))
     flow.set_next(setup.chapter, int(current["normal_successor"]))
     for path, (source, data) in compiled.items():
         project.write_keeping_original(path, data)

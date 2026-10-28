@@ -45,6 +45,7 @@ from tkinter import ttk  # noqa: E402
 from PIL import ImageGrab  # noqa: E402
 
 from fe_modding import config  # noqa: E402
+from fe_modding.game_profile import files_root_of
 
 # -- keep the user's own config out of it --------------------------------------------------------
 _settings = {}
@@ -653,7 +654,7 @@ def lesson_05(ctx: Ctx):
              caption="**Tools › Check › Run check** on the unmodified project gives the baseline list. Note these "
                      "rows: after an edit, only new rows are yours to fix.",
              alt="Check page with the Run check button, the summary line and the results table.")
-    message = ctx.project.extracted_dir / "files" / "Mess" / "c31.m"
+    message = files_root_of(ctx.project) / "Mess" / "c31.m"
     hidden = message.with_name("c31.m.tutorial-hidden")
     if hidden.exists() and not message.exists():
         hidden.rename(message)  # a previous run stopped half-way
@@ -1047,7 +1048,7 @@ def lesson_11(ctx: Ctx):
              alt="Portraits page with the portrait list, the assembled face preview, replace controls and the face "
                  "record form.")
     body = sample_portrait(ctx.project_dir / "capture_samples")
-    exists = (ctx.project.extracted_dir / "files" / "Face" / "TGUARD.cms").is_file()
+    exists = (files_root_of(ctx.project) / "Face" / "TGUARD.cms").is_file()
     dialog = NewPortraitDialog(viewer, ctx.shell.session)
     dialog._face_name.set("TGUARD")
     dialog._name_key.set("MPID_TUTORIAL_GUARD")
@@ -2846,7 +2847,7 @@ def lesson_79(ctx: Ctx):
                      "`MED_DIED_CHAPnn` the chapter a unit fell in, `MED_REC_LV`, `_WIN` and `_TURN` the column headers.",
              alt="Dialogue editor on ending.m with the war-record label messages.")
     from fe_modding.gui.pages.chapters import open_script
-    open_script(ctx.shell, ctx.project.extracted_dir / "files" / "Scripts" / "ending.cmb", "Ending", chapter_id="01")
+    open_script(ctx.shell, files_root_of(ctx.project) / "Scripts" / "ending.cmb", "Ending", chapter_id="01")
     yield 5000
     ctx.grab("79-c-script.png", lesson=79,
              caption="`ending.cmb`, function `Ending`, in a chapter's **Script** tab (**File** *ending.cmb - shared "

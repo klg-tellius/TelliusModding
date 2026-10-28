@@ -76,22 +76,23 @@ class LogicalFileTests(unittest.TestCase):
         rd = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)
         por = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
         self.assertEqual(rd.profile.disc_id_prefix, "RFE")
-        self.assertEqual(rd.logical_path("game_data"), rd.extracted_dir / "files" / "FE10Data.cms")
-        self.assertEqual(por.logical_path("game_data"), por.extracted_dir / "files" / "FE8Data.bin")
+        self.assertEqual(rd.logical_path("game_data").rel, "files/FE10Data.cms")
+        self.assertEqual(por.logical_path("game_data").rel, "files/FE8Data.bin")
 
     def test_radiant_dawn_files_are_lz10_transparent(self):
         project = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)
         path = project.logical_path("game_data")
-        path.parent.mkdir(parents=True)
+        extracted = project.extracted_dir / "files" / "FE10Data.cms"   # as the disc had it
+        extracted.parent.mkdir(parents=True)
         payload = bytes(range(256)) * 8
-        path.write_bytes(lz10.compress(payload))
+        extracted.write_bytes(lz10.compress(payload))
         self.assertEqual(project.read_logical("game_data"), payload)
 
         project.write_logical("game_data", payload + b"edited")
         self.assertEqual(lz10.decompress(path.read_bytes()), payload + b"edited")
         self.assertEqual(project.read_logical("game_data"), payload + b"edited")
-        original = project.originals_dir / "files" / "FE10Data.cms"
-        self.assertEqual(lz10.decompress(original.read_bytes()), payload, "the extracted file is kept")
+        original = project.files.vanilla("files/FE10Data.cms")
+        self.assertEqual(lz10.decompress(original), payload, "the extracted file is kept")
 
     def test_path_of_radiance_files_are_stored_as_they_are(self):
         project = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
@@ -144,6 +145,36 @@ class LogicalFileTests(unittest.TestCase):
         project.set_source(right)
         self.assertIsNone(project.source_mismatch_warning())
 
+
+    def test_set_source_records_the_path_without_copying(self):
+        project = ModProject.create(self.parent, "Mod", Game.PATH_OF_RADIANCE)
+        iso = self.parent / "disc.iso"
+        iso.write_bytes(b"GFEE01" + bytes(64))
+        self.assertEqual(project.set_source(iso), iso.resolve())
+        self.assertFalse((project.directory / "source").exists())
+        loaded = ModProject.load(project.directory)
+        self.assertEqual(loaded.source_path, iso.resolve())
+        self.assertEqual(loaded.source_iso, "disc.iso")
+        self.assertFalse(loaded.source_missing)
+
+    def test_older_projects_keep_their_copied_disc(self):
+        project = ModProject.create(self.parent, "Old", Game.PATH_OF_RADIANCE)
+        copy = project.directory / "source" / "disc.iso"
+        copy.parent.mkdir()
+        copy.write_bytes(b"x")
+        project.source_iso = "disc.iso"
+        project.save()
+        self.assertEqual(ModProject.load(project.directory).source_path, copy)
+
+    def test_extract_reports_a_moved_disc(self):
+        project = ModProject.create(self.parent, "Moved", Game.PATH_OF_RADIANCE)
+        iso = self.parent / "disc.iso"
+        iso.write_bytes(b"x")
+        project.set_source(iso)
+        iso.unlink()
+        self.assertTrue(project.source_missing)
+        with self.assertRaisesRegex(ProjectError, "no longer at"):
+            project.extract()
 
 if __name__ == "__main__":
     unittest.main()

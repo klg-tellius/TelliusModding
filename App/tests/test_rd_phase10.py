@@ -1,12 +1,16 @@
+import sys
 import unittest
+from pathlib import Path
 
-from App.fe_modding import battle_sim
-from App.fe_modding.battle_sim.units import Combatant, Weapon
-from App.fe_modding.game_profile import BATTLE_SIM, PLAY, PLAYTHROUGH, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
-from App.fe_modding.playthrough.ai_vm import unsupported_fe10_opcodes
-from App.fe_modding.playthrough.dialect import dialect_for
-from App.fe_modding.playthrough.state import GameState, SimUnit
-from App.fe_modding.playthrough import fog, natives, triggers
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from fe_modding import battle_sim
+from fe_modding.battle_sim.units import Combatant, Weapon
+from fe_modding.game_profile import BATTLE_SIM, PLAY, PLAYTHROUGH, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
+from fe_modding.playthrough.ai_vm import unsupported_fe10_opcodes
+from fe_modding.playthrough.dialect import dialect_for
+from fe_modding.playthrough.state import GameState, SimUnit
+from fe_modding.playthrough import fog, natives, triggers
 
 
 class Phase10ProfileTests(unittest.TestCase):

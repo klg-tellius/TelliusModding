@@ -6,13 +6,13 @@ from pathlib import Path
 from tkinter import ttk
 
 from ..formats import fe10_message, message
-from ..game_profile import profile_of
+from ..game_profile import files_root_of, profile_of
 
 CREATE_MESSAGE = "＋ Create new message…"
 
 
 def common_path(project) -> Path:
-    folder = project.extracted_dir / "files" / "Mess"
+    folder = files_root_of(project) / "Mess"
     english = folder / "e_common.m"
     return english if profile_of(project).message_dialect == "fe10" and english.is_file() else folder / "common.m"
 

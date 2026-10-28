@@ -37,7 +37,7 @@ from .. import fe8_references
 from ..formats import cp_ai_lang as lang
 from ..formats import cp_data as cp
 from ..formats import cp_ops
-from ..game_profile import AI, profile_of
+from ..game_profile import AI, files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .code_editor import CodeEditor
@@ -72,8 +72,8 @@ class CpDataPanel(EditorPanel):
         self._handled_ops = cp_ops.FE10_HANDLED_OPS if self._dialect is cp.FE10 else cp_ops.HANDLED_OPS
         self._source_extension = ".fe10ai" if self._dialect is cp.FE10 else ".fe9ai"
         self._force_raw_source = False
-        self._path = (profile_of(project).path(project.extracted_dir / "files", "ai_data")
-                      if profile_of(project).supports(AI) else project.extracted_dir / "files" / FILE_NAME)
+        self._path = (profile_of(project).path(files_root_of(project), "ai_data")
+                      if profile_of(project).supports(AI) else files_root_of(project) / FILE_NAME)
         self._doc: Optional[cp.CpDocument] = None
         self._dirty = False
         self._loading = False

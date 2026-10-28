@@ -124,7 +124,7 @@ class ModelSlotProjectTests(unittest.TestCase):
         records = [_record("AID_FIGHTER_BO_N", "fighter/"), _record("AID_FIGHTER_BO_AX", "fighter/", weapon=2)]
         (files / "FE8Anim.bin").write_bytes(anim_registry.build_anim_registry(records))
         (files / "FE8Data.bin").write_bytes(_fe8data_with_header())
-        self.files = files
+        self.files = self.project.files_root
 
     def test_clone_and_assign_battle_model(self):
         written = model_slots.clone_battle_model(self.project, "fig1", "bol2")
@@ -140,7 +140,7 @@ class ModelSlotProjectTests(unittest.TestCase):
         self.assertEqual(model_slots.battle_textures(self.project, "fig1")["PID_BOLE"], "bole")
         models = zdbx.job_list_models(tables[zdbx.JOB_LIST])
         self.assertEqual(zdbx.battle_model_for(models, "JID_FIGHTER", "PID_BOLE"), "bol2")
-        self.assertTrue((self.project.originals_dir / "files" / "zdbx.cmp").is_file())
+        self.assertTrue(self.project.files.is_modified("files/zdbx.cmp"))
         with self.assertRaises(ProjectError):
             model_slots.clone_battle_model(self.project, "fig1", "bol2")
 

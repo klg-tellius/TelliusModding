@@ -23,15 +23,16 @@ from pathlib import Path
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, fe10_anim, fe10_battle, fe10data, lz10, zdbx
 from .games import Game
-from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_path_of, profile_of
+from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_game_path_of, profile_of, files_root_of
 from .project import ModProject
+from .game_files import files_of, remove_tree
 
 AID_BASE_RE = re.compile(r"^AID_[A-Z0-9_]+$")
 FOLDER_RE = re.compile(r"^[a-z0-9_]+$")
 
 
 def _files(project: ModProject) -> Path:
-    return project.extracted_dir / "files"
+    return files_root_of(project)
 
 
 # The codecs below are Path of Radiance's (zdbx, FE8Anim, FE8Data): another game's file of the same
@@ -44,13 +45,14 @@ def _logical(project: ModProject, name: str) -> Path:
     feature = _LOGICAL_FEATURES.get(name)
     if feature is not None and not profile.supports(feature):
         raise ProjectError(profile.unavailable(feature))
-    return logical_path_of(project, name)
+    return logical_game_path_of(project, name)
 
 
 def _vanilla_bytes(project: ModProject, path: Path) -> bytes:
-    """The file as extracted: its kept original when an edit replaced it."""
-    original = project.originals_dir / path.relative_to(project.extracted_dir)
-    return (original if original.is_file() else path).read_bytes()
+    """The file as extracted (as it is now when the mod added it)."""
+    files = files_of(project)
+    data = files.vanilla(path)
+    return data if data is not None else files.read(path)
 
 
 def _vanilla_logical(project: ModProject, name: str) -> bytes:
@@ -140,7 +142,7 @@ def clone_battle_model(project: ModProject, source_code: str, new_code: str) -> 
         name = path.name
         if name.startswith(f"{source_code}_") and path.suffix in (".pak", ".cmp"):
             name = new_code + name[len(source_code):]
-        shutil.copy2(path, dest / name)
+        (dest / name).write_bytes(path.read_bytes())
         written.append(dest / name)
     model = tables[f"zu/{source_code}.dbx"].decode("shift_jis")
     tables[f"zu/{new_code}.dbx"] = zdbx.encode_dbx(zdbx.clone_model_dbx(model, new_code))
@@ -262,7 +264,7 @@ def remove_battle_model(project: ModProject, code: str) -> int:
     _write_zdbx(project, tables)
     folder = _files(project) / "zu" / code
     if folder.is_dir():
-        shutil.rmtree(folder)
+        remove_tree(folder)
     return removed
 
 
@@ -352,8 +354,10 @@ def clone_map_model(project: ModProject, source_aid: str, new_aid: str, new_fold
         dest = _files(project) / "ymu" / new_folder
         if dest.exists():
             raise ProjectError(f"ymu/{new_folder}/ already exists.")
-        shutil.copytree(_files(project) / "ymu" / folder.rstrip("/"), dest)
-        written = sorted(p for p in dest.rglob("*") if p.is_file())
+        source = _files(project) / "ymu" / folder.rstrip("/")
+        for path in sorted(p for p in source.rglob("*") if p.is_file()):
+            (dest / path.relative_to(source)).write_bytes(path.read_bytes())
+            written.append(dest / path.relative_to(source))
         folder = f"{new_folder}/"
     added = [
         replace(r, aid_name=new_aid + r.aid_name[len(source_aid):], class_folder=folder,
@@ -441,7 +445,7 @@ def remove_map_model(project: ModProject, base_aid: str) -> list[str]:
     for folder in sorted({r.class_folder for r in removed}):
         path = _files(project) / "ymu" / folder.rstrip("/")
         if folder not in vanilla_folders and not any(r.class_folder == folder for r in kept) and path.is_dir():
-            shutil.rmtree(path)
+            remove_tree(path)
             changes.append(f"Deleted ymu/{folder}")
 
     path = _logical(project, "game_data")

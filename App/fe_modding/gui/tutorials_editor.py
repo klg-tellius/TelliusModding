@@ -17,6 +17,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .message_reference import message_texts, preview
+from ..game_profile import files_root_of
 
 #: The file each build reads (the US game loads the English list).
 FILE_NAMES = ("tut_data_en.bin", "tut_data.bin")
@@ -31,7 +32,7 @@ class TutorialsEditor(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        folder = project.extracted_dir / "files"
+        folder = files_root_of(project)
         self._path = next((folder / n for n in FILE_NAMES if (folder / n).is_file()), folder / FILE_NAMES[0])
         self._data: Optional[td.TutData] = None
         self._texts: dict[str, str] = {}

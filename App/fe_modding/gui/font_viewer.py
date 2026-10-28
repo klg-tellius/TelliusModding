@@ -23,7 +23,7 @@ from PIL import Image, ImageTk
 
 from ..formats import fe9_font, lz10
 from ..formats.fe9_font import GameFont, ImportOptions
-from ..game_profile import FONTS, profile_of
+from ..game_profile import FONTS, files_root_of, profile_of
 from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
@@ -75,7 +75,7 @@ class FontViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        self._files = project.extracted_dir / "files"
+        self._files = files_root_of(project)
         self._fonts = [(name, self._files / rel)
                        for name, rel in fe9_font.resolve_font_files(self._files, profile_of(project).font_files)
                        if profile_of(project).supports(FONTS) and (self._files / rel).is_file()]

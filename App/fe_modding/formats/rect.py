@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import BinaryIO, Callable
 
 from .common import HEADER_SIZE
+from ..game_files import as_path
 
 CODEC = "shift_jis"
 
@@ -628,7 +629,7 @@ def new_background(
 def free_tpl_name(directory: Path | str) -> str:
     """The first unused three-character name (0-9, a-z, like every vanilla
     ``s/`` file) in ``directory``, counting up from ``aaa``."""
-    taken = {p.name for p in Path(directory).iterdir()} if Path(directory).is_dir() else set()
+    taken = {p.name for p in as_path(directory).iterdir()} if as_path(directory).is_dir() else set()
     alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
     for n in range(10, len(alphabet) ** 3):
         text = "".join(alphabet[(n // len(alphabet) ** k) % len(alphabet)] for k in (2, 1, 0))
@@ -639,7 +640,7 @@ def free_tpl_name(directory: Path | str) -> str:
 
 def add_background(
     doc: RectFile,
-    files_dir: Path | str,
+    files_root: Path | str,
     name: str,
     images: list,
     *,
@@ -650,7 +651,7 @@ def add_background(
     effect: int = EFFECT_NONE,
 ) -> RectResource:
     """Encode ``images`` (Pillow images of one size) as a new CMPR TPL under
-    ``files_dir/s/`` and add a resource that shows them. The caller writes
+    ``files_root/s/`` and add a resource that shows them. The caller writes
     ``doc.build()`` back to ``s/rect.bin`` (a project build then copies it into
     ``system.cmp``, where the game reads it)."""
     from . import tpl  # Pillow is only needed for this helper
@@ -662,7 +663,7 @@ def add_background(
     width, height = images[0].size
     if not (0 < width <= 1024 and 0 < height <= 1024):
         raise RectError(f"{width}x{height}: a GX texture is at most 1024 pixels on each side")
-    folder = Path(files_dir) / "s"
+    folder = as_path(files_root) / "s"
     tpl_name = tpl_name or free_tpl_name(folder)
     if (folder / tpl_name).exists():
         raise RectError(f"s/{tpl_name} already exists")
@@ -726,8 +727,7 @@ def read_rect_file(path: Path | str) -> RectFile:
 
 
 def write_rect_file(doc: RectFile, path: Path | str) -> None:
-    with open(path, "wb") as stream:
-        stream.write(doc.build())
+    as_path(path).write_bytes(doc.build())
 
 
 # -- compatibility with the first version of this module -------------------------

@@ -13,6 +13,7 @@ from .formats import fe10_rect, lz10, message, pak, rect, soundroom, tpl
 from .formats.cmb import read_cmb, write_cmb
 from .formats.cmb.model import PUSHSTR_OPS
 from .games import Game
+from .game_profile import files_root_of
 
 _IMAGE_TYPES = (rect.RectLayer, rect.ColorQuadLayer)
 
@@ -25,7 +26,7 @@ class Reference:
 
 
 def rect_paths(project) -> list[Path]:
-    root = project.files_dir
+    root = files_root_of(project)
     if not root.is_dir():
         return []
     return sorted(
@@ -93,7 +94,7 @@ def collect_references(project, rid: str, paths: list[Path] | None = None) -> li
                             found.append(Reference("Rect", path, f"{resource.name}, layer {index}, {slot}"))
         except Exception as exc:
             found.append(Reference("Unreadable rect", path, str(exc)))
-    script_dir = project.files_dir / "Scripts"
+    script_dir = files_root_of(project) / "Scripts"
     if script_dir.is_dir():
         needle = rid.encode("cp932")
         for path in sorted(script_dir.rglob("*.cmb")):
@@ -108,7 +109,7 @@ def collect_references(project, rid: str, paths: list[Path] | None = None) -> li
                             found.append(Reference("Script", path, function.id_string or f"function {number}"))
             except Exception as exc:
                 found.append(Reference("Unreadable script", path, str(exc)))
-    mess_dir = project.files_dir / "Mess"
+    mess_dir = files_root_of(project) / "Mess"
     if mess_dir.is_dir():
         needle = rid.removeprefix("RID_").encode("cp932")
         for path in sorted(mess_dir.rglob("*.m")):
@@ -121,7 +122,7 @@ def collect_references(project, rid: str, paths: list[Path] | None = None) -> li
                         found.append(Reference("Dialogue", path, item.speaker))
             except Exception as exc:
                 found.append(Reference("Unreadable dialogue", path, str(exc)))
-    sound = project.files_dir / "soundroom.bin"
+    sound = files_root_of(project) / "soundroom.bin"
     if sound.is_file():
         try:
             for index, item in enumerate(soundroom.read_soundroom_path(sound)):
@@ -191,7 +192,7 @@ def prepare_rename(project, old: str, new: str, paths: list[Path] | None = None)
     for path, doc in docs.items():
         if _rename_in_doc(doc, old, new):
             changes[path] = doc.build()
-    script_dir = project.files_dir / "Scripts"
+    script_dir = files_root_of(project) / "Scripts"
     if script_dir.is_dir():
         for path in sorted(script_dir.rglob("*.cmb")):
             raw = path.read_bytes()
@@ -206,7 +207,7 @@ def prepare_rename(project, old: str, new: str, paths: list[Path] | None = None)
                     if instruction.op in PUSHSTR_OPS and instruction.operands and instruction.operands[0] == old:
                         instruction.operands[0] = new
             changes[path] = write_cmb(script)
-    mess_dir = project.files_dir / "Mess"
+    mess_dir = files_root_of(project) / "Mess"
     if mess_dir.is_dir():
         for path in sorted(mess_dir.rglob("*.m")):
             if old.removeprefix("RID_").encode("cp932") not in path.read_bytes():
@@ -216,7 +217,7 @@ def prepare_rename(project, old: str, new: str, paths: list[Path] | None = None)
                        for item in items]
             if updated != items:
                 changes[path] = message.write_messages(updated, message.read_text_order_path(path))
-    path = project.files_dir / "soundroom.bin"
+    path = files_root_of(project) / "soundroom.bin"
     if path.is_file():
         source = path.read_bytes()
         entries = soundroom.read_soundroom(source)
@@ -245,14 +246,14 @@ def save_changes(project, changes: dict[Path, bytes], changelog, note: str) -> N
                 path.write_bytes(old)
         raise
     for path in changes:
-        changelog.append(str(path.relative_to(project.files_dir)), note)
+        changelog.append(str(path.relative_to(files_root_of(project))), note)
 
 
 def image_path(project, file_name: str) -> Path:
     parts = Path(file_name.replace("\\", "/"))
     if parts.is_absolute() or ".." in parts.parts:
         raise ValueError(f"Invalid image path: {file_name}")
-    return project.files_dir / parts
+    return files_root_of(project) / parts
 
 
 @lru_cache(maxsize=2)
@@ -266,11 +267,11 @@ def preview_image(project, layer) -> Image.Image:
     path = image_path(project, layer_file(layer))
     if path.is_file():
         raw = path.read_bytes()
-    elif not is_fe10(project) and (project.files_dir / "system.cmp").is_file():
-        archive_path = project.files_dir / "system.cmp"
+    elif not is_fe10(project) and (files_root_of(project) / "system.cmp").is_file():
+        archive_path = files_root_of(project) / "system.cmp"
         stat = archive_path.stat()
         archive = _system_archive_files(archive_path, stat.st_mtime_ns, stat.st_size)
-        name = path.relative_to(project.files_dir).as_posix().casefold()
+        name = path.relative_to(files_root_of(project)).as_posix().casefold()
         if name not in archive:
             raise FileNotFoundError(path)
         raw = archive[name]
@@ -287,13 +288,13 @@ def texture_files(project) -> list[str]:
     compressed, those of s/ have no extension) and, for Path of Radiance, the
     ones inside system.cmp (paths relative to files/)."""
     names = set()
-    if project.files_dir.is_dir():
-        names = {path.relative_to(project.files_dir).as_posix()
-                 for pattern in ("*.tpl", "*.cms") for path in project.files_dir.rglob(pattern)}
-    folder = project.files_dir / "s"  # the rect textures: .tpl files without the extension
+    if files_root_of(project).is_dir():
+        names = {path.relative_to(files_root_of(project)).as_posix()
+                 for pattern in ("*.tpl", "*.cms") for path in files_root_of(project).rglob(pattern)}
+    folder = files_root_of(project) / "s"  # the rect textures: .tpl files without the extension
     if folder.is_dir():
         names.update(f"s/{path.name}" for path in folder.iterdir() if path.is_file() and not path.suffix)
-    archive_path = project.files_dir / "system.cmp"
+    archive_path = files_root_of(project) / "system.cmp"
     if not is_fe10(project) and archive_path.is_file():
         stat = archive_path.stat()
         known = {name.casefold() for name in names}
@@ -308,7 +309,7 @@ def texture_images(project, file_name: str) -> list[Image.Image]:
     if path.is_file():
         raw = path.read_bytes()
     else:
-        archive_path = project.files_dir / "system.cmp"
+        archive_path = files_root_of(project) / "system.cmp"
         stat = archive_path.stat()
         raw = _system_archive_files(archive_path, stat.st_mtime_ns, stat.st_size)[file_name.casefold()]
     if raw[:1] == b"\x10":
@@ -328,7 +329,7 @@ def new_texture_path(project, rect_path: Path) -> tuple[Path, str]:
         else:
             raise ValueError("No free texture filename")
     path = folder / name
-    return path, path.relative_to(project.files_dir).as_posix()
+    return path, path.relative_to(files_root_of(project)).as_posix()
 
 
 def encode_images(images: list[Image.Image]) -> bytes:

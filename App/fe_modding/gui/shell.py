@@ -31,7 +31,7 @@ from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe10DataSession, Fe8DataSession
-from ..game_profile import DATA_TABLES, GAME_DATA
+from ..game_profile import DATA_TABLES, GAME_DATA, disc_root_of
 from .patch_dialog import ApplyPatchDialog
 from .settings_dialog import SettingsDialog
 from .widgets import Link, PortraitCache, tip, track_hover
@@ -102,7 +102,7 @@ class Shell(ttk.Frame):
         self._forward: list[Route] = []
         self.visited: list[tuple[Route, str]] = []
         self._session: Optional[Fe8DataSession | Fe10DataSession] = None
-        self.portraits = PortraitCache(self, project.extracted_dir, project.game)
+        self.portraits = PortraitCache(self, disc_root_of(project), project.game)
         self.index: Optional[ProjectIndex] = None
         self._index_thread: Optional[threading.Thread] = None
         self._index_again = False
@@ -538,7 +538,7 @@ class Shell(ttk.Frame):
         project = self.project
         if not project.source_iso:
             return
-        if self.extracted and not messagebox.askyesno(
+        if self.extracted and not project.is_overlay and not messagebox.askyesno(
                 "Re-extract the disc?",
                 "Extracting again overwrites the extracted files with the disc's own, "
                 "so edits made to them are replaced.\n\nContinue?", icon="warning", parent=self):
@@ -546,8 +546,39 @@ class Shell(ttk.Frame):
         self.run_task(f"Extracting {project.source_iso} …", project.extract,
                       lambda _r: self._on_extracted())
 
+    def export_riivolution(self) -> None:
+        if not self.extracted or self._task_running:
+            return
+        if not self.confirm_unsaved(" and won't be exported", "export without them."):
+            return
+        from .. import riivolution
+        project = self.project
+
+        def done(result) -> None:
+            lines = [f"{len(result.files)} files and {len(result.memory)} main.dol memory patches in "
+                     f"{result.folder}.",
+                     "Copy what is in that folder to the root of the SD card (the riivolution folder and "
+                     "the mod's folder) and start the game from Riivolution, or put it in Dolphin's "
+                     "Load/Riivolution folder and use \"Start with Riivolution Patches\" on the game.",
+                     *result.warnings]
+            self.set_status(f"Exported for Riivolution to {result.folder}")
+            messagebox.showinfo("Riivolution export", "\n\n".join(lines), parent=self)
+
+        self.run_task("Exporting for Riivolution …", lambda: riivolution.export_project(project), done)
+
+    def use_input_folder(self) -> None:
+        """Layout 2: read the vanilla files from a folder the user already extracted."""
+        chosen = filedialog.askdirectory(
+            title="Choose the extracted game folder (the one holding sys and files, or DATA)", parent=self)
+        if not chosen:
+            return
+        self.run_task("Checking the extracted files …", lambda: self.project.use_input_folder(chosen),
+                      lambda _r: self._on_extracted())
+
     def _on_extracted(self) -> None:
-        self.set_status(f"Extracted into {self.project.extracted_dir}")
+        project = self.project
+        self.set_status(f"Vanilla files: {project.input_root}" if project.is_overlay
+                        else f"Extracted into {project.disc_tree()}")
         warning = self.project.disc_mismatch_warning()
         if warning:
             messagebox.showwarning("Wrong game?", warning, parent=self)
@@ -604,7 +635,7 @@ class Shell(ttk.Frame):
 
         def work():
             project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
-            return emulator.prepare_chapter_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+            return emulator.prepare_chapter_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                                 chapter_id, difficulty)
         label = f"{chapter_id:02d}" if isinstance(chapter_id, int) else str(chapter_id)
         self.run_task(f"Preparing chapter {label} for Dolphin …", work, self._launch)
@@ -624,7 +655,7 @@ class Shell(ttk.Frame):
 
         def work():
             project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
-            return emulator.prepare_save_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
+            return emulator.prepare_save_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                              gci_name, gci)
 
         def started(result) -> None:
@@ -655,7 +686,7 @@ class Shell(ttk.Frame):
 
         def work():
             project.sync_system_archive()
-            return emulator.prepare_wii_save_run(project.extracted_dir,
+            return emulator.prepare_wii_save_run(project.disc_tree(),
                                                  project.build_dir / emulator.RUN_FOLDER,
                                                  save_data, banner)
 
@@ -713,14 +744,15 @@ class Shell(ttk.Frame):
             filetypes=[("Tellius patches", f"*{patch.PATCH_EXTENSION}")])
         if not dest:
             return
-        self.run_task("Creating patch (extracting the source disc to compare) …",
+        self.run_task("Creating patch …" if project.is_overlay else
+                      "Creating patch (extracting the source disc to compare) …",
                       lambda: patch.create_project_patch(project, dest), lambda s: self._on_patch_created(dest, s))
 
     def _on_patch_created(self, dest: str, summary) -> None:
         self.last_patch = f"Last patch: {dest} - {summary.describe()}"
         self.set_status(f"Created {dest}")
         if summary.empty:
-            messagebox.showinfo("Empty patch", "The extracted files are identical to the source disc's, "
+            messagebox.showinfo("Empty patch", "The project's files are identical to the source disc's, "
                                 "so the patch changes nothing.", parent=self)
         else:
             messagebox.showinfo("Patch created", f"{dest}\n\n{summary.describe()}", parent=self)

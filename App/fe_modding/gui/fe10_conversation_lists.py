@@ -13,7 +13,7 @@ from tkinter import messagebox, simpledialog, ttk
 from ..exceptions import ProjectError
 from ..formats import fe10_conversation_data as cd
 from ..formats import fe10_message, message
-from ..game_profile import profile_of
+from ..game_profile import files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -57,7 +57,7 @@ class Fe10ConversationLists(EditorPanel):
             return ""
         if self._names is None:
             self._names = {}
-            folder = self._project.extracted_dir / "files" / "Mess"
+            folder = files_root_of(self._project) / "Mess"
             for name in ("common.m", "e_common.m"):
                 path = folder / name
                 if path.is_file():

@@ -53,6 +53,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import confirm_delete_added, list_buttons, tip
+from ..game_profile import files_root_of, sys_root_of
 
 try:
     import winsound
@@ -82,7 +83,7 @@ class MusicEditor(EditorPanel):
         self._task_running = False
         self._rd_streams: dict[str, str] | None = None
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_music_"))
-        self._native_bgm_cues = executable_bgm_cues(self._project.extracted_dir / "sys" / "main.dol")
+        self._native_bgm_cues = executable_bgm_cues(sys_root_of(self._project) / "main.dol")
 
         self._build_widgets()
         self._load_track_list()
@@ -167,7 +168,7 @@ class MusicEditor(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_track_list(self) -> None:
-        sound_dir = self._project.extracted_dir / "files" / "Sound"
+        sound_dir = files_root_of(self._project) / "Sound"
         folder = sound_dir / "strm" if self._fe10 else sound_dir
         pattern = "*.brstm" if self._fe10 else "*.stm"
         files = sorted(folder.glob(pattern)) if folder.exists() else []
@@ -216,7 +217,7 @@ class MusicEditor(EditorPanel):
             self._file_list.see(index)
             self._on_file_selected()
             return True
-        catalog = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
+        catalog = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
         try:
             cue = gcfesnd.find_cue(gcfesnd.read_bgm_cues_path(catalog), cue_name)
         except (OSError, gcfesnd.GcfesndError, ValueError):
@@ -270,7 +271,7 @@ class MusicEditor(EditorPanel):
     # -- music cues ------------------------------------------------------------
     def _catalog(self) -> Path:
         name = "sound_data_en.cms" if self._fe10 else "gcfesnd.bin"
-        return self._project.extracted_dir / "files" / "Sound" / name
+        return files_root_of(self._project) / "Sound" / name
 
     @staticmethod
     def _rd_key(value: str) -> str:
@@ -283,7 +284,7 @@ class MusicEditor(EditorPanel):
 
     def _rd_sound_map(self) -> dict[str, str]:
         if self._rd_streams is None:
-            path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+            path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
             archive = brsar.read_brsar(path.read_bytes())
             self._rd_streams = {sound.name: sound.external_path for sound in archive.sounds
                                 if sound.external_path}
@@ -464,7 +465,7 @@ class MusicEditor(EditorPanel):
             messagebox.showinfo("New track", "Adding a new Radiant Dawn track also requires a new BRSAR stream "
                                 "entry and is not enabled yet. Replace an existing track instead.", parent=self)
             return
-        sound_dir = self._project.extracted_dir / "files" / "Sound"
+        sound_dir = files_root_of(self._project) / "Sound"
         if not sound_dir.exists():
             messagebox.showerror("No Sound folder", "Extract the project first.", parent=self)
             return

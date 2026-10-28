@@ -33,7 +33,7 @@ from ...exceptions import ModdingError
 from ...config import load_setting, save_setting
 from ...game_code import chapter_flow, chapter_jump, chapter_parts
 from ...formats.cmb.catalog import TRIGGERS
-from ...game_profile import CHAPTERS, profile_of
+from ...game_profile import CHAPTERS, disc_root_of, profile_of
 from ...project_index import difficulty_name
 from ..battle_scene_editor import BattleScenePanel
 from ..chapter_settings import ChapterDataPanel, MapSettingsPanel
@@ -58,7 +58,7 @@ def open_flow(project) -> tuple[chapter_flow.ChapterFlow | None, str]:
     """The project's story flow, or None and why it can't be edited."""
     from ...game_code.editor import CodeEditor
     try:
-        flow = chapter_flow.ChapterFlow(CodeEditor(project.extracted_dir, project.write_keeping_original))
+        flow = chapter_flow.ChapterFlow(CodeEditor(disc_root_of(project), project.write_keeping_original))
     except (OSError, ModdingError) as exc:
         return None, f"Could not open sys/main.dol: {exc}"
     return (flow, "") if flow.available else (None, flow.unavailable_reason)
@@ -70,7 +70,7 @@ def open_rd_story(project):
     from ...game_code.rd_story import StorySequence, chapter_number_map
     try:
         ids = chapter_number_map(project.read_logical("game_data"))
-        story = StorySequence(CodeEditor(project.extracted_dir, project.write_keeping_original), ids)
+        story = StorySequence(CodeEditor(disc_root_of(project), project.write_keeping_original), ids)
     except (OSError, ModdingError, ValueError) as exc:
         return None, f"Could not open the Radiant Dawn story data: {exc}"
     return (story, "") if story.available else (None, story.unavailable_reason)
@@ -867,7 +867,7 @@ class ChapterPage(Page):
         from ...game_code.catalog import State
         from ...game_code.editor import CodeEditor
         try:
-            editor = CodeEditor(self.project.extracted_dir, self.project.write_keeping_original)
+            editor = CodeEditor(disc_root_of(self.project), self.project.write_keeping_original)
             if editor.status(PART_SUPPORTS_PATCH).state != State.ORIGINAL:
                 return ""
             editor.set_patch(PART_SUPPORTS_PATCH, True)

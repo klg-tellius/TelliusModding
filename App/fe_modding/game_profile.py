@@ -22,6 +22,7 @@ from typing import Mapping, Optional
 
 from .formats.fe9_font import FONT_FILES, FONT_FILES_FE10
 from .games import Game
+from .game_files import as_path
 
 
 @dataclass(frozen=True)
@@ -114,13 +115,13 @@ class GameProfile:
     def has_file(self, name: str) -> bool:
         return name in self.files
 
-    def path(self, files_dir: Path | str, name: str) -> Path:
+    def path(self, files_root: Path | str, name: str) -> Path:
         """Where logical file ``name`` lives, given the ``extracted/files`` folder."""
-        return Path(files_dir) / self.logical(name).path
+        return as_path(files_root) / self.logical(name).path
 
-    def path_or_none(self, files_dir: Path | str, name: str) -> Optional[Path]:
+    def path_or_none(self, files_root: Path | str, name: str) -> Optional[Path]:
         """:meth:`path`, or None when this game has no such logical file."""
-        return Path(files_dir) / self.files[name].path if name in self.files else None
+        return as_path(files_root) / self.files[name].path if name in self.files else None
 
     def file_label(self, name: str) -> str:
         """Short file name for UI text (``FE8Data.bin`` / ``FE10Data.cms``); falls back to ``name``."""
@@ -132,13 +133,13 @@ class GameProfile:
         """Normalise a chapter id for file names (zero-padded on Path of Radiance)."""
         return chapter_id.zfill(self.chapter_id_width) if chapter_id.isdigit() else chapter_id
 
-    def script_path(self, files_dir: Path | str, chapter_id: str) -> Path:
+    def script_path(self, files_root: Path | str, chapter_id: str) -> Path:
         key = self.chapter_key(chapter_id)
-        return Path(files_dir) / self.chapter_script.format(id=key)
+        return as_path(files_root) / self.chapter_script.format(id=key)
 
-    def mess_path(self, files_dir: Path | str, chapter_id: str) -> Path:
+    def mess_path(self, files_root: Path | str, chapter_id: str) -> Path:
         key = self.chapter_key(chapter_id)
-        return Path(files_dir) / self.chapter_mess.format(id=key)
+        return as_path(files_root) / self.chapter_mess.format(id=key)
 
     def chapter_sort_key(self, chapter_id: str) -> tuple:
         """Story order of chapter ids: by number, then suffix (``0407a`` after ``0406``); ``final`` last."""
@@ -149,14 +150,14 @@ class GameProfile:
         """``bmap05`` for chapter 5 (the primary map; later phases add ``_2``...)."""
         return self.map_dir.format(id=self.chapter_key(chapter_id))
 
-    def deployment_path(self, files_dir: Path | str, folder: str, difficulty: str = "") -> Path:
-        return Path(files_dir) / "zmap" / folder / self.deployment.format(diff=difficulty)
+    def deployment_path(self, files_root: Path | str, folder: str, difficulty: str = "") -> Path:
+        return as_path(files_root) / "zmap" / folder / self.deployment.format(diff=difficulty)
 
-    def shop_folder(self, files_dir: Path | str) -> Path:
-        return Path(files_dir) / self.shop_dir
+    def shop_folder(self, files_root: Path | str) -> Path:
+        return as_path(files_root) / self.shop_dir
 
-    def shop_path(self, files_dir: Path | str, difficulty: str) -> Path:
-        return self.shop_folder(files_dir) / self.shop_file.format(diff=difficulty)
+    def shop_path(self, files_root: Path | str, difficulty: str) -> Path:
+        return self.shop_folder(files_root) / self.shop_file.format(diff=difficulty)
 
     # -- features ---------------------------------------------------------------------------
     def supports(self, feature: str) -> bool:
@@ -267,11 +268,32 @@ def profile_of(project) -> GameProfile:
     return PROFILES.get(game, PATH_OF_RADIANCE_PROFILE)
 
 
-def files_dir_of(project) -> Path:
-    """``extracted/files`` of a project (see :func:`profile_of` for stand-ins)."""
-    return Path(project.extracted_dir) / "files"
+def files_root_of(project):
+    """The disc's ``files/`` tree of a project as a ``GamePath`` (see :func:`profile_of` for
+    stand-ins, which are read as the older layout)."""
+    from .game_files import files_of
+    return files_of(project).at("files")
 
 
-def logical_path_of(project, name: str) -> Path:
-    """Path of logical file ``name`` in the project's extracted files."""
-    return profile_of(project).path(files_dir_of(project), name)
+def disc_root_of(project):
+    """The project's whole disc tree (``sys/`` and ``files/``) as a ``GamePath``."""
+    from .game_files import files_of
+    return files_of(project).at("")
+
+
+def sys_root_of(project):
+    """The disc's ``sys/`` folder of a project as a ``GamePath``."""
+    from .game_files import files_of
+    return files_of(project).at("sys")
+
+
+def logical_game_path_of(project, name: str):
+    """Logical file ``name`` of the project as a ``GamePath``."""
+    from .game_files import files_of
+    return files_of(project).at(logical_rel_of(project, name))
+
+
+def logical_rel_of(project, name: str) -> str:
+    """Disc-relative path of logical file ``name`` (``files/FE8Data.bin``), for ``project.files``."""
+    return f"files/{profile_of(project).logical(name).path}"
+

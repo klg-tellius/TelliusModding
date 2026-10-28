@@ -19,6 +19,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import tip
+from ..game_profile import files_root_of
 
 RIG_ENTRY = "zdbx/camera.dbx"
 NO_SCENERY = "(no scenery)"
@@ -146,7 +147,7 @@ class BattleCameraViewer(EditorPanel):
             return
         rules = battle_sim.Fe9Rules()
         if self._player is None:
-            self._player = BattlePlayer(self._player_parent, self._project.files_dir, rules, fe8)
+            self._player = BattlePlayer(self._player_parent, files_root_of(self._project), rules, fe8)
             self._player.pack(fill="both", expand=True, pady=(6, 0))
             self._scenery_box.configure(values=[NO_SCENERY] + sorted(self._player.sceneries(), key=str.casefold))
             if self._scenery.get() == NO_SCENERY and "map03_ground01" in self._player.sceneries():

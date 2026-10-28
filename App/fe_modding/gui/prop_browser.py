@@ -22,6 +22,7 @@ from . import map_scene
 from .editor_panel import EditorPanel
 from .model_viewer import _ModelPreview
 from .widgets import info
+from ..game_profile import disc_root_of
 
 ALL_MAPS = "All maps"
 COLUMNS = (("map", "Map", 150), ("name", "Object", 190), ("placed", "Placed", 60), ("tiles", "Tiles", 60),
@@ -128,7 +129,7 @@ class PropBrowser(ttk.Frame):
         self._scanning = True
         self._status.configure(text="Reading maps...")
         results: "queue.Queue" = queue.Queue()
-        extracted = self._project.extracted_dir
+        extracted = disc_root_of(self._project)
 
         def worker() -> None:
             try:
@@ -371,7 +372,7 @@ class MapObjectsPanel(EditorPanel):
             return
         paths = [prop.path]
         if self._everywhere.get():
-            paths += map_props.maps_with_same_prop(self._project.extracted_dir, prop.path, prop.name)
+            paths += map_props.maps_with_same_prop(disc_root_of(self._project), prop.path, prop.name)
         written = []
         try:
             for path in paths:

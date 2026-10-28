@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from .game_files import as_path
 
 
 # ``opening.thp`` is started by the title/demo flow.  The other retail THPs
@@ -65,7 +66,7 @@ def script_video_users(scripts_dir: Path | str, video_name: str) -> list[str]:
     """
     needle = ("movie/" + Path(video_name).name).encode("ascii", "ignore").lower()
     users = []
-    root = Path(scripts_dir)
+    root = as_path(scripts_dir)
     if not root.is_dir() or not needle:
         return users
     for script in sorted(root.glob("*.cmb")):

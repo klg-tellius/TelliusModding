@@ -12,6 +12,8 @@ from .game_code.extended_flag_installation import (
     inspect_project, RuntimeState, RECEIPT_NAME, rebuild_installed, receipt_for,
 )
 from .game_code.versions import read_boot_code
+from .game_profile import disc_root_of, sys_root_of
+from .game_files import as_path
 
 
 def prepare_runtime_update(project, layout: FlagLayout, sources=None):
@@ -21,11 +23,11 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
         raise ValueError(f"Cannot update extended project: {status.state.value}: {status.detail}")
     layout.require_compatible(status.layout)
     inventories = project_inventories(project)
-    changes = {Path(path): text for path, text in (sources or {}).items()}
+    changes = {as_path(path): text for path, text in (sources or {}).items()}
     dependencies, outputs = {}, {}
 
     def snapshot(path):
-        path = Path(path)
+        path = as_path(path)
         if path not in dependencies:
             dependencies[path] = path.read_bytes() if path.exists() else None
         return dependencies[path]
@@ -36,9 +38,9 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
     if previous != status.layout:
         raise ValueError("Manifest changed during update preparation")
     receipt = snapshot(receipt_path).decode("utf-8")
-    executable = project.extracted_dir / "sys" / "main.dol"
+    executable = sys_root_of(project) / "main.dol"
     original = snapshot(executable)
-    snapshot(project.extracted_dir / "sys" / "boot.bin")
+    snapshot(sys_root_of(project) / "boot.bin")
     snapshot(project.directory / "hub.json")
     startup = script_sources.startup_path(project)
     paths = {path: None for path in script_sources.shared_scripts(project)}
@@ -67,7 +69,7 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
             outputs[path] = write_cmb(result.script)
             outputs[script_sources.sidecar_path(project, path)] = source.encode("utf-8")
     if layout != previous:
-        candidate = rebuild_installed(Dol(original), read_boot_code(project.extracted_dir), previous, layout, receipt)
+        candidate = rebuild_installed(Dol(original), read_boot_code(disc_root_of(project)), previous, layout, receipt)
         outputs[executable] = candidate.executable
         outputs[manifest_path] = layout.to_json().encode("utf-8")
         outputs[receipt_path] = receipt_for(candidate, layout).encode("utf-8")

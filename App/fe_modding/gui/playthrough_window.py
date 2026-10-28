@@ -30,7 +30,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats.cmb.decompiler import Decompiler, function_to_source
-from ..game_profile import PLAYTHROUGH
+from ..game_profile import PLAYTHROUGH, disc_root_of, files_root_of
 from ..playthrough import actions, combat, engine, fog, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
@@ -77,7 +77,7 @@ class PlaythroughWindow(_Window):
         self.minsize(900, 560)
         self._builder = builder
         self._project = builder._project
-        self._files = self._project.extracted_dir / "files"
+        self._files = files_root_of(self._project)
         self.empty_text = "Open a chapter with a map."
         self.sim: Optional[Simulation] = None
         self._selected: Optional[int] = None
@@ -976,7 +976,7 @@ class PlaythroughWindow(_Window):
                 from ..formats.fe9_conversation_assets import ConversationAssets
                 from ..formats.fe9_conversation_render import ConversationRenderer
 
-                assets = ConversationAssets(self._project.extracted_dir)
+                assets = ConversationAssets(disc_root_of(self._project))
                 self._conversation = (assets, ConversationRenderer(assets))
             except Exception:  # noqa: BLE001 - no fonts or faces: the text alone is shown
                 self._conversation = False

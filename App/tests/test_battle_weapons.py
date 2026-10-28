@@ -104,7 +104,7 @@ class BattleTablesProjectTests(unittest.TestCase):
         battle_tables.write_entry(self.project, name, bw.set_weapon_field(SWORD, "kind", "2"))
         self.assertTrue(battle_tables.is_modified(self.project, name))
         self.assertEqual(bw.read_weapon(battle_tables.read_entry(self.project, name)).kind, 2)
-        self.assertTrue((self.project.originals_dir / "files" / "zdbx.cmp").exists())
+        self.assertTrue(self.project.files.is_modified("files/zdbx.cmp"))
         battle_tables.restore_entry(self.project, name)
         self.assertEqual(battle_tables.read_entry(self.project, name), SWORD)
 

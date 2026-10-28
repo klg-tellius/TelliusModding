@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..exceptions import ModdingError
+from ..game_files import as_path
 
 TEXT_SLOTS = 7
 SLOTS = 18
@@ -54,7 +55,7 @@ class Dol:
         return cls(Path(path).read_bytes())
 
     def save(self, path: Path | str) -> None:
-        Path(path).write_bytes(bytes(self.data))
+        as_path(path).write_bytes(bytes(self.data))
 
     def _set_slot(self, index: int, offset: int, address: int, size: int) -> None:
         struct.pack_into(">I", self.data, index * 4, offset)
