@@ -1,9 +1,11 @@
 """The chapter page's Battle scenes tab: finding a map's row and the scenes to pick from."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from fe_modding.formats.fe8data import BattleTerrainRow
 from fe_modding.gui import battle_scene_editor as bse
@@ -67,6 +69,7 @@ class BattleSceneTests(unittest.TestCase):
         panel = SimpleNamespace(
             _cells={1: (None, note)},
             _map="bmap01",
+            _session=lambda: None,
             _scene_models=lambda: {"map01_woods": Path("woods.cmp"),
                                    "map02_cliff01": Path("cliff.cmp")},
         )
@@ -83,6 +86,71 @@ class BattleSceneTests(unittest.TestCase):
         users = bse.scene_users(ROWS)
         self.assertEqual(users["map01_woods"], ["Shared default (row 0: Map6)", "bmap02"])
         self.assertEqual(users["castle_in"], ["bmap01"])
+
+
+def _fe10_panel(session, log):
+    """The parts of BattleScenePanel that _rows / _write use, around a Radiant Dawn session."""
+    panel = SimpleNamespace(_data_file="FE10Data.cms", _changelog=SimpleNamespace(append=lambda *a: log.append(a)))
+    panel._session = lambda: session
+    return panel
+
+
+class Fe10BattleSceneTests(unittest.TestCase):
+    """Radiant Dawn rows hold BattleTerrName indices (0xFFFF: none); the panel shows them as names."""
+
+    def setUp(self):
+        record = SimpleNamespace(values={"map": "bmap0101"}, lists={"scenery": [1, 0xFFFF, 0]})
+        self.session = SimpleNamespace(data=b"data", fe10=SimpleNamespace(tables={"battle_scenery": [record]}),
+                                       changed=lambda source: None)
+        self.log = []
+        self.panel = _fe10_panel(self.session, self.log)
+        self.names = mock.patch.object(bse.fe10data, "battle_scenery_names", return_value=["bgA", "bgB"])
+        self.names.start()
+
+    def tearDown(self):
+        self.names.stop()
+
+    def test_rows_show_indices_as_names(self):
+        rows = bse.BattleScenePanel._rows(self.panel)
+        self.assertEqual(rows, [BattleTerrainRow("bmap0101", ["bgB", None, "bgA"])])
+        self.assertEqual(bse.scene_names({}, rows), ["bgA", "bgB"])
+
+    def test_write_stores_names_as_indices(self):
+        calls = []
+
+        def set_scenery(data, index, terrain, scenery):
+            calls.append((index, terrain, scenery))
+            return data + b"!"
+
+        with mock.patch.object(bse.fe10data, "set_battle_scenery", side_effect=set_scenery):
+            bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", [None, "bgA", "bgA"])], "edit")
+        self.assertEqual(calls, [(0, 0, 0xFFFF), (0, 1, 0)])
+        self.assertEqual(self.session.data, b"data!!")
+        self.assertEqual(self.log, [("FE10Data.cms", "edit")])
+
+    def test_write_refuses_a_name_outside_the_table(self):
+        with self.assertRaises(ValueError):
+            bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", ["bgB", "new_bg", "bgA"])], "edit")
+
+
+@unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"),
+                     "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+class DiscFe10BattleSceneTests(unittest.TestCase):
+    def test_retail_rows_round_trip_through_the_panel(self):
+        from fe_modding.formats import fe10data, lz10
+        data = lz10.decompress((Path(os.environ["FE10_EXTRACTED_FILES"]) / "FE10Data.cms").read_bytes())
+        session = SimpleNamespace(data=data, fe10=fe10data.read_fe10data(data), changed=lambda source: None)
+        panel = _fe10_panel(session, [])
+        rows = bse.BattleScenePanel._rows(panel)
+        self.assertEqual(len(rows), 44)
+        self.assertTrue(all(isinstance(scene, str) for row in rows for scene in row.scenes if scene is not None))
+        bse.BattleScenePanel._write(panel, rows, "unchanged")
+        self.assertEqual(session.data, data)
+        target = next(name for name in fe10data.battle_scenery_names(data) if name and name != rows[1].scenes[0])
+        rows[1].scenes[0] = target
+        bse.BattleScenePanel._write(panel, rows, "edit")
+        session.fe10 = fe10data.read_fe10data(session.data)
+        self.assertEqual(bse.BattleScenePanel._rows(panel)[1].scenes[0], target)
 
 
 if __name__ == "__main__":

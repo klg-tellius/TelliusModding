@@ -291,6 +291,7 @@ class BattleScenePanel(ttk.Frame):
         self._changelog = changelog
         self._session_provider = session_provider
         self._map_editor = map_editor
+        self._data_file = project.profile.file_label("game_data")  # FE8Data.bin / FE10Data.cms
         self._map: Optional[str] = None
         self._edit_default = False
         self._subscribed = None
@@ -301,7 +302,7 @@ class BattleScenePanel(ttk.Frame):
 
         top = ttk.Frame(self, padding=(8, 8, 8, 0))
         top.pack(fill="x")
-        self._save_button = ttk.Button(top, text="Save FE8Data.bin", style="Accent.TButton", command=self._save,
+        self._save_button = ttk.Button(top, text=f"Save {self._data_file}", style="Accent.TButton", command=self._save,
                                        state="disabled")
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
@@ -331,7 +332,11 @@ class BattleScenePanel(ttk.Frame):
         if session is None:
             return []
         if getattr(session, "fe10", None) is not None:
-            return [fe8data.BattleTerrainRow(record.values.get("map"), list(record.lists.get("scenery", [])))
+            # Radiant Dawn stores BattleTerrName indices (0xFFFF: none); the panel works with the names
+            names = fe10data.battle_scenery_names(session.data)
+            return [fe8data.BattleTerrainRow(record.values.get("map"),
+                                             [names[i] if i < len(names) else None
+                                              for i in record.lists.get("scenery", [])])
                     for record in session.fe10.tables.get("battle_scenery", [])]
         try:
             return fe8data.read_battle_terrain(session.data)
@@ -345,17 +350,23 @@ class BattleScenePanel(ttk.Frame):
             if len(rows) != len(current):
                 raise ValueError("Adding Radiant Dawn battle-scenery rows is not decoded yet.")
             data = session.data
+            names = fe10data.battle_scenery_names(data)
+            index = {name: i for i, name in reversed(list(enumerate(names))) if name}
             for i, (row, record) in enumerate(zip(rows, current)):
                 if row.map_name != record.values.get("map"):
                     raise ValueError("Renaming Radiant Dawn battle-scenery rows is not decoded yet.")
                 for terrain, (new, old) in enumerate(zip(row.scenes, record.lists.get("scenery", []))):
+                    if new is not None and new not in index:
+                        raise ValueError(f"{new} is not a BattleTerrName entry; adding Radiant Dawn battle "
+                                         "backgrounds is not decoded yet.")
+                    new = index[new] if new is not None else 0xFFFF
                     if new != old:
                         data = fe10data.set_battle_scenery(data, i, terrain, new)
             session.data = data
         else:
             session.data = fe8data.write_battle_terrain(session.data, rows)
         session.changed(self)
-        self._changelog.append("FE8Data.bin", log_text)
+        self._changelog.append(self._data_file, log_text)
 
     def _scene_models(self) -> dict[str, Path]:
         if self._models is None:
@@ -426,11 +437,11 @@ class BattleScenePanel(ttk.Frame):
                       style="Muted.TLabel").pack(anchor="w")
             return
         if session is None:
-            ttk.Label(body, text="FE8Data.bin could not be read.", style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(body, text=f"{self._data_file} could not be read.", style="Muted.TLabel").pack(anchor="w")
             return
         rows = self._rows()
         if not rows:
-            ttk.Label(body, text="FE8Data.bin has no BattleTerrData table.", style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(body, text=f"{self._data_file} has no battle-scenery table.", style="Muted.TLabel").pack(anchor="w")
             return
         own = find_row(rows, self._map)
         editing = own if own is not None else (0 if self._edit_default else None)
@@ -510,7 +521,9 @@ class BattleScenePanel(ttk.Frame):
         row = rows[editing if editing is not None else 0]
         value = row.scenes[k]
         chosen = effective_scene(rows, self._map, k)
-        missing = chosen and find_scene(self._scene_models(), chosen) is None
+        # Radiant Dawn's zbg/ folders have hashed names, not the BattleTerrName ones
+        missing = (chosen and getattr(self._session(), "fe10", None) is None
+                   and find_scene(self._scene_models(), chosen) is None)
         if missing:
             source = "first terrain scene: " if not value else ""
             text = f"{source}{chosen} (no zbg folder of that name)"
@@ -527,7 +540,7 @@ class BattleScenePanel(ttk.Frame):
             self._save_button.configure(state="normal" if dirty else "disabled")
             self._revert_button.configure(state="normal" if dirty else "disabled")
             if dirty:
-                self._status.configure(text="Unsaved changes (FE8Data.bin)", style="Muted.TLabel")
+                self._status.configure(text=f"Unsaved changes ({self._data_file})", style="Muted.TLabel")
             elif self._status.cget("style") != "Danger.TLabel":
                 self._status.configure(text="")
         except tk.TclError:
@@ -607,16 +620,16 @@ class BattleScenePanel(ttk.Frame):
         try:
             session.save()
         except OSError as exc:
-            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
+            messagebox.showerror(f"Could not save {self._data_file}", str(exc), parent=self)
             self._status.configure(text=f"Not saved: {exc}", style="Danger.TLabel")
             return
         self._update_status()
-        self._status.configure(text="Saved FE8Data.bin", style="Muted.TLabel")
+        self._status.configure(text=f"Saved {self._data_file}", style="Muted.TLabel")
 
     def _revert(self) -> None:
         session = self._session()
         if session is None or not messagebox.askyesno(
-                "Discard unsaved edits?", "Discard every unsaved FE8Data.bin edit (on every page, not only the "
+                "Discard unsaved edits?", f"Discard every unsaved {self._data_file} edit (on every page, not only the "
                 "battle scenes)?", icon="warning", parent=self):
             return
         session.revert()
