@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import DATA_TABLES, GAME_DATA, SCRIPTS
+from ...game_profile import DATA_TABLES, GAME_DATA, SCRIPTS, files_root_of
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
@@ -28,7 +28,6 @@ from ..shell import Page
 from ..stats_editor import TAB_KEYS, StatsEditor
 from ..support_editor import SupportEditorPanel
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
-from ...game_profile import files_root_of
 
 TABS = {"classes": "Classes", "items": "Items", "skills": "Skills", "terrain": "Terrain",
         "general": "General", "supports": "Supports", "flags": "Flags", "ai": "AI (CP)", "rect_images": "Rect RIDs"}

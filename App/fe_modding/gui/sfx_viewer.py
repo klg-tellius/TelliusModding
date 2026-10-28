@@ -248,9 +248,9 @@ class SfxViewer(EditorPanel):
     def _original_cue_names(self) -> set[str]:
         """The cues of gcfesnd.bin as extracted (its kept original, else the file itself)."""
         path = files_root_of(self._project) / "Sound" / "gcfesnd.bin"
-        original = self._project.originals_dir / path.relative_to(self._project.extracted_dir)
+        original = path.files.vanilla_path(path)
         try:
-            return {c.name for c in gcfesnd.read_sfx_cues_path(original if original.is_file() else path)}
+            return {c.name for c in gcfesnd.read_sfx_cues_path(original if original is not None else path)}
         except (OSError, gcfesnd.GcfesndError):
             return set()
 

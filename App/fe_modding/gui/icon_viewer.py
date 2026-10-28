@@ -38,13 +38,12 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats import fe8data, icons, lz10, tpl
-from ..game_profile import GAME_DATA, profile_of
+from ..game_profile import GAME_DATA, files_root_of, profile_of
 from ..games import Game
 from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from ..game_profile import files_root_of
 
 #: The item-icon number of an item record is the cell number minus this.
 ITEM_ICON_FIRST_CELL = icons.ITEM_FIRST_CELL

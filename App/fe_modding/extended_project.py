@@ -12,7 +12,7 @@ from .game_code.extended_flag_installation import (
     inspect_project, RuntimeState, RECEIPT_NAME, rebuild_installed, receipt_for,
 )
 from .game_code.versions import read_boot_code
-from .game_profile import sys_root_of
+from .game_profile import disc_root_of, sys_root_of
 
 
 def prepare_runtime_update(project, layout: FlagLayout, sources=None):
@@ -68,7 +68,7 @@ def prepare_runtime_update(project, layout: FlagLayout, sources=None):
             outputs[path] = write_cmb(result.script)
             outputs[script_sources.sidecar_path(project, path)] = source.encode("utf-8")
     if layout != previous:
-        candidate = rebuild_installed(Dol(original), read_boot_code(project.extracted_dir), previous, layout, receipt)
+        candidate = rebuild_installed(Dol(original), read_boot_code(disc_root_of(project)), previous, layout, receipt)
         outputs[executable] = candidate.executable
         outputs[manifest_path] = layout.to_json().encode("utf-8")
         outputs[receipt_path] = receipt_for(candidate, layout).encode("utf-8")

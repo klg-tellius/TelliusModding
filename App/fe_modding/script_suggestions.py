@@ -28,9 +28,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from . import chapters
-from .game_profile import profile_of
+from .game_profile import files_root_of, profile_of
 from .project import ModProject
-from .game_profile import files_root_of
 
 
 @dataclass(frozen=True)

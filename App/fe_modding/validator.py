@@ -24,9 +24,8 @@ from typing import Iterable, Optional
 
 from . import chapters
 from .formats import dispo, fe8data, lz10, pak, shop, supports
-from .game_profile import DATA_TABLES, GAME_DATA, profile_of
+from .game_profile import DATA_TABLES, GAME_DATA, files_root_of, profile_of
 from .project import ModProject
-from .game_profile import files_root_of
 
 ERROR, WARNING = "error", "warning"
 SEVERITIES = (ERROR, WARNING)

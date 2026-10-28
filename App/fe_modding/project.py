@@ -16,11 +16,11 @@ from pathlib import Path
 from typing import Optional
 
 from . import tools
-from .game_files import GameFiles, GamePath, LegacyFiles
 from .formats import gcdisc, lz10, pak
 from .exceptions import ProjectError
 from .game_profile import GameProfile, game_for_disc_id
 from .games import Game, get_game_info, profile as game_profile, read_disc_id, read_image_disc_id
+from .game_files import GameFiles, GamePath, LegacyFiles
 
 PROJECT_FILENAME = "project.json"
 

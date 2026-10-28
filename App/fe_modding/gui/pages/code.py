@@ -19,7 +19,7 @@ from ...game_code.entries import G_BATTLE, G_GROWTH, G_PROCS, PROCS, SCALE_DENOM
 from ...game_code import three_tier_data
 from ..shell import Page
 from ..widgets import ScrollFrame, section_header
-from ...game_profile import files_root_of
+from ...game_profile import disc_root_of, files_root_of
 
 GROUP_NOTES = {
     "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field.",
@@ -173,7 +173,7 @@ class CodePage(Page):
 
     def show(self, route) -> bool:
         try:
-            self.editor = CodeEditor(self.project.extracted_dir, self.project.write_keeping_original,
+            self.editor = CodeEditor(disc_root_of(self.project), self.project.write_keeping_original,
                                      self.project.extracted_bytes)
         except (OSError, ModdingError) as exc:
             self.editor = None

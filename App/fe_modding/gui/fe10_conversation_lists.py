@@ -13,11 +13,10 @@ from tkinter import messagebox, simpledialog, ttk
 from ..exceptions import ProjectError
 from ..formats import fe10_conversation_data as cd
 from ..formats import fe10_message, message
-from ..game_profile import profile_of
+from ..game_profile import files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from ..game_profile import files_root_of
 
 FILE_LABEL = "FE10Conversation.cms"
 

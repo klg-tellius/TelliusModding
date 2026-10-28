@@ -42,20 +42,20 @@ class EffectEntry:
         return (self.flags >> 24) & 0xFF
 
 
-def registry_path(files_dir: Path) -> Path:
-    return as_path(files_dir) / REGISTRY_FILE
+def registry_path(files_root: Path) -> Path:
+    return as_path(files_root) / REGISTRY_FILE
 
 
-def pack_path(files_dir: Path, name: str) -> Path:
-    return as_path(files_dir) / PACK_DIR / f"{name}.cmp"
+def pack_path(files_root: Path, name: str) -> Path:
+    return as_path(files_root) / PACK_DIR / f"{name}.cmp"
 
 
-def list_effects(files_dir: Path) -> list[EffectEntry]:
+def list_effects(files_root: Path) -> list[EffectEntry]:
     """Every registered effect plus every pack with no registry record, by name."""
-    files_dir = as_path(files_dir)
-    reg = registry_path(files_dir)
+    files_root = as_path(files_root)
+    reg = registry_path(files_root)
     records = effect_registry.read_effect_registry(reg.read_bytes()) if reg.exists() else []
-    packs = {p.stem for p in (files_dir / PACK_DIR).glob("EID_*.cmp")}
+    packs = {p.stem for p in (files_root / PACK_DIR).glob("EID_*.cmp")}
     out = [
         EffectEntry(r.eid_name, True, r.eid_name in packs, r.flags, r.next_in_chain)
         for r in records

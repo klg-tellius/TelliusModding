@@ -27,7 +27,6 @@ import traceback
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 from unittest import mock
-from fe_modding.game_profile import files_root_of
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "App"))
@@ -46,6 +45,7 @@ from tkinter import ttk  # noqa: E402
 from PIL import ImageGrab  # noqa: E402
 
 from fe_modding import config  # noqa: E402
+from fe_modding.game_profile import files_root_of
 
 # -- keep the user's own config out of it --------------------------------------------------------
 _settings = {}

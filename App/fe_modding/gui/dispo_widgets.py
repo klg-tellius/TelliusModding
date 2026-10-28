@@ -67,10 +67,10 @@ def parse_leading_int(text: str) -> int:
     return int(token, 0)
 
 
-def read_group_keys(files_dir: Path) -> list[Optional[str]]:
+def read_group_keys(files_root: Path) -> list[Optional[str]]:
     """The project's ``GroupData`` keys, or an empty list when unreadable."""
     try:
-        return fe8data.read_group_keys(PATH_OF_RADIANCE_PROFILE.path(files_dir, "game_data").read_bytes())
+        return fe8data.read_group_keys(PATH_OF_RADIANCE_PROFILE.path(files_root, "game_data").read_bytes())
     except Exception:  # noqa: BLE001 - a broken FE8Data.bin just leaves numbers
         return []
 

@@ -18,7 +18,7 @@ from ..game_code.versions import identify, read_boot_code
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from ..game_profile import files_root_of, sys_root_of
+from ..game_profile import disc_root_of, files_root_of, sys_root_of
 
 
 class SoundRoomTracksEditor(EditorPanel):
@@ -86,7 +86,7 @@ class SoundRoomTracksEditor(EditorPanel):
     # -- data -----------------------------------------------------------------------------
     def _open(self) -> tuple[Dol, str]:
         dol = Dol.open(self._path)
-        version = identify(dol, read_boot_code(self._project.extracted_dir)).version
+        version = identify(dol, read_boot_code(disc_root_of(self._project))).version
         if version is None or version.code not in tracks.LAYOUT:
             raise ValueError("This main.dol is not a known Path of Radiance build.")
         return dol, version.code

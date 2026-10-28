@@ -30,7 +30,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats.cmb.decompiler import Decompiler, function_to_source
-from ..game_profile import PATH_OF_RADIANCE_PROFILE
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, disc_root_of, files_root_of
 from ..playthrough import actions, combat, engine, fog, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
@@ -38,7 +38,6 @@ from ..playthrough.simulation import ACTION, INPUT, LINE, MESSAGE, PHASE, UNIT, 
 from ..playthrough.state import FACTION_NAMES, PLAYER, AiTurn, MessageShow, ScriptRun
 from .map_builder import FACTION_COLORS, _BuildCanvas, _dim
 from .map_windows import _Window
-from ..game_profile import files_root_of
 
 GRANULARITIES = (("Line (instruction, message page, AI entry)", LINE), ("Message page", MESSAGE),
                  ("Action", ACTION), ("AI unit", UNIT), ("Phase", PHASE), ("Until my turn", INPUT))
@@ -952,7 +951,7 @@ class PlaythroughWindow(_Window):
                 from ..formats.fe9_conversation_assets import ConversationAssets
                 from ..formats.fe9_conversation_render import ConversationRenderer
 
-                assets = ConversationAssets(self._project.extracted_dir)
+                assets = ConversationAssets(disc_root_of(self._project))
                 self._conversation = (assets, ConversationRenderer(assets))
             except Exception:  # noqa: BLE001 - no fonts or faces: the text alone is shown
                 self._conversation = False

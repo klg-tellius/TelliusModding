@@ -29,6 +29,7 @@ import numpy as np
 
 from . import map_heights, water_kit
 from .formats import animation, gltf_export, gltf_import, gs_file, lz10, map_file, model, pak, skeleton, tpl
+from .game_files import as_path
 
 #: Material names the map loader gives projected-texture callbacks.
 CALLBACK_MATERIALS = frozenset(
@@ -380,9 +381,9 @@ class PropInfo:
 _catalog_cache: dict[Path, tuple[tuple[int, int], list[PropInfo]]] = {}
 
 
-def map_paths(extracted_dir: Path) -> list[Path]:
+def map_paths(disc: Path) -> list[Path]:
     """Every chapter map (``zmap/<map>/map.cmp``) of an extracted disc."""
-    return sorted(Path(extracted_dir).glob("**/zmap/*/map.cmp"))
+    return sorted((as_path(disc) / "files" / "zmap").glob("*/map.cmp"))
 
 
 def map_props_info(path: Path) -> list[PropInfo]:
@@ -408,10 +409,10 @@ def map_props_info(path: Path) -> list[PropInfo]:
     return props
 
 
-def prop_catalog(extracted_dir: Path, progress=None) -> list[PropInfo]:
+def prop_catalog(disc: Path, progress=None) -> list[PropInfo]:
     """Every prop of every map; ``progress(done, total)`` after each map. A
     map that can't be read is skipped."""
-    paths = map_paths(extracted_dir)
+    paths = map_paths(disc)
     props: list[PropInfo] = []
     for k, path in enumerate(paths):
         try:
@@ -840,12 +841,12 @@ def edit_prop(project, path: Path, name: str, changes: dict) -> bool:
     return True
 
 
-def maps_with_same_prop(extracted_dir: Path, path: Path, name: str) -> list[Path]:
+def maps_with_same_prop(disc: Path, path: Path, name: str) -> list[Path]:
     """The other saved maps holding prop ``name`` with the same model, skeleton,
     animation and images as in ``path``."""
     _entries, source = read_map_container(path)
     out = []
-    for other in map_paths(extracted_dir):
+    for other in map_paths(disc):
         if other == Path(path):
             continue
         try:

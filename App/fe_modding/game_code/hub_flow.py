@@ -152,7 +152,7 @@ class HubFlow:
             return False
         from .extended_flag_installation import inspect_runtime, RuntimeState, RECEIPT_NAME
         from ..formats.extended_flags import FlagLayout, MANIFEST_NAME
-        root = self.editor.extracted_dir.parent
+        root = self.editor.project_dir
         try:
             layout = FlagLayout.from_json((root / MANIFEST_NAME).read_text(encoding="utf-8"))
             receipt = (root / RECEIPT_NAME).read_text(encoding="utf-8")

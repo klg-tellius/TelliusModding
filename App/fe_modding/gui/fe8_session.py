@@ -15,12 +15,11 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from ..formats import fe8data, item_rules
-from ..game_profile import GAME_DATA
+from ..game_profile import GAME_DATA, disc_root_of, sys_root_of
 from ..game_code.dol import Dol
 from ..game_code import item_restrictions as rule_code, versions
 from ..project import ModProject
 from .changelog import ChangeLog
-from ..game_profile import sys_root_of
 
 
 class Fe8DataSession:
@@ -86,7 +85,7 @@ class Fe8DataSession:
         patched_dol = None
         if old_dol is not None:
             dol = Dol(old_dol)
-            ident = versions.identify(dol, versions.read_boot_code(self.project.extracted_dir))
+            ident = versions.identify(dol, versions.read_boot_code(disc_root_of(self.project)))
             if ident.version is None:
                 if any(not rule.empty for rule in rules.values()):
                     raise ValueError(ident.note or "Unsupported FE9 main.dol for item restrictions.")

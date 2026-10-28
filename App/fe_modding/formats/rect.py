@@ -640,7 +640,7 @@ def free_tpl_name(directory: Path | str) -> str:
 
 def add_background(
     doc: RectFile,
-    files_dir: Path | str,
+    files_root: Path | str,
     name: str,
     images: list,
     *,
@@ -651,7 +651,7 @@ def add_background(
     effect: int = EFFECT_NONE,
 ) -> RectResource:
     """Encode ``images`` (Pillow images of one size) as a new CMPR TPL under
-    ``files_dir/s/`` and add a resource that shows them. The caller writes
+    ``files_root/s/`` and add a resource that shows them. The caller writes
     ``doc.build()`` back to ``s/rect.bin`` (a project build then copies it into
     ``system.cmp``, where the game reads it)."""
     from . import tpl  # Pillow is only needed for this helper
@@ -663,7 +663,7 @@ def add_background(
     width, height = images[0].size
     if not (0 < width <= 1024 and 0 < height <= 1024):
         raise RectError(f"{width}x{height}: a GX texture is at most 1024 pixels on each side")
-    folder = as_path(files_dir) / "s"
+    folder = as_path(files_root) / "s"
     tpl_name = tpl_name or free_tpl_name(folder)
     if (folder / tpl_name).exists():
         raise RectError(f"s/{tpl_name} already exists")

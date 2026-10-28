@@ -34,6 +34,7 @@ from .fe8_session import Fe8DataSession
 from .patch_dialog import ApplyPatchDialog
 from .settings_dialog import SettingsDialog
 from .widgets import Link, PortraitCache, track_hover
+from ..game_profile import disc_root_of
 
 Route = tuple
 
@@ -101,7 +102,7 @@ class Shell(ttk.Frame):
         self._forward: list[Route] = []
         self.visited: list[tuple[Route, str]] = []
         self._session: Optional[Fe8DataSession] = None
-        self.portraits = PortraitCache(self, project.extracted_dir)
+        self.portraits = PortraitCache(self, disc_root_of(project))
         self.index: Optional[ProjectIndex] = None
         self._index_thread: Optional[threading.Thread] = None
         self._index_again = False

@@ -68,8 +68,8 @@ def read_face_data(data: bytes) -> list[FaceRecord]:
 class FaceLibrary:
     """Faces of an extracted disc, looked up by cast name (``IKE``, ``L_IKE``) or FID."""
 
-    def __init__(self, files_dir: Path | str, wide: bool = False):
-        self._dir = as_path(files_dir) / "Face"
+    def __init__(self, files_root: Path | str, wide: bool = False):
+        self._dir = as_path(files_root) / "Face"
         self._wide = wide
         data_path = (self._dir / "wide" / "facedata.bin") if wide else (self._dir / "facedata.bin")
         self.records = read_face_data(data_path.read_bytes()) if data_path.is_file() else []

@@ -131,7 +131,7 @@ class DeploymentEditor(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_chapter_list(self) -> None:
-        self._chapter_paths = sorted(self._project.extracted_dir.glob("**/zmap/*/dispos.cmp"))
+        self._chapter_paths = sorted(files_root_of(self._project).glob("zmap/*/dispos.cmp"))
         self._chapter_list.delete(0, "end")
         for path in self._chapter_paths:
             self._chapter_list.insert("end", path.parent.name)

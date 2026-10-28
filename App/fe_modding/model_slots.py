@@ -22,9 +22,9 @@ from pathlib import Path
 
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, zdbx
-from .game_files import files_of
 from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, files_root_of, logical_game_path_of, profile_of
 from .project import ModProject
+from .game_files import files_of
 
 AID_BASE_RE = re.compile(r"^AID_[A-Z0-9_]+$")
 FOLDER_RE = re.compile(r"^[a-z0-9_]+$")

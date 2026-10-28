@@ -36,13 +36,12 @@ from .. import fe8_references
 from ..formats import cp_ai_lang as lang
 from ..formats import cp_data as cp
 from ..formats import cp_ops
-from ..game_profile import AI, profile_of
+from ..game_profile import AI, files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .code_editor import CodeEditor
 from .editor_panel import EditorPanel
 from .widgets import info, tip
-from ..game_profile import files_root_of
 
 FILE_NAME = "cp_data.bin"
 SOURCES_DIR = "ai_sources"

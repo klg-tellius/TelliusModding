@@ -15,7 +15,7 @@ from .formats import event_flags as ef
 from .formats.extended_flags import FlagLayout, FlagCompileContext, HUB_ALIASES
 from .formats.cmb import compile_source
 from .formats.cmb.parser import parse
-from .game_profile import files_root_of, sys_root_of
+from .game_profile import disc_root_of, files_root_of, sys_root_of
 
 
 @dataclass(frozen=True)
@@ -179,7 +179,7 @@ def prepare_project_update(project, layout: FlagLayout) -> HubProjectUpdate:
     executable_path = sys_root_of(project) / "main.dol"
     snapshot(executable_path)
     snapshot(sys_root_of(project) / "boot.bin")
-    editor = CodeEditor(project.extracted_dir)
+    editor = CodeEditor(disc_root_of(project))
     if editor.version is None:
         raise ValueError("Cannot identify the project's executable region")
     candidate = build_candidate(editor.dol, editor.version.code, layout, hub_chapter=configuration["chapter"])
@@ -211,7 +211,7 @@ def commit_project_update(project, update: HubProjectUpdate):
     from .game_code.versions import read_boot_code
     from .project_transaction import commit
 
-    region = read_boot_code(project.extracted_dir)
+    region = read_boot_code(disc_root_of(project))
     if region not in EXTENDED_FLAGS_PATCH.versions:
         raise ProjectError(UNAVAILABLE_REASON)
     update.verify_unchanged()

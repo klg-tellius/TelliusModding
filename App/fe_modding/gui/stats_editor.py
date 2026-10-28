@@ -78,7 +78,7 @@ from PIL import Image, ImageTk
 from ..formats import fe8data, icons, item_rules, zdbx
 from .. import excel_io
 from ..formats.fe9_message_scene import to_display
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, profile_of
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, files_root_of, profile_of
 from ..game_code.dol import DolError
 from ..project import ModProject
 from . import record_actions, theme
@@ -87,7 +87,6 @@ from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
 from . import message_reference
 from .widgets import ScrollFrame, TileBrowser, info, tip
-from ..game_profile import files_root_of
 
 #: params[1] and params[2]; params[0] is the icon, edited next to its picture.
 SKILL_PARAM_LABELS = ["Capacity cost", "Has scroll (unread)"]

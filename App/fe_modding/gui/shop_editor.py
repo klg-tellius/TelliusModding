@@ -30,12 +30,11 @@ from typing import Callable, Optional
 from PIL import ImageTk
 
 from ..formats import fe8data, icons, shop
-from ..game_profile import SHOPS, profile_of
+from ..game_profile import SHOPS, files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .widgets import info, tip
-from ..game_profile import files_root_of
 
 NONE_LABEL = "(none)"
 LIST_KINDS = ("W", "I")

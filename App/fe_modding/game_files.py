@@ -127,6 +127,8 @@ class GameFiles:
 
     #: Roots a :class:`~pathlib.Path` argument may be under, most specific first.
     roots: tuple[Path, ...] = ()
+    #: The project folder (``project.json``, manifests, receipts) beside the game files.
+    project_dir: Path
 
     def _canonical(self, rel: str, trees: tuple[Path, ...]) -> str:
         """``rel`` with each part spelled as the first of ``trees`` that has it spells it, so one
@@ -564,6 +566,9 @@ class GamePath(os.PathLike):
         self.files.mkdir(self.rel)
 
     def rmdir(self) -> None:
+        """Remove an empty folder (OSError when it holds anything, as for a real folder)."""
+        if self.files.listdir(self.rel):
+            raise OSError(39, "Directory not empty", self.rel)
         self.files.remove(self.rel)
 
     def touch(self, exist_ok: bool = True) -> None:
@@ -589,6 +594,7 @@ class LegacyFiles(GameFiles):
         self.root = Path(extracted)
         self.originals = Path(originals)
         self.roots = (self.originals, self.root)
+        self.project_dir = self.root.parent
         self._fst_cache: Optional[tuple[float, dict[str, str]]] = None
 
     def _disc_paths(self) -> Optional[dict[str, str]]:
@@ -729,6 +735,7 @@ class OverlayFiles(GameFiles):
         self.output = Path(output_root)
         self.overlay_file = Path(overlay_file)
         self.roots = (self.output, self.input)
+        self.project_dir = self.output.parent
         self._state: Optional[dict] = None
 
     def rel(self, path: RelPath) -> str:
@@ -970,10 +977,12 @@ def files_of(project) -> GameFiles:
     files = getattr(project, "files", None)
     if isinstance(files, GameFiles):
         return files
-    if getattr(project, "extracted_dir", None) is None and getattr(project, "files_dir", None) is not None:
+    if getattr(project, "extracted_dir", None) is not None:
+        extracted = Path(project.extracted_dir)
+    elif getattr(project, "files_dir", None) is not None:
         extracted = Path(project.files_dir).parent    # a stand-in that only names its files/ folder
     else:
-        extracted = Path(project.extracted_dir)
+        extracted = Path(project.directory) / "extracted"
     originals = getattr(project, "originals_dir", None)
     return LegacyFiles(extracted, Path(originals) if originals else extracted.parent / "originals")
 

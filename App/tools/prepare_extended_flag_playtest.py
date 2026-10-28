@@ -26,8 +26,8 @@ from fe_modding.game_code.extended_flag_installation import RECEIPT_NAME, receip
 from fe_modding.game_code.extended_flag_container import container_name
 from fe_modding.games import Game
 from fe_modding.project import ModProject
-from tools.build_hub_infinite_action_test import patched_executable
 from fe_modding.game_profile import files_root_of
+from tools.build_hub_infinite_action_test import patched_executable
 
 CAMPAIGN = [f"XFT_CAMPAIGN_{i:03d}" for i in range(100)]
 LOCALS = [f"XFT_LOCAL_{i:03d}" for i in range(80)]

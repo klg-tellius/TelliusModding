@@ -37,13 +37,12 @@ from ..battle_sim import scene_assets as sa
 from ..battle_sim.units import STAT_NAMES, Combatant, weapon_from_item
 from ..formats import fe8data
 from ..formats.fe9_message_scene import to_display
-from ..game_profile import profile_of
+from ..game_profile import files_root_of, profile_of
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe8DataSession
 from .widgets import ScrollFrame
-from ..game_profile import files_root_of
 
 #: Weapon types the simulator offers (staves are filtered out by might).
 COMBAT_WEAPON_TYPES = ("sword", "lance", "axe", "bow", "knife", "flame", "thunder", "wind", "rod", "fang")

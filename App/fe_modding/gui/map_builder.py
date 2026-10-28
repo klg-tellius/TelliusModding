@@ -76,6 +76,7 @@ from . import dispo_widgets, gpu_renderer, map_scene
 from ..project_index import difficulty_name
 from .editor_panel import EditorPanel
 from .widgets import ScrollFrame, info, tip
+from ..game_profile import files_root_of
 
 F = dispo.FIELD
 BACKDROP_PX_PER_TILE = 32
@@ -2196,7 +2197,7 @@ class MapBuilder(EditorPanel):
             from ..formats import lz10, pak
 
             docs = []
-            for path in sorted(self._project.extracted_dir.glob("**/zmap/*/dispos.cmp")):
+            for path in sorted(files_root_of(self._project).glob("zmap/*/dispos.cmp")):
                 try:
                     archive = lz10.decompress(path.read_bytes())
                     for entry in pak.read_pak_entries(archive):

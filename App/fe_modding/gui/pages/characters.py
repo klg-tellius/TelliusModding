@@ -14,7 +14,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ...game_profile import GAME_DATA
+from ...game_profile import GAME_DATA, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from ... import excel_io
 from .. import record_actions
@@ -23,7 +23,6 @@ from ..shell import Page, plain_text
 from ..support_editor import CharacterSupportsPanel, read_conversation_ids
 from ..widgets import Card, CardGrid, Chip, Link, ScrollFrame, section_header
 from ..widgets import info as help_mark
-from ...game_profile import files_root_of
 
 CATEGORY_CHIPS = {PLAYABLE: "chip_playable", NAMED: "chip_named", GENERIC: "chip_generic"}
 TABS = ["stats", "supports", "look", "appearances", "scripts"]

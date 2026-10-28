@@ -23,12 +23,11 @@ from PIL import Image, ImageTk
 
 from ..formats import fe9_font, lz10
 from ..formats.fe9_font import GameFont, ImportOptions
-from ..game_profile import FONTS, profile_of
+from ..game_profile import FONTS, files_root_of, profile_of
 from ..project import ModProject
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from ..game_profile import files_root_of
 
 USES = {
     "system": "Menus, status, forecast, shops, tutorials, nameplates",

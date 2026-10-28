@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding import games
 from fe_modding.game_profile import (AI, GAME_DATA, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE, SHOPS,
-                                     files_dir_of, game_for_disc_id, get_profile, logical_path_of, profile_of)
+                                     files_root_of, game_for_disc_id, get_profile, logical_game_path_of, profile_of)
 from fe_modding.games import Game
 
 
@@ -115,8 +115,8 @@ class ProfileTests(unittest.TestCase):
         self.assertIs(profile_of(SimpleNamespace()), PATH_OF_RADIANCE_PROFILE)
         self.assertIs(profile_of(SimpleNamespace(game=Game.RADIANT_DAWN)), RADIANT_DAWN_PROFILE)
         stand_in = SimpleNamespace(extracted_dir=Path("e"))
-        self.assertEqual(files_dir_of(stand_in), Path("e") / "files")
-        self.assertEqual(logical_path_of(stand_in, "game_data"), Path("e") / "files" / "FE8Data.bin")
+        self.assertEqual(files_root_of(stand_in).real(), Path("e") / "files")
+        self.assertEqual(logical_game_path_of(stand_in, "game_data").rel, "files/FE8Data.bin")
 
 
 class ChapterKeyTests(unittest.TestCase):

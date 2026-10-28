@@ -6,8 +6,7 @@ from pathlib import Path
 from tkinter import ttk
 
 from ..formats import fe10_message, message
-from ..game_profile import profile_of
-from ..game_profile import files_root_of
+from ..game_profile import files_root_of, profile_of
 
 CREATE_MESSAGE = "＋ Create new message…"
 

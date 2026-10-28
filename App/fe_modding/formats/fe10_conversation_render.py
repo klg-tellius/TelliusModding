@@ -30,11 +30,11 @@ NAME_PANEL = (60, 40, 20, 235)
 class Fe10ConversationAssets:
     """Everything the renderer reads from an extracted Radiant Dawn disc (loaded lazily)."""
 
-    def __init__(self, files_dir: Path | str, language_prefix: str = "e_", wide: bool = False):
+    def __init__(self, files_root: Path | str, language_prefix: str = "e_", wide: bool = False):
         """``wide``: the 16:9 assets (``Face/wide``, ``_w`` fonts and layouts). They use the same
         640x480 coordinates, with art squeezed horizontally that the console stretches back; show
         the rendered frame stretched to 854x480 (:data:`WIDE_SIZE`)."""
-        self.files = as_path(files_dir)
+        self.files = as_path(files_root)
         self.prefix = language_prefix
         self.wide = wide
         self._layouts = self._backgrounds = self._font = self._names = None

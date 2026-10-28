@@ -5,7 +5,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from ..game_profile import profile_of
+from ..game_profile import disc_root_of, profile_of
 from ..formats.fe9_conversation import InitialContext, build_timeline
 from ..formats.fe9_conversation_assets import ConversationAssets
 from ..formats.fe9_conversation_render import ConversationRenderer, SCENE_SIZE
@@ -202,7 +202,7 @@ class FE9ConversationPreview(ttk.Frame):
     def _reload(self):
         self._stop()
         try:
-            self._assets = ConversationAssets(self._project.extracted_dir)
+            self._assets = ConversationAssets(disc_root_of(self._project))
             self._renderer = ConversationRenderer(self._assets)
             self._layout_combo.configure(values=layout_labels(self._assets))
             self._background_combo.configure(values=background_names(self._assets))

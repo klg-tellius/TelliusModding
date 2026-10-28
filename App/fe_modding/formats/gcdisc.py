@@ -136,7 +136,7 @@ def read_fst_sizes(fst: bytes) -> dict[str, int]:
     return sizes
 
 
-def _build_tree(files_dir: Path, retail_order: list[str]) -> _Node:
+def _build_tree(files_folder: Path, retail_order: list[str]) -> _Node:
     rank = {path.lower(): i for i, path in enumerate(retail_order)}
 
     def walk(directory: Path, rel: str) -> _Node:
@@ -152,7 +152,7 @@ def _build_tree(files_dir: Path, retail_order: list[str]) -> _Node:
         node.children = [n for _, n in entries]
         return node
 
-    return walk(files_dir, "")
+    return walk(files_folder, "")
 
 
 def _flatten(root: _Node) -> list[list]:
@@ -247,22 +247,22 @@ def _write_ciso(dest: Path, chunks: Iterator[tuple[int, bytes]], disc_size: int,
     os.replace(tmp, dest)
 
 
-def build_gamecube_ciso(extracted_dir: Path | str, dest: Path | str,
+def build_gamecube_ciso(disc_dir: Path | str, dest: Path | str,
                         progress: Optional[Callable[[int, int], None]] = None) -> BuildResult:
-    """Compose extracted_dir (containing sys/ and files/) into a GameCube CISO.
+    """Compose disc_dir (containing sys/ and files/) into a GameCube CISO.
 
     An image larger than GAMECUBE_DISC_SIZE is still written - Dolphin reads
     past the physical limit - but BuildResult.oversized flags it, since it
     cannot fit a real disc (or run on hardware loaders that enforce it)."""
-    extracted_dir = Path(extracted_dir)
+    disc_dir = Path(disc_dir)
     dest = Path(dest)
-    sys_dir = extracted_dir / "sys"
-    files_dir = extracted_dir / "files"
+    sys_dir = disc_dir / "sys"
+    files_folder = disc_dir / "files"
     for name in REQUIRED_SYS_FILES:
         if not (sys_dir / name).is_file():
-            raise GcDiscError(f"Missing sys/{name} in {extracted_dir}")
-    if not files_dir.is_dir():
-        raise GcDiscError(f"Missing files/ in {extracted_dir}")
+            raise GcDiscError(f"Missing sys/{name} in {disc_dir}")
+    if not files_folder.is_dir():
+        raise GcDiscError(f"Missing files/ in {disc_dir}")
 
     boot = bytearray((sys_dir / "boot.bin").read_bytes()[:BOOT_SIZE])
     bi2 = (sys_dir / "bi2.bin").read_bytes()[:BI2_SIZE]
@@ -273,7 +273,7 @@ def build_gamecube_ciso(extracted_dir: Path | str, dest: Path | str,
     old_fst = sys_dir / "fst.bin"
     retail_order = _read_fst_order(old_fst.read_bytes()) if old_fst.is_file() else []
 
-    entries = _flatten(_build_tree(files_dir, retail_order))
+    entries = _flatten(_build_tree(files_folder, retail_order))
 
     dol_offset = _align(APPLOADER_OFFSET + len(apploader), HEADER_ALIGN)
     fst_offset = _align(dol_offset + len(dol), HEADER_ALIGN)

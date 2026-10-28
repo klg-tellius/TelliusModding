@@ -18,13 +18,12 @@ from tkinter import ttk
 
 from ... import chapters, script_sources
 from ...formats import fe10_message
-from ...game_profile import CHAPTERS, profile_of
+from ...game_profile import CHAPTERS, files_root_of, profile_of
 from ..dialogue_editor import DialogueEditor
 from ..editor_panel import EditorPanel
 from ..script_editor import ScriptEditor
 from ..widgets import Card, CardGrid, Link, ScrollFrame, section_header
 from .chapters import open_script
-from ...game_profile import files_root_of
 
 
 def _chapter_file_re(project, extension: str) -> re.Pattern:

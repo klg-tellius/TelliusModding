@@ -128,7 +128,7 @@ from .. import blender as blender_tool
 from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, zdbx
-from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of
+from ..game_profile import PATH_OF_RADIANCE_PROFILE, files_root_of, logical_game_path_of
 from ..project import ModProject
 from . import gpu_renderer
 from .changelog import ChangeLog
@@ -136,7 +136,6 @@ from .editor_panel import EditorPanel
 from .terrain_paint_dialogs import (AtlasSwatchesDialog, NewMapKitDialog, PaintImportOptions, PaintKitDialog,
                                     WaterImportOptions, add_texturing_tab, add_water_tab)
 from .widgets import info, tip
-from ..game_profile import files_root_of
 
 
 @dataclass(frozen=True)
@@ -257,17 +256,17 @@ class GridOverlay:
 
 
 def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
-    files_dir = files_root_of(project)
+    files_root = files_root_of(project)
     sets: list[tuple[str, Path]] = []
 
-    ymu_dir = files_dir / "ymu"
+    ymu_dir = files_root / "ymu"
     if ymu_dir.exists():
         for pack_path in sorted(ymu_dir.glob("*/pack.cmp")):
             sets.append((f"ymu/{pack_path.parent.name}", pack_path))
 
     # Battle models: zu/<code>/<code>_<weapon>.pak, one per weapon type, all
     # holding the same body and skeleton; listed once per folder.
-    zu_dir = files_dir / "zu"
+    zu_dir = files_root / "zu"
     if zu_dir.exists():
         for folder in sorted(p for p in zu_dir.iterdir() if p.is_dir()):
             paks = sorted(folder.glob(f"{folder.name}_*.pak"))
@@ -275,12 +274,12 @@ def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
                 sets.append((f"zu/{folder.name}", paks[0]))
 
     # Chapter maps: zmap/<map>/map.cmp (terrain, water, props and map.bin).
-    zmap_dir = files_dir / "zmap"
+    zmap_dir = files_root / "zmap"
     if zmap_dir.exists():
         for cmp_path in sorted(zmap_dir.glob("*/map.cmp")):
             sets.append((f"zmap/{cmp_path.parent.name}", cmp_path))
 
-    zbg_dir = files_dir / "zbg"
+    zbg_dir = files_root / "zbg"
     if zbg_dir.exists():
         for folder in sorted(p for p in zbg_dir.iterdir() if p.is_dir()):
             for cmp_path in sorted(folder.glob("*.cmp")):
@@ -288,7 +287,7 @@ def _iter_model_sets(project: ModProject) -> list[tuple[str, Path]]:
 
     # Weapons: xwp/<name>/<name>.cmp, the equipped item's model in battle
     # (formats/icons.py), and xwp/forge/<name>_b.cmp for forged weapons.
-    xwp_dir = files_dir / "xwp"
+    xwp_dir = files_root / "xwp"
     if xwp_dir.exists():
         for folder in sorted(p for p in xwp_dir.iterdir() if p.is_dir()):
             for cmp_path in sorted(folder.glob("*.cmp")):

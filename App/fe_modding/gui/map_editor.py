@@ -23,13 +23,12 @@ from tkinter import filedialog, messagebox, simpledialog
 from .. import map_props
 from ..games import read_disc_id
 from ..formats import fe8data, lz10, map_file, pak
-from ..game_profile import GAME_DATA, profile_of
+from ..game_profile import GAME_DATA, disc_root_of, files_root_of, profile_of
 from ..project import ModProject
 from . import map_scene
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .model_viewer import ModelPreviewDialog, load_named_model_set
-from ..game_profile import files_root_of
 
 
 class MapEditor(EditorPanel):
@@ -40,7 +39,7 @@ class MapEditor(EditorPanel):
         """Whether the open project's map flags match the traced build: GFEE01, and GFEP01/GFEJ01
         whose load_map_data and apply_map_extra_flags read the same fields (and whose map files
         are byte-identical to the US ones)."""
-        return read_disc_id(self._project.extracted_dir) in ("GFEE01", "GFEP01", "GFEJ01")
+        return read_disc_id(disc_root_of(self._project)) in ("GFEE01", "GFEP01", "GFEJ01")
 
     def __init__(self, parent, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
@@ -60,7 +59,7 @@ class MapEditor(EditorPanel):
 
     # -- loading ----------------------------------------------------------------------
     def _load_chapter_list(self) -> None:
-        self._chapter_paths = sorted(self._project.extracted_dir.glob("**/zmap/*/map.cmp"))
+        self._chapter_paths = sorted(files_root_of(self._project).glob("zmap/*/map.cmp"))
 
     def refresh_chapter_list(self) -> None:
         """Re-glob for chapter files - see dialogue_editor.py's version of
