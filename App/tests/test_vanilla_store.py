@@ -97,7 +97,9 @@ class VanillaStoreTests(unittest.TestCase):
         self.assertEqual(store.root, (dump / "DATA").resolve())
         self.assertTrue(store.adopted)
         self.assertFalse((dump / "DATA" / vanilla_store.MANIFEST).exists())
-        (dump / "DATA/files/FE8Data.bin").write_bytes(b"still writable")
+        with self.assertRaises(PermissionError):
+            (dump / "DATA/files/FE8Data.bin").write_bytes(b"x")
+        self.assertEqual(store.verify(), [])
         self.assertEqual(vanilla_store.get_store(store.key).root, store.root)
 
     def test_adopt_folder_rejects_an_incomplete_dump(self):
@@ -127,7 +129,7 @@ class VanillaStoreTests(unittest.TestCase):
         write_tree(dump)
         adopted = vanilla_store.adopt_folder(dump, wii=False)
         vanilla_store.forget_store(adopted)
-        self.assertTrue((dump / "files/FE8Data.bin").is_file())
+        (dump / "files/FE8Data.bin").write_bytes(b"writable again")
         with mock.patch.object(tools, "extract_disc", side_effect=self._fake_extract):
             store = vanilla_store.ensure_store(self.disc, wii=False)
         vanilla_store.forget_store(store)

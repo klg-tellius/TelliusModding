@@ -28,7 +28,6 @@ LAYER = frozenset({
 NOT_YET_MOVED = frozenset({
     "fe_modding/battle_sim/scene_assets.py",
     "fe_modding/chapter_phase_ops.py",
-    "fe_modding/chapters.py",
     "fe_modding/emulator.py",
     "fe_modding/extended_hub.py",
     "fe_modding/extended_project.py",

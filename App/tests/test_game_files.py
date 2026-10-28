@@ -133,6 +133,32 @@ class ContractMixin:
         folder = self.files.path("files")
         self.assertFalse([p for p in folder.rglob("*.tmp")])
 
+    def test_game_path_acts_like_a_path(self):
+        root = self.files.at("files")
+        mess = root / "Mess"
+        self.assertEqual((mess / "c01.m").read_bytes(), b"c01")
+        self.assertTrue(mess.is_dir())
+        self.assertEqual(sorted(p.name for p in mess.glob("*.m")), ["c01.m", "common.m"])
+        self.assertEqual([p.rel for p in root.glob("**/map.cmp")], ["files/zmap/bmap01/map.cmp"])
+        self.assertEqual([p.rel for p in root.glob("zmap/*/map.cmp")], ["files/zmap/bmap01/map.cmp"])
+        self.assertEqual(sorted(p.name for p in root.iterdir()), ["FE8Data.bin", "mess", "zmap"])
+        new = mess / "c02.m"
+        self.assertFalse(new.exists())
+        new.write_bytes(b"c02")
+        self.assertTrue(self.files.is_added("files/mess/c02.m"))
+        with (mess / "c01.m").open("wb") as out:
+            out.write(b"via open")
+        self.assertEqual(self.files.read("files/mess/c01.m"), b"via open")
+        self.assertEqual(self.files.vanilla("files/mess/c01.m"), b"c01")
+        self.assertEqual((mess / "c01.m").relative_to(root).as_posix(), "mess/c01.m")
+        self.assertEqual((mess / "c01.m").parent, mess)
+        self.assertEqual(mess / "C01.M", mess / "c01.m")
+        with open(mess / "c01.m", "rb") as f:
+            self.assertEqual(f.read(), b"via open")
+        (mess / "c02.m").unlink()
+        self.assertFalse((mess / "c02.m").exists())
+        self.assertEqual(game_files.as_path(mess), mess)
+
     def test_any_case_names_the_same_file(self):
         self.files.write("FILES/MESS/C01.M", b"edited")
         self.assertEqual(self.files.read("files/mess/c01.m"), b"edited")

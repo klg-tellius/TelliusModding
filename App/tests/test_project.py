@@ -76,8 +76,8 @@ class LogicalFileTests(unittest.TestCase):
         rd = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)
         por = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
         self.assertEqual(rd.profile.disc_id_prefix, "RFE")
-        self.assertEqual(rd.logical_path("game_data"), rd.extracted_dir / "files" / "FE10Data.cms")
-        self.assertEqual(por.logical_path("game_data"), por.extracted_dir / "files" / "FE8Data.bin")
+        self.assertEqual(rd.logical_path("game_data").real(), rd.extracted_dir / "files" / "FE10Data.cms")
+        self.assertEqual(por.logical_path("game_data").real(), por.extracted_dir / "files" / "FE8Data.bin")
 
     def test_radiant_dawn_files_are_lz10_transparent(self):
         project = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)

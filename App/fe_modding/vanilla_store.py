@@ -10,7 +10,8 @@ Two kinds:
 - extracted by the app from a disc image into ``<store root>/<key>/``; its files are marked
   read-only, so a stray write fails instead of changing the vanilla file for every project;
 - a folder the user already extracted (Dolphin's "Extract Entire Disc", WIT...), registered where
-  it is and left as it is.
+  it is. Its files are marked read-only too (and made writable again when it is forgotten);
+  nothing else in it changes.
 
 The key is ``<disc id>-<revision>-<first 8 hex digits of the SHA-1 of sys/fst.bin>``, so two dumps of
 the same disc share a store and another revision never does.
@@ -254,12 +255,14 @@ def ensure_store(disc_image: Path | str, *, wii: bool,
 
 def adopt_folder(folder: Path | str, *, wii: bool,
                  progress: Optional[Callable[[int, int], None]] = None) -> VanillaStore:
-    """Register a folder the user extracted as a store, where it is (nothing is copied or
-    changed in it). Raises ProjectError when it is not a complete extraction."""
+    """Register a folder the user extracted as a store, where it is: nothing is copied, and its
+    files are marked read-only. Raises ProjectError when it is not a complete extraction."""
     tree = find_tree(Path(folder)).resolve()
     check_tree(tree, wii=wii)
     key = store_key(tree)
     manifest = describe_tree(tree, progress)
+    _set_read_only(tree, True)
+    _refresh_times(tree, manifest)
     store = VanillaStore(key=key, root=tree, disc_id=manifest["disc_id"], revision=manifest["revision"],
                          adopted=True)
     write_atomic(store.manifest_path, (json.dumps(manifest, indent=1) + "\n").encode("utf-8"))
@@ -275,10 +278,12 @@ def delete_store_files(folder: Path) -> None:
 
 def forget_store(store: VanillaStore) -> None:
     """Drop a store from the registry; an app-made store's files are deleted, an adopted folder
-    is left where it is."""
+    is left where it is with its files writable again."""
     registry = _read_registry()
     registry.pop(store.key, None)
     _write_registry(registry)
+    if store.adopted and store.root.is_dir():
+        _set_read_only(store.root, False)
     own = store_root() / store.key
     if own.is_dir():
         delete_store_files(own)

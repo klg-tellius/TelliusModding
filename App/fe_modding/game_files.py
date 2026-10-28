@@ -14,12 +14,18 @@ Paths are disc-relative POSIX strings, as in the disc's file table plus the ``sy
 ``"files/FE8Data.bin"``, ``"sys/main.dol"``. A :class:`~pathlib.Path` under one of the layer's
 roots is accepted too and turned into its relative path, so code holding a path it got from
 :meth:`GameFiles.path` can pass it back.
+
+:meth:`GameFiles.at` gives a :class:`GamePath`, a :class:`~pathlib.Path` look-alike whose joins,
+reads, listings and writes all go through the layer. Code written against paths
+(``files_dir / "Face" / name``, ``folder.glob("*.cms")``, ``path.write_bytes(data)``) works on it
+unchanged, which is how most of the app reaches game files.
 """
 
 from __future__ import annotations
 
 import fnmatch
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -150,7 +156,12 @@ class GameFiles:
 
     # -- paths ---------------------------------------------------------------------------------------
     def rel(self, path: RelPath) -> str:
-        """The disc-relative POSIX path of ``path`` (a relative path, or a path under a root)."""
+        """The disc-relative POSIX path of ``path`` (a relative path, a :class:`GamePath`, or a
+        path under a root)."""
+        if isinstance(path, GamePath):
+            return path.rel
+        if isinstance(path, str) and os.path.isabs(path):
+            path = Path(path)
         if isinstance(path, Path) and path.is_absolute():
             resolved = path.resolve()
             for root in self.roots:
@@ -165,8 +176,17 @@ class GameFiles:
             raise ProjectError(f"{path} leaves the game's file tree.")
         return "/".join(parts)
 
+    def at(self, path: RelPath = "") -> "GamePath":
+        """``path`` as a :class:`GamePath` (``files.at("files")`` is the disc's file tree)."""
+        return GamePath(self, self.rel(path))
+
     def path(self, path: RelPath) -> Optional[Path]:
         """The real file or folder to read for ``path``; None when there is none."""
+        raise NotImplementedError
+
+    def target(self, path: RelPath) -> Path:
+        """The real path a write of ``path`` goes to (whether or not it exists yet): what to key
+        a plan of pending writes by. Read through :meth:`path`, write through :meth:`write`."""
         raise NotImplementedError
 
     def require(self, path: RelPath) -> Path:
@@ -286,6 +306,252 @@ class GameFiles:
         raise NotImplementedError
 
 
+class _WriteOnClose(io.BytesIO):
+    """What :meth:`GamePath.open` returns for writing: the bytes go through the layer on close."""
+
+    def __init__(self, files: GameFiles, rel: str, initial: bytes = b""):
+        super().__init__()
+        self._files, self._rel = files, rel
+        if initial:
+            self.write(initial)
+
+    def close(self) -> None:
+        if not self.closed:
+            self._files.write(self._rel, self.getvalue())
+        super().close()
+
+
+class GamePath(os.PathLike):
+    """A game file or folder of one project, used like a :class:`~pathlib.Path`.
+
+    Joins (``/``, :meth:`joinpath`, :attr:`parent`) stay virtual; reads go to the real file the
+    layer picks (:meth:`GameFiles.path`); :meth:`iterdir` and :meth:`glob` list the merged tree;
+    writes, :meth:`unlink` and :meth:`mkdir` go through the layer. ``os.fspath`` gives the real
+    file to read, or where a write would go when there is none, for code and tools that need a
+    real path (opening such a path to write bypasses the layer: use :meth:`write_bytes`)."""
+
+    __slots__ = ("files", "rel")
+
+    def __init__(self, files: GameFiles, rel: str):
+        self.files = files
+        self.rel = rel
+
+    # -- names ---------------------------------------------------------------------------------------
+    def _child(self, rel: str) -> "GamePath":
+        return GamePath(self.files, self.files.rel(rel))
+
+    def __truediv__(self, other) -> "GamePath":
+        other = str(other).replace("\\", "/")
+        return self._child(f"{self.rel}/{other}" if self.rel else other)
+
+    def joinpath(self, *parts) -> "GamePath":
+        result = self
+        for part in parts:
+            result = result / part
+        return result
+
+    @property
+    def name(self) -> str:
+        return self.rel.rsplit("/", 1)[-1] if self.rel else ""
+
+    @property
+    def stem(self) -> str:
+        return PurePosixPath(self.name).stem
+
+    @property
+    def suffix(self) -> str:
+        return PurePosixPath(self.name).suffix
+
+    @property
+    def suffixes(self) -> list[str]:
+        return PurePosixPath(self.name).suffixes
+
+    @property
+    def parts(self) -> tuple[str, ...]:
+        return tuple(self.rel.split("/")) if self.rel else ()
+
+    @property
+    def parent(self) -> "GamePath":
+        return GamePath(self.files, self.rel.rsplit("/", 1)[0] if "/" in self.rel else "")
+
+    def with_name(self, name: str) -> "GamePath":
+        return self.parent / name
+
+    def with_suffix(self, suffix: str) -> "GamePath":
+        return self.parent / (self.stem + suffix)
+
+    def with_stem(self, stem: str) -> "GamePath":
+        return self.parent / (stem + self.suffix)
+
+    def relative_to(self, other) -> PurePosixPath:
+        base = other.rel if isinstance(other, GamePath) else self.files.rel(other)
+        if base and self.rel.lower() != base.lower() and not self.rel.lower().startswith(base.lower() + "/"):
+            raise ValueError(f"{self.rel!r} is not in {base!r}")
+        return PurePosixPath(self.rel[len(base):].lstrip("/") or ".")
+
+    def is_relative_to(self, other) -> bool:
+        try:
+            self.relative_to(other)
+            return True
+        except (ValueError, ProjectError):
+            return False
+
+    def as_posix(self) -> str:
+        return self.rel
+
+    def resolve(self, strict: bool = False) -> "GamePath":
+        return self
+
+    def absolute(self) -> "GamePath":
+        return self
+
+    def is_absolute(self) -> bool:
+        return True
+
+    def real(self) -> Path:
+        """The real file to read, or where a write would go when there is none."""
+        found = self.files.path(self.rel)
+        return found if found is not None else self.files.target(self.rel)
+
+    def __fspath__(self) -> str:
+        return str(self.real())
+
+    def __str__(self) -> str:
+        return str(self.real())
+
+    def __repr__(self) -> str:
+        return f"GamePath({self.rel!r})"
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, GamePath):
+            return other.files is self.files and other.rel.lower() == self.rel.lower()
+        return NotImplemented
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, GamePath):
+            return self.rel.lower() < other.rel.lower()
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash((id(self.files), self.rel.lower()))
+
+    # -- reading -------------------------------------------------------------------------------------
+    def exists(self) -> bool:
+        return self.files.exists(self.rel)
+
+    def is_file(self) -> bool:
+        return self.files.is_file(self.rel)
+
+    def is_dir(self) -> bool:
+        return self.files.is_dir(self.rel)
+
+    def stat(self):
+        return self.files.require(self.rel).stat()
+
+    def read_bytes(self) -> bytes:
+        return self.files.read(self.rel)
+
+    def read_text(self, encoding: Optional[str] = None, errors: Optional[str] = None) -> str:
+        return self.files.require(self.rel).read_text(encoding=encoding, errors=errors)
+
+    def iterdir(self) -> Iterator["GamePath"]:
+        prefix = f"{self.rel}/" if self.rel else ""
+        for name in self.files.listdir(self.rel):
+            yield GamePath(self.files, prefix + name)
+
+    def glob(self, pattern: str) -> Iterator["GamePath"]:
+        """``*.ext``-style patterns in this folder, ``**/<pattern>`` below it, and
+        ``<folder pattern>/<pattern>`` one level down (matched without case)."""
+        parts = pattern.replace("\\", "/").split("/")
+        yield from self._glob(parts)
+
+    def _glob(self, parts: list[str]) -> Iterator["GamePath"]:
+        head, rest = parts[0], parts[1:]
+        if head == "**":
+            if not rest:
+                yield self
+                for rel in self.files.iter_files(self.rel):
+                    yield GamePath(self.files, rel)
+                return
+            seen = set()
+            for folder in [self, *self._folders_below()]:
+                for match in folder._glob(rest):
+                    if match not in seen:
+                        seen.add(match)
+                        yield match
+            return
+        for child in self.iterdir():
+            if fnmatch.fnmatchcase(child.name.lower(), head.lower()):
+                if not rest:
+                    yield child
+                elif child.is_dir():
+                    yield from child._glob(rest)
+
+    def _folders_below(self) -> list["GamePath"]:
+        folders = set()
+        for rel in self.files.iter_files(self.rel):
+            parts = rel.split("/")[:-1]
+            for i in range(len(self.parts) + 1, len(parts) + 1):
+                folders.add("/".join(parts[:i]))
+        return [GamePath(self.files, rel) for rel in sorted(folders)]
+
+    def rglob(self, pattern: str) -> Iterator["GamePath"]:
+        return self.glob(f"**/{pattern}")
+
+    def open(self, mode: str = "r", buffering: int = -1, encoding: Optional[str] = None,
+             errors: Optional[str] = None, newline: Optional[str] = None):
+        if not any(flag in mode for flag in "wax+"):
+            return open(self.files.require(self.rel), mode, buffering, encoding, errors, newline)
+        initial = self.files.read(self.rel) if ("a" in mode or "+" in mode) and self.is_file() else b""
+        raw = _WriteOnClose(self.files, self.rel, initial)
+        if "b" in mode:
+            return raw
+        return io.TextIOWrapper(raw, encoding=encoding or "utf-8", errors=errors, newline=newline,
+                                write_through=True)
+
+    # -- writing -------------------------------------------------------------------------------------
+    def write_bytes(self, data) -> int:
+        data = bytes(data)
+        self.files.write(self.rel, data)
+        return len(data)
+
+    def write_text(self, data: str, encoding: Optional[str] = None, errors: Optional[str] = None,
+                   newline: Optional[str] = None) -> int:
+        if newline is None:
+            data = data.replace("\n", os.linesep)
+        elif newline:
+            data = data.replace("\n", newline)
+        self.files.write(self.rel, data.encode(encoding or "utf-8", errors or "strict"))
+        return len(data)
+
+    def unlink(self, missing_ok: bool = False) -> None:
+        if not self.is_file():
+            if missing_ok:
+                return
+            raise FileNotFoundError(self.rel)
+        self.files.remove(self.rel)
+
+    def mkdir(self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False) -> None:
+        if self.exists() and not exist_ok:
+            raise FileExistsError(self.rel)
+        self.files.mkdir(self.rel)
+
+    def rmdir(self) -> None:
+        self.files.remove(self.rel)
+
+    def touch(self, exist_ok: bool = True) -> None:
+        if not self.exists():
+            self.files.write(self.rel, b"")
+
+    def replace(self, target) -> "GamePath":
+        target = target if isinstance(target, GamePath) else self._child(self.files.rel(target))
+        target.write_bytes(self.read_bytes())
+        self.files.remove(self.rel)
+        return target
+
+    rename = replace
+
+
 # -- the layout older projects use ---------------------------------------------------------------------
 
 
@@ -322,6 +588,9 @@ class LegacyFiles(GameFiles):
     def path(self, path: RelPath) -> Optional[Path]:
         real = self.root / self.rel(path)
         return real if real.exists() else None
+
+    def target(self, path: RelPath) -> Path:
+        return self.root / self.rel(path)
 
     def listdir(self, folder: RelPath = "") -> list[str]:
         real = self.root / self.rel(folder)
@@ -470,6 +739,9 @@ class OverlayFiles(GameFiles):
             return False
         parts = rel.split("/")
         return any("/".join(parts[:i]) in removed for i in range(1, len(parts) + 1))
+
+    def target(self, path: RelPath) -> Path:
+        return self.output / self.rel(path)
 
     def path(self, path: RelPath) -> Optional[Path]:
         rel = self.rel(path)
@@ -635,6 +907,26 @@ class OverlayFiles(GameFiles):
     def base_hashes(self) -> dict[str, str]:
         """SHA-1 of the input file each replaced file was made from."""
         return dict(self._load()["base"])
+
+
+def as_path(path) -> "Path | GamePath":
+    """``Path(path)``, except that a :class:`GamePath` stays one (``Path()`` of it would give the
+    real file and leave the layer). Use it where a function takes a folder as ``Path | str``."""
+    return path if isinstance(path, GamePath) else Path(path)
+
+
+def as_files(source) -> GameFiles:
+    """A layer for ``source``: a :class:`GameFiles` as it is, the layer of a :class:`GamePath`, a
+    project (:func:`files_of`), or the ``files/`` folder of a plain extracted disc (tools and
+    tests reading a retail tree; read only)."""
+    if isinstance(source, GameFiles):
+        return source
+    if isinstance(source, GamePath):
+        return source.files
+    if isinstance(source, (str, Path)):
+        root = Path(source).parent
+        return LegacyFiles(root, root / "originals")
+    return files_of(source)
 
 
 def files_of(project) -> GameFiles:

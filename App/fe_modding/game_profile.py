@@ -257,9 +257,27 @@ def profile_of(project) -> GameProfile:
     return PROFILES.get(game, PATH_OF_RADIANCE_PROFILE)
 
 
+def files_root_of(project):
+    """The disc's ``files/`` tree of a project as a ``GamePath`` (see :func:`profile_of` for
+    stand-ins, which are read as the older layout)."""
+    from .game_files import files_of
+    return files_of(project).at("files")
+
+
+def logical_game_path_of(project, name: str):
+    """Logical file ``name`` of the project as a ``GamePath``."""
+    from .game_files import files_of
+    return files_of(project).at(logical_rel_of(project, name))
+
+
 def files_dir_of(project) -> Path:
     """``extracted/files`` of a project (see :func:`profile_of` for stand-ins)."""
     return Path(project.extracted_dir) / "files"
+
+
+def logical_rel_of(project, name: str) -> str:
+    """Disc-relative path of logical file ``name`` (``files/FE8Data.bin``), for ``project.files``."""
+    return f"files/{profile_of(project).logical(name).path}"
 
 
 def logical_path_of(project, name: str) -> Path:

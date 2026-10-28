@@ -8,8 +8,8 @@ times, in four different pickers, across four separate windows. This module
 is the single place that maps a chapter number to all four paths, so the
 workspace's chapter page (see ``fe_modding/gui/pages/chapters.py``) can drive
 every chapter-scoped editor from one selection. Paths below are relative to
-``extracted/files/`` - one level below ``ModProject.extracted_dir`` itself,
-matching the actual disc-extraction layout.
+the disc's ``files/`` tree, reached through the project's file layer
+(``project.files``); the paths this module returns are the real files to read.
 
 The dialogue file (``Mess/cNN.m``) is treated as the authoritative source of
 "what chapters exist" - it's the one format that's reliably one file per
@@ -37,13 +37,13 @@ take the free ids of :data:`NEW_CHAPTER_IDS`.
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from .formats import dispo, lz10, pak
-from .game_profile import GAME_DATA, files_dir_of, logical_path_of, profile_of
+from .game_files import FILES, files_of, game_path
+from .game_profile import GAME_DATA, logical_rel_of, profile_of
 from .project import ModProject
 
 def _chapter_file_re(project: ModProject):
@@ -62,14 +62,10 @@ class ChapterPaths:
 def list_chapter_ids(project: ModProject) -> list[str]:
     """Every chapter number that has a ``Mess/cNN.m`` dialogue file, sorted
     numerically. This is the list the Chapters page shows."""
-    mess_dir = files_dir_of(project) / "Mess"
-    if not mess_dir.is_dir():
-        return []
-
     pattern = _chapter_file_re(project)
     ids = []
-    for path in mess_dir.glob("c*.m"):
-        match = pattern.match(path.name)
+    for rel in files_of(project).glob(game_path("Mess"), "c*.m"):
+        match = pattern.match(rel.rsplit("/", 1)[-1])
         if match:
             ids.append(match.group(1))
     return sorted(set(ids), key=profile_of(project).chapter_sort_key)
@@ -82,7 +78,7 @@ def _first_deployment_difficulty(project: ModProject, folder: str) -> str:
     if "{diff}" not in profile.deployment:
         return ""
     for diff in profile.deployment_difficulties:
-        if profile.deployment_path(files_dir_of(project), folder, diff).exists():
+        if files_of(project).exists(profile.deployment_path(FILES, folder, diff)):
             return diff
     return profile.deployment_difficulties[0]
 
@@ -92,20 +88,14 @@ def chapter_paths(project: ModProject, chapter_id: str) -> ChapterPaths:
     paths - any of the four may be None if that file doesn't exist for this
     chapter (e.g. a tutorial-only or trial-map chapter)."""
     profile = profile_of(project)
-    extracted = files_dir_of(project)
+    files = files_of(project)
     folder = profile.map_folder(chapter_id)
-
-    dialogue = profile.mess_path(extracted, chapter_id)
-    script = profile.script_path(extracted, chapter_id)
-    deployment = profile.deployment_path(extracted, folder, _first_deployment_difficulty(project, folder))
-    map_bin = extracted / "zmap" / folder / "map.cmp"
-
     return ChapterPaths(
         chapter_id=chapter_id,
-        dialogue=dialogue if dialogue.exists() else None,
-        script=script if script.exists() else None,
-        deployment=deployment if deployment.exists() else None,
-        map=map_bin if map_bin.exists() else None,
+        dialogue=files.path(profile.mess_path(FILES, chapter_id)),
+        script=files.path(profile.script_path(FILES, chapter_id)),
+        deployment=files.path(profile.deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))),
+        map=files.path(game_path("zmap", folder, "map.cmp")),
     )
 
 
@@ -115,23 +105,20 @@ _PHASE_FOLDER_RE = re.compile(r"^bmap(\d+)(?:_(\d+))?$", re.IGNORECASE)
 def chapter_phases(project: ModProject, chapter_id: str) -> list[str]:
     """The chapter's map folders in play order: ``bmapNN`` first, then
     ``bmapNN_2``, ``bmapNN_3``... (a mid-chapter map change)."""
-    zmap = project.extracted_dir / "files" / "zmap"
-    if not zmap.is_dir():
-        return []
     phases = []
-    for folder in zmap.iterdir():
-        match = _PHASE_FOLDER_RE.match(folder.name)
-        if folder.is_dir() and match and int(match.group(1)) == int(chapter_id):
-            phases.append((int(match.group(2) or 1), folder.name))
+    for rel in files_of(project).glob(game_path("zmap"), "*", dirs=True):
+        name = rel.rsplit("/", 1)[-1]
+        match = _PHASE_FOLDER_RE.match(name)
+        if match and int(match.group(1)) == int(chapter_id):
+            phases.append((int(match.group(2) or 1), name))
     return [name for _n, name in sorted(phases)]
 
 
 def phase_paths(project: ModProject, folder: str) -> tuple[Optional[Path], Optional[Path]]:
     """``(dispos.cmp, map.cmp)`` of one map folder, None where missing."""
-    base = files_dir_of(project) / "zmap" / folder
-    deployment = profile_of(project).deployment_path(files_dir_of(project), folder, _first_deployment_difficulty(project, folder))
-    map_cmp = base / "map.cmp"
-    return (deployment if deployment.exists() else None, map_cmp if map_cmp.exists() else None)
+    files = files_of(project)
+    deployment = profile_of(project).deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))
+    return files.path(deployment), files.path(game_path("zmap", folder, "map.cmp"))
 
 
 def chapter_of_map_folder(folder: str) -> Optional[str]:
@@ -155,8 +142,9 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
         if loose is not None:
             texts = {key: m.text for key, m in _common_messages(loose).items()}
         else:
-            system_cmp = logical_path_of(project, "system_archive") if profile_of(project).has_file("system_archive") else None
-            texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None and system_cmp.exists() else {}
+            system_cmp = (files_of(project).path(logical_rel_of(project, "system_archive"))
+                          if profile_of(project).has_file("system_archive") else None)
+            texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None else {}
     except Exception:  # noqa: BLE001 - titles are presentation only
         return {}
     titles = {}
@@ -185,8 +173,9 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
 
     try:
         records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
-        mess = project.extracted_dir / "files" / "Mess"
-        path = next((p for p in (mess / "e_common.m", mess / "common.m") if p.is_file()), None)
+        files = files_of(project)
+        path = next((p for p in (files.path(game_path("Mess", n)) for n in ("e_common.m", "common.m"))
+                     if p is not None and p.is_file()), None)
         texts = {}
         if path is not None:
             for msg in message.read_messages_path(path):
@@ -202,8 +191,8 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
 
 
 def _common_messages_path(project: ModProject) -> Optional[Path]:
-    path = logical_path_of(project, "common_mess")
-    return path if path.is_file() else None
+    path = files_of(project).path(logical_rel_of(project, "common_mess"))
+    return path if path is not None and path.is_file() else None
 
 
 def _common_messages(path: Path) -> dict:
@@ -237,9 +226,8 @@ def free_chapter_ids(project: ModProject, used_record_ids=()) -> list[int]:
     """Numbers a new story chapter can take: in :data:`NEW_CHAPTER_IDS`, used by no
     ``ChapterData`` record and by no chapter file or map folder."""
     taken = {int(c) for c in list_chapter_ids(project)} | set(used_record_ids)
-    zmap = project.extracted_dir / "files" / "zmap"
-    if zmap.is_dir():
-        taken |= {int(m.group(1)) for f in zmap.iterdir() if (m := _PHASE_FOLDER_RE.match(f.name))}
+    taken |= {int(m.group(1)) for name in files_of(project).listdir(game_path("zmap"))
+              if (m := _PHASE_FOLDER_RE.match(name))}
     return [n for n in NEW_CHAPTER_IDS if n not in taken]
 
 
@@ -274,33 +262,28 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
 
     new_padded = new_id.zfill(2)
     source_padded = source_id.zfill(2)
-    extracted = project.extracted_dir / "files"
-    zmap = extracted / "zmap"
+    files = files_of(project)
     phases = chapter_phases(project, source_id)
     for folder in phases:
-        target = zmap / _phase_target(folder, source_padded, new_padded)
-        if target.exists():
-            raise ValueError(f"zmap/{target.name} already exists.")
+        target = _phase_target(folder, source_padded, new_padded)
+        if files.exists(game_path("zmap", target)):
+            raise ValueError(f"zmap/{target} already exists.")
 
-    new_dialogue = extracted / "Mess" / f"c{new_padded}.m"
-    new_dialogue.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source.dialogue, new_dialogue)
-
+    files.import_file(game_path("Mess", f"c{new_padded}.m"), source.dialogue)
     if source.script is not None:
-        new_script = extracted / "Scripts" / f"C{new_padded}.cmb"
-        new_script.parent.mkdir(parents=True, exist_ok=True)
-        new_script.write_bytes(_renumber_script(source.script.read_bytes(), source_padded, new_padded))
+        files.write(game_path("Scripts", f"C{new_padded}.cmb"),
+                    _renumber_script(source.script.read_bytes(), source_padded, new_padded))
 
     for folder in phases:
-        target = zmap / _phase_target(folder, source_padded, new_padded)
-        target.mkdir(parents=True)
-        for item in (zmap / folder).iterdir():
-            if item.is_dir():
-                shutil.copytree(item, target / item.name)
-            elif item.name.lower() == "dispos.cmp":
-                (target / item.name).write_bytes(_renumber_dispos(item.read_bytes(), source_padded, new_padded))
+        source_folder = game_path("zmap", folder)
+        target = game_path("zmap", _phase_target(folder, source_padded, new_padded))
+        files.mkdir(target)
+        for rel in files.iter_files(source_folder):
+            inner = rel[len(source_folder) + 1:]
+            if inner.lower() == "dispos.cmp":
+                files.write(f"{target}/{inner}", _renumber_dispos(files.read(rel), source_padded, new_padded))
             else:
-                shutil.copyfile(item, target / item.name)
+                files.import_file(f"{target}/{inner}", files.require(rel))
 
     return chapter_paths(project, new_padded)
 
@@ -385,8 +368,8 @@ WAR_RECORD_KEYS = ("MED_CHAP{:02d}_TAG", "MED_CHAP{:02d}_TITLE", "MED_DIED_CHAP{
 
 
 def _ending_messages_path(project: ModProject) -> Optional[Path]:
-    path = files_dir_of(project) / "Mess" / "ending.m"
-    return path if path.is_file() else None
+    path = files_of(project).path(game_path("Mess", "ending.m"))
+    return path if path is not None and path.is_file() else None
 
 
 def war_record_texts(chapter: int, title: str) -> dict:
@@ -461,10 +444,10 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
         data = fe8data.write_battle_terrain(data, rows + [fe8data.BattleTerrainRow(f"bmap{padded}", list(row.scenes))])
 
     shops: dict[Path, bytes] = {}
-    folder = project.extracted_dir / "files" / "shop"
+    files = files_of(project)
     for name in shop.DIFFICULTY_FILES.values():
-        path = folder / name
-        if not path.is_file():
+        path = files.path(game_path("shop", name))
+        if path is None or not path.is_file():
             continue
         doc = shop.parse_shop(path.read_bytes())
         if any(doc.shop(kind, new_id) for kind in shop.SHOP_KINDS):
@@ -500,7 +483,7 @@ def plan_story_chapter(project: ModProject, fe8: bytes, source_id: str, new_id: 
 
     from . import chapter_images
 
-    images = chapter_images.chapter_name_images(project.extracted_dir / "files", new_id, title, source_number)
+    images = chapter_images.chapter_name_images(files, new_id, title, source_number)
     if len(images) < 2:
         warnings.append("The chapter-name pictures could not be drawn (no template picture or no "
                         "Fonts/bigkana.gcf): the file menu shows an empty box for this chapter.")
@@ -591,10 +574,10 @@ def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow)
     data = fe8data.write_battle_terrain(data, rows)
 
     shops: dict[Path, bytes] = {}
-    shop_folder = project.extracted_dir / "files" / "shop"
+    files = files_of(project)
     for name in shop.DIFFICULTY_FILES.values():
-        path = shop_folder / name
-        if not path.is_file():
+        path = files.path(game_path("shop", name))
+        if path is None or not path.is_file():
             continue
         doc = shop.parse_shop(path.read_bytes())
         if shop.remove_chapter(doc, chapter):
@@ -610,16 +593,15 @@ def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow)
             common = (common_path, message.write_messages(kept))
 
     padded = f"{chapter:02d}"
-    files = project.extracted_dir / "files"
-    strip = files / chapter_images.STRIP_FOLDER / chapter_images.strip_name(chapter)
+    strip_name = chapter_images.strip_name(chapter)
     remaining_chapters = [int(cid) for cid in list_chapter_ids(project)
                           if cid.isdigit() and int(cid) != chapter]
-    strip_is_shared = any(chapter_images.strip_name(other) == strip.name for other in remaining_chapters)
-    assets = [files / "Mess" / f"c{padded}.m", files / "Scripts" / f"C{padded}.cmb",
-              files / chapter_images.CARD_FOLDER / chapter_images.card_name(chapter)]
+    strip_is_shared = any(chapter_images.strip_name(other) == strip_name for other in remaining_chapters)
+    assets = [game_path("Mess", f"c{padded}.m"), game_path("Scripts", f"C{padded}.cmb"),
+              game_path(chapter_images.CARD_FOLDER, chapter_images.card_name(chapter))]
     if not strip_is_shared:
-        assets.append(strip)
-    assets.extend(files / "zmap" / folder for folder in chapter_phases(project, padded))
+        assets.append(game_path(chapter_images.STRIP_FOLDER, strip_name))
+    assets.extend(game_path("zmap", folder) for folder in chapter_phases(project, padded))
 
     # Update references before deleting their targets. The deletion route also
     # clears an unreachable chapter's own flow-table entry.
@@ -638,13 +620,10 @@ def remove_story_chapter(project: ModProject, fe8: bytes, chapter_id: str, flow)
         if updated_ending is not None:
             project.write_keeping_original(ending_path, updated_ending)
     removed = []
-    for path in assets:
-        if path.is_dir():
-            shutil.rmtree(path)
-            removed.append(path)
-        elif path.is_file():
-            path.unlink()
-            removed.append(path)
+    for rel in assets:
+        if files.exists(rel):
+            removed.append(files.target(rel))
+            files.remove(rel)
     return RemovedChapterPlan(data, removed, shops, common)
 
 
@@ -656,14 +635,14 @@ def ensure_name_images(project: ModProject) -> list[Path]:
     from . import chapter_images
     from .formats import fe8data
 
-    files = project.extracted_dir / "files"
+    files = files_of(project)
     if not profile_of(project).supports(GAME_DATA):
         return []
-    fe8 = logical_path_of(project, "game_data")
-    if not fe8.is_file():
+    fe8 = files.read_or_none(logical_rel_of(project, "game_data"))
+    if fe8 is None:
         return []
     try:
-        records = fe8data.read_chapter_data(fe8.read_bytes())
+        records = fe8data.read_chapter_data(fe8)
     except Exception:  # noqa: BLE001 - an unreadable table is reported by its own editor
         return []
     titles = chapter_titles(project)
@@ -672,13 +651,13 @@ def ensure_name_images(project: ModProject) -> list[Path]:
         chapter = record.chapter_id
         if chapter not in NEW_CHAPTER_IDS:
             continue
-        wanted = (files / chapter_images.STRIP_FOLDER / chapter_images.strip_name(chapter),
-                  files / chapter_images.CARD_FOLDER / chapter_images.card_name(chapter))
-        if all(path.is_file() for path in wanted):
+        wanted = (game_path(chapter_images.STRIP_FOLDER, chapter_images.strip_name(chapter)),
+                  game_path(chapter_images.CARD_FOLDER, chapter_images.card_name(chapter)))
+        if all(files.is_file(rel) for rel in wanted):
             continue
         title = chapter_display_title(f"{chapter:02d}", titles)
         for path, data in chapter_images.chapter_name_images(files, chapter, title, 1).items():
-            if not path.is_file():
-                project.write_keeping_original(path, data)
+            if not files.is_file(path):
+                files.write(path, data)
                 written.append(path)
     return written

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import tools
-from .game_files import GameFiles, LegacyFiles
+from .game_files import GameFiles, GamePath, LegacyFiles
 from .formats import gcdisc, lz10, pak
 from .exceptions import ProjectError
 from .game_profile import GameProfile, game_for_disc_id
@@ -97,21 +97,36 @@ class ModProject:
         return self._files
 
     @property
+    def files_root(self) -> GamePath:
+        """The disc's file tree (``files/``), where the profile's paths are relative to, as a
+        :class:`~fe_modding.game_files.GamePath`: joins, reads and writes go through :attr:`files`."""
+        return self.files.at("files")
+
+    @property
+    def sys_root(self) -> GamePath:
+        """The disc's ``sys/`` folder (``main.dol``, ``boot.bin``...), through :attr:`files`."""
+        return self.files.at("sys")
+
+    @property
     def files_dir(self) -> Path:
-        """``extracted/files``: the disc's file tree, where the profile's paths are relative to."""
+        """``extracted/files`` of the older layout. Use :attr:`files_root`."""
         return self.extracted_dir / "files"
 
-    def logical_path(self, name: str) -> Path:
-        """Path of a logical game file (``game_data``, ``battle_data``...) in this project."""
-        return self.profile.path(self.files_dir, name)
+    def logical_rel(self, name: str) -> str:
+        """Disc-relative path of a logical game file (``files/FE8Data.bin``), for :attr:`files`."""
+        return f"files/{self.profile.logical(name).path}"
+
+    def logical_path(self, name: str) -> GamePath:
+        """A logical game file (``game_data``, ``battle_data``...) of this project."""
+        return self.files.at(self.logical_rel(name))
 
     def read_logical(self, name: str) -> bytes:
         """The bytes of a logical game file, LZ10-decompressed when the game stores it compressed
         (Radiant Dawn's ``.cms`` files). Raises ProjectError when the file is missing."""
-        path = self.logical_path(name)
-        if not path.is_file():
+        data = self.files.read_or_none(self.logical_rel(name))
+        if data is None:
             raise ProjectError(f"{self.profile.file_label(name)} was not found. Extract the project first.")
-        data = path.read_bytes()
+        path = self.logical_path(name)
         if self.profile.logical(name).compressed:
             try:
                 return lz10.decompress(data)
@@ -120,11 +135,11 @@ class ModProject:
         return data
 
     def write_logical(self, name: str, data: bytes) -> None:
-        """Write a logical game file, LZ10-compressing it where the game stores it compressed. The
-        extracted file is first kept in ``originals/`` (:meth:`write_keeping_original`)."""
+        """Write a logical game file through :attr:`files`, LZ10-compressing it where the game
+        stores it compressed."""
         if self.profile.logical(name).compressed:
             data = lz10.compress(data)
-        self.write_keeping_original(self.logical_path(name), data)
+        self.files.write(self.logical_rel(name), data)
 
     @property
     def source_path(self) -> Optional[Path]:
