@@ -74,6 +74,7 @@ docs/*
 !docs/tellius_archive.html
 !docs/index.html
 !docs/.nojekyll
+!docs/app/
 
 # JVM crash logs (Ghidra)
 hs_err_pid*.log
