@@ -8,7 +8,9 @@
 
 Both are LZ10-compressed TPL files. A new chapter's files are the template chapter's with the
 image replaced (same size and pixel format), drawn with the game's own large serif font
-(``Fonts/bigkana.gcf``); they can be replaced afterwards like any other image.
+(``Fonts/bigkana.gcf``); they can be replaced afterwards like any other image. The Japanese
+``bigkana.gcf`` holds only kana and digits (its retail pictures are drawn art), so a title it
+cannot spell is drawn with the first of :data:`FALLBACK_FONT_FILES` that can.
 """
 
 from __future__ import annotations
@@ -25,6 +27,8 @@ from .formats import fe9_font, lz10, tpl
 STRIP_FOLDER = "window/chapter2"
 CARD_FOLDER = "window/chapter"
 FONT_FILE = "Fonts/bigkana.gcf"
+#: Fonts with the full CP932 set (kanji and ASCII), tried when ``FONT_FILE`` lacks a character.
+FALLBACK_FONT_FILES = ("Fonts/talk.gcf", "Fonts/system.cms", "Fonts/system.gcf")
 
 
 def strip_name(chapter: int) -> str:
@@ -117,13 +121,27 @@ def _template(folder: Path, names: list[str]) -> Optional[bytes]:
     return None
 
 
+def title_font(files: Path, title: str) -> Optional[fe9_font.GameFont]:
+    """``FONT_FILE``, or the first fallback font that has every character of ``title`` (a
+    missing glyph draws the font's first record, a dash); ``FONT_FILE`` when none covers it."""
+    fonts = []
+    for relative in (FONT_FILE, *FALLBACK_FONT_FILES):
+        path = files / relative
+        if path.is_file():
+            data = path.read_bytes()
+            font = fe9_font.GameFont(lz10.decompress(data) if data[:1] == b"\x10" else data)
+            if all(font.has(c) for c in title.replace(":", ": ") if not c.isspace()):
+                return font
+            fonts.append(font)
+    return fonts[0] if fonts else None
+
+
 def chapter_name_images(files: Path, chapter: int, title: str, template_chapter: int) -> dict[Path, bytes]:
     """The strip and title card files of ``chapter`` (paths under ``files``), drawn from
     ``title`` on copies of ``template_chapter``'s. Missing templates or font give fewer files."""
-    font_path = files / FONT_FILE
-    if not font_path.is_file():
+    font = title_font(files, title)
+    if font is None:
         return {}
-    font = fe9_font.GameFont(font_path.read_bytes())
     result = {}
     strip = _template(files / STRIP_FOLDER, [strip_name(template_chapter), strip_name(1)])
     if strip is not None:

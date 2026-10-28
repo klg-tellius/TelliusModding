@@ -654,7 +654,13 @@ def _chapter_fields() -> tuple:
                    _f(f"win2_{d}", "Victory 2", "label", base + 0x08, group)]
         fields += [_f(f"lose{i}_{d}", f"Defeat {i + 1}", "label", base + 0x10 + 4 * i, group) for i in range(4)]
     fields += [_f("number", "Number", "u8", 0x84, "Settings")]
-    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x88, 0x90)]
+    # +0x89 selects the party-state gold account (FUN_800615dc/FUN_80061808/
+    # FUN_800626e0); +0x8A selects the warehouse pointer (FUN_801059b0).
+    # Keep the remaining bytes conservatively named until their semantics are confirmed.
+    fields += [_f("unknown_88", "Unknown +0x88", "u8", 0x88, "Settings"),
+               _f("gold_account", "Gold account", "u8", 0x89, "Settings"),
+               _f("convoy", "Convoy", "u8", 0x8A, "Settings")]
+    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x8B, 0x90)]
     fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
                _f("base_scene", "Base scene", "label", 0x94, "Settings"),
                _f("battle_background", "Battle background", "label", 0x98, "Settings"),
@@ -680,6 +686,20 @@ TERRAIN_BLOCK_FIELDS = (
             for i in range(MOVE_COST_COUNT))
 )
 
+DIFFICULTY_ROW_NAMES = (
+    "Kill EXP base",
+    "Action EXP base",
+    "Kill EXP multiplier (%)",
+    "Action EXP multiplier (%)",
+    "Second-tier effective-level adjustment",
+    "Third-tier effective-level adjustment",
+    "Animalize effective-level adjustment",
+    "Boss target kill EXP bonus",
+    "Steal-skill target kill EXP bonus",
+    "Weapon EXP multiplier (%)",
+)
+
+
 FIXED_TABLES = {
     "chapter": FixedTable("ChapterData", 0xB4, _chapter_fields()),
     "terrain": FixedTable("TerrainData", 0x10, (
@@ -704,7 +724,8 @@ FIXED_TABLES = {
         _f("against", "Against", "label", 4, "Weapon triangle"),
         _f("damage", "Damage", "s8", 8, "Weapon triangle"), _f("hit", "Hit", "s8", 9, "Weapon triangle"))),
     "difficulty": FixedTable("GameData", 0x08, tuple(
-        _f(f"value_{i}", f"Difficulty {i + 1}", "u16", 2 * i, "Constants") for i in range(4)), counted=False,
+        _f(f"value_{i}", name, "u16", 2 * i, "Difficulty values")
+        for i, name in enumerate(("Easy", "Normal", "Hard", "Maniac"))), counted=False,
         fixed_count=10),  # ten rows of four u16 (one per difficulty) before the terrain blocks
     "biorhythm": FixedTable("BioData", 0x10, tuple(
         _f(f"value_{i}", f"Value {i + 1}", "f32", 4 * i, "Biorhythm row") for i in range(4)), counted=False,

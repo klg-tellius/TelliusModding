@@ -22,6 +22,19 @@ from ..widgets import ScrollFrame, section_header
 
 GROUP_NOTES = {
     "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field.",
+    "Radiant Dawn combat": "Verified RFEE01 battle-engine constants. Settings that need a local instruction "
+                             "replacement install and remove it automatically.",
+    "Radiant Dawn experience": "Combat-award rules recovered from RFEE01. The award cap is applied after "
+                                 "Paragon and Blossom.",
+    "Radiant Dawn growth": "RFEE01 random-growth payouts, route selection, Blossom rolls and the native "
+                            "BEXP target. Ordinary levels have no PoR-style fixed-growth accumulator.",
+    "Radiant Dawn skills": "Verified RFEE01 skill conditions, bonuses and behavior patches.",
+    "Radiant Dawn transformation": "Verified RFEE01 laguz transformation constants.",
+    "Radiant Dawn Triangle Attack": "RFEE01 eligibility rules for the two native Triangle Attack skills.",
+    "Radiant Dawn random numbers": "Boot-time seeds for RFEE01's battle/script and general-purpose random-number generators.",
+    "Radiant Dawn economy": "Verified RFEE01 wallet, forge and economy constants. Display-safe bounds are enforced by the editor.",
+    "Radiant Dawn promotion": "Native RFEE01 promotion-item and automatic-promotion rules. Tier and scripted restrictions remain active.",
+    "Radiant Dawn rules": "Other verified RFEE01 executable rules.",
     G_PROCS: "A skill's chance is its formula (for example Skill / 2) times the multiplier, plus the bonus; "
              "the game caps it at 100. Deathblow only has a multiplier: its chance is 0 unless the hit "
              "is a critical.",
@@ -96,6 +109,28 @@ class _ChoiceRow:
             self.refresh()
             return
         value = self.tunable.minimum + self.tunable.choices.index(self.var.get())
+        if value == self.page.editor.status(self.tunable).value:
+            return
+        self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
+
+
+class _BoolRow:
+    """A binary tunable presented as a checkbox rather than a numeric field."""
+
+    def __init__(self, page: "CodePage", parent: tk.Misc, tunable: Tunable):
+        self.page, self.tunable = page, tunable
+        self.var = tk.BooleanVar()
+        self.box = ttk.Checkbutton(parent, variable=self.var, style="Surface.TCheckbutton", command=self.apply)
+
+    def refresh(self) -> None:
+        status = self.page.editor.status(self.tunable)
+        available = status.state not in (State.UNAVAILABLE, State.CONFLICT)
+        self.box.configure(state="normal" if available else "disabled")
+        value = status.value if status.value is not None else self.tunable.default
+        self.var.set(bool(value))
+
+    def apply(self) -> None:
+        value = 1 if self.var.get() else 0
         if value == self.page.editor.status(self.tunable).value:
             return
         self.page.run(lambda: self.page.editor.set_value(self.tunable, value))
@@ -303,7 +338,7 @@ class CodePage(Page):
         self._summary.pack(side="left")
         ttk.Button(bottom, text="Reset everything to vanilla", command=self._reset_all).pack(side="right")
 
-        for group, entries in CATALOG.groups().items():
+        for group, entries in CATALOG.groups_for(editor.version).items():
             shown = [e for e in entries if not getattr(e, "internal", False)]
             if not shown:
                 continue
@@ -356,7 +391,10 @@ class CodePage(Page):
         if isinstance(entry, Tunable):
             control = ttk.Frame(row, style="Surface.TFrame")
             control.pack(side="right")
-            if entry.choices:
+            if entry.checkbox:
+                value = _BoolRow(self, control, entry)
+                vanilla = "on" if entry.default else "off"
+            elif entry.choices:
                 value = _ChoiceRow(self, control, entry)
                 vanilla = value.label(entry.default)
             else:

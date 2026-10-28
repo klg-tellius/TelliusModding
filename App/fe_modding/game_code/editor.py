@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import entries  # noqa: F401  (registers the catalog)
+from . import entries, entries_fe10  # noqa: F401  (registers both game catalogues)
 from .battle_window import GameFiles
 from .catalog import CATALOG, Entry, Patch, Session, State, Status, Tunable
 from .dol import Dol, DolError
@@ -71,7 +71,7 @@ class CodeEditor:
         return self.session.status(entry)
 
     def modified_entries(self) -> list[Entry]:
-        return [e for e in CATALOG.entries.values() if not getattr(e, "internal", False)
+        return [e for e in CATALOG.entries_for(self.version) if not getattr(e, "internal", False)
                 and self.status(e).state in (State.APPLIED, State.CUSTOM)]
 
     # -- edits: each returns the change-log description -----------------------------------------

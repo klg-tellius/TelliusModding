@@ -117,20 +117,20 @@ class TransactionTests(unittest.TestCase):
         extracted = self.root / "extracted"
         (extracted / "sys").mkdir(parents=True)
         boot = extracted / "sys" / "boot.bin"
-        boot.write_bytes(b"GFEE01")
+        boot.write_bytes(b"GFEJ01")
         target = extracted / "sys" / "example"
         target.write_bytes(b"original")
         backup = self.root / "originals" / "sys" / "example"
         project = SimpleNamespace(directory=self.root, extracted_dir=extracted,
                                   _original_of=lambda path: self.root / "originals" / path.relative_to(extracted))
         update = HubProjectUpdate((PreparedFile(target, b"original", b"changed"),),
-                                  ((target, b"original"), (boot, b"GFEE01")), None)
+                                  ((target, b"original"), (boot, b"GFEJ01")), None)
         with self.assertRaises(ProjectError):
             commit_project_update(project, update)
         self.assertEqual(target.read_bytes(), b"original")
         self.assertFalse(backup.exists())
         # Exercise transaction plumbing with inert test bytes, not a game patch.
-        with patch.object(extended_flags, "EXTENDED_FLAGS_PATCH", SimpleNamespace(versions={"GFEE01": ()})):
+        with patch.object(extended_flags, "EXTENDED_FLAGS_PATCH", SimpleNamespace(versions={"GFEJ01": ()})):
             commit_project_update(project, update)
             self.assertEqual(backup.read_bytes(), b"original")
             second = HubProjectUpdate((PreparedFile(target, b"changed", b"changed again"),),

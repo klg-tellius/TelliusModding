@@ -54,8 +54,16 @@ class MiniPPC:
                 address = (base + _s16(imm)) & 0xFFFFFFFF
                 for i in range(4):
                     self.memory[address + i] = (value >> (24 - i * 8)) & 0xFF
+            elif op == 32:                                  # lwz
+                address = (base + _s16(imm)) & 0xFFFFFFFF
+                self.r[rd] = int.from_bytes(bytes(self.memory.get(address + i, 0) for i in range(4)), "big")
             elif op == 15:                                  # lis
                 self.r[rd] = (imm << 16) & 0xFFFFFFFF
+            elif op == 24:                                  # ori
+                self.r[ra] = self.r[rd] | imm
+            elif op == 28:                                  # andi.
+                self.r[ra] = self.r[rd] & imm
+                self._compare(self.r[ra], 0, True)
             elif op == 14:                                  # addi / li
                 self.r[rd] = (base + _s16(imm)) & 0xFFFFFFFF
             elif op == 11:                                  # cmpwi
@@ -407,6 +415,23 @@ class AddStoryChapterTests(unittest.TestCase):
         self.assertFalse((self.files / "Mess" / "c09.m").exists())
         self.assertFalse((self.files / "zmap" / "bmap09").exists())
         self.assertEqual(chapter_flow.ChapterFlow(CodeEditor(self.project.extracted_dir)).next_of(8), 10)
+
+
+class JapaneseTitleFontTests(unittest.TestCase):
+    """The JP bigkana.gcf has no ASCII or kanji: a hub titled in ASCII drew a row of dashes."""
+
+    FILES = Path(__file__).resolve().parents[2] / "research/main_dol/extracted/GFEJ01/P-GFEJ/files"
+
+    def test_a_title_bigkana_cannot_spell_uses_a_font_that_can(self):
+        from fe_modding import chapter_images
+
+        if not (self.FILES / chapter_images.FONT_FILE).is_file():
+            self.skipTest("retail Japanese files not extracted")
+        for title in ("Flag Test Hub", "第３３章　拠点"):
+            font = chapter_images.title_font(self.FILES, title)
+            self.assertTrue(all(font.has(c) for c in title if not c.isspace()), title)
+            images = chapter_images.chapter_name_images(self.FILES, 33, title, 1)
+            self.assertEqual(len(images), 2)
 
 
 if __name__ == "__main__":

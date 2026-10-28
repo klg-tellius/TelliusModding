@@ -54,9 +54,12 @@ def _validate(core, version):
         ppc.cmplw(5, 6), ("ne", "fail"),
         ppc.lwz(5, 0x44, 3), *_address(6, xf.SAVE_VERSIONS[magic]),
         ppc.cmplw(5, 6), ("ne", "fail"),
-        ppc.lbz(5, 0x60, 3), ppc.cmpwi(5, 2), ("eq", "kind_ok"),
-        ppc.cmpwi(5, 3), ("ne", "fail"),
-        "kind_ok", ppc.addi(6, 3, 0xB8),
+        # Save kind 2 file, 3 Suspend, or 1: a Suspend the game has already marked as used. The
+        # Japanese build marks the copy in memory before it deserializes it, so the restore sees
+        # kind 1. The card-open guard skips kind 1 itself (on the card those copies are partial).
+        ppc.lbz(5, 0x60, 3), ppc.cmplwi(5, 1), ("lt", "fail"),
+        ppc.cmplwi(5, 3), ("gt", "fail"),
+        ppc.addi(6, 3, 0xB8),
     ]
 
     def chunk(tag, payload):

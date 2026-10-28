@@ -24,6 +24,14 @@ def _files():
 
 
 class MapPropTests(unittest.TestCase):
+    def test_import_can_scale_widest_side_to_tiles(self):
+        entries, files = _files()
+        warnings = map_props.import_prop(
+            entries, files, _quad_glb(translation=(2.5, 0.0, 2.5)), "stone", scale_tiles=3)
+        stone = map_file.read_map_bytes(files["map.bin"]).build_desc[2]
+        self.assertAlmostEqual(max(stone.size_x - stone.offset_x, stone.size_z - stone.offset_z), 15.0)
+        self.assertTrue(any("3 tiles" in warning for warning in warnings))
+
     def test_import_place_replace_and_remove(self):
         entries, files = _files()
         warnings = map_props.import_prop(entries, files, _quad_glb(translation=(2.5, 0.0, 2.5)), "stone")

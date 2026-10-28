@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from . import entries  # noqa: F401  (registers the catalog)
+from . import entries, entries_fe10  # noqa: F401  (registers both catalogues)
 from .catalog import CATALOG, Patch, Session, State, Tunable
 from .dol import Dol, DolError
 from .versions import identify
@@ -24,7 +24,8 @@ def verify(dol: Dol) -> list[str]:
     retail = Dol(bytes(dol.data))
     session = Session(dol, ident.version, retail.read)
     before = dol.sha1()
-    for entry in CATALOG.entries.values():
+    catalogue = CATALOG.entries_for(ident.version)
+    for entry in catalogue:
         if ident.version.code not in entry.versions:
             problems.append(f"{entry.id}: no sites for {ident.version.code}")
             continue
@@ -43,7 +44,7 @@ def verify(dol: Dol) -> list[str]:
         return True
 
     def revert_all() -> None:
-        pending = [e for e in CATALOG.entries.values() if session.status(e).state != State.UNAVAILABLE]
+        pending = [e for e in catalogue if session.status(e).state != State.UNAVAILABLE]
         for _ in range(len(pending) + 1):       # an option can only be undone once its rival is
             left = []
             # Reverse patch registration: an extension that hooks another patch
@@ -76,14 +77,14 @@ def verify(dol: Dol) -> list[str]:
     # entries that share bytes with another (mutually exclusive options) cannot all be on at once:
     # they are applied first-come, and the ones left out are then tried on their own
     deferred = []
-    for entry in CATALOG.entries.values():
+    for entry in catalogue:
         if session.status(entry).state == State.UNAVAILABLE:
             continue
         try:
             apply(entry)
         except DolError:
             deferred.append(entry)
-    for entry in CATALOG.entries.values():
+    for entry in catalogue:
         if entry not in deferred and session.status(entry).state != State.UNAVAILABLE:
             check_applied(entry)
     revert_all()

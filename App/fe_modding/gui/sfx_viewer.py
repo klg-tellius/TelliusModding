@@ -19,11 +19,12 @@ import tempfile
 import tkinter as tk
 import wave
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import numpy as np
 
-from ..formats import gcfesnd, musyx, musyx_song
+from ..formats import brsar, brstm, fe10_sound, gcfesnd, lz10, musyx, musyx_song, rbnk, rseq, rwsd
+from ..games import Game
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -52,16 +53,22 @@ class SfxViewer(EditorPanel):
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
         self._project = project
+        self._fe10 = project.game == Game.RADIANT_DAWN
         self._changelog = changelog
         self._cues: list[gcfesnd.SfxCue] = []
         self._by_iid: dict[str, gcfesnd.SfxCue] = {}
         self._banks: musyx.SoundBanks | None = None
+        self._rd_archive: brsar.BrsarArchive | None = None
+        self._rd_sounds: dict[str, brsar.BrsarSound] = {}
         self._stbl_names: list[str] = []
         self._slib: bytes = b""
         self._scratch_dir = Path(tempfile.mkdtemp(prefix="tellius_sfx_"))
         self.bind("<Destroy>", self._on_destroy)
         self.bind("<Unmap>", self._on_unmap)
         self._build_widgets()
+        if self._fe10:
+            self._tree.heading("sound_id", text="BRSAR resource")
+            self._tree.column("sound_id", width=220, anchor="w")
         self._load()
 
     def _build_widgets(self) -> None:
@@ -147,6 +154,28 @@ class SfxViewer(EditorPanel):
             shutil.rmtree(self._scratch_dir, ignore_errors=True)
 
     def _load(self) -> None:
+        if self._fe10:
+            path = self._project.extracted_dir / "files" / "Sound" / "sound_data_en.cms"
+            archive_path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+            if not path.is_file() or not archive_path.is_file():
+                self._count.config(text="Radiant Dawn sound data not found. Extract the project first.")
+                return
+            try:
+                self._cues = [cue for cue in fe10_sound.read_sound_data(lz10.decompress(path.read_bytes()))
+                              if cue.name.startswith(("SFX_", "SE_", "FF_"))]
+                archive = brsar.read_brsar(archive_path.read_bytes())
+                self._rd_archive = archive
+                self._rd_sounds = {sound.name: sound for sound in archive.sounds}
+                self._rd_archive_symbols = set(archive.symbols)
+            except (OSError, ValueError) as exc:
+                self._count.config(text=f"Could not read Radiant Dawn sound data: {exc}")
+                return
+            groups = sorted({cue.family for cue in self._cues})
+            self._group_box.config(values=[ALL_GROUPS, *groups])
+            self._play_status.config(text="Embedded RWSD waves and RSEQ/RBNK sequences can be previewed; "
+                                          "existing waves can be replaced. New archive resources are not enabled yet.")
+            self._refresh()
+            return
         path = self._project.extracted_dir / "files" / "Sound" / "gcfesnd.bin"
         if not path.exists():
             self._count.config(text="Sound/gcfesnd.bin not found. Extract the project first.")
@@ -177,6 +206,18 @@ class SfxViewer(EditorPanel):
         self._by_iid.clear()
         shown = 0
         for index, cue in enumerate(self._cues):
+            if self._fe10:
+                if group != ALL_GROUPS and cue.family != group:
+                    continue
+                if query and query not in cue.name.lower() and query not in cue.resource.lower():
+                    continue
+                iid = str(index)
+                self._by_iid[iid] = cue
+                self._tree.insert("", "end", iid=iid, values=(
+                    cue.name, cue.resource, f"{cue.raw_words[0]:#x}", f"{cue.raw_words[1]:#x}",
+                    f"{cue.raw_words[2]:#x}", f"{cue.raw_words[-1]:#x}"))
+                shown += 1
+                continue
             if group != ALL_GROUPS and cue.group != group:
                 continue
             if query and query not in cue.name.lower() and query != f"{cue.sound_id}":
@@ -197,6 +238,37 @@ class SfxViewer(EditorPanel):
         if cue is None:
             return
         self._stop()
+        if self._fe10:
+            sharing = sum(1 for item in self._cues if item.resource == cue.resource)
+            registered = cue.resource in getattr(self, "_rd_archive_symbols", set())
+            sound = self._rd_sounds.get(cue.resource)
+            playable = False
+            kind = "not registered"
+            if sound is not None and self._rd_archive is not None:
+                kind = {1: "sequence", 2: "stream", 3: "wave"}.get(sound.sound_type, "unknown")
+                source = self._rd_archive.files[sound.file_index]
+                playable = ((sound.sound_type == 3 and source.magic == "RWSD") or
+                            (sound.sound_type == 1 and source.magic == "RSEQ" and
+                             sound.bank_index is not None and
+                             sound.bank_index < len(self._rd_archive.banks) and
+                             self._rd_archive.files[
+                                 self._rd_archive.banks[sound.bank_index].file_index].magic == "RBNK"))
+            self._play_button.config(state="normal" if winsound and playable else "disabled")
+            self._replace_button.config(state="normal" if sound is not None and sound.sound_type == 3 and
+                                        self._rd_archive is not None and
+                                        self._rd_archive.files[sound.file_index].magic == "RWSD" else "disabled")
+            self._title.config(text=cue.name)
+            self._detail.config(text=(f"BRSAR resource: {cue.resource}\n"
+                                      f"Registered in sound_us.brsar: {'yes' if registered else 'no'}\n"
+                                      f"Resource kind: {kind}\n"
+                                      f"Shared by {sharing} cue(s)\n"
+                                      f"Record offset: {cue.record_offset:#x}"))
+            self._macro_text.config(state="normal")
+            self._macro_text.delete("1.0", "end")
+            self._macro_text.insert("1.0", "Opaque parameter words:\n" +
+                                    " ".join(f"{word:08X}" for word in cue.raw_words))
+            self._macro_text.config(state="disabled")
+            return
         self._play_button.config(state="normal" if winsound and self._banks else "disabled")
         self._replace_button.config(state="normal")
         sharing = sum(1 for c in self._cues if c.sound_id == cue.sound_id)
@@ -227,6 +299,51 @@ class SfxViewer(EditorPanel):
 
     # -- adding / replacing ---------------------------------------------------
     def _open_import(self, cue: gcfesnd.SfxCue | None) -> None:
+        if self._fe10:
+            if cue is None:
+                messagebox.showinfo("Sound effects", "Adding a new Radiant Dawn archive registration is not "
+                                    "enabled yet. Existing embedded wave sounds can be replaced.", parent=self)
+                return
+            sound = self._rd_sounds.get(cue.resource)
+            if self._rd_archive is None or sound is None or sound.sound_type != 3:
+                messagebox.showinfo("Sound effects", "Only embedded RWSD wave sounds can be replaced.", parent=self)
+                return
+            source = self._rd_archive.files[sound.file_index]
+            try:
+                document = rwsd.read_rwsd(source.header, source.wave_data)
+                wave_index = document.entries[sound.info_index].wave_index
+            except (rwsd.RwsdError, IndexError) as exc:
+                messagebox.showerror("Replace sound effect", str(exc), parent=self)
+                return
+            affected = [item.name for item in self._rd_archive.sounds
+                        if item.sound_type == 3 and item.file_index == sound.file_index and
+                        item.info_index < len(document.entries) and
+                        document.entries[item.info_index].wave_index == wave_index]
+            if len(affected) > 1 and not messagebox.askyesno(
+                    "Shared audio", f"This wave is shared by {len(affected)} archive sounds. Replacing it also "
+                    f"changes: {', '.join(affected[:8])}{'…' if len(affected) > 8 else ''}\n\nContinue?",
+                    icon="warning", parent=self):
+                return
+            chosen = filedialog.askopenfilename(title="Choose replacement WAV",
+                                                filetypes=[("WAV audio", "*.wav")], parent=self)
+            if not chosen:
+                return
+            try:
+                imported = brstm.wav_path_to_brstm_audio(chosen)
+                replacement = rwsd.RwsdAudio(imported.sample_rate,
+                                              tuple(tuple(channel) for channel in imported.channels), None)
+                new_header, new_wave = rwsd.replace_wave(document, wave_index, replacement)
+                archive_bytes = brsar.replace_embedded_file(self._rd_archive, sound.file_index,
+                                                             new_header, new_wave)
+                archive_path = self._project.extracted_dir / "files" / "Sound" / "sound_us.brsar"
+                self._project.write_keeping_original(archive_path, archive_bytes)
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Replace sound effect", str(exc), parent=self)
+                return
+            self._changelog.append(cue.name, f"Replaced embedded audio for {cue.resource}")
+            self._load()
+            self._play_status.config(text=f"Saved replacement audio for {cue.name}.")
+            return
         if not self._cues:
             messagebox.showinfo("Sound effects", "Extract the project first.", parent=self)
             return
@@ -256,6 +373,10 @@ class SfxViewer(EditorPanel):
     def _delete_cue(self) -> None:
         cue = self._selected_cue()
         if cue is None:
+            return
+        if self._fe10:
+            messagebox.showinfo("Delete sound effect", "Retail Radiant Dawn cues cannot be removed until BRSAR "
+                                "rebuilding is enabled.", parent=self)
             return
         if cue.name in self._original_cue_names():
             messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "
@@ -288,8 +409,35 @@ class SfxViewer(EditorPanel):
         self._play_status.config(text=f"Saved {name}. Build the project to use it in the game.")
 
     # -- playback -----------------------------------------------------------
-    def _render(self, cue: gcfesnd.SfxCue) -> tuple[int, np.ndarray]:
+    def _render(self, cue: gcfesnd.SfxCue | fe10_sound.Fe10SoundCue) -> tuple[int, np.ndarray]:
         """(sample rate, int16 samples) of a cue: an FX sound, else a song."""
+        if self._fe10:
+            if self._rd_archive is None or not isinstance(cue, fe10_sound.Fe10SoundCue):
+                raise rwsd.RwsdError("Radiant Dawn sound archive is not loaded")
+            sound = self._rd_sounds.get(cue.resource)
+            if sound is None:
+                raise rwsd.RwsdError(f"{cue.resource} is not registered in the archive")
+            source = self._rd_archive.files[sound.file_index]
+            if sound.sound_type == 3 and source.magic == "RWSD":
+                document = rwsd.read_rwsd(source.header, source.wave_data)
+                audio = rwsd.render_entry(document, sound.info_index)
+                samples = np.asarray(audio.channels, dtype=np.int16)
+                if len(audio.channels) == 1:
+                    samples = samples[0]
+                else:
+                    samples = samples.T
+                return audio.sample_rate, samples
+            if sound.sound_type == 1 and source.magic == "RSEQ" and sound.bank_index is not None:
+                if sound.bank_index >= len(self._rd_archive.banks):
+                    raise rseq.RseqError("Sequence bank index is out of range")
+                bank_info = self._rd_archive.banks[sound.bank_index]
+                bank_file = self._rd_archive.files[bank_info.file_index]
+                if bank_file.magic != "RBNK":
+                    raise rbnk.RbnkError(f"{bank_info.name} does not refer to an RBNK file")
+                return rseq.render_sequence(rseq.read_rseq(source.header),
+                                            rbnk.read_rbnk(bank_file.header, bank_file.wave_data),
+                                            sound.info_index)
+            raise rwsd.RwsdError(f"{cue.resource} is not a supported embedded sound")
         assert self._banks is not None
         if self._banks.fx_entry(cue.sound_id) is not None:
             sfx = self._banks.render(cue.sound_id)
@@ -301,21 +449,24 @@ class SfxViewer(EditorPanel):
 
     def _play(self) -> None:
         cue = self._selected_cue()
-        if cue is None or winsound is None or self._banks is None:
+        if cue is None or winsound is None or (not self._fe10 and self._banks is None):
             return
-        wav_path = self._scratch_dir / f"{cue.sound_id}.wav"
+        cache_id = cue.record_offset if self._fe10 else cue.sound_id
+        wav_path = self._scratch_dir / f"{cache_id}.wav"
         if not wav_path.exists():
             self._play_status.config(text=f"Rendering {cue.name}...")
             self.update_idletasks()
             try:
                 rate, samples = self._render(cue)
-            except (musyx.MusyxError, musyx_song.SongError, OSError) as exc:
+            except (musyx.MusyxError, musyx_song.SongError, rwsd.RwsdError, rseq.RseqError,
+                    rbnk.RbnkError, OSError, IndexError) as exc:
                 self._play_status.config(text=f"Can't play {cue.name}: {exc}")
                 return
             _write_wav(wav_path, rate, samples)
         winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
         self._stop_button.config(state="normal")
-        self._play_status.config(text=f"Playing {cue.name}{self._song_note(cue)}")
+        note = "" if self._fe10 else self._song_note(cue)
+        self._play_status.config(text=f"Playing {cue.name}{note}")
 
     def _song_note(self, cue: gcfesnd.SfxCue) -> str:
         if self._banks is None or self._banks.fx_entry(cue.sound_id) is not None or cue.sound_id <= 0xFF:
@@ -333,8 +484,12 @@ class SfxViewer(EditorPanel):
 
 
 def _write_wav(path: Path, rate: int, samples: np.ndarray) -> None:
+    pcm = np.asarray(samples, dtype="<i2")
+    channels = 1 if pcm.ndim == 1 else pcm.shape[1]
+    if channels not in (1, 2):
+        raise ValueError("WAV preview must be mono or stereo")
     with wave.open(str(path), "wb") as out:
-        out.setnchannels(1)
+        out.setnchannels(channels)
         out.setsampwidth(2)
         out.setframerate(rate)
-        out.writeframes(np.asarray(samples, dtype="<i2").tobytes())
+        out.writeframes(pcm.tobytes())

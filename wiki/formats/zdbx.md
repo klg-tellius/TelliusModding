@@ -8,7 +8,7 @@ article_type: "format-reference"
 tags: ["Container","Battle Graphics"]
 aliases: ["tellius_archive.html#/zdbx"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-27"
 sources: ["tellius-archive-research"]
 cms_collection: "formats"
 source_path: "formats/zdbx.md"
@@ -40,6 +40,8 @@ source_path: "formats/zdbx.md"
 2. **`zu/<code>.dbx`** (the model table) names the model inside the packs and, for every weapon and action, the animation to play (`ax_攻撃1 fig1_at1_ax`: the first axe attack).
 3. The packs are `zu/<code>/<code>_<weapon>.pak` (a `.cmp` of the same name would be tried first).
 4. **`zu/<code>_prm.dbx`** (the parameter table) starts with `texnum` and that many texture lines. The texture is picked by the unit's animation ID, then its character, then its army (`自軍` player, `敵軍` enemy, `中立` other, `味方` ally), falling back to the model code; the file is `zu/<code>/<name>.tpl`. Tuning keys follow: move speed (`移動速度`), range (`間合い`), five jump variants of the attacks, flying type (`飛行系`), flying away after the finishing blow, run count (`走り回数`), knockback on damage (`ダメージ後退`), three animation blend durations and a large-model flag (`大型`). <span class="confidence confidence--confirmed">engine</span>
+
+  A different colour needs no new model: a recoloured copy of the texture in the same folder and one texture line naming it under the character's `PID_` (or one army key pointed at a copy) is enough, because the texture is looked up separately from the model. The app's **Colour variant…** and **Army colours…** write exactly that. <span class="confidence confidence--strong">engine; not yet seen in game</span>
 
   A new battle model can be added without replacing one: a copied model folder under a new code, its two tables, and one job-list line. In the Prologue, Boyd was given `zu/bol2` (a copy of `fig1` with a recoloured texture) through the line `JID_FIGHTER PID_BOLE_MAP1=bol2`; the game drew it in battle while every other fighter kept `fig1`. <span class="confidence confidence--confirmed">in game</span>
 

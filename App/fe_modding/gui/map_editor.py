@@ -18,17 +18,18 @@ folder.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from tkinter import filedialog, messagebox, simpledialog
 
 from .. import map_props
 from ..games import read_disc_id
-from ..formats import fe8data, lz10, map_file, pak
-from ..game_profile import GAME_DATA, profile_of
+from ..formats import fe10data, fe8data, lz10, map_file, pak
+from ..game_profile import DATA_TABLES, GAME_DATA, profile_of
 from ..project import ModProject
 from . import map_scene
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from .model_viewer import ModelPreviewDialog, load_named_model_set
+from .model_viewer import ModelPreviewDialog
 
 
 class MapEditor(EditorPanel):
@@ -203,12 +204,8 @@ class MapEditor(EditorPanel):
         return name
 
     def view_model(self, parent, base_name: str) -> None:
-        loaded = load_named_model_set(
-            self._pak_contents,
-            base_name,
-            label=f"{self.map_name}/{base_name}",
-            map_projection=map_scene.compute_map_texture_projection(base_name, self._map_data),
-        )
+        loaded = map_scene.load_map_prop(self._pak_contents, self._map_data, base_name,
+                                         label=f"{self.map_name}/{base_name}")
         if loaded is None:
             messagebox.showinfo(
                 "No 3D model",
@@ -366,11 +363,22 @@ class MapEditor(EditorPanel):
         self._terrain_types: list[fe8data.TerrainType] = []
         self._terrain_labels: dict[str, str] = {}
         try:
-            if not profile.supports(GAME_DATA):
+            if profile.supports(DATA_TABLES) and not profile.supports(GAME_DATA):
+                database = fe10data.read_fe10data(self._project.read_logical("game_data"))
+                self._terrain_types = [SimpleNamespace(
+                    name=record.values.get("name") or "",
+                    name_key=record.values.get("name_key") or "",
+                    avoid=record.values.get("avoid", 0), defense=record.values.get("defense", 0),
+                    resistance=record.values.get("resistance", 0), heal=record.values.get("heal", 0),
+                    impassable=False,
+                ) for record in database.tables.get("terrain", []) if record.values.get("name")]
+                texts = fe10data.message_names(files / "Mess")
+            elif not profile.supports(GAME_DATA):
                 raise ValueError(profile.unavailable(GAME_DATA))
-            self._terrain_types = fe8data.read_terrain_types(profile.path(files, "game_data").read_bytes())
-            system = profile.path(files, "system_archive")
-            texts = fe8data.read_message_texts(system) if system.is_file() else {}
+            else:
+                self._terrain_types = fe8data.read_terrain_types(profile.path(files, "game_data").read_bytes())
+                system = profile.path(files, "system_archive")
+                texts = fe8data.read_message_texts(system) if system.is_file() else {}
         except Exception:  # noqa: BLE001 - the Build tab then lists names as stored
             texts = {}
         for t in self._terrain_types:

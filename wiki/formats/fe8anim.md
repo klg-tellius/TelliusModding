@@ -8,7 +8,7 @@ article_type: "format-reference"
 tags: ["Graphics","Animation","Registry"]
 aliases: ["tellius_archive.html#/fe8anim"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-27"
 sources: ["tellius-archive-research"]
 cms_collection: "formats"
 source_path: "formats/fe8anim.md"
@@ -56,6 +56,8 @@ An `AID_..._SW` entry resolves to a class folder and weapon enum 1, so it is eli
 </div>
 
   A character with no animation ID of its own uses its class's: the class record names one (the Ranger `AID_LORD`, the Fighter `AID_FIGHTER`). A name that finds no record, or an empty one, gives `AID_DUMMY_N`, a black stand-in. <span class="confidence confidence--confirmed">engine + in game</span>
+
+  A texture can live inside the folder's `pack.cmp` (`tex_4.tpl` of `armor/`, the named characters' colours) or loose beside it (the generic army colours). A recolour gets an unused number as a loose `tex_<n>.tpl` and the record's texture number pointed at it; the app's colour variants do this. <span class="confidence confidence--strong">files + engine path; not yet seen in game</span>
 
   A new map model can be given to one character without touching the rest of its class: records copied under a new base ID and pointing at a copied folder, and the character's animation ID pointed at that new name. In the Prologue, Boyd (`PID_BOLE_MAP1`) was given `AID_FIGHTER_BOX` with a recoloured copy of his texture, and the game drew it on the map. <span class="confidence confidence--confirmed">in game</span>
 

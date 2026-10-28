@@ -18,12 +18,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..formats.cmb.binary import _pool_layout
-from ..formats.cmb.catalog import TRIGGERS
 from ..formats.cmb.decompiler import _Names
 from .state import Frame, GameState, ScriptRun
 from .world import World
 
-ONCE = frozenset({1, 2, 5, 8, 9})
+ONCE = frozenset({1, 2, 5, 8, 9, 17, 18, 19})
 
 
 @dataclass
@@ -48,7 +47,7 @@ def index(world: World) -> list:
             text.setdefault(off, s)
         names = _Names(script).defs
         for fi, fn in enumerate(script.functions):
-            kind = TRIGGERS.get(fn.type)
+            kind = world.dialect.trigger_catalogue.get(fn.type)
             if fn.type == 0 or kind is None:
                 continue
             params = {}
@@ -116,8 +115,11 @@ def _pair(params: dict, a: Optional[str], b: Optional[str]) -> bool:
 def _blocked(state: GameState, t: TriggerFn) -> bool:
     if t.type in ONCE and (t.script, t.function) in state.seen:
         return True
-    flag = t.params.get("name") if t.type in (8, 9) else None
-    return isinstance(flag, str) and state.get_flag(flag)
+    flag = t.params.get("name") if t.type in (4, 5, 8, 9, 17, 18, 19) else None
+    # In FE10 this slot may instead name a condition function.  It is only a
+    # flag when it was registered; condition-function evaluation is handled by
+    # the trigger task before the event body is launched.
+    return isinstance(flag, str) and state.flag_slot(flag) is not None and state.get_flag(flag)
 
 
 def matches(world: World, state: GameState, kind: int, ctx: dict, start: int = 0) -> list:
@@ -141,6 +143,21 @@ def matches(world: World, state: GameState, kind: int, ctx: dict, start: int = 0
             ok = _pair(p, ctx.get("pid1"), ctx.get("pid2"))
         elif kind in (10, 11):
             ok = p.get("pid") == ctx.get("pid")
+        elif kind == 17:
+            ok = _pair(p, ctx.get("pid1"), ctx.get("pid2"))
+        elif kind == 18:
+            first = (p.get("pid1") in (None, ctx.get("pid1")) and
+                     p.get("pid2") in (None, ctx.get("pid2")))
+            swapped = bool(p.get("flag")) and (p.get("pid1") in (None, ctx.get("pid2")) and
+                                                p.get("pid2") in (None, ctx.get("pid1")))
+            ok = (first or swapped) and p.get("pid3") in (None, ctx.get("pid3"))
+        elif kind == 19:
+            ok = (p.get("pid") in (None, ctx.get("pid")) and
+                  p.get("x") in (0xFFFF, ctx.get("x")) and p.get("y") in (0xFFFF, ctx.get("y")))
+        elif kind in (14, 16, 20):
+            # Base, named-support and epilogue entries are catalogued for
+            # inspection, but the tactical runner never launches them.
+            ok = False
         else:
             ok = True
         if ok:

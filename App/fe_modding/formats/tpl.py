@@ -632,6 +632,94 @@ def _replace_region_own_palette(
     return bytes(out)
 
 
+def map_colours(tpl_bytes: bytes, mapping) -> bytes:
+    """Return a copy of tpl_bytes with every colour passed through
+    ``mapping``, a function from an (N, 4) uint8 RGBA array to another.
+
+    Each format is recoloured in its own terms, so nothing is re-quantized
+    that the mapping leaves alone:
+
+    - C8/C4: only the palette entries change. Every image sharing the
+      palette (a portrait's body, mouths and eyes) follows, and the indices
+      stay.
+    - CMPR: only each 4x4 sub-block's two endpoint colours change. The
+      in-between colours are derived from them on the GPU, and the 2-bit
+      indices stay; when the new endpoints would flip the block's mode
+      (4-colour opaque vs 3-colour plus transparent) they are swapped and
+      the indices remapped to match. Every mip level is covered.
+    - Any other format: each image is decoded, mapped and re-encoded with
+      its mip chain (_write_chain()).
+    """
+    stream = io.BytesIO(tpl_bytes)
+    infos = read_tpl_image_info(stream)
+    out = bytearray(tpl_bytes)
+    palettes_done: set[int] = set()
+    for info in infos:
+        if info.format in (FORMAT_C8, FORMAT_C4):
+            if info.palette_offset in palettes_done:
+                continue
+            palettes_done.add(info.palette_offset)
+            _length, fmt, data_offset = struct.unpack_from(">HxxII", tpl_bytes, info.palette_offset)
+            palette = np.array(_read_palette(stream, info.palette_offset), dtype=np.uint8).reshape(-1, 4)
+            mapped = np.asarray(mapping(palette), dtype=np.uint8)
+            for i in np.flatnonzero((mapped != palette).any(axis=1)):
+                colour = tuple(int(c) for c in mapped[i])
+                value = _from_rgb5a3(colour) if fmt == PALETTE_RGB5A3 else _rgb565_from_decoded(colour[:3])
+                struct.pack_into(">H", out, data_offset + 2 * int(i), value)
+        elif info.format == FORMAT_CMPR:
+            end = info.data_addr + info.mip_data_length
+            if end > len(tpl_bytes):
+                raise TplError(f"Image {info.index}'s data runs past the end of the file.")
+            out[info.data_addr:end] = _map_cmpr_endpoints(tpl_bytes[info.data_addr:end], mapping)
+        else:
+            base = _decode_level(stream, info, info.data_addr, info.width, info.height, {}).convert("RGBA")
+            pixels = np.array(base)
+            mapped = np.asarray(mapping(pixels.reshape(-1, 4)), dtype=np.uint8).reshape(pixels.shape)
+            if not np.array_equal(mapped, pixels):
+                out = bytearray(_write_chain(bytes(out), info, Image.fromarray(mapped, "RGBA")))
+    return bytes(out)
+
+
+def _rgb565_from_decoded(rgb: tuple[int, int, int]) -> int:
+    """RGB565 from colours decoded as ``0x8 * r5`` / ``0x4 * g6`` (_rgb565()
+    and the CMPR decoder), so an unchanged colour encodes back to itself."""
+    r, g, b = rgb
+    return (min(31, round(r / 8)) << 11) | (min(63, round(g / 4)) << 5) | min(31, round(b / 8))
+
+
+def _map_cmpr_endpoints(data: bytes, mapping) -> bytes:
+    """CMPR sub-blocks (8 bytes: colour0, colour1, 16 2-bit indices) with
+    both endpoint colours mapped; see map_colours()."""
+    blocks = np.frombuffer(data, dtype=">u2").reshape(-1, 4).astype(np.uint32)
+    color0, color1 = blocks[:, 0], blocks[:, 1]
+    bits = (blocks[:, 2] << 16) | blocks[:, 3]
+    four_color = color0 > color1
+
+    def mapped(color: np.ndarray) -> np.ndarray:
+        rgba = _rgb565_array(color)
+        rgb = np.asarray(mapping(rgba), dtype=np.int32)[:, :3]
+        return ((np.minimum(31, np.round(rgb[:, 0] / 8)).astype(np.uint32) << 11)
+                | (np.minimum(63, np.round(rgb[:, 1] / 4)).astype(np.uint32) << 5)
+                | np.minimum(31, np.round(rgb[:, 2] / 8)).astype(np.uint32))
+
+    new0, new1 = mapped(color0), mapped(color1)
+    # 4-colour blocks need colour0 > colour1, 3-colour blocks colour0 <= colour1
+    swap = np.where(four_color, new0 < new1, new0 > new1)
+    new0, new1 = np.where(swap, new1, new0), np.where(swap, new0, new1)
+    # swapping the endpoints turns index 0 into 1 and back; in 4-colour mode
+    # the 1/3 and 2/3 colours (2, 3) trade places too, in 3-colour mode the
+    # midpoint (2) and transparent (3) stay
+    low = np.uint32(0x55555555)
+    flip = np.where(four_color, low, ~(bits >> 1) & low)
+    bits = np.where(swap, bits ^ flip, bits)
+    # a 4-colour block whose endpoints became equal would read as 3-colour
+    flat = four_color & (new0 == new1)
+    new1 = np.where(flat & (new0 > 0), new1 - 1, new1)
+    new0 = np.where(flat & (new0 == 0), 1, new0)
+    blocks = np.stack((new0, new1, bits >> 16, bits & 0xFFFF), axis=1).astype(">u2")
+    return blocks.tobytes()
+
+
 def _palette_value(tpl_bytes: bytes, palette_data: int, index: int) -> int:
     (value,) = struct.unpack_from(">H", tpl_bytes, palette_data + index * 2)
     return value

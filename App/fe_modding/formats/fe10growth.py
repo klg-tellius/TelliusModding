@@ -10,9 +10,12 @@ LZ10 around the usual data container (:mod:`fe8data`), with one symbol, ``FE10Pe
 
 Levels are **internal levels**: tier 1 is 1-20, tier 2 21-40, tier 3 41-60 (Ike's record runs 31-60,
 from Hero level 11, his level in ``FE10Data.cms``, to Vanguard level 20; a laguz runs 1-40).
-A unit's **starting** stats do not come from here: they are the class bases plus the character's
-bonuses in ``FE10Data.cms`` (checked in game: Micaiah's level-1 line set to HP 25 left her at the
-FE10Data value). What the game reads these lines for is not established yet.
+This table is a deployment-controlled alternative for constructing a unit's stats, not the normal
+player level-up algorithm. During unit creation, deployment flag ``0x0400`` makes the game look up
+the unit's PID and internal level here, clamp the level to the record's last line, and convert that
+line's eight absolute stats into the unit's runtime stat bonuses. Units without that flag continue
+to use their class bases plus character bonuses; this explains why changing Micaiah's line alone
+did not change her normal Part 1 Prologue starting stats.
 
 A few records share one block of lines (the tutorial's ``PID_TUT_*`` duplicates), so editing a
 shared line changes each of them; :func:`sharing` names them.

@@ -251,6 +251,7 @@ def _transform_triangle(tri: _Triangle, matrix) -> _Triangle:
         blend_mode=tri.blend_mode,
         material=tri.material,
         cull=tri.cull,
+        layer=tri.layer,
     )
 
 
@@ -419,6 +420,14 @@ def _loaded_for_map_model(
     return cache[filename]
 
 
+def _mesh_layer(filename: str) -> str:
+    """``"water"`` for a map's water surfaces (``bmap01_water0``) and shore waves, else ``"land"``."""
+    from ..terrain_kit import WAVE_OBJECTS
+
+    name = filename.lower()
+    return "water" if "water" in name or name in WAVE_OBJECTS else "land"
+
+
 def build_map_terrain_scene(
     pak_contents: dict[str, bytes],
     map_data: map_file.MapData,
@@ -439,7 +448,8 @@ def build_map_terrain_scene(
             continue
         loaded = _loaded_for_map_model(pak_contents, map_data, cache, obj.filename)
         if loaded is not None:
-            triangles.extend(loaded.triangles)
+            layer = _mesh_layer(obj.filename)
+            triangles.extend(replace(tri, layer=layer) for tri in loaded.triangles)
 
     return _LoadedSet(label=label, bones=[], triangles=triangles, bone_markers={}, animations=[])
 
@@ -475,7 +485,8 @@ def build_map_scene(
         if loaded is None:
             continue
         if obj.filename not in stills:
-            stills[obj.filename] = _still_triangles(loaded)
+            layer = _mesh_layer(obj.filename)
+            stills[obj.filename] = [replace(tri, layer=layer) for tri in _still_triangles(loaded)]
         matrix = inst.world_transform(map_scale=map_scale, parent_matrix=anchor)
         triangles.extend(_transform_triangle(tri, matrix) for tri in stills[obj.filename])
 
@@ -507,6 +518,16 @@ def _still_triangles(loaded: _LoadedSet) -> list[_Triangle]:
              for index, track in tracks.items()}
     return [replace(t, alpha=min(1.0, peaks[t.material] * STILL_ALPHA_SHARE))
             if t.alpha < 0.01 and t.material in peaks else t for t in loaded.triangles]
+
+
+def load_map_prop(pak_contents: dict[str, bytes], map_data: map_file.MapData, name: str,
+                  label: str | None = None) -> _LoadedSet | None:
+    """One map prop for a single-model preview, textured as on its map and, at rest, as a still
+    picture shows it (:func:`_still_triangles`: ``wave_99``'s foam is otherwise invisible until its
+    animation plays, which then sets the alpha itself)."""
+    loaded = load_named_model_set(pak_contents, name, label=label,
+                                  map_projection=compute_map_texture_projection(name, map_data))
+    return replace(loaded, triangles=_still_triangles(loaded)) if loaded is not None else None
 
 
 # -- top-down image (the Build tab's backdrop) -------------------------------------------

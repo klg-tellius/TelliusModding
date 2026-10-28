@@ -11,6 +11,7 @@ on the 608x448 screen; drag it to move it.
 from __future__ import annotations
 
 import io
+import struct
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -18,7 +19,8 @@ from typing import Optional
 
 from PIL import Image, ImageDraw, ImageTk
 
-from ..formats import rect, soundroom, tpl
+from .. import rect_catalog
+from ..formats import soundroom, tpl
 from ..formats.soundroom import SCREEN_SIZE, SoundRoomEntry
 from ..project import ModProject
 from . import theme
@@ -42,7 +44,8 @@ class SoundRoomEditor(EditorPanel):
         self._files = project.extracted_dir / "files"
         self._path = self._files / FILE_NAME
         self._entries: list[SoundRoomEntry] = []
-        self._rects: Optional[rect.RectFile] = None
+        self._rects = None
+        self._source_bytes: bytes | None = None
         self._pictures: dict[str, Optional[Image.Image]] = {}
         self._index: Optional[int] = None
         self._dirty = False
@@ -129,20 +132,23 @@ class SoundRoomEditor(EditorPanel):
         self._loading = True
         try:
             self._rects = None
+            self._source_bytes = None
             rect_path = self._files / "s" / "rect.bin"
             try:
                 if rect_path.exists():
-                    self._rects = rect.read_rect_file(rect_path)
+                    self._rects = rect_catalog.read_doc(self._project, rect_path)
             except Exception:  # noqa: BLE001 - the picture names and previews are optional
                 self._rects = None
-            self._name_box.config(values=sorted(r.name for r in self._rects.resources) if self._rects else [])
+            self._name_box.config(values=sorted(r.name for r in rect_catalog.resources(self._rects))
+                                  if self._rects else [])
             self._pictures.clear()
             if not self._path.exists():
                 self._entries = []
-                self._status.config(text=f"{FILE_NAME} not found (Path of Radiance only; extract the project first).")
+                self._status.config(text=f"{FILE_NAME} not found; extract the project first.")
             else:
                 try:
-                    self._entries = soundroom.read_soundroom_path(self._path)
+                    self._source_bytes = self._path.read_bytes()
+                    self._entries = soundroom.read_soundroom(self._source_bytes)
                     self._status.config(text=f"{len(self._entries)} pictures")
                 except Exception as exc:  # noqa: BLE001
                     self._entries = []
@@ -222,6 +228,12 @@ class SoundRoomEditor(EditorPanel):
         if not name:
             self._show_entry()
             return
+        if entry.extra_word is not None and name not in {item.name for item in soundroom.read_soundroom(
+                self._source_bytes or b"")}:
+            messagebox.showerror("Invalid resource", "Choose one of soundroom.bin's existing pooled resources.",
+                                 parent=self)
+            self._show_entry()
+            return
         if (name, x, y) != (entry.name, entry.x, entry.y):
             entry.name, entry.x, entry.y = name, x, y
             self._changed()
@@ -251,7 +263,10 @@ class SoundRoomEditor(EditorPanel):
     def _add(self) -> None:
         name = self._name_box.cget("values")[0] if self._name_box.cget("values") else "RID_"
         position = len(self._entries) if self._index is None else self._index + 1
-        self._entries.insert(position, SoundRoomEntry(name))
+        current = self._current()
+        extra = current.extra_word if current is not None else (
+            self._entries[0].extra_word if self._entries else None)
+        self._entries.insert(position, SoundRoomEntry(name, extra_word=extra))
         self._set_dirty(True)
         self._fill_tree(position)
         self._name_box.focus_set()
@@ -260,7 +275,7 @@ class SoundRoomEditor(EditorPanel):
         entry = self._current()
         if entry is None:
             return
-        self._entries.insert(self._index + 1, SoundRoomEntry(entry.name, entry.x, entry.y))
+        self._entries.insert(self._index + 1, SoundRoomEntry(entry.name, entry.x, entry.y, entry.extra_word))
         self._set_dirty(True)
         self._fill_tree(self._index + 1)
 
@@ -282,13 +297,16 @@ class SoundRoomEditor(EditorPanel):
             return self._pictures[name]
         picture = None
         resource = self._rects.find(name) if self._rects is not None else None
-        quads = resource.quads() if resource is not None else []
-        if quads:
-            layer = quads[0]
+        layers = list(rect_catalog.image_layers(resource)) if resource is not None else []
+        if layers:
+            _index, layer = layers[0]
             try:
-                images = tpl.read_tpl_images(io.BytesIO((self._files / layer.file).read_bytes()))
-                texture = images[layer.texture].convert("RGBA")
-                x0, y0, x1, y1 = layer.src
+                images = tpl.read_tpl_images(io.BytesIO((self._files / rect_catalog.layer_file(layer)).read_bytes()))
+                texture = images[rect_catalog.layer_texture(layer)].convert("RGBA")
+                if hasattr(layer, "src"):
+                    x0, y0, x1, y1 = layer.src
+                else:
+                    x0, y0, x1, y1 = struct.unpack_from(">4H", layer.raw, 0x1C)
                 picture = texture.crop((min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)))
                 if x1 < x0:
                     picture = picture.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
@@ -361,7 +379,9 @@ class SoundRoomEditor(EditorPanel):
         if not self._entries:
             return False
         try:
-            soundroom.write_soundroom(self._entries, self._path)
+            data = soundroom.build_soundroom(self._entries, self._source_bytes)
+            self._project.write_keeping_original(self._path, data)
+            self._source_bytes = data
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror(f"Could not save {FILE_NAME}", str(exc), parent=self)
             return False

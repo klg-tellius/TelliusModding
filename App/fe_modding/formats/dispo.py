@@ -79,6 +79,7 @@ old one.
 from __future__ import annotations
 
 import io
+import re
 import struct
 from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
@@ -88,6 +89,8 @@ from .common import HEADER_SIZE, decode_str, read_cstring_table, read_section_ta
 
 RECORD_SIZE = 0x6C
 RECORD_FORMAT = ">16I12b4I16b"
+FE10_RECORD_SIZE = 0x68
+FE10_RECORD_FORMAT = ">26I"
 
 FIELD_NAMES: dict[int, str] = {
     0: "pid",
@@ -448,6 +451,25 @@ class DocSection:
         return isinstance(self.header, str)
 
 
+class DispoUnitValues(list):
+    """The shared 48-field unit view, with an optional FE10 raw record.
+
+    Radiant Dawn packs the scalar fields into six words and has seven item
+    slots rather than PoR's eight.  Keeping the original record here lets
+    the shared deployment/map UI edit the common fields while preserving
+    every still-unknown byte exactly.
+    """
+
+    def __init__(self, values=(), *, raw: bytes | None = None,
+                 extra_pointers: Optional[dict[int, str]] = None):
+        super().__init__(values)
+        self.raw = raw
+        self.extra_pointers = dict(extra_pointers or {})
+
+    def clone(self) -> "DispoUnitValues":
+        return DispoUnitValues(self, raw=self.raw, extra_pointers=self.extra_pointers)
+
+
 @dataclass
 class DispoDocument:
     """A whole dispos variant with its pointers resolved to label strings;
@@ -459,6 +481,7 @@ class DispoDocument:
     names_blob: bytes
     labels: list[str]  # label pool order
     header_tail: bytes  # header words 4-7, kept as they are
+    dialect: str = "fe9"
 
     def section(self, name: str) -> Optional[DocSection]:
         return next((s for s in self.sections if s.name == name), None)
@@ -473,7 +496,101 @@ class DispoDocument:
         return offsets
 
     def _pool_start(self) -> int:
-        return HEADER_SIZE + sum(4 + RECORD_SIZE * len(s.units) for s in self.sections)
+        record_size = FE10_RECORD_SIZE if self.dialect == "fe10" else RECORD_SIZE
+        return HEADER_SIZE + sum(4 + record_size * len(s.units) for s in self.sections)
+
+
+FE10_POINTER_OFFSETS = {
+    FIELD["pid"]: 0x04,
+    FIELD["jid"]: 0x08,
+    **{FIELD[f"item{i}"]: 0x24 + 4 * i for i in range(7)},
+    **{FIELD[f"skill{i}"]: 0x40 + 4 * i for i in range(5)},
+    FIELD["seq_attack"]: 0x54,
+    FIELD["seq_move"]: 0x58,
+    FIELD["seq_heal"]: 0x5C,
+    FIELD["mtype"]: 0x60,
+}
+FE10_BYTE_OFFSETS = {
+    FIELD["pos_x"]: 0x0C, FIELD["pos_y"]: 0x0D,
+    FIELD["pos2_x"]: 0x0E, FIELD["pos2_y"]: 0x0F,
+    FIELD["level"]: 0x10, FIELD["faction"]: 0x11,
+    FIELD["flags"]: 0x12, FIELD["ai_order"]: 0x13,
+    **{FIELD[f"item{i}_flag"]: 0x14 + i for i in range(7)},
+}
+FE10_GROWTH_FLAGS_FIELD = 2
+FE10_GROWTH_FLAGS_OFFSET = 0x02
+FE10_GROWTH_TABLE = 0x0400
+FE10_GROWTH_FLAG_BITS = ((
+    FE10_GROWTH_TABLE,
+    "Use FE10Growth stats",
+    "Build this unit's eight stats from its character and internal-level row in FE10Growth.cms. "
+    "If no row applies, normal class/personal bases remain in use.",
+),)
+FE10_SUPPORTED_FIELDS = frozenset((*FE10_POINTER_OFFSETS, *FE10_BYTE_OFFSETS,
+                                   FE10_GROWTH_FLAGS_FIELD))
+
+
+def field_name_for(index: int, dialect: str = "fe9") -> Optional[str]:
+    if dialect == "fe10" and index == FE10_GROWTH_FLAGS_FIELD:
+        return "growth_flags"
+    return field_name(index)
+
+
+def field_help_for(index: int, dialect: str = "fe9") -> str:
+    if dialect == "fe10" and index == FE10_GROWTH_FLAGS_FIELD:
+        return "Radiant Dawn unit-creation growth flags."
+    return FIELD_HELP.get(index, "")
+
+
+def describe_field_for(index: int, value, dialect: str = "fe9") -> str:
+    if dialect == "fe10" and index == FE10_GROWTH_FLAGS_FIELD:
+        names = flag_names(int(value), FE10_GROWTH_FLAG_BITS)
+        return f"0x{int(value):04X} ({', '.join(names)})" if names else f"0x{int(value):04X}"
+    return describe_field(index, value)
+
+
+def supported_fields(doc: "DispoDocument") -> frozenset[int]:
+    """Fields that are backed by the open game's deployment record."""
+    return FE10_SUPPORTED_FIELDS if doc.dialect == "fe10" else frozenset(range(len(FIELD_LAYOUT)))
+
+
+def _record_size(data: bytes, entries: list[tuple[int, int]], pool_start: int) -> int | None:
+    """Infer the unit stride from section boundaries (0x6c FE9, 0x68 FE10)."""
+    ordered = sorted(address + HEADER_SIZE for address, _name in entries)
+    candidates = set()
+    for i, address in enumerate(ordered):
+        count = struct.unpack_from(">b", data, address)[0]
+        if count <= 0:
+            continue
+        end = ordered[i + 1] if i + 1 < len(ordered) else pool_start
+        payload = end - address - 4
+        if payload >= 0 and payload % count == 0:
+            candidates.add(payload // count)
+    if not candidates:
+        return None
+    if len(candidates) != 1 or next(iter(candidates)) not in (RECORD_SIZE, FE10_RECORD_SIZE):
+        raise ValueError(f"Unsupported deployment record sizes: {sorted(candidates)}")
+    return next(iter(candidates))
+
+
+def _parse_fe10_unit(raw: bytes, by_offset: dict[int, str], record_address: int,
+                     relocation_positions: set[int]) -> DispoUnitValues:
+    values: list[Value] = [0] * len(FIELD_LAYOUT)
+    for field, offset in FE10_POINTER_OFFSETS.items():
+        value = struct.unpack_from(">I", raw, offset)[0]
+        values[field] = by_offset.get(value, value) if value else 0
+    for field, offset in FE10_BYTE_OFFSETS.items():
+        values[field] = raw[offset]
+    values[FE10_GROWTH_FLAGS_FIELD] = struct.unpack_from(">H", raw, FE10_GROWTH_FLAGS_OFFSET)[0]
+    known_offsets = set(FE10_POINTER_OFFSETS.values())
+    extras = {}
+    for offset in range(0, FE10_RECORD_SIZE, 4):
+        if offset in known_offsets:
+            continue
+        value = struct.unpack_from(">I", raw, offset)[0]
+        if record_address + offset in relocation_positions and value in by_offset:
+            extras[offset] = by_offset[value]
+    return DispoUnitValues(values, raw=raw, extra_pointers=extras)
 
 
 def parse_dispo(data: bytes) -> DispoDocument:
@@ -488,13 +605,22 @@ def parse_dispo(data: bytes) -> DispoDocument:
     order = sorted(range(section_count), key=lambda i: entries[i][0])
     position_of = {entry_index: position for position, entry_index in enumerate(order)}
 
+    # The first body word points at the label pool in every retail file.
+    declared_pool_start = struct.unpack_from(">I", data, HEADER_SIZE)[0] + HEADER_SIZE
+    record_size = _record_size(data, entries, declared_pool_start)
+    if record_size is None:
+        section_names = [decode_str(names.get(name_offset, b"")) for _address, name_offset in entries]
+        record_size = (FE10_RECORD_SIZE if any(re.search(r"(?:bmap\d{4}|emap)", name, re.IGNORECASE)
+                                                   for name in section_names)
+                       else RECORD_SIZE)
+    dialect = "fe10" if record_size == FE10_RECORD_SIZE else "fe9"
     pool_start = HEADER_SIZE
     for i in order:
         address = entries[i][0] + HEADER_SIZE
         if address != pool_start:
             raise ValueError(f"Section at {address:#x} doesn't follow the previous one ({pool_start:#x})")
-        count = struct.unpack_from(">b", data, address)[0]
-        pool_start = address + 4 + max(count, 0) * RECORD_SIZE
+        count = data[address] if dialect == "fe10" else struct.unpack_from(">b", data, address)[0]
+        pool_start = address + 4 + max(count, 0) * record_size
     labels, by_offset, position = [], {}, pool_start - HEADER_SIZE
     for raw in data[pool_start : layout.label_map_end].split(b"\x00"):
         if raw:
@@ -503,16 +629,29 @@ def parse_dispo(data: bytes) -> DispoDocument:
             by_offset[position] = label
         position += len(raw) + 1
 
+    relocation_count = struct.unpack_from(">I", data, 8)[0]
+    relocation_positions = {
+        struct.unpack_from(">I", data, layout.label_map_end + 4 * i)[0] + HEADER_SIZE
+        for i in range(relocation_count)
+    }
+
     sections = []
     for i in order:
         address = entries[i][0] + HEADER_SIZE
         (word,) = struct.unpack_from(">I", data, address)
-        count = struct.unpack_from(">b", data, address)[0]
+        count = data[address] if dialect == "fe10" else struct.unpack_from(">b", data, address)[0]
         header: Value = by_offset.get(word, word) if count == 0 else word
         units = []
         for u in range(max(count, 0)):
-            raw_values = struct.unpack_from(RECORD_FORMAT, data, address + 4 + u * RECORD_SIZE)
-            units.append([by_offset.get(v, v) if f in POINTER_FIELDS and v else v for f, v in enumerate(raw_values)])
+            record = address + 4 + u * record_size
+            if dialect == "fe10":
+                units.append(_parse_fe10_unit(data[record:record + record_size], by_offset,
+                                              record, relocation_positions))
+            else:
+                raw_values = struct.unpack_from(RECORD_FORMAT, data, record)
+                units.append(DispoUnitValues(
+                    [by_offset.get(v, v) if f in POINTER_FIELDS and v else v
+                     for f, v in enumerate(raw_values)]))
         sections.append(DocSection(name=decode_str(names.get(entries[i][1], b"")), header=header, units=units))
 
     return DispoDocument(
@@ -522,6 +661,7 @@ def parse_dispo(data: bytes) -> DispoDocument:
         names_blob=data[names_start:],
         labels=labels,
         header_tail=data[0x10:HEADER_SIZE],
+        dialect=dialect,
     )
 
 
@@ -544,6 +684,8 @@ def build_dispo(doc: DispoDocument) -> bytes:
             if len(unit) != len(FIELD_LAYOUT):
                 raise ValueError(f"A unit of {section.name!r} has {len(unit)} fields, not {len(FIELD_LAYOUT)}")
             for value in unit:
+                use(value)
+            for value in getattr(unit, "extra_pointers", {}).values():
                 use(value)
     pool_labels = [label for label in doc.labels if label in seen]
     in_pool = set(pool_labels)
@@ -571,11 +713,36 @@ def build_dispo(doc: DispoDocument) -> bytes:
             relocations.append(address - HEADER_SIZE)
             body += struct.pack(">I", offsets[section.header])
             continue
-        if len(section.units) > MAX_SECTION_UNITS:
-            raise ValueError(f"Section {section.name!r} has more than {MAX_SECTION_UNITS} units")
+        max_units = 255 if doc.dialect == "fe10" else MAX_SECTION_UNITS
+        if len(section.units) > max_units:
+            raise ValueError(f"Section {section.name!r} has more than {max_units} units")
         body += struct.pack(">I", (section.header & 0x00FFFFFF) | (len(section.units) << 24))
         for unit in section.units:
             record = HEADER_SIZE + len(body)
+            if doc.dialect == "fe10":
+                raw = bytearray(getattr(unit, "raw", None) or bytes(FE10_RECORD_SIZE))
+                if len(raw) != FE10_RECORD_SIZE:
+                    raise ValueError(f"A Radiant Dawn unit record has {len(raw)} bytes, not {FE10_RECORD_SIZE}")
+                for field, offset in FE10_POINTER_OFFSETS.items():
+                    value = unit[field]
+                    if isinstance(value, str):
+                        relocations.append(record + offset - HEADER_SIZE)
+                        value = offsets[value]
+                    struct.pack_into(">I", raw, offset, value)
+                for field, offset in FE10_BYTE_OFFSETS.items():
+                    value = int(unit[field])
+                    if not 0 <= value <= 0xFF:
+                        raise ValueError(f"Radiant Dawn field {field} must be 0..255, got {value}")
+                    raw[offset] = value
+                growth_flags = int(unit[FE10_GROWTH_FLAGS_FIELD])
+                if not 0 <= growth_flags <= 0xFFFF:
+                    raise ValueError(f"Radiant Dawn growth flags must be 0..65535, got {growth_flags}")
+                struct.pack_into(">H", raw, FE10_GROWTH_FLAGS_OFFSET, growth_flags)
+                for offset, value in getattr(unit, "extra_pointers", {}).items():
+                    relocations.append(record + offset - HEADER_SIZE)
+                    struct.pack_into(">I", raw, offset, offsets[value])
+                body += raw
+                continue
             raw_values = []
             for f, value in enumerate(unit):
                 if isinstance(value, str):
@@ -588,18 +755,18 @@ def build_dispo(doc: DispoDocument) -> bytes:
     table = bytearray()
     for entry_index, section_index in enumerate(doc.table_order):
         table += struct.pack(">II", addresses[section_index] - HEADER_SIZE, doc.name_offsets[entry_index])
-    tail = b"".join(struct.pack(">I", r) for r in relocations) + bytes(table) + doc.names_blob
+    tail = b"".join(struct.pack(">I", r) for r in sorted(relocations)) + bytes(table) + doc.names_blob
     total = pool_end + len(tail)
     header = struct.pack(">4I", total, pool_end - HEADER_SIZE, len(relocations), len(doc.table_order)) + doc.header_tail
     return header + bytes(body) + bytes(pool) + tail
 
 
-def new_unit_values() -> list[Value]:
+def new_unit_values(dialect: str = "fe9") -> DispoUnitValues:
     """A blank unit: every field 0 but the bridge-cover barrier flag, which
     every vanilla non-flying unit has."""
     values: list[Value] = [0] * len(FIELD_LAYOUT)
     values[FIELD["flags"]] = FLAG_BRIDGE_BARRIER
-    return values
+    return DispoUnitValues(values, raw=bytes(FE10_RECORD_SIZE) if dialect == "fe10" else None)
 
 
 def add_unit(doc: DispoDocument, section_name: str, values: list[Value]) -> int:
@@ -609,11 +776,16 @@ def add_unit(doc: DispoDocument, section_name: str, values: list[Value]) -> int:
         raise ValueError(f"No section {section_name!r}")
     if section.is_link:
         raise ValueError(f"Section {section_name!r} is a link; it can't hold units")
-    if len(section.units) >= MAX_SECTION_UNITS:
-        raise ValueError(f"Section {section_name!r} already has the maximum {MAX_SECTION_UNITS} units")
+    max_units = 255 if doc.dialect == "fe10" else MAX_SECTION_UNITS
+    if len(section.units) >= max_units:
+        raise ValueError(f"Section {section_name!r} already has the maximum {max_units} units")
     if len(values) != len(FIELD_LAYOUT):
         raise ValueError(f"A unit has {len(FIELD_LAYOUT)} fields, got {len(values)}")
-    section.units.append(list(values))
+    if isinstance(values, DispoUnitValues):
+        unit = values.clone()
+    else:
+        unit = DispoUnitValues(values, raw=bytes(FE10_RECORD_SIZE) if doc.dialect == "fe10" else None)
+    section.units.append(unit)
     return len(section.units) - 1
 
 

@@ -14,7 +14,7 @@ Scope: US Path of Radiance (`GFEE01`). The executable addresses below were check
 
 This is executable/UI logic rather than a chapter `.cmb` dialog.
 
-1. `build_job_data_table` (`0x8001A5E4`) reads the class's nine-character `weapon_ranks` string from `FE8Data.bin` JobData field `+0x14`. It stores decoded rank bytes at runtime `ClassData+0x2C` and retains a pointer to the original string at `ClassData+0x34`.
+1. `build_job_data_table` (`0x8001A5E4`) reads the class's nine-character `weapon_ranks` string from `FE8Data.bin` JobData field `+0x14`. It stores decoded rank bytes at runtime `ClassData+0x2C` and retains a pointer to the original string at `ClassData+0x34`. The decoder (`map_byte_values_from_table`, `0x8001CC48`) converts the first eight characters: `E` 1, `D` 0x1F, `C` 0x47, `B` 0x79, `A` 0xB5, `S` 0xFB, and both `-` and `*` 0. A `*` therefore gives no starting rank.
 2. `promote_unit_to_linked_class` (`0x8003D2C4`) follows the source class's `promotes_to` link (`+0x0C`), swaps class skill flags and raises each of the actor's eight numeric weapon-rank bytes (`CombatActor+0x20C..0x213`) to at least the new class default. Existing Ghidra names `current_stat_caps` and `get_stat_cap_with_skill_bonus` for this byte range are misleading: the class source is the rank string, the checks gate sword/lance/axe/bow/staff use, and the numeric thresholds match weapon-rank progression.
 3. In state 6, `update_class_change_sequence` (`0x801EE0C8`) checks all **nine** characters of the promoted class string. `check_char_field_less_than_0x2a` (`0x800A8504`) returns true when the character equals ASCII `*` (`0x2A`). If any position is marked, the sequence starts the picker process at `0x8029A780`.
 4. The picker uses option labels `MCA_SW`, `MCA_LA`, `MCA_AX`, `MCA_BW`, `MCA_FI`, `MCA_TH`, `MCA_WD`, `MCA_RD`, `MCA_KN` in index order. Its `validate_char_field_and_conditionally_assign` (`0x801F1644`) offers a row only when that class rank character is `*`; `store_pending_action_param8` (`0x801F16D4`) stores the chosen index.
@@ -29,7 +29,7 @@ This is executable/UI logic rather than a chapter `.cmb` dialog.
    | 7 | `MCA_RD` Staff | `0x28` | `+0x213` |
    | 8 | `MCA_KN` Knife | `0x22` | none in the eight-byte rank block |
 
-   Indices 4–6 have labels but **no grant case** in the retail result switch. The Game Code patch **Grant Fire, Thunder, or Wind on promotion** redirects those three results to handlers that start the corresponding numeric rank (`+0x210`, `+0x211`, or `+0x212`) at 1 if it is zero. The patch is available for US, PAL, and JP executables. Its bytes and reset path have been checked against all three retail DOLs; promotion in the running game still needs a live test.
+   Indices 4–6 have labels but **no grant case** in the retail result switch. The Game Code patch **Grant Fire, Thunder, or Wind on promotion** redirects those three results to handlers that start the corresponding numeric rank (`+0x210`, `+0x211`, or `+0x212`) at 1 if it is zero. The patch is available for US, PAL, and JP executables. Its bytes and reset path have been checked against all three retail DOLs; promotion in the running game still needs a live test. A rank the unit already has is kept: to see the grant, test with a unit that has no rank in that type (a late-game save's Soren already has S in all three).
 
 ### Reuse in another promotion
 

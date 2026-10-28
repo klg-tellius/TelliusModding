@@ -8,21 +8,25 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import AUDIO, BATTLE_TABLES, CHAPTERS, EFFECTS, VIDEO, profile_of
+from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_TABLES, CHAPTERS, EFFECTS,
+                             ICONS, MODELS, VIDEO, profile_of)
+from ..animation_data_viewer import AnimationDataViewer
 from ..background_viewer import BackgroundViewer
-from ..battle_camera_viewer import BattleCameraViewer
+from ..fe10_camera_viewer import battle_camera_viewer
 from ..battle_params_viewer import BattleParamsViewer
 from ..battle_scenery_viewer import BattleSceneryViewer
 from ..battle_simulator import BattleSimulator
 from ..battle_weapons_viewer import BattleWeaponsViewer
-from ..dbx_files_viewer import DbxFilesViewer
+from ..fe10_battle_viewer import battle_data_viewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
 from ..graphics_viewers import (
+    BattleSceneryGraphicsViewer,
     EndingViewer,
     EquipmentViewer,
     EtcGraphicsViewer,
     IllustrationViewer,
+    SkyGraphicsViewer,
     WindowGraphicsViewer,
     WorldMapViewer,
 )
@@ -52,6 +56,8 @@ ASSET_TOOLS = [
      "Base conversations, Conversation Room supports, support chat lines (FE10Conversation.cms)", Fe10ConversationLists),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
+    ("animation_data", "Animation Data", "↝", "Animation IDs, model mappings, motions and weapon mappings",
+     AnimationDataViewer),
     ("map_models", "Map Models", "▦", "Every chapter map model, terrain sculpting, painting and water", MapModelViewer),
     ("tilesets", "Tilesets", "▥", "Browse every terrain atlas; create and edit reusable paint swatches", TilesetManager),
     ("map_objects", "Map Objects", "▲", "Every prop of every chapter map (map.cmp): browse, export, edit", MapObjectsPanel),
@@ -64,19 +70,22 @@ ASSET_TOOLS = [
     ("ui_windows", "UI Windows", "▤", "Window textures (window/)", WindowGraphicsViewer),
     ("etc_graphics", "Misc Graphics", "▧", "Textures in etc/", EtcGraphicsViewer),
     ("equipment", "Equipment", "⚔", "Loose .tpl textures in zu/", EquipmentViewer),
-    ("music", "Music", "♫", "Music streams (Sound/): preview, replace, add", MusicEditor),
-    ("effects", "Visual Effects", "✺", "Spell and battle effects (FE8Effect.bin, yme/): preview, replace, add", EffectsViewer),
+    ("sky_graphics", "Battle Skies", "☁", "Packed sky textures (sky/): view and replace", SkyGraphicsViewer),
+    ("battle_scenery_graphics", "Battle Scenery Textures", "▨",
+     "Packed backdrop textures (zbg/): view and replace", BattleSceneryGraphicsViewer),
+    ("music", "Music", "♫", "Music streams: preview, export, replace and manage supported cues", MusicEditor),
+    ("effects", "Visual Effects", "✺", "Spell and battle effects (effect registry, yme/): inspect and preview", EffectsViewer),
     ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle (zdbx.cmp xwp/): type, flight, effects", BattleWeaponsViewer),
     ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", BattleSceneryViewer),
-    ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action camera scripts (camera.dbx, xcam/)", BattleCameraViewer),
+    ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action clips (camera data, xcam/)", battle_camera_viewer),
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
-    ("dbx_files", "DBX Files", "▤", "Browse, edit, add, delete and restore every text entry in zdbx.cmp", DbxFilesViewer),
-    ("sfx", "Sound Effects", "♪", "Sound effect cues (gcfesnd.bin): names and parameters", SfxViewer),
+    ("dbx_files", "Battle Data", "▤", "Browse the game's native battle tables (DBX on Path of Radiance)", battle_data_viewer),
+    ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("tutorials", "Tutorials", "?", "The in-game tutorial list (tut_data_en.bin): groups, order, start flags", TutorialsEditor),
     ("staff_credits", "Staff Credits", "≡", "The end credits (ending/staffroll_noa.bin): edit, add and reorder lines", StaffRollEditor),
-    ("sound_room_tracks", "Soundroom Tracks", "♬", "The Sound Room's 64 music cues (a table in main.dol): pick and reorder",
+    ("sound_room_tracks", "Soundroom Tracks", "♬", "The Sound Room's music cues: pick and reorder",
      SoundRoomTracksEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
 ]
@@ -84,12 +93,14 @@ TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
 #: Tools that need a decoder the game's profile must list (``GameProfile.features``); the rest open
 #: for every game. Without it the page says the tool is not available for the game yet.
 ASSET_FEATURES = {
-    "map_models": CHAPTERS, "tilesets": CHAPTERS, "map_objects": CHAPTERS,
+    "models": MODELS, "animation_data": MODELS, "map_models": MODELS, "tilesets": MODELS,
+    "map_objects": CHAPTERS,
+    "icons": ICONS,
     "effects": EFFECTS,
-    "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_TABLES,
-    "battle_sim": BATTLE_TABLES, "battle_params": BATTLE_TABLES,
-    "dbx_files": BATTLE_TABLES,
-    "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO,
+    "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_CAMERAS,
+    "battle_sim": BATTLE_SIM, "battle_params": BATTLE_TABLES,
+    "dbx_files": BATTLE_DATA,
+    "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO, "sound_room_tracks": AUDIO,
     "videos": VIDEO,
 }
 #: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
@@ -110,10 +121,12 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
         for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "fonts")),
-                            ("Characters and models", ("portraits", "models", "map_models", "tilesets", "map_objects")),
+                            ("Characters and models", ("portraits", "models", "animation_data", "map_models",
+                                                       "tilesets", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
-                                        "icons", "ui_windows", "etc_graphics", "equipment")),
+                                        "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
+                                        "battle_scenery_graphics")),
                             ("Sound and video", ("music", "sfx", "videos"))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
@@ -149,6 +162,11 @@ class AssetPage(Page):
         key = route[1] if len(route) > 1 else None
         if key not in TOOLS_BY_KEY:
             return False
+        if key == "models" and len(route) > 2 and str(route[2]).startswith("zmap/"):
+            # chapter maps live in Map Models only
+            target = ("asset", "map_models", *route[2:])
+            self.after_idle(lambda: self.shell.replace_route(target))  # after navigate() records the route
+            return self.show(target)
         if key != self._key and self._key == "dbx_files":
             if not self._panels["dbx_files"].confirm_navigate_away():
                 return False

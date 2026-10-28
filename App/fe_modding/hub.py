@@ -301,7 +301,9 @@ def _validate_setup(project, setup: HubSetup, current: dict | None, flow: Chapte
     if setup.start_x is not None and (setup.start_x >= capacity.x_size or setup.start_y >= capacity.y_size):
         raise ValueError("The avatar start is outside the hub map.")
     _hub_units, player_units = _deployment_pids(deployment_path)
-    if player_units != {setup.avatar_pid}:
+    # A different sole player PID is the previous avatar; installation can
+    # retarget it after all of the new PID's ordinary validation succeeds.
+    if len(player_units) != 1:
         raise ValueError("The hub's player army must be the dedicated avatar alone; other armies may hold "
                          "decoration units.")
     for chapter_id in chapters.list_chapter_ids(project):
@@ -330,7 +332,11 @@ def _deployment_pids(path: Path) -> tuple[set[str], set[str]]:
 
 
 def _avatar_position_bytes(path: Path, pid: str, x: int, y: int) -> bytes:
-    packed = lz10.decompress(path.read_bytes())
+    return _avatar_position_bytes_data(path.read_bytes(), pid, x, y)
+
+
+def _avatar_position_bytes_data(compressed: bytes, pid: str, x: int, y: int) -> bytes:
+    packed = lz10.decompress(compressed)
     entries = pak.read_pak_entries(packed)
     files, reserved = [], []
     found = False
@@ -348,6 +354,33 @@ def _avatar_position_bytes(path: Path, pid: str, x: int, y: int) -> bytes:
         reserved.append(entry.reserved)
     if not found:
         raise ValueError(f"The hub deployment has no {pid} unit to position.")
+    return lz10.compress(pak.pack_pak(files, reserved))
+
+
+def _retarget_avatar_bytes(compressed: bytes, old_pid: str, new_pid: str, new_jid: str) -> bytes:
+    """Change the sole player avatar in every difficulty deployment, keeping
+    its position and authored fields while updating the PID/default class."""
+    packed = lz10.decompress(compressed)
+    entries = pak.read_pak_entries(packed)
+    files, reserved = [], []
+    found = False
+    for entry in entries:
+        content = pak.read_pak_file_content(packed, entry)
+        if entry.name.startswith("dispos_"):
+            doc = dispo.parse_dispo(content)
+            for section in doc.sections:
+                if section.is_link or not ("mikata" in section.name or "_avatar_" in section.name):
+                    continue
+                for unit in section.units:
+                    if unit[dispo.FIELD["pid"]] == old_pid:
+                        unit[dispo.FIELD["pid"]] = new_pid
+                        unit[dispo.FIELD["jid"]] = new_jid
+                        found = True
+            content = dispo.build_dispo(doc)
+        files.append((entry.name, content))
+        reserved.append(entry.reserved)
+    if not found:
+        raise ValueError(f"The hub deployment has no {old_pid} avatar to replace.")
     return lz10.compress(pak.pack_pak(files, reserved))
 
 
@@ -373,13 +406,21 @@ def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) 
     flow = ChapterFlow(editor)
     _validate_setup(project, setup, current, flow)
     deployment_path, _map = chapters.phase_paths(project, chapters.chapter_phases(project, f"{setup.chapter:02d}")[0])
+    _all_units, player_units = _deployment_pids(deployment_path)
+    deployed_avatar = next(iter(player_units)) if len(player_units) == 1 else None
     marked_map = entrance_markers(project, _map, setup)
-    deployment_data = (_avatar_position_bytes(deployment_path, setup.avatar_pid, setup.start_x, setup.start_y)
-                       if setup.start_x is not None else None)
     from .hub_creation import repair_avatar_deployment, avatar_class
-    deployment_data = repair_avatar_deployment(deployment_data if deployment_data is not None
-                                      else deployment_path.read_bytes(), setup.avatar_pid,
-                                      avatar_class(project.read_logical("game_data"), setup.avatar_pid))
+    avatar_jid = avatar_class(project.read_logical("game_data"), setup.avatar_pid)
+    deployment_data = deployment_path.read_bytes()
+    avatar_changed = deployed_avatar is not None and deployed_avatar != setup.avatar_pid
+    if avatar_changed:
+        deployment_data = _retarget_avatar_bytes(deployment_data, deployed_avatar, setup.avatar_pid, avatar_jid)
+    if setup.start_x is not None:
+        # Position the possibly retargeted in-memory deployment, rather than
+        # rereading the old PID from disk.
+        deployment_data = _avatar_position_bytes_data(
+            deployment_data, setup.avatar_pid, setup.start_x, setup.start_y)
+    deployment_data = repair_avatar_deployment(deployment_data, setup.avatar_pid, avatar_jid)
     startup = script_sources.startup_path(project)
     hub_path = script_sources.chapter_script(project, f"{setup.chapter:02d}")
     activation_path = script_sources.chapter_script(project, f"{setup.activation_chapter:02d}")
@@ -387,6 +428,9 @@ def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) 
     if migration is not None:
         scripts[startup] = migration.startup_source
     hub_base = _remove_generated(scripts[hub_path]) if current else scripts[hub_path]
+    if avatar_changed:
+        hub_base = hub_base.replace(f'InstantUnitFocusByPID("{deployed_avatar}")',
+                                    f'InstantUnitFocusByPID("{setup.avatar_pid}")', 1)
     if any(decorator.name == "on_complete" for function in parse(hub_base).functions
            for decorator in function.decorators):
         raise ValueError("The prepared hub script still has a chapter-completion event. Remove its old victory "

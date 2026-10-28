@@ -860,9 +860,9 @@ G_BATTLE = "Battle screen"
 
 # The battle scene's HUD (zdbx/battle.dbx) draws each HP bar through the Gauge widget's draw method
 # (kaneko_gauge_draw, a vtable slot). The hook runs it, then prints the fighter's damage, hit and
-# critical rate with draw_formatted_text_ui. GaugeL is always the attacker (the scene's left/right
-# swap, +0x274, is set to 0 in setup_battle_scene); the gauge's x (+0x48) tells the sides apart, and
-# the EXP gauge (mode +0x6C == 2) is skipped. The numbers are the forecast values the strikes roll
+# critical rate with draw_formatted_text_ui. The gauge's x (+0x48) tells the sides apart (GaugeR
+# has no 'left' field, so +0x6C is 0 on both HP gauges) and the EXP gauge (+0x6C == 2) is skipped.
+# Context byte +0xCAC bit 0x20 says whether actor 0 is on the left (set) or the right (clear). The numbers are the forecast values the strikes roll
 # against (CombatActor +0x298 Atk, +0x29A Def, +0x2A2 hit, +0x2A8 crit); the context's flag bit 0
 # (+0xCAC) marks an exchange without them (staves), which draws nothing.
 # version: (gauge vtable draw slot, kaneko_gauge_draw, set_prim2d_texture_mode_0x13, draw_formatted_text_ui)
@@ -876,7 +876,7 @@ BATTLE_STATS_HOOK = CAVE_ADDRESS + 0x300
 # Data: x nudge, y nudge, text size, 0.0 (f32), position preset (u32), pad, then one (x left, x right,
 # y) f32 triple per preset, then the formats. A bare "#C" is a 4-byte token to the text code (it
 # would swallow the terminator), so every colour code carries its two digits.
-BATTLE_STATS_DATA = CAVE_ADDRESS + 0x4A0
+BATTLE_STATS_DATA = CAVE_ADDRESS + 0x4C0
 _STATS_FORMAT = b"#C06Dmg #C01%d  #C06Hit #C01%d  #C06Crit #C01%d\x00"
 _STATS_UNARMED = b"#C06Dmg #C01--  #C06Hit #C01--  #C06Crit #C01--\x00"
 STATS_PRESETS = (                     # (x left, x right, y) on the 640x480 HUD
@@ -922,11 +922,20 @@ def _battle_stats_code(version: str) -> bytes:
         "preset",
         ppc.mulli(0, 0, 12), ppc.addi(11, 12, _cave_offset(_PRESET_TABLE)), ppc.add(11, 11, 0),
         ppc.lfs(1, 0, 11),
-        # Gauge mode is the stable identity: 0 left, 1 right, 2 EXP.  The widget x is relative
-        # to its layer and is not a reliable left/right discriminator in every HUD layout.
-        ppc.lwz(0, 0x6C, 31), ppc.cmpwi(0, 0), ("eq", "left"),
-        ppc.mr(0, 30), ppc.mr(30, 29), ppc.mr(29, 0), ppc.lfs(1, 4, 11),
+        # Which actor sits on which side: context byte +0xCAC bit 0x20 set means actor 0 is on
+        # the left, clear means the sides are swapped (actor 0 on the right). r3 = 1 when the
+        # gauge being drawn shows actor 1.
+        ppc.lbz(0, 0xCAC, 30), ppc.andi_(0, 0, 0x20), ppc.li(3, 0), ("ne", "side"),
+        ppc.li(3, 1),
+        "side",
+        # The side is the gauge's x (GaugeL 84, GaugeR 360). Its 'left' field (+0x6C) only marks
+        # GaugeExp: battle.dbx gives GaugeL 0 and GaugeR none, so both read 0.
+        ppc.lwz(0, 0x48, 31), ppc.cmpwi(0, 200), ("lt", "left"),
+        ppc.lfs(1, 4, 11), ppc.li(4, 1), ppc.subf(3, 3, 4),                    # r3 = 1 - r3
         "left",
+        ppc.cmpwi(3, 0), ("eq", "self"),
+        ppc.mr(0, 30), ppc.mr(30, 29), ppc.mr(29, 0),
+        "self",
         ppc.lfs(2, 8, 11),
         ppc.lfs(0, data, 12), ppc.fadds(1, 1, 0), ppc.lfs(0, data + 4, 12), ppc.fadds(2, 2, 0),
         ppc.lha(9, 0x298, 30), ppc.lha(0, 0x29A, 29), ppc.subf(9, 0, 9),       # damage = Atk - Def
@@ -972,7 +981,7 @@ def _battle_stats_code(version: str) -> bytes:
 def _battle_stats_edits(version: str) -> tuple[Edit, ...]:
     slot, draw = _BATTLE_STATS[version][:2]
     code, data = _battle_stats_code(version), _battle_stats_data()
-    assert BATTLE_STATS_HOOK + len(code) <= BATTLE_STATS_DATA
+    assert BATTLE_STATS_HOOK + len(code) <= BATTLE_STATS_DATA, hex(BATTLE_STATS_HOOK + len(code))
     return (Edit(slot, _word(draw), _word(BATTLE_STATS_HOOK)),
             Edit(BATTLE_STATS_HOOK, bytes(len(code)), code),
             Edit(BATTLE_STATS_DATA, bytes(len(data)), data, wild=((0, 0x14),)))   # the tunables' values
@@ -999,7 +1008,9 @@ for _key, _name, _what, _default, _minimum, _maximum, _unit, _at, _kind in (
         f"battle.stats_{_key}", G_BATTLE, _name, f"{_what} (the HUD is 640x480; default {_default:g}).",
         default=_default, minimum=_minimum, maximum=_maximum, unit=_unit,
         versions={v: (Field(BATTLE_STATS_DATA + _at, _kind),) for v in _BATTLE_STATS},
-        requires=(_battle_stats,)))
+        requires=(_battle_stats,),
+        choices=tuple(name[:1].upper() + name[1:] for name, *_xy in STATS_PRESETS)
+        if _key == "position" else ()))
 
 # FE7Dragon's info window (battle_window.py): a box at the bottom middle in animated and map battles.
 from . import battle_window  # noqa: E402

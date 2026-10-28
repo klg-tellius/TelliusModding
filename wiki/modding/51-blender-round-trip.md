@@ -159,7 +159,7 @@ Do not combine these transitions into one first test.
 
 | Control | Meaning | How to choose and verify |
 | --- | --- | --- |
-| Model-set search | Filters known `ymu/`, `zu/`, `zmap/`, `zbg/`, and `xwp/` sets. | Record the full selected label before exporting and importing. |
+| Model-set search | Filters known `ymu/`, `zu/`, `zbg/`, and `xwp/` sets (chapter maps, `zmap/`, are under **Map Models**). | Record the full selected label before exporting and importing. |
 | **Export .glb…** | Converts the selected set or map terrain to binary glTF. | Preserve the file as a reference; export is non-mutating. |
 | **Export .blend…** | Creates a self-contained Blender file with packed images and a tagged model collection. | Keep replacement objects in **FE9 Model**; map terrain receives its specialized live material graph. |
 | **Import .blend/.glb…** | Rebuilds the compatible mesh/body for the selected set. | `.blend` is converted in the background, then follows the same reviewed import as GLB; bows use their dedicated composite-skinned path. |

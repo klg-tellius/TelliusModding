@@ -2153,6 +2153,16 @@ class AnimationWriteTests(unittest.TestCase):
         data = animation.write_animation(_synthetic_animation())
         self.assertEqual(animation.write_animation(animation.read_animation_bytes(data)), data)
 
+    def test_fe10_compact_footer_is_preserved_opaque(self):
+        anim = _synthetic_animation()
+        anim.body_trailing = b"\x12\x34\x56\x78"
+        anim.footer = animation.GaFooter(compact_raw=struct.pack(">3I", 5, 0x30, 0))
+        data = animation.write_animation(anim)
+        rebuilt = animation.read_animation_bytes(data)
+        self.assertEqual(rebuilt.body_trailing, b"\x12\x34\x56\x78")
+        self.assertEqual(rebuilt.footer.compact_raw, struct.pack(">3I", 5, 0x30, 0))
+        self.assertEqual(animation.write_animation(rebuilt), data)
+
     def test_groups_start_at_0x30_and_assign_bones(self):
         anim = animation.read_animation_bytes(animation.write_animation(_synthetic_animation()))
         self.assertEqual(anim.header.group_table_addr, 0x30)

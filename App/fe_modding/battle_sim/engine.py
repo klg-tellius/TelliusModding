@@ -49,7 +49,7 @@ class OutcomeSource(Protocol):
 
 class RngOutcomes:
     def __init__(self, rng: Fe9Rng | int = 0):
-        self.rng = rng if isinstance(rng, Fe9Rng) else Fe9Rng(rng)
+        self.rng = rng if hasattr(rng, "roll_true_hit") else Fe9Rng(rng)
 
     def decide(self, strike, side, kind, chance):
         if kind == "hit":
@@ -216,6 +216,9 @@ def simulate(attacker: Combatant, defender: Combatant, *, rules: Optional[Fe9Rul
     """Fight ``attacker`` against ``defender`` (copies; the inputs are not changed)."""
     rules = rules or Fe9Rules()
     outcomes = outcomes or FixedOutcomes()
+    game_simulate = getattr(rules, "simulate", None)
+    if game_simulate is not None:
+        return game_simulate(attacker, defender, outcomes=outcomes, distance=distance)
     a, d = attacker.copy(), defender.copy()
     log = BattleLog(a, d, rules.forecast(a, d, distance), hp_start=(a.hp, d.hp))
     fight = _Fight(rules, [a, d], distance, outcomes, log)

@@ -93,6 +93,18 @@ class ProfileFontsTest(unittest.TestCase):
         self.assertEqual(RADIANT_DAWN_PROFILE.message_dialect, "fe10")
 
 
+class TextColorTest(unittest.TestCase):
+    def test_inline_color_markup_is_removed_and_split_into_palette_runs(self):
+        from fe_modding.formats.fe10_conversation_render import Fe10ConversationAssets, _plain, _styled_lines
+
+        assets = Fe10ConversationAssets(Path("."))
+        assets.text_color = lambda index: (index, 0, 0, 255)
+        self.assertEqual(_plain("A#C22B#cC<wait>"), "ABC")
+        self.assertEqual(_styled_lines("A#C22B#cC", assets, 3),
+                         [[("A", (255, 255, 255, 255)), ("B", (0x22, 0, 0, 255)),
+                           ("C", (255, 255, 255, 255))]])
+
+
 class TitleCardTest(unittest.TestCase):
     def test_title_split_like_the_retail_cards(self):
         from fe_modding.chapter_images import split_fe10_title

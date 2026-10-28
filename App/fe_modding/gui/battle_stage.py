@@ -241,6 +241,10 @@ def load_unit(cache: SetCache, assets: sa.UnitAssets) -> StageUnit:
     if assets.pack is not None:
         def load():
             files, anims = _set_contents(assets.pack)
+            packed_names = {Path(name).name.lower() for name, _data in anims}
+            for path in assets.animation_paths:
+                if path.is_file() and path.name.lower() not in packed_names:
+                    anims.append((path.name, path.read_bytes()))
             if assets.texture is not None:
                 files = {n: d for n, d in files.items() if not n.lower().endswith(".tpl")}
                 files[assets.texture.name] = assets.texture.read_bytes()
@@ -964,11 +968,12 @@ class BattleStage:
 class StageView(ttk.Frame):
     """Canvas, HP bars and playback controls for a :class:`BattleStage`.
 
-    The canvas keeps the game's 4:3 picture; playback targets
+    The canvas keeps the selected game's picture aspect; playback targets
     :data:`~fe_modding.battle_sim.timeline.FPS` without skipping game ticks."""
 
-    def __init__(self, parent: tk.Misc):
+    def __init__(self, parent: tk.Misc, *, aspect: float = cam.ASPECT):
         super().__init__(parent)
+        self.aspect = float(aspect)
         self.stage: Optional[BattleStage] = None
         self._t = 0.0
         self._playing = False
@@ -1009,10 +1014,10 @@ class StageView(ttk.Frame):
         self._time.pack(side="left", padx=(6, 0))
 
     def _fit_screen(self, event) -> None:
-        """Center the largest 4:3 box in the screen area."""
+        """Center the largest game-aspect box in the screen area."""
         width, height = max(event.width, 1), max(event.height, 1)
-        w = min(width, int(height * cam.ASPECT))
-        h = int(w / cam.ASPECT)
+        w = min(width, int(height * self.aspect))
+        h = int(w / self.aspect)
         self.canvas.place(x=(width - w) // 2, y=(height - h) // 2, width=w, height=h)
 
     def set_stage(self, stage: Optional[BattleStage], names: tuple = SIDE_NAMES, max_hp: tuple = (1, 1)) -> None:

@@ -30,10 +30,11 @@ from .. import emulator, patch
 from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
-from .fe8_session import Fe8DataSession
+from .fe8_session import Fe10DataSession, Fe8DataSession
+from ..game_profile import DATA_TABLES, GAME_DATA
 from .patch_dialog import ApplyPatchDialog
 from .settings_dialog import SettingsDialog
-from .widgets import Link, PortraitCache, track_hover
+from .widgets import Link, PortraitCache, tip, track_hover
 
 Route = tuple
 
@@ -100,8 +101,8 @@ class Shell(ttk.Frame):
         self._back: list[Route] = []
         self._forward: list[Route] = []
         self.visited: list[tuple[Route, str]] = []
-        self._session: Optional[Fe8DataSession] = None
-        self.portraits = PortraitCache(self, project.extracted_dir)
+        self._session: Optional[Fe8DataSession | Fe10DataSession] = None
+        self.portraits = PortraitCache(self, project.extracted_dir, project.game)
         self.index: Optional[ProjectIndex] = None
         self._index_thread: Optional[threading.Thread] = None
         self._index_again = False
@@ -128,10 +129,15 @@ class Shell(ttk.Frame):
         return self.project.has_extracted_files
 
     @property
-    def session(self) -> Fe8DataSession:
-        """The shared FE8Data.bin (characters and game data edit the same bytes)."""
+    def session(self) -> Fe8DataSession | Fe10DataSession:
+        """The shared game database used by Characters and Game Data."""
         if self._session is None:
-            self._session = Fe8DataSession(self.project, self.changelog)
+            if self.project.profile.supports(GAME_DATA):
+                self._session = Fe8DataSession(self.project, self.changelog)
+            elif self.project.profile.supports(DATA_TABLES):
+                self._session = Fe10DataSession(self.project, self.changelog)
+            else:
+                self._session = Fe8DataSession(self.project, self.changelog)
             self._session.on_saved.append(self.rebuild_index)
         return self._session
 
@@ -163,12 +169,15 @@ class Shell(ttk.Frame):
 
         right = tk.Frame(bar)
         right.pack(side="right", padx=12)
-        settings = ttk.Button(right, text="⚙", width=3, command=self.open_settings)
+        settings = ttk.Button(right, text="Settings", command=self.open_settings)
         settings.pack(side="right", padx=(8, 0))
-        disc = ttk.Button(right, text="💿", width=3, command=lambda: self.navigate(("disc",)))
+        tip(settings, "App settings: theme, Dolphin and Blender locations")
+        disc = ttk.Button(right, text="Disc & build", command=lambda: self.navigate(("disc",)))
         disc.pack(side="right", padx=(8, 0))
-        search = ttk.Button(right, text="⌕  Search everything…      Ctrl+K", command=self.open_search, width=34)
+        tip(disc, "The source disc, extraction, building the modded disc and patches")
+        search = ttk.Button(right, text="⌕  Search everything…   Ctrl+K", command=self.open_search, width=30)
         search.pack(side="right")
+        tip(search, "Find a chapter, character, class, item, message or tool (Ctrl+K)")
 
         def paint():
             bg = theme.color("surface_alt")
@@ -322,7 +331,7 @@ class Shell(ttk.Frame):
         return True
 
     def save_all(self) -> list[str]:
-        """Save every editor holding unsaved edits, then FE8Data.bin. Returns
+        """Save every editor holding unsaved edits, then the shared game-data session. Returns
         the names of those still unsaved (each reported its own error)."""
         self.flush_pages()
         failed = []
@@ -580,7 +589,7 @@ class Shell(ttk.Frame):
             self._launch(dest)
         self.run_task("Building disc image …", project.build, built)
 
-    def play_chapter(self, chapter_id: int, difficulty: int) -> None:
+    def play_chapter(self, chapter_id: int | str, difficulty: int) -> None:
         """Start Dolphin on the extracted files, booting straight into ``chapter_id`` on
         ``difficulty`` (``emulator.prepare_chapter_run``); no disc is built."""
         if not self.extracted or self._task_running:
@@ -597,7 +606,8 @@ class Shell(ttk.Frame):
             project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
             return emulator.prepare_chapter_run(project.extracted_dir, project.build_dir / emulator.RUN_FOLDER,
                                                 chapter_id, difficulty)
-        self.run_task(f"Preparing chapter {chapter_id:02d} for Dolphin …", work, self._launch)
+        label = f"{chapter_id:02d}" if isinstance(chapter_id, int) else str(chapter_id)
+        self.run_task(f"Preparing chapter {label} for Dolphin …", work, self._launch)
 
     def play_from_save(self, gci_name: str, gci: bytes) -> None:
         """Start Dolphin on the extracted files with ``gci`` alone on memory card A (a GCI
@@ -627,6 +637,39 @@ class Shell(ttk.Frame):
             self.set_status(f"Started Dolphin with {gci_name} on memory card A ({card})")
         self.run_task("Preparing the save for Dolphin …", work, started)
 
+    def play_from_wii_save(self, save_data: bytes, banner: Optional[bytes] = None) -> None:
+        """Start Radiant Dawn with ``save_data`` in a private emulated Wii NAND.
+
+        Dolphin receives a per-run user directory, so neither the source ``FE10_US.dat`` nor
+        the user's ordinary Dolphin NAND can be changed by the test run.
+        """
+        if not self.extracted or self._task_running:
+            return
+        if emulator.configured_dolphin() is None:
+            messagebox.showinfo("Dolphin not found", "Set Dolphin's location first (Settings > Preferences).",
+                                parent=self)
+            return
+        if not self.confirm_unsaved(" and won't be played", "play without them."):
+            return
+        project = self.project
+
+        def work():
+            project.sync_system_archive()
+            return emulator.prepare_wii_save_run(project.extracted_dir,
+                                                 project.build_dir / emulator.RUN_FOLDER,
+                                                 save_data, banner)
+
+        def started(result) -> None:
+            dol, user_dir = result
+            try:
+                emulator.launch(dol, user_dir=user_dir)
+            except emulator.EmulatorError as exc:
+                messagebox.showerror("Could not start Dolphin", str(exc), parent=self)
+                return
+            self.set_status(f"Started Dolphin with an isolated RFEE01 NAND ({user_dir})")
+
+        self.run_task("Preparing the RFEE01 save for Dolphin …", work, started)
+
     def open_play_chapter(self) -> None:
         """Play in Dolphin from the menu: the open chapter if a chapter page shows
         one, else a dialog that also picks the chapter."""
@@ -647,7 +690,7 @@ class Shell(ttk.Frame):
         dialog = PlayChapterDialog(self, choices=choices)
         self.wait_window(dialog)
         if dialog.result is not None and dialog.chapter is not None:
-            self.play_chapter(int(dialog.chapter), dialog.result)
+            self.play_chapter(dialog.chapter, dialog.result)
 
     def _launch(self, image) -> None:
         try:
@@ -792,9 +835,11 @@ class _NavItem(tk.Frame):
 
 class SearchPalette(tk.Toplevel):
     """Ctrl+K: type to find a chapter, character, class, item, message or
-    tool; Enter (or a click) goes there, Escape closes."""
+    tool; Enter (or a click) goes there; Escape, the ✕ button or a click
+    outside closes."""
 
     LIMIT = 60
+    _TOP_EVENTS = ("<Button-1>", "<Escape>", "<Configure>")
 
     def __init__(self, shell: Shell, items: list[tuple[str, str, str, Route]]):
         super().__init__(shell)
@@ -809,8 +854,13 @@ class SearchPalette(tk.Toplevel):
         body = ttk.Frame(border, padding=10)
         body.pack(fill="both", expand=True)
         self._query = tk.StringVar()
-        entry = ttk.Entry(body, textvariable=self._query, font=theme.font("heading"))
-        entry.pack(fill="x")
+        top_row = ttk.Frame(body)
+        top_row.pack(fill="x")
+        entry = ttk.Entry(top_row, textvariable=self._query, font=theme.font("heading"))
+        entry.pack(side="left", fill="x", expand=True)
+        close = ttk.Button(top_row, text="✕", width=3, command=self.close)
+        close.pack(side="left", padx=(6, 0))
+        tip(close, "Close (Esc)")
         self._entry = entry
         ttk.Label(body, text="Chapters, characters, classes, items, messages, tools  ·  ↑↓ Enter  ·  Esc",
                   style="Caption.TLabel").pack(anchor="w", pady=(6, 4))
@@ -825,12 +875,19 @@ class SearchPalette(tk.Toplevel):
         entry.bind("<Down>", lambda e: self._move(1))
         entry.bind("<Up>", lambda e: self._move(-1))
         entry.bind("<Return>", lambda e: self._go())
-        entry.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Escape>", lambda e: self.close())
         self._list.bind("<ButtonRelease-1>", lambda e: self._go())
-        self._list.bind("<Escape>", lambda e: self.destroy())
         self.bind("<FocusOut>", self._on_focus_out)
 
         top = shell.winfo_toplevel()
+        # an overrideredirect window does not always get the focus on Windows, so the main window's
+        # own clicks, Escape and moves close it too; its previous bindings come back on close
+        self._top = top
+        self._saved_bindings = {seq: top.bind(seq) for seq in self._TOP_EVENTS}
+        top.bind("<Button-1>", self._on_outside_click, add="+")
+        top.bind("<Escape>", lambda e: self.close(), add="+")
+        top.bind("<Configure>", self._on_top_configure, add="+")
+        self._top_geometry = top.winfo_geometry()
         width = min(640, max(420, top.winfo_width() - 80))
         x = top.winfo_rootx() + (top.winfo_width() - width) // 2
         y = top.winfo_rooty() + 56
@@ -842,6 +899,31 @@ class SearchPalette(tk.Toplevel):
         self.lift()
         self._entry.focus_force()
 
+    def close(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        try:
+            for seq, script in self._saved_bindings.items():
+                self._top.bind(seq, script)
+        except tk.TclError:
+            pass
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+
+    def _on_outside_click(self, event) -> None:
+        try:
+            if event.widget.winfo_toplevel() is not self:
+                self.close()
+        except (AttributeError, KeyError, tk.TclError):
+            self.close()
+
+    def _on_top_configure(self, event) -> None:
+        if event.widget is self._top and self._top.winfo_geometry() != self._top_geometry:
+            self.close()
+
     def _on_focus_out(self, _event) -> None:
         self.after(50, self._close_if_unfocused)
 
@@ -851,7 +933,7 @@ class SearchPalette(tk.Toplevel):
         except (KeyError, tk.TclError):
             focus = None
         if focus is None or focus.winfo_toplevel() is not self:
-            self.destroy()
+            self.close()
 
     def _filter(self) -> None:
         words = self._query.get().casefold().split()
@@ -884,5 +966,5 @@ class SearchPalette(tk.Toplevel):
         if not current or current[0] >= len(self._shown):
             return
         route = self._items[self._shown[current[0]]][3]
-        self.destroy()
+        self.close()
         self._shell.navigate(route)

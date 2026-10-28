@@ -288,29 +288,28 @@ class ReleaseGateTests(unittest.TestCase):
             path.write_text(source, encoding="utf-8")
             for operation in (lambda: require_project_runtime(project), lambda: ModProject.build(project),
                               lambda: script_sources.save(project, None, ""), lambda: hub.prepare(project, None)):
-                with self.assertRaisesRegex(ProjectError, "not available in the game"):
+                with self.assertRaisesRegex(ProjectError, "not approved"):
                     operation()
             self.assertEqual(path.read_text(encoding="utf-8"), source)
             self.assertEqual(list(Path(tmp).iterdir()), [path])
 
-    def test_runtime_patch_cannot_be_applied_to_any_retail_version(self):
+    def test_runtime_release_approval_is_regional_and_not_a_catalog_patch(self):
         from fe_modding.game_code.catalog import Session, State
         from fe_modding.game_code.dol import Dol, DolError
         from fe_modding.game_code.extended_flags import EXTENDED_FLAGS_PATCH
         from fe_modding.game_code.versions import VERSIONS
         root = Path(__file__).resolve().parents[2] / "research" / "main_dol" / "dols"
-        for code, version in VERSIONS.items():
-            with self.subTest(region=code):
-                path = root / f"{code}.dol"
-                if not path.is_file():
-                    self.skipTest(f"retail {code} DOL is not available")
-                dol = Dol.open(path)
-                before = bytes(dol.data)
-                session = Session(dol, version)
-                self.assertEqual(session.status(EXTENDED_FLAGS_PATCH).state, State.UNAVAILABLE)
-                with self.assertRaises(DolError):
-                    session.set_patch(EXTENDED_FLAGS_PATCH, True)
-                self.assertEqual(bytes(dol.data), before)
+        self.assertEqual(set(EXTENDED_FLAGS_PATCH.versions), {"GFEE01", "GFEP01"})
+        path = root / "GFEJ01.dol"
+        if not path.is_file():
+            self.skipTest("retail GFEJ01 DOL is not available")
+        dol = Dol.open(path)
+        before = bytes(dol.data)
+        session = Session(dol, VERSIONS["GFEJ01"])
+        self.assertEqual(session.status(EXTENDED_FLAGS_PATCH).state, State.UNAVAILABLE)
+        with self.assertRaises(DolError):
+            session.set_patch(EXTENDED_FLAGS_PATCH, True)
+        self.assertEqual(bytes(dol.data), before)
 
 
 if __name__ == "__main__":

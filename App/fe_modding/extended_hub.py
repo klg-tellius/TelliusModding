@@ -202,8 +202,8 @@ def prepare_project_update(project, layout: FlagLayout) -> HubProjectUpdate:
 def commit_project_update(project, update: HubProjectUpdate):
     """Commit only after regional release approval, including kept originals.
 
-    No region is approved yet. The transaction engine is independently testable;
-    this entry point must not install unvalidated native code into user projects.
+    Approval is intentionally regional; this entry point must not install native
+    code into a build whose exact runtime has not passed its playtest.
     """
     from .exceptions import ProjectError
     from .game_code.extended_flags import EXTENDED_FLAGS_PATCH, UNAVAILABLE_REASON

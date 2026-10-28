@@ -20,7 +20,7 @@ verification: ["source-reviewed", "unknown"]
 ---
 # Import water and set its flow
 
-**Route:** Chapter → Build → Map settings → Import water GLB / Water flow, or Assets → 3D Models → Sculpt & paint kit... (Blender)
+**Route:** Chapter → Build → Map settings → Import water GLB / Water flow, or Assets → Map Models → Sculpt & paint kit... (Blender)
 
 ## What you will make
 
@@ -123,7 +123,7 @@ Read the report for confirmation that water flag `0x20` was set. Then resolve al
 
 The terrain kit carries the map's water with it, so the shoreline can follow ground you sculpt. Install the add-on once from **Settings → Install the Tellius Terrain add-on** (Blender 4.2 or newer; reinstall it after updating the app).
 
-1. In **Assets → 3D Models**, select the map's `zmap/` set and choose **Sculpt & paint kit...**. Open the `.blend` it writes and find the **Tellius** tab of the 3D View sidebar. The **Water** panel lists every water body. Each body is an object in the **FE9 Water** collection, and every `wave_99` and ship wake is a movable object under **FE9 Shore Waves**. Press Play in the timeline to watch the water flow.
+1. In **Assets → Map Models**, select the map's `zmap/` set and choose **Sculpt & paint kit...**. Open the `.blend` it writes and find the **Tellius** tab of the 3D View sidebar. The **Water** panel lists every water body. Each body is an object in the **FE9 Water** collection, and every `wave_99` and ship wake is a movable object under **FE9 Shore Waves**. Press Play in the timeline to watch the water flow.
 2. Pick the water body and set **Water level**. The surface moves as you drag.
 3. Put the 3D cursor on the water and choose **Cut Shoreline from Terrain**. The surface is rebuilt over every bit of ground below the level, running **Under the banks** units past the waterline so its edge stays hidden.
    - Keep **Only the water at the 3D cursor** on so hollows elsewhere stay dry.

@@ -49,6 +49,10 @@ class Weapon:
     effective: frozenset = frozenset()  # ITEM_CATEGORY_TOKENS the weapon is effective against
     stat_bonus: tuple = (0,) * 10  # ITEM_STAT_BONUS_NAMES order: STAT_NAMES, Mov, Con
     effect: str = ""  # EID_ played when it is used (a tome's spell)
+    rank: str = ""
+    wexp: int = 0
+    uses: int = 0
+    durability: Optional[int] = None
 
     @property
     def magic(self) -> bool:
@@ -71,7 +75,8 @@ def weapon_from_item(item: fe8data.ItemEntry) -> Weapon:
         min_range=item.min_range, max_range=item.max_range,
         properties=frozenset(p for p in item.properties if p),
         effective=frozenset(c for c in item.categories if c), stat_bonus=bonus[:10],
-        effect=item.effect or "",
+        effect=item.effect or "", rank=getattr(item, "rank", "") or "", wexp=getattr(item, "wexp", 0),
+        uses=getattr(item, "uses", 0), durability=getattr(item, "uses", 0),
     )
 
 
@@ -93,6 +98,19 @@ class Combatant:
     final_boss: bool = False
     blessed_armor: bool = False  # only weakA weapons damage it
     status_condition: bool = False  # under a status: attackers' Hit becomes 100
+    # Radiant Dawn-only combat context.  Neutral defaults keep FE9 callers stable.
+    tier: int = 1
+    effective_level: int = 1
+    exp: int = 0
+    weapon_ranks: dict = field(default_factory=dict)
+    wexp: dict = field(default_factory=dict)
+    biorhythm: int = 0
+    authority: int = 0
+    support_bonus: tuple = (0, 0, 0, 0, 0, 0)  # Atk Def Hit Avoid Crit Dodge
+    laguz_gauge: int = 0
+    transformed: bool = False
+    royal: bool = False
+    status: str = ""
 
     def __post_init__(self):
         self.stats = list(self.stats)
@@ -100,7 +118,9 @@ class Combatant:
             self.hp = self.stats[HP]
 
     def copy(self) -> "Combatant":
-        return replace(self, stats=list(self.stats), skills=list(self.skills))
+        weapon = replace(self.weapon) if self.weapon is not None else None
+        return replace(self, stats=list(self.stats), skills=list(self.skills), weapon=weapon,
+                       weapon_ranks=dict(self.weapon_ranks), wexp=dict(self.wexp))
 
     def has(self, sid: str) -> bool:
         return sid in self.skills

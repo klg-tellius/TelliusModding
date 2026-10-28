@@ -37,8 +37,8 @@ from typing import Optional
 
 from PIL import Image, ImageTk
 
-from ..formats import fe8data, icons, lz10, tpl
-from ..game_profile import GAME_DATA, profile_of
+from ..formats import fe10data, fe8data, icons, lz10, tpl
+from ..game_profile import DATA_TABLES, GAME_DATA, profile_of
 from ..games import Game
 from ..project import ModProject
 from . import theme
@@ -70,14 +70,44 @@ SHEETS = {
         *(IconSheet(f"Card icons {n + 1}", "window/cardicon.tpl", n, (32, 32)) for n in range(4)),
     ],
     Game.RADIANT_DAWN: [
-        IconSheet("Items and menu icons", "window/icon.cms", 0, (24, 24), wide=("window/icon_wide.cms", 0, (18, 24))),
-        IconSheet("Skill and status icons", "window/icon.cms", 1, (32, 32), wide=("window/icon_wide.cms", 1, (24, 32))),
+        IconSheet("Items and menu icons", "window/icon.cms", 0, (24, 24),
+                  wide=("window/icon_wide.cms", 0, (18, 24)), item_icons=True),
+        IconSheet("Skill and status icons", "window/icon.cms", 1, (32, 32),
+                  wide=("window/icon_wide.cms", 1, (24, 32)), skill_icons=True),
         IconSheet("Small icons", "etc/icon.tpl", 0, (16, 16)),
         *(IconSheet(f"Card icons {n + 1}", "window/cardicon.tpl", n, (32, 32)) for n in range(4)),
         IconSheet("Event markers (debug)", "etc/eventicon.tpl", 0, (32, 32)),
         IconSheet("Terrain markers (debug)", "etc/terricon.tpl", 0, (32, 32)),
     ],
 }
+
+
+def icon_users(database, game: Game) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
+    """Return item/skill icon numbers mapped to the record IDs that use them.
+
+    FE9 exposes dataclass fields while FE10's variable-size records expose a
+    ``values`` mapping.  Keeping that difference here lets the shared icon
+    browser use identical labels and routes for both games.
+    """
+    items: dict[int, list[str]] = {}
+    skills: dict[int, list[str]] = {}
+    if game is Game.RADIANT_DAWN:
+        for record in database.items:
+            iid, icon = record.values.get("iid"), record.values.get("icon")
+            if iid is not None and icon is not None:
+                items.setdefault(icon, []).append(iid.removeprefix("IID_"))
+        for record in database.skills:
+            sid, icon = record.values.get("sid"), record.values.get("icon")
+            if sid and icon:
+                skills.setdefault(icon, []).append(sid.removeprefix("SID_"))
+        return items, skills
+    for item in database.items:
+        if item.iid:
+            items.setdefault(item.icon, []).append(item.iid.removeprefix("IID_"))
+    for skill in database.skills:
+        if skill.sid and skill.params[0]:
+            skills.setdefault(skill.params[0], []).append(skill.sid.removeprefix("SID_"))
+    return items, skills
 
 
 def _is_compressed(path: Path) -> bool:
@@ -118,25 +148,18 @@ class IconViewer(EditorPanel):
 
     # -- data ---------------------------------------------------------------
     def _load_names(self) -> tuple[dict[int, list[str]], dict[int, list[str]]]:
-        """Item and skill icon numbers -> the IIDs/SIDs using them (Path of
-        Radiance only: the tables this app reads are FE8Data.bin's)."""
+        """Item and skill icon numbers -> the IIDs/SIDs using them."""
         profile = profile_of(self._project)
         path = profile.path(self._files, "game_data")
-        if not profile.supports(GAME_DATA) or not path.is_file():
+        if not (profile.supports(GAME_DATA) or profile.supports(DATA_TABLES)) or not path.is_file():
             return {}, {}
         try:
-            data = fe8data.read_fe8data_path(path)
+            raw = self._project.read_logical("game_data")
+            data = (fe10data.read_fe10data(raw) if self._project.game is Game.RADIANT_DAWN
+                    else fe8data.read_fe8data(raw))
         except Exception:  # noqa: BLE001 - labels are a convenience
             return {}, {}
-        items: dict[int, list[str]] = {}
-        for item in data.items:
-            if item.iid:
-                items.setdefault(item.icon, []).append(item.iid.removeprefix("IID_"))
-        skills: dict[int, list[str]] = {}
-        for skill in data.skills:
-            if skill.sid and skill.params[0]:
-                skills.setdefault(skill.params[0], []).append(skill.sid.removeprefix("SID_"))
-        return items, skills
+        return icon_users(data, self._project.game)
 
     def select_icon(self, target: str) -> None:
         """Show one icon: ``item:<N>`` (an item's icon field), ``skill:<N>``

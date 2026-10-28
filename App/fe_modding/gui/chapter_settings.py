@@ -11,6 +11,7 @@ from tkinter import ttk
 from typing import Callable
 
 from .map_windows import MapSettingsForm
+from .fe10_data_editor import Fe10DataEditor
 from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame, info
 
@@ -48,9 +49,16 @@ class ChapterDataPanel(ttk.Frame):
     def __init__(self, parent: tk.Misc, builder, session_provider: Callable[[], object]) -> None:
         super().__init__(parent)
         self._chapter_record: ChapterRecordPanel | None = None
+        self._fe10_record: Fe10DataEditor | None = None
+        session = session_provider()
+        if session.available and getattr(session, "fe10", None) is not None:
+            self._fe10_record = Fe10DataEditor(self, builder.project, builder.changelog, session,
+                                               navigate=builder.navigate)
+            self._fe10_record.pack(fill="both", expand=True)
+            self._fe10_record.select_tab("chapters")
+            return
         scroll = ScrollFrame(self, padding=(16, 12))
         scroll.pack(fill="both", expand=True)
-        session = session_provider()
         if session.available:
             self._chapter_record = ChapterRecordPanel(
                 scroll.body, builder.project, builder.changelog, session, navigate=builder.navigate)
@@ -59,13 +67,20 @@ class ChapterDataPanel(ttk.Frame):
             ttk.Label(scroll.body, text=session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
 
     def show_chapter(self, chapter_id: str, map_name: str | None) -> None:
+        if self._fe10_record is not None:
+            self._fe10_record.select_record("C" + chapter_id.upper())
+            return
         if self._chapter_record is not None:
             self._chapter_record.show_chapter(int(chapter_id) if chapter_id.isdigit() else None, map_name)
 
     def flush(self) -> None:
+        if self._fe10_record is not None:
+            self._fe10_record.focus_set()  # commits the active field's FocusOut binding
         if self._chapter_record is not None:
             self._chapter_record.flush()
 
     def cleanup(self) -> None:
+        if self._fe10_record is not None:
+            self._fe10_record.cleanup()
         if self._chapter_record is not None:
             self._chapter_record.cleanup()

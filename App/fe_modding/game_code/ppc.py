@@ -175,6 +175,10 @@ def andi_(ra: int, rs: int, imm: int) -> int:
     return _d_form(28, rs, ra, imm)
 
 
+def ori(ra: int, rs: int, imm: int) -> int:
+    return _d_form(24, rs, ra, imm)
+
+
 def _x_form(rd: int, ra: int, rb: int, xo: int, op: int = 31) -> int:
     return (op << 26) | (rd << 21) | (ra << 16) | (rb << 11) | (xo << 1)
 
@@ -210,6 +214,16 @@ def fadds(frd: int, fra: int, frb: int) -> int:
 def subf(rd: int, ra: int, rb: int) -> int:
     """rd = rb - ra"""
     return _x_form(rd, ra, rb, 40)
+
+
+def divw(rd: int, ra: int, rb: int) -> int:
+    """Signed integer division: rd = ra / rb, truncated toward zero."""
+    return _x_form(rd, ra, rb, 491)
+
+
+def mullw(rd: int, ra: int, rb: int) -> int:
+    """Low 32 bits of rd = ra * rb."""
+    return _x_form(rd, ra, rb, 235)
 
 
 def extsb(ra: int, rs: int) -> int:
@@ -261,5 +275,9 @@ def assemble(origin: int, program) -> list[int]:
                 item = bl(source, target)
             else:
                 item = bc(kind, source, target)
+        if (item >> 26) in _D_FORM_MEMORY and not (item >> 16) & 31:
+            raise ValueError(f"{origin + 4 * len(words):08X}: a load or store based on r0 reads "
+                             "address 0 + offset, not r0 + offset; use another register or an "
+                             "indexed form.")
         words.append(item)
     return words

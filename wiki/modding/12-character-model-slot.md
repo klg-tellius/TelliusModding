@@ -13,7 +13,7 @@ verification: ["source-reviewed", "app-tested", "unknown"]
 tags: ["Guide", "Models", "Characters", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-21"
+last_reviewed: "2026-10-27"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/12-character-model-slot.md"
@@ -108,6 +108,16 @@ Open the Guard › **Portrait & models**. Under **Models**: *Battle model* `zu/f
 
 The Guard's **Portrait & models** now reads *Battle model* `zu/tgd1`, *Map model* `ymu/tguard` via `AID_TGUARD`; the promoted rows are unchanged. The slots hold exact copies, so the game looks the same until you import new geometry into them ([Round-trip a model through Blender safely](51-blender-round-trip.md)).
 
+### 5. Recolour instead of copying
+
+A different colour does not need a slot: the texture tables already pick a texture per character and per army, so a recoloured copy of the texture is enough.
+
+1. On Gatrie's **Portrait & models**, press **Colour variant…**. **Also for** has `PID_GATRIE_EV` (his event record) ticked.
+2. Click the blue of his armour in the **Before** picture, press **To…** and choose a red. Narrow **Band ±** until skin and gold stay as they are in **After**; the **Texture** list switches between his battle textures, map textures and portraits.
+3. Press **Create**. The changes list shows what is written: `zu/amr1/gatrie_red.tpl` with the line `PID_GATRIE gatrie_red`, the same in `zu/gen1`, a new `tex_<n>.tpl` in `ymu/armor/` and `ymu/general/` with `AID_ARMOR_GA` and `AID_GENERAL_GA` pointing at it, and the portraits `FID_GATRIE_RED` / `FID_L_GATRIE_RED` given to both records.
+
+For a whole army of a class, open the class in **Game Data** › **Classes** and press **Army colours…**: with **Army** enemy and `JID_SWORDER`, the enemy line of `zu/swm1` and the enemy texture number of `AID_SWORDER` point at blue copies, so every enemy Myrmidon without a texture line of its own turns blue.
+
 ## Understand every control
 
 ### New slot (map model, from a `ymu/` set)
@@ -137,7 +147,21 @@ The Guard's **Portrait & models** now reads *Battle model* `zu/tgd1`, *Map model
 | **Battle textures** | Per battle model: which texture file is used for a key (animation ID, character, or army: 自軍 player, 敵軍 enemy, 中立 other, 味方 ally); **Set** / **Remove**; **Remove this slot...** deletes a battle model the mod added |
 | **Map models** | Per animation ID: its folder and one texture number per army; **Set textures** writes them (every weapon set of the ID loads `ymu/<folder>tex_<n>.tpl`, `n` picked by the unit's army); **Remove this slot...** deletes an AID the mod added and puts characters that used it back on their previous or class model |
 
-## Things to try next
+### Colour variant (character page) and Army colours (class form)
+
+| Control | What it does |
+| --- | --- |
+| **Tag** | Names the new files and IDs: `gatrie_red.tpl`, `FID_GATRIE_RED`, and `<AID>_RED` when a copy of the map records is needed. 1-8 capitals or digits, starting with a letter |
+| **Battle texture** / **Map texture** / **Portrait** | Which of the three to recolour (portraits only for a character) |
+| **Also for** | Other records with the same name and portrait; ones extending the PID in the same class (`PID_GATRIE_EV`) start ticked |
+| **Colours where nothing of the character's own picks one** | The army texture copied when the character has no texture line or texture number of its own |
+| **Army whose colours change** / **Its promoted class too** | Class form: the army key and texture slot to recolour, and whether the promoted class follows |
+| **From… / To…** | The colour to change and the colour it becomes; clicking **Before** picks the first |
+| **Hue to change**, **Band ±**, **Soft edge** | The hues that change: a band around the hue, fading out over the soft edge |
+| **Turn hue by**, **Saturation**, **Brightness** | What happens to them (filled from **From…** and **To…**) |
+| **Leave greys under** | Colours less saturated than this stay: steel, white and black |
+
+A character whose map animation ID is shared (with the class or other characters) gets a copy of the records under `<AID>_<TAG>`, using the same folder, and the job-list line of the old ID is copied so the battle model stays. Portraits change palette only, so the eye and mouth frames follow.
 
 1. **The promoted state.** Repeat steps 2 and 3 from `ymu/fighter2` and `zu/war1` with **Promoted model** on, then check **Promoted** in **Which models does a character get?**.
 2. **A class-wide model.** In **Model tables…**, set the line `JID_FIGHTER` to `tgd1` and look at Boyd: every Fighter now uses the copy. Set it back to `fig1`.
@@ -170,6 +194,7 @@ Checkpoint before slot creation. Save FE8Data and model tables/resources they ow
 
 - The two resolution systems, the dialogs and what they write are source-reviewed. Both slots of this lesson were created in the app on a US disc, checked in **Model tables…** and on the character page, then removed (app-tested).
 - How a copied or replaced model plays in every map action and battle animation needs Dolphin (unknown).
+- Colour variants and army colours were created in the app on a copy of a US project and their files and tables read back (app-tested). The per-character battle texture line follows the engine's lookup order and the Boyd test; a new loose `tex_<n>.tpl` texture number for a map model has not been seen in game yet (unknown).
 
 ## Related tutorials and references
 

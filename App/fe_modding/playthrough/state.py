@@ -73,6 +73,21 @@ class SimUnit:
     status_turns: int = 0  # phases of its side the status still lasts
     needs_heal: bool = False  # AI flag +0x254 bit 0: set under the heal record's retreat_below, kept until resume_at
     steals: int = 0  # AI steal attempts (+0x258)
+    # FE10 tactical state.  The defaults preserve FE9 snapshots and fixtures.
+    team: Optional[int] = None
+    force: int = 0
+    weapon_ranks: dict = field(default_factory=dict)
+    wexp: dict = field(default_factory=dict)
+    biorhythm: int = 0
+    biorhythm_type: int = 255
+    laguz_gauge: int = 0
+    transformed: bool = False
+    rescue_partner: Optional[int] = None
+    tier: int = 1
+    effective_level: int = 1
+    authority: int = 0
+    ai_state: dict = field(default_factory=dict)
+    vision: int = 2
 
     @property
     def tile(self) -> tuple:
@@ -145,6 +160,8 @@ class ScriptRun(Task):
     ctx: dict = field(default_factory=dict)  # me, target, x, y of the event
     name: str = ""
     executed: int = 0  # instructions run so far
+    result: object = 0  # top-level return value (used by FE10 trigger predicates)
+    then_event: Optional[tuple] = None  # (script, function, ctx, mark_once) after a true predicate
 
     @property
     def title(self) -> str:
@@ -197,6 +214,7 @@ class GameState:
     phase: int = PLAYER
     flags: list = field(default_factory=lambda: [[name, False] for name in ENGINE_FLAGS]
                         + [[None, False] for _ in range(FLAG_SLOTS - len(ENGINE_FLAGS))])
+    flag_capacity: int = FLAG_SLOTS
     globals: list = field(default_factory=lambda: [0] * GLOBAL_SLOTS)
     rng: Fe9Rng = field(default_factory=Fe9Rng)
     pending: list = field(default_factory=list)  # Task, front first
@@ -208,6 +226,8 @@ class GameState:
     forced: Optional[dict] = None  # outcome choices for the next battle (battle_sim.FixedOutcomes keys)
     money: int = 0
     fog: bool = False  # show only what the player's units can see (a view; see fog.py)
+    sight: int = 0  # native map sight state; UI visibility overrides never mutate it
+    sight_sources: dict = field(default_factory=dict)  # (x,y) -> remaining turns, for torch/extinction
     choice_plan: list = field(default_factory=list)  # entries to pick at the next choice dialogs, in order (0-based)
     deploy_only: Optional[list] = None  # PIDs the preparations place (None: every unit of the player's sections)
     over: str = ""  # "complete" / "gameover" once the chapter ended
@@ -257,7 +277,7 @@ class GameState:
         slot = self.flag_slot(name)
         if slot is not None:
             return slot
-        order = range(FLAG_SLOTS - 1, -1, -1) if from_top else range(FLAG_SLOTS)
+        order = range(len(self.flags) - 1, -1, -1) if from_top else range(len(self.flags))
         for i in order:
             if self.flags[i][0] is None:
                 self.flags[i] = [name, False]

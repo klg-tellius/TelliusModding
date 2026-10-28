@@ -30,7 +30,7 @@ from typing import Optional
 from PIL import Image, ImageTk
 
 from ..formats.cmb.decompiler import Decompiler, function_to_source
-from ..game_profile import PATH_OF_RADIANCE_PROFILE
+from ..game_profile import PLAYTHROUGH
 from ..playthrough import actions, combat, engine, fog, loader, movement, setup, triggers
 from ..playthrough.ai_vm import program as ai_program
 from ..playthrough.event_vm import code as script_code, disassemble
@@ -90,6 +90,7 @@ class PlaythroughWindow(_Window):
         self._battle_window = None
         self._source_cache: dict = {}
         self._conversation = None  # (assets, renderer) once loaded, False when unavailable
+        self._rd_conversation = None  # wide FE10 conversation assets, False when unavailable
         self._message_photo = None
         self._seed = tk.StringVar(value="0")
         self._difficulty = tk.StringVar(value=DIFFICULTIES[0][0])
@@ -98,7 +99,7 @@ class PlaythroughWindow(_Window):
         self._auto_messages = tk.BooleanVar(value=False)
         self._follow = tk.BooleanVar(value=True)
         self._show_zones = tk.BooleanVar(value=True)
-        self._fog = tk.BooleanVar(value=False)
+        self._show_all = tk.BooleanVar(value=False)
         self._skip_opening = tk.BooleanVar(value=True)
         self._reveal_after = None  # the running text-reveal animation of the message tab
         self._reveal_key = None
@@ -133,7 +134,7 @@ class PlaythroughWindow(_Window):
         ttk.Checkbutton(options, text="Follow the running code", variable=self._follow).pack(side="left", padx=(8, 0))
         ttk.Checkbutton(options, text="Script zones", variable=self._show_zones,
                         command=self._refresh_map).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(options, text="Fog (approximate)", variable=self._fog,
+        ttk.Checkbutton(options, text="Show all", variable=self._show_all,
                         command=self._toggle_fog).pack(side="left", padx=(8, 0))
 
         transport = ttk.Frame(self, padding=(8, 0, 8, 4))
@@ -236,11 +237,10 @@ class PlaythroughWindow(_Window):
         if data is None or data.capacity is None:
             raise ValueError("This chapter has no map.")
         session = b._session_provider()
-        fe8 = getattr(session, "fe8", None)
-        if fe8 is None:
-            from ..formats import fe8data
-
-            fe8 = fe8data.read_fe8data(PATH_OF_RADIANCE_PROFILE.path(self._files, "game_data").read_bytes())
+        profile = self._project.profile
+        if not profile.supports(PLAYTHROUGH):
+            raise ValueError(profile.unavailable(PLAYTHROUGH))
+        game_data = getattr(session, "fe8", None) or getattr(session, "fe10", None)
         index = b._index_provider()
         names = {pid: info.name for pid, info in getattr(index, "by_pid", {}).items() if info.name}
         script_editor = b._script
@@ -250,7 +250,8 @@ class PlaythroughWindow(_Window):
         documents = [b._deploy.document(v) for v in b._deploy.variants()]
         difficulty = dict(DIFFICULTIES)[self._difficulty.get()]
         world = loader.load_world(self._files, map_data=data, terrain_grid=b.map_editor.terrain_grid,
-                                  terrain_types=b.map_editor.terrain_types, documents=documents, fe8=fe8,
+                                  terrain_types=b.map_editor.terrain_types, documents=documents, data=game_data,
+                                  profile=profile,
                                   script=script, difficulty=difficulty, names=names,
                                   chapter_stem=path.stem if path is not None else None, problems=problems)
         world.item_names = {k: v for k, v in (getattr(index, "item_names", {}) or {}).items() if v}
@@ -270,7 +271,6 @@ class PlaythroughWindow(_Window):
             return
         state = setup.initial_state(world, seed=seed)
         state.deploy_only = list(self._deploy_only) if self._deploy_only is not None else None
-        state.fog = self._fog.get()
         self.sim = Simulation(world, state)
         self._source_cache.clear()
         self._selected, self._reach, self._watch = None, {}, None
@@ -377,7 +377,8 @@ class PlaythroughWindow(_Window):
         from .playthrough_battle import BattleAnimationWindow
 
         if self._battle_window is None or not self._battle_window.winfo_exists():
-            self._battle_window = BattleAnimationWindow(self, self._files, self.sim.world.rules, self.sim.world.fe8)
+            self._battle_window = BattleAnimationWindow(
+                self, self._files, self.sim.world.rules, self.sim.world.fe8, project=self._project)
         self._waiting_animation = True
 
         def done() -> None:
@@ -450,8 +451,7 @@ class PlaythroughWindow(_Window):
     def _toggle_fog(self) -> None:
         if self.sim is None:
             return
-        on = self._fog.get()
-        self.sim.edit(lambda s: setattr(s, "fog", on), "Fog on" if on else "Fog off")
+        # A view override: replayable simulation state is deliberately untouched.
         self.refresh()
 
     def set_choices(self) -> None:
@@ -691,7 +691,8 @@ class PlaythroughWindow(_Window):
         if canvas.backdrop is None and self._builder._backdrop is not None:
             canvas.backdrop = self._builder._backdrop
         canvas.units = []
-        visible = fog.visible_tiles(world, state) if state.fog else None
+        game_visibility = bool(state.sight or state.fog) and not self._show_all.get()
+        visible = fog.visible_tiles(world, state, show_all=self._show_all.get()) if game_visibility else None
         acting = next((t.uid for t in state.pending if isinstance(t, AiTurn)), None)  # marked like a selection
         for u in state.living():
             if visible is not None and not fog.can_see(world, state, u, visible):
@@ -898,6 +899,10 @@ class PlaythroughWindow(_Window):
         self._stop_reveal()
         self._reveal_key = key
         self._set_message_text(f"{data['msg_id']}  page {data['page']}/{data['pages']}\n{found.text}")
+        if data.get("dialect") == "fe10":
+            self._draw_rd_message(data["raw"], data["page"])
+            self._reveal_ms = 0
+            return
         page = self._message_page(data["raw"], data["page"])
         if page is None:
             self._message_canvas.delete("all")
@@ -939,6 +944,26 @@ class PlaythroughWindow(_Window):
         self._message_canvas.delete("all")
         w = max(1, self._message_canvas.winfo_width())
         h = max(1, self._message_canvas.winfo_height())
+        scale = min(w / image.width, h / image.height)
+        size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+        self._message_photo = ImageTk.PhotoImage(image.resize(size, Image.Resampling.BILINEAR))
+        self._message_canvas.create_image(w // 2, h // 2, image=self._message_photo)
+
+    def _draw_rd_message(self, raw: str, page: int) -> None:
+        try:
+            from ..formats.fe10_conversation import build_frames
+            from ..formats.fe10_conversation_render import Fe10ConversationAssets, WIDE_SIZE, render
+            if self._rd_conversation is None:
+                self._rd_conversation = Fe10ConversationAssets(self._files, wide=True)
+            frames = [frame for frame in build_frames(raw) if frame.kind in ("wait", "end")]
+            frame = frames[min(max(1, page), len(frames)) - 1]
+            image = render(frame, self._rd_conversation).resize(WIDE_SIZE, Image.Resampling.BILINEAR)
+        except Exception:  # noqa: BLE001 - the plain message text remains usable
+            self._rd_conversation = False
+            self._message_canvas.delete("all")
+            return
+        self._message_canvas.delete("all")
+        w, h = max(1, self._message_canvas.winfo_width()), max(1, self._message_canvas.winfo_height())
         scale = min(w / image.width, h / image.height)
         size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
         self._message_photo = ImageTk.PhotoImage(image.resize(size, Image.Resampling.BILINEAR))

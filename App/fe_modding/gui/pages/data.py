@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import DATA_TABLES, GAME_DATA, SCRIPTS
+from ...game_profile import AI, DATA_TABLES, GAME_DATA, SCRIPTS
 from .flags import FlagsPanel
 from ..cp_data_editor import CpDataPanel
 from ..dialogue_editor import DialogueEditor
@@ -53,7 +53,20 @@ class GameDataPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
+        self._fe10 = not self.project.profile.supports(GAME_DATA) and self.project.profile.supports(DATA_TABLES)
         self._hub = None
+        self._supports = None
+        self._flags = None
+        self._rect_images = None
+        if self._fe10:
+            self._editor = Fe10DataEditor(self, self.project, shell.changelog, session=shell.session,
+                                          navigate=shell.navigate, toolbar_parent=self)
+            self._editor.toolbar.pack_forget()
+            self._ai = CpDataPanel(self, self.project, shell.changelog,
+                                   session_provider=lambda: shell.session if shell.session.available else None)
+            self._tab = "classes"
+            self._hub = self._build_hub()
+            return
         self._editor = StatsEditor(self, self.project, shell.changelog, shell.session, navigate=shell.navigate)
         style = ttk.Style(self)
         style.layout("Tabless.TNotebook.Tab", [])  # the hub picks the section, not a tab strip
@@ -62,7 +75,6 @@ class GameDataPage(Page):
         self._editor._notebook.hide(TAB_KEYS.index("chapters"))
         self._editor._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._tab = "classes"
-        self._supports = None
         session = shell.session
         if session.available:
             self._supports = SupportEditorPanel(
@@ -89,10 +101,39 @@ class GameDataPage(Page):
         scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
         ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
         data_file = self.project.profile.file_label("game_data")
-        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}, the script flags "
-                  "and the AI scripts.", style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
+        description = (f"The game's tables, shared by every chapter: {data_file}. Fields whose meaning is not "
+                       "known yet are shown as Unknown and edit as numbers." if self._fe10 else
+                       f"The game's tables, shared by every chapter: {data_file}, the script flags and the AI "
+                       "scripts.")
+        ttk.Label(scroll.body, text=description, style="Muted.TLabel", wraplength=720,
+                  justify="left").pack(anchor="w", pady=(2, 16))
         if not self.shell.session.available:
             ttk.Label(scroll.body, text=self.shell.session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
+        if self._fe10:
+            for title, keys in FE10_SECTIONS:
+                section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
+                grid = CardGrid(scroll.body, card_width=280)
+                grid.pack(fill="x")
+                for key in keys:
+                    icon, description = FE10_TILES[key]
+                    label = "Rect RIDs" if key == "rect_images" else FE10_TAB_TITLES[key]
+                    grid.add(key, Card(grid, title=label, subtitle=description, icon=icon, width=280,
+                                       on_click=lambda k=key: self.shell.navigate((self.kind, k))))
+                grid.done()
+            if self.project.profile.supports(SCRIPTS):
+                section_header(scroll.body, "Scripts").pack(anchor="w", pady=(12, 8))
+                grid = CardGrid(scroll.body, card_width=280)
+                grid.pack(fill="x")
+                grid.add("flags", Card(grid, title=TABS["flags"], icon="⚐", width=280,
+                                       subtitle="The 128 named script flags: campaign and chapter",
+                                       on_click=lambda: self.shell.navigate((self.kind, "flags"))))
+                if self.project.profile.supports(AI):
+                    icon, description = TILES["ai"]
+                    grid.add("ai", Card(grid, title=TABS["ai"], icon=icon, width=280,
+                                        subtitle=description,
+                                        on_click=lambda: self.shell.navigate((self.kind, "ai"))))
+                grid.done()
+            return scroll
         available = self._tab_widgets()
         for title, keys in SECTIONS:
             title = data_file if title == "game_data" else title
@@ -115,10 +156,19 @@ class GameDataPage(Page):
             if self._hub is None:
                 self._hub = self._build_hub()
             self._editor.pack_forget()
+            if self._flags is not None:
+                self._flags.pack_forget()
+            if self._rect_images is not None:
+                self._rect_images.pack_forget()
+            if self._fe10:
+                self._editor.toolbar.pack_forget()
+                self._ai.pack_forget()
             self._hub.pack(fill="both", expand=True)
         else:
             if self._hub is not None:
                 self._hub.pack_forget()
+            if self._fe10:
+                self._editor.toolbar.pack(fill="x")
             self._editor.pack(fill="both", expand=True)
 
     def _character_name(self, pid: str) -> str:
@@ -141,15 +191,21 @@ class GameDataPage(Page):
             self._supports.reload()
 
     def index_changed(self) -> None:
-        self._flags.index_changed()
+        if self._flags is not None:
+            self._flags.index_changed()
 
     def panels(self):
+        if self._fe10:
+            return [self._editor, self._ai]
         panels = [self._editor, self._ai]
         if self._supports is not None and self._supports.dialogue_editor is not None:
             panels.append(self._supports.dialogue_editor)  # yell.m has its own Save
         return panels
 
     def flush(self) -> None:
+        if self._fe10:
+            self.focus_set()  # FE10 fields apply when focus leaves them
+            return
         self._editor.flush()
         if self._supports is not None:
             self._supports.flush()
@@ -172,6 +228,8 @@ class GameDataPage(Page):
         return widgets
 
     def show(self, route) -> bool:
+        if self._fe10:
+            return self._show_fe10(route)
         if len(route) < 2 or route[1] not in TABS or route[1] not in self._tab_widgets():
             self._show_hub(True)
             return True
@@ -194,15 +252,77 @@ class GameDataPage(Page):
                 self._editor.select_skill(route[2])
         return True
 
+    def _show_fe10(self, route) -> bool:
+        """Present FE10 tables through this shared page; only the form adapter differs."""
+        if len(route) > 1 and route[1] == "rect_images":
+            if self._rect_images is None:
+                self._rect_images = RectImagesPanel(self, self.project, self.shell.changelog, self.shell)
+            self._show_hub(False)
+            self._editor.pack_forget()
+            if self._flags is not None:
+                self._flags.pack_forget()
+            self._rect_images.pack(fill="both", expand=True)
+            return True
+        if self._rect_images is not None:
+            self._rect_images.pack_forget()
+        self._ai.pack_forget()
+        if len(route) > 1 and route[1] == "flags" and self.project.profile.supports(SCRIPTS):
+            if self._flags is None:
+                self._flags = FlagsPanel(self, self.shell)
+            self._show_hub(False)
+            self._editor.pack_forget()
+            self._flags.pack(fill="both", expand=True)
+            self._flags.show_sub(tuple(route[2:]))
+            return True
+        if len(route) > 1 and route[1] == "ai" and self.project.profile.supports(AI):
+            if self._flags is not None:
+                self._flags.pack_forget()
+            self._show_hub(False)
+            self._editor.pack_forget()
+            self._ai.pack(fill="both", expand=True)
+            return True
+        if self._flags is not None:
+            self._flags.pack_forget()
+        if len(route) < 2 or route[1] not in FE10_PAGE_TABS:
+            self._show_hub(True)
+            return True
+        self._show_hub(False)
+        self._editor.pack(fill="both", expand=True)
+        self._editor.select_tab(route[1])
+        if len(route) > 2 and route[2]:
+            self._editor.select_record(str(route[2]))
+        else:
+            self._editor.show_records()
+        return True
+
     def crumbs(self, route):
+        if self._fe10:
+            title = self._fe10_title(route)
+            if title is None:
+                return [("Game Data", None)]
+            crumbs = [("Game Data", ("data",)), (title, ("data", route[1]))]
+            if len(route) > 2 and route[2]:
+                crumbs.append((self._editor.record_title(route[1], str(route[2])), None))
+            else:
+                crumbs[-1] = (title, None)
+            return crumbs
         if len(route) < 2 or route[1] not in TABS:
             return [("Game Data", None)]
         return [("Game Data", ("data",)), (TABS[route[1]], None)]
 
     def history_label(self, route):
+        if self._fe10:
+            title = self._fe10_title(route)
+            return f"Game Data › {title}" if title else None
         if len(route) < 2 or route[1] not in TABS:
             return None
         return f"Game Data › {TABS[route[1]]}"
+
+    @staticmethod
+    def _fe10_title(route):
+        if len(route) > 1 and route[1] in ("flags", "ai", "rect_images"):
+            return TABS[route[1]]
+        return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
 
 
 FE10_TILES = {
@@ -224,118 +344,16 @@ FE10_TILES = {
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
     "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
-FE10_SECTIONS = (("Units and items", ("characters", "classes", "items", "skills", "growth")),
+FE10_SECTIONS = (("Units and items", ("classes", "items", "skills", "growth")),
                  ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
                  ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
                  ("Rules", ("triangle", "groups", "difficulty", "biorhythm")),
                  ("Images", ("rect_images",)))
-
-
-class Fe10GameDataPage(Page):
-    """Game Data for a game whose database has only its record tables decoded (Radiant Dawn): a hub
-    of the tables and one :class:`Fe10DataEditor` showing the picked one, plus the script flags
-    (``("data", "flags"[, tab])``) once the game's scripts are decoded."""
-
-    kind = "data"
-
-    def __init__(self, shell):
-        super().__init__(shell)
-        self._editor = Fe10DataEditor(self, self.project, shell.changelog)
-        self._flags: FlagsPanel | None = None
-        self._rect_images: RectImagesPanel | None = None
-        self._hub = self._build_hub()
-
-    def _build_hub(self) -> ScrollFrame:
-        scroll = ScrollFrame(self, padding=(28, 12, 28, 28))
-        ttk.Label(scroll.body, text="Game Data", style="Title.TLabel").pack(anchor="w")
-        data_file = self.project.profile.file_label("game_data")
-        ttk.Label(scroll.body, text=f"The game's tables, shared by every chapter: {data_file}. Fields whose "
-                  "meaning is not known yet are shown as Unknown and edit as numbers.", style="Muted.TLabel",
-                  wraplength=720, justify="left").pack(anchor="w", pady=(2, 16))
-        for title, keys in FE10_SECTIONS:
-            section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
-            grid = CardGrid(scroll.body, card_width=280)
-            grid.pack(fill="x")
-            for key in keys:
-                icon, description = FE10_TILES[key]
-                grid.add(key, Card(grid, title="Rect RIDs" if key == "rect_images" else FE10_TAB_TITLES[key], subtitle=description, icon=icon, width=280,
-                                   on_click=lambda k=key: self.shell.navigate((self.kind, k))))
-            grid.done()
-        if self.project.profile.supports(SCRIPTS):
-            section_header(scroll.body, "Scripts").pack(anchor="w", pady=(12, 8))
-            grid = CardGrid(scroll.body, card_width=280)
-            grid.pack(fill="x")
-            grid.add("flags", Card(grid, title=TABS["flags"], icon="⚐", width=280,
-                                   subtitle="The 128 named script flags: campaign and chapter",
-                                   on_click=lambda: self.shell.navigate((self.kind, "flags"))))
-            grid.done()
-        return scroll
-
-    def show(self, route) -> bool:
-        if len(route) > 1 and route[1] == "rect_images":
-            if self._rect_images is None:
-                self._rect_images = RectImagesPanel(self, self.project, self.shell.changelog, self.shell)
-            self._hub.pack_forget()
-            self._editor.pack_forget()
-            if self._flags is not None:
-                self._flags.pack_forget()
-            self._rect_images.pack(fill="both", expand=True)
-            return True
-        if self._rect_images is not None:
-            self._rect_images.pack_forget()
-        if len(route) > 1 and route[1] == "flags" and self.project.profile.supports(SCRIPTS):
-            if self._flags is None:
-                self._flags = FlagsPanel(self, self.shell)
-            self._hub.pack_forget()
-            self._editor.pack_forget()
-            self._flags.pack(fill="both", expand=True)
-            self._flags.show_sub(tuple(route[2:]))
-            return True
-        if self._flags is not None:
-            self._flags.pack_forget()
-        if len(route) < 2 or route[1] not in FE10_TAB_KEYS:
-            self._editor.pack_forget()
-            self._hub.pack(fill="both", expand=True)
-            return True
-        self._hub.pack_forget()
-        self._editor.pack(fill="both", expand=True)
-        self._editor.select_tab(route[1])
-        if len(route) > 2 and route[2]:
-            self._editor.select_record(str(route[2]))
-        return True
-
-    def panels(self):
-        return [self._editor]
-
-    def flush(self) -> None:
-        self.focus_set()  # a field applies when it loses focus
-
-    def index_changed(self) -> None:
-        if self._flags is not None:
-            self._flags.index_changed()
-
-    def _title(self, route):
-        if len(route) > 1 and route[1] in ("flags", "rect_images"):
-            return TABS[route[1]]
-        return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
-
-    def crumbs(self, route):
-        title = self._title(route)
-        if title is None:
-            return [("Game Data", None)]
-        return [("Game Data", ("data",)), (title, None)]
-
-    def history_label(self, route):
-        title = self._title(route)
-        return f"Game Data › {title}" if title else None
+FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
 
 
 def game_data_page(shell) -> Page:
-    """The Game Data page for the project's game: the full one where the whole database is decoded,
-    the tables-only one where just the record tables are (Radiant Dawn)."""
-    profile = shell.project.profile
-    if not profile.supports(GAME_DATA) and profile.supports(DATA_TABLES):
-        return Fe10GameDataPage(shell)
+    """The shared Game Data page; profiles choose table and form adapters inside it."""
     return GameDataPage(shell)
 
 

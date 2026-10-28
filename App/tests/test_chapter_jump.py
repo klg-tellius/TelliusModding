@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding import emulator
-from fe_modding.game_code import chapter_jump, entries  # noqa: F401  (registers the catalog)
+from fe_modding.game_code import chapter_jump, chapter_jump_fe10, entries, entries_fe10  # noqa: F401
 from fe_modding.game_code.catalog import CATALOG, Session, State
 from fe_modding.game_code.chapter_jump import (DIFFICULTIES, JUMP_PATCH, JUMP_PREDICATE, JUMP_RECORD, JUMP_STUB,
                                                _SITES)
@@ -135,6 +135,7 @@ class RunFolderTests(unittest.TestCase):
         shutil.copy(dol, self.extracted / "sys" / "main.dol")
         (self.extracted / "sys" / "boot.bin").write_bytes(b"GFEE01\x00\x00" + bytes(0x438))
         (self.extracted / "sys" / "bi2.bin").write_bytes(b"bi2")
+        (self.extracted / "ticket.bin").write_bytes(b"ticket")
         (self.extracted / "files" / "FE8Data.bin").write_bytes(b"fe8")
         self.run_dir = root / "build" / emulator.RUN_FOLDER
         self.retail = dol.read_bytes()
@@ -153,6 +154,7 @@ class RunFolderTests(unittest.TestCase):
         self.assertEqual(main, self.run_dir / "sys" / "main.dol")
         self.assertEqual((self.extracted / "sys" / "main.dol").read_bytes(), self.retail)
         self.assertEqual((self.run_dir / "sys" / "bi2.bin").read_bytes(), b"bi2")
+        self.assertEqual((self.run_dir / "ticket.bin").read_bytes(), b"ticket")
         self.assertEqual((self.run_dir / "files" / "FE8Data.bin").read_bytes(), b"fe8")
         dol = Dol.open(main)
         self.assertEqual(dol.read(JUMP_RECORD + 4, 1), bytes([7]))
@@ -170,6 +172,13 @@ class RunFolderTests(unittest.TestCase):
     def test_unknown_chapter(self):
         with self.assertRaises(emulator.EmulatorError):
             emulator.chapter_position(b"", 5)
+
+    def test_rd_chapter_id_uses_the_internal_number(self):
+        with mock.patch("fe_modding.game_code.rd_story.chapter_number_map",
+                        return_value={7: "0101", 9: "0407a"}):
+            self.assertEqual(emulator.rd_chapter_number(b"data", "C0407A"), 9)
+            with self.assertRaises(emulator.EmulatorError):
+                emulator.rd_chapter_number(b"data", "9999")
 
 
 if __name__ == "__main__":

@@ -6,10 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.game_code import versions
-from fe_modding.game_code import entries, ppc, verify
+from fe_modding.game_code import entries, entries_fe10, ppc, verify
 from fe_modding.game_code import promotion
 from fe_modding.game_code.catalog import (CATALOG, CAVE_ADDRESS, CAVE_SIZE, Edit, Field, Patch, Session,
-                                          State, Tunable, make_signature)
+                                          State, Tunable, in_cave, make_signature)
 from fe_modding.game_code.dol import Dol, DolError
 
 TEXT_ADDR = 0x80005600
@@ -41,6 +41,11 @@ US, JP = "GFEE01", "GFEJ01"
 
 
 class DolTests(unittest.TestCase):
+    def test_special_tunables_use_the_requested_controls(self):
+        self.assertTrue(CATALOG.entries["promotion.third_tier_crown_only"].checkbox)
+        self.assertEqual(CATALOG.entries["battle.stats_position"].choices,
+                         ("Under the HP windows", "Above the HP windows", "Bottom of the screen"))
+
     def test_read_write_by_address(self):
         dol = build_dol(word(LI_R3_3))
         self.assertEqual(dol.u32(TEXT_ADDR), LI_R3_3)
@@ -131,6 +136,12 @@ class PatchTests(unittest.TestCase):
         session.set_patch(patch, True)
         self.assertEqual(moved.u32(TEXT_ADDR + 8), LI_R3_5)
 
+    def test_signature_fallback_never_crosses_game_families(self):
+        moved = self.moved_dol()
+        patch = self.signed_patch("t.no_cross_game")
+        session = Session(moved, versions.RADIANT_DAWN_VERSIONS["RFEE01"])
+        self.assertEqual(session.patch_status(patch).state, State.UNAVAILABLE)
+
     def test_signature_masks_relocatable_operands(self):
         lis_addi = word(0x3C608030) + word(0x38631234) + word(BLR)   # lis r3,0x8030 ; addi r3,r3,0x1234
         other = word(0x3C608040) + word(0x38635678) + word(BLR)
@@ -155,6 +166,18 @@ class TunableTests(unittest.TestCase):
         self.assertEqual(self.dol.u32(TEXT_ADDR), 0x3860FFFE)      # opcode/register half untouched
         self.session.reset(t)
         self.assertEqual(self.dol.u32(TEXT_ADDR), LI_R3_3)
+
+    def test_negated_instruction_immediate(self):
+        dol = build_dol(word(0x3803FFFB) + word(BLR))       # subi r0,r3,5
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.neg", "Test", "Neg", "", 5, 1, 25,
+                    {US: (Field(TEXT_ADDR, "imm16neg", bytes.fromhex("3803")),)})
+        self.assertEqual(session.tunable_status(t).value, 5)
+        session.set_tunable(t, 7)
+        self.assertEqual(session.tunable_status(t).value, 7)
+        self.assertEqual(dol.u32(TEXT_ADDR), 0x3803FFF9)
+        session.reset(t)
+        self.assertEqual(dol.u32(TEXT_ADDR), 0x3803FFFB)
 
     def test_wrong_instruction_makes_it_unavailable(self):
         t = self.tunable("imm16s", TEXT_ADDR + 4, 3, 0, 9, expect=word(LI_R3_3)[:2])
@@ -181,6 +204,18 @@ class TunableTests(unittest.TestCase):
             self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00000 | hi, 0x38050000 | lo))
         session.reset(t)
         self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 4)), (0x3CA00099, 0x3805967F))
+
+    def test_lis_addi_constant_with_intervening_instruction(self):
+        dol = build_dol(word(0x3C600099) + word(NOP) + word(0x3803967F))
+        session = Session(dol, versions.VERSIONS[US])
+        t = Tunable("t.gold.gap", "Test", "Gold", "", 9999999, 0, 9999999,
+                    {US: (Field(TEXT_ADDR, "lis_addi8", bytes.fromhex("3c603803")),)})
+        self.assertEqual(session.tunable_status(t).value, 9999999)
+        session.set_tunable(t, 50000)
+        self.assertEqual(session.tunable_status(t).value, 50000)
+        self.assertEqual(dol.u32(TEXT_ADDR + 4), NOP)
+        session.reset(t)
+        self.assertEqual((dol.u32(TEXT_ADDR), dol.u32(TEXT_ADDR + 8)), (0x3C600099, 0x3803967F))
 
     def test_signed_byte(self):
         dol = build_dol(data=bytes([0xF6, 0x0A]))                       # -10, +10
@@ -262,6 +297,8 @@ class EncoderTests(unittest.TestCase):
         self.assertEqual(ppc.fmr(30, 1), 0xFFC00890)
         self.assertEqual(ppc.extsb(0, 0), 0x7C000774)
         self.assertEqual(ppc.subf(3, 4, 5), 0x7C642850)
+        self.assertEqual(ppc.divw(3, 4, 6), 0x7C6433D6)
+        self.assertEqual(ppc.mullw(3, 3, 0), 0x7C6301D6)
         self.assertEqual(ppc.fctiwz(0, 1), 0xFC00081E)
         self.assertEqual(ppc.stfd(0, 0x18, 1), 0xD8010018)
         self.assertEqual(ppc.andi_(0, 0, 1), 0x70000001)
@@ -277,9 +314,113 @@ RETAIL_DIR = Path(__file__).resolve().parents[2] / "research" / "main_dol" / "do
 class RetailCatalogTests(unittest.TestCase):
     """Every catalog entry against the real executables (skipped when they are not extracted)."""
 
+    def test_rd_numeric_proc_controls_are_independent(self):
+        keys = ("astra", "aether", "adept", "luna", "sol", "colossus", "corrosion",
+                "counter", "miracle", "cancel", "deadeye", "pavise")
+        hooks = set()
+        sites = set()
+        for key in keys:
+            scale = CATALOG.entries[f"rd.skill.{key}.activation_scale"]
+            bonus = CATALOG.entries[f"rd.skill.{key}.activation_bonus"]
+            self.assertEqual((scale.default, scale.minimum, scale.maximum), (4, 0, 16))
+            self.assertEqual((bonus.default, bonus.minimum, bonus.maximum), (0, -100, 100))
+            self.assertEqual(scale.requires, bonus.requires)
+            self.assertEqual(len(scale.requires), 1)
+            hook = scale.requires[0]
+            self.assertTrue(hook.internal)
+            hooks.add(hook.id)
+            scale_site = scale.versions["RFEE01"][0].address
+            bonus_site = bonus.versions["RFEE01"][0].address
+            self.assertEqual(bonus_site, scale_site + 8)
+            sites.add(scale_site)
+        self.assertEqual(len(hooks), len(keys))
+        self.assertEqual(len(sites), len(keys))
+
+    def test_rd_growth_controls_cover_roll_fallback_and_bexp_target(self):
+        hook = CATALOG.entries["rd.growth.random_gain.hook"]
+        self.assertTrue(hook.internal)
+        call, code, values = hook.versions["RFEE01"]
+        self.assertEqual(call.address, entries_fe10._RD_GROWTH_CALL)
+        self.assertEqual(code.address, entries_fe10._RD_GROWTH_STUB)
+        self.assertEqual(code.patched, entries_fe10._rd_growth_stub(code.address))
+        self.assertEqual(values.address, entries_fe10._RD_GROWTH_VALUES)
+        self.assertEqual(values.patched, bytes([1]) * 8)
+        for index, stat in enumerate(entries_fe10._RD_GROWTH_STATS):
+            growth = CATALOG.entries[f"rd.growth.random.{index}"]
+            self.assertEqual((growth.default, growth.minimum, growth.maximum), (1, 0, 9), stat)
+            self.assertEqual(growth.requires, (hook,))
+            table, = growth.versions["RFEE01"]
+            self.assertEqual((table.address, table.kind),
+                             (entries_fe10._RD_GROWTH_VALUES + index, "u8"))
+        bexp = CATALOG.entries["rd.growth.bexp_stat_count"]
+        self.assertEqual((bexp.default, bexp.minimum, bexp.maximum), (3, 0, 8))
+        self.assertEqual(tuple(field.address for field in bexp.versions["RFEE01"]),
+                         (0x8006D8E8, 0x8006DAB4, 0x8006DCD4))
+        force_random = CATALOG.entries["rd.growth.force_random"].versions["RFEE01"][0]
+        force_bexp = CATALOG.entries["rd.growth.force_bexp"].versions["RFEE01"][0]
+        self.assertEqual((force_random.address, force_bexp.address),
+                         (0x8006DD0C, 0x8006DD0C))
+        self.assertEqual(force_random.original, force_bexp.original)
+        self.assertEqual(force_random.patched,
+                         ppc.b(0x8006DD0C, 0x8006DD24).to_bytes(4, "big"))
+        self.assertEqual(force_bexp.patched,
+                         ppc.b(0x8006DD0C, 0x8006DD34).to_bytes(4, "big"))
+        empty = CATALOG.entries["rd.growth.allow_empty_level"].versions["RFEE01"][0]
+        self.assertEqual(empty.address, 0x8006D6F0)
+        self.assertEqual(empty.patched,
+                         ppc.b(0x8006D6F0, 0x8006D77C).to_bytes(4, "big"))
+        blossom_all = CATALOG.entries["rd.growth.blossom_for_everyone"].versions["RFEE01"][0]
+        blossom_off = CATALOG.entries["rd.growth.disable_blossom_reroll"].versions["RFEE01"][0]
+        self.assertEqual((blossom_all.address, blossom_off.address),
+                         (0x8006D320, 0x8006D320))
+        self.assertEqual(blossom_all.original, blossom_off.original)
+        self.assertEqual(blossom_all.patched, ppc.NOP.to_bytes(4, "big"))
+        self.assertEqual(blossom_off.patched,
+                         ppc.b(0x8006D320, 0x8006D34C).to_bytes(4, "big"))
+
+    def test_rd_promotion_controls_keep_distinct_native_paths(self):
+        minimum = CATALOG.entries["rd.promotion.item_min_level"]
+        crown_only = CATALOG.entries["rd.promotion.third_tier_crown_only"]
+        self.assertEqual((minimum.default, minimum.minimum, minimum.maximum), (10, 1, 20))
+        self.assertEqual(minimum.versions["RFEE01"][0].address, 0x8011FFA4)
+        self.assertEqual(crown_only.versions["RFEE01"][0].address, 0x8006D238)
+        self.assertEqual(crown_only.versions["RFEE01"][1].address,
+                         entries_fe10._RD_CROWN_ONLY_STUB)
+        self.assertTrue(in_cave(crown_only.versions["RFEE01"][1].address,
+                                len(crown_only.versions["RFEE01"][1].patched)))
+
+    def test_rd_no_terrain_bonus_uses_native_parity_clearer(self):
+        patch = CATALOG.entries["rd.combat.no_terrain_bonus"]
+        edit, = patch.versions["RFEE01"]
+        self.assertEqual(edit.address, 0x8002F14C)
+        self.assertEqual(edit.original, bytes.fromhex("9421FFF0"))
+        self.assertEqual(edit.patched,
+                         ppc.b(0x8002F14C, 0x8002F20C).to_bytes(4, "big"))
+
+    def test_rd_relaxed_triangle_b_replaces_only_geometry_result(self):
+        patch = CATALOG.entries["rd.triangle.b_relaxed_formation"]
+        edit, = patch.versions["RFEE01"]
+        self.assertEqual(edit.address, 0x8002D854)
+        self.assertEqual(edit.original, bytes.fromhex("4BFFFAF5"))
+        self.assertEqual(edit.patched, ppc.li(3, 1).to_bytes(4, "big"))
+
+    def test_rd_support_controls_share_the_native_affinity_helper(self):
+        support_range = CATALOG.entries["rd.support.range"]
+        full = CATALOG.entries["rd.support.full_bonus"]
+        self.assertEqual((support_range.default, support_range.minimum,
+                          support_range.maximum), (3, 1, 30))
+        range_field, = support_range.versions["RFEE01"]
+        self.assertEqual((range_field.address, range_field.kind, range_field.expect),
+                         (0x8002FD04, "imm16u", bytes.fromhex("2800")))
+        full_edit, = full.versions["RFEE01"]
+        self.assertEqual(full_edit.address, 0x8002FD60)
+        self.assertEqual(full_edit.original, bytes.fromhex("480E9A01"))
+        self.assertEqual(full_edit.patched, ppc.NOP.to_bytes(4, "big"))
+
     def test_catalog_entries_ids_are_unique_and_versioned(self):
         for entry in CATALOG.entries.values():
-            self.assertEqual(set(entry.versions), set(entries.ALL), entry.id)
+            expected = {"RFEE01"} if next(iter(entry.versions)).startswith("R") else set(entries.ALL)
+            self.assertEqual(set(entry.versions), expected, entry.id)
 
     def test_every_version_verifies(self):
         found = 0

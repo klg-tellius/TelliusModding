@@ -9,7 +9,8 @@ writes it back (the build copies the file into ``system.cmp``):
   and *Raw entries* (the opcode and its six words, with the field meanings
   from :mod:`fe_modding.formats.cp_ops`). Code is applied to the script when
   it compiles - on Apply, when switching tab or script, and on Save. The code
-  you applied, comments included, is kept in ``ai_sources/SEQ_*.fe9ai`` next
+  you applied, comments included, is kept in ``ai_sources/SEQ_*.fe9ai`` or
+  ``SEQ_*.fe10ai`` next
   to the project and reused while it still matches the script.
 - **Heal** - when a unit retreats and whether it tries healing items first.
 - **Movement types** - the tile-scoring weights behind a unit's ``mtype``.
@@ -45,7 +46,7 @@ from .widgets import info, tip
 
 FILE_NAME = "cp_data.bin"
 SOURCES_DIR = "ai_sources"
-ENTRY_COLUMNS = ("op", "name", "a", "b", "c", "d", "e", "f", "code")
+ENTRY_COLUMNS = ("op", "name", "a", "b", "c", "d", "e", "f", "g", "h", "i", "code")
 _Completion = namedtuple("_Completion", "text label replace")
 _KEYWORDS = ("goto", "if", "found", "not", "start", "True", "False", "None", "keep", "none")
 _GROUPS = (("Flow", lambda op: op < 100 or op >= 1000), ("Actions", lambda op: 100 <= op < 200),
@@ -65,6 +66,12 @@ class CpDataPanel(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._session_provider = session_provider
+        self._dialect = cp.FE10 if profile_of(project).script_dialect == "fe10" else cp.FE9
+        self._ops = cp_ops.FE10_OPS if self._dialect is cp.FE10 else cp_ops.OPS
+        self._by_name = cp_ops.FE10_BY_NAME if self._dialect is cp.FE10 else cp_ops.BY_NAME
+        self._handled_ops = cp_ops.FE10_HANDLED_OPS if self._dialect is cp.FE10 else cp_ops.HANDLED_OPS
+        self._source_extension = ".fe10ai" if self._dialect is cp.FE10 else ".fe9ai"
+        self._force_raw_source = False
         self._path = (profile_of(project).path(project.extracted_dir / "files", "ai_data")
                       if profile_of(project).supports(AI) else project.extracted_dir / "files" / FILE_NAME)
         self._doc: Optional[cp.CpDocument] = None
@@ -168,13 +175,16 @@ class CpDataPanel(EditorPanel):
         for title, sub in submenus.items():
             menu.add_cascade(label=title, menu=sub)
         flow = submenus["Flow"]
-        for label, text in lang.statement_templates()[:5]:
-            flow.add_command(label=text, command=lambda t=text: self._insert_statement(t))
-        for label, text in lang.statement_templates()[5:]:
-            spec = cp_ops.BY_NAME[label]
-            group = next(title for title, test in _GROUPS if test(spec.op))
-            submenus[group].add_command(label=f"{text}    ({spec.op})",
-                                        command=lambda t=text: self._insert_statement(t))
+        if self._force_raw_source:
+            flow.add_command(label="raw opcode", command=lambda: self._insert_statement("op(202, b=65535)"))
+        else:
+            for label, text in lang.statement_templates(self._ops)[:5]:
+                flow.add_command(label=text, command=lambda t=text: self._insert_statement(t))
+            for label, text in lang.statement_templates(self._ops)[5:]:
+                spec = self._by_name[label]
+                group = next(title for title, test in _GROUPS if test(spec.op))
+                submenus[group].add_command(label=f"{text}    ({spec.op})",
+                                            command=lambda t=text: self._insert_statement(t))
         insert["menu"] = menu
         insert.pack(side="left", padx=(6, 0))
         ttk.Button(tools, text="Reload from data", command=self._reload_source).pack(side="left", padx=(6, 0))
@@ -182,8 +192,11 @@ class CpDataPanel(EditorPanel):
         self._source_state.pack(side="left", padx=(12, 0))
         panes = ttk.PanedWindow(page, orient="vertical")
         panes.pack(fill="both", expand=True, pady=(6, 0))
-        self._code = CodeEditor(panes, completions=self._completions, signature=lang.signature,
-                                is_known_call=lambda name: name in cp_ops.BY_NAME or name in ("op", "ref"),
+        self._code = CodeEditor(panes, completions=self._completions,
+                                signature=(lambda name: lang.signature(name, self._ops) if not self._force_raw_source
+                                           else (lang.signature(name, self._ops) if name == "op" else None)),
+                                is_known_call=lambda name: name in ("op", "ref") or (
+                                    not self._force_raw_source and name in self._by_name),
                                 on_change=self._on_source_changed,
                                 on_status=lambda text: self._code_hint.configure(text=text))
         panes.add(self._code, weight=5)
@@ -199,7 +212,8 @@ class CpDataPanel(EditorPanel):
     def _build_raw_view(self) -> None:
         page = ttk.Frame(self._views, padding=(0, 6, 0, 0))
         self._views.add(page, text="Raw entries")
-        self._entries = self._tree(page, ENTRY_COLUMNS, (44, 150, 50, 56, 50, 50, 140, 110, 260), height=10)
+        self._entries = self._tree(page, ENTRY_COLUMNS,
+                                   (44, 130, 48, 52, 48, 48, 100, 100, 80, 80, 80, 220), height=10)
         self._entries.pack(fill="both", expand=True)
         self._entries.bind("<<TreeviewSelect>>", lambda e: self._select_entry())
         row = ttk.Frame(page)
@@ -213,18 +227,18 @@ class CpDataPanel(EditorPanel):
         self._op_var = tk.StringVar()
         ttk.Label(form, text="Opcode").grid(row=0, column=0, sticky="w")
         self._op_box = ttk.Combobox(form, textvariable=self._op_var, width=34, state="readonly",
-                                    values=[self._op_label(op) for op in sorted(cp_ops.OPS) if op >= 0])
+                                    values=[self._op_label(op) for op in sorted(self._handled_ops) if op >= 0])
         self._op_box.grid(row=0, column=1, columnspan=3, sticky="w", padx=4)
         self._op_box.bind("<<ComboboxSelected>>", lambda e: self._apply_entry())
         self._field_vars: dict[str, tk.StringVar] = {}
         self._field_boxes: dict[str, ttk.Combobox] = {}
         self._field_labels: dict[str, ttk.Label] = {}
-        for i, key in enumerate("abcdef"):
+        for i, key in enumerate("abcdefghi"):
             r, c = 1 + i // 3, (i % 3) * 2
             label = ttk.Label(form, text=key)
             label.grid(row=r, column=c, sticky="e", pady=2, padx=(8, 0))
             var = tk.StringVar()
-            box = ttk.Combobox(form, textvariable=var, width=24 if key in "ef" else 14)
+            box = ttk.Combobox(form, textvariable=var, width=24 if key in "efghi" else 14)
             box.grid(row=r, column=c + 1, sticky="w", padx=4)
             box.bind("<Return>", lambda e: self._apply_entry())
             box.bind("<FocusOut>", lambda e: self._apply_entry())
@@ -235,9 +249,11 @@ class CpDataPanel(EditorPanel):
         self._op_help = ttk.Label(page, text="", style="Muted.TLabel", wraplength=760, justify="left")
         self._op_help.pack(anchor="w", pady=(6, 0))
 
-    @staticmethod
-    def _op_label(op: int) -> str:
-        spec = cp_ops.OPS.get(op)
+    def _op_spec(self, op: int):
+        return self._ops.get(op)
+
+    def _op_label(self, op: int) -> str:
+        spec = self._op_spec(op)
         return f"{op}  {spec.key}  ({spec.name})" if spec else str(op)
 
     # heal
@@ -367,12 +383,12 @@ class CpDataPanel(EditorPanel):
             self._message.configure(text=f"{FILE_NAME} was not found in the extracted files.")
             return
         try:
-            self._doc = cp.parse_cp_data(self._path.read_bytes())
+            self._doc = cp.parse_cp_data(self._project.read_logical("ai_data"))
         except Exception as exc:  # noqa: BLE001
             self._message.configure(text=f"Could not read {FILE_NAME}: {exc}")
             return
         self._sources = self._read_sources()
-        problems = cp.id_problems(self._doc)
+        problems = cp.id_problems(self._doc, self._dialect)
         self._message.configure(text=("Warning: " + "; ".join(problems[:3])) if problems else (
             "AI scripts, movement scoring, heal thresholds and thief targets. Ids are positions in the id lists; "
             "new records are appended."))
@@ -391,7 +407,7 @@ class CpDataPanel(EditorPanel):
         sources = {}
         folder = self._sources_dir()
         if folder.is_dir():
-            for path in folder.glob("*.fe9ai"):
+            for path in folder.glob(f"*{self._source_extension}"):
                 try:
                     sources[path.stem] = path.read_text(encoding="utf-8")
                 except OSError:
@@ -401,12 +417,20 @@ class CpDataPanel(EditorPanel):
     def _refresh_choices(self) -> None:
         session = self._session_provider()
         fe8 = getattr(session, "fe8", None) if session is not None else None
-        iids = sorted(i.iid for i in fe8.items if i.iid) if fe8 is not None else []
-        pids = sorted({c.pid for c in fe8.characters if getattr(c, "pid", None)}) if fe8 is not None else []
-        jids = sorted({c.jid for c in fe8.classes if getattr(c, "jid", None)}) if fe8 is not None else []
-        sids = sorted(s.sid for s in fe8.skills if s.sid) if fe8 is not None else []
+        fe10 = getattr(session, "fe10", None) if session is not None else None
+        if fe10 is not None:
+            iids = sorted(r.values.get("iid") for r in fe10.items if r.values.get("iid"))
+            pids = sorted(r.values.get("pid") for r in fe10.characters if r.values.get("pid"))
+            jids = sorted(r.values.get("jid") for r in fe10.classes if r.values.get("jid"))
+            sids = sorted(r.values.get("sid") for r in fe10.skills if r.values.get("sid"))
+        else:
+            iids = sorted(i.iid for i in fe8.items if i.iid) if fe8 is not None else []
+            pids = sorted({c.pid for c in fe8.characters if getattr(c, "pid", None)}) if fe8 is not None else []
+            jids = sorted({c.jid for c in fe8.classes if getattr(c, "jid", None)}) if fe8 is not None else []
+            sids = sorted(s.sid for s in fe8.skills if s.sid) if fe8 is not None else []
         tables = self._doc.names("TBL_")
-        attack, move = cp.attack_scripts(self._doc), cp.move_scripts(self._doc)
+        attack = cp.attack_scripts(self._doc, self._dialect)
+        move = cp.move_scripts(self._doc, self._dialect)
         self._names = lang.Names(pids=set(pids), jids=set(jids), iids=set(iids), sids=set(sids),
                                  attack_scripts=set(attack), move_scripts=set(move),
                                  sections={s.name for s in self._doc.sections})
@@ -433,7 +457,8 @@ class CpDataPanel(EditorPanel):
     def _script_names(self) -> list[str]:
         if self._doc is None:
             return []
-        return cp.attack_scripts(self._doc) if self._script_kind.get() == "attack" else cp.move_scripts(self._doc)
+        return (cp.attack_scripts(self._doc, self._dialect) if self._script_kind.get() == "attack"
+                else cp.move_scripts(self._doc, self._dialect))
 
     def _on_kind_changed(self) -> None:
         if not self._leave_source():
@@ -468,13 +493,13 @@ class CpDataPanel(EditorPanel):
             self._script_list.selection_set(self._script.name)
             self._loading = False
             return
-        self._script = cp.read_script(self._doc.section(selection[0]))
+        self._script = cp.read_script(self._doc.section(selection[0]), self._dialect)
         self._uses.delete(0, "end")
         self._fill_entries()
         self._load_source()
 
     def _kind_of(self, name: str) -> str:
-        return "attack" if name in cp.attack_scripts(self._doc) else "move"
+        return "attack" if name in cp.attack_scripts(self._doc, self._dialect) else "move"
 
     def _fill_entries(self, select: Optional[int] = None) -> None:
         self._entries.delete(*self._entries.get_children())
@@ -485,10 +510,11 @@ class CpDataPanel(EditorPanel):
         kind = self._kind_of(script.name)
         self._script_info.configure(text=f"{script.name} - {kind} script, id {script.script_id}, "
                                          f"{len(script.entries)} entries, labels {labels}.")
-        for i, (e, code) in enumerate(zip(script.entries, lang.entry_lines(script.entries))):
+        for i, (e, code) in enumerate(zip(script.entries, lang.entry_lines(
+                script.entries, force_raw=self._force_raw_source, ops=self._ops))):
             self._entries.insert("", "end", iid=str(i), values=(
-                e.op, cp_ops.OPS[e.op].key if e.op in cp_ops.OPS else "?",
-                *(show_value(v) for v in (e.a, e.b, e.c, e.d, e.e, e.f)), code))
+                e.op, self._op_spec(e.op).key if self._op_spec(e.op) else "?",
+                *(show_value(getattr(e, key)) for key in "abcdefghi"), code))
         if script.entries:
             index = min(select or 0, len(script.entries) - 1)
             self._entries.selection_set(str(index))
@@ -503,28 +529,29 @@ class CpDataPanel(EditorPanel):
         if index is None:
             return
         entry = self._script.entries[index]
-        spec = cp_ops.OPS.get(entry.op)
+        spec = self._op_spec(entry.op)
         self._loading = True
         self._op_var.set(self._op_label(entry.op))
-        for key in "abcdef":
+        for key in "abcdefghi":
             field = spec.field(key) if spec else None
             if field is not None:
                 text, values = f"{key}  {field.name}", self._value_lists.get(field.kind, [])
             elif key == "b" and spec is not None:
                 text, values = "b  threat limit", []
             else:
-                text, values = f"{key}  (unused)" if spec else key, self._choices if key in "ef" else []
+                text, values = f"{key}  (unused)" if spec else key, self._choices if key in "efghi" else []
             if field is not None and field.kind == "label":
                 values = ["0"] + [str(n) for n in cp.script_labels(self._script) if n]
             self._field_labels[key].configure(text=text)
             self._field_boxes[key]["values"] = values
             self._field_vars[key].set(show_value(getattr(entry, key)))
-        self._op_help.configure(text=cp_ops.describe(entry.op))
+        self._op_help.configure(text=(cp_ops.describe(entry.op) if spec else
+                                      f"RFEE01 opcode {entry.op}; edit its lossless raw operands a..i."))
         self._loading = False
 
     def _store_script(self, description: str) -> None:
         section = self._doc.section(self._script.name)
-        cp.write_script(section, self._script)
+        cp.write_script(section, self._script, self._dialect)
         self._changed(f"{self._script.name}: {description}")
 
     def _after_raw_edit(self, select: int) -> None:
@@ -540,9 +567,9 @@ class CpDataPanel(EditorPanel):
         entry = self._script.entries[index]
         try:
             op = int(self._op_var.get().split()[0])
-            spec = cp_ops.OPS.get(op)
+            spec = self._op_spec(op)
             values = {}
-            for key in "abcdef":
+            for key in "abcdefghi":
                 field = spec.field(key) if spec else None
                 kind = field.kind if field is not None else "any"
                 values[key] = lang.parse_field_text(self._field_vars[key].get(), kind)
@@ -556,7 +583,7 @@ class CpDataPanel(EditorPanel):
         if new == entry:
             return
         self._script.entries[index] = new
-        self._store_script(f"entry {index} set to {cp_ops.OPS[op].key if op in cp_ops.OPS else op}")
+        self._store_script(f"entry {index} set to {spec.key if spec else op}")
         self._after_raw_edit(index)
 
     def _insert_entry(self) -> None:
@@ -598,11 +625,12 @@ class CpDataPanel(EditorPanel):
         return name
 
     def _add_script(self, name: str, entries: list, source_of: Optional[str], note: str) -> None:
-        kind_list = "ATK_SEQID_LIST" if self._script_kind.get() == "attack" else "MOV_SEQID_LIST"
+        kind = self._script_kind.get()
+        kind_list = next(section for section, value in self._dialect.id_lists if value == kind)
         new_id = cp.add_to_id_list(self._doc, kind_list, name)
         section = cp.Section(name, [])
-        cp.write_script(section, cp.Script(name, new_id, [cp.Entry(e.op, e.a, e.b, e.c, e.d, e.e, e.f)
-                                                           for e in entries]))
+        cp.write_script(section, cp.Script(name, new_id, [cp.Entry.from_words(e.words(self._dialect), self._dialect)
+                                                           for e in entries]), self._dialect)
         self._doc.sections.insert(self._doc.sections.index(self._doc.section(kind_list)), section)
         if source_of in self._sources:
             self._sources[name] = self._sources[source_of]
@@ -618,7 +646,7 @@ class CpDataPanel(EditorPanel):
         if name is None:
             return
         template = self._doc.section("SEQ_NOATTACK" if attack else "SEQ_NOMOVE")
-        entries = cp.read_script(template).entries if template is not None else []
+        entries = cp.read_script(template, self._dialect).entries if template is not None else []
         self._add_script(name, entries, None, "that does nothing yet")
 
     def _copy_script(self) -> None:
@@ -637,15 +665,17 @@ class CpDataPanel(EditorPanel):
             messagebox.showinfo("Cannot delete", "Only the last script of a list can be deleted: later scripts' ids "
                                 "are saved in save files and must not move.", parent=self)
             return
+        script_lists = tuple(section for section, kind in self._dialect.id_lists if kind in ("attack", "move"))
         users = [s.name for s in self._doc.sections if s.name != name and any(
-            w == name for w in s.words) and s.name not in ("ATK_SEQID_LIST", "MOV_SEQID_LIST")]
+            w == name for w in s.words) and s.name not in script_lists]
         if users:
             messagebox.showinfo("Cannot delete", f"{', '.join(users[:4])} still point at {name}.", parent=self)
             return
         if not messagebox.askyesno("Delete script", f"Delete {name}? Dispo records naming it will stop working.",
                                    icon="warning", parent=self):
             return
-        kind_list = "ATK_SEQID_LIST" if self._script_kind.get() == "attack" else "MOV_SEQID_LIST"
+        kind_list = next(section for section, value in self._dialect.id_lists
+                         if value == self._script_kind.get())
         items = cp.read_list(self._doc.section(kind_list))
         items.remove(name)
         cp.write_list(self._doc.section(kind_list), items)
@@ -690,11 +720,12 @@ class CpDataPanel(EditorPanel):
         script = self._script
         text = self._sources.get(script.name)
         if text is not None:
-            result = lang.compile_source(text, check=False)
+            result = lang.compile_source(text, check=False, ops=self._ops)
             if result.errors or result.entries != [lang._normalised(e) for e in script.entries]:
                 text = None
         if text is None:
-            text = lang.decompile(script, self._kind_of(script.name))
+            text = lang.decompile(script, self._kind_of(script.name), force_raw=self._force_raw_source,
+                                  ops=self._ops)
         self._code.set(text)
         self._source_pending = False
         self._check_source(quiet=True)
@@ -724,8 +755,10 @@ class CpDataPanel(EditorPanel):
         self._source_state.configure(text="Code changes not applied yet" if self._source_pending else "")
 
     def _compile(self) -> lang.CompileResult:
-        fallthrough = lang.fallthrough_labels(self._doc.sections, self._script.name)
-        return lang.compile_source(self._code.get(), self._names, fallthrough)
+        fallthrough = lang.fallthrough_labels(self._doc.sections, self._script.name,
+                                              entry_words=self._dialect.entry_words)
+        return lang.compile_source(self._code.get(), self._names, fallthrough,
+                                   handled_ops=self._handled_ops, ops=self._ops)
 
     def _check_source(self, quiet: bool = False) -> Optional[lang.CompileResult]:
         self._check_job = None
@@ -833,7 +866,7 @@ class CpDataPanel(EditorPanel):
         call = self._enclosing_call(prefix)
         if call is not None and prefix.rstrip().endswith("="):
             name, keyword = call, prefix.rstrip()[:-1].split("(")[-1].split(",")[-1].strip()
-            kind = lang.field_kind_at(name, keyword)
+            kind = lang.field_kind_at(name, keyword, self._ops)
             if kind == "label":
                 candidates = ["start"] + [f"L{n}" for n in self._labels_in_code()]
             elif kind:
@@ -841,7 +874,7 @@ class CpDataPanel(EditorPanel):
             elif keyword == "threat_limit":
                 candidates = ["none", "keep"]
         elif call is not None:
-            spec = cp_ops.BY_NAME.get(call)
+            spec = None if self._force_raw_source else self._by_name.get(call)
             if spec is not None:
                 candidates = [f.name + "=" for f in spec.fields if not (spec.form == "assign" and f.slot == "a")]
                 if not spec.uses_b:
@@ -849,7 +882,7 @@ class CpDataPanel(EditorPanel):
         elif prefix.rstrip().endswith("goto"):
             candidates = ["start"] + [f"L{n}" for n in self._labels_in_code()]
         else:
-            candidates = lang.function_names() + list(_KEYWORDS)
+            candidates = (["op"] if self._force_raw_source else lang.function_names(self._ops)) + list(_KEYWORDS)
         lowered = word.lower()
         matches = [c for c in candidates if c.lower().startswith(lowered) and c != word]
         if not matches and len(word) >= 3:
@@ -873,15 +906,15 @@ class CpDataPanel(EditorPanel):
         return None
 
     def _labels_in_code(self) -> list[int]:
-        result = lang.compile_source(self._code.get(), check=False)
+        result = lang.compile_source(self._code.get(), check=False, ops=self._ops)
         return sorted({e.c for e in result.entries if e.op == 0 and isinstance(e.c, int) and e.c})
 
     # -- heal -----------------------------------------------------------------------------
     def _fill_heal(self, select: Optional[str] = None) -> None:
         self._heal_list.delete(*self._heal_list.get_children())
-        for index, name in enumerate(cp.heal_records(self._doc)):
+        for index, name in enumerate(cp.heal_records(self._doc, self._dialect)):
             self._heal_list.insert("", "end", iid=name, values=(index, name))
-        names = cp.heal_records(self._doc)
+        names = cp.heal_records(self._doc, self._dialect)
         if names:
             self._heal_list.selection_set(select if select in names else names[0])
 
@@ -924,7 +957,8 @@ class CpDataPanel(EditorPanel):
         selection = tree.selection()
         if copy and not selection:
             return
-        prefix, list_name = ("SEQ_", "HEAL_SEQID_LIST") if kind == "heal" else ("MTYPE_", "MTYPE_TABLEID_LIST")
+        list_name = next(section for section, value in self._dialect.id_lists if value == kind)
+        prefix = "SEQ_" if kind == "heal" else "MTYPE_"
         initial = (selection[0] + "_COPY") if copy else ("SEQ_NEW_HEAL" if kind == "heal" else "MTYPE_NEW")
         name = self._ask_name("Create copy" if copy else "New", prefix, initial)
         if name is None:
@@ -948,7 +982,7 @@ class CpDataPanel(EditorPanel):
     # -- movement types ----------------------------------------------------------------------
     def _fill_mtypes(self, select: Optional[str] = None) -> None:
         self._mtype_list.delete(*self._mtype_list.get_children())
-        names = cp.mtype_tables(self._doc)
+        names = cp.mtype_tables(self._doc, self._dialect)
         for index, name in enumerate(names):
             self._mtype_list.insert("", "end", iid=name, values=(index, name))
         if names:
@@ -1152,10 +1186,10 @@ class CpDataPanel(EditorPanel):
         if not self._leave_source():
             return False
         try:
-            problems = cp.id_problems(self._doc)
+            problems = cp.id_problems(self._doc, self._dialect)
             if problems:
                 raise ValueError("; ".join(problems[:3]))
-            self._project.write_keeping_original(self._path, cp.build_cp_data(self._doc))
+            self._project.write_logical("ai_data", cp.build_cp_data(self._doc))
             self._write_sources()
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not save AI data", str(exc), parent=self)
@@ -1174,7 +1208,7 @@ class CpDataPanel(EditorPanel):
             if name not in live:
                 continue
             folder.mkdir(parents=True, exist_ok=True)
-            with open(folder / f"{name}.fe9ai", "w", encoding="utf-8", newline="\n") as handle:
+            with open(folder / f"{name}{self._source_extension}", "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(text)
 
     def _confirm_discard(self) -> bool:

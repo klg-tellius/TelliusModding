@@ -16,8 +16,8 @@ from .battle_window import BattleWindow
 
 
 class BattleAnimationWindow(BattleWindow):
-    def __init__(self, parent: tk.Misc, files: Path, rules, fe8):
-        super().__init__(parent, files, rules, fe8)
+    def __init__(self, parent: tk.Misc, files: Path, rules, fe8, *, project=None):
+        super().__init__(parent, files, rules, fe8, project=project)
         self._on_done: Optional[Callable[[], None]] = None
         self._finish_job: Optional[str] = None
         self.scenery = tk.StringVar(value="(none)")

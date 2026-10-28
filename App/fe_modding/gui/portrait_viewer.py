@@ -15,20 +15,27 @@ the depth order and the nameplate key; it is saved straight to the loose
 portrait...** writes ``FID_<NAME>`` and ``FID_L_<NAME>`` (the game pairs a
 small face with the large one of the same name) and can set a character's
 FID. See ``fe_modding/portraits.py``.
+
+Radiant Dawn keeps one 15-image ``.cms`` plus one 48-byte face row per slot,
+with separate normal and widescreen copies. New slots clone the selected
+row and texture set in both aspect folders, preserving their distinct part
+coordinates; subsequent picture replacement customizes the clone.
 """
 
 from __future__ import annotations
 
 import io
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
 from .. import portraits
-from ..formats import fe8data, lz10, tpl
+from ..formats import fe10_faces, fe10data, fe8data, lz10, tpl
 from ..formats.fe9_portraits import FaceAsset, FaceRecord
+from ..games import Game
 from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
@@ -55,6 +62,7 @@ class PortraitViewer(EditorPanel):
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session=None):
         super().__init__(parent)
         self._project = project
+        self._rd = project.game is Game.RADIANT_DAWN
         self._changelog = changelog
         self._session = session
         self._current_path: Path | None = None
@@ -63,6 +71,8 @@ class PortraitViewer(EditorPanel):
         self._decoded_images: list[Image.Image] = []
         self._selected_index: int | None = None
         self._dirty = False
+        self._wide_bytes: bytes | None = None
+        self._wide_dirty = False
         self._faces: list[FaceRecord] = []
         self._record: FaceRecord | None = None
         self._thumb_photos: list[ImageTk.PhotoImage] = []
@@ -93,7 +103,8 @@ class PortraitViewer(EditorPanel):
         self._file_list.bind("<<ListboxSelect>>", lambda e: self._on_file_selected())
         buttons = ttk.Frame(left)
         buttons.pack(fill="x", pady=(6, 0))
-        ttk.Button(buttons, text="New portrait…", command=self._new_portrait).pack(side="left")
+        self._new_button = ttk.Button(buttons, text="New portrait…", command=self._new_portrait)
+        self._new_button.pack(side="left")
         self._remove_button = ttk.Button(buttons, text="Remove", command=self._remove_portrait, state="disabled")
         self._remove_button.pack(side="left", padx=(6, 0))
 
@@ -125,6 +136,10 @@ class PortraitViewer(EditorPanel):
         self._new_palette = tk.BooleanVar(value=True)
         ttk.Checkbutton(button_row, text="New palette (keeps the picture's colours)",
                         variable=self._new_palette).pack(side="left", padx=(8, 0))
+        self._wide_var = tk.BooleanVar(value=True)
+        if self._rd:
+            ttk.Checkbutton(button_row, text="Also update Face/wide", variable=self._wide_var).pack(
+                side="left", padx=(8, 0))
         self._save_button = ttk.Button(button_row, text="Save pictures", command=self._save, state="disabled")
         self._save_button.pack(side="left", padx=(8, 0))
         self._status_label = ttk.Label(button_row, text="", style="Muted.TLabel")
@@ -135,6 +150,9 @@ class PortraitViewer(EditorPanel):
         self._build_record_form(self._record_frame)
 
     def _build_record_form(self, frame: ttk.Frame) -> None:
+        if self._rd:
+            self._build_rd_record_form(frame)
+            return
         v = self._record_vars
         row = 0
         ttk.Label(frame, text="Face ID").grid(row=row, column=0, sticky="w")
@@ -176,10 +194,47 @@ class PortraitViewer(EditorPanel):
                                               state="disabled")
         self._save_record_button.pack(side="left", padx=(6, 0))
 
+    def _build_rd_record_form(self, frame: ttk.Frame) -> None:
+        """Known FE10 face metadata; unknown halfwords remain preserved and read-only."""
+        self._fid_box = ttk.Combobox(frame, state="readonly", width=24)
+        self._fid_box.grid(row=0, column=1, sticky="w")
+        self._fid_box.bind("<<ComboboxSelected>>", lambda _e: self._show_record(self._fid_box.get()))
+        ttk.Label(frame, text="Face ID").grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(frame, text="Large face ID").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=2)
+        self._record_vars["large_fid"] = tk.StringVar()
+        ttk.Label(frame, textvariable=self._record_vars["large_fid"]).grid(row=1, column=1, sticky="w")
+        ttk.Label(frame, text="Name key").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=2)
+        self._record_vars["name_id"] = tk.StringVar()
+        ttk.Entry(frame, textvariable=self._record_vars["name_id"], width=26).grid(row=2, column=1, columnspan=2,
+                                                                                   sticky="w")
+        for row, (label, key) in enumerate((("Eye A", "eye_a"), ("Eye B", "eye_b"),
+                                             ("Mouth", "mouth"), ("Cut-in origin", "cut_in_origin")), start=3):
+            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=2)
+            for axis in range(2):
+                var = self._record_vars[f"{key}{axis}"] = tk.IntVar()
+                ttk.Spinbox(frame, from_=-1, to=512, width=7, textvariable=var).grid(
+                    row=row, column=1 + axis, sticky="w", padx=(0, 4))
+        ttk.Label(frame, text="Unknown fields").grid(row=7, column=0, sticky="w", padx=(0, 10), pady=2)
+        self._record_vars["extra"] = tk.StringVar()
+        ttk.Label(frame, textvariable=self._record_vars["extra"], style="Muted.TLabel").grid(
+            row=7, column=1, columnspan=3, sticky="w")
+        bar = ttk.Frame(frame)
+        bar.grid(row=8, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        self._apply_record_button = ttk.Button(bar, text="Preview", command=self._preview_record,
+                                               state="disabled")
+        self._apply_record_button.pack(side="left")
+        self._save_record_button = ttk.Button(bar, text="Save face record", command=self._save_record,
+                                              state="disabled")
+        self._save_record_button.pack(side="left", padx=(6, 0))
+
     # -- data loading ---------------------------------------------------------
     def _load_faces(self) -> None:
         try:
-            self._faces = portraits.load_faces(self._project)
+            if self._rd:
+                path = portraits.face_dir(self._project) / "facedata.bin"
+                self._faces = fe10_faces.read_face_data(path.read_bytes())
+            else:
+                self._faces = portraits.load_faces(self._project)
         except (OSError, ValueError):
             self._faces = []
 
@@ -221,10 +276,13 @@ class PortraitViewer(EditorPanel):
         try:
             self._current_bytes = lz10.decompress(path.read_bytes())
             self._infos = tpl.read_tpl_image_info(io.BytesIO(self._current_bytes))
+            wide_path = portraits.face_dir(self._project) / "wide" / path.name
+            self._wide_bytes = lz10.decompress(wide_path.read_bytes()) if self._rd and wide_path.is_file() else None
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read portrait", str(exc), parent=self)
             return
         self._dirty = False
+        self._wide_dirty = False
         self._save_button.config(state="disabled")
         self._status_label.config(text="")
         self._refresh_thumbnails()
@@ -237,6 +295,13 @@ class PortraitViewer(EditorPanel):
         self._remove_button.config(state="normal" if added else "disabled")
 
     def _retail_ids(self) -> set[str]:
+        if self._rd:
+            path = portraits.face_dir(self._project) / "facedata.bin"
+            original = self._project.extracted_bytes(path)
+            try:
+                return {record.fid for record in fe10_faces.read_face_data(original)} if original else set()
+            except ValueError:
+                return set()
         from ..formats.fe9_portraits import read_face_table
         data = self._project.extracted_bytes(portraits.face_table_path(self._project))
         try:
@@ -278,6 +343,25 @@ class PortraitViewer(EditorPanel):
     def _show_record(self, fid: str | None) -> None:
         self._record = next((r for r in self._faces if r.fid == fid), None)
         v, r = self._record_vars, self._record
+        if self._rd:
+            state = "normal" if r else "disabled"
+            self._apply_record_button.config(state=state)
+            self._save_record_button.config(state=state)
+            if r is None:
+                self._fid_box.set("")
+                for var in v.values():
+                    var.set("")
+                self._composed_label.config(image="")
+                return
+            self._fid_box.set(r.fid)
+            v["large_fid"].set(r.large_fid)
+            v["name_id"].set(r.name_id)
+            for key in ("eye_a", "eye_b", "mouth", "cut_in_origin"):
+                for axis in range(2):
+                    v[f"{key}{axis}"].set(getattr(r, key)[axis])
+            v["extra"].set(", ".join(map(str, r.extra)))
+            self._draw_composed(r)
+            return
         state = "normal" if r else "disabled"
         self._apply_record_button.config(state=state)
         self._save_record_button.config(state=state)
@@ -298,6 +382,15 @@ class PortraitViewer(EditorPanel):
 
     def _record_from_form(self) -> FaceRecord:
         v, r = self._record_vars, self._record
+        if self._rd:
+            if r is None:
+                raise ValueError("Select a face record first.")
+            name_id = v["name_id"].get().strip()
+            if not name_id.startswith("MPID_"):
+                raise ValueError("The name key is an MPID_ label.")
+            points = {key: tuple(v[f"{key}{axis}"].get() for axis in range(2))
+                      for key in ("eye_a", "eye_b", "mouth", "cut_in_origin")}
+            return replace(r, name_id=name_id, **points)
         name_id = v["name_id"].get().strip()
         if not name_id.startswith("MPID_"):
             raise ValueError("The name key is an MPID_ label.")
@@ -312,7 +405,8 @@ class PortraitViewer(EditorPanel):
 
     def _draw_composed(self, record: FaceRecord) -> None:
         try:
-            image = FaceAsset(record, tuple(self._decoded_images)).compose()
+            image = (fe10_faces.compose_face(record, self._decoded_images)
+                     if self._rd else FaceAsset(record, tuple(self._decoded_images)).compose())
         except (ValueError, tk.TclError) as exc:
             self._composed_label.config(image="", text=f"Cannot assemble: {exc}")
             return
@@ -328,8 +422,24 @@ class PortraitViewer(EditorPanel):
     def _save_record(self) -> None:
         try:
             record = self._record_from_form()
-            portraits.update_face(self._project, record)
-        except (ValueError, tk.TclError, OSError, KeyError) as exc:
+            if self._rd:
+                face_dir = portraits.face_dir(self._project)
+                path = face_dir / "facedata.bin"
+                data = path.read_bytes()
+                index = next(i for i, item in enumerate(fe10_faces.read_face_data(data)) if item.fid == record.fid)
+                data = fe10_faces.patch_face_record(data, index, record)
+                wide_path = face_dir / "wide" / "facedata.bin"
+                wide_data = wide_path.read_bytes()
+                wide_records = fe10_faces.read_face_data(wide_data)
+                wide_index = next(i for i, item in enumerate(wide_records) if item.fid == record.fid)
+                wide_record = replace(wide_records[wide_index], large_fid=record.large_fid,
+                                      name_id=record.name_id, filename=record.filename)
+                wide_data = fe10_faces.patch_face_record(wide_data, wide_index, wide_record)
+                self._project.write_keeping_original(path, data)
+                self._project.write_keeping_original(wide_path, wide_data)
+            else:
+                portraits.update_face(self._project, record)
+        except (ValueError, tk.TclError, OSError, KeyError, StopIteration) as exc:
             messagebox.showerror("Could not save the face record", str(exc), parent=self)
             return
         self._load_faces()
@@ -351,11 +461,23 @@ class PortraitViewer(EditorPanel):
             return
         try:
             new_image = Image.open(chosen)
-            if self._new_palette.get() and all(i.format == tpl.FORMAT_C8 for i in self._infos):
-                self._current_bytes = portraits.rebuild_with_new_palette(
-                    self._current_bytes, {self._selected_index: new_image})
-            else:
-                self._current_bytes = tpl.replace_image(self._current_bytes, self._selected_index, new_image)
+            def replace(data: bytes) -> bytes:
+                infos = tpl.read_tpl_image_info(io.BytesIO(data))
+                if self._new_palette.get() and all(i.format == tpl.FORMAT_C8 for i in infos):
+                    return portraits.rebuild_with_new_palette(data, {self._selected_index: new_image})
+                return tpl.replace_image(data, self._selected_index, new_image)
+
+            new_current = replace(self._current_bytes)
+            new_wide = self._wide_bytes
+            if self._rd and self._wide_var.get() and self._wide_bytes is not None:
+                wide_infos = tpl.read_tpl_image_info(io.BytesIO(self._wide_bytes))
+                if self._selected_index >= len(wide_infos):
+                    raise ValueError("The Face/wide portrait does not have the matching picture slot.")
+                new_wide = replace(self._wide_bytes)
+            self._current_bytes = new_current
+            self._wide_bytes = new_wide
+            if self._rd and self._wide_var.get() and self._wide_bytes is not None:
+                self._wide_dirty = True
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not import picture", str(exc), parent=self)
             return
@@ -372,10 +494,14 @@ class PortraitViewer(EditorPanel):
             return
         try:
             self._project.write_keeping_original(self._current_path, lz10.compress(self._current_bytes))
+            if self._rd and self._wide_dirty and self._wide_bytes is not None:
+                wide_path = portraits.face_dir(self._project) / "wide" / self._current_path.name
+                self._project.write_keeping_original(wide_path, lz10.compress(self._wide_bytes))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not save portrait", str(exc), parent=self)
             return
         self._dirty = False
+        self._wide_dirty = False
         self._save_button.config(state="disabled")
         self._status_label.config(text=f"Saved {self._current_path.name}")
         self._changelog.append(self._current_path.stem, "Saved portrait (picture replaced)")
@@ -392,6 +518,9 @@ class PortraitViewer(EditorPanel):
 
     # -- new / remove ---------------------------------------------------------------
     def _new_portrait(self) -> None:
+        if self._rd:
+            self._new_rd_portrait()
+            return
         if self._dirty and not self._confirm_discard():
             return
         dialog = NewPortraitDialog(self, self._session)
@@ -412,7 +541,58 @@ class PortraitViewer(EditorPanel):
             messagebox.showinfo("New portrait", f"{pid} now uses {small_id}. Save FE8Data.bin (Game Data or the "
                                 "character page) to keep it.", parent=self)
 
+    def _new_rd_portrait(self) -> None:
+        if self._dirty and not self._confirm_discard():
+            return
+        if self._record is None or self._current_path is None:
+            messagebox.showinfo("New portrait", "Select the portrait whose 15 picture slots should be copied.",
+                                parent=self)
+            return
+        dialog = NewRdPortraitDialog(self, self._session, self._record)
+        self.wait_window(dialog)
+        if not dialog.result:
+            return
+        name, name_id, pid = dialog.result
+        face_dir = portraits.face_dir(self._project)
+        path, wide_path = face_dir / "facedata.bin", face_dir / "wide" / "facedata.bin"
+        try:
+            data, wide_data = path.read_bytes(), wide_path.read_bytes()
+            records, wide_records = fe10_faces.read_face_data(data), fe10_faces.read_face_data(wide_data)
+            source_index = next(i for i, item in enumerate(records) if item.fid == self._record.fid)
+            wide_source = next(i for i, item in enumerate(wide_records) if item.fid == self._record.fid)
+            data, new_index = fe10_faces.add_face_record(data, source_index, name, name_id)
+            wide_data, _ = fe10_faces.add_face_record(wide_data, wide_source, name, name_id)
+            new = fe10_faces.read_face_data(data)[new_index]
+            target, wide_target = face_dir / new.filename, face_dir / "wide" / new.filename
+            if target.exists() or wide_target.exists():
+                raise ValueError(f"Face/{new.filename} already exists.")
+            normal_texture = self._current_path.read_bytes()
+            source_wide = face_dir / "wide" / self._current_path.name
+            wide_texture = source_wide.read_bytes()
+            self._project.write_keeping_original(path, data)
+            self._project.write_keeping_original(wide_path, wide_data)
+            self._project.write_keeping_original(target, normal_texture)
+            self._project.write_keeping_original(wide_target, wide_texture)
+        except (ValueError, OSError, StopIteration) as exc:
+            messagebox.showerror("Could not add portrait", str(exc), parent=self)
+            return
+        self._changelog.append(new.fid, f"Added portrait slot {new.fid} / {new.large_fid}")
+        if pid and self._session is not None and self._session.available:
+            index = self._session.character_index(pid)
+            if index is not None:
+                self._session.data = fe10data.patch_field(self._session.data, "character", index, "fid", new.fid)
+                self._session.changed(self)
+        self._load_portrait_list()
+        self._portraits_changed()
+        self.select_character(new.fid)
+        if pid:
+            messagebox.showinfo("New portrait", f"{pid} now uses {new.fid}. Save FE10Data.cms (Game Data or the "
+                                "character page) to keep it.", parent=self)
+
     def _remove_portrait(self) -> None:
+        if self._rd:
+            self._remove_rd_portrait()
+            return
         records = self._records_of(self._current_path) if self._current_path else []
         if not records:
             return
@@ -430,6 +610,41 @@ class PortraitViewer(EditorPanel):
         self._load_portrait_list()
         self._portraits_changed()
 
+    def _remove_rd_portrait(self) -> None:
+        records = self._records_of(self._current_path) if self._current_path else []
+        if not records:
+            return
+        record = records[0]
+        if record.fid in self._retail_ids():
+            messagebox.showerror("Could not remove", "The game's own portraits cannot be removed.", parent=self)
+            return
+        if not messagebox.askyesno("Remove portrait", f"Remove {record.fid}, its face-table row and both files?",
+                                   parent=self):
+            return
+        face_dir = portraits.face_dir(self._project)
+        path, wide_path = face_dir / "facedata.bin", face_dir / "wide" / "facedata.bin"
+        try:
+            data, wide_data = path.read_bytes(), wide_path.read_bytes()
+            normal_records, wide_records = fe10_faces.read_face_data(data), fe10_faces.read_face_data(wide_data)
+            index = next(i for i, item in enumerate(normal_records) if item.fid == record.fid)
+            wide_index = next(i for i, item in enumerate(wide_records) if item.fid == record.fid)
+            data = fe10_faces.remove_face_record(data, index)
+            wide_data = fe10_faces.remove_face_record(wide_data, wide_index)
+            self._project.write_keeping_original(path, data)
+            self._project.write_keeping_original(wide_path, wide_data)
+            if not any(item.filename.casefold() == record.filename.casefold()
+                       for item in fe10_faces.read_face_data(data)):
+                for texture in (face_dir / record.filename, face_dir / "wide" / record.filename):
+                    if texture.exists():
+                        texture.unlink()
+        except (ValueError, OSError, StopIteration) as exc:
+            messagebox.showerror("Could not remove portrait", str(exc), parent=self)
+            return
+        self._changelog.append(record.fid, f"Removed portrait slot {record.fid} / {record.large_fid}")
+        self._current_path = None
+        self._load_portrait_list()
+        self._portraits_changed()
+
     # -- workspace navigation -------------------------------------------------
     def select_character(self, name: str) -> None:
         """Jump to a portrait by file name, ``FID_`` or ``PID_`` (prefix, case
@@ -441,7 +656,10 @@ class PortraitViewer(EditorPanel):
         needle = name.strip().upper().removeprefix("PID_").removeprefix("FID_")
         if self._session is not None and self._session.available and name.startswith("PID_"):
             index = self._session.character_index(name)
-            fid = self._session.fe8.characters[index].fid if index is not None else None
+            if self._rd:
+                fid = self._session.fe10.characters[index].values.get("fid") if index is not None else None
+            else:
+                fid = self._session.fe8.characters[index].fid if index is not None else None
             if fid:
                 needle = fid.removeprefix("FID_")
         for i, path in enumerate(self._filtered_files):
@@ -452,6 +670,50 @@ class PortraitViewer(EditorPanel):
                 self._file_list.see(i)
                 self._on_file_selected()
                 return
+
+
+class NewRdPortraitDialog(tk.Toplevel):
+    """Create an FE10 slot by cloning the selected normal/wide texture set and row geometry."""
+
+    def __init__(self, viewer: PortraitViewer, session, source: fe10_faces.FaceRecord):
+        super().__init__(viewer)
+        self.title("New Radiant Dawn portrait")
+        self.transient(viewer.winfo_toplevel())
+        self.result = None
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        labels = sorted(session.labels_by_prefix.get("MPID_", [])) if session and session.available else []
+        pids = ([record.values.get("pid") for record in session.fe10.characters
+                 if record.values.get("pid")] if session and session.available else [])
+        self._name, self._name_key, self._pid = tk.StringVar(), tk.StringVar(value=source.name_id), tk.StringVar()
+        ttk.Label(body, text="Name (FID_…)").grid(row=0, column=0, sticky="w")
+        ttk.Entry(body, textvariable=self._name, width=26).grid(row=0, column=1, sticky="w")
+        ttk.Label(body, text="HERO creates FID_HERO, FID_L_HERO and HERO.cms",
+                  style="Muted.TLabel").grid(row=0, column=2, sticky="w", padx=(8, 0))
+        ttk.Label(body, text="Name key").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Combobox(body, textvariable=self._name_key, values=labels, width=26).grid(
+            row=1, column=1, sticky="w", pady=(4, 0))
+        ttk.Label(body, text="Use for character").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ttk.Combobox(body, textvariable=self._pid, values=[""] + pids, width=26, state="readonly").grid(
+            row=2, column=1, sticky="w", pady=(4, 0))
+        ttk.Label(body, text=f"Starts as a copy of {source.fid}; replace its individual pictures after creation.",
+                  style="Muted.TLabel").grid(row=3, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        buttons = ttk.Frame(body)
+        buttons.grid(row=4, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="Create", command=self._create).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
+        self.grab_set()
+
+    def _create(self) -> None:
+        name, name_key = self._name.get().strip(), self._name_key.get().strip()
+        if not name:
+            messagebox.showerror("New portrait", "Enter a face name.", parent=self)
+            return
+        if not name_key.startswith("MPID_"):
+            messagebox.showerror("New portrait", "The name key is an MPID_ label.", parent=self)
+            return
+        self.result = (name, name_key, self._pid.get() or None)
+        self.destroy()
 
 
 class NewPortraitDialog(tk.Toplevel):

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
+from ...game_profile import DATA_TABLES, GAME_DATA
 from ..shell import Page
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
@@ -48,11 +49,17 @@ class HomePage(Page):
         browse.pack(fill="x")
         chapters = f"{len(index.chapters)} chapters" if index else "Indexing…"
         playable = len(index.main_characters("playable")) if index and index.characters else 0
-        characters = f"{playable} playable, {len(index.main_characters()) if index else 0} in all" if index else "Indexing…"
+        rd_tables = project.profile.supports(DATA_TABLES) and not project.profile.supports(GAME_DATA)
+        characters = ((f"{len(index.main_characters())} named records" if rd_tables else
+                       f"{playable} playable, {len(index.main_characters())} in all") if index else "Indexing…")
+        data_subtitle = ("Classes · Items · Skills · Growth · Rules · AI" if rd_tables else
+                         "Classes · Items · Skills · Flags · AI")
+        data_caption = (f"Shared tables in {project.profile.file_label('game_data')}" if rd_tables else
+                        "Everything else in FE8Data.bin, plus script flags")
         tiles = (
             ("chapters", "▦", "Chapters", chapters, "Maps, deployment, dialogue and scripts, per chapter"),
             ("characters", "☺", "Characters", characters, "Stats, portrait, models and every appearance"),
-            ("data", "≡", "Game Data", "Classes · Items · Skills · Flags · AI", "Everything else in FE8Data.bin, plus script flags"),
+            ("data", "≡", "Game Data", data_subtitle, data_caption),
             ("assets", "▣", "Assets", "Portraits, art, map objects, music, videos, 3D models", "Browse and replace game files"),
             ("tools", "⚒", "Tools", "Battle Simulator · Saves · Check · Game Code", "Simulate fights, edit saves, find broken references, patch the game's code"),
             ("disc", "◎", "Disc & Patch", project.source_iso if shell.extracted else "Not extracted yet",
