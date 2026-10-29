@@ -8,14 +8,15 @@ What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
   unit's saved program counter and runs until END/STOP (which sets where the
   next run starts) or SET_SCRIPTS replaces it; after 256 entries the built-in
   fallback runs (``attack(chance=100)``, ``move_nearest()``);
-- the entry's ``b`` word becomes the movement threat ceiling before dispatch;
-  ``0xFFFF`` means the acting unit's current HP, not an unlimited move. Moves
-  only stop on tiles whose ``ai_threat_map`` value is at most that ceiling
+- a non-zero ``b`` word sets the threat limit before the entry runs (Radiant
+  Dawn copies it before every entry, and reads ``0xFFFF`` as the acting unit's
+  current HP rather than no limit). Moves only stop on tiles whose ``ai_threat_map`` value is at most that ceiling
   (:func:`enemy_threat_map`: the summed expected damage of the hostile units
   that could strike the tile, built for each deciding unit);
 - jumps go to the first LABEL entry with that number, reading on past the
   end of the script into the sections that follow it (``fallthrough``);
-- action entries roll their chance (``rn < chance``), register a candidate
+- action entries roll their chance (``rn <= chance``; Radiant Dawn
+  ``rn < chance``), register a candidate
   and set the found flag; a later action replaces the candidate.
 
 The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_a``
@@ -29,8 +30,9 @@ minus the expected counter (hit^2.125, the same +50 near the attacker's death),
 the tile's threat (``ai_threat_map`` >> 4) and how wounded the attacker is. The
 best wins (ties: the shorter walk). Not reproduced: the Warp staff routine (which
 rebuilds the map mid-phase; the simulator has no Warp) and the order of equal
-scores. Movement towards a goal follows RFEE01's reverse-route/threat frontier,
-including its safe and unsafe fallback order and stable Y/X ties.
+scores. Movement towards a goal takes the reachable tile with the shortest
+remaining path; on Radiant Dawn it follows RFEE01's reverse-route/threat
+frontier, including its safe and unsafe fallback order and stable Y/X ties.
 
 Before the attack script runs, the heal step, staves (each staff's own
 routine), Steal, item use and the skill routines follow :mod:`.ai_actions`.
@@ -483,7 +485,9 @@ class AiStep(ai_actions.ActionRoutines):
         return f"goto L{label}"
 
     def _roll(self, chance) -> bool:
-        return self.state.rng.rn() < int(chance or 0)
+        if self.world.dialect.name == "fe10":
+            return self.state.rng.rn() < int(chance or 0)  # RFEE01: strict
+        return self.state.rng.rn() <= int(chance or 0)
 
     def _register(self, candidate: dict) -> None:
         self.turn.found = True
@@ -764,6 +768,8 @@ class AiStep(ai_actions.ActionRoutines):
             return None
         reach = movement.destinations(world, state, unit)
         dist = _goal_distances(world, state, unit, goals)
+        if world.dialect.name != "fe10":
+            return self._move_towards_fe9(reach, dist, limit=limit, fallback=fallback, text=text)
         if unit.tile in goals:
             best = unit.tile
         else:
@@ -790,6 +796,27 @@ class AiStep(ai_actions.ActionRoutines):
             if best is None and fallback:
                 best = farther if farther is not None else unsafe
         if best is None:
+            return None
+        self._register({"action": "wait", "dest": best, "text": text or f"move to {best}"})
+        return best
+
+    def _move_towards_fe9(self, reach: dict, dist: dict, *, limit: bool, fallback: bool, text: str) -> Optional[tuple]:
+        """GFEE01: 0xFFFF is no threat limit; the reachable tile with the shortest remaining path."""
+        world, state, unit = self.world, self.state, self.unit
+        threat = enemy_threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
+        here = dist.get(unit.tile, 1 << 30)
+        candidates = [t for t in reach if t in dist]
+        if threat:
+            safe = [t for t in candidates if threat.get(t, 0) <= self.turn.threat_limit]
+            if not safe or min(dist[t] for t in safe) >= here:
+                if not fallback:
+                    return None
+                safe = candidates
+            candidates = safe
+        if not candidates:
+            return None
+        best = min(candidates, key=lambda t: (dist[t], reach[t][0]))
+        if best == unit.tile:
             return None
         self._register({"action": "wait", "dest": best, "text": text or f"move to {best}"})
         return best
@@ -836,6 +863,8 @@ class AiStep(ai_actions.ActionRoutines):
         return f"walks to {dest}" if dest else "can't get closer"
 
     def _op_202(self, e, prog):
+        if self.world.dialect.name != "fe10":
+            return ""
         self._register({"action": "wait", "dest": self.unit.tile, "text": "stay in place"})
         return "stays"
 
@@ -862,6 +891,12 @@ class AiStep(ai_actions.ActionRoutines):
     def _op_205(self, e, prog):
         reach = movement.destinations(self.world, self.state, self.unit)
         threat = enemy_threat_map(self.world, self.state, self.unit)
+        if self.world.dialect.name != "fe10":
+            best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
+            if best != self.unit.tile and not _hold(self.unit):
+                self._register({"action": "wait", "dest": best, "text": f"move to the safest tile {best}"})
+                return self.turn.candidate["text"]
+            return "stays"
         ceiling = self._threat_ceiling()
         order = sorted(reach, key=lambda t: (t[1], t[0]))
         safe = [t for t in order if threat.get(t, 0) < ceiling]

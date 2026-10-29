@@ -65,12 +65,12 @@ def _fe8():
     )
 
 
-def _world(width=8, height=8, terrain=None, scripts=(), cp=None, messages=None):
+def _world(width=8, height=8, terrain=None, scripts=(), cp=None, messages=None, dialect=None):
     grid = [[PLAIN] * height for _ in range(width)]
     for (x, y), name in (terrain or {}).items():
         grid[x][y] = name
     return World(width=width, height=height, terrain=grid, terrain_types=TERRAIN, fe8=_fe8(),
-                 scripts=list(scripts), cp=cp, messages=dict(messages or {}))
+                 scripts=list(scripts), cp=cp, messages=dict(messages or {}), dialect=dialect)
 
 
 def _unit(state, pid, x, y, faction=PLAYER, items=("IID_SWORD",), jid=None, move=None, **kw):
@@ -441,8 +441,8 @@ class AiTests(unittest.TestCase):
         # the enemy reaches 0-5 but not 3, where nobody can stand
         self.assertEqual(set(threat), {(0, 0), (1, 0), (2, 0), (4, 0), (5, 0)})
 
-    def test_default_move_threat_ceiling_is_current_hp(self):
-        world = _world(width=8, height=1)
+    def test_rd_default_move_threat_ceiling_is_current_hp(self):
+        world = _world(width=8, height=1, dialect="fe10")
         state = GameState()
         unit = _unit(state, "PID_B", 0, 0, faction=ENEMY)
         unit.hp = 3
@@ -451,16 +451,16 @@ class AiTests(unittest.TestCase):
             self.assertEqual(step._move_towards({(7, 0)}), (4, 0))
         self.assertEqual(step.turn.candidate["dest"], (4, 0))
 
-    def test_move_ties_keep_the_first_y_then_x_tile(self):
-        world = _world(width=5, height=5)
+    def test_rd_move_ties_keep_the_first_y_then_x_tile(self):
+        world = _world(width=5, height=5, dialect="fe10")
         state = GameState()
         unit = _unit(state, "PID_B", 2, 2, faction=ENEMY, move=1)
         step = _ai_step(world, state, unit)
         with patch.object(ai_vm, "enemy_threat_map", return_value={}):
             self.assertEqual(step._move_towards({(0, 2), (4, 2)}), (1, 2))
 
-    def test_nomove_registers_a_wait_at_the_current_tile(self):
-        world = _world()
+    def test_rd_nomove_registers_a_wait_at_the_current_tile(self):
+        world = _world(dialect="fe10")
         state = GameState()
         unit = _unit(state, "PID_B", 2, 3, faction=ENEMY)
         step = _ai_step(world, state, unit)
@@ -468,14 +468,28 @@ class AiTests(unittest.TestCase):
         self.assertTrue(step.turn.found)
         self.assertEqual(step.turn.candidate, {"action": "wait", "dest": (2, 3), "text": "stay in place"})
 
-    def test_cp_chance_is_strictly_greater_than_the_roll(self):
-        world = _world()
+    def test_rd_cp_chance_is_strictly_greater_than_the_roll(self):
+        world = _world(dialect="fe10")
         state = GameState()
         unit = _unit(state, "PID_B", 0, 0, faction=ENEMY)
         step = _ai_step(world, state, unit)
         with patch.object(state.rng, "rn", side_effect=[5, 4]):
             self.assertFalse(step._roll(5))
             self.assertTrue(step._roll(5))
+
+    def test_por_keeps_its_inclusive_roll_unlimited_ffff_and_nop_nomove(self):
+        world = _world(width=8, height=1)
+        state = GameState()
+        unit = _unit(state, "PID_B", 0, 0, faction=ENEMY)
+        unit.hp = 3
+        step = _ai_step(world, state, unit)
+        with patch.object(state.rng, "rn", side_effect=[5, 6]):
+            self.assertTrue(step._roll(5))
+            self.assertFalse(step._roll(5))
+        self.assertEqual(step._op_202(SimpleNamespace(), None), "")
+        self.assertFalse(step.turn.found)
+        with patch.object(ai_vm, "enemy_threat_map", return_value={(5, 0): 4}):
+            self.assertEqual(step._move_towards({(7, 0)}), (5, 0))  # walks onto the threatened tile
 
     def test_damage_term_and_its_bonuses(self):
         from types import SimpleNamespace as S

@@ -37,7 +37,8 @@ RFEE01 keeps the same 0x28-byte entry shape exposed by this module but differs
 in one important runtime detail: its dispatcher copies word ``b`` before every
 opcode, including zero and opcodes that also use ``b`` as another operand.
 Its movement helper treats ``0xFFFF`` as the acting unit's current HP rather
-than as an unlimited threat ceiling.
+than as an unlimited threat ceiling, and its chance roll is strict
+(``roll < chance``) where GFEE01 accepts ``roll <= chance``.
 """
 
 from __future__ import annotations
@@ -100,7 +101,7 @@ class OpSpec:
 
 
 def _chance() -> Field:
-    return Field("a", "chance", "percent", None, "percent chance to try (roll 0-99 < chance)")
+    return Field("a", "chance", "percent", None, "percent chance to try (roll 0-99 <= chance; Radiant Dawn: < chance)")
 
 
 def _targets(table_help: str = "only units in this character list") -> tuple[Field, Field]:
