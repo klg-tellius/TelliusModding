@@ -276,7 +276,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
                         MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS,
-                        NEW_CAMPAIGN}),
+                        NEW_CAMPAIGN, COLOUR_VARIANTS}),
     # playthrough waits for the RFEE01 script runtime: chapter and startup scripts still call natives
     # it does not model (playthrough/natives.py stops on those rather than guessing).
     message_dialect="fe10",

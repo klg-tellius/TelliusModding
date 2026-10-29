@@ -65,6 +65,12 @@ source_path: "meta/radiant-dawn.md"
 
   `UNIP` has 254 unit slots, `SOKO` the convoy's 316 items. An item is its number and a state word; a forged item adds its name and eight more bytes. The 128 script flags are in `BMST`. <span class="confidence confidence--confirmed">engine</span>
 
+## Map and battle textures
+
+  A map animation ID (`FE10AnimHeader` in `FE10Anim.cms`) names one texture and one model folder: `AID_MIKAYA1` draws `ymu/mikaya1/mikaya1.tpl`. Map colours belong to the ID, not to an army: `AID_SOLDIER` (Begnion) is `soldier1_b`, `AID_SOLDIER_De` (Daein) is `soldier1_d`. A character's IDs are its `aid_1` to `aid_4`, one per tier. <span class="confidence confidence--confirmed">engine</span>
+
+  In battle, an `FE10BAnimData` row of `FE10Battle.cms` picks the battle unit by animation ID, then PID and class. Each `FE10BUnit` owns a run of `FE10BTex` rows, one per army or per character, naming a loose `zu/<model>/<texture>.tpl`. `PID_ISAIYA` → `ISAIYA` gives one character her own look on a shared model. <span class="confidence confidence--confirmed">engine</span>
+
 ## Articles
 
 - [Message Format (Radiant Dawn)](../formats/rd-message-format.md): the byte-code that replaced the `$` commands, layouts and speech balloons.

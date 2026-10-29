@@ -69,7 +69,7 @@ Hard and Maniac each store three overrides: fields 0, 1 and 2 replace Normal slo
 - **Hub**: both games list the data tiles in the same order. Radiant Dawn's General (Difficulty constants, Army groups) and Supports (Supports, Bonds, Affinities, Affinity pairs) tiles each hold several tables, switched by a strip above the table. Path of Radiance has a Battle scenery tile: the chapter page's Battle scenes panel with a map picker.
 - The RD character form has Path of Radiance's **Open** buttons; `character_form.open_map_model` finds an AID's map-model folder through `model_slots.map_model_records` on either game.
 
-Colour variants, the weapon triangle and the biorhythm table are still per game (see `workspace/por-rd-parity-audit.md`).
+**Colour variant…** is one dialog on both games, through the data adapter (`plan_character_variant`, `apply_variant`; `colour_variant_options` says whether it offers an army, the character's other records and class variants, which Path of Radiance does). Radiant Dawn's (`colour_variants_fe10.py`) copies each of the character's map animation IDs (`FE10AnimHeader`: ID → texture and model, the ordinal is the row number) with a recoloured `ymu/<folder>/<texture>_<tag>.tpl`, copies the `FE10BAnimData` battle selectors of the old IDs for the new ones, gives each battle unit a `PID → <texture>_<tag>` row in its `FE10BTex` slice (`fe10_battle.add_unit_texture`), and copies the portrait in both `Face/` and `Face/wide/`; checked in Dolphin. The weapon triangle and the biorhythm table are still per game (see `workspace/por-rd-parity-audit.md`).
 
 ## Assets on both games
 

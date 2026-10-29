@@ -163,6 +163,24 @@ class DataAdapter:
         session to save."""
         raise NotImplementedError
 
+    # -- colour variants (Colour variant… on the character page and the class form) ----------------
+    #: Which choices the Colour variant dialog offers: "armies" (the army whose colours a variant
+    #: takes), "family" (the character's other records), "classes" (class variants).
+    colour_variant_options: frozenset = frozenset()
+
+    def character_family(self, project, pid: str) -> tuple[list[str], list[str]]:
+        """Records the character's variant should also cover: (suggested, others)."""
+        return [], []
+
+    def plan_character_variant(self, project, pid: str, tag: str, **options):
+        raise NotImplementedError
+
+    def plan_class_variant(self, project, jid: str, army: str, tag: str, **options):
+        raise ValueError("Class colour variants are not available for this game.")
+
+    def apply_variant(self, project, plan, recolour) -> list[str]:
+        raise NotImplementedError
+
     def campaign_problems(self, project, chapter_specs: list, character_specs: list, after: Optional[str]) -> list:
         """Why New campaign can't add these chapters (``campaign.ChapterSpec``, templates as chapter page
         ids) and characters after chapter ``after``; empty: it can."""
@@ -293,6 +311,24 @@ class PorDataAdapter(DataAdapter):
     def remove_story_chapter(self, project, chapter_id, flow):
         from . import chapters
         return chapters.remove_story_chapter(project, self.data, chapter_id, getattr(flow, "flow", flow)).fe8data
+
+    colour_variant_options = frozenset({"armies", "family", "classes"})
+
+    def character_family(self, project, pid):
+        from . import colour_variants
+        return colour_variants.character_family(project, pid)
+
+    def plan_character_variant(self, project, pid, tag, **options):
+        from . import colour_variants
+        return colour_variants.plan_character_variant(project, pid, tag, **options)
+
+    def plan_class_variant(self, project, jid, army, tag, **options):
+        from . import colour_variants
+        return colour_variants.plan_class_variant(project, jid, army, tag, **options)
+
+    def apply_variant(self, project, plan, recolour):
+        from . import colour_variants
+        return colour_variants.apply_variant(project, plan, recolour)
 
     def campaign_problems(self, project, chapter_specs, character_specs, after):
         from . import campaign
@@ -506,6 +542,15 @@ class RdDataAdapter(DataAdapter):
     def remove_story_chapter(self, project, chapter_id, flow):
         from . import chapters_fe10
         return chapters_fe10.remove_story_chapter(project, self.data, chapter_id, flow).fe10data
+
+    def plan_character_variant(self, project, pid, tag, **options):
+        from . import colour_variants_fe10
+        kept = {k: v for k, v in options.items() if k in ("battle", "map_models", "portrait")}
+        return colour_variants_fe10.plan_character_variant(project, pid, tag, **kept)
+
+    def apply_variant(self, project, plan, recolour):
+        from . import colour_variants_fe10
+        return colour_variants_fe10.apply_variant(project, plan, recolour)
 
     def campaign_problems(self, project, chapter_specs, character_specs, after):
         from . import campaign
