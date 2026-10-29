@@ -34,10 +34,26 @@ PRESENTATION_PREFIXES = (
     "AchieveSet", "UnitSetFixed", "BeginFinale", "EndFinale", "StaffRoll", "WarRecord", "IndividualWarRecord",
     "NetuzoInit", "VisitIn", "intplGetValue", "UnitMoveWait", "FocusWait", "TalkResume", "TTPM", "AddTT",
     "CmSleepScript", "CmWakeupScripts", "UnitClrStatus", "UnitSetStatus", "taikitk", "turntk", "turnatk",
+    # Radiant Dawn (descriptions in formats/cmb/externs_fe10.json): event camera, portraits outside
+    # conversations, post effects, model display, input, sound, menus and screens that only show
+    # something, tutorial plumbing, event maps (the chapter map stays loaded) and script threads (every
+    # vanilla CreateVMCThread function plays an animation, a sound or a camera move).
+    "ClearEventCamera", "SetEventCamera", "IsEventCamera", "IsFileCamera", "SetMapCamera", "SetCircle",
+    "SetGrid", "SetLisner", "SetMapLamp", "SetPullCursor", "SetRoofEnable", "SetTimeScale", "SetUnitAlways",
+    "SetUnitGauge", "SetUnitIcon", "SetUnitMask", "SetEventBattle", "SetOutLink", "GetMapHeight", "Face",
+    "IsFaceEnable", "PostEffect", "FinEffect", "IsEffect", "GetFadeType", "GetButton", "GetPress", "VOICE",
+    "MapEnv", "MapLoad", "MapFree", "MapReload", "ProcKill", "SuspendEvent", "ResumeEvent", "Comeback",
+    "CmbMess", "CreateVMCThread", "SaveMenu", "SelectSally", "DivideForce", "UnitRanking", "ShowHealWindow",
+    "SetAvailableGrandOpening", "DialogSetDefault", "IsGMapPointEnable", "IsUnitMove", "UnitMoveDelete",
+    "UnitAngleRotate", "UnitPosRotate", "UnitHide", "UnitShow", "UnitSetAID", "UnitSetAnim", "UnitSetColor",
+    "UnitSetHand", "UnitSetOffset", "UnitSetScale", "UnitWaitAnim", "UnitLooksChange", "NetuzoBG",
+    "NetuzoDisable", "BMSetWinTerm", "BMSetLoseTerm", "_pa", "_seqini", "_tr", "tde",
 )
 #: Presentation calls the game answers with something other than 0.
 PRESENTATION_RESULTS = {"_pldone": 1, "isFading": 0, "isFlash": 0, "isWipe": 0, "TalkExist": 0, "ProcExists": 0,
-                        "FRAME2MSEC": None, "MSEC2FRAME": None}
+                        "FRAME2MSEC": None, "MSEC2FRAME": None, "MStoF": None}
+#: Script functions startup.cmb calls in the chapter script; a chapter without one answers 0, like the game.
+OPTIONAL_CHAPTER_FUNCTIONS = {"RegistLocationTT"}
 
 
 def native(*names):
@@ -57,7 +73,7 @@ def classification(world, name: str) -> str:
     """Return ``stateful``, ``presentation`` or ``unclassified`` for an extern."""
     if handler(world, name) is not None:
         return "stateful"
-    if name in PRESENTATION_RESULTS or name.startswith(PRESENTATION_PREFIXES):
+    if name in PRESENTATION_RESULTS or name.startswith(PRESENTATION_PREFIXES) or name in OPTIONAL_CHAPTER_FUNCTIONS:
         return "presentation"
     return "unclassified"
 
@@ -97,9 +113,9 @@ def unmodelled(vm, name: str, args: list) -> int:
     if name in PRESENTATION_RESULTS:
         value = PRESENTATION_RESULTS[name]
         if value is None:  # unit conversions
-            value = args[0] * 1000 // 60 if name == "FRAME2MSEC" else args[0] * 60 // 1000
+            value = int(args[0]) * 1000 // 60 if name == "FRAME2MSEC" else int(args[0]) * 60 // 1000
         return value
-    if name.startswith(PRESENTATION_PREFIXES):
+    if name.startswith(PRESENTATION_PREFIXES) or name in OPTIONAL_CHAPTER_FUNCTIONS:
         vm.state.emit("script", shown)
         return 0
     if vm.world.dialect.name == "fe10":
@@ -922,3 +938,5 @@ def _netuzo(vm, a):
 FE9_HANDLERS.update({name: SHARED_HANDLERS[name] for name in ("NetuzoBattle",)})
 FE10_HANDLERS.update({name: SHARED_HANDLERS[name] for name in
                       ("SetSight", "MapGetSight", "BuildInstTorch", "BuildInstExtinction")})
+
+from . import natives_fe10  # noqa: E402,F401 - fills FE10_HANDLERS

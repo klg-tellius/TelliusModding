@@ -25,7 +25,7 @@ from .world import World
 #: Granularities of :meth:`Simulation.run`.
 LINE, MESSAGE, ACTION, UNIT, PHASE, INPUT = "line", "message", "action", "unit", "phase", "input"
 MAX_ENTRIES = 20_000
-MAX_RUN = 50_000
+MAX_RUN = 500_000  # Radiant Dawn openings wait in script loops (every frame is a few instructions)
 
 
 @dataclass
@@ -155,7 +155,14 @@ class Simulation:
         if self._live is None:
             self._live = self.history[self.cursor].state.snapshot()
         state = self._live
-        result = engine.step(self.world, state)
+        try:
+            result = engine.step(self.world, state)
+        except Exception as exc:  # noqa: BLE001 - e.g. an unmodelled native: the run stops with the reason
+            state.pending.clear()
+            state.over = "stopped"
+            reason = str(exc) if isinstance(exc, RuntimeError) else f"{type(exc).__name__}: {exc}"
+            state.emit("warn", f"Stopped: {reason}")
+            result = engine.Step("over", "Stopped", outputs=list(state.out))
         if result.kind in ("input", "over") and not result.outputs:
             if not self._live_steps:
                 self._live = None

@@ -178,8 +178,10 @@ class RetailFe10DataTests(unittest.TestCase):
             "Action EXP multiplier (%)", "Second-tier effective-level adjustment",
             "Third-tier effective-level adjustment", "Animalize effective-level adjustment",
             "Boss target kill EXP bonus", "Steal-skill target kill EXP bonus",
-            "Weapon EXP multiplier (%)",
+            "Weapon EXP multiplier (%)", "Row 11 (no reader found)", "Row 12 (no reader found)",
+            "Critical bonus with SID_CRITRISE",
         ))
+        self.assertEqual(len(self.db.table("difficulty")), len(fe10data.DIFFICULTY_ROW_NAMES))
 
     def test_fixed_table_edits(self):
         out = fe10data.patch_field(self.data, "chapter", 1, "lord", "PID_IKE")
@@ -214,6 +216,81 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(rows[1].values["value_0"], 1.5)
         out = fe10data.patch_field(self.data, "biorhythm", 1, "value_0", 1.25)
         self.assertEqual(fe10data.record(out, "biorhythm", 1).values["value_0"], 1.25)
+
+    def test_support_points_biorhythm_bands_and_movement_type(self):
+        points = self.db.table("support_param")[0].values
+        self.assertEqual([points[k] for k in ("points_c", "points_b", "points_a", "points_cap")], [50, 100, 150, 151])
+        self.assertEqual([points[f"speed_{i}"] for i in range(5)], [2, 1, 0, -1, -2])
+        bands = self.db.table("biorhythm_band")
+        self.assertEqual([b.values["threshold"] for b in bands], [0.8, 0.4, 0.0, -0.4, -0.8])
+        self.assertEqual([bands[0].values[f"bonus_{i}"] for i in range(1, 6)], [10, 10, 0, 10, 20])
+        self.assertEqual(bands[-1].end, fe8data.section_start(self.data, "NOBTL_TABLE"))
+        fliers = {c.id: c.values["movement_type"] for c in self.db.classes}
+        self.assertEqual(fliers["JID_PEGASUSKNIGHT"], 10)
+
+    def test_fields_named_from_the_loaders(self):
+        classes = {c.id: c.values for c in self.db.classes}
+        wyvern = classes["JID_DRAGONKNIGHT"]
+        self.assertEqual([wyvern[k] for k in ("weight", "weight_kind_1", "weight_part_1", "weight_kind_2",
+                                               "weight_part_2", "promotion_level")], [12, 1, 4, 4, 25, 21])
+        self.assertEqual(classes["JID_SWORDESCHATOS"]["promotion_level"], 0)
+        self.assertEqual(classes["JID_EGRET"]["weight_part_1"], -5)
+        people = {c.id: c.values for c in self.db.characters}
+        self.assertEqual(people["PID_ERINCIA"]["protected_parts"], 31)
+        self.assertEqual(people["PID_MORDY"]["protected_parts"], 3)
+        self.assertTrue(all(c.values["extra_skill"] is None and c.values["unused_01"] == 0 for c in self.db.characters))
+        chapters = {c.id: c.values for c in self.db.table("chapter")}
+        self.assertEqual([chapters["C0105"][f"enemy_levels_{d}"] for d in range(4)], [0, 0, 2, 0])
+        self.assertEqual((chapters["C0105"]["move_change"], chapters["C0105"]["part"]), (-2, 0x01))
+        self.assertEqual((chapters["C0301"]["player_group"], chapters["C0301"]["part"]), (15, 0x04))
+        self.assertEqual(chapters["C0401a"]["skip_mask"], 0x80)
+        self.assertEqual(chapters["C0101"]["preparations"], 0)
+        items = {i.id: i.values for i in self.db.items}
+        self.assertEqual((items["IID_IRONSWORD"]["article"], items["IID_BOOTS"]["article"],
+                          items["IID_RAGNELL"]["article"]), (2, 0, 255))
+        self.assertTrue(all(i.values["colour"] == 4 for i in self.db.items))
+        skills = {s.id: s.values for s in self.db.skills}
+        self.assertEqual((skills["SID_AETHER"]["article"], skills["SID_HERO"]["article"]), (2, 3))
+        self.assertEqual(classes["JID_PEGASUSKNIGHT"]["vision"], 3)
+        self.assertTrue(all(b.values["kind"] == 1 for b in self.db.table("bond")))
+        blessing = self.db.table("blessing")
+        self.assertEqual([b.values["blessing_str"] for b in blessing], [5, 5, 0, 0])  # Easy, Normal, Hard, Maniac
+        self.assertEqual(blessing[-1].end, fe8data.section_start(self.data, "GameData") + 0x88)
+        self.assertEqual(self.db.table("difficulty")[9].values["value_0"], 200)  # weapon EXP, Easy
+
+    def test_no_battle_lists_and_list_edits(self):
+        lists = self.db.table("no_battle")
+        self.assertEqual(len(lists), 22)
+        self.assertEqual(lists[1].id, "PID_SOTHE")
+        self.assertEqual(lists[1].lists["characters"], ["PID_RIEUSION", "PID_LEARNE"])
+        self.assertEqual(lists[1].values["flags"], [0, 0])
+        self.assertEqual([r.start for r in lists[1:]],
+                         [fe8data.section_start(self.data, f"NOBTL_{r.id[4:]}") for r in lists[1:]])
+        grown = fe10data.set_list(self.data, "no_battle", 1, "characters", ["PID_RIEUSION", "PID_LEARNE", "PID_IKE"])
+        after = fe10data.read_table(grown, "no_battle")
+        self.assertEqual(after[1].lists["characters"][-1], "PID_IKE")
+        self.assertEqual(after[2].start, fe8data.section_start(grown, "NOBTL_ZIHARK"))
+        self.assertEqual(fe10data.set_list(grown, "no_battle", 1, "characters", ["PID_RIEUSION", "PID_LEARNE"]),
+                         self.data)
+        emptied = fe10data.set_list(self.data, "no_battle", 4, "characters", [])
+        self.assertEqual(fe10data.read_table(emptied, "no_battle")[4].lists["characters"], [])
+        self.assertEqual(fe10data.set_list(emptied, "no_battle", 4, "characters", ["PID_JILL"]), self.data)
+
+    def test_byte_coverage_places_every_byte(self):
+        from fe_modding.formats import fe10data_coverage, fe8data_coverage
+
+        cov = fe10data_coverage.build_coverage(self.data)
+        counts = {s: 0 for s in fe8data_coverage.STATUSES}
+        for section in cov.summary().values():
+            for status, n in section.items():
+                counts[status] += n
+        self.assertEqual(sum(counts.values()), len(self.data))
+        self.assertNotIn("", cov.section)
+        # the open bytes are the unknown_* fields and the few ranges FE10DATA_DECODE_PLAN.md lists
+        loose = {(s.section, s.name) for s in cov.undecoded_ranges()
+                 if "unknown_" not in s.name and not s.name.startswith("chapter.+")}
+        self.assertEqual(loose, {("GameData", "difficulty.row_without_reader")})
+        self.assertEqual(fe10data_coverage.unreferenced_strings(cov), [])
 
     def test_retail_database_has_no_errors(self):
         from fe_modding import validator_fe10

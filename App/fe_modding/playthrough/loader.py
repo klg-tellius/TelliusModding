@@ -99,6 +99,9 @@ def load_world(files: Path, *, map_data, terrain_grid, terrain_types, documents,
             from ..formats import fe8data
             data = fe8data.read_fe8data(raw)
     tactical = adapt(data)
+    if dialect.name == "fe10" and tactical.terrain:
+        # FE10Data's terrain records carry the movement costs the Build tab's terrain list leaves out.
+        terrain_types = tactical.terrain
     cap = map_data.capacity
     scripts, script_names = [], []
     if script is not None:
