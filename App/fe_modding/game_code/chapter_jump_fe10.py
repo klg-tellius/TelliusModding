@@ -3,7 +3,7 @@
 The retail ``GameController`` process initializes the databases at label 2, opens the title at
 label 5, and enters a loaded/new game at label 11.  For a test launch we replace the two label-2
 calls with a cave stub followed by ``goto 11``.  The stub preserves both retail initializers,
-selects a fresh-party mode, stores the requested RD difficulty, calls the retail chapter setter
+selects the story mode, stores the requested RD difficulty, calls the retail chapter setter
 and party reinitializer, and selects the same resume point used by chapter advance.
 
 This patch is only applied to the disposable ``build/dolphin_run/sys/main.dol`` copy.
@@ -38,6 +38,10 @@ _PARTY = 0x803CAB38
 _RESUME_POINT = 0x803CABD4
 _GET_STATE = 0x80060728
 _SET_CHAPTER = 0x80061584
+#: The low two bits of the state word (``_GET_STATE``) are the game mode. 1 is a trial map: at a
+#: chapter's end FUN_800437D0 then opens the trial result (GameController label 0x24), which loads
+#: ``window/achieve.cms`` (not on the retail disc) and never returns. 0 is the story.
+_STORY_MODE = 0
 _REINIT_PARTY = 0x8006132C
 _REFRESH_PARTY_STATE = 0x801097FC
 _INIT_DATABASES = 0x800CDCEC
@@ -62,7 +66,7 @@ def _stub() -> bytes:
         ppc.mr(31, 3),
         ("bl", _INIT_DATABASES), ("bl", _INIT_DATABASES_2),
         *_address(3, _PARTY), ("bl", _GET_STATE),
-        ppc.lwz(5, 0, 3), ppc.andi_(5, 5, 0xFFFC), ppc.li(6, 1), ppc.add(5, 5, 6),
+        ppc.lwz(5, 0, 3), ppc.andi_(5, 5, 0xFFFC), ppc.li(6, _STORY_MODE), ppc.add(5, 5, 6),
         ppc.stw(5, 0, 3),
         ppc.li(0, DIFFICULTIES["Normal"]), ppc.stb(0, 0x11, 3),
         *_address(3, _PARTY), ppc.li(4, 0), ("bl", _SET_CHAPTER),

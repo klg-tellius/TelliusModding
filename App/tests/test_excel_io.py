@@ -157,6 +157,35 @@ class AssetExcelTests(unittest.TestCase):
             self.assertIn("avoid", errors[0])
 
 
+class WorkbookReaderTests(unittest.TestCase):
+    def test_shared_strings_and_absolute_sheet_paths(self):
+        """Excel saves text as shared strings; other tools write /xl/... targets. Both must read."""
+        import zipfile
+        main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "book.xlsx"
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr("xl/workbook.xml", f'<workbook xmlns="{main}" xmlns:r="{rel}"><sheets>'
+                                              f'<sheet name="Characters" sheetId="1" r:id="rId1"/></sheets></workbook>')
+                z.writestr("xl/_rels/workbook.xml.rels",
+                           f'<Relationships xmlns="{pkg}">'
+                           f'<Relationship Id="rId1" Type="{rel}/worksheet" Target="/xl/worksheets/sheet1.xml"/>'
+                           f'<Relationship Id="rId2" Type="{rel}/sharedStrings" Target="sharedStrings.xml"/>'
+                           '</Relationships>')
+                z.writestr("xl/sharedStrings.xml", f'<sst xmlns="{main}"><si><t>pid</t></si><si><t>bonus_mag</t></si>'
+                                                   '<si><r><t>PID_</t></r><r><t>MICAIAH</t></r></si></sst>')
+                z.writestr("xl/worksheets/sheet1.xml",
+                           f'<worksheet xmlns="{main}"><sheetData>'
+                           '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+                           '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>8</v></c>'
+                           '<c r="C2" t="b"><v>1</v></c><c r="D2" t="str"><f>A2</f><v>PID_MICAIAH</v></c></row>'
+                           '</sheetData></worksheet>')
+            rows = excel_io.read_workbook(path)["Characters"]
+        self.assertEqual(rows, [["pid", "bonus_mag"], ["PID_MICAIAH", 8, 1, "PID_MICAIAH"]])
+
+
 class Fe10GrowthExcelTests(unittest.TestCase):
     def test_export_and_import_changes_shared_line_once(self):
         data = growth_data()

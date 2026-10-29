@@ -27,7 +27,12 @@ if __package__ in (None, ""):
 
 from .harness import MANIFEST, WATCHED, WorkProject, sha256, write_cmd, write_lf  # noqa: E402
 from .context import Context  # noqa: E402
-from .scenarios import SCENARIOS  # noqa: E402
+from . import scenarios as session_scenarios  # noqa: E402
+from fe_modding.games import Game  # noqa: E402
+
+SCENARIOS = session_scenarios.SCENARIOS
+#: Test sets: the PoR session (scenarios.py) and the PoR/RD parity checks (parity_scenarios.py).
+SETS = {"session": "scenarios", "parity": "parity_scenarios"}
 from . import docs  # noqa: E402
 
 DEFAULT_DOLPHIN = Path(r"G:\Dolphin-x64\Dolphin.exe")
@@ -37,9 +42,9 @@ def _format(text: str, facts: dict) -> str:
     return text.format_map(defaultdict(lambda: "?", facts))
 
 
-def install_jump(ctx: Context, chapter: int, difficulty: str) -> None:
+def install_jump(ctx: Context, chapter, difficulty: str) -> None:
     from fe_modding import emulator
-    from fe_modding.game_code import chapter_jump
+    from fe_modding.game_code import chapter_jump, chapter_jump_fe10
     from fe_modding.game_code.catalog import Session
     from fe_modding.game_code.dol import Dol
     from fe_modding.game_code.versions import identify, read_boot_code
@@ -52,8 +57,12 @@ def install_jump(ctx: Context, chapter: int, difficulty: str) -> None:
     version = identify(dol, read_boot_code(extracted)).version
     if version is None:
         raise RuntimeError("main.dol is not a supported build after the fixture")
-    position = emulator.chapter_position(ctx.project.read_logical("game_data"), chapter)
-    chapter_jump.install(Session(dol, version), position, chapter_jump.DIFFICULTIES[difficulty])
+    if version.code.startswith("R"):   # Radiant Dawn: the chapter's internal number, from its page id
+        number = emulator.rd_chapter_number(ctx.project.read_logical("game_data"), chapter)
+        chapter_jump_fe10.install(Session(dol, version), number, chapter_jump_fe10.DIFFICULTIES[difficulty])
+    else:
+        position = emulator.chapter_position(ctx.project.read_logical("game_data"), chapter)
+        chapter_jump.install(Session(dol, version), position, chapter_jump.DIFFICULTIES[difficulty])
     path.write_bytes(bytes(dol.data))
 
 
@@ -73,11 +82,13 @@ def build_one(scenario, work: WorkProject, saves: Path, package: Path) -> dict:
             scenario.build(ctx)
         for chapter, turn in scenario.auto_win.items():
             ctx.auto_win(chapter, turn)
-        if scenario.anim_speed:
+        por = not scenario.region.startswith("R")
+        if scenario.anim_speed and por:
             ctx.tunes({"anim.speed": scenario.anim_speed})
-        if scenario.build is not None:      # what the app's Build does (it also draws missing name pictures)
+        if scenario.build is not None and por:   # what the app's Build does (it also draws missing name pictures)
             chapters.ensure_name_images(ctx.project)
-        ctx.project.sync_system_archive()
+        if por:
+            ctx.project.sync_system_archive()
         if scenario.boot == "chapter":
             install_jump(ctx, scenario.chapter, scenario.difficulty)
         changed = work.changed()
@@ -109,8 +120,15 @@ def main() -> None:
     parser.add_argument("--run-root", type=Path, required=True, help="where the runner builds run trees (same drive as --base)")
     parser.add_argument("--package", type=Path, required=True, help="output: patches, cards, docs, launcher")
     parser.add_argument("--dolphin", type=Path, default=DEFAULT_DOLPHIN)
+    parser.add_argument("--base-rd", type=Path, default=Path(r"G:\ROM\rd_work\RFEE01"),
+                        help="clean extracted Radiant Dawn (USA) disc, for RFEE01 tests")
+    parser.add_argument("--set", choices=sorted(SETS), default="session", help="which tests to build")
     parser.add_argument("--only", nargs="*", help="test ids to (re)build; the others keep their last build")
     args = parser.parse_args()
+    global SCENARIOS
+    import importlib
+    chosen = importlib.import_module(f".{SETS[args.set]}", __package__)
+    SCENARIOS = chosen.SCENARIOS
 
     package = args.package.resolve()
     from fe_modding.game_code.versions import identify, read_boot_code
@@ -118,6 +136,8 @@ def main() -> None:
     bases = {"GFEE01": args.base.resolve()}
     if (args.base_pal / "sys" / "main.dol").is_file():
         bases["GFEP01"] = args.base_pal.resolve()
+    if (args.base_rd / "sys" / "main.dol").is_file():
+        bases["RFEE01"] = args.base_rd.resolve()
     for region, base in bases.items():
         if not (base / "sys" / "main.dol").is_file():
             parser.error(f"{base} is not an extracted disc")
@@ -131,7 +151,8 @@ def main() -> None:
         if region not in works:
             folder = args.work.resolve() if region == "GFEE01" else args.work.resolve().with_name(
                 f"{args.work.name}_{region}")
-            works[region] = WorkProject(bases[region], folder, region)
+            game = Game.RADIANT_DAWN if region.startswith("R") else Game.PATH_OF_RADIANCE
+            works[region] = WorkProject(bases[region], folder, region, game)
         return works[region]
 
     manifest_path = package / MANIFEST
@@ -170,9 +191,9 @@ def main() -> None:
     write_cmd(package / "Start-Session.cmd",
               "@echo off\n"
               f'cd /d "{Path(__file__).resolve().parents[2]}"\n'
-              f'"{sys.executable}" -m tools.session_playtest.run --package "%~dp0."\n'
+              f'"{sys.executable}" -m tools.session_playtest.run --package "%~dp0." --set {args.set}\n'
               "pause\n")
-    docs.write_docs(package, manifest)
+    docs.write_docs(package, manifest, chosen)
     print(f"Package: {package}")
     if failures:
         print(f"FAILED fixtures: {' '.join(failures)}")

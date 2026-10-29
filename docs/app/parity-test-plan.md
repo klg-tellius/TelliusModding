@@ -94,5 +94,48 @@ difficulty, and let it boot into the chapter.
 
 ## Results
 
-Write each section's result, date and project copy here, and update the matching rows of
-`workspace/por-rd-parity-audit.md` ("Not checked in Dolphin" → checked, or the failure).
+### 2026-10-28, unattended run
+
+Run without a person: each edit was made on a copy of the clean disc through the app's own functions
+(the same calls the editors make), then booted in Dolphin 2606a with the chapter jump, an isolated user
+folder, a scripted pad, Dolphin's file log and screenshots. A test chapter that must be won gets an
+automatic victory at its first enemy phase. Clean discs: `G:\ROM\rd_work\RFEE01`, `G:\ROM\por_work\GFEE01`.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| 1. RD map: unit moved | Partial | Micaiah starts elsewhere than in retail, but not on the tile set: the opening walks her, so her second position is not her turn-1 tile. |
+| 1. RD map: terrain tile | **Not confirmed** | A one-tile change under the turn-1 cursor still reads Paving Stones; making all 960 tiles Forest crashes on map load (Unhandled Exception 3, LR 0x8029D824). Needs a look at which layer RFEE01 reads. |
+| 2. RD story flow (1-1 → 1-3) | **Pass** | After 1-1's victory the game loads `C0103` / `bmap0103` and skips 1-2. Needed two fixes (below). |
+| 2. RD Add chapter | **Partial** | The added chapter (`0501`, number 56) is reached after 1-1, with its own script and map, but hangs in its opening before any unit is placed, also when jumped into. Files equal 1-1's apart from the renamed names. It also shows 1-1's title card. |
+| 3. RD Chapter data: goal | **Pass** | Hard goal reads "Victory: Defeat boss" on the map and the situation screen (retail: Rout enemy). |
+| 3. RD Chapter data: weather | Not confirmed | Snow instead of cloudy: nothing visible on the map. |
+| 3. RD Battle scenes | **Pass** | 1-1's battles load `zbg/bg0001grd` (generic plains, a name appended to `BattleTerrName`) instead of `bg0101twn`. |
+| 3. PoR Chapter data: map music | **Pass** | Chapter 1 streams `gcfe_bgm_map04_32k.stm` instead of `gcfe_bgm_map00_cut03_32k.stm`. |
+| 4. RD Excel import | **Pass** | Micaiah's status page shows Mag 12 (base 4 + 8; retail 7). Needed a fix (below). |
+| 4. RD Supports | Not run | Needs a save from Part 3 or later. |
+| 5. RD Battle Weapons | **Pass** | The Bronze Axe battle loads `yme/EID_K_FIRE.cmp` (not in the retail run). |
+| 5. RD Tutorials | **Pass** | The Guide lists "The Map Menu" twice (entry 1 took entry 2's title), from `Tutorial/tut_data_h_en.bin`. Slot names not checked. |
+| 5. PoR Animation Data | **Pass** | Enemy fighters load `ymu/fighter/tex_32.tpl` (the player number) instead of `tex_97.tpl`. |
+| 5. PoR Visual Effects add + remove | No game check needed | The file is byte-identical to retail (unit test). |
+| 6. RD Skill activation grid | **Pass** | Adept at bonus +100: `EID_K_ADEPT` twice and two Light hits; at x0: none. |
+| 6. RD Level-up growth | Left to a person | Package test G1 (below). |
+| 6. RD Saves: convoy | Not run | The convoy is not reachable at the start of Part 1, the only RD save here. |
+
+App bugs found and fixed by this run:
+
+- The RD chapter jump (**Play in Dolphin**) set game mode 1, a trial map: every chapter won then opened
+  the trial result (GameController label 0x24, FUN_800437D0), which loads `window/achieve.cms`, absent
+  from the retail disc, and hangs. It now sets mode 0, the story (`chapter_jump_fe10._STORY_MODE`).
+- The RD story-order hook sat at 0x80001800, where Dolphin (cheats off) puts its HBReload stub and
+  `STUBHAXX`: under Dolphin every chapter advance went there instead. Moved to 0x80001900.
+- Excel import ignored shared strings (Excel saves text cells that way) and absolute sheet paths
+  (`/xl/worksheets/...`, written by other tools): a sheet saved by Excel or openpyxl did not import.
+
+Limits found: a chapter jump starts with an empty party, so on Radiant Dawn only 1-1 fields an army (any
+later chapter is an immediate Game Over).
+
+### Interactive tests
+
+`workspace/parity-playtest` (built with `python -m tools.session_playtest.build --set parity ...`):
+G1 (a level-up gives 3 per growth success) and A1 (optional, Adept seen in battle). Double-click
+**Start-Session.cmd**; results go to its RESULTS.md.

@@ -122,17 +122,30 @@ def _col(ref):
  n=0
  for ch in re.match(r'[A-Z]+',ref.upper()).group(0): n=n*26+ord(ch)-64
  return n-1
+def _part(target):
+ # a relationship target is relative to xl/ (Excel) or absolute from the package root (/xl/..., other tools)
+ return target.lstrip('/') if target.startswith('/') else 'xl/'+target
+def _text(node):
+ # an inline or shared string: plain <t>, or rich-text runs <r><t>..</t></r>
+ return ''.join(t.text or '' for t in node.iter(f'{{{MAIN}}}t'))
 def read_workbook(path):
  with zipfile.ZipFile(Path(path)) as z:
   wb=ET.fromstring(z.read('xl/workbook.xml')); rels=ET.fromstring(z.read('xl/_rels/workbook.xml.rels')); targets={r.attrib['Id']:r.attrib['Target'] for r in rels}; result={}
+  # Excel saves every text cell as an index into the shared strings (t="s")
+  shared_part=next((_part(r.attrib['Target']) for r in rels if r.attrib.get('Type','').endswith('/sharedStrings')),'xl/sharedStrings.xml')
+  shared=[_text(si) for si in ET.fromstring(z.read(shared_part)).findall(f'{{{MAIN}}}si')] if shared_part in z.namelist() else []
   for sheet in wb.find(f'{{{MAIN}}}sheets'):
-   root=ET.fromstring(z.read('xl/'+targets[sheet.attrib[f'{{{REL}}}id']])); rows=[]
+   root=ET.fromstring(z.read(_part(targets[sheet.attrib[f'{{{REL}}}id']]))); rows=[]
    for row in root.findall(f'.//{{{MAIN}}}row'):
     vals=[]
     for cell in row.findall(f'{{{MAIN}}}c'):
      i=_col(cell.attrib['r'])
      while len(vals)<=i: vals.append(None)
-     if cell.attrib.get('t')=='inlineStr': n=cell.find(f'{{{MAIN}}}is/{{{MAIN}}}t'); v=n.text if n is not None else ''
+     kind=cell.attrib.get('t')
+     if kind=='inlineStr': n=cell.find(f'{{{MAIN}}}is'); v=_text(n) if n is not None else ''
+     elif kind=='s': n=cell.find(f'{{{MAIN}}}v'); v=shared[int(n.text)] if n is not None and n.text else None
+     elif kind in ('str','e'): n=cell.find(f'{{{MAIN}}}v'); v=n.text if n is not None else None
+     elif kind=='b': n=cell.find(f'{{{MAIN}}}v'); v=int(n.text) if n is not None and n.text else None
      else:
       n=cell.find(f'{{{MAIN}}}v'); v=n.text if n is not None else None
       if v is not None:
