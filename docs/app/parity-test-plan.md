@@ -103,8 +103,8 @@ automatic victory at its first enemy phase. Clean discs: `G:\ROM\rd_work\RFEE01`
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| 1. RD map: unit moved | Partial | Micaiah starts elsewhere than in retail, but not on the tile set: the opening walks her, so her second position is not her turn-1 tile. |
-| 1. RD map: terrain tile | **Not confirmed** | A one-tile change under the turn-1 cursor still reads Paving Stones; making all 960 tiles Forest crashes on map load (Unhandled Exception 3, LR 0x8029D824). Needs a look at which layer RFEE01 reads. |
+| 1. RD map: unit moved | **Pass** | Her second position is her turn-1 tile; the first runs moved her onto 森, which her class cannot enter, so the game placed her on the nearest passable tile. |
+| 1. RD map: terrain tile | **Pass** | A block of 茂み (Thicket) around her start: the terrain window under Micaiah reads Thicket, Avoid 10, Def 1 (retail: Paving Stones). The earlier "failures" used 森, deep forest with movement cost 255 for nearly every class: units are moved off it, and a block of it with no passable tile near the starts crashes the deployment. Check now warns about that (below). |
 | 2. RD story flow (1-1 → 1-3) | **Pass** | After 1-1's victory the game loads `C0103` / `bmap0103` and skips 1-2. Needed two fixes (below). |
 | 2. RD Add chapter | **Pass** (after a fix) | 1-1 → the added chapter `0501` (own script, map, deployments and title card `e_ch0501.cms`) → its victory → 1-2. The first run hung: see the fixes below. PoR's Add chapter, checked the same way (a copy of Chapter 1 as chapter 33, jumped into), deploys its army. |
 | 3. RD Chapter data: goal | **Pass** | Hard goal reads "Victory: Defeat boss" on the map and the situation screen (retail: Rout enemy). |
@@ -136,6 +136,10 @@ App bugs found and fixed by this run:
   `bmap0101:uniquepanel`...), so a copy kept the template's names, loaded nothing and hung before placing a
   unit. `chapters.rename_map_pack` now renames them. The script's own chapter id (`ChapterTitle("C0101")`,
   which picks the title card) is renamed too.
+
+- Check (Radiant Dawn) now warns when a deployed unit's turn-1 tile is terrain its class cannot enter
+  (movement cost 255 for the class's movement type, FE10Data class byte +8, now named `movement_type`).
+  Retail's own cases (prisoners on swamp in 1-9, a few units on cliffs) are exempt.
 
 Limits found: a chapter jump starts with an empty party, so on Radiant Dawn only 1-1 fields an army (any
 later chapter is an immediate Game Over).

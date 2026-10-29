@@ -108,7 +108,7 @@ CLASS_LABELS = _labels(("jid", "ID"), ("mjid", "Name key"), ("japanese_name", "J
 CLASS_FIXED = _bytes("u8", (
     ("unknown_00", "Unknown +0"), ("unknown_01", "Unknown +1"), ("unknown_02", "Unknown +2"),
     ("unknown_03", "Unknown +3"), ("unknown_04", "Unknown +4"), ("skill_count", "Skill count"),
-    ("sound_count", "Sound class count"), ("unknown_07", "Unknown +7"), ("unknown_08", "Unknown +8"),
+    ("sound_count", "Sound class count"), ("unknown_07", "Unknown +7"), ("movement_type", "Movement type"),
     ("movement", "Movement"), ("skill_capacity", "Skill capacity"), ("weight", "Weight")), "Class")
 CLASS_BEFORE_SKILLS = _labels(("unknown_label", "Unknown label"), group="Class")
 CLASS_AFTER_SKILLS = _labels(("extra_skill", "Extra skill"), group="Class")

@@ -81,6 +81,29 @@ class RdCheckTests(unittest.TestCase):
         self.assertEqual([i for i in report.errors if i.area != "Chapters"], [])
         self.assertTrue(any("PID_TIBARN_EV" in i.message for i in report.warnings))
 
+    def test_unit_starting_on_impassable_terrain(self):
+        """RD 森 (deep forest) has movement cost 255 for nearly every class: the game moves a unit
+        off it, and an 11x11 block of it around 1-1's start crashed the deployment in Dolphin."""
+        from fe_modding import validator
+        from fe_modding.formats import dispo, lz10, map_file, pak
+
+        for name in ("map.cmp", "dispos_n.bin", "dispos_h.bin", "dispos_c.bin"):
+            self.write(f"zmap/bmap0101/{name}", (Path(FE10) / "zmap/bmap0101" / name).read_bytes())
+        clean = validator.validate_project(self.project)
+        self.assertEqual([i for i in clean.issues if "cannot enter" in i.message], [])
+
+        doc = dispo.parse_dispo((self.files / "zmap/bmap0101/dispos_h.bin").read_bytes())
+        unit = next(u for s in doc.sections for u in s.units if u[dispo.FIELD["pid"]] == "PID_MICAIAH")
+        tile = (unit[dispo.FIELD["pos2_x"]], unit[dispo.FIELD["pos2_y"]])
+        raw = lz10.decompress((self.files / "zmap/bmap0101/map.cmp").read_bytes())
+        entries = pak.read_pak_entries(raw)
+        files = [(e.name, pak.read_pak_file_content(raw, e)) for e in entries]
+        files = [(n, map_file.set_tile_terrains(c, {tile: "\u68ee"}) if n == "map.bin" else c) for n, c in files]
+        self.write("zmap/bmap0101/map.cmp", lz10.compress(pak.pack_pak(files, [e.reserved for e in entries])))
+        warnings = [i for i in validator.validate_project(self.project).warnings if "cannot enter" in i.message]
+        self.assertTrue(any("PID_MICAIAH" in i.message and "dispos_h.bin" in i.where for i in warnings), warnings)
+        self.assertEqual({i.route for i in warnings}, {("chapter", "0101")})
+
     def test_text_export_deployments_shops_and_sound(self):
         import json
         import shutil

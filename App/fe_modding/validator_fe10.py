@@ -12,7 +12,7 @@ from typing import Iterable, Optional
 
 from . import chapters
 from .exceptions import ProjectError
-from .formats import dispo, fe10data, fe10growth
+from .formats import dispo, fe10data, fe10growth, lz10, map_file, pak
 from .project import ModProject
 from .validator import (ERROR, SEVERITIES, WARNING, Issue, Report, _check_script_globals, _check_scripts,
                         _check_shops, _duplicates)
@@ -26,6 +26,20 @@ RETAIL_MISSING_FILES = frozenset({f"C040{n}{s}" for n in range(1, 7) for s in "a
 #: Retail deployments that name a missing record: (map folder, section, ID). ``PID_TIBARN_EV`` is a unit
 #: of a 3-15 event map with no character record in the retail database.
 RETAIL_MISSING_DEPLOYED = frozenset({("emap0315a", "emap0315a_ed01_c", "PID_TIBARN_EV")})
+#: Retail units whose turn-1 tile is terrain their class cannot enter: (map folder, section, PID).
+#: The game moves such a unit to a passable tile nearby, so these are left alone, as is the debug
+#: map ``bmap0000`` (RETAIL_TEST_MAPS).
+RETAIL_TEST_MAPS = frozenset({"bmap0000"})
+RETAIL_IMPASSABLE_STARTS = frozenset({
+    ("bmap0103", "bmap0103_mikata_c", "PID_SOTHE"),
+    *(("bmap0109", f"bmap0109_horyo_{d}", "PID_MAP9_PRISONER") for d in "nh"),
+    *(("bmap0203", f"bmap0203_teki_{d}", "PID_REBELLIONLARMOR2") for d in "nh"),
+    ("bmap0204", "bmap0204_ed01_c", "PID_CRIMEASOLDIER"),
+    *(("bmap0313", f"bmap0313_teki2_{d}", "PID_CRIMEASOLDIER") for d in "nh"),
+    ("bmap0407a", "bmap0407a_op0407a_02_c", "PID_APOSTLELKNIGHT"),
+    ("emap0407c", "emap0407c_mikata_c", "PID_SENERIO"),
+    *(("test_taisen01", s, "PID_VS_ARC") for s in ("test_taisen01_4p_red_n", "test_taisen01_bak4p_red_n")),
+})
 #: Deployment fields that name a record: (field, table, what the message calls it).
 _DISPO_REFERENCES = (("pid", "character", "is"), ("jid", "class", "has class"),
                      *((f"item{i}", "item", "carries") for i in range(7)),
@@ -134,11 +148,45 @@ def _check_chapter_files(project: ModProject, db: fe10data.Fe10Data, issues: lis
                                 f"{owner}'s message file is not on the disc (no {messages}.m in any language).", route))
 
 
-def _check_deployments(project: ModProject, known: dict, issues: list) -> None:
+def _terrain_grid(folder) -> Optional[list]:
+    """The map folder's ``[x][y]`` terrain names (``map.cmp``'s ``map.bin``), None when unreadable."""
+    try:
+        compressed = (folder / "map.cmp").read_bytes()
+        # the pack's entry table, then only as far as map.bin's end: the models after it are most of it
+        try:
+            entries = pak.read_pak_entries(lz10.decompress(compressed, limit=0x8000))
+        except Exception:  # noqa: BLE001 - an entry table longer than the prefix
+            entries = pak.read_pak_entries(lz10.decompress(compressed))
+        entry = next(e for e in entries if e.name == "map.bin")
+        packed = lz10.decompress(compressed, limit=entry.offset + entry.length)
+        return map_file.terrain_grid(pak.read_pak_file_content(packed, entry))
+    except Exception:  # noqa: BLE001 - the Build tab reports unreadable maps
+        return None
+
+
+def _impassable_start(unit, grid, moves: dict, costs: dict) -> Optional[str]:
+    """The terrain name when ``unit``'s turn-1 tile (its second position) is one its class can't
+    enter (movement cost 255 for the class's movement type), else None. ``moves``: JID -> movement
+    type; ``costs``: terrain name -> its record's values."""
+    jid = unit[dispo.FIELD["jid"]]
+    move = moves.get(jid.partition("/")[0]) if isinstance(jid, str) else None
+    x, y = unit[dispo.FIELD["pos2_x"]], unit[dispo.FIELD["pos2_y"]]
+    if move is None or grid is None or not (0 <= x < len(grid) and 0 <= y < len(grid[0])):
+        return None
+    terrain = costs.get(grid[x][y])
+    return grid[x][y] if terrain is not None and terrain.get(f"cost_{move}") == 255 else None
+
+
+def _check_deployments(project: ModProject, known: dict, issues: list, db: Optional[fe10data.Fe10Data] = None) -> None:
     """Every unit of every ``zmap/<folder>/dispos_<diff>.bin`` names records that exist. A label's
     ``/`` suffix (``IID_HERB/D``, an item the unit drops; ``/L``, ``/S``, ``/F``) is a flag, not part
-    of the ID."""
+    of the ID. With the database, a unit whose turn-1 tile is terrain its class can't enter is a
+    warning: the game moves it to a passable tile nearby, and its deployment crashes when there is
+    none (checked in Dolphin: an 11x11 block of impassable 森 around 1-1's start)."""
     zmap = files_root_of(project) / "zmap"
+    grids: dict = {}
+    moves = {r.id: r.values.get("movement_type") for r in db.classes} if db is not None else {}
+    costs = {r.id: r.values for r in db.table("terrain")} if db is not None else {}
     for path in sorted(zmap.glob("*/dispos_*.bin")) if zmap.is_dir() else []:
         folder, at = path.parent.name, f"zmap/{path.parent.name}/{path.name}"
         chapter = chapters.chapter_of_map_folder(folder)
@@ -151,8 +199,19 @@ def _check_deployments(project: ModProject, known: dict, issues: list) -> None:
             continue
         # one row per missing ID and file: a renamed class would otherwise give one per unit
         missing: dict = {}
+        if db is not None and folder not in grids and folder not in RETAIL_TEST_MAPS:
+            grids[folder] = _terrain_grid(path.parent)
         for section in doc.sections:
             for index, unit in enumerate(section.units):
+                terrain = _impassable_start(unit, grids.get(folder), moves, costs)
+                pid = unit[dispo.FIELD["pid"]]
+                if terrain and (folder, section.name, pid) not in RETAIL_IMPASSABLE_STARTS:
+                    x, y = unit[dispo.FIELD["pos2_x"]], unit[dispo.FIELD["pos2_y"]]
+                    issues.append(Issue(WARNING, area, at,
+                                        f"section {section.name}, unit {index + 1} ({pid}) starts on {terrain} "
+                                        f"({x}, {y}), which its class cannot enter: the game moves it to a "
+                                        "passable tile nearby, and the deployment crashes when there is none.",
+                                        route))
                 for field, kind, verb in _DISPO_REFERENCES:
                     value = unit[dispo.FIELD[field]]
                     label = value.partition("/")[0] if isinstance(value, str) else None
@@ -187,7 +246,7 @@ def validate_fe10_project(project: ModProject) -> Report:
         return Report(issues)
     known = {kind: _ids(db, kind) for kind in ("character", "class", "item", "skill")}
     _check_chapter_files(project, db, issues)
-    _check_deployments(project, known, issues)
+    _check_deployments(project, known, issues, db)
     _check_scripts(project, set().union(*known.values()), issues)
     _check_script_globals(project, issues)
     _check_shops(project, known["item"], issues)
