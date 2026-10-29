@@ -343,12 +343,16 @@ FE10_TILES = {
     "growth": ("↗", "FE10Growth.cms: absolute stats at every level, per character"),
     "battle_scenery": ("⛰", "Battle background per map and terrain type"),
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
+    "biorhythm_bands": ("∿", "The five biorhythm bands: threshold and bonuses"),
+    "support_params": ("♡", "Support levels, points per event and per support speed"),
+    "no_battle": ("⊘", "Character pairs listed in the NOBTL lists"),
     "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
 FE10_SECTIONS = (("Units and items", ("classes", "items", "skills", "growth")),
                  ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
-                 ("Relations", ("supports", "bonds", "affinities", "affinity_pairs")),
-                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm")),
+                 ("Relations", ("supports", "support_params", "bonds", "affinities", "affinity_pairs",
+                                "no_battle")),
+                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm", "biorhythm_bands")),
                  ("Images", ("rect_images",)))
 FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
 
