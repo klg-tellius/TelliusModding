@@ -32,7 +32,9 @@ from .catalog import CAVE_ADDRESS, Edit, Patch, State, in_cave
 
 RFEE01 = "RFEE01"
 
-HOOK = CAVE_ADDRESS
+# Not at the cave's first bytes: with cheats off Dolphin HLE-patches 0x80001800 ("HBReload") and
+# writes "STUBHAXX" at 0x80001804 (Core/HLE/HLE.cpp), so code there never runs in the emulator.
+HOOK = CAVE_ADDRESS + 0x100
 SUCCESSORS = CAVE_ADDRESS + 0x400
 ARMIES = CAVE_ADDRESS + 0x500
 FLAGS = CAVE_ADDRESS + 0x600
@@ -59,7 +61,7 @@ _CURRENT_CHAPTER = 0x803CAB48
 _RESUME_POINT = 0x803CABD4
 _CALLS = (0x80043B6C, 0x800CD8F8)
 
-assert in_cave(HOOK, 0x704)
+assert in_cave(HOOK, MAGIC + 4 - HOOK)
 
 
 class Army(IntEnum):

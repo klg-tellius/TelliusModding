@@ -66,12 +66,6 @@ def open_flow(project) -> tuple[chapter_flow.ChapterFlow | None, str]:
     return (flow, "") if flow.available else (None, flow.unavailable_reason)
 
 
-def _flow_label(chapter: int, titles: dict) -> str:
-    if chapter == chapter_flow.GAME_CLEARED:
-        return "32 · Ending"
-    return f"{chapter:02d} · {chapters.chapter_display_title(f'{chapter:02d}', titles)}"
-
-
 def _fallback_story_order(project, chapter_ids) -> list[str]:
     """Retail order when this game's editable story-flow table is unavailable.
 
@@ -380,63 +374,62 @@ class ChaptersHub(Page):
             messagebox.showinfo("New campaign", profile_of(self.project).unavailable(NEW_CAMPAIGN) +
                                 " Add chapter… creates one chapter at a time.", parent=self)
             return
-        from ... import campaign
         from ..campaign_dialog import NewCampaignDialog
-        from ...formats import fe8data
 
         session = self.shell.session
+        adapter = data_adapter(session)
+        file_label = session.file_label
         ids = chapters.list_chapter_ids(self.project)
-        if not ids or not session.available:
-            messagebox.showerror("New campaign", "This project has no chapters or no FE8Data.bin.", parent=self)
+        if not ids or not session.available or adapter is None:
+            messagebox.showerror("New campaign", f"This project has no chapters or no {file_label}.", parent=self)
             return
-        records = fe8data.read_chapter_data(session.data)
         titles = chapters.chapter_titles(self.project)
         templates = {chapters.chapter_display_title(c, titles) + f"  ({c})": c
-                     for c in ids if any(r.chapter_id == int(c) for r in records)}
-        flow, why = open_flow(self.project)
+                     for c in adapter.chapter_templates(self.project)}
+        flow, why = open_story_flow(self.project)
         if flow is None:
             messagebox.showerror("New campaign", f"The story flow can't be edited ({why}), so the chapters "
                                  "could not be put in order.", parent=self)
             return
         order = flow.order()
-        after_choices = {_flow_label(c, titles): c for c in order}
+        after_choices = {flow.label(c, titles): c for c in order}
         names = {pid: info.name for pid, info in getattr(self.shell.index, "by_pid", {}).items() if info.name}
-        characters = {(f"{names[c.pid]}  ({c.pid})" if c.pid in names else c.pid): c.pid
-                      for c in fe8data.read_fe8data(session.data).characters if c.pid}
+        characters = {(f"{names[row.id]}  ({row.id})" if row.id in names else row.id): row.id
+                      for row in adapter.records("character") if row.id}
         dialog = NewCampaignDialog(self, templates, after_choices, characters, order[-1] if order else None)
         self.wait_window(dialog)
         if dialog.result is None:
             return
         chapter_specs, cast, after = dialog.result
-        problems = campaign.check_campaign(self.project, session.data, chapter_specs, cast, after)
+        after = None if after is None else str(after)
+        problems = adapter.campaign_problems(self.project, chapter_specs, cast, after)
         if problems:
             messagebox.showerror("New campaign", "\n".join(problems), parent=self)
             return
         if session.dirty and not messagebox.askyesno(
-                "Save FE8Data.bin?", "Creating the campaign saves FE8Data.bin, including its unsaved edits. Continue?",
-                parent=self):
+                f"Save {file_label}?", f"Creating the campaign saves {file_label}, including its unsaved edits. "
+                "Continue?", parent=self):
             return
         try:
-            result = campaign.add_campaign(self.project, session.data, chapter_specs, cast, after, flow)
+            data, chapter_ids, warnings = adapter.add_campaign(self.project, chapter_specs, cast, after, flow)
         except (ValueError, OSError, ModdingError) as exc:
             messagebox.showerror("New campaign", str(exc), parent=self)
             return
-        session.data = result.fe8data
+        session.data = data
         session.changed(self)
         try:
             session.save()
         except OSError as exc:
-            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=self)
-        summary = f"{len(result.chapter_ids)} chapters ({', '.join(f'{c:02d}' for c in result.chapter_ids)}), " \
-                  f"{len(result.pids)} characters"
+            messagebox.showerror(f"Could not save {file_label}", str(exc), parent=self)
+        summary = f"{len(chapter_ids)} chapters ({', '.join(chapter_ids)}), {len(cast)} characters"
         self.shell.changelog.append("Campaign", f"Added {summary}")
-        if result.warnings:
-            messagebox.showwarning("Campaign added", "\n".join(result.warnings), parent=self)
+        if warnings:
+            messagebox.showwarning("Campaign added", "\n".join(warnings), parent=self)
         page = self.shell.existing_page("chapter")
         if page is not None:
             page.refresh_chapter_lists()
-        if result.chapter_ids:
-            self.shell.navigate(("chapter", f"{result.chapter_ids[0]:02d}"))
+        if chapter_ids:
+            self.shell.navigate(("chapter", chapter_ids[0]))
 
     def _story_order(self) -> None:
         from ..campaign_dialog import StoryOrderDialog
@@ -889,7 +882,8 @@ class ChapterPage(Page):
         position = self._ids.index(cid) if cid in self._ids else -1
         self._prev.configure(state="normal" if position > 0 else "disabled")
         self._next.configure(state="normal" if 0 <= position < len(self._ids) - 1 else "disabled")
-        if cid is not None and cid.isdigit() and int(cid) in chapters.DELETABLE_CHAPTER_IDS:
+        adapter = data_adapter(self.shell.session) if cid is not None else None
+        if adapter is not None and adapter.deletable(cid):
             self._delete_chapter_button.pack(side="right", padx=(0, 6), before=self._prev)
         else:
             self._delete_chapter_button.pack_forget()
@@ -899,14 +893,15 @@ class ChapterPage(Page):
         if self._chapter is None:
             return
         chapter_id = self._chapter
-        chapter = int(chapter_id)
-        if chapter not in chapters.DELETABLE_CHAPTER_IDS:
-            messagebox.showerror(
-                "Could not delete chapter",
-                "The Prologue starts every new game and the Ending completes it, so those chapters cannot be deleted.",
-                parent=self)
+        session = self.shell.session
+        adapter = data_adapter(session)
+        if adapter is None or not adapter.deletable(chapter_id):
+            messagebox.showerror("Could not delete chapter",
+                                 adapter.delete_rule() if adapter is not None else "This project has no game data.",
+                                 parent=self)
             return
-        deleting_hub = hub.hub_chapter(self.project) == chapter
+        deleting_hub = (profile_of(self.project).supports(HUB) and chapter_id.isdigit()
+                        and hub.hub_chapter(self.project) == int(chapter_id))
         dirty = [panel for panel in self.panels() if panel.dirty]
         if dirty:
             names = ", ".join(panel.display_name for panel in dirty)
@@ -915,18 +910,18 @@ class ChapterPage(Page):
                     f"Deleting this chapter discards its unsaved changes in: {names}. Continue?",
                     icon="warning", parent=self):
                 return
-        session = self.shell.session
+        file_label = session.file_label
         if not session.available:
-            messagebox.showerror("Could not delete chapter", "This project has no FE8Data.bin.", parent=self)
+            messagebox.showerror("Could not delete chapter", f"This project has no {file_label}.", parent=self)
             return
-        flow, why = open_flow(self.project)
+        flow, why = open_story_flow(self.project)
         if flow is None:
             messagebox.showerror("Could not delete chapter", f"Story flow is unavailable: {why}", parent=self)
             return
         phases = chapters.chapter_phases(self.project, chapter_id)
         details = ["its ChapterData and battle-scene records", "its dialogue and script",
                    f"its {len(phases)} map phase{'s' if len(phases) != 1 else ''}",
-                   "its shops, title text and chapter-name pictures"]
+                   "its shops, title text and title pictures"]
         if deleting_hub:
             details.insert(0, "its installed hub setup and routing")
         if not messagebox.askyesno(
@@ -938,8 +933,8 @@ class ChapterPage(Page):
                 icon="warning", parent=self):
             return
         if session.dirty and not messagebox.askyesno(
-                "Save FE8Data.bin?",
-                "Deleting the chapter saves FE8Data.bin, including its other unsaved edits. Continue?",
+                f"Save {file_label}?",
+                f"Deleting the chapter saves {file_label}, including its other unsaved edits. Continue?",
                 parent=self):
             return
         for panel in dirty:
@@ -947,11 +942,10 @@ class ChapterPage(Page):
         try:
             if deleting_hub:
                 hub.uninstall(self.project)
-                flow, why = open_flow(self.project)
+                flow, why = open_story_flow(self.project)
                 if flow is None:
                     raise ValueError(f"Story flow is unavailable after removing the hub: {why}")
-            plan = chapters.remove_story_chapter(self.project, session.data, chapter_id, flow)
-            session.data = plan.fe8data
+            session.data = adapter.remove_story_chapter(self.project, chapter_id, flow)
             session.changed(self)
             session.save()
         except (ValueError, OSError, ModdingError) as exc:

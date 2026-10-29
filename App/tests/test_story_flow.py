@@ -140,8 +140,10 @@ class CapabilityTests(unittest.TestCase):
     def test_story_flow_is_on_both_games(self):
         self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(CHAPTER_FLOW))
         self.assertTrue(RADIANT_DAWN_PROFILE.supports(CHAPTER_FLOW))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(NEW_CAMPAIGN))
         for feature in (NEW_CAMPAIGN, HUB, MAP_PHASES):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature))
+        for feature in (HUB, MAP_PHASES):
             self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature))
 
     def test_chapter_page_holds_no_game_checks(self):
@@ -159,6 +161,23 @@ class CapabilityTests(unittest.TestCase):
         self.assertIsNone(chapters_fe10.number_for("0204"))
         with self.assertRaises(ValueError):
             chapters_fe10.chapter_id_for(55)
+
+
+@unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+class MapPackRenameTests(unittest.TestCase):
+    def test_models_and_sections_take_the_new_name(self):
+        from fe_modding import chapters
+        from fe_modding.formats import lz10, pak
+
+        map_bin = b"bmap0101\x00bmap0101_water0\x00bmap0101:mapdata\x00xbmap0101\x00bmap01010\x00"
+        packed = lz10.compress(pak.pack_pak([("bmap0101.gs", b"gs"), ("bmap0101_water0.g", b"g"),
+                                             ("boat01.g", b"b"), ("map.bin", map_bin)], [0, 0, 0, 0]))
+        out = lz10.decompress(chapters.rename_map_pack(packed, "bmap0101", "bmap0501"))
+        entries = pak.read_pak_entries(out)
+        self.assertEqual([e.name for e in entries], ["bmap0501.gs", "bmap0501_water0.g", "boat01.g", "map.bin"])
+        self.assertEqual(pak.read_pak_file_content(out, entries[3]),
+                         b"bmap0501\x00bmap0501_water0\x00bmap0501:mapdata\x00xbmap0101\x00bmap01010\x00")
+        self.assertEqual(chapters.rename_map_pack(packed, "bmap0101", "bmap101"), packed)  # other length: kept
 
 
 @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
@@ -217,11 +236,20 @@ class RdAddChapterTests(unittest.TestCase):
             raw = (self.files / "zmap" / "bmap0501" / f"dispos_{diff}.bin").read_bytes()
             self.assertNotIn(b"bmap0204", raw)
             self.assertIn(b"bmap0501", raw)
-        self.assertTrue((self.files / "zmap" / "bmap0501" / "map.cmp").is_file())
+        # the game finds a map's models and sections by the map's name: the copy renames them
+        from fe_modding.formats import pak
+        packed = lz10.decompress((self.files / "zmap" / "bmap0501" / "map.cmp").read_bytes())
+        entries = pak.read_pak_entries(packed)
+        self.assertIn("bmap0501.gs", [e.name for e in entries])
+        self.assertFalse(any(e.name.startswith("bmap0204") for e in entries))
+        map_bin = pak.read_pak_file_content(packed, next(e for e in entries if e.name == "map.bin"))
+        self.assertIn(b"bmap0501:mapdata\x00", map_bin)
+        self.assertNotIn(b"bmap0204", map_bin)
         script = (self.files / "Scripts" / "C0501.cmb").read_bytes()
         pool_start, table_start = struct.unpack_from("<II", script, 0x24)
         self.assertIn(b"bmap0501_mikata", script[pool_start:table_start])
         self.assertNotIn(b"bmap0204\x00", script[pool_start:table_start])
+        self.assertIn(b"\x00C0501\x00", script[pool_start:table_start])  # ChapterTitle("C0501")
         for name in ("c0501.m", "e_c0501.m", "n0501.m", "e_n0501.m"):
             self.assertTrue((self.files / "Mess" / name).is_file(), name)
         self.assertIn("0501", chapters.list_chapter_ids(self.project))
@@ -235,6 +263,80 @@ class RdAddChapterTests(unittest.TestCase):
         self.assertEqual(reopened.next_of("0204"), "0501")
         self.assertEqual(reopened.next_of("0501"), retail_next)
         self.assertEqual(reopened.order().count("0501"), 1)
+
+    def test_new_campaign(self):
+        from fe_modding import campaign
+        from fe_modding.formats import dispo, fe10data, lz10, message
+        from fe_modding.game_adapter import RdDataAdapter
+        from fe_modding.game_code.story_flow import open_story_flow
+
+        data = lz10.decompress((self.files / "FE10Data.cms").read_bytes())
+        adapter = RdDataAdapter(SimpleNamespace(data=data, fe10=fe10data.read_fe10data(data)))
+        flow, _why = open_story_flow(self.project)
+        retail_next = flow.next_of("0204")
+        specs = [campaign.ChapterSpec("A New Road", "0204"), campaign.ChapterSpec("Empty Fields", "0204", True)]
+        cast = [campaign.CharacterSpec("PID_NEWHERO", "PID_MICAIAH", "Nova", "JID_BLADE")]
+        self.assertEqual(adapter.campaign_problems(self.project, specs, cast, "0204"), [])
+        bad = [campaign.CharacterSpec("PID_MICAIAH", "PID_NOPE")]
+        self.assertEqual(len(adapter.campaign_problems(self.project, specs, bad, "0204")), 2)
+
+        new, ids, warnings = adapter.add_campaign(self.project, specs, cast, "0204", flow)
+        self.assertEqual((ids, warnings), (["0501", "0502"], []))
+        self.assertEqual([r.values["cid"] for r in fe10data.read_table(new, "chapter")][-2:], ["C0501", "C0502"])
+        hero = next(r for r in fe10data.read_fe10data(new).characters if r.id == "PID_NEWHERO")
+        self.assertEqual((hero.values["jid"], hero.values["mpid"]), ("JID_BLADE", "MPID_NEWHERO"))
+        names = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
+        self.assertEqual(names["MPID_NEWHERO"], "Nova")
+        # the second chapter keeps only the player's army
+        for diff in "nh":
+            doc = dispo.parse_dispo((self.files / "zmap" / "bmap0502" / f"dispos_{diff}.bin").read_bytes())
+            self.assertTrue(all(not s.units for s in doc.sections if campaign.PLAYER_SECTION_MARK not in s.name))
+        (self.files / "FE10Data.cms").write_bytes(lz10.compress(new))
+        flow, _why = open_story_flow(self.project)
+        self.assertEqual((flow.next_of("0204"), flow.next_of("0501"), flow.next_of("0502")),
+                         ("0501", "0502", retail_next))
+
+    def test_added_chapter_is_deleted_and_retail_ones_are_refused(self):
+        from fe_modding import chapters
+        from fe_modding.formats import fe10data, lz10, message, shop
+        from fe_modding.game_adapter import RdDataAdapter
+        from fe_modding.game_code.story_flow import open_story_flow
+
+        retail = lz10.decompress((self.files / "FE10Data.cms").read_bytes())
+        shops_before = (self.files / "Shop" / "shopitem_n.bin").read_bytes()
+        session = SimpleNamespace(data=retail, fe10=fe10data.read_fe10data(retail))
+        adapter = RdDataAdapter(session)
+        flow, _why = open_story_flow(self.project)
+        retail_next = flow.next_of("0204")
+        added, _warnings = adapter.add_story_chapter(self.project, "0204", "0501", "II:9-A New Road", "0204", flow)
+        self.assertFalse(adapter.deletable("0204"))
+        self.assertTrue(adapter.deletable("0501"))
+
+        session = SimpleNamespace(data=added, fe10=fe10data.read_fe10data(added))
+        adapter = RdDataAdapter(session)
+        flow, _why = open_story_flow(self.project)
+        with self.assertRaisesRegex(ValueError, "retail chapter"):
+            adapter.remove_story_chapter(self.project, "0204", flow)
+        # the story flow reads chapter numbers from the saved database: give it the one with 0501
+        (self.files / "FE10Data.cms").write_bytes(lz10.compress(added))
+        flow, _why = open_story_flow(self.project)
+        data = adapter.remove_story_chapter(self.project, "0501", flow)
+
+        # the record and the battle-scenery row are gone and nothing else changed (the new names stay in
+        # the string pool, unused)
+        for kind in ("chapter", "battle_scenery", "character", "class", "item"):
+            self.assertEqual([(r.values, r.lists) for r in fe10data.read_table(data, kind)],
+                             [(r.values, r.lists) for r in fe10data.read_table(retail, kind)], kind)
+        self.assertFalse((self.files / "zmap" / "bmap0501").exists())
+        for rel in ("Scripts/C0501.cmb", "Mess/c0501.m", "Mess/e_c0501.m", "window/title/e_ch0501.cms"):
+            self.assertFalse((self.files / rel).exists(), rel)
+        self.assertNotIn("0501", chapters.list_chapter_ids(self.project))
+        self.assertEqual((self.files / "Shop" / "shopitem_n.bin").read_bytes(), shops_before)
+        titles = {m.speaker for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
+        self.assertNotIn("MCT0501", titles)
+        (self.files / "FE10Data.cms").write_bytes(lz10.compress(data))
+        flow, _why = open_story_flow(self.project)
+        self.assertEqual(flow.next_of("0204"), retail_next)
 
 
 if __name__ == "__main__":

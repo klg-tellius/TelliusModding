@@ -1,10 +1,12 @@
 """The Colour variant dialog: recolour a character's (or one army's look of a
 class's) battle texture, map texture and portrait, with a live preview
-(``fe_modding/colour_variants.py`` does the work).
+(the game data adapter does the work: ``fe_modding/colour_variants.py`` on
+Path of Radiance, ``colour_variants_fe10.py`` on Radiant Dawn).
 
 :func:`open_colour_variant` is the entry point for the character page and
-the class form: it saves the shared FE8Data.bin first (the variant writes
-the file on disk), runs the dialog and reloads the session afterwards.
+the class form: it saves the shared game-data file first (the variant writes
+the file on disk), runs the dialog and reloads the session afterwards. The
+army and "Also for" choices appear only where the game's adapter offers them.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from PIL import Image, ImageTk
 
 from .. import colour_variants
 from ..exceptions import ProjectError
+from ..game_adapter import data_adapter
 from ..project import ModProject
 from ..recolour import Recolour, recolour_tpl
 from ..formats import tpl
@@ -31,17 +34,22 @@ ARMY_LABELS = {key: f"{name} army ({key})" for key, name in colour_variants.ARMY
 def open_colour_variant(parent: tk.Misc, project: ModProject, session, changelog, *, pid: str | None = None,
                         jid: str | None = None, on_done: Optional[Callable[[], None]] = None) -> None:
     """Run the dialog for a character (``pid``) or a class (``jid``)."""
+    label = getattr(session, "file_label", "the game data")
+    adapter = data_adapter(session)
+    if adapter is None:
+        messagebox.showerror("Colour variant", "This project has no game data.", parent=parent)
+        return
     if session is not None and getattr(session, "dirty", False):
-        if not messagebox.askyesno("Save FE8Data.bin?", "A colour variant changes portraits and animation IDs "
-                                   "in FE8Data.bin on disk. Save its unsaved edits first?", parent=parent):
+        if not messagebox.askyesno(f"Save {label}?", "A colour variant changes portraits and animation IDs "
+                                   f"in {label} on disk. Save its unsaved edits first?", parent=parent):
             return
         try:
             session.save()
         except (OSError, ValueError) as exc:
-            messagebox.showerror("Could not save FE8Data.bin", str(exc), parent=parent)
+            messagebox.showerror(f"Could not save {label}", str(exc), parent=parent)
             return
     try:
-        dialog = ColourVariantDialog(parent, project, pid=pid, jid=jid)
+        dialog = ColourVariantDialog(parent, project, adapter, pid=pid, jid=jid)
     except ProjectError as exc:
         messagebox.showerror("Colour variant", str(exc), parent=parent)
         return
@@ -58,10 +66,12 @@ def open_colour_variant(parent: tk.Misc, project: ModProject, session, changelog
 
 
 class ColourVariantDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, project: ModProject, *, pid: str | None = None,
+    def __init__(self, parent: tk.Misc, project: ModProject, adapter, *, pid: str | None = None,
                  jid: str | None = None) -> None:
         super().__init__(parent)
         self._project = project
+        self._adapter = adapter
+        self._options = adapter.colour_variant_options
         self._pid, self._jid = pid, jid
         self.result: list[str] | None = None
         self.result_label = pid or jid or ""
@@ -130,7 +140,7 @@ class ColourVariantDialog(tk.Toplevel):
         self._promoted = tk.BooleanVar(value=True)
         self._also: dict[str, tk.BooleanVar] = {}
         if self._pid is not None:
-            suggested, others = colour_variants.character_family(self._project, self._pid)
+            suggested, others = self._adapter.character_family(self._project, self._pid)
             if suggested or others:
                 also = ttk.Frame(box)
                 also.pack(fill="x", pady=(6, 0))
@@ -146,6 +156,11 @@ class ColourVariantDialog(tk.Toplevel):
             ttk.Checkbutton(box, text="Its promoted class too", variable=self._promoted,
                             command=self._schedule_plan).pack(anchor="w", pady=(6, 0))
             label = "Army whose colours change"
+        if "armies" not in self._options:
+            # Radiant Dawn: a character's colours follow its own animation IDs, whatever its army
+            ttk.Label(box, text="Every tier of the character: its map and battle models and its portrait.",
+                      style="Muted.TLabel", wraplength=300).pack(anchor="w", pady=(6, 0))
+            return
         ttk.Label(box, text=label).pack(anchor="w", pady=(6, 0))
         army = ttk.Combobox(box, textvariable=self._army, values=list(ARMY_LABELS.values()), state="readonly",
                             width=30)
@@ -295,16 +310,16 @@ class ColourVariantDialog(tk.Toplevel):
         self._plan_job = None
         try:
             if self._pid is not None:
-                self._plan = colour_variants.plan_character_variant(
+                self._plan = self._adapter.plan_character_variant(
                     self._project, self._pid, self._tag.get(),
                     also=[p for p, var in self._also.items() if var.get()], battle=self._battle.get(),
                     map_models=self._map.get(), portrait=self._portrait.get(), army=self._army_key())
             else:
-                self._plan = colour_variants.plan_class_variant(
+                self._plan = self._adapter.plan_class_variant(
                     self._project, self._jid, self._army_key(), self._tag.get(), promoted=self._promoted.get(),
                     battle=self._battle.get(), map_models=self._map.get())
             lines = self._plan.summary() + [f"Note: {note}" for note in self._plan.notes]
-        except ProjectError as exc:
+        except (ProjectError, ValueError) as exc:
             self._plan = None
             lines = [str(exc)]
         self._changes.configure(state="normal")
@@ -336,7 +351,7 @@ class ColourVariantDialog(tk.Toplevel):
 
         def work() -> None:
             try:
-                outcome["lines"] = colour_variants.apply_variant(self._project, plan, recolour)
+                outcome["lines"] = self._adapter.apply_variant(self._project, plan, recolour)
             except Exception as exc:  # noqa: BLE001 - shown to the user
                 outcome["error"] = exc
 

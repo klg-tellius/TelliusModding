@@ -264,8 +264,10 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
     rename needs a same-length number (real ones are 2 digits); with a
     different digit count the names are carried through unchanged.
 
-    Dialogue text, ``map.cmp`` (its bundled model names are internal and
-    consistent) and the script's message keys are copied as they are.
+    ``map.cmp``'s models are named after the map (``bmap01.gs``, ``bmap01_water0.g``, and the
+    same names in ``map.bin``), and the game loads them by the map folder's name, so they are
+    renamed too (:func:`rename_map_pack`). Dialogue text and the script's message keys are copied
+    as they are.
     This only copies files: :func:`add_story_chapter` also makes the game
     load and reach the chapter.
     """
@@ -298,6 +300,8 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
             inner = rel[len(source_folder) + 1:]
             if inner.lower() == "dispos.cmp":
                 files.write(f"{target}/{inner}", _renumber_dispos(files.read(rel), source_padded, new_padded))
+            elif inner.lower() == "map.cmp":
+                files.write(f"{target}/{inner}", rename_map_pack(files.read(rel), folder, target.rsplit("/", 1)[-1]))
             else:
                 files.import_file(f"{target}/{inner}", files.require(rel))
 
@@ -305,16 +309,18 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
 
 
 def _renumber_script(data: bytes, source_padded: str, new_padded: str) -> bytes:
-    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings renamed,
-    and its ``ChapterMoviePlay(<source>)`` calls given the new number. A same-length rename
-    keeps every string offset, so the code is untouched apart from that one operand byte."""
+    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings and its own
+    chapter id ``C<source>`` (Radiant Dawn's ``ChapterTitle("C0101")`` picks the title card with
+    it) renamed, and its ``ChapterMoviePlay(<source>)`` calls given the new number. A same-length
+    rename keeps every string offset, so the code is untouched apart from that one operand byte."""
     if len(source_padded) != len(new_padded):
         return data
     import struct
 
     pool_start, table_start = struct.unpack_from("<II", data, 0x24)
     old, new = f"bmap{source_padded}".encode("ascii"), f"bmap{new_padded}".encode("ascii")
-    entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else e
+    own_id, new_id = f"C{source_padded}".encode("ascii"), f"C{new_padded}".encode("ascii")
+    entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else new_id if e == own_id else e
                for e in data[pool_start:table_start].split(b"\x00")]
     data = data[:pool_start] + b"\x00".join(entries) + data[table_start:]
     return _renumber_chapter_movie(data, int(source_padded), int(new_padded))
@@ -340,6 +346,39 @@ def _renumber_chapter_movie(data: bytes, source: int, new: int) -> bytes:
         out[at + 1] = new
         at = out.find(call, at + len(call))
     return bytes(out)
+
+
+def rename_map_pack(compressed: bytes, old_map: str, new_map: str) -> bytes:
+    """A copied ``map.cmp`` with its models renamed from ``old_map`` to ``new_map``: the pack
+    entries (``bmap0101.gs`` -> ``bmap0501.gs``) and the names ``map.bin`` gives them. The game
+    finds a map's models by the map's own name; a copy that keeps the template's names loads no
+    models and its chapter hangs before any unit is placed (checked in Dolphin on Radiant Dawn).
+    Names of another length are left as they are (a same-length rename keeps every offset)."""
+    if len(old_map) != len(new_map) or old_map == new_map:
+        return compressed
+    old, new = old_map.encode("ascii"), new_map.encode("ascii")
+
+    def renamed(name: str) -> str:
+        return new_map + name[len(old_map):] if name.startswith(old_map) and name[len(old_map):][:1] in (".", "_") else name
+
+    def strings(data: bytes) -> bytes:
+        # whole names only: the map name followed by its terminator, a "_" suffix, an extension or
+        # ":" (map.bin names its own sections "bmap0101:mapdata", "bmap0101:uniquepanel"...)
+        out, at = bytearray(data), data.find(old)
+        while at != -1:
+            after = data[at + len(old):at + len(old) + 1]
+            if (at == 0 or not data[at - 1:at].isalnum()) and after in (b"\x00", b"_", b".", b":"):
+                out[at:at + len(old)] = new
+            at = data.find(old, at + 1)
+        return bytes(out)
+
+    decompressed = lz10.decompress(compressed)
+    entries = pak.read_pak_entries(decompressed)
+    files = []
+    for entry in entries:
+        content = pak.read_pak_file_content(decompressed, entry)
+        files.append((renamed(entry.name), strings(content) if entry.name == "map.bin" else content))
+    return lz10.compress(pak.pack_pak(files, [entry.reserved for entry in entries]))
 
 
 def _renumber_dispos(compressed: bytes, source_padded: str, new_padded: str) -> bytes:

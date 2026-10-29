@@ -106,8 +106,10 @@ class Context:
         self._editor = None
 
     # -- scripts ---------------------------------------------------------------------------------
-    def chapter_script(self, chapter: int) -> Path:
-        path = script_sources.chapter_script(self.project, f"{chapter:02d}")
+    def chapter_script(self, chapter) -> Path:
+        """``chapter``: a PoR ChapterData id (int) or an RD chapter page id (``"0101"``)."""
+        key = chapter if isinstance(chapter, str) else f"{chapter:02d}"
+        path = script_sources.chapter_script(self.project, key)
         if path is None:
             raise ValueError(f"Chapter {chapter:02d} has no script")
         return path

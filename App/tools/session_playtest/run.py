@@ -19,9 +19,10 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     __package__ = "tools.session_playtest"
 
-from .harness import (assemble_run_tree, dolphin_command, load_manifest, normal_volume,  # noqa: E402
+from .harness import (RD_NAND_DATA, assemble_run_tree, dolphin_command, load_manifest, normal_volume,  # noqa: E402
                       prepare_dolphin_user, run_dolphin, sha256, write_lf)
 from . import docs  # noqa: E402
+from . import scenarios as SCENARIO_SET  # noqa: E402  (replaced by --set)
 
 RESULTS = "results.json"
 WIDTH = 100
@@ -104,7 +105,7 @@ def record(test: dict, after_lines: list[str]) -> dict:
 def run_after(test_id: str, card: Path, manifest: dict) -> list[str]:
     from fe_modding.project import ModProject  # noqa: F401  (path setup check)
     from .context import Context
-    from .scenarios import by_id
+    by_id = SCENARIO_SET.by_id
 
     scenario = by_id().get(test_id)
     if scenario is None or scenario.after is None:
@@ -152,6 +153,13 @@ def launch(test: dict, manifest: dict, package: Path) -> list[str]:
     user = run_root / "DolphinUser"
     source_config = Path(os.environ.get("APPDATA", "")) / "Dolphin Emulator" / "Config"
     prepare_dolphin_user(user, source_config)
+    if test["region"].startswith("R"):   # Radiant Dawn saves to NAND: the test's own save, or none
+        nand = user / RD_NAND_DATA
+        if nand.exists():
+            shutil.rmtree(nand)
+        nand.mkdir(parents=True)
+        for save in (package / "cards" / test["id"]).glob("FE10_US.dat"):
+            shutil.copy2(save, nand / save.name)
     command = dolphin_command(Path(manifest["dolphin"]), user, main_dol, card, gdb=test.get("gdb", False),
                               volume=normal_volume(source_config))
     write_lf(run / "INSTRUCTIONS.txt", docs.test_text(test))
@@ -212,7 +220,12 @@ def menu(package: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
-    menu(parser.parse_args().package.resolve())
+    parser.add_argument("--set", choices=("session", "parity"), default="session")
+    args = parser.parse_args()
+    global SCENARIO_SET
+    import importlib
+    SCENARIO_SET = importlib.import_module(".parity_scenarios" if args.set == "parity" else ".scenarios", __package__)
+    menu(args.package.resolve())
 
 
 if __name__ == "__main__":

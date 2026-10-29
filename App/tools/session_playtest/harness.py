@@ -66,18 +66,18 @@ class WorkProject:
     """One full copy of the clean disc in a throw-away project. Each fixture edits it through the
     app's own functions; :meth:`collect` lists what changed and :meth:`revert` puts it back."""
 
-    def __init__(self, base: Path, directory: Path, region: str = "GFEE01"):
+    def __init__(self, base: Path, directory: Path, region: str = "GFEE01", game: Game = Game.PATH_OF_RADIANCE):
         self.base = base
         self.directory = directory
         self.region = region
         if not (directory / "project.json").is_file():
             directory.parent.mkdir(parents=True, exist_ok=True)
-            self.project = ModProject.create(directory.parent, directory.name, Game.PATH_OF_RADIANCE)
+            self.project = ModProject.create(directory.parent, directory.name, game)
         else:
             self.project = ModProject.load(directory)
         self.extracted = self.project.extracted_dir
         if not (self.extracted / "sys" / "main.dol").is_file():
-            print(f"Copying the clean disc to {self.extracted} (once, about 1.3 GB)...", flush=True)
+            print(f"Copying the clean disc to {self.extracted} (once)...", flush=True)
             shutil.copytree(base, self.extracted, dirs_exist_ok=True)
         self.snapshot = _snapshot(self.extracted)
         self.revert()
@@ -180,6 +180,12 @@ def assemble_run_tree(base: Path, patch: Path, run: Path) -> Path:
         target = run / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
+    # a Wii disc's partition metadata (ticket.bin, tmd.bin, cert.bin, h3.bin, disc/) sits beside sys and files
+    for item in base.iterdir():
+        if item.is_file() and item.suffix == ".bin":
+            shutil.copyfile(item, run / item.name)
+        elif item.is_dir() and item.name == "disc":
+            shutil.copytree(item, run / "disc", dirs_exist_ok=True)
     return run / "sys" / "main.dol"
 
 
@@ -211,6 +217,10 @@ def normal_volume(source_config: Optional[Path]) -> int:
     except (OSError, TypeError):
         pass
     return 75
+
+
+#: Radiant Dawn's NAND save folder under a Dolphin user folder.
+RD_NAND_DATA = Path("Wii/title/00010000/52464545/data")
 
 
 def dolphin_command(dolphin: Path, user: Path, main_dol: Path, card: Path, *, gdb: bool = False,

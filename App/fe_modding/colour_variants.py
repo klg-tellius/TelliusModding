@@ -444,10 +444,9 @@ def plan_class_variant(project: ModProject, jid: str, army: str, tag: str, *, pr
     return plan
 
 
-def apply_variant(project: ModProject, plan: VariantPlan, recolour: Recolour) -> list[str]:
-    """Write the recoloured copies, then the table changes. Returns the
-    summary lines. The copies are written first and removed again if a
-    copy fails, so a refused variant leaves no stray files."""
+def write_copies(plan: VariantPlan, recolour: Recolour) -> list[Path]:
+    """Write the plan's recoloured copies (both games). A failed copy removes the ones already
+    written, so a refused variant leaves no stray files."""
     if plan.empty:
         raise ProjectError("Nothing to recolour.")
     written: list[Path] = []
@@ -463,7 +462,14 @@ def apply_variant(project: ModProject, plan: VariantPlan, recolour: Recolour) ->
         for path in written:
             path.unlink(missing_ok=True)
         raise
+    return written
 
+
+def apply_variant(project: ModProject, plan: VariantPlan, recolour: Recolour) -> list[str]:
+    """Write the recoloured copies, then the table changes. Returns the
+    summary lines. The copies are written first and removed again if a
+    copy fails, so a refused variant leaves no stray files."""
+    write_copies(plan, recolour)
     for code, aid in plan.job_lines:
         model_slots.assign_battle_model(project, code, aid=aid)
     for code, key, texture in plan.battle_lines:
