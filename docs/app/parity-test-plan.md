@@ -107,6 +107,8 @@ automatic victory at its first enemy phase. Clean discs: `G:\ROM\rd_work\RFEE01`
 | 1. RD map: terrain tile | **Pass** | A block of 茂み (Thicket) around her start: the terrain window under Micaiah reads Thicket, Avoid 10, Def 1 (retail: Paving Stones). The earlier "failures" used 森, deep forest with movement cost 255 for nearly every class: units are moved off it, and a block of it with no passable tile near the starts crashes the deployment. Check now warns about that (below). |
 | 2. RD story flow (1-1 → 1-3) | **Pass** | After 1-1's victory the game loads `C0103` / `bmap0103` and skips 1-2. Needed two fixes (below). |
 | 2. RD Add chapter | **Pass** (after a fix) | 1-1 → the added chapter `0501` (own script, map, deployments and title card `e_ch0501.cms`) → its victory → 1-2. The first run hung: see the fixes below. PoR's Add chapter, checked the same way (a copy of Chapter 1 as chapter 33, jumped into), deploys its army. |
+| 2. RD New campaign | **Pass** | Two chapters after 1-1 (the second emptied but the player's army): 1-1 → 0501 → 0502, each with its own title card. An emptied chapter has no enemy phase, so a "Rout enemy" goal does not end it by itself. |
+| 2. RD Delete chapter | **Pass** | The same campaign with 0501 deleted: 1-1 → 0502. |
 | 3. RD Chapter data: goal | **Pass** | Hard goal reads "Victory: Defeat boss" on the map and the situation screen (retail: Rout enemy). |
 | 3. RD Chapter data: weather | Not confirmed | Snow instead of cloudy: nothing visible on the map. |
 | 3. RD Battle scenes | **Pass** | 1-1's battles load `zbg/bg0001grd` (generic plains, a name appended to `BattleTerrName`) instead of `bg0101twn`. |

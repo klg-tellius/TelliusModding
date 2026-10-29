@@ -12,6 +12,11 @@ modelled on these chapters, with these characters") and get all of it, checked f
 - :func:`blank_chapter_units` empties a new chapter's deployments but the player's army, for a
   chapter that should not keep the template's enemies and other units.
 
+:func:`check_campaign_fe10` and :func:`add_campaign_fe10` do the same for Radiant Dawn: chapters
+through :func:`chapters_fe10.add_story_chapter` (custom numbers 56-79, ids ``05NN``), characters as
+``FE10Data.cms`` records whose name is an ``MPID_`` text in ``Mess/e_common.m`` and ``common.m``.
+The pages reach both through their game's data adapter (``campaign_problems`` / ``add_campaign``).
+
 Nothing here uses Tk.
 """
 
@@ -197,6 +202,15 @@ def blank_chapter_units(project: ModProject, chapter_id: str) -> list:
     """Empty every deployment of the chapter's map folders but the player's army. Returns the files
     changed."""
     changed = []
+    if project.profile.wii:   # Radiant Dawn: loose zmap/<folder>/dispos_<diff>.bin files
+        from .game_files import files_of, game_path
+        files = files_of(project)
+        for folder in chapters.chapter_phases(project, chapter_id):
+            for rel in files.iter_files(game_path("zmap", folder)):
+                if Path(rel).name.lower().startswith("dispos_"):
+                    files.write(rel, blank_dispos_bytes(files.read(rel)))
+                    changed.append(rel)
+        return changed
     for folder in chapters.chapter_phases(project, chapter_id):
         path: Optional[Path] = chapters.phase_paths(project, folder)[0]
         if path is None:
@@ -213,3 +227,103 @@ def blank_chapter_units(project: ModProject, chapter_id: str) -> list:
         project.write_keeping_original(path, lz10.compress(pak.pack_pak(files, reserved)))
         changed.append(f"zmap/{folder}/dispos.cmp")
     return changed
+
+
+# -- Radiant Dawn ---------------------------------------------------------------------------------
+
+def check_campaign_fe10(project: ModProject, fe10: bytes, chapter_specs: list, character_specs: list = (),
+                        after: Optional[str] = None) -> list:
+    """Every reason :func:`add_campaign_fe10` would fail (``fe10``: the decompressed ``FE10Data.cms``;
+    chapter ids are page ids, ``"0204"``)."""
+    from . import chapters_fe10
+    from .formats import fe10data
+
+    problems = []
+    free = chapters_fe10.free_chapters(project, fe10)
+    if len(chapter_specs) > len(free):
+        problems.append(f"{len(chapter_specs)} chapters asked for, but only {len(free)} chapter numbers are free.")
+    templates = chapters_fe10.templates(project, fe10)
+    for n, spec in enumerate(chapter_specs, 1):
+        label = f"Chapter {n} ({spec.title or 'untitled'})"
+        if spec.template not in templates:
+            problems.append(f"{label}: chapter {spec.template} can't be used as a template.")
+        if not spec.title.isascii():
+            problems.append(f"{label}: titles are limited to plain ASCII text.")
+    db = fe10data.read_fe10data(fe10)
+    pids = {r.id for r in db.characters}
+    new_pids = set()
+    for spec in character_specs:
+        if not _PID_RE.match(spec.pid):
+            problems.append(f"{spec.pid!r}: a character ID is PID_ followed by capital letters, digits or _.")
+        elif spec.pid in pids or spec.pid in new_pids:
+            problems.append(f"{spec.pid} already exists.")
+        new_pids.add(spec.pid)
+        if spec.template not in pids:
+            problems.append(f"{spec.pid}: the template character {spec.template} does not exist.")
+        if spec.jid is not None and spec.jid not in {r.id for r in db.classes}:
+            problems.append(f"{spec.pid}: the class {spec.jid} does not exist.")
+        if spec.name and not spec.name.isascii():
+            problems.append(f"{spec.pid}: names are limited to plain ASCII text.")
+    return problems
+
+
+def add_campaign_fe10(project: ModProject, fe10: bytes, chapter_specs: list, character_specs: list = (),
+                      after: Optional[str] = None, flow=None) -> CampaignResult:
+    """:func:`add_campaign` for Radiant Dawn: the chapters in story order after ``after`` (a page id,
+    or None: outside the story), then the characters. ``FE10Data.cms`` is returned, not written."""
+    from . import chapters_fe10
+
+    problems = check_campaign_fe10(project, fe10, chapter_specs, character_specs, after)
+    if problems:
+        raise ValueError("The campaign cannot be added:\n  " + "\n  ".join(problems))
+    result = CampaignResult(fe10)
+    previous = after
+    for spec in chapter_specs:
+        new_id = chapters_fe10.free_chapters(project, result.fe8data)[0]
+        try:
+            plan = chapters_fe10.add_story_chapter(project, result.fe8data, spec.template, new_id, spec.title,
+                                                   previous, flow)
+            if spec.blank_units:
+                blank_chapter_units(project, new_id)
+        except (ValueError, OSError) as exc:
+            done = ", ".join(result.chapter_ids) or "none"
+            raise ValueError(f"Chapter {new_id} ({spec.title}) failed: {exc}\n"
+                             f"Chapters added before it: {done}.") from exc
+        result.fe8data = plan.fe10data
+        result.warnings += plan.warnings
+        result.chapter_ids.append(new_id)
+        previous = new_id
+    for spec in character_specs:
+        result.fe8data = add_character_fe10(project, result.fe8data, spec, result.warnings)
+        result.pids.append(spec.pid)
+    return result
+
+
+def add_character_fe10(project: ModProject, fe10: bytes, spec: CharacterSpec, warnings: Optional[list] = None) -> bytes:
+    """One Radiant Dawn character copied from ``spec.template``; a ``name`` gets its own ``MPID_``
+    text in ``Mess/e_common.m`` and ``common.m`` (written at once)."""
+    from .chapters_fe10 import TITLE_FILES
+    from .formats import fe10data
+    from .game_files import files_of, game_path
+
+    warnings = warnings if warnings is not None else []
+    source = next(r for r in fe10data.read_fe10data(fe10).characters if r.id == spec.template)
+    data, index = fe10data.add_record(fe10, "character", source.index, spec.pid)
+    if spec.jid:
+        data = fe10data.patch_field(data, "character", index, "jid", spec.jid)
+    if spec.name.strip():
+        key = mpid_for(spec.pid)
+        data = fe10data.patch_field(data, "character", index, "mpid", key)
+        files, wrote = files_of(project), False
+        for name in TITLE_FILES:
+            path = files.find(game_path("Mess", name))
+            if path is None or not path.is_file():
+                continue
+            messages = [m for m in message.read_messages_path(path) if m.speaker != key]
+            messages.append(message.Message(key, spec.name.strip()))
+            files.write(game_path("Mess", name), message.write_messages(messages, message.read_text_order_path(path)))
+            wrote = True
+        if not wrote:
+            warnings.append(f"No Mess/e_common.m or common.m: {spec.pid} has no name text.")
+    return data
+

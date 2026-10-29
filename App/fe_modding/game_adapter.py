@@ -149,6 +149,30 @@ class DataAdapter:
         session to save and the warnings."""
         raise NotImplementedError
 
+    def deletable(self, chapter_id: str) -> bool:
+        """Whether Delete chapter can remove ``chapter_id``."""
+        raise NotImplementedError
+
+    def delete_rule(self) -> str:
+        """Which chapters can be deleted, for the refusal message."""
+        raise NotImplementedError
+
+    def remove_story_chapter(self, project, chapter_id: str, flow) -> bytes:
+        """Delete chapter ``chapter_id`` and its files; chapters that led to it lead to its successor
+        in ``flow`` (a :class:`~.game_code.story_flow.StoryFlow`). Returns the game-data file for the
+        session to save."""
+        raise NotImplementedError
+
+    def campaign_problems(self, project, chapter_specs: list, character_specs: list, after: Optional[str]) -> list:
+        """Why New campaign can't add these chapters (``campaign.ChapterSpec``, templates as chapter page
+        ids) and characters after chapter ``after``; empty: it can."""
+        raise NotImplementedError
+
+    def add_campaign(self, project, chapter_specs: list, character_specs: list, after: Optional[str], flow):
+        """Add the campaign (chapters in story order after ``after``, then the characters). Returns the
+        game-data file for the session to save, the new chapter page ids and the warnings."""
+        raise NotImplementedError
+
 
 class PorDataAdapter(DataAdapter):
     """Path of Radiance: ``FE8Data.bin`` through :mod:`formats.fe8data`."""
@@ -258,6 +282,28 @@ class PorDataAdapter(DataAdapter):
                                           int(after) if after is not None else None,
                                           getattr(flow, "flow", None))
         return plan.fe8data, plan.warnings
+
+    def deletable(self, chapter_id):
+        from . import chapters
+        return chapter_id.isdigit() and int(chapter_id) in chapters.DELETABLE_CHAPTER_IDS
+
+    def delete_rule(self):
+        return "The Prologue starts every new game and the Ending completes it, so those chapters cannot be deleted."
+
+    def remove_story_chapter(self, project, chapter_id, flow):
+        from . import chapters
+        return chapters.remove_story_chapter(project, self.data, chapter_id, getattr(flow, "flow", flow)).fe8data
+
+    def campaign_problems(self, project, chapter_specs, character_specs, after):
+        from . import campaign
+        return campaign.check_campaign(project, self.data, chapter_specs, character_specs,
+                                       int(after) if after is not None else None)
+
+    def add_campaign(self, project, chapter_specs, character_specs, after, flow):
+        from . import campaign
+        result = campaign.add_campaign(project, self.data, chapter_specs, character_specs,
+                                       int(after) if after is not None else None, getattr(flow, "flow", flow))
+        return result.fe8data, [f"{c:02d}" for c in result.chapter_ids], result.warnings
 
 
 class RdDataAdapter(DataAdapter):
@@ -448,6 +494,27 @@ class RdDataAdapter(DataAdapter):
         from . import chapters_fe10
         plan = chapters_fe10.add_story_chapter(project, self.data, source_id, new_id, title, after, flow)
         return plan.fe10data, plan.warnings
+
+    def deletable(self, chapter_id):
+        from . import chapters_fe10
+        return chapters_fe10.deletable(chapter_id)
+
+    def delete_rule(self):
+        return ("Only added chapters (0501 and up) can be deleted: removing a retail chapter's record would shift "
+                "the chapters after it. Take a retail chapter out of the story in the story flow instead.")
+
+    def remove_story_chapter(self, project, chapter_id, flow):
+        from . import chapters_fe10
+        return chapters_fe10.remove_story_chapter(project, self.data, chapter_id, flow).fe10data
+
+    def campaign_problems(self, project, chapter_specs, character_specs, after):
+        from . import campaign
+        return campaign.check_campaign_fe10(project, self.data, chapter_specs, character_specs, after)
+
+    def add_campaign(self, project, chapter_specs, character_specs, after, flow):
+        from . import campaign
+        result = campaign.add_campaign_fe10(project, self.data, chapter_specs, character_specs, after, flow)
+        return result.fe8data, list(result.chapter_ids), result.warnings
 
 
 def zbg_packs(project) -> dict:

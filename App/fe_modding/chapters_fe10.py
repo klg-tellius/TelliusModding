@@ -16,6 +16,10 @@ so its files are named like retail ones of the same length:
 - the template's ``SHOP_PERSON`` / armory / vendor / forge sections in each shop file;
 - the ``MCT05NN`` title in ``Mess/e_common.m`` and ``common.m``, and the title card
   ``window/title/e_ch05NN.cms`` drawn from it.
+
+:func:`remove_story_chapter` (Delete chapter) takes all of that back out. Only added chapters can be
+deleted: the retail advance walks ChapterData by index, so removing a retail record would shift the
+chapters after it; a retail chapter is taken out of the story with the story flow instead.
 """
 
 from __future__ import annotations
@@ -190,6 +194,78 @@ def plan_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id:
     else:
         out[game_path(chapter_images.FE10_CARD_FOLDER, chapter_images.fe10_card_name(new_id))] = card[1]
     return RdChapterPlan(data, number, new_id, out, warnings)
+
+
+def deletable(chapter_id: str) -> bool:
+    """Whether Delete chapter can remove ``chapter_id``: an added chapter (``05NN``)."""
+    return number_for(chapter_id) is not None
+
+
+@dataclass
+class RdRemovedChapter:
+    """What :func:`remove_story_chapter` did; ``fe10data`` is left to the caller's session."""
+    fe10data: bytes
+    removed: list = field(default_factory=list)     # paths under files/ that were deleted
+    files: dict = field(default_factory=dict)       # path under files/ -> new bytes (shops, titles)
+
+
+def remove_story_chapter(project: ModProject, fe10: bytes, chapter_id: str, flow) -> RdRemovedChapter:
+    """Delete added chapter ``chapter_id``: its ChapterData record and battle-scenery row, its shops,
+    title text and title card, its dialogue, script and map folders. Chapters that led to it lead to
+    its successor (``flow``, a :class:`game_code.story_flow.RdStoryFlow`). ``FE10Data.cms`` is not
+    written: the result's ``fe10data`` is for the caller's session to save."""
+    from . import chapter_images
+
+    if not deletable(chapter_id):
+        raise ValueError(f"Chapter {chapter_id} is a retail chapter: take it out of the story in the story "
+                         "flow instead (removing its record would shift the chapters after it).")
+    if flow is None or not flow.available:
+        reason = flow.unavailable_reason if flow is not None else "it could not be opened."
+        raise ValueError(f"main.dol cannot update the story flow: {reason}")
+    profile = profile_of(project)
+    files = files_of(project)
+    record_id = rd_story.chapter_record_id(chapter_id)
+    matching = [r for r in _records(fe10) if r.values.get("cid") == record_id]
+    if len(matching) > 1:
+        raise ValueError(f"FE10Data.cms has more than one ChapterData record {record_id}.")
+    data = fe10data.remove_record(fe10, "chapter", matching[0].index) if matching else fe10
+    map_name = profile.map_folder(chapter_id)
+    rows = fe10data.read_table(data, "battle_scenery")
+    for row in reversed([r for r in rows if r.values.get("map") == map_name]):
+        data = fe10data.remove_battle_scenery(data, row.index)
+
+    out: dict = {}
+    for difficulty in profile.shop_difficulties:
+        rel = game_path(profile.shop_dir, profile.shop_file.format(diff=difficulty))
+        path = files.find(rel)
+        if path is not None and path.is_file():
+            doc = shop.parse_shop(path.read_bytes())
+            if shop.remove_chapter(doc, chapter_id):
+                out[rel] = shop.build_shop(doc)
+    key = f"MCT{chapter_id}"
+    for name in TITLE_FILES:
+        path = files.find(game_path("Mess", name))
+        if path is None or not path.is_file():
+            continue
+        messages = message.read_messages_path(path)
+        kept = [m for m in messages if m.speaker != key]
+        if len(kept) != len(messages):
+            out[game_path("Mess", name)] = message.write_messages(kept, message.read_text_order_path(path))
+
+    if chapter_id in flow.order() or flow.predecessors(chapter_id):
+        flow.remove(chapter_id)
+    for rel, content in out.items():
+        files.write(rel, content)
+    assets = [game_path("Mess", name.format(id=chapter_id)) for name in MESSAGE_FILES]
+    assets += [game_path(profile.chapter_script.format(id=chapter_id)),
+               game_path(chapter_images.FE10_CARD_FOLDER, chapter_images.fe10_card_name(chapter_id))]
+    assets += [game_path("zmap", folder) for folder in chapters.chapter_phases(project, chapter_id)]
+    removed = []
+    for rel in assets:
+        if files.exists(rel):
+            removed.append(rel)
+            files.remove(rel)
+    return RdRemovedChapter(data, removed, out)
 
 
 def add_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id: str, title: str = "",
