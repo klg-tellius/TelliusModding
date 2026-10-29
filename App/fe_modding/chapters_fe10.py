@@ -6,8 +6,9 @@ those through its successor table, and every ChapterData user but the retail adv
 by number, so the record is appended after the tutorials) and the page id ``05NN`` (56 -> ``0501``),
 so its files are named like retail ones of the same length:
 
-- ``zmap/bmap05NN`` (``map.cmp`` copied, ``dispos_{c,n,h}.bin`` with their ``bmap<template>``
-  section names renamed), ``Scripts/C05NN.cmb`` (its own ``bmap<template>`` strings renamed);
+- ``zmap/bmap05NN`` (``map.cmp`` with its models renamed after the new map,
+  :func:`chapters.rename_map_pack`; ``dispos_{c,n,h}.bin`` with their ``bmap<template>`` section
+  names renamed), ``Scripts/C05NN.cmb`` (its own ``bmap<template>`` strings renamed);
 - ``Mess/c05NN.m``, ``e_c05NN.m``, ``n05NN.m``, ``e_n05NN.m`` copied (the script's message keys
   keep naming the template's, which the copies hold);
 - a ``ChapterData`` record copied from the template's with the new number, ID and names, and a
@@ -146,6 +147,8 @@ def plan_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id:
             content = files.read(rel)
             if inner.lower().startswith("dispos_"):
                 content = dispo.rename_chapter_sections(content, source_id, new_id)
+            elif inner.lower() == "map.cmp":
+                content = chapters.rename_map_pack(content, folder, target)
             out[game_path("zmap", target, inner)] = content
     script = chapters.chapter_paths(project, source_id).script
     out[game_path(profile.chapter_script.format(id=new_id))] = chapters._renumber_script(

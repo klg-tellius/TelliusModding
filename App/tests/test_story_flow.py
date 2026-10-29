@@ -162,6 +162,22 @@ class CapabilityTests(unittest.TestCase):
 
 
 @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+class MapPackRenameTests(unittest.TestCase):
+    def test_models_and_sections_take_the_new_name(self):
+        from fe_modding import chapters
+        from fe_modding.formats import lz10, pak
+
+        map_bin = b"bmap0101\x00bmap0101_water0\x00bmap0101:mapdata\x00xbmap0101\x00bmap01010\x00"
+        packed = lz10.compress(pak.pack_pak([("bmap0101.gs", b"gs"), ("bmap0101_water0.g", b"g"),
+                                             ("boat01.g", b"b"), ("map.bin", map_bin)], [0, 0, 0, 0]))
+        out = lz10.decompress(chapters.rename_map_pack(packed, "bmap0101", "bmap0501"))
+        entries = pak.read_pak_entries(out)
+        self.assertEqual([e.name for e in entries], ["bmap0501.gs", "bmap0501_water0.g", "boat01.g", "map.bin"])
+        self.assertEqual(pak.read_pak_file_content(out, entries[3]),
+                         b"bmap0501\x00bmap0501_water0\x00bmap0501:mapdata\x00xbmap0101\x00bmap01010\x00")
+        self.assertEqual(chapters.rename_map_pack(packed, "bmap0101", "bmap101"), packed)  # other length: kept
+
+
 class RdAddChapterTests(unittest.TestCase):
     """Add chapter on a scratch Radiant Dawn project holding chapter 0204's files."""
 
@@ -217,11 +233,20 @@ class RdAddChapterTests(unittest.TestCase):
             raw = (self.files / "zmap" / "bmap0501" / f"dispos_{diff}.bin").read_bytes()
             self.assertNotIn(b"bmap0204", raw)
             self.assertIn(b"bmap0501", raw)
-        self.assertTrue((self.files / "zmap" / "bmap0501" / "map.cmp").is_file())
+        # the game finds a map's models and sections by the map's name: the copy renames them
+        from fe_modding.formats import pak
+        packed = lz10.decompress((self.files / "zmap" / "bmap0501" / "map.cmp").read_bytes())
+        entries = pak.read_pak_entries(packed)
+        self.assertIn("bmap0501.gs", [e.name for e in entries])
+        self.assertFalse(any(e.name.startswith("bmap0204") for e in entries))
+        map_bin = pak.read_pak_file_content(packed, next(e for e in entries if e.name == "map.bin"))
+        self.assertIn(b"bmap0501:mapdata\x00", map_bin)
+        self.assertNotIn(b"bmap0204", map_bin)
         script = (self.files / "Scripts" / "C0501.cmb").read_bytes()
         pool_start, table_start = struct.unpack_from("<II", script, 0x24)
         self.assertIn(b"bmap0501_mikata", script[pool_start:table_start])
         self.assertNotIn(b"bmap0204\x00", script[pool_start:table_start])
+        self.assertIn(b"\x00C0501\x00", script[pool_start:table_start])  # ChapterTitle("C0501")
         for name in ("c0501.m", "e_c0501.m", "n0501.m", "e_n0501.m"):
             self.assertTrue((self.files / "Mess" / name).is_file(), name)
         self.assertIn("0501", chapters.list_chapter_ids(self.project))

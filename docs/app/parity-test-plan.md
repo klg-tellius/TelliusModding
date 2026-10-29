@@ -106,7 +106,7 @@ automatic victory at its first enemy phase. Clean discs: `G:\ROM\rd_work\RFEE01`
 | 1. RD map: unit moved | Partial | Micaiah starts elsewhere than in retail, but not on the tile set: the opening walks her, so her second position is not her turn-1 tile. |
 | 1. RD map: terrain tile | **Not confirmed** | A one-tile change under the turn-1 cursor still reads Paving Stones; making all 960 tiles Forest crashes on map load (Unhandled Exception 3, LR 0x8029D824). Needs a look at which layer RFEE01 reads. |
 | 2. RD story flow (1-1 → 1-3) | **Pass** | After 1-1's victory the game loads `C0103` / `bmap0103` and skips 1-2. Needed two fixes (below). |
-| 2. RD Add chapter | **Partial** | The added chapter (`0501`, number 56) is reached after 1-1, with its own script and map, but hangs in its opening before any unit is placed, also when jumped into. Files equal 1-1's apart from the renamed names. It also shows 1-1's title card. |
+| 2. RD Add chapter | **Pass** (after a fix) | 1-1 → the added chapter `0501` (own script, map, deployments and title card `e_ch0501.cms`) → its victory → 1-2. The first run hung: see the fixes below. PoR's Add chapter, checked the same way (a copy of Chapter 1 as chapter 33, jumped into), deploys its army. |
 | 3. RD Chapter data: goal | **Pass** | Hard goal reads "Victory: Defeat boss" on the map and the situation screen (retail: Rout enemy). |
 | 3. RD Chapter data: weather | Not confirmed | Snow instead of cloudy: nothing visible on the map. |
 | 3. RD Battle scenes | **Pass** | 1-1's battles load `zbg/bg0001grd` (generic plains, a name appended to `BattleTerrName`) instead of `bg0101twn`. |
@@ -130,6 +130,12 @@ App bugs found and fixed by this run:
   `STUBHAXX`: under Dolphin every chapter advance went there instead. Moved to 0x80001900.
 - Excel import ignored shared strings (Excel saves text cells that way) and absolute sheet paths
   (`/xl/worksheets/...`, written by other tools): a sheet saved by Excel or openpyxl did not import.
+
+- Add chapter (both games) copied `map.cmp` as it was. The game finds a map's models and sections by the map's
+  own name (`bmap0101.gs`, and in Radiant Dawn's `map.bin` the section symbols `bmap0101:mapdata`,
+  `bmap0101:uniquepanel`...), so a copy kept the template's names, loaded nothing and hung before placing a
+  unit. `chapters.rename_map_pack` now renames them. The script's own chapter id (`ChapterTitle("C0101")`,
+  which picks the title card) is renamed too.
 
 Limits found: a chapter jump starts with an empty party, so on Radiant Dawn only 1-1 fields an army (any
 later chapter is an immediate Game Over).

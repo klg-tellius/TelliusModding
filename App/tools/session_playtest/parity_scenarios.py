@@ -62,9 +62,6 @@ NOT_COVERED = [
      "Needs a save from Part 3 or later with both units; the only RD save on this machine is a Part 1 start."),
     ("RD Saves > Convoy edit loaded in game",
      "The convoy is not reachable in Part 1's first chapters; needs a later save."),
-    ("RD Add chapter: the added chapter's opening",
-     "The copy of 1-1 (chapter 0501, number 56) reaches its map and hangs before any unit is placed. "
-     "That is a bug to find in RFEE01 (custom chapter numbers), not something to look at in game."),
 ]
 
 
