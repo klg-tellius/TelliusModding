@@ -32,6 +32,12 @@ where its last END / STOP jumped to on the next turn.
 Action entries register a candidate action (``register_available_action``)
 and set the *found* flag; a later action entry overwrites the candidate, so
 scripts follow each one with ``if found: goto ...``.
+
+RFEE01 keeps the same 0x28-byte entry shape exposed by this module but differs
+in one important runtime detail: its dispatcher copies word ``b`` before every
+opcode, including zero and opcodes that also use ``b`` as another operand.
+Its movement helper treats ``0xFFFF`` as the acting unit's current HP rather
+than as an unlimited threat ceiling.
 """
 
 from __future__ import annotations
@@ -94,7 +100,7 @@ class OpSpec:
 
 
 def _chance() -> Field:
-    return Field("a", "chance", "percent", None, "percent chance to try (roll 0-99 <= chance)")
+    return Field("a", "chance", "percent", None, "percent chance to try (roll 0-99 < chance)")
 
 
 def _targets(table_help: str = "only units in this character list") -> tuple[Field, Field]:

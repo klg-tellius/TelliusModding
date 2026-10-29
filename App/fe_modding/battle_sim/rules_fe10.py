@@ -114,7 +114,10 @@ class Fe10Rules:
         out.avoid = 2 * self.attack_speed(target) + self.stat(target, LCK) + terrain[0] + target_support[3] + target.biorhythm
         if "vigilance" in target_keys:
             out.avoid += 20
-        out.raw_crit = w.crit + self.stat(unit, SKL) // 2 + support[4] + unit.biorhythm
+        # Retail BioParam slot 4 is the critical channel and is zero in every shipped row.
+        # ``unit.biorhythm`` models the shared shipped Hit/Avoid/skill-activation value, so it
+        # must not be added to critical chance.
+        out.raw_crit = w.crit + self.stat(unit, SKL) // 2 + support[4]
         if "wrath" in keys and unit.hp * 10 <= unit.stats[HP] * 3 and "lucky" not in target_keys:
             out.raw_crit += 50
         out.crit_avoid = self.stat(target, LCK) + target_support[5] + (20 if "vigilance" in target_keys else 0)

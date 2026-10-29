@@ -715,7 +715,8 @@ FIXED_TABLES = {
     "affinity": FixedTable("DivineData", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Affinity"), _f("attack", "Attack", "s8", 4, "Affinity"),
         _f("defense", "Defense", "s8", 5, "Affinity"), _f("hit", "Hit", "s8", 6, "Affinity"),
-        _f("avoid", "Avoid", "s8", 7, "Affinity"))),
+        _f("avoid", "Avoid", "s8", 7, "Affinity"), _f("critical", "Critical", "s8", 8, "Affinity"),
+        _f("critical_avoid", "Critical avoid", "s8", 9, "Affinity"))),
     "affinity_pair": FixedTable("DivineParam", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Pair"), _f("partner", "Partner affinity", "label", 4, "Pair"),
         _f("value_0", "Value 1", "s8", 8, "Pair"), _f("value_1", "Value 2", "s8", 9, "Pair"),
@@ -804,7 +805,8 @@ SUPPORT_ENTRY_SIZE = 8
 
 def _read_supports(data: bytes) -> list[Record]:
     """RelianceData: a count, then per character its PID, a partner count and one 8-byte entry per
-    partner (``partner PID, u8 flag, u8 speed, 2 zero bytes``). The retail table lists all 71
+    partner (``partner PID, u8 flag, s8 support-growth tier input, 2 zero bytes``; the reader keeps
+    the signed field's raw byte representation). The retail table lists all 71
     supporting characters against all 71 (themselves included)."""
     start = fe8data.section_start(data, "RelianceData")
     count = _u32(data, start)
