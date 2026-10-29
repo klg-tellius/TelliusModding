@@ -52,6 +52,15 @@ class ByteMoveTests(unittest.TestCase):
             fe10data.delete_bytes(self.data, HEADER_SIZE + 16, 4)
 
 
+class FixedTableSchemaTests(unittest.TestCase):
+    def test_affinity_exposes_all_six_combat_bonus_channels(self):
+        fields = {field.key: field.offset for field in fe10data.FIXED_TABLES["affinity"].fields}
+        self.assertEqual({key: fields[key] for key in
+                          ("attack", "defense", "hit", "avoid", "critical", "critical_avoid")},
+                         {"attack": 4, "defense": 5, "hit": 6, "avoid": 7,
+                          "critical": 8, "critical_avoid": 9})
+
+
 def _files() -> Path | None:
     value = os.environ.get("FE10_EXTRACTED_FILES")
     if value:
@@ -167,6 +176,7 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual((chapter["map"], chapter["lord"], chapter["number"]), ("bmap0101", "PID_MICAIAH", 1))
         affinities = {r.id: r.values for r in self.db.table("affinity")}
         self.assertEqual([affinities["fire"][k] for k in ("attack", "defense", "hit", "avoid")], [1, 0, 5, 0])
+        self.assertTrue(all(k in affinities["fire"] for k in ("critical", "critical_avoid")))
         plain = self.db.table("terrain")[1].values
         self.assertEqual((plain["name"], plain["cost_0"]), ("平地", 1))
         ike = self.db.table("support")[0]

@@ -224,7 +224,8 @@ class ShopEditor(EditorPanel):
             items = session.fe8.items
         elif session is not None and session.available and getattr(session, "fe10", None) is not None:
             items = [SimpleNamespace(iid=r.values.get("iid"), cost=r.values.get("price", 0),
-                                     uses=r.values.get("uses", 0), icon=r.values.get("icon", -1), record=r)
+                                     uses=r.values.get("uses", 0), icon=r.values.get("icon", -1),
+                                     weapon_type=r.values.get("weapon_type"), record=r)
                      for r in session.fe10.tables.get("item", [])]
         else:
             items = []

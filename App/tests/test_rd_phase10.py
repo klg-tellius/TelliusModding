@@ -69,6 +69,19 @@ class Fe10BattleTests(unittest.TestCase):
                      "kill_exp_base": 15, "kill_exp_multiplier": 100, "boss_kill_bonus": 20}
         self.assertEqual(rules.battle_exp(winner, other, dealt=True, killed=True, constants=constants), 90)
 
+    def test_biorhythm_affects_hit_avoid_and_skill_activation_but_not_critical(self):
+        rules = battle_sim.Fe10Rules()
+        weapon = Weapon(weapon_type="sword", attack_type="sword", might=5, hit=70, crit=8, weight=0,
+                        min_range=1, max_range=1, durability=20)
+        attacker = self.unit("A", weapon, biorhythm=10)
+        defender = self.unit("D", weapon, biorhythm=10)
+        side = rules.side(attacker, defender)
+        neutral = rules.side(self.unit("A", weapon), self.unit("D", weapon))
+        self.assertEqual(side.raw_hit, neutral.raw_hit + 10)
+        self.assertEqual(side.avoid, neutral.avoid + 10)
+        self.assertEqual(side.raw_crit, neutral.raw_crit)
+        self.assertEqual(rules.proc_chance("adept", attacker), rules.proc_chance("adept", self.unit("A", weapon)) + 10)
+
 
 class SightTests(unittest.TestCase):
     def test_show_all_does_not_mutate_game_sight(self):

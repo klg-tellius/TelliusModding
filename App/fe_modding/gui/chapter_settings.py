@@ -11,6 +11,7 @@ from tkinter import ttk
 from typing import Callable
 
 from .map_windows import MapSettingsForm
+from ..game_code.rd_story import chapter_record_id
 from .fe10_data_editor import Fe10DataEditor
 from .stats_editor import ChapterRecordPanel
 from .widgets import ScrollFrame, info
@@ -68,7 +69,7 @@ class ChapterDataPanel(ttk.Frame):
 
     def show_chapter(self, chapter_id: str, map_name: str | None) -> None:
         if self._fe10_record is not None:
-            self._fe10_record.select_record("C" + chapter_id.upper())
+            self._fe10_record.select_record(chapter_record_id(chapter_id))
             return
         if self._chapter_record is not None:
             self._chapter_record.show_chapter(int(chapter_id) if chapter_id.isdigit() else None, map_name)
