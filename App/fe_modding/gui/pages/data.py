@@ -346,13 +346,14 @@ FE10_TILES = {
     "biorhythm_bands": ("∿", "The five biorhythm bands: threshold and bonuses"),
     "support_params": ("♡", "Support levels, points per event and per support speed"),
     "no_battle": ("⊘", "Character pairs listed in the NOBTL lists"),
+    "blessing": ("✦", "Endgame stat bonus for the player's army, by difficulty"),
     "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
 FE10_SECTIONS = (("Units and items", ("classes", "items", "skills", "growth")),
                  ("Chapters and maps", ("chapters", "terrain", "battle_scenery")),
                  ("Relations", ("supports", "support_params", "bonds", "affinities", "affinity_pairs",
                                 "no_battle")),
-                 ("Rules", ("triangle", "groups", "difficulty", "biorhythm", "biorhythm_bands")),
+                 ("Rules", ("triangle", "groups", "difficulty", "blessing", "biorhythm", "biorhythm_bands")),
                  ("Images", ("rect_images",)))
 FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
 

@@ -29,7 +29,7 @@ PLAUSIBLE_FIELDS = {
     "skill": {"capacity", "icon"},
     "support_param": {"gain_0", "gain_0_flag", "gain_1", "gain_2", "gain_3", "gain_4", "gain_5"},
     "class": {"weight_kind_1", "weight_kind_2"},  # the kind numbers are named from the retail classes only
-    "chapter": {"move_change"},  # which class types it applies to is not resolved
+    "chapter": {"move_change", "preparations"},  # class types / modes not resolved
 }
 #: Fields that only pad a record to a word (zero everywhere, a word field follows, the loader skips them).
 ALIGNMENT_FIELDS = {"character": {"unknown_t27"}, "skill": {"unknown_22", "unknown_23"},
@@ -114,6 +114,8 @@ def _mark_fixed_tables(cov: CoverageMap, data: bytes) -> None:
             _mark_count(cov, data, kind)
         for r in fe10data.read_table(data, kind):
             _mark_record(cov, r, defs)
+            if kind == "difficulty" and r.index in (10, 11):  # no getter found for these two rows
+                cov.mark(r.start, table.size, UNDECODED, "difficulty.row_without_reader")
             if kind == "terrain":
                 cov.mark(r.start + 0x0C, 4, DECODED, "terrain.block")
             own = [d for d in table.fields if kind != "terrain" or d.key not in fe10data.TERRAIN_FIELDS]
@@ -131,6 +133,11 @@ def _mark_fixed_tables(cov: CoverageMap, data: bytes) -> None:
                     cov.mark(r.start + o, 1, UNDECODED, f"{kind}.+{word:#04x}")
         if kind == "terrain":
             _mark_terrain_blocks(cov, data)
+            # the engine uses exactly 199 types (0x8011d17c); the bytes after them up to BattleTerrIndex are unread
+            records = fe10data.read_table(data, kind)
+            tail = fe8data.section_start(data, "BattleTerrIndex")
+            if records and len(records) == 199:
+                cov.mark(records[-1].end, tail - records[-1].end, RESERVED, "terrain.after_199")
         if kind == "bond":  # a null word ends the bonds (as on Path of Radiance)
             records = fe10data.read_table(data, kind)
             end = records[-1].end if records else fe8data.section_start(data, table.symbol) + 4
@@ -190,8 +197,9 @@ def _mark_no_battle(cov: CoverageMap, data: bytes) -> None:
         at = r.offsets["characters"]
         for i in range(len(r.lists["characters"])):
             entry = at + fe10data.NO_BATTLE_ENTRY_SIZE * i
-            cov.mark(entry, 4, PLAUSIBLE, "no_battle.character")  # the list's meaning is not confirmed
-            cov.mark(entry + 4, 4, UNDECODED, "no_battle.entry_word")
+            cov.mark(entry, 4, DECODED, "no_battle.character")
+            cov.mark(entry + 4, 1, DECODED, "no_battle.flag")
+            cov.mark(entry + 5, 3, RESERVED, "no_battle.unread")  # copied with the entry, never used
         cov.mark(r.end - 4, 4, DECODED, "no_battle.terminator")
 
 
@@ -263,7 +271,7 @@ def build_coverage(data: bytes) -> CoverageMap:
             cov.section[j] = name
 
     head = fe8data.section_start(data, "DatabaseHead")
-    cov.mark(head, 4, UNDECODED, "database_head.word0")  # 0, off the pointer list
+    cov.mark(head, 4, RESERVED, "database_head.word0")  # 0, off the pointer list; the loader ignores the section
     cov.mark(head + 4, 8, DECODED, "database_head.build_time_author")
     _mark_variable_tables(cov, data)
     _mark_skills(cov, data)

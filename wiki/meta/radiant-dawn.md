@@ -41,18 +41,19 @@ source_path: "meta/radiant-dawn.md"
 
 ## Game database
 
-`FE10Data.cms` holds the same kinds of tables as Path of Radiance's `FE8Data.bin`, but character, class and item records are variable in size: a count byte in each record says how many skill, sound-class, attribute or effectiveness labels follow. About 98 % of its bytes have a known meaning; the rest are mostly single bytes in the character, class, item and chapter records. Fields that work differently from Path of Radiance: <span class="confidence confidence--confirmed">engine</span>
+`FE10Data.cms` holds the same kinds of tables as Path of Radiance's `FE8Data.bin`, but character, class and item records are variable in size: a count byte in each record says how many skill, sound-class, attribute or effectiveness labels follow. About 99 % of its bytes have a known meaning; the rest are mostly single bytes in the character, class, item and chapter records. Fields that work differently from Path of Radiance: <span class="confidence confidence--confirmed">engine</span>
 
 - A class has a base weight and two weight parts, each a kind and a signed weight (armour, horse, pegasus, wyvern, beast, dragon, bird). A unit's weight is the class weight plus its personal weight; the parts are added on top for its mounted total.
 - A class's promotion level (21 on first- and second-tier classes) makes the level-up that would reach it promote the unit instead. The class base Luck in the file is ignored: the game sets it to 0.
 - A character lists the Parts in which it withdraws instead of dying when defeated (royals, herons and the laguz kings in every Part; others only in some).
-- A chapter gives enemy units extra levels per difficulty (+2 on Hard), can change the movement of some class types (−2 on six desert and snow maps), names the army group the player's units join, and can be skipped on some difficulties.
+- On Easy and Normal, Yune's blessing in the Endgame adds +5 to every stat but HP for the player's army; the bonus is a table per difficulty.
+- A chapter gives enemy units extra levels per difficulty (+2 on the US disc's Hard, which the game calls Maniac), can change the movement of some class types (−2 on six desert and snow maps), names the army group the player's units join, and can be skipped on some difficulties.
 
 Tables that Path of Radiance does not have:
 
 - `RelianceParam`, the support point rules: a pair needs 50, 100 and 150 points for C, B and A and stops at 151. Points never pass the next level's value until that level is reached. Six kinds of support event give 15 (30 while a game flag is set), 3, 5, 4, 1 and 2 points. The pair's support speed in `RelianceData` adds +2, +1, 0, −1 or −2 to every gain. <span class="confidence confidence--confirmed">engine</span>
 - `BioParam`, the five biorhythm bands: a threshold on the curve (0.8, 0.4, 0, −0.4, −0.8) and five signed bonuses (+10 +10 0 +10 +20 in the best band, mirrored in the worst). Tempest doubles them and Serenity halves them. <span class="confidence confidence--confirmed">engine</span>
-- `NOBTL_TABLE`, 22 lists, each naming a character and the characters listed against it. The dragon and spirit lists name the herons, Ena and Kurthnaga, which suggests pairs that do not fight each other. <span class="confidence confidence--plausible">plausible</span>
+- `NOBTL_TABLE`, 22 lists, each naming a character and the characters it cannot attack: for example the Goldoan dragons cannot attack the herons, Ena or Kurthnaga, and several Part 3 characters cannot attack friends fighting on the other side. Each pair has a flag (unused in the retail data) that still lets the two fight in combat. <span class="confidence confidence--confirmed">engine</span>
 
 The Game Data page of the app edits all three tables.
 

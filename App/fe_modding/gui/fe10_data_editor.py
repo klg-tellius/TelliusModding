@@ -31,19 +31,21 @@ from ..game_profile import files_root_of
 
 TAB_KEYS = ("characters", "classes", "items", "skills", "growth", "chapters", "terrain", "battle_scenery",
             "supports", "groups", "bonds", "affinities", "affinity_pairs", "triangle", "difficulty", "biorhythm",
-            "biorhythm_bands", "support_params", "no_battle")
+            "biorhythm_bands", "support_params", "no_battle", "blessing")
 KIND_OF_TAB = {"characters": "character", "classes": "class", "items": "item", "skills": "skill",
                "chapters": "chapter", "terrain": "terrain", "supports": "support", "groups": "group",
                "bonds": "bond", "affinities": "affinity", "affinity_pairs": "affinity_pair",
                "triangle": "triangle", "difficulty": "difficulty", "growth": "growth",
                "battle_scenery": "battle_scenery", "biorhythm": "biorhythm",
-               "biorhythm_bands": "biorhythm_band", "support_params": "support_param", "no_battle": "no_battle"}
+               "biorhythm_bands": "biorhythm_band", "support_params": "support_param", "no_battle": "no_battle",
+               "blessing": "blessing"}
 TAB_TITLES = {"characters": "Characters", "classes": "Classes", "items": "Items", "skills": "Skills",
               "chapters": "Chapters", "terrain": "Terrain", "supports": "Supports", "groups": "Army groups",
               "bonds": "Bonds", "affinities": "Affinities", "affinity_pairs": "Affinity pairs",
               "triangle": "Weapon triangle", "difficulty": "Difficulty constants", "growth": "Stats per level",
               "battle_scenery": "Battle scenery", "biorhythm": "Biorhythm",
-              "biorhythm_bands": "Biorhythm bands", "support_params": "Support points", "no_battle": "No-battle lists"}
+              "biorhythm_bands": "Biorhythm bands", "support_params": "Support points", "no_battle": "No-battle lists",
+              "blessing": "Yune's blessing"}
 NAME_KEY = {"character": "mpid", "class": "mjid", "item": "miid", "skill": "msid", "chapter": "title",
             "terrain": "name_key", "group": "name_key"}
 
@@ -376,6 +378,8 @@ class Fe10DataEditor(EditorPanel):
             return f"Band {r.index + 1} (from {r.values.get('threshold')})"
         if r.kind == "support_param":
             return "Support point rules"
+        if r.kind == "blessing":
+            return fe10data.DIFFICULTY_NAMES[r.index] if r.index < len(fe10data.DIFFICULTY_NAMES) else f"Row {r.index + 1}"
         if r.kind in ("bond", "affinity_pair", "triangle"):
             other = r.values.get("partner") or r.values.get("against") or ""
             return f"{r.id or '-'} / {other}"
