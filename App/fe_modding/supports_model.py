@@ -8,7 +8,7 @@ bonds through a :class:`SupportsModel`. The game adapters pick the model
   partners with the points at which C, B and A open; a pair is written to both lists; bonds have an
   effect and a value; support conversations are ``Mess/yell.m`` messages.
 - Radiant Dawn (:class:`RdSupports`, :mod:`formats.fe10data`): RelianceData lists every supporting
-  character against all of them, each entry with a flag and a growth speed, so partners are edited,
+  character against all of them, each entry with an unused flag byte and a support speed, so partners are edited,
   not added; bonds (KiznaData) have a bonus; support chat lines are in Assets › Conversation Lists.
 
 A model reads one snapshot of the file. Every write takes the current bytes and returns new ones; the
@@ -265,14 +265,31 @@ class PorSupports(SupportsModel):
         return [p for p in supports.validate_support_lists(self.lists) if pid and pid in p]
 
 
+def _rd_speed_note(data: bytes) -> str:
+    """How the support speed and flag work, with this file's ``RelianceParam`` numbers
+    (research/rd/SUPPORT_NOTES.md: ``calculate_support_growth_tier`` 0x801197F4 and
+    ``add_support_points_clamped`` 0x8012EAB4 in RFEE01)."""
+    try:
+        param = data[fe8data.section_start(data, "RelianceParam"):][:16]
+    except (KeyError, ValueError):
+        param = b""
+    if len(param) < 16:
+        return ("Speed picks one of five extra gains (0 fastest ... 4 slowest) added to every support-point "
+                "gain. The flag is not read by the game.")
+    extra = ", ".join(f"{tier}: {value - 256 if value > 127 else value:+d}" for tier, value in enumerate(param[11:16]))
+    return (f"Speed (0 to 4) adds an extra amount to every support-point gain of the pair: {extra}. Gains: "
+            f"{param[4]} at each map start ({param[5]} in part IV), {param[6]} per phase next to the partner, "
+            f"{param[7]} carrying it, {param[8]} per staff, {param[9]} per Shove, {param[10]} per Smite; ranks "
+            f"C/B/A open at {param[0]}/{param[1]}/{param[2]} points. The flag (255 on 151 pairs in the retail data, "
+            "always the same in both lists, 0 elsewhere) is not read by the game's code.")
+
+
 class RdSupports(SupportsModel):
-    partner_columns = (("Partner affinity", 110), ("Flag", 60), ("Speed", 60))
-    pair_fields = (PairField("Flag", 0, 255), PairField("Speed", 0, 255))
+    partner_columns = (("Partner affinity", 110), ("Speed", 60), ("Flag", 60))
+    pair_fields = (PairField("Speed (0 fastest, 4 slowest)", 0, 255), PairField("Flag (not read by the game)", 0, 255))
     pair_note = ("Radiant Dawn lists every supporting character against all of them (themselves included), so "
-                 "the partners are edited, not added. Speed is the pair's growth speed (2 in most "
-                 "retail entries); the flag is 0 or 255 in the retail data and its meaning is not decoded yet. "
-                 "Each character's own list is edited; the partner's list keeps its own entry. Double-click a "
-                 "partner to open their page.")
+                 "the partners are edited, not added. Each character's own list is edited; the partner's list "
+                 "keeps its own entry. Double-click a partner to open their page.")
     can_add_partners = False
     bond_columns = (("This character is", 110), ("Bonus", 60))
     bond_fields = (PairField("Bonus", 0, 255),)
@@ -286,6 +303,7 @@ class RdSupports(SupportsModel):
             r.values.get("affinity") for r in self.db.table("affinity") if r.values.get("affinity")))
         self._support = {r.values.get("pid"): r for r in self.db.table("support")}
         self._characters = {r.id: r for r in self.db.characters}
+        self.pair_note = self.pair_note + " " + _rd_speed_note(data)
 
     def affinity_of(self, pid):
         record = self._characters.get(pid)
@@ -299,7 +317,7 @@ class RdSupports(SupportsModel):
 
     def partners(self, pid, conversations=None):
         record = self._support.get(pid)
-        return [PartnerRow(partner, k, (self.affinity_of(partner or ""), flag, speed))
+        return [PartnerRow(partner, k, (self.affinity_of(partner or ""), speed, flag))
                 for k, (partner, flag, speed) in enumerate(record.lists["partners"] if record else [])]
 
     def slot_note(self, pid):
@@ -320,10 +338,10 @@ class RdSupports(SupportsModel):
     def pair_values(self, pid, partner):
         record, k = self._entry(pid, partner)
         _p, flag, speed = record.lists["partners"][k]
-        return (str(flag), str(speed))
+        return (str(speed), str(flag))
 
     def set_pair(self, data, pid, partner, texts):
-        flag, speed = (_int(t, f) for t, f in zip(texts, self.pair_fields))
+        speed, flag = (_int(t, f) for t, f in zip(texts, self.pair_fields))
         record, k = self._entry(pid, partner)
         return fe10data.set_support(data, record.index, k, flag, speed)
 

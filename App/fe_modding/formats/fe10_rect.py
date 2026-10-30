@@ -215,11 +215,24 @@ class EditableResource:
 
 
 @dataclass
+class UnlistedBlock:
+    """Bytes between two resource blocks that no export names: retail ``s/rect.bin`` keeps three
+    unexported copies of forest resources (a descriptor and its layers). Kept as they are, with their
+    string pointers (``strings``, offset -> text) and pointers into the block itself (``inner``, offset
+    -> target offset in the block) moved with it, so the file rebuilds byte for byte."""
+    raw: bytes
+    strings: dict[int, str] = field(default_factory=dict)
+    inner: dict[int, int] = field(default_factory=dict)
+
+
+@dataclass
 class EditableRect:
     resources: list[EditableResource]
     address_order: list[str]
     pool_order: list[str]
     header_tail: bytes
+    #: Unlisted blocks by the resource whose block they follow ("" for blocks before the first).
+    unlisted: dict[str, list[UnlistedBlock]] = field(default_factory=dict)
 
     def find(self, name):
         return next((resource for resource in self.resources if resource.name == name), None)
@@ -290,7 +303,24 @@ def read_editable_rect(data: bytes) -> EditableRect:
     pool_start = max((end for _start, end, _name in blocks), default=base)
     raw_pool = data[pool_start:reloc].rstrip(b"\0")
     pool_order = [item.decode(ENCODING) for item in raw_pool.split(b"\0") if item]
-    return EditableRect(resources, [name for _start, _end, name in blocks], pool_order, data[0x14:0x20])
+    unlisted: dict[str, list[UnlistedBlock]] = {}
+    position, previous = base, ""
+    for start, end, name in blocks:
+        gap = data[position:start] if start > position else b""
+        if gap.strip(b"\0") and len(gap) >= 4:  # more than the alignment padding the builder adds
+            block = UnlistedBlock(gap)
+            for off in range(0, len(gap) - 3, 4):
+                if position - base + off in pointers:
+                    target = base + struct.unpack_from(">I", gap, off)[0]
+                    if position <= target < start:
+                        block.inner[off] = target - position
+                    elif pool_start <= target < reloc:
+                        block.strings[off] = string(target - base)
+                    else:
+                        raise ValueError("An unlisted rect block points outside itself and the strings")
+            unlisted.setdefault(previous, []).append(block)
+        position, previous = max(position, end), name
+    return EditableRect(resources, [name for _start, _end, name in blocks], pool_order, data[0x14:0x20], unlisted)
 
 
 def build_editable_rect(doc: EditableRect) -> bytes:
@@ -302,10 +332,21 @@ def build_editable_rect(doc: EditableRect) -> bytes:
         names_used.append(resource.name)
         for layer in resource.layers:
             names_used.extend(layer.strings.values())
+    for blocks in doc.unlisted.values():
+        for block in blocks:
+            names_used.extend(block.strings.values())
     pool_order = list(dict.fromkeys([s for s in doc.pool_order if s in names_used] + names_used))
     body = bytearray()
     addresses = {}
     layer_addresses = {}
+    placed: list[tuple[int, UnlistedBlock]] = []
+
+    def place_unlisted(after: str) -> None:
+        for block in doc.unlisted.get(after, ()):
+            placed.append((len(body), block))
+            body.extend(block.raw)
+
+    place_unlisted("")
     for name in doc.address_order:
         resource = by_name[name]
         body += bytes(-len(body) % 4)
@@ -315,6 +356,7 @@ def build_editable_rect(doc: EditableRect) -> bytes:
         for layer in resource.layers:
             layer_addresses[name].append(len(body))
             body += layer.raw
+        place_unlisted(name)
     pool_start = len(body)
     pool = bytearray()
     offsets = {}
@@ -340,6 +382,13 @@ def build_editable_rect(doc: EditableRect) -> bytes:
                 struct.pack_into(">I", raw, off, offsets[value])
                 relocations.append(layer_addresses[name][index] + off)
             body[layer_addresses[name][index]:layer_addresses[name][index] + len(raw)] = raw
+    for at, block in placed:
+        for off, value in block.strings.items():
+            struct.pack_into(">I", body, at + off, offsets[value])
+            relocations.append(at + off)
+        for off, target in block.inner.items():
+            struct.pack_into(">I", body, at + off, at + target)
+            relocations.append(at + off)
     relocations.sort()
     exports = bytearray()
     export_names = bytearray()

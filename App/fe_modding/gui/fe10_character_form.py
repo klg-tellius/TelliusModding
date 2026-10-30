@@ -8,7 +8,10 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
 from ..formats import fe10data
+from . import message_reference
+from .character_form import weapon_rank_grid
 from .fe8_session import Fe10DataSession
+from .widgets import Link, tip
 
 
 PREFIXES = {
@@ -17,11 +20,17 @@ PREFIXES = {
 }
 
 STAT_KEYS = tuple(name.lower() for name in fe10data.STAT_NAMES)
-IDENTITY_FIELDS = ("pid", "mpid", "mnpid", "fid", "jid", "affinity", "weapon_ranks")
+IDENTITY_FIELDS = ("pid", "mpid", "mnpid", "fid", "jid", "affinity")
+#: The weapon types of a Radiant Dawn rank string, in order (from the classes' starting and maximum
+#: ranks: Swordmaster first letter, Thief fifth, the laguz classes' "*" sixth, Priest last).
+WEAPON_TYPES = ("Sword", "Lance", "Axe", "Bow", "Knife", "Strike", "Fire", "Thunder", "Wind", "Light", "Dark",
+                "Staff")
+#: Fields whose value is a message ID: the message's text is shown beside them.
+MESSAGE_FIELDS = ("mpid", "mnpid")
 ANIMATION_FIELDS = ("aid_1", "aid_2", "aid_3", "aid_4")
 UNIT_FIELDS = ("level", "sex", "authority", "biorhythm")
 GAUGE_FIELDS = ("gauge_turn", "gauge_battle", "gauge_turn_transformed", "gauge_battle_transformed")
-KNOWN_FIELDS = frozenset(IDENTITY_FIELDS + ANIMATION_FIELDS + UNIT_FIELDS + GAUGE_FIELDS
+KNOWN_FIELDS = frozenset(IDENTITY_FIELDS + ("weapon_ranks",) + ANIMATION_FIELDS + UNIT_FIELDS + GAUGE_FIELDS
                          + tuple(f"bonus_{key}" for key in STAT_KEYS) + ("bonus_weight",)
                          + tuple(f"growth_{key}" for key in STAT_KEYS))
 
@@ -40,6 +49,7 @@ class Fe10CharacterForm(ttk.Frame):
         self._on_open_character = on_open_character
         self._index: Optional[int] = None
         self._vars: dict[str, tk.StringVar] = {}
+        self._texts: Optional[dict[str, str]] = None
         session.subscribe(self._session_changed)
 
         bar = ttk.Frame(self, style="Page.TFrame")
@@ -71,6 +81,8 @@ class Fe10CharacterForm(ttk.Frame):
 
         top = ttk.Frame(self._body, style="Page.TFrame")
         top.pack(fill="x")
+        # The Path of Radiance arrangement: Identity with the map models under it, then Skills with the
+        # weapon ranks (the rank table is what makes Skills wide).
         left = ttk.Frame(top, style="Page.TFrame")
         left.pack(side="left", fill="both", padx=(0, 12))
         identity = self._group(left, "Identity")
@@ -78,12 +90,17 @@ class Fe10CharacterForm(ttk.Frame):
             self._field(identity, row, definitions[key], record.values.get(key))
         if record.values.get("jid") and self._on_open_class:
             ttk.Button(identity, text="Open", command=lambda jid=record.values["jid"]: self._on_open_class(jid)).grid(
-                row=4, column=2, sticky="w", padx=(6, 0))
+                row=IDENTITY_FIELDS.index("jid"), column=2, sticky="w", padx=(6, 0))
         if self._navigate is not None and record.values.get("pid"):
-            ttk.Button(identity, text="Open", command=lambda pid=record.values["pid"]: self._navigate(
-                ("asset", "portraits", pid))).grid(row=IDENTITY_FIELDS.index("fid"), column=2, sticky="w", padx=(6, 0))
+            pid = record.values["pid"]
+            ttk.Button(identity, text="Open", command=lambda: self._navigate(("asset", "portraits", pid))).grid(
+                row=IDENTITY_FIELDS.index("fid"), column=2, sticky="w", padx=(6, 0))
+            tip(ttk.Button(identity, text="Supports", command=lambda: self._navigate(("character", pid, "supports"))),
+                "The affinity is also set on the Supports tab, with the support partners.").grid(
+                row=IDENTITY_FIELDS.index("affinity"), column=2, sticky="w", padx=(6, 0))
 
-        animations = self._group(left, "Animations")
+        animations = self._group(left, "Map models", "The unit's map animation sets (AID), one per tier; an "
+                                                     "empty first one uses the class's own.")
         animations.master.pack(fill="x", pady=(12, 0))
         for row, key in enumerate(ANIMATION_FIELDS):
             self._field(animations, row, definitions[key], record.values.get(key))
@@ -95,17 +112,32 @@ class Fe10CharacterForm(ttk.Frame):
         skills.master.pack(side="left", fill="both", expand=True)
         ttk.Label(skills, text="Personal skills", style="Surface.TLabel").grid(row=0, column=0, sticky="nw",
                                                                                 padx=(0, 8))
-        self._skills = tk.StringVar(value=", ".join(v for v in record.lists.get("skills", []) if v))
+        own = [v for v in record.lists.get("skills", []) if v]
+        self._skills = tk.StringVar(value=", ".join(own))
         skill_entry = ttk.Combobox(skills, textvariable=self._skills,
-                                   values=self._session.labels_by_prefix.get("SID_", []), width=70)
+                                   values=self._session.labels_by_prefix.get("SID_", []), width=52)
         skill_entry.grid(row=0, column=1, sticky="w")
         ttk.Label(skills, text="Separate multiple IDs with commas.", style="SurfaceMuted.TLabel").grid(
-            row=1, column=1, sticky="w", pady=(2, 8))
-        ttk.Label(skills, text="Class innate skills", style="SurfaceMuted.TLabel").grid(
-            row=2, column=0, sticky="w", padx=(0, 8))
-        innate = ", ".join(v for v in (cls.lists.get("skills", []) if cls else []) if v)
-        ttk.Label(skills, text=innate or "None", style="SurfaceMuted.TLabel", wraplength=430,
-                  justify="left").grid(row=2, column=1, sticky="w")
+            row=1, column=1, sticky="w", pady=(2, 4))
+        innate = [v for v in (cls.lists.get("skills", []) if cls else []) if v]
+        for row, (label, sids) in enumerate((("Open skill", own), ("Class innate skills", innate)), 2):
+            ttk.Label(skills, text=label, style="SurfaceMuted.TLabel").grid(row=row, column=0, sticky="w",
+                                                                            padx=(0, 8), pady=2)
+            links = ttk.Frame(skills, style="Surface.TFrame")
+            links.grid(row=row, column=1, sticky="w")
+            if not sids:
+                ttk.Label(links, text="None", style="SurfaceMuted.TLabel").pack(side="left")
+            for sid in sids:
+                if self._navigate is not None:
+                    Link(links, sid, lambda sid=sid: self._navigate(("data", "skills", sid)),
+                         bg_token="surface").pack(side="left", padx=(0, 10))
+                else:
+                    ttk.Label(links, text=sid, style="SurfaceMuted.TLabel").pack(side="left", padx=(0, 10))
+        weapon_rank_grid(skills, 4, record.values.get("weapon_ranks"), cls.values.get("weapon_ranks") if cls else None,
+                         WEAPON_TYPES, self._vars,
+                         "The game starts from the class's ranks; a letter here replaces the class's for that "
+                         "weapon type. - keeps the class's rank, * makes the type usable without a set rank, E to S "
+                         "set the starting rank.", short=3)
 
         unit = self._group(self._body, "Level, unit details and stats")
         unit.master.pack(fill="x", pady=(12, 0))
@@ -165,10 +197,10 @@ class Fe10CharacterForm(ttk.Frame):
             aid = (cls.values.get("aid") if cls else None) or ""
         open_map_model(self, self._session.project, self._navigate, aid)
 
-    def _group(self, parent: tk.Misc, title: str) -> ttk.Frame:
+    def _group(self, parent: tk.Misc, title: str, help_text: str = "") -> ttk.Frame:
         outer = ttk.Frame(parent, style="Surface.TFrame", padding=14)
         outer.pack(fill="x")
-        ttk.Label(outer, text=title, style="SurfaceHeading.TLabel").pack(anchor="w", pady=(0, 8))
+        tip(ttk.Label(outer, text=title, style="SurfaceHeading.TLabel"), help_text).pack(anchor="w", pady=(0, 8))
         inner = ttk.Frame(outer, style="Surface.TFrame")
         inner.pack(fill="both", expand=True)
         return inner
@@ -184,10 +216,28 @@ class Fe10CharacterForm(ttk.Frame):
         else:
             widget = ttk.Entry(parent, textvariable=var, width=12)
         widget.grid(row=row, column=1, sticky="w", pady=2)
+        if definition.key in MESSAGE_FIELDS:
+            shown = tk.StringVar()
+
+            def update(*_args):
+                key = var.get().strip()
+                text = self._message_texts().get(key, "")
+                shown.set(message_reference.preview(text, fe10=True) if text else
+                          "(message not found)" if key else "")
+            var.trace_add("write", update)
+            update()
+            ttk.Label(parent, textvariable=shown, style="SurfaceCaption.TLabel", wraplength=260,
+                      justify="left").grid(row=row, column=2, sticky="w", padx=(6, 0))
         note = fe10data.FIELD_NOTES.get(definition.key)
         if note:
             ttk.Label(parent, text=note, style="SurfaceMuted.TLabel", wraplength=360, justify="left").grid(
                 row=row, column=2, sticky="w", padx=(10, 0))
+
+    def _message_texts(self) -> dict[str, str]:
+        if self._texts is None:
+            project = self._session.project
+            self._texts = {**message_reference.epilogue_texts(project), **message_reference.message_texts(project)}
+        return self._texts
 
     def _entry(self, parent, row: int, column: int, key: str, value, width: int) -> None:
         var = self._vars[key] = tk.StringVar(value="" if value is None else str(value))

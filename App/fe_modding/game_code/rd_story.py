@@ -48,10 +48,11 @@ ENDING = 55
 FLAG_PART_BOUNDARY = 0x01
 FLAG_DIVIDE_ARMIES = 0x02
 
-# Successor routing is installed and verified.  Do not let the UI present army
-# switching as live until the force-4 persistence and moved DivideForce path
-# have both been verified in Dolphin.
-ARMY_RUNTIME_READY = False
+# Army switching is scripted, not part of this hook: Part 4 chapters end with startup.cmb's
+# TEAM_<id>_ED, which moves the played army (force 5) back to its store (8 Micaiah, 9 Ike,
+# 10 Tibarn) and the next one out. ``rd_armies`` rewrites those functions from this table, so the
+# army combo is live; the result still needs its Dolphin check (workspace/locks-playtest, A1).
+ARMY_RUNTIME_READY = True
 
 # RFEE01 addresses confirmed against SHA-1 d1b8deabfec5a96bf38945665ffe203867612c1c.
 _ADVANCE = 0x80067EE8
@@ -304,17 +305,24 @@ class StorySequence:
             problems.append("Part and division steps must be followed by a chapter.")
         if sum(isinstance(step, DivideArmiesStep) for step in steps) > 1:
             problems.append("Divide armies can only appear once.")
-        divided = False
+        divided = merged = False
         effective: Army | None = None
+        divisions = (Army.DIVISION_1, Army.DIVISION_2, Army.DIVISION_3)
         for step in steps:
             if isinstance(step, DivideArmiesStep):
                 divided = True
             elif isinstance(step, ChapterStep):
+                previous = effective
                 effective = effective if step.army == Army.INHERIT else step.army
                 if effective is None:
                     problems.append(f"{step.chapter_id} inherits an army, but no earlier chapter selects one.")
-                elif effective in (Army.DIVISION_1, Army.DIVISION_2, Army.DIVISION_3) and not divided:
+                elif effective in divisions and not divided:
                     problems.append(f"{step.chapter_id} selects {effective.label} before Divide armies.")
+                elif effective in divisions and merged:
+                    problems.append(f"{step.chapter_id} selects {effective.label} after the divisions were "
+                                    "merged back into the main army.")
+                if previous in divisions and effective == Army.MAIN:
+                    merged = True
         return problems
 
     def set_steps(self, steps: Iterable[StoryStep]) -> str:

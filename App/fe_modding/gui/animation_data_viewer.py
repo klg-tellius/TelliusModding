@@ -41,7 +41,9 @@ class AnimationDataViewer(EditorPanel):
         body = ttk.PanedWindow(self, orient="horizontal")
         body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         left, right = ttk.Frame(body), ttk.Frame(body)
-        body.add(left, weight=2)
+        # Path of Radiance's FE8Anim.bin is one table: no list to pick it from, it opens directly.
+        if project.game is Game.RADIANT_DAWN:
+            body.add(left, weight=2)
         body.add(right, weight=5)
         self._tables = ttk.Treeview(left, columns=("name", "rows", "size"), show="headings", selectmode="browse")
         for key, title, width in (("name", "Table", 180), ("rows", "Rows", 65), ("size", "Row size", 65)):
@@ -83,6 +85,8 @@ class AnimationDataViewer(EditorPanel):
                 self._por_records = records
                 self._tables.insert("", "end", iid="AnimData",
                                     values=("AnimData", len(records), anim_registry.RECORD_SIZE))
+                self._tables.selection_set("AnimData")
+                self._show_table()
                 self._status.configure(text=f"{len(records)} animation records.")
         except Exception as exc:  # noqa: BLE001
             self._status.configure(text=f"Could not read animation data: {exc}")

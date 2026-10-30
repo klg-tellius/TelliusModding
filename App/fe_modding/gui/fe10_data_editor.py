@@ -88,7 +88,7 @@ class Fe10DataEditor(EditorPanel):
         self._growth: list[fe10data.Record] = []
         self._growth_dirty = False
         self._names = read_names(project)
-        self._message_texts = message_reference.message_texts(project)
+        self._message_texts = {**message_reference.epilogue_texts(project), **message_reference.message_texts(project)}
         self._tab = "characters"
         self._selected: dict[str, Optional[int]] = {key: None for key in TAB_KEYS}
         self._vars: dict[str, tk.StringVar] = {}
@@ -576,7 +576,7 @@ class Fe10DataEditor(EditorPanel):
                         except (OSError, ValueError) as exc:
                             messagebox.showerror("Create message", str(exc), parent=self)
                             return
-                        self._message_texts = message_reference.message_texts(self._project)
+                        self._message_texts = {**message_reference.epilogue_texts(self._project), **message_reference.message_texts(self._project)}
                         self._names = read_names(self._project)
                         self._changelog.append(message_reference.common_path(self._project).name,
                                                f"Created message {name}")

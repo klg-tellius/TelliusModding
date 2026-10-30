@@ -41,9 +41,35 @@ source_path: "meta/radiant-dawn.md"
 
 ## Chapter order
 
-  Each `ChapterData` record has a number byte at +0x84 (0-55 for the story, 80-83 for the four tutorials stored after `CFINAL`). Nearly everything that needs a chapter's record, including setting the current chapter, searches the table for that number. Moving to the next chapter is the exception: it reads records by position, starting one past the current number, skips each record whose +0x8D byte is set unless the party's route matches it (the attached `C0401a`/`C0401b` records have 128 there), and sets the first one it keeps. Retail numbers equal positions, so this works on the unmodified disc. <span class="confidence confidence--confirmed">engine</span>
+  Each `ChapterData` record has a number byte at +0x84 (0-55 for the story, 80-83 for the four tutorials stored after `CFINAL`). Nearly everything that needs a chapter's record, including setting the current chapter, searches the table for that number. Moving to the next chapter is the exception: it reads records by position, starting one past the current number, skips each record whose +0x8D byte is set unless the bit for the current difficulty is set in it (1 Easy, 2 Normal, 4 Hard, 8 Maniac), and sets the first one it keeps. The attached `C0401a`/`C0401b` records have 128 there, which no difficulty matches: the step never enters them, a script sends the player there. Retail numbers equal positions, so this works on the unmodified disc. <span class="confidence confidence--confirmed">engine</span>
 
   A chapter played on several maps is several records, one per map, in a row (`C0407a` to `C0407e`, and `C0401a`/`C0401b` on `lmap01`/`lmap02`). No chapter changes battle map mid-chapter the way Path of Radiance's numbered parts do. A script ends a branching chapter with `CompleteSubChapter(route)`. <span class="confidence confidence--confirmed">files</span>
+
+## Part 4 armies
+
+  Switching armies in Part 4 is done by the scripts, not the engine. Units belong to numbered forces: 0 is on the map, 5 is the army being played, and 8, 9 and 10 store Micaiah's, Ike's and Tibarn's armies. The deployment step only places characters that are in force 0 or 5, so a stored army stays off the map. <span class="confidence confidence--confirmed">engine</span>
+
+  4-P splits the army with `DivideForce` and brings Micaiah's army (force 8) into force 5. Each later Part 4 chapter calls its own `startup.cmb` function `TEAM_<chapter>_ED` when it ends, which puts force 5 back into its store and brings out the next chapter's army: `TEAM_0402_ED` moves 5 to 9 and 10 to 5. The Endgame's `TEAM_0407a_OP` merges the three stores back into force 5. ChapterData +0x8F and the lord at +0xA4 name the army for the chapter: 18 and Micaiah, 19 and Ike, 20 and Tibarn. <span class="confidence confidence--confirmed">files</span>
+
+## Chapter rules
+
+  Five bytes of each `ChapterData` record set rules for the whole chapter. <span class="confidence confidence--confirmed">engine</span>
+
+- +0x8B: a signed change to the movement of mounted and beast units (the game adds it to their Mov, capped 0 to 20). Retail sets -2 on 1-4, 1-7, 1-E, 3-8, 3-13 and 4-4.
+- +0x8C: the preparations screen. 0 means none, unless the chapter's script sets the flag `イベント進撃`; 1 is the usual screen. The endgame's parts use 2 and 5.
+- +0x8D: which difficulties the next-chapter step may enter the record on (see Chapter order); 0 means all.
+- +0x8E: the chapter's part, one bit each: 1 part I, 2 part II, 4 part III, 8 part IV, 16 the endgame. A defeated character whose own part bits include the chapter's withdraws instead of dying. Bit 128 (4-P, 4-1 and their attached records) turns on an extra map-drawing setup whose look has not been checked in game.
+- +0x8F: the army the player's units belong to, by its `GroupData` number (1 Dawn Brigade, 15 Greil Mercenaries, 18 to 20 the three part IV armies, 27 the endgame). The chapter's lord (the label at +0xA4) gets the army's leader mark.
+
+  +0x88 is 2 on every story record and 0 on the test map and `CFINAL`; its meaning is not known.
+
+## Supports
+
+  `RelianceData` lists every supporting character against all of them, themselves included. Each 8-byte entry holds the partner, a flag byte, a speed byte and two zero bytes. <span class="confidence confidence--confirmed">engine</span>
+
+  The speed (0 to 4) picks one of five extra amounts in `RelianceParam` that the game adds to every support-point gain of the pair: +2, +1, 0, -1 and -2 in the retail data, so 0 is the fastest and 4 the slowest. The gains themselves are also in `RelianceParam`: 15 at each map start (30 in part IV), 3 per phase next to the partner, 5 while carrying it, 4 per staff, 1 per Shove and 2 per Smite. Ranks C, B and A open at 50, 100 and 150 points. Retail pairs mostly use speed 2.
+
+  The flag is 255 on 151 pairs and 0 on the others, always the same in both characters' lists. No game code reads it. <span class="confidence confidence--probable">engine</span>
 
 ## Battle backdrops
 
@@ -57,7 +83,7 @@ source_path: "meta/radiant-dawn.md"
 
 ## Tutorials
 
-  The tutorial lists use Path of Radiance's `tut_data` layout, one file per difficulty set: `Tutorial/tut_data_n_en.bin` and `tut_data_h_en.bin`, plus the Japanese `tut_data_n.bin` and `tut_data_h.bin`. Each entry has the same four start-flag slots as Path of Radiance's. Which difficulty each slot stands for has not been checked. <span class="confidence confidence--confirmed">files</span>
+  The tutorial lists use Path of Radiance's `tut_data` layout, one file per difficulty set: `Tutorial/tut_data_n_en.bin` and `tut_data_h_en.bin`, plus the Japanese `tut_data_n.bin` and `tut_data_h.bin`. Each entry has the same four start-flag slots as Path of Radiance's; retail English entries are 0, 2, 2, 0 (only slots 2 and 3 unlocked). Which game each slot stands for has not been checked in game. <span class="confidence confidence--confirmed">files</span>
 
 ## Saves
 

@@ -220,11 +220,12 @@ def menu(package: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
-    parser.add_argument("--set", choices=("session", "parity"), default="session")
+    parser.add_argument("--set", choices=("session", "parity", "locks"), default="session")
     args = parser.parse_args()
     global SCENARIO_SET
     import importlib
-    SCENARIO_SET = importlib.import_module(".parity_scenarios" if args.set == "parity" else ".scenarios", __package__)
+    SCENARIO_SET = importlib.import_module(
+        {"parity": ".parity_scenarios", "locks": ".locks_scenarios"}.get(args.set, ".scenarios"), __package__)
     menu(args.package.resolve())
 
 

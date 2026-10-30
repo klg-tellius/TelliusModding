@@ -181,21 +181,42 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
     return titles
 
 
+_FE10_TITLES_CACHE: dict[str, tuple[tuple, dict[str, str]]] = {}
+
+
+def _stamp(path) -> tuple:
+    try:
+        stat = path.stat()
+        return (str(path), stat.st_mtime_ns, stat.st_size)
+    except (OSError, AttributeError):
+        return (str(path), None, None)
+
+
 def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
     """Radiant Dawn: chapter id (``0102``, ``0407a``, ``final``) -> the title of its ``ChapterData``
     record (``MCT0102`` in ``Mess/e_common.m``, else the Japanese ``common.m``), e.g.
-    ``"I:1-Maiden of Miracles"``."""
+    ``"I:1-Maiden of Miracles"``. Kept until FE10Data.cms or the message file changes: every
+    chapter page asks for the titles several times."""
     from .formats import fe10_message, fe10data, message
 
     try:
-        records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
         files = files_of(project)
+        data = files.find(logical_rel_of(project, "game_data"))
         path = next((p for p in (files.find(game_path("Mess", n)) for n in ("e_common.m", "common.m"))
                      if p is not None and p.is_file()), None)
+        stamp = (_stamp(data) if data is not None else None, _stamp(path) if path is not None else None)
+        cache_key = str(files.target(logical_rel_of(project, "game_data")))  # one entry per project
+        cached = _FE10_TITLES_CACHE.get(cache_key)
+        if cached is not None and cached[0] == stamp:
+            return dict(cached[1])
+        records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
+        wanted = {record.values.get("title") for record in records}
         texts = {}
         if path is not None:
             for msg in message.read_messages_path(path):
-                texts[msg.speaker.encode("cp437").decode("cp932", errors="replace")] = fe10_message.plain_text(msg.text)
+                key = msg.speaker.encode("cp437").decode("cp932", errors="replace")
+                if key in wanted:  # only the titles are decoded: plain_text on every message is slow
+                    texts[key] = fe10_message.plain_text(msg.text)
     except Exception:  # noqa: BLE001 - titles are presentation only
         return {}
     titles = {}
@@ -203,7 +224,8 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
         cid, key = record.values.get("cid") or "", record.values.get("title")
         if cid[:1] in "Cc" and key and texts.get(key):
             titles[cid[1:].lower() if not cid[1:].isdigit() else cid[1:]] = texts[key]
-    return titles
+    _FE10_TITLES_CACHE[cache_key] = (stamp, titles)
+    return dict(titles)
 
 
 def _common_messages_path(project: ModProject) -> Optional[Path]:

@@ -76,7 +76,7 @@ def _stats(prefix: str, kind: str, group: str, names: Sequence[str] = STAT_NAMES
 # -- character (PersonData) ------------------------------------------------------------------------
 # +0x00 skill count, +0x01 unknown, +0x02 level, +0x03 sex; 7 labels; skills; 5 labels; 28 bytes.
 CHARACTER_HEAD = _bytes("u8", (("unknown_01", "Unknown +0x01"), ("level", "Level"), ("sex", "Sex (1 = female)")), "Unit")
-CHARACTER_LABELS = _labels(("pid", "ID"), ("mpid", "Name key"), ("mnpid", "Help key"), ("fid", "Portrait"),
+CHARACTER_LABELS = _labels(("pid", "ID"), ("mpid", "Name key"), ("mnpid", "Epilogue title key"), ("fid", "Portrait"),
                            ("jid", "Class"), ("affinity", "Affinity"), ("weapon_ranks", "Weapon ranks"),
                            group="Identity")
 CHARACTER_AFTER_SKILLS = _labels(("unknown_label", "Unknown label"), ("aid_1", "Animation 1"),
@@ -282,7 +282,26 @@ def _read_label_list(data: bytes, record: Record, key: str, at: int, count: int)
     return at + 4 * count
 
 
+_WALK_CACHE: dict[tuple[str, bytes], list[Record]] = {}
+_WALK_CACHE_SIZE = 16
+
+
 def _walk(data: bytes, kind: str) -> list[Record]:
+    """Every ``kind`` record of ``data``. Forms read one field at a time (``record``), so the last
+    tables walked are kept, keyed by the (immutable) file bytes; a bytearray is walked each time."""
+    if not isinstance(data, bytes):
+        return _walk_uncached(data, kind)
+    key = (kind, data)
+    records = _WALK_CACHE.get(key)
+    if records is None:
+        records = _walk_uncached(data, kind)
+        if len(_WALK_CACHE) >= _WALK_CACHE_SIZE:
+            _WALK_CACHE.pop(next(iter(_WALK_CACHE)))
+        _WALK_CACHE[key] = records
+    return list(records)
+
+
+def _walk_uncached(data: bytes, kind: str) -> list[Record]:
     if kind == "skill":
         return _read_skills(data)
     if kind in FIXED_TABLES:
@@ -657,11 +676,17 @@ def _chapter_fields() -> tuple:
     fields += [_f("number", "Number", "u8", 0x84, "Settings")]
     # +0x89 selects the party-state gold account (FUN_800615dc/FUN_80061808/
     # FUN_800626e0); +0x8A selects the warehouse pointer (FUN_801059b0).
-    # Keep the remaining bytes conservatively named until their semantics are confirmed.
+    # +0x8B..+0x8F: research/rd/CHAPTER_DATA_NOTES.md (the keys keep their offsets so Excel
+    # sheets exported before the names stay importable); +0x88 is still unknown.
     fields += [_f("unknown_88", "Unknown +0x88", "u8", 0x88, "Settings"),
                _f("gold_account", "Gold account", "u8", 0x89, "Settings"),
                _f("convoy", "Convoy", "u8", 0x8A, "Settings")]
-    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x8B, 0x90)]
+    fields += [_f(key, label, "u8", o, "Settings") for key, label, o in (
+        ("unknown_8b", "Movement change (mounted and beast units)", 0x8B),
+        ("unknown_8c", "Preparations", 0x8C),
+        ("unknown_8d", "Skipped by the next-chapter step", 0x8D),
+        ("unknown_8e", "Part", 0x8E),
+        ("unknown_8f", "Player army group", 0x8F))]
     fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
                _f("base_scene", "Base scene", "label", 0x94, "Settings"),
                _f("battle_background", "Battle background", "label", 0x98, "Settings"),

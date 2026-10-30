@@ -31,8 +31,9 @@ from . import scenarios as session_scenarios  # noqa: E402
 from fe_modding.games import Game  # noqa: E402
 
 SCENARIOS = session_scenarios.SCENARIOS
-#: Test sets: the PoR session (scenarios.py) and the PoR/RD parity checks (parity_scenarios.py).
-SETS = {"session": "scenarios", "parity": "parity_scenarios"}
+#: Test sets: the PoR session (scenarios.py), the PoR/RD parity checks (parity_scenarios.py) and the
+#: checks that unlock Radiant Dawn controls (locks_scenarios.py).
+SETS = {"session": "scenarios", "parity": "parity_scenarios", "locks": "locks_scenarios"}
 from . import docs  # noqa: E402
 
 DEFAULT_DOLPHIN = Path(r"G:\Dolphin-x64\Dolphin.exe")

@@ -1044,6 +1044,21 @@ def _animation_containers(container_path: Path) -> list[Path]:
     return _set_containers(container_path)
 
 
+def _loose_map_unit_texture(container_path: Path, files: dict[str, bytes]) -> Path | None:
+    """The texture of a map unit whose ``pack.cmp`` has none: Radiant Dawn keeps most of them loose
+    beside the pack, one per army colour (``archer1/archer1_b.tpl``, ``_r``...; ``barbarian/bar_R.tpl``).
+    The folder's own ``<folder>.tpl`` is shown when there is one, else the first, preferring files
+    without a ``_tut`` (tutorial) suffix."""
+    folder = container_path.parent
+    if folder.parent.name.lower() != "ymu" or any(Path(n).suffix.lower() == ".tpl" for n in files):
+        return None
+    own = folder / f"{folder.name}.tpl"
+    if own.is_file():
+        return own
+    textures = sorted(folder.glob("*.tpl"), key=lambda p: ("_tut" in p.stem.lower(), p.name.lower()))
+    return textures[0] if textures else None
+
+
 def _set_contents(
     container_path: Path, pending: dict[Path, bytes] | None = None
 ) -> tuple[dict[str, bytes], list[tuple[str, bytes]]]:
@@ -1062,6 +1077,9 @@ def _set_contents(
 
     _entries, files = _unpack(container_path, data(container_path))
     if not _is_battle_container(container_path):
+        texture = _loose_map_unit_texture(container_path, files)
+        if texture is not None:
+            files[texture.name] = data(texture)
         return files, [(p.name, data(p)) for p in sorted(container_path.parent.glob("*.ga"))]
     files = {n: d for n, d in files.items() if Path(n).suffix.lower() != ".ga"}
     folder = container_path.parent

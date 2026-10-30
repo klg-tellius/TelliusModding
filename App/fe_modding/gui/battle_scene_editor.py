@@ -382,6 +382,9 @@ class BattleScenePanel(ttk.Frame):
             pass
 
     def _on_map_changed(self) -> None:
+        editor = self._map_editor
+        if editor is not None and editor.map_name != self._map:
+            return  # another chapter's map is loading: select_map follows and renders it
         counts = self._tile_counts()
         key = (self._map, frozenset(counts) if counts is not None else None)
         if key != self._counts_key:

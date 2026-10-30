@@ -56,6 +56,47 @@ TAB_LABELS = {"overview": "Overview", "build": "Build", "map_settings": "Map set
               "battle": "Battle scenes"}
 
 
+def armies_can_change(page) -> bool:
+    """Radiant Dawn story changes rewrite scripts (see :func:`sync_armies`): refuse while a script has
+    unsaved edits, which saving it later would undo."""
+    if "Scripts" in page.shell.unsaved(flush=True):
+        messagebox.showinfo("Story flow", "Save or revert the open script first: changing the story rewrites "
+                                          "the army hand-over in startup.cmb and the chapter scripts.", parent=page)
+        return False
+    return True
+
+
+def sync_armies(page, flow) -> None:
+    """Radiant Dawn: rewrite the scripts and ChapterData records that hand the Part 4 armies over
+    (``rd_armies``) after a story change. The retail flow leaves everything as it is."""
+    if not getattr(flow, "armies", False):
+        return
+    from ... import rd_armies
+    from ...formats.cmb import CompileError
+
+    session = page.shell.session
+    try:
+        fe10 = session.data if session.available else page.project.read_logical("game_data")
+        result = rd_armies.plan(page.project, flow, fe10)
+        written = rd_armies.apply_scripts(page.project, result)
+    except (OSError, ValueError, ModdingError, CompileError) as exc:
+        messagebox.showerror("Army switching", f"The army hand-over scripts could not be written: {exc}",
+                             parent=page)
+        return
+    for name in written:
+        page.shell.changelog.append(name, "Army hand-over for the story flow's armies")
+    if result.records and session.available:
+        was_dirty = session.dirty
+        session.data = rd_armies.apply_records(session.data, result)
+        session.changed(None)
+        if not was_dirty:
+            session.save()
+        page.shell.changelog.append(session.file_label, "Chapter army groups and lords: "
+                                    + ", ".join(sorted(result.records)))
+    if result.problems:
+        messagebox.showwarning("Army switching", "\n".join(result.problems), parent=page)
+
+
 def open_flow(project) -> tuple[chapter_flow.ChapterFlow | None, str]:
     """The project's story flow, or None and why it can't be edited."""
     from ...game_code.editor import CodeEditor
@@ -361,6 +402,8 @@ class ChaptersHub(Page):
             messagebox.showerror(f"Could not save {file_label}", str(exc), parent=self)
         where = f"after {after}" if after is not None else "not in the story flow"
         self.shell.changelog.append(f"Chapter {new_id}", f"Added chapter {new_id} from {source_id} ({where})")
+        if flow is not None and flow.armies:
+            sync_armies(self, open_story_flow(self.project)[0] or flow)
         if warnings:
             messagebox.showwarning("Chapter added", "\n".join(warnings), parent=self)
         page = self.shell.existing_page("chapter")
@@ -446,7 +489,7 @@ class ChaptersHub(Page):
             labels[c] = flow.label(c, titles) + (f"    ·    {army.label}" if army else "")
         dialog = StoryOrderDialog(self, order, labels, flow.locked)
         self.wait_window(dialog)
-        if dialog.result is None:
+        if dialog.result is None or (flow.armies and not armies_can_change(self)):
             return
         try:
             flow.set_order(dialog.result)
@@ -454,6 +497,7 @@ class ChaptersHub(Page):
             messagebox.showerror("Story order", str(exc), parent=self)
             return
         self.shell.changelog.append("Story order", "Reordered the story: " + " → ".join(dialog.result))
+        sync_armies(self, flow)
         self._build()
 
 
@@ -545,6 +589,7 @@ class ChapterPage(Page):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
         self._tab = "overview"
+        self._overview_stale = False
 
     # -- Page ----------------------------------------------------------------------------
     def panels(self):
@@ -590,10 +635,12 @@ class ChapterPage(Page):
         self._ids = chapters.list_chapter_ids(self.project)
         if chapter_id not in self._ids:
             return False
+        tab = self._route_tab(route)
+        if tab is not None:
+            self._tab = tab  # so the switch doesn't build the Overview of a page opened on another tab
         if chapter_id != self._chapter:
             if not self._switch_to(chapter_id):
                 return False
-        tab = self._route_tab(route)
         if tab is not None:
             self._select_tab(tab)
             self._deep_link(tab, route[3:])
@@ -645,11 +692,15 @@ class ChapterPage(Page):
             self._add_phase_button.pack_forget()
             self._remove_phase_button.pack_forget()
         self._phase = None
-        self._set_phase(phases[0] if phases else None)
+        # _set_phase shows the phase's chapter data and overview; a chapter without a map has no
+        # phase to set, so those are shown here instead (not twice: the overview is slow to build).
+        shown = bool(phases) and self._set_phase(phases[0])
         self._build.set_chapter(chapter_id)
-        self._chapter_data.show_chapter(chapter_id, self._phase)
+        if not shown:
+            self._chapter_data.show_chapter(chapter_id, self._phase)
         self._update_header()
-        self._render_overview()
+        if not shown:
+            self._render_overview()
         return True
 
     def _configure_phases(self, phases) -> None:
@@ -952,6 +1003,8 @@ class ChapterPage(Page):
             messagebox.showerror("Could not delete chapter", str(exc), parent=self)
             return
         self.shell.changelog.append(f"Chapter {chapter_id}", "Deleted chapter and its assets")
+        if flow.armies:
+            sync_armies(self, open_story_flow(self.project)[0] or flow)
         self._chapter = None
         self.refresh_chapter_lists()
         self.shell.rebuild_index()
@@ -996,6 +1049,8 @@ class ChapterPage(Page):
         self._battle.flush()
         self._chapter_data.flush()
         self._tab = TABS[self._notebook.index("current")]
+        if self._tab == "overview" and self._overview_stale and self._chapter is not None:
+            self._render_overview()
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):
             self.shell.replace_route(("chapter", self._chapter, self._tab))
@@ -1061,6 +1116,12 @@ class ChapterPage(Page):
 
     # -- overview --------------------------------------------------------------------------------
     def _render_overview(self) -> None:
+        # The Overview reads the story flow, the cast and every script function: it is only built
+        # while its tab is showing, and rebuilt when the tab is picked after a change.
+        if self._tab != "overview":
+            self._overview_stale = True
+            return
+        self._overview_stale = False
         body = self._overview.body
         for child in body.winfo_children():
             child.destroy()
@@ -1168,6 +1229,9 @@ class ChapterPage(Page):
     def _change_flow(self, change) -> None:
         """Run ``change(flow)`` on the project's story flow, log it and redraw the overview."""
         flow, why = open_story_flow(self.project)
+        if flow is not None and flow.armies and not armies_can_change(self):
+            self._render_overview()
+            return
         try:
             if flow is None:
                 raise ValueError(why)
@@ -1177,6 +1241,9 @@ class ChapterPage(Page):
         else:
             if description:
                 self.shell.changelog.append("main.dol", f"Story flow: {description}")
+                sync_armies(self, flow)
+                if self._script.showing_chapter_script and not self._script.dirty:
+                    self._script.select_chapter(chapters.chapter_paths(self.project, self._chapter).script)
         self._render_overview()
 
     def _set_next(self, chapter: str, nxt: str) -> None:
