@@ -44,11 +44,13 @@ class Fe10SaveTests(unittest.TestCase):
         self.data = save_bytes()
         self.save = sf.SaveFile.from_bytes(self.data)
 
-    def test_layout_and_rotating_slots(self):
+    def test_layout_and_six_files(self):
         self.assertEqual(len(self.save.records), 12)
         first = self.save.records[0]
         self.assertTrue(first.valid)
-        self.assertEqual((first.logical_slot, first.copy_name, first.checkpoint), (0, "A", False))
+        self.assertEqual((first.logical_slot, first.checkpoint), (0, False))
+        self.assertEqual(self.save.records[5].logical_slot, 5)
+        self.assertEqual(self.save.records[11].logical_slot, 5)
         self.assertEqual([record.index for record in self.save.active_records()], [0])
         self.assertTrue(self.save.records[1].empty)
         self.assertEqual(self.save.records[6].offset, sf.CHECKPOINT_BASE)

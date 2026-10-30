@@ -87,6 +87,8 @@ source_path: "meta/radiant-dawn.md"
 
 ## Saves
 
+  `FE10_US.dat` holds a system record, six files and six checkpoints. Each file is a record of its own: its header holds the file number, the difficulty and the chapter number the file menu shows, which `BMST` repeats. <span class="confidence confidence--confirmed">files</span>
+
   A save record is a stream of tagged sections: `ITBL`, `BMST`, `MDST`, `UNIP`, `SOKO`, `FGPT`, `T  T`, `RELD`, `KZND` and `DEBU`. `ITBL` holds eight name lists (characters, classes, items, skills, then the AI's attack, move and heal sequences and move types), each a count followed by the names without their `PID_`, `JID_`... prefix. The other sections name a record by its number in these lists, so the save carries its own copy of the names. Characters, classes and items count from 1, skills from 0. <span class="confidence confidence--confirmed">engine</span>
 
   `UNIP` has 254 unit slots, `SOKO` the convoy's 316 items. An item is its number and a state word; a forged item adds its name and eight more bytes. The 128 script flags are in `BMST`. <span class="confidence confidence--confirmed">engine</span>

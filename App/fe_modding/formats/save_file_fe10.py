@@ -2,8 +2,13 @@
 
 The unencrypted NAND file is 0x124000 bytes: one 0x4000-byte ``FE10ASYS``
 system record, six 0x18000-byte file-save records and six 0x18000-byte
-checkpoint records.  The six records in each bank are two rotating copies of
-the three visible file slots.  Empty records are filled with ``0xff``.
+checkpoint records.  Each record of a bank is one of the game's six visible
+files (header +0x30 holds its number, File 1 = 0).  Empty records are filled
+with ``0xff``.
+
+The header keeps what the file menu shows: +0x35 the difficulty as the US game
+names it (0 Easy, 1 Normal, 2 Hard) and +0x36 the chapter number, which BMST
++0x10 repeats.
 
 Every populated record has a CRC-32 at +0x18.  The game clears that word,
 computes the ordinary reflected CRC-32 across the complete record and stores
@@ -44,6 +49,7 @@ CRC_OFFSET = 0x18
 HEADER_SIZE = 0x40
 REGULAR_BASE = SYSTEM_SIZE
 CHECKPOINT_BASE = SYSTEM_SIZE + COPIES_PER_BANK * BLOCK_SIZE  # 0x94000
+HEADER_CHAPTER = 0x36
 
 #: ITBL's lists in file order: (name, ID prefix the file leaves out, number of the first entry).
 #: Written by RFEE01 0x80242920; the four AI lists are CP_ATKSEQ/MOVSEQ/HEALSEQ/MTYPE_LIST.
@@ -206,15 +212,7 @@ class SaveRecord:
     def logical_slot(self) -> Optional[int]:
         if self.index is None:
             return None
-        bank_index = self.index - COPIES_PER_BANK if self.checkpoint else self.index
-        return bank_index // 2
-
-    @property
-    def copy_name(self) -> str:
-        if self.index is None:
-            return "System"
-        bank_index = self.index - COPIES_PER_BANK if self.checkpoint else self.index
-        return "A" if bank_index % 2 == 0 else "B"
+        return self.index - COPIES_PER_BANK if self.checkpoint else self.index
 
     def section(self, name: str) -> Optional[SaveSection]:
         wanted = name[:4]
@@ -322,6 +320,7 @@ class SaveRecord:
     @chapter_number.setter
     def chapter_number(self, value: int) -> None:
         self._set_bmst_value(0x10, 1, value)
+        self.set_header_u8(HEADER_CHAPTER, value)  # what the file menu shows
 
     @property
     def army_phase(self) -> int:
@@ -391,15 +390,8 @@ class SaveFile:
         return cls.from_bytes(path.read_bytes())
 
     def active_records(self) -> list[SaveRecord]:
-        """Newest valid rotating copy for each regular/checkpoint logical slot."""
-        active = []
-        for checkpoint in (False, True):
-            bank = [record for record in self.records if record.checkpoint == checkpoint]
-            for slot in range(3):
-                choices = [record for record in bank if record.logical_slot == slot and record.valid]
-                if choices:
-                    active.append(max(choices, key=lambda record: record.sequence))
-        return active
+        """Every valid record: each one is a file of its own."""
+        return [record for record in self.records if record.valid]
 
     def to_bytes(self, records: Optional[Iterable[SaveRecord]] = None,
                  *, include_system: bool = True) -> bytes:
@@ -417,7 +409,7 @@ def record_label(record: SaveRecord, active: Iterable[SaveRecord] = ()) -> str:
     if record.index is None:
         return "System data"
     kind = "Checkpoint" if record.checkpoint else "File"
-    base = f"{kind} {record.logical_slot + 1}, copy {record.copy_name}"
+    base = f"{kind} {record.logical_slot + 1}"
     if record.empty:
         return base + " - empty"
     status = "valid" if record.valid else ("bad checksum" if record.magic == DATA_MAGIC else "invalid")
@@ -436,7 +428,7 @@ def validate(save: SaveFile) -> list[str]:
     for record in save.records:
         if record.empty:
             continue
-        where = f"{'checkpoint' if record.checkpoint else 'file'} slot {record.logical_slot + 1} copy {record.copy_name}"
+        where = f"{'checkpoint' if record.checkpoint else 'file'} slot {record.logical_slot + 1}"
         if record.magic != DATA_MAGIC:
             problems.append(f"{where}: invalid magic {record.magic!r}")
         elif record.version != DATA_VERSION:

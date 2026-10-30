@@ -10,8 +10,8 @@ Each test settles one thing the app still refuses to edit or labels vaguely on R
   marking every tutorial learned in one slot shows whether a Normal game reads that slot.
 
 - A1: the story flow's Army combo (``rd_armies``). It starts from a GameFAQs save (Nassaro30, 2024,
-  decrypted from the SD export into ``<saves>/rd/gamefaqs_30509_FE10_US.dat``) whose File 3 is at the
-  Endgame; the fixture moves that file back to 4-P (chapter number 32).
+  decrypted from the SD export into ``<saves>/rd/gamefaqs_30509_FE10_US.dat``) whose File 5 is at the
+  very start of the Endgame on Hard; the fixture moves that file back to 4-P (chapter number 32).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ FLAG_TESTS = (
 TUTORIAL_FILE = "Tutorial/tut_data_n_en.bin"
 #: The Part 4 save (see the module docstring) and the slot moved back to 4-P.
 ARMY_SAVE = "rd/gamefaqs_30509_FE10_US.dat"
-ARMY_FILE_SLOT = 2           # File 3 (logical slots count from 0)
+ARMY_FILE_SLOT = 4           # File 5 (slots count from 0): saved before the Endgame opens, no battle state
 FOUR_P = 32                  # C0401's chapter number
 
 
@@ -63,8 +63,8 @@ def tutorial_slot_build(slot: int):
 
 def build_army(ctx):
     """4-1 (C0402) played with Micaiah's army instead of Ike's, through the story flow and rd_armies,
-    with an automatic win at 4-P's first enemy phase. Test-only: TEAM_0401_OP also collects force 5,
-    because the save comes from after the Endgame merge, where every unit is in force 5."""
+    with an automatic win at 4-P's first enemy phase. Test-only: TEAM_0401_OP also collects forces 0
+    and 5, because the save holds units there and 4-P's split only divides force 7."""
     from fe_modding import rd_armies, script_sources
     from fe_modding.game_code.rd_story import Army
     from fe_modding.game_code.story_flow import open_story_flow
@@ -84,7 +84,7 @@ def build_army(ctx):
     loaded = script_sources.load(ctx.project, path)
     bodies = rd_armies.function_bodies(loaded.source)
     old = bodies["TEAM_0401_OP"]
-    new = rd_armies._with_transfers(old, [(5, 7), *rd_armies.transfers_of(old)])
+    new = rd_armies._with_transfers(old, [(0, 7), (5, 7), *rd_armies.transfers_of(old)])
     script_sources.save(ctx.project, loaded, loaded.source.replace("\n".join(old), "\n".join(new), 1))
     ctx.append_script("0401", '\n# Session playtest: automatic victory\n'
                               '@before_phase(turn_from=1, turn_to=1, phase="enemy")\n'
@@ -92,7 +92,7 @@ def build_army(ctx):
 
 
 def card_army(ctx):
-    """The Part 4 save with File 3 moved back to 4-P."""
+    """The Part 4 save with File 5 moved back to 4-P."""
     from fe_modding.formats import save_file_fe10 as sf
 
     save = sf.SaveFile.from_bytes((ctx.saves / ARMY_SAVE).read_bytes())
@@ -111,27 +111,28 @@ SCENARIOS: list[Scenario] = [
         "A1", "Radiant Dawn: locked controls", "Army switching: Micaiah's army plays 4-1",
         "Chapter › Overview › Army on RD (rd_armies: TEAM_0401_ED / TEAM_0402_ED, C0402 group 18 and lord "
         "Micaiah)",
-        steps=["At the title screen, Continue and load File 3 (it was at the Endgame, chapter {was_chapter}; "
-               "the test moved it back to Part 4's Prologue, 4-P).",
+        steps=["At the title screen, Continue and load File 5 (Hard; it was at the Endgame, chapter {was_chapter}; "
+               "the test moved it back to Part 4's Prologue, so the file menu shows chapter 4-P).",
                "Let 4-P's opening play (Start skips talks). The army-splitting screen appears: accept it as it is.",
                "In 4-P's battle, end the player phase (Z menu, End). The chapter clears itself when the enemy "
                "phase starts.",
                "Go through the end of 4-P and the save menu, up to 4-1's base or preparations screen.",
                "Open the unit list (Manage units / the army list)."],
-        checks=["4-P starts and its splitting screen shows the three armies (no freeze when loading File 3).",
+        checks=["File 5 shows 4-P in the file menu, 4-P starts and its splitting screen shows the three armies "
+                "(no freeze when loading it).",
                 "4-1's units are Micaiah's army: Micaiah, Sothe, Naesala, Sanaki and the rest of the Silver "
                 "Army group from 4-P. Ike, Mist and Tibarn are not in the list.",
                 "4-1's map loads with them deployed (Micaiah on a starting tile), and the game runs through "
                 "one player phase.",
                 "The army is named the Silver Army in 4-1 (unit or army screens)."],
-        build=build_army, card=card_army, boot="title", difficulty="Normal", anim_speed=None, region=RD,
+        build=build_army, card=card_army, boot="title", difficulty="Hard", anim_speed=None, region=RD,
         minutes=15,
-        notes=["The save is a GameFAQs save (Nassaro30) decrypted from its SD export; File 3 was moved from the "
-               "Endgame back to 4-P in the app's save code. If File 3 does not load or 4-P misbehaves "
+        notes=["The save is a GameFAQs save (Nassaro30) decrypted from its SD export; File 5 was moved from the "
+               "Endgame back to 4-P in the app's save code. If File 5 does not load or 4-P misbehaves "
                "before the split, fail the first check and note what you saw: that is the save edit, not "
                "army switching.",
-               "Changes: {handover}. Test only: 4-P's split also collects force 5, because the save is from "
-               "after the Endgame merge."]),
+               "Changes: {handover}. Test only: 4-P's split also collects forces 0 and 5, where this "
+               "Endgame save keeps units."]),
     Scenario(
         "L1", "Radiant Dawn: locked controls", "Object flags on a Radiant Dawn map",
         "Build > Object flags… on RD (kept read-only until these bits behave as on Path of Radiance)",

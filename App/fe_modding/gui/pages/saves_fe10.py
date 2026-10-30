@@ -222,7 +222,7 @@ class Fe10SaveEditor(ttk.Frame):
             self._sync()
             return
         if record.empty:
-            summary = f"Offset 0x{record.offset:06X}\nEmpty rotating record (0xFF-filled)."
+            summary = f"Offset 0x{record.offset:06X}\nEmpty file (0xFF-filled)."
         else:
             summary = (f"Offset 0x{record.offset:06X}\nMagic {record.magic.decode('ascii', 'replace')} · "
                        f"version 0x{record.version:08X} · format 0x{record.format_version:08X}\n"
