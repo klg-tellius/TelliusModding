@@ -55,6 +55,10 @@ class Fe10SaveTests(unittest.TestCase):
         self.assertTrue(self.save.records[1].empty)
         self.assertEqual(self.save.records[6].offset, sf.CHECKPOINT_BASE)
 
+    def test_move_to_chapter_needs_a_map_name(self):
+        with self.assertRaises(ValueError):
+            self.save.records[0].move_to_chapter(32, "bmap0401", 5)
+
     def test_sections_are_ordered_and_sized(self):
         record_ = self.save.records[0]
         self.assertEqual([section.name for section in record_.sections],

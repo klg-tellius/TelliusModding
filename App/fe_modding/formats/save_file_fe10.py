@@ -26,6 +26,7 @@ Research reference: ``research/rd/SAVE_NOTES.md``.
 
 from __future__ import annotations
 
+import re
 import struct
 import zlib
 from dataclasses import dataclass
@@ -50,6 +51,10 @@ HEADER_SIZE = 0x40
 REGULAR_BASE = SYSTEM_SIZE
 CHECKPOINT_BASE = SYSTEM_SIZE + COPIES_PER_BANK * BLOCK_SIZE  # 0x94000
 HEADER_CHAPTER = 0x36
+BMST_AFFINITY = 0x92      # state +0x92: the chapter's DivineData row (0x80061584 sets it with the chapter)
+BMST_PREFIX = 0xD8
+MAP_NAME_SIZE = 0x18      # state +0x914, the C string the file load gives load_map (0x800CD9F0)
+_MAP_NAME = re.compile(rb"[be]map[0-9A-Za-z_]+\0")
 
 #: ITBL's lists in file order: (name, ID prefix the file leaves out, number of the first entry).
 #: Written by RFEE01 0x80242920; the four AI lists are CP_ATKSEQ/MOVSEQ/HEALSEQ/MTYPE_LIST.
@@ -321,6 +326,32 @@ class SaveRecord:
     def chapter_number(self, value: int) -> None:
         self._set_bmst_value(0x10, 1, value)
         self.set_header_u8(HEADER_CHAPTER, value)  # what the file menu shows
+
+    def _map_name_offset(self) -> Optional[int]:
+        """Where BMST holds the map folder; its place follows parts of variable size."""
+        match = _MAP_NAME.search(self.section_bytes("BMST"), BMST_PREFIX)
+        return match.start() if match else None
+
+    @property
+    def map_name(self) -> Optional[str]:
+        """The map folder the file loads (``bmap0407a``); None on a file that has none yet."""
+        at = self._map_name_offset()
+        if at is None:
+            return None
+        return self.section_bytes("BMST")[at:at + MAP_NAME_SIZE].split(b"\0")[0].decode("ascii")
+
+    def move_to_chapter(self, number: int, map_name: str, affinity_row: int) -> None:
+        """Make the file open chapter ``number``: the game loads the map by the saved name, not by
+        the chapter, and keeps the chapter's affinity row beside it."""
+        at = self._map_name_offset()
+        if at is None:
+            raise ValueError("This file holds no map name.")
+        encoded = map_name.encode("ascii")
+        if len(encoded) >= MAP_NAME_SIZE:
+            raise ValueError(f"{map_name} is too long for a save file.")
+        self.replace_section_bytes("BMST", at, encoded.ljust(MAP_NAME_SIZE, b"\0"))
+        self.replace_section_bytes("BMST", BMST_AFFINITY, bytes([affinity_row]))
+        self.chapter_number = number
 
     @property
     def army_phase(self) -> int:

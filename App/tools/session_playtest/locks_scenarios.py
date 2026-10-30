@@ -93,12 +93,15 @@ def build_army(ctx):
 
 def card_army(ctx):
     """The Part 4 save with File 5 moved back to 4-P."""
-    from fe_modding.formats import save_file_fe10 as sf
+    from fe_modding.formats import fe10data, save_file_fe10 as sf
 
+    tables = fe10data.read_fe10data(ctx.project.read_logical("game_data"))
+    chapter = next(r for r in tables.table("chapter") if r.values.get("number") == FOUR_P)
+    affinity = next(r.index for r in tables.table("affinity") if r.values.get("affinity") == chapter.values["affinity"])
     save = sf.SaveFile.from_bytes((ctx.saves / ARMY_SAVE).read_bytes())
     record = next(r for r in save.active_records() if not r.checkpoint and r.logical_slot == ARMY_FILE_SLOT)
     ctx.facts["was_chapter"] = record.chapter_number
-    record.chapter_number = FOUR_P
+    record.move_to_chapter(FOUR_P, chapter.values["map"], affinity)
     return {"FE10_US.dat": save.to_bytes([record])}
 
 
