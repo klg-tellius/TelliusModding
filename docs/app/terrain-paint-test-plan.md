@@ -12,7 +12,7 @@ Tick each box; for a failure, note the step number and take a screenshot.
 ## 0. Setup (5 min)
 
 - [ ] Run the app from the PR's worktree, which already has the branch checked out:
-      `cd C:\Users\Julien\Documents\TelliusModding-terrain\App` then `python -m fe_modding`
+      `cd` into the checkout's `App` folder then `python -m fe_modding`
 - [ ] Open a **disposable copy** of your project, or make a checkpoint first. The import rewrites `zmap/bmap01/map.cmp`.
 - [ ] **Settings → Preferences → 3D tools**: Blender location shows "Found: G:\blender\blender.exe".
 - [ ] Click **Install the Tellius Terrain add-on**.
