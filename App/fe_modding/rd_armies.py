@@ -49,7 +49,7 @@ class ArmyPlan:
     functions: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
     #: chapter page id -> (old call, new call) to rename in the chapter's script.
     renames: dict[str, tuple[str, str]] = field(default_factory=dict)
-    #: ChapterData record id (``C0402``) -> fields to set (``unknown_8f`` group, ``lord``).
+    #: ChapterData record id (``C0402``) -> fields to set (``player_group``, ``lord``).
     records: dict[str, dict] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
@@ -113,7 +113,7 @@ def plan(project, flow, fe10: Optional[bytes] = None) -> ArmyPlan:
                                        "the divisions can't be split a second time.")
                 continue
             result.records[f"C{chapter}" if chapter != "final" else "CFINAL"] = {
-                "unknown_8f": GROUP[army], "lord": LORD[army]}
+                "player_group": GROUP[army], "lord": LORD[army]}
         elif divided and army == Army.MAIN and i and armies[order[i - 1]] in STORE:
             merged = True
         if chapter == DIVIDE_CHAPTER and army in STORE:

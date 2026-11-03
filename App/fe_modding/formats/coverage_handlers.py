@@ -548,7 +548,19 @@ def fe10_cp_data(cov: FileCoverage, walker: Walker) -> None:
     cov.fill(DECODED)
 
 
-@handles("fe10 sound data", lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
+@handles("FE10Data.cms", lambda name, data: _base(name) == "fe10data.cms" and name.endswith("#"))
+def fe10data_file(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's game database; must precede the generic FE10-container handler."""
+    from . import fe10data_coverage as fc
+
+    # As for FE8Data.bin: "reserved" there is a static finding, not a live watch, so UNREAD here.
+    status = {fc.DECODED: DECODED, fc.PLAUSIBLE: PLAUSIBLE, fc.UNDECODED: UNDECODED,
+              fc.RESERVED: UNREAD, fc.PADDING: PADDING}
+    for span in fc.build_coverage(cov.data).spans():
+        cov.mark(span.start, span.end - span.start, status[span.status], f"{span.section}.{span.name}")
+
+
+@handles("fe10 sound data",lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
          and name.endswith("#"))
 def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
     from . import fe10_sound

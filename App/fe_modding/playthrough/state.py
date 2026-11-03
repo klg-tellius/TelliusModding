@@ -230,7 +230,9 @@ class GameState:
     sight_sources: dict = field(default_factory=dict)  # (x,y) -> remaining turns, for torch/extinction
     choice_plan: list = field(default_factory=list)  # entries to pick at the next choice dialogs, in order (0-based)
     deploy_only: Optional[list] = None  # PIDs the preparations place (None: every unit of the player's sections)
-    over: str = ""  # "complete" / "gameover" once the chapter ended
+    frame: int = 0  # 60 Hz frames the event scripts have waited (every ``yield`` is one frame)
+    fe10: dict = field(default_factory=dict)  # RFEE01 records the natives keep (natives_fe10.py)
+    over: str = ""  # "complete" / "gameover" once the chapter ended, "stopped" after a runtime error
     out: list = field(default_factory=list)  # what the last step did (cleared every step): Output
 
     # -- units ----------------------------------------------------------------------------------

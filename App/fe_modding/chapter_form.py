@@ -151,29 +151,30 @@ def rd_sections(data: bytes, index: int) -> list[ChapterSection]:
     settings = (ChapterField("Gold account", "gold_account", NUMBER,
                              "Which party's gold account the chapter uses."),
                 ChapterField("Convoy", "convoy", NUMBER, "Which party's convoy the chapter uses."),
-                ChapterField("Player army group", "unknown_8f", NUMBER,
+                ChapterField("Player army group", "player_group", NUMBER,
                              "The army the player's units belong to, by its Game Data › Army groups number "
                              "(1 Dawn Brigade, 2 Liberators, 15 Mercenaries, 18-20 the part IV armies, 27 the "
                              "endgame; 0 on attached records). The chapter's lord gets the army's leader mark."),
-                ChapterField("Part", "unknown_8e", NUMBER,
+                ChapterField("Part", "part", NUMBER,
                              "Bits: 1 part I, 2 part II, 4 part III, 8 part IV, 16 the endgame. A defeated "
                              "character whose own part bits include this chapter's withdraws instead of dying. "
                              "128 also turns on an extra map drawing pass (set on 4-P, 4-1 and their attached "
                              "records)."),
-                ChapterField("Preparations", "unknown_8c", NUMBER,
+                ChapterField("Preparations", "preparations", NUMBER,
                              "0: no preparations screen (unless the script sets the flag イベント進撃); 1: the "
                              "usual preparations; the endgame parts use 2 and 5, the test map 6."),
-                ChapterField("Movement change (mounted and beast units)", "unknown_8b", NUMBER,
+                ChapterField("Movement change (mounted and beast units)", "move_change", NUMBER,
                              "A signed byte added to the movement of mounted and beast units for the whole "
-                             "chapter: 254 is -2 (1-4, 1-7, 1-E, 3-8, 3-13 and 4-4 in the retail data), 0 none."),
-                ChapterField("Skipped by the next-chapter step", "unknown_8d", NUMBER,
+                             "chapter: -2 on 1-4, 1-7, 1-E, 3-8, 3-13 and 4-4 in the retail data, 0 none."),
+                ChapterField("Skipped by the next-chapter step", "skip_mask", NUMBER,
                              "0: the step from the previous record enters this one. Otherwise it is entered only on "
                              "the difficulties whose bit is set (1 Easy, 2 Normal, 4 Hard, 8 Maniac); 128 alone "
                              "(C0401a/b and the other attached records) is never entered this way, so a script has "
                              "to send the player there."),
-                ChapterField("Unknown +0x88", "unknown_88", NUMBER,
-                             "2 on every story chapter, 0 on the test map and the final record; its meaning is not "
-                             "known yet."))
+                *(ChapterField(f"Enemy levels, {name}", f"enemy_levels_{d}", NUMBER,
+                               "Extra levels given to enemy units on this difficulty (2 on Maniac, the US "
+                               "disc's Hard, on every story chapter).")
+                  for d, name in ((3, "Easy"), (0, "Normal"), (1, "Hard"), (2, "Maniac (US Hard)"))))
     return [ChapterSection("Identity and files", identity), ChapterSection("Objectives (text keys)", tuple(objectives)),
             ChapterSection("Scenes", scenes),
             ChapterSection("Parties and rules", settings, "Bytes whose meaning is not known yet edit as numbers.")]

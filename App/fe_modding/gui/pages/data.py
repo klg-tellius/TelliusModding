@@ -400,12 +400,18 @@ FE10_TILES = {
     "growth": ("↗", "FE10Growth.cms: absolute stats at every level, per character"),
     "battle_scenery": ("⛰", "Battle background per map and terrain type"),
     "biorhythm": ("∿", "Biorhythm rows (four values each, not named yet)"),
+    "biorhythm_bands": ("∿", "The five biorhythm bands: threshold and bonuses"),
+    "support_params": ("♡", "Support levels, points per event and per support speed"),
+    "no_battle": ("⊘", "Character pairs listed in the NOBTL lists"),
+    "blessing": ("✦", "Endgame stat bonus for the player's army, by difficulty"),
     "rect_images": ("▧", "Browse rect RIDs, layers, previews and references"),
 }
-#: Radiant Dawn's tiles, in Path of Radiance's order; General and Supports each hold several tables.
+#: Radiant Dawn's tiles, in Path of Radiance's order; General, Supports and Biorhythm each hold several tables.
 FE10_DATA_TILES = ("classes", "items", "skills", "growth", "terrain", "chapters", "battle_scenery", "general",
                    "supports", "triangle", "biorhythm")
-FE10_GROUPS = {"general": ("difficulty", "groups"), "supports": ("supports", "bonds", "affinities", "affinity_pairs")}
+FE10_GROUPS = {"general": ("difficulty", "groups", "blessing"),
+               "supports": ("supports", "support_params", "bonds", "affinities", "affinity_pairs", "no_battle"),
+               "biorhythm": ("biorhythm", "biorhythm_bands")}
 FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
 
 

@@ -93,8 +93,8 @@ class RetailTests(unittest.TestCase):
         plan = rd_armies.plan(self.project, flow, self.project.read_logical("game_data"))
         self.assertEqual(plan.functions, {"TEAM_0401_ED": [], "TEAM_0402_ED": [(5, 8), (9, 5)],
                                           "TEAM_0403_ED": [(5, 9), (8, 5)]})
-        self.assertEqual(plan.records, {"C0402": {"unknown_8f": 18, "lord": "PID_MICAIAH"},
-                                        "C0403": {"unknown_8f": 19, "lord": "PID_IKE"}})
+        self.assertEqual(plan.records, {"C0402": {"player_group": 18, "lord": "PID_MICAIAH"},
+                                        "C0403": {"player_group": 19, "lord": "PID_IKE"}})
         rd_armies.apply_scripts(self.project, plan)
         self.project.write_logical("game_data", rd_armies.apply_records(self.project.read_logical("game_data"),
                                                                         plan))
@@ -105,7 +105,7 @@ class RetailTests(unittest.TestCase):
         self.assertEqual(rd_armies.transfers_of(startup["TEAM_0402_ED"]), [(5, 8), (9, 5)])
         record = next(r for r in fe10data.read_table(self.project.read_logical("game_data"), "chapter")
                       if r.values["cid"] == "C0403")
-        self.assertEqual((record.values["unknown_8f"], record.values["lord"]), (19, "PID_IKE"))
+        self.assertEqual((record.values["player_group"], record.values["lord"]), (19, "PID_IKE"))
 
     def test_division_after_the_merge_is_refused(self):
         from fe_modding.game_code.rd_story import Army

@@ -120,7 +120,7 @@ def fe10_data(data) -> TacticalData:
         v = r.values
         terrain.append(SimpleNamespace(name=v.get("name") or str(r.index), name_key=v.get("name_key"),
                                        avoid=int(v.get("avoid", 0)), defense=int(v.get("defense", 0)),
-                                       resistance=int(v.get("resistance", 0)),
+                                       resistance=int(v.get("resistance", 0)), heal=int(v.get("heal", 0)),
                                        alt_bonus=(int(v.get("alternate_avoid", 0)), int(v.get("alternate_defense", 0)),
                                                   int(v.get("alternate_resistance", 0))),
                                        move_costs=list(r.lists.get("move_costs", ())), index=r.index))
