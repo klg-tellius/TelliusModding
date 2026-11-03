@@ -2,8 +2,13 @@
 
 The unencrypted NAND file is 0x124000 bytes: one 0x4000-byte ``FE10ASYS``
 system record, six 0x18000-byte file-save records and six 0x18000-byte
-checkpoint records.  The six records in each bank are two rotating copies of
-the three visible file slots.  Empty records are filled with ``0xff``.
+checkpoint records.  Each record of a bank is one of the game's six visible
+files (header +0x30 holds its number, File 1 = 0).  Empty records are filled
+with ``0xff``.
+
+The header keeps what the file menu shows: +0x35 the difficulty as the US game
+names it (0 Easy, 1 Normal, 2 Hard) and +0x36 the chapter number, which BMST
++0x10 repeats.
 
 Every populated record has a CRC-32 at +0x18.  The game clears that word,
 computes the ordinary reflected CRC-32 across the complete record and stores
@@ -12,11 +17,16 @@ the result big-endian.  Data records contain the native tagged stream
 keeps the stream in place: edits replace bytes inside a decoded section and
 all unrecognised/reserved bytes survive unchanged.
 
+``ITBL`` is the save's own name tables (:meth:`SaveRecord.id_tables`): the other sections name
+characters, classes, items and skills by their number in these lists, so a save stays readable after the
+database is reordered.
+
 Research reference: ``research/rd/SAVE_NOTES.md``.
 """
 
 from __future__ import annotations
 
+import re
 import struct
 import zlib
 from dataclasses import dataclass
@@ -35,10 +45,22 @@ DATA_MAGIC = b"FE10ADAT"
 SYSTEM_VERSION = 0x20061002
 DATA_VERSION = 0x20060920
 FORMAT_VERSION = 0x11
+FORGE_TAIL = 8  # bytes after a forged item's name
 CRC_OFFSET = 0x18
 HEADER_SIZE = 0x40
 REGULAR_BASE = SYSTEM_SIZE
 CHECKPOINT_BASE = SYSTEM_SIZE + COPIES_PER_BANK * BLOCK_SIZE  # 0x94000
+HEADER_CHAPTER = 0x36
+BMST_AFFINITY = 0x92      # state +0x92: the chapter's DivineData row (0x80061584 sets it with the chapter)
+BMST_PREFIX = 0xD8
+MAP_NAME_SIZE = 0x18      # state +0x914, the C string the file load gives load_map (0x800CD9F0)
+_MAP_NAME = re.compile(rb"[be]map[0-9A-Za-z_]+\0")
+
+#: ITBL's lists in file order: (name, ID prefix the file leaves out, number of the first entry).
+#: Written by RFEE01 0x80242920; the four AI lists are CP_ATKSEQ/MOVSEQ/HEALSEQ/MTYPE_LIST.
+ITBL_LISTS = (("character", "PID_", 1), ("class", "JID_", 1), ("item", "IID_", 1), ("skill", "SID_", 0),
+              ("attack_sequence", "SEQ_", 0), ("move_sequence", "SEQ_", 0), ("heal_sequence", "SEQ_", 0),
+              ("move_type", "MTYPE_", 0))
 
 # The final on-disc tag is the four bytes DEBU; the executable's source string is DEBUG.
 STREAM_TAGS = (b"ITBL", b"BMST", b"MDST", b"UNIP", b"SOKO", b"FGPT", b"T  T",
@@ -78,10 +100,11 @@ class SaveSection:
 
 @dataclass(frozen=True)
 class ConvoyItem:
-    """One serialized SOKO item slot.
+    """One serialized SOKO item slot (RFEE01 0x80111d68).
 
-    Ordinary and empty slots are four bytes. Forged items have a confirmed 32-byte suffix which
-    is retained verbatim; its individual fields are not exposed until their meanings are closed.
+    Ordinary and empty slots are four bytes: the item number (ITBL ``item``) and the state word.
+    A forged item (state bit 0x20) follows them with its name, NUL-terminated, and eight bytes,
+    kept verbatim here (their fields are not exposed until their meanings are checked).
     """
 
     slot: int
@@ -93,6 +116,11 @@ class ConvoyItem:
     @property
     def forged(self) -> bool:
         return bool(self.item_number and self.state & 0x20)
+
+    @property
+    def forged_name(self) -> str:
+        """The name the player gave a forged item ("" for others)."""
+        return self.forge_data[:-FORGE_TAIL - 1].decode("shift_jis", errors="replace") if self.forged else ""
 
     @property
     def size(self) -> int:
@@ -189,15 +217,7 @@ class SaveRecord:
     def logical_slot(self) -> Optional[int]:
         if self.index is None:
             return None
-        bank_index = self.index - COPIES_PER_BANK if self.checkpoint else self.index
-        return bank_index // 2
-
-    @property
-    def copy_name(self) -> str:
-        if self.index is None:
-            return "System"
-        bank_index = self.index - COPIES_PER_BANK if self.checkpoint else self.index
-        return "A" if bank_index % 2 == 0 else "B"
+        return self.index - COPIES_PER_BANK if self.checkpoint else self.index
 
     def section(self, name: str) -> Optional[SaveSection]:
         wanted = name[:4]
@@ -231,7 +251,10 @@ class SaveRecord:
                 raise ValueError(f"SOKO ends in convoy slot {slot + 1}")
             item_number, state = struct.unpack_from(">HH", data, cursor)
             forged = bool(item_number and state & 0x20)
-            end = cursor + (36 if forged else 4)
+            end = cursor + 4
+            if forged:
+                name_end = data.find(b"\0", end)
+                end = len(data) + 1 if name_end < 0 else name_end + 1 + FORGE_TAIL
             if end > len(data):
                 raise ValueError(f"SOKO forged item in slot {slot + 1} is truncated")
             items.append(ConvoyItem(slot, cursor, item_number, state,
@@ -256,6 +279,33 @@ class SaveRecord:
             state = 0
         self.replace_section_bytes("SOKO", item.offset, struct.pack(">HH", item_number, state))
 
+    def id_tables(self) -> dict[str, list[str]]:
+        """ITBL as full IDs: ``{"character": ["PID_IKE", ...], "item": [...], ...}`` (see ITBL_LISTS)."""
+        data = self.section_bytes("ITBL")
+        tables, cursor = {}, 0
+        for name, prefix, _first in ITBL_LISTS:
+            if cursor + 4 > len(data):
+                raise ValueError(f"ITBL ends before its {name} list")
+            count = _u32(data, cursor)
+            cursor += 4
+            names = []
+            for _ in range(count):
+                end = data.find(b"\0", cursor)
+                if end < 0:
+                    raise ValueError(f"ITBL's {name} list is truncated")
+                names.append(prefix + data[cursor:end].decode("shift_jis", errors="replace"))
+                cursor = end + 1
+            tables[name] = names
+        if cursor != len(data):
+            raise ValueError(f"ITBL has {len(data) - cursor} unexpected trailing byte(s)")
+        return tables
+
+    def id_of(self, table: str, number: int) -> Optional[str]:
+        """The ID a section's ``number`` names in ITBL list ``table``; None when out of range."""
+        first = next(f for name, _prefix, f in ITBL_LISTS if name == table)
+        names = self.id_tables()[table]
+        return names[number - first] if 0 <= number - first < len(names) else None
+
     def _bmst_value(self, relative_offset: int, size: int) -> int:
         data = self.section_bytes("BMST")
         if relative_offset + size > len(data):
@@ -275,6 +325,33 @@ class SaveRecord:
     @chapter_number.setter
     def chapter_number(self, value: int) -> None:
         self._set_bmst_value(0x10, 1, value)
+        self.set_header_u8(HEADER_CHAPTER, value)  # what the file menu shows
+
+    def _map_name_offset(self) -> Optional[int]:
+        """Where BMST holds the map folder; its place follows parts of variable size."""
+        match = _MAP_NAME.search(self.section_bytes("BMST"), BMST_PREFIX)
+        return match.start() if match else None
+
+    @property
+    def map_name(self) -> Optional[str]:
+        """The map folder the file loads (``bmap0407a``); None on a file that has none yet."""
+        at = self._map_name_offset()
+        if at is None:
+            return None
+        return self.section_bytes("BMST")[at:at + MAP_NAME_SIZE].split(b"\0")[0].decode("ascii")
+
+    def move_to_chapter(self, number: int, map_name: str, affinity_row: int) -> None:
+        """Make the file open chapter ``number``: the game loads the map by the saved name, not by
+        the chapter, and keeps the chapter's affinity row beside it."""
+        at = self._map_name_offset()
+        if at is None:
+            raise ValueError("This file holds no map name.")
+        encoded = map_name.encode("ascii")
+        if len(encoded) >= MAP_NAME_SIZE:
+            raise ValueError(f"{map_name} is too long for a save file.")
+        self.replace_section_bytes("BMST", at, encoded.ljust(MAP_NAME_SIZE, b"\0"))
+        self.replace_section_bytes("BMST", BMST_AFFINITY, bytes([affinity_row]))
+        self.chapter_number = number
 
     @property
     def army_phase(self) -> int:
@@ -344,15 +421,8 @@ class SaveFile:
         return cls.from_bytes(path.read_bytes())
 
     def active_records(self) -> list[SaveRecord]:
-        """Newest valid rotating copy for each regular/checkpoint logical slot."""
-        active = []
-        for checkpoint in (False, True):
-            bank = [record for record in self.records if record.checkpoint == checkpoint]
-            for slot in range(3):
-                choices = [record for record in bank if record.logical_slot == slot and record.valid]
-                if choices:
-                    active.append(max(choices, key=lambda record: record.sequence))
-        return active
+        """Every valid record: each one is a file of its own."""
+        return [record for record in self.records if record.valid]
 
     def to_bytes(self, records: Optional[Iterable[SaveRecord]] = None,
                  *, include_system: bool = True) -> bytes:
@@ -370,7 +440,7 @@ def record_label(record: SaveRecord, active: Iterable[SaveRecord] = ()) -> str:
     if record.index is None:
         return "System data"
     kind = "Checkpoint" if record.checkpoint else "File"
-    base = f"{kind} {record.logical_slot + 1}, copy {record.copy_name}"
+    base = f"{kind} {record.logical_slot + 1}"
     if record.empty:
         return base + " - empty"
     status = "valid" if record.valid else ("bad checksum" if record.magic == DATA_MAGIC else "invalid")
@@ -389,7 +459,7 @@ def validate(save: SaveFile) -> list[str]:
     for record in save.records:
         if record.empty:
             continue
-        where = f"{'checkpoint' if record.checkpoint else 'file'} slot {record.logical_slot + 1} copy {record.copy_name}"
+        where = f"{'checkpoint' if record.checkpoint else 'file'} slot {record.logical_slot + 1}"
         if record.magic != DATA_MAGIC:
             problems.append(f"{where}: invalid magic {record.magic!r}")
         elif record.version != DATA_VERSION:

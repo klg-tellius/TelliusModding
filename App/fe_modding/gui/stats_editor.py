@@ -76,8 +76,9 @@ from typing import Callable, Optional
 from PIL import Image, ImageTk
 
 from ..formats import fe8data, icons, item_rules, zdbx
-from .. import excel_io
+from .. import chapter_form, excel_io
 from ..formats.fe9_message_scene import to_display
+from ..game_adapter import data_adapter
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, files_root_of, profile_of
 from ..game_code.dol import DolError
 from ..games import Game
@@ -1495,98 +1496,73 @@ class StatsEditor(EditorPanel):
 
     # -- chapters ------------------------------------------------------------------------
     def _show_chapter(self, index: int) -> None:
+        """A ``ChapterData`` record, laid out by the game adapter (:mod:`chapter_form`)."""
         form, parent = self._new_form("chapters", "chapter", index)
-        chapter = lambda: fe8data.read_chapter_data(self._data)[index]  # noqa: E731
-        patch = fe8data.patch_chapter_field
+        adapter = data_adapter(self._session)
         columns = 8
         row = 0
-
-        def text_row(label: str, field: str, read: Callable[[], Optional[str]], note: str = "",
-                     prefix: Optional[str] = None, asset: Optional[str] = None) -> None:
-            nonlocal row
-            ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=1, padx=(0, 10))
-            if prefix:
-                widget, var = self._pointer_combo(parent, prefix)
-            else:
-                var = tk.StringVar()
-                widget = ttk.Entry(parent, textvariable=var, width=32)
-            widget.grid(row=row, column=1, columnspan=3, sticky="w")
-            form.add(widget, label, var, lambda: read() or "", lambda data, v: patch(data, index, field, v))
-            if prefix:
-                self._message_preview(parent, var, row, 4, columns - 4)
-            elif asset and self._navigate is not None:
-                link = ttk.Button(parent, text=f"Open in {asset.title()} ›",
-                                  command=lambda a=asset, v=var: self._navigate(("asset", a, v.get().strip())))
-                link.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
-                var.trace_add("write", lambda *_: link.configure(state="normal" if var.get().strip() else "disabled"))
-                link.configure(state="normal" if var.get().strip() else "disabled")
-            if note:
-                tip(parent.grid_slaves(row=row, column=0)[0], note)
+        for n, section in enumerate(adapter.chapter_sections(index)):
+            self._heading(parent, section.title, row, columns, section.note)
             row += 1
+            for spec in section.fields:
+                row = self._chapter_field(parent, form, adapter, index, spec, row, columns)
+            if n == 0 and "title_card" in adapter.chapter_actions:
+                ttk.Button(parent, text="Title card…", command=lambda: self._title_card(adapter, index)).grid(
+                    row=row, column=1, sticky="w", pady=(4, 0))
+                row += 1
 
-        self._heading(parent, "Identity and files", row, columns)
-        row += 1
-        if fe8data.japanese_chapter_layout(self._data):
-            text_row("Title", "title_text", lambda: chapter().title_text,
-                     "The Japanese release stores the displayed title directly in this record.")
+    def _chapter_field(self, parent, form: _Form, adapter, index: int, spec, row: int, columns: int) -> int:
+        """One field of the chapter form on ``row``; returns the next free row."""
+        key = spec.key
+        if spec.kind == chapter_form.BYTES:
+            self._byte_row(parent, form, row if spec.header else row - 1, spec.label, list(spec.names),
+                           lambda i: adapter.chapter_value(self._data, index, key.format(i=i)),
+                           lambda d, i, v: adapter.write_chapter_value(d, index, key.format(i=i), v),
+                           spec.low, spec.high, header=spec.header, help_text=spec.note, name_help=spec.name_help)
+            return row + 2 if spec.header else row + 1
+        label = ttk.Label(parent, text=spec.label)
+        label.grid(row=row, column=0, sticky="w", pady=1, padx=(0, 10))
+        number = spec.kind == chapter_form.NUMBER
+        if spec.prefix:
+            widget, var = self._pointer_combo(parent, spec.prefix)
+        elif spec.kind == chapter_form.CHOICE:
+            var = tk.StringVar()
+            widget = ttk.Combobox(parent, textvariable=var, values=["", *spec.options], width=32)
         else:
-            text_row("Title key", "title_key", lambda: chapter().title_key, prefix="MCT")
-        tip(ttk.Label(parent, text="Chapter id"), "Scripts change to a chapter by this id; 90 and up are the trial "
-                                                  "maps.").grid(row=row, column=0, sticky="w", pady=1)
-        var = tk.StringVar()
-        entry = ttk.Entry(parent, textvariable=var, width=6)
-        entry.grid(row=row, column=1, sticky="w")
-        form.add(entry, "Chapter id", var, lambda: str(chapter().chapter_id),
-                 lambda data, v: patch(data, index, "chapter_id", _number(v, 0, 255)))
-        row += 1
-        text_row("Map", "map_name", lambda: chapter().map_name, "The map folder: zmap/<name>/.")
-        text_row("Script", "script", lambda: chapter().script, "The event script: Scripts/<name>.cmb.")
-        text_row("Message file", "message", lambda: chapter().message, "The text file: Mess/<name>.m; empty: none.")
-        text_row("Map music", "bgm", lambda: chapter().bgm, asset="music")
+            var = tk.StringVar()
+            widget = ttk.Entry(parent, textvariable=var, width=6 if number else 32)
+        widget.grid(row=row, column=1, columnspan=1 if number else 3, sticky="w")
+        form.add(widget, spec.label, var, lambda: adapter.chapter_value(self._data, index, key),
+                 (lambda data, v: adapter.write_chapter_value(data, index, key, _number(v, spec.low, spec.high)))
+                 if number else (lambda data, v: adapter.write_chapter_value(data, index, key, v)))
+        if spec.prefix:
+            self._message_preview(parent, var, row, 4, columns - 4)
+        elif spec.link and self._navigate is not None:
+            text, route = spec.link
+            link = ttk.Button(parent, text=text, command=lambda: self._navigate((*route, var.get().strip())))
+            link.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+            var.trace_add("write", lambda *_: link.configure(state="normal" if var.get().strip() else "disabled"))
+            link.configure(state="normal" if var.get().strip() else "disabled")
+        if spec.note:
+            tip(label, spec.note)
+        return row + 1
 
-        self._heading(parent, "Objectives (text keys)", row, columns)
-        row += 1
-        slots = ("Goal", "Goal second line", "Defeat condition", "Defeat second line")
-        for k, label in enumerate(slots):
-            text_row(label, f"objective{k}", lambda k=k: chapter().objectives[k],
-                     prefix="ML_" if k >= 2 else "MW_")
-        for mode, field in (("Hard", "hard_objective"), ("Maniac", "maniac_objective")):
-            for k, slot in enumerate((0, 1, 3)):
-                text_row(f"{mode}: {slots[slot].lower()}", f"{field}{k}",
-                         lambda k=k, a=f"{field}s": getattr(chapter(), a)[k],
-                         prefix="ML_" if slot == 3 else "MW_")
+    def _title_card(self, adapter, index: int) -> None:
+        """Draw a chapter's title card from its title (Radiant Dawn's ``window/title`` cards)."""
+        from .. import chapters
+        from .fe10_data_editor import _TitleCardDialog
 
-        self._heading(parent, "Scenes", row, columns)
-        row += 1
-        text_row("Base background", "base_background", lambda: chapter().base_background,
-                 asset="backgrounds")
-        text_row("Conversation background", "talk_background", lambda: chapter().talk_background,
-                 asset="backgrounds")
-        text_row("Class-change scene map", "scene_map", lambda: chapter().scene_map)
-        text_row("Class-change scene sky", "scene_sky", lambda: chapter().scene_sky, "A Battle scenes sky name.")
-
-        self._heading(parent, "Enemy levels and trial grades", row, columns)
-        row += 1
-        difficulty_names = list(fe8data.DIFFICULTY_NAMES[:len(chapter().enemy_bonus_levels)])
-        self._byte_row(parent, form, row, "Enemy levels +", difficulty_names,
-                       lambda i: chapter().enemy_bonus_levels[i],
-                       lambda d, i, v: patch(d, index, f"enemy_bonus_level{i}", v),
-                       help_text="Levels added to auto-levelled enemies on each difficulty (capped at level 20).",
-                       name_help={"Easy": "Easy (the North American mode) has no deployment or shop files of its "
-                                          "own: it uses Normal's. Only this bonus differs."})
-        row += 2
-        grades = ["A", "B", "C", "D"]
-        grade_help = {"Turns": "Trial maps only: the most turns for each grade.",
-                      "Units lost": "Trial maps only: the most units lost for each grade.",
-                      "Kills": "Trial maps only: the fewest kills for each grade (fewer than D gives E)."}
-        for n, (title, attr, field) in enumerate((("Turns", "trial_turn_grades", "trial_turn_grade"),
-                                                  ("Units lost", "trial_loss_grades", "trial_loss_grade"),
-                                                  ("Kills", "trial_score_grades", "trial_score_grade"))):
-            # one A-D header over the three rows: row n's entries go on row + n + 1
-            self._byte_row(parent, form, row + n, title, grades, lambda i, a=attr: getattr(chapter(), a)[i],
-                           lambda d, i, v, f=field: patch(d, index, f"{f}{i}", v),
-                           header=n == 0, help_text=grade_help[title])
-        row += 4
+        self.flush()
+        title_key, _text, _script, cid = adapter.chapter_summary(index)
+        cid = str(cid or "")
+        chapter_id = cid[1:] if cid[1:].isdigit() else cid[1:].lower()
+        title = self._text(title_key) or chapters.chapter_titles(self._project).get(chapter_id, "")
+        dialog = _TitleCardDialog(self, self._project, chapter_id, title)
+        self.wait_window(dialog)
+        written = getattr(dialog, "written", None)
+        if written is not None:
+            self._changelog.append(written.name, f"Drew the title card of chapter {chapter_id}")
+            self._status_label.config(text=f"Wrote {written.name}.", style="Muted.TLabel")
 
     # -- general ------------------------------------------------------------------------------
     def _show_general(self) -> None:
@@ -1781,7 +1757,7 @@ class StatsEditor(EditorPanel):
     def _revert(self) -> None:
         if not messagebox.askyesno(
                 "Discard unsaved edits?",
-                "Put FE8Data.bin back as it was last saved? This discards every unsaved edit to characters, "
+                f"Put {self._session.file_label} back as it was last saved? This discards every unsaved edit to characters, "
                 "classes, items, skills, terrain and supports.", icon="warning", parent=self):
             return
         for key in self._forms:
@@ -1838,14 +1814,15 @@ class _Body:
 
 
 class ChapterRecordPanel(StatsEditor):
-    """A chapter's ``ChapterData`` form in Chapters › Chapter data.
+    """A chapter's ``ChapterData`` form in Chapters › Chapter data, on both games.
 
-    It edits the shared FE8Data.bin session and is saved with Save FE8Data.bin."""
+    It edits the shared game-data session (``FE8Data.bin`` or ``FE10Data.cms``) through the session's
+    adapter and is saved with that file's Save button."""
 
-    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session: Fe8DataSession,
+    def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog, session,
                  navigate: Optional[Callable[[tuple], None]] = None):
         self._map_name: Optional[str] = None
-        self._chapter_id: Optional[int] = None
+        self._chapter_id: Optional[str] = None
         self._matches: list[int] = []
         self._record: Optional[int] = None
         super().__init__(parent, project, changelog, session, navigate)
@@ -1853,11 +1830,13 @@ class ChapterRecordPanel(StatsEditor):
     def _build_widgets(self) -> None:
         top = ttk.Frame(self)
         top.pack(fill="x")
-        self._save_button = ttk.Button(top, text="Save FE8Data.bin", style="Accent.TButton", command=self._save,
-                                       state="disabled")
+        self._save_button = ttk.Button(top, text=f"Save {self._session.file_label}", style="Accent.TButton",
+                                       command=self._save, state="disabled")
         self._save_button.pack(side="left")
         self._revert_button = ttk.Button(top, text="Discard unsaved edits", command=self._revert, state="disabled")
         self._revert_button.pack(side="left", padx=(6, 0))
+        if self._navigate is not None:
+            ttk.Button(top, text="‹ All chapters", command=self._all_chapters).pack(side="right")
 
         self._status_label = ttk.Label(top, text="", style="Muted.TLabel")
         self._status_label.pack(side="left", padx=(10, 0))
@@ -1874,16 +1853,13 @@ class ChapterRecordPanel(StatsEditor):
 
     def _refresh_pickers(self) -> None:
         """Relabel the records (a title or map may just have changed)."""
-        try:
-            chapters = fe8data.read_chapter_data(self._data)
-        except (KeyError, ValueError, struct.error):
-            chapters = []
-        self._matches = [c.index for c in chapters if (c.chapter_id == self._chapter_id
-                         if self._chapter_id is not None else bool(self._map_name and c.map_name == self._map_name))]
-        if self._chapter_id is not None and self._map_name:
-            self._matches.sort(key=lambda i: chapters[i].map_name != self._map_name)
-        labels = [f"{self._text(chapters[i].title_key) or chapters[i].title_text or chapters[i].title_key or '(untitled)'}  ·  "
-                  f"{chapters[i].script or '-'}  ·  id {chapters[i].chapter_id}  ·  record {i}" for i in self._matches]
+        adapter = data_adapter(self._session)
+        self._matches = adapter.chapter_records(self._chapter_id, self._map_name) if self._session.available else []
+        labels = []
+        for i in self._matches:
+            title_key, title_text, script, record_id = adapter.chapter_summary(i)
+            labels.append(f"{self._text(title_key) or title_text or title_key or '(untitled)'}  ·  {script or '-'}  ·  "
+                          f"id {record_id}  ·  record {i}")
         try:
             self._record_combo.configure(values=labels)
             if len(self._matches) > 1:
@@ -1903,7 +1879,15 @@ class ChapterRecordPanel(StatsEditor):
     def select_tab(self, name: str) -> None:
         pass
 
-    def show_chapter(self, chapter_id: Optional[int], map_name: Optional[str]) -> None:
+    def _all_chapters(self) -> None:
+        """Game Data › Chapters, on this record."""
+        self.flush()
+        route = ("data", "chapters")
+        if self._record is not None:
+            route += (str(data_adapter(self._session).chapter_summary(self._record)[3]),)
+        self._navigate(route)
+
+    def show_chapter(self, chapter_id: Optional[str], map_name: Optional[str]) -> None:
         """Show this chapter's record, preferring the selected phase's map."""
         if ((chapter_id, map_name) == (self._chapter_id, self._map_name)
                 and self._forms["chapters"] is not None):

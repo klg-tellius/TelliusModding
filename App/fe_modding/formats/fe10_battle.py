@@ -555,6 +555,34 @@ def clone_unit_model(data: bytes, index: int, model_name: str,
     return build_fe10_battle(document), len(units.records)
 
 
+def add_unit_texture(data: bytes, index: int, condition: str, texture_name: str) -> bytes:
+    """Give battle unit ``index`` one more ``FE10BTex`` row, ``condition`` (an army key or a PID)
+    -> ``texture_name`` (``zu/<model>/<texture>.tpl``), at the end of its slice; the unit's row
+    count (+0x14D) goes up by one. A PID row is picked before the army rows (retail
+    ``PID_ISAIYA`` -> ``ISAIYA`` follows ``swoL``'s four army rows)."""
+    document = read_fe10_battle(data)
+    units = document.table("FE10BUnit")
+    textures = document.table("FE10BTex")
+    if not 0 <= index < len(units.records):
+        raise IndexError("Battle unit-model index is out of range.")
+    unit = document.unit_texture_sets[index]
+    if any(m.condition == condition for m in unit.mappings):
+        raise ValueError(f"{unit.unit_name} already has a {condition} texture.")
+    if len(unit.mappings) >= 0xFF:
+        raise ValueError(f"{unit.unit_name} has no room for another texture row.")
+    end = sum(len(item.mappings) for item in document.unit_texture_sets[:index + 1])
+    template = textures.records[end - 1] if unit.mappings else textures.records[0]
+    row = replace(template, address=0, raw=bytes(len(template.raw)),
+                  strings=((0, condition), (4, texture_name)))
+    raw = bytearray(units.records[index].raw)
+    raw[0x14D] += 1
+    unit_records = list(units.records)
+    unit_records[index] = replace(units.records[index], raw=bytes(raw))
+    document = _replace_table(document, units.name, tuple(unit_records))
+    document = _replace_table(document, textures.name, textures.records[:end] + (row,) + textures.records[end:])
+    return build_fe10_battle(document)
+
+
 def clone_battle_selector(
     data: bytes, index: int, description: str, *, aid: str | None = None,
     pid: str | None = None, jid: str | None = None,

@@ -2,13 +2,13 @@
 id: "map-format"
 title: "Map File Format"
 description: "Terrain, placed 3D scenery, tile elevation, and lighting for one chapter"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "formats"
 article_type: "format-reference"
 tags: ["Chapter data","Editable"]
 aliases: ["tellius_archive.html#/map-format"]
 status: "published"
-last_reviewed: "2026-10-13"
+last_reviewed: "2026-10-28"
 sources: ["tellius-archive-research"]
 cms_collection: "formats"
 source_path: "formats/map-format.md"
@@ -35,6 +35,21 @@ One `mapbuilddesc` can name the tree model and its footprint. Several `mapbuildi
     <tr><td><code>uniquepanel</code>/<code>Roof</code>/<code>Base</code></td><td class="num">12B/record</td><td>Four signed corner elevations, three layers (ground+object / ground alone / building); tiles share records through the <code>panelindex</code> grids, which hold 0-based record numbers. The ground layer sits at terrain height <code>&amp;minus;elevation / 400</code>. Each record also points to a terrain-type name (<a class="wl" href="../fe8data/">TerrainData</a>); the combined layer's name is the tile's terrain, the ground layer's the ground under objects <span class="badge confirmed">files + in game</span></td></tr>
     <tr><td><code>maplink</code>/<code>maplinkAt</code>/<code>maplinkAbs</code></td><td class="num">sparse grids</td><td>Count followed by <code>(x, y, value)</code> entries; together they form per-tile status/blocking bitfields</td></tr>
     <tr><td><code>maplight</code>/<code>mapfog</code>/<code>mapgrid</code>/<code>mapextra</code></td><td class="num">1 rec. each</td><td>Ambient+directional light color, fog density/color, grid overlay color, tactical-grid margins and map-mode flags</td></tr>
+  </tbody></table>
+</div>
+
+## Radiant Dawn
+
+Radiant Dawn's `map.bin` is the same container with the sections renamed, each name prefixed with its map folder (`bmap0101:mapdata`), and wider records. All 128 maps of the US disc share this layout. <span class="confidence confidence--confirmed">files</span>
+
+<div class="table-wrap">
+<table><thead><tr><th>Radiant Dawn section</th><th>Path of Radiance equivalent</th><th>Difference</th></tr></thead><tbody>
+    <tr><td><code>mapdata</code></td><td><code>mapcapacity</code> + <code>mapextra</code> + <code>mapgrid</code></td><td>Version byte, then width and height as single bytes, the two record counts and the 2000.0 scale; the <code>mapextra</code> record at +0x0C and the <code>mapgrid</code> colour at +0x18; versions 3 and 4 add one and two more words. Half sizes are rounded down.</td></tr>
+    <tr><td><code>mapdesc</code></td><td><code>mapbuilddesc</code></td><td>36 bytes per object: the same 32 bytes, then the footprint in tiles along x and z and two zero bytes</td></tr>
+    <tr><td><code>mapinst</code></td><td><code>mapbuildinst</code></td><td>20 bytes per placement: a lead byte, x, y, angle, a sub-tile offset along x and y, a 16-bit object index, the covered-tile rectangle, the height float and a trailing word</td></tr>
+    <tr><td><code>roofindex</code>/<code>roofpanel</code>, <code>baseindex</code>/<code>basepanel</code></td><td><code>panelindexRoof</code>/<code>uniquepanelRoof</code>, <code>panelindexBase</code>/<code>uniquepanelBase</code></td><td>Same 12-byte panel records; <code>panelindex</code>/<code>uniquepanel</code> keep their names</td></tr>
+    <tr><td><code>maplink</code>/<code>maplinkAt</code></td><td>same</td><td>32-bit record count; no map uses <code>maplinkAbs</code></td></tr>
+    <tr><td><code>maplight</code>, <code>mapfog</code>, <code>mapshader</code></td><td><code>maplight</code>, <code>mapfog</code>, none</td><td>Different layouts, not decoded yet <span class="confidence confidence--open">open</span></td></tr>
   </tbody></table>
 </div>
 

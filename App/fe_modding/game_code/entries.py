@@ -215,6 +215,10 @@ PROCS = (
     ("sol", "Sol", 0x2F, "Skill", {US: 0x801A5FD4, EU: 0x801A840C, JP: 0x801A3D64}, True),
 )
 
+#: The Skill activation grid's rows: (skill, activates on, scale tunable id, bonus tunable id or None).
+PROC_ROWS = tuple((name, formula, f"proc.{key}.scale", f"proc.{key}.bonus" if has_bonus else None)
+                  for key, name, _sid, formula, _sites, has_bonus in PROCS)
+
 STUB_SIZE = 0x20
 SCALE_DENOMINATOR = 4      # the stub computes (chance * scale) >> 2 + bonus, so scale 4 is vanilla
 

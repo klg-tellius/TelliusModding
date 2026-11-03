@@ -63,6 +63,27 @@ PLAYTHROUGH = "playthrough"    # In-app tactical chapter runner
 BATTLE_SIM = "battle_sim"      # Forecast, simulation and rendered fight workflow
 PATCHES = "patches"            # .tpatch create / apply
 DISC = "disc"                  # extract / rebuild
+COLOUR_VARIANTS = "colour_variants"  # recoloured battle/map texture + portrait copies
+MAP_DECODED = "map_decoded"    # map.bin sections (capacity, grids, props) decoded for the Build canvas
+EXTENDED_FLAGS = "extended_flags"  # main.dol runtime for flags past the vanilla slots
+TUTORIALS = "tutorials"        # tutorial pages
+STAFF_CREDITS = "staff_credits"  # staff roll
+ENDING_ART = "ending_art"      # ending/ illustrations
+BATTLE_SKIES = "battle_skies"  # sky/ battle backdrops
+# Purpose-built screens a game gets once its data reaches them through the adapters (game_adapter.py);
+# until then the page shows that game's generic record view for the same feature.
+CHARACTER_FORM = "character_form"  # the Character › Stats form with Open buttons
+CHAPTER_RECORD_FORM = "chapter_record_form"  # Chapter › Chapter data: objectives, music, backgrounds
+SUPPORT_LIST = "support_list"  # per-partner support list with conversation links
+DATA_WORKSPACE = "data_workspace"  # Game Data as one tabbed workspace (supports, flags, AI, rect RIDs as tabs)
+SAVE_UNITS = "save_units"      # save editor with Units, Convoy, Forges, Map objects, Flags, System tabs
+CHAPTER_FLOW = "chapter_flow"  # editable story flow (game_code.story_flow) and Add chapter
+NEW_CAMPAIGN = "new_campaign"  # Chapters › New campaign (several chapters and characters at once)
+HUB = "hub"                    # Chapters › Create hub (a hub chapter with links to chapters)
+#: Several map folders per chapter (bmap06, bmap06_2: Opening18_N / Complete18 parts). Not on Radiant
+#: Dawn: its multi-map chapters are separate ChapterData records (0407a-e) and it has no part natives.
+MAP_PHASES = "map_phases"
+BATTLE_WEAPONS = "battle_weapons"  # Assets › Battle Weapons (xwp/ dbx tables or FE10BWeapon rows)
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -72,6 +93,13 @@ FEATURE_LABELS = {
     EFFECTS: "Effects", AUDIO: "Audio editing", VIDEO: "Video editing", SAVES: "Save files",
     GAME_CODE: "Game Code patches", PLAY: "Play in Dolphin", PLAYTHROUGH: "In-app playthrough",
     BATTLE_SIM: "Battle Simulator and rendered fights", PATCHES: "Patches", DISC: "Disc extraction",
+    COLOUR_VARIANTS: "Colour variants", MAP_DECODED: "Map editing", EXTENDED_FLAGS: "Extended flags",
+    TUTORIALS: "Tutorials", STAFF_CREDITS: "Staff credits", ENDING_ART: "Ending art", BATTLE_SKIES: "Battle skies",
+    CHARACTER_FORM: "The character form", CHAPTER_RECORD_FORM: "The chapter data form",
+    SUPPORT_LIST: "The support partner list", DATA_WORKSPACE: "The Game Data workspace",
+    SAVE_UNITS: "Save unit, convoy and forge editing",
+    BATTLE_WEAPONS: "Battle weapons", CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
+    MAP_PHASES: "Map phases",
 }
 
 
@@ -99,11 +127,20 @@ class GameProfile:
     #: Event-script bytecode and catalogues (``formats/cmb``): "fe9" or "fe10" (a
     #: :class:`~fe_modding.formats.cmb.model.Dialect` name).
     script_dialect: str = "fe9"
+    #: Battle tables: ``zdbx`` (Path of Radiance's ``zdbx.cmp`` dbx files) or ``fe10`` (``FE10Battle.cms`` rows).
+    battle_dialect: str = "zdbx"
     #: Buckets of the engine's name hash (``message.engine_name_hash``): message IDs and container
     #: symbols that share a bucket and check value shadow each other.
     name_hash_buckets: int = 509
     #: (font name, path under files/) of every game font, in the game's font order.
     font_files: tuple[tuple[str, str], ...] = ()
+    #: Parts of Disc & Patch › Export as text implemented for this game (``text_export.PART_LABELS`` keys).
+    text_export_parts: tuple[str, ...] = ()
+    #: (label, path under files/) of each tutorial list (``formats/tut_data.py``), the one the US game
+    #: loads first; Radiant Dawn has one per difficulty set.
+    tutorial_files: tuple[tuple[str, str], ...] = (("English", "tut_data_en.bin"), ("Japanese", "tut_data.bin"))
+    #: The names of a tutorial's four start-flag slots (``tut_data.DIFFICULTIES`` on Path of Radiance).
+    tutorial_flag_names: tuple[str, ...] = ("Normal", "Hard", "Maniac", "Easy")
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -211,8 +248,12 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h", "m"),
     features=frozenset({GAME_DATA, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_TABLES, BATTLE_DATA, BATTLE_CAMERAS, ANIM, MODELS, FONTS,
-                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
+                        ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
+                        COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART,
+                        CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS,
+                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES, BATTLE_WEAPONS}),
     font_files=FONT_FILES,
+    text_export_parts=("FE8Data", "deployments", "shops", "messages", "scripts", "sound", "faces", "zdbx"),
 )
 
 # Radiant Dawn: only what is decoded. Each phase of the parity plan switches features on.
@@ -233,11 +274,21 @@ RADIANT_DAWN_PROFILE = GameProfile(
     shop_difficulties=("n", "h", "m"),
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
-                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC}),
+                        AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
+                        MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS,
+                        NEW_CAMPAIGN, COLOUR_VARIANTS}),
+    # playthrough waits for the RFEE01 script runtime: chapter and startup scripts still call natives
+    # it does not model (playthrough/natives.py stops on those rather than guessing).
     message_dialect="fe10",
     script_dialect="fe10",
+    battle_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
+    text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"),
+    tutorial_files=(("Normal, English", "Tutorial/tut_data_n_en.bin"), ("Hard, English", "Tutorial/tut_data_h_en.bin"),
+                    ("Normal, Japanese", "Tutorial/tut_data_n.bin"), ("Hard, Japanese", "Tutorial/tut_data_h.bin")),
+    # same record layout as Path of Radiance; which difficulty each slot stands for is not checked yet
+    tutorial_flag_names=("Slot 1", "Slot 2", "Slot 3", "Slot 4"),
 )
 
 PROFILES: dict[Game, GameProfile] = {

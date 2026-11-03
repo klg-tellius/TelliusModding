@@ -35,7 +35,7 @@ class TextExportGuardTests(unittest.TestCase):
         self.assertEqual(written, [])
         # the single-file parts report their missing file; folder parts just export nothing
         self.assertEqual(sorted(p.split(':')[0] for p in problems),
-                         sorted(label for name, label in text_export.PARTS if name in ('FE8Data', 'sound', 'faces', 'zdbx')))
+                         sorted(text_export.PART_LABELS[name] for name in ('FE8Data', 'sound', 'faces', 'zdbx')))
         self.assertTrue((self.root / "out" / text_export.MARKER).is_file())
 
 
@@ -50,7 +50,7 @@ class RadiantDawnTextExportTests(unittest.TestCase):
 
     def test_radiant_dawn_has_its_implemented_export_parts(self):
         self.assertEqual([name for name, _label in text_export.parts_for(self.project)],
-                         ["FE10Data", "FE10Growth", "messages", "scripts"])
+                         ["FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"])
 
     def test_fe10_records_export_semantic_values_without_binary_offsets(self):
         record = SimpleNamespace(values={"pid": "PID_IKE", "level": 11, "block": 0x1234},

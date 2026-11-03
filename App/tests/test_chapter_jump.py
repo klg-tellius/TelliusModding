@@ -121,6 +121,15 @@ class StubTests(unittest.TestCase):
             chapter_jump.install(session, 1, 7)
 
 
+class RdJumpTests(unittest.TestCase):
+    def test_the_jump_selects_the_story_mode(self):
+        # game mode 1 is a trial map: a chapter's end then opens the trial result and never returns
+        from fe_modding.game_code import ppc
+        code = chapter_jump_fe10._CODE
+        self.assertIn(ppc.li(6, 0).to_bytes(4, "big"), code)
+        self.assertNotIn(ppc.li(6, 1).to_bytes(4, "big"), code)
+
+
 class RunFolderTests(unittest.TestCase):
     def setUp(self):
         dol = RETAIL_DIR / "GFEE01.dol"

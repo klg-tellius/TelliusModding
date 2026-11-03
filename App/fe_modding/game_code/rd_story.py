@@ -10,6 +10,12 @@ chapters (including its processing of hidden ``C0401a``/``C0401b`` records),
 then applies an optional successor.  Chapters 56-79 bypass the unsafe retail
 lookup and use the successor table directly.
 
+The retail advance (``_ADVANCE``) walks records by index (``8010b0cc``: index
+times 0xB4); ``_SET_CHAPTER`` and the other 36 ChapterData users search by the
+record's number byte (+0x84, ``8010b094``).  Only the advance and its "previous
+chapter" twin (``80067fe8``, menu code) use the index, so a custom chapter's
+record may sit anywhere in the table: appended after the tutorials is fine.
+
 The remaining tables are the editor-owned story model.  They deliberately use
 logical army identities; raw force/convoy implementation belongs to the
 separate army-switch runtime and is not guessed here.
@@ -26,7 +32,9 @@ from .catalog import CAVE_ADDRESS, Edit, Patch, State, in_cave
 
 RFEE01 = "RFEE01"
 
-HOOK = CAVE_ADDRESS
+# Not at the cave's first bytes: with cheats off Dolphin HLE-patches 0x80001800 ("HBReload") and
+# writes "STUBHAXX" at 0x80001804 (Core/HLE/HLE.cpp), so code there never runs in the emulator.
+HOOK = CAVE_ADDRESS + 0x100
 SUCCESSORS = CAVE_ADDRESS + 0x400
 ARMIES = CAVE_ADDRESS + 0x500
 FLAGS = CAVE_ADDRESS + 0x600
@@ -40,10 +48,11 @@ ENDING = 55
 FLAG_PART_BOUNDARY = 0x01
 FLAG_DIVIDE_ARMIES = 0x02
 
-# Successor routing is installed and verified.  Do not let the UI present army
-# switching as live until the force-4 persistence and moved DivideForce path
-# have both been verified in Dolphin.
-ARMY_RUNTIME_READY = False
+# Army switching is scripted, not part of this hook: Part 4 chapters end with startup.cmb's
+# TEAM_<id>_ED, which moves the played army (force 5) back to its store (8 Micaiah, 9 Ike,
+# 10 Tibarn) and the next one out. ``rd_armies`` rewrites those functions from this table, so the
+# army combo is live; the result still needs its Dolphin check (workspace/locks-playtest, A1).
+ARMY_RUNTIME_READY = True
 
 # RFEE01 addresses confirmed against SHA-1 d1b8deabfec5a96bf38945665ffe203867612c1c.
 _ADVANCE = 0x80067EE8
@@ -53,7 +62,7 @@ _CURRENT_CHAPTER = 0x803CAB48
 _RESUME_POINT = 0x803CABD4
 _CALLS = (0x80043B6C, 0x800CD8F8)
 
-assert in_cave(HOOK, 0x704)
+assert in_cave(HOOK, MAGIC + 4 - HOOK)
 
 
 class Army(IntEnum):
@@ -288,7 +297,7 @@ class StorySequence:
         elif chapters[-1].chapter != ENDING:
             problems.append("CFINAL must be the last chapter in the story order.")
         for step in chapters:
-            if not (0 <= step.chapter <= ENDING or CUSTOM_FIRST <= step.chapter <= CUSTOM_LAST):
+            if not is_story_number(step.chapter):
                 problems.append(f"{step.chapter_id} has no supported story number (0-55 or 56-79 custom).")
         if any(isinstance(step, (PartBoundaryStep, DivideArmiesStep)) and
                not any(isinstance(later, ChapterStep) for later in steps[i + 1:])
@@ -296,17 +305,24 @@ class StorySequence:
             problems.append("Part and division steps must be followed by a chapter.")
         if sum(isinstance(step, DivideArmiesStep) for step in steps) > 1:
             problems.append("Divide armies can only appear once.")
-        divided = False
+        divided = merged = False
         effective: Army | None = None
+        divisions = (Army.DIVISION_1, Army.DIVISION_2, Army.DIVISION_3)
         for step in steps:
             if isinstance(step, DivideArmiesStep):
                 divided = True
             elif isinstance(step, ChapterStep):
+                previous = effective
                 effective = effective if step.army == Army.INHERIT else step.army
                 if effective is None:
                     problems.append(f"{step.chapter_id} inherits an army, but no earlier chapter selects one.")
-                elif effective in (Army.DIVISION_1, Army.DIVISION_2, Army.DIVISION_3) and not divided:
+                elif effective in divisions and not divided:
                     problems.append(f"{step.chapter_id} selects {effective.label} before Divide armies.")
+                elif effective in divisions and merged:
+                    problems.append(f"{step.chapter_id} selects {effective.label} after the divisions were "
+                                    "merged back into the main army.")
+                if previous in divisions and effective == Army.MAIN:
+                    merged = True
         return problems
 
     def set_steps(self, steps: Iterable[StoryStep]) -> str:
@@ -317,8 +333,6 @@ class StorySequence:
         if not self.available:
             raise ValueError(self.unavailable_reason)
         chapters = [step for step in steps if isinstance(step, ChapterStep)]
-        if not self.installed:
-            self.editor.session.set_patch(PATCH, True)
         successors = bytearray(0x100)
         armies = bytearray(0x100)
         flags = bytearray(0x100)
@@ -335,11 +349,39 @@ class StorySequence:
             elif isinstance(step, DivideArmiesStep):
                 following = next(later for later in steps[i + 1:] if isinstance(later, ChapterStep))
                 flags[following.chapter] |= FLAG_DIVIDE_ARMIES
+        self._store(successors, armies, flags)
+        return "updated Radiant Dawn story order"
+
+    def set_successors(self, changes: dict[int, int | None]) -> str:
+        """Give each chapter of ``changes`` a new next chapter (None: the retail one, or none for a
+        custom chapter, which takes it out of the story). The army and part tables are kept."""
+        if not self.available:
+            raise ValueError(self.unavailable_reason)
+        for chapter, following in changes.items():
+            if not is_story_number(chapter) or chapter == ENDING:
+                raise ValueError(f"Chapter number {chapter} cannot have a next chapter.")
+            if following is not None and (not is_story_number(following) or following == 0):
+                raise ValueError(f"Chapter number {following} cannot follow a chapter.")
+        successors = bytearray(self._table(SUCCESSORS, bytes(0x100)))
+        for chapter, following in changes.items():
+            retail = following is None or (chapter < CUSTOM_FIRST and following == retail_next(chapter))
+            successors[chapter] = 0 if retail else following
+        self._store(successors, self._table(ARMIES, _retail_armies()), self._table(FLAGS, _retail_flags()))
+        return ", ".join(f"after {chapter}: {following if following is not None else 'retail'}"
+                         for chapter, following in sorted(changes.items()))
+
+    def _store(self, successors: bytes, armies: bytes, flags: bytes) -> None:
+        if not self.installed:
+            self.editor.session.set_patch(PATCH, True)
         self.editor.session._write(SUCCESSORS, bytes(successors))
         self.editor.session._write(ARMIES, bytes(armies))
         self.editor.session._write(FLAGS, bytes(flags))
         self.editor.save()
-        return "updated Radiant Dawn story order"
+
+
+def is_story_number(chapter: int) -> bool:
+    """A retail story number (0-55) or a custom one (56-79)."""
+    return 0 <= chapter <= ENDING or CUSTOM_FIRST <= chapter <= CUSTOM_LAST
 
 
 def chapter_number_map(fe10data_bytes: bytes) -> dict[int, str]:

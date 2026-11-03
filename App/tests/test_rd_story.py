@@ -73,6 +73,10 @@ class HookTests(unittest.TestCase):
             self.assertEqual(edit.original, ppc.bl(site, rd_story._ADVANCE).to_bytes(4, "big"))
             self.assertEqual(edit.patched, ppc.bl(site, rd_story.HOOK).to_bytes(4, "big"))
 
+    def test_hook_is_past_dolphins_hbreload_stub(self):
+        # with cheats off Dolphin replaces 0x80001800 and writes "STUBHAXX" at 0x80001804
+        self.assertGreaterEqual(rd_story.HOOK, rd_story.CAVE_ADDRESS + 0x100)
+
     def test_custom_range_and_tables_fit_the_cave(self):
         self.assertLessEqual(rd_story.HOOK + len(rd_story._hook()), rd_story.SUCCESSORS)
         self.assertTrue(rd_story.in_cave(rd_story.MAGIC, 4))

@@ -181,21 +181,42 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
     return titles
 
 
+_FE10_TITLES_CACHE: dict[str, tuple[tuple, dict[str, str]]] = {}
+
+
+def _stamp(path) -> tuple:
+    try:
+        stat = path.stat()
+        return (str(path), stat.st_mtime_ns, stat.st_size)
+    except (OSError, AttributeError):
+        return (str(path), None, None)
+
+
 def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
     """Radiant Dawn: chapter id (``0102``, ``0407a``, ``final``) -> the title of its ``ChapterData``
     record (``MCT0102`` in ``Mess/e_common.m``, else the Japanese ``common.m``), e.g.
-    ``"I:1-Maiden of Miracles"``."""
+    ``"I:1-Maiden of Miracles"``. Kept until FE10Data.cms or the message file changes: every
+    chapter page asks for the titles several times."""
     from .formats import fe10_message, fe10data, message
 
     try:
-        records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
         files = files_of(project)
+        data = files.find(logical_rel_of(project, "game_data"))
         path = next((p for p in (files.find(game_path("Mess", n)) for n in ("e_common.m", "common.m"))
                      if p is not None and p.is_file()), None)
+        stamp = (_stamp(data) if data is not None else None, _stamp(path) if path is not None else None)
+        cache_key = str(files.target(logical_rel_of(project, "game_data")))  # one entry per project
+        cached = _FE10_TITLES_CACHE.get(cache_key)
+        if cached is not None and cached[0] == stamp:
+            return dict(cached[1])
+        records = fe10data.read_fe10data(project.read_logical("game_data")).table("chapter")
+        wanted = {record.values.get("title") for record in records}
         texts = {}
         if path is not None:
             for msg in message.read_messages_path(path):
-                texts[msg.speaker.encode("cp437").decode("cp932", errors="replace")] = fe10_message.plain_text(msg.text)
+                key = msg.speaker.encode("cp437").decode("cp932", errors="replace")
+                if key in wanted:  # only the titles are decoded: plain_text on every message is slow
+                    texts[key] = fe10_message.plain_text(msg.text)
     except Exception:  # noqa: BLE001 - titles are presentation only
         return {}
     titles = {}
@@ -203,7 +224,8 @@ def _fe10_chapter_titles(project: ModProject) -> dict[str, str]:
         cid, key = record.values.get("cid") or "", record.values.get("title")
         if cid[:1] in "Cc" and key and texts.get(key):
             titles[cid[1:].lower() if not cid[1:].isdigit() else cid[1:]] = texts[key]
-    return titles
+    _FE10_TITLES_CACHE[cache_key] = (stamp, titles)
+    return dict(titles)
 
 
 def _common_messages_path(project: ModProject) -> Optional[Path]:
@@ -264,8 +286,10 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
     rename needs a same-length number (real ones are 2 digits); with a
     different digit count the names are carried through unchanged.
 
-    Dialogue text, ``map.cmp`` (its bundled model names are internal and
-    consistent) and the script's message keys are copied as they are.
+    ``map.cmp``'s models are named after the map (``bmap01.gs``, ``bmap01_water0.g``, and the
+    same names in ``map.bin``), and the game loads them by the map folder's name, so they are
+    renamed too (:func:`rename_map_pack`). Dialogue text and the script's message keys are copied
+    as they are.
     This only copies files: :func:`add_story_chapter` also makes the game
     load and reach the chapter.
     """
@@ -298,6 +322,8 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
             inner = rel[len(source_folder) + 1:]
             if inner.lower() == "dispos.cmp":
                 files.write(f"{target}/{inner}", _renumber_dispos(files.read(rel), source_padded, new_padded))
+            elif inner.lower() == "map.cmp":
+                files.write(f"{target}/{inner}", rename_map_pack(files.read(rel), folder, target.rsplit("/", 1)[-1]))
             else:
                 files.import_file(f"{target}/{inner}", files.require(rel))
 
@@ -305,16 +331,18 @@ def duplicate_chapter(project: ModProject, source_id: str, new_id: str) -> Chapt
 
 
 def _renumber_script(data: bytes, source_padded: str, new_padded: str) -> bytes:
-    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings renamed,
-    and its ``ChapterMoviePlay(<source>)`` calls given the new number. A same-length rename
-    keeps every string offset, so the code is untouched apart from that one operand byte."""
+    """The script with its own ``bmap<source>`` / ``bmap<source>_...`` pool strings and its own
+    chapter id ``C<source>`` (Radiant Dawn's ``ChapterTitle("C0101")`` picks the title card with
+    it) renamed, and its ``ChapterMoviePlay(<source>)`` calls given the new number. A same-length
+    rename keeps every string offset, so the code is untouched apart from that one operand byte."""
     if len(source_padded) != len(new_padded):
         return data
     import struct
 
     pool_start, table_start = struct.unpack_from("<II", data, 0x24)
     old, new = f"bmap{source_padded}".encode("ascii"), f"bmap{new_padded}".encode("ascii")
-    entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else e
+    own_id, new_id = f"C{source_padded}".encode("ascii"), f"C{new_padded}".encode("ascii")
+    entries = [new + e[len(old):] if e == old or e.startswith(old + b"_") else new_id if e == own_id else e
                for e in data[pool_start:table_start].split(b"\x00")]
     data = data[:pool_start] + b"\x00".join(entries) + data[table_start:]
     return _renumber_chapter_movie(data, int(source_padded), int(new_padded))
@@ -340,6 +368,39 @@ def _renumber_chapter_movie(data: bytes, source: int, new: int) -> bytes:
         out[at + 1] = new
         at = out.find(call, at + len(call))
     return bytes(out)
+
+
+def rename_map_pack(compressed: bytes, old_map: str, new_map: str) -> bytes:
+    """A copied ``map.cmp`` with its models renamed from ``old_map`` to ``new_map``: the pack
+    entries (``bmap0101.gs`` -> ``bmap0501.gs``) and the names ``map.bin`` gives them. The game
+    finds a map's models by the map's own name; a copy that keeps the template's names loads no
+    models and its chapter hangs before any unit is placed (checked in Dolphin on Radiant Dawn).
+    Names of another length are left as they are (a same-length rename keeps every offset)."""
+    if len(old_map) != len(new_map) or old_map == new_map:
+        return compressed
+    old, new = old_map.encode("ascii"), new_map.encode("ascii")
+
+    def renamed(name: str) -> str:
+        return new_map + name[len(old_map):] if name.startswith(old_map) and name[len(old_map):][:1] in (".", "_") else name
+
+    def strings(data: bytes) -> bytes:
+        # whole names only: the map name followed by its terminator, a "_" suffix, an extension or
+        # ":" (map.bin names its own sections "bmap0101:mapdata", "bmap0101:uniquepanel"...)
+        out, at = bytearray(data), data.find(old)
+        while at != -1:
+            after = data[at + len(old):at + len(old) + 1]
+            if (at == 0 or not data[at - 1:at].isalnum()) and after in (b"\x00", b"_", b".", b":"):
+                out[at:at + len(old)] = new
+            at = data.find(old, at + 1)
+        return bytes(out)
+
+    decompressed = lz10.decompress(compressed)
+    entries = pak.read_pak_entries(decompressed)
+    files = []
+    for entry in entries:
+        content = pak.read_pak_file_content(decompressed, entry)
+        files.append((renamed(entry.name), strings(content) if entry.name == "map.bin" else content))
+    return lz10.compress(pak.pack_pak(files, [entry.reserved for entry in entries]))
 
 
 def _renumber_dispos(compressed: bytes, source_padded: str, new_padded: str) -> bytes:

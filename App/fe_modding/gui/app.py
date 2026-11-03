@@ -25,7 +25,7 @@ from .changelog import ChangeLog
 from .new_project_dialog import NewProjectDialog
 from .patch_dialog import ApplyPatchDialog
 from .settings_dialog import SettingsDialog
-from .pages import ASSET_TOOLS, PAGE_FACTORIES
+from .pages import ASSET_TOOLS, PAGE_FACTORIES, tool_applies
 from .shell import NAV, Shell
 from .widgets import Card, CardGrid, ScrollFrame, disable_wheel_value_changes
 
@@ -214,7 +214,8 @@ class MainWindow(tk.Tk):
         self._clear_container()
         self._shell = Shell(self._container, project, ChangeLog(), PAGE_FACTORIES,
                             on_close_project=self._close_project,
-                            asset_tools=tuple((key, label) for key, label, *_rest in ASSET_TOOLS))
+                            asset_tools=tuple((key, label) for key, label, *_rest in ASSET_TOOLS
+                                              if tool_applies(project, key)))
         self._shell.pack(fill="both", expand=True)
         self._shell.navigate(("home",))
         self.title(f"{project.name} - Tellius Modding")

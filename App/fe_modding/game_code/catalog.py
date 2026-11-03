@@ -464,10 +464,13 @@ class Catalog:
                 if any(site_code[:1] == family for site_code in entry.versions)]
 
     def groups_for(self, version: GameVersion | str | None) -> dict[str, list[Entry]]:
+        """``version``'s entries by group, the groups in the catalogue's order so that both games'
+        pages list the groups they share in the same order."""
         grouped: dict[str, list[Entry]] = {}
         for entry in self.entries_for(version):
             grouped.setdefault(entry.group, []).append(entry)
-        return grouped
+        order = {group: i for i, group in enumerate(self.groups())}
+        return dict(sorted(grouped.items(), key=lambda item: order[item[0]]))
 
 
 CATALOG = Catalog()

@@ -1,4 +1,5 @@
-"""Radiant Dawn character panels hosted by the shared Characters page."""
+"""The Radiant Dawn character form hosted by the shared Characters page (its Supports tab is the shared
+:class:`.support_editor.CharacterSupportsPanel`)."""
 
 from __future__ import annotations
 
@@ -7,8 +8,10 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
 from ..formats import fe10data
+from . import message_reference
+from .character_form import weapon_rank_grid
 from .fe8_session import Fe10DataSession
-from .widgets import Link
+from .widgets import Link, tip
 
 
 PREFIXES = {
@@ -17,11 +20,17 @@ PREFIXES = {
 }
 
 STAT_KEYS = tuple(name.lower() for name in fe10data.STAT_NAMES)
-IDENTITY_FIELDS = ("pid", "mpid", "mnpid", "fid", "jid", "affinity", "weapon_ranks")
+IDENTITY_FIELDS = ("pid", "mpid", "mnpid", "fid", "jid", "affinity")
+#: The weapon types of a Radiant Dawn rank string, in order (from the classes' starting and maximum
+#: ranks: Swordmaster first letter, Thief fifth, the laguz classes' "*" sixth, Priest last).
+WEAPON_TYPES = ("Sword", "Lance", "Axe", "Bow", "Knife", "Strike", "Fire", "Thunder", "Wind", "Light", "Dark",
+                "Staff")
+#: Fields whose value is a message ID: the message's text is shown beside them.
+MESSAGE_FIELDS = ("mpid", "mnpid")
 ANIMATION_FIELDS = ("aid_1", "aid_2", "aid_3", "aid_4")
 UNIT_FIELDS = ("level", "sex", "authority", "biorhythm")
 GAUGE_FIELDS = ("gauge_turn", "gauge_battle", "gauge_turn_transformed", "gauge_battle_transformed")
-KNOWN_FIELDS = frozenset(IDENTITY_FIELDS + ANIMATION_FIELDS + UNIT_FIELDS + GAUGE_FIELDS
+KNOWN_FIELDS = frozenset(IDENTITY_FIELDS + ("weapon_ranks",) + ANIMATION_FIELDS + UNIT_FIELDS + GAUGE_FIELDS
                          + tuple(f"bonus_{key}" for key in STAT_KEYS) + ("bonus_weight",)
                          + tuple(f"growth_{key}" for key in STAT_KEYS))
 
@@ -31,13 +40,16 @@ class Fe10CharacterForm(ttk.Frame):
 
     def __init__(self, parent: tk.Misc, session: Fe10DataSession, *,
                  on_open_class: Optional[Callable[[str], None]] = None,
-                 on_open_character: Optional[Callable[[Optional[str]], None]] = None):
+                 on_open_character: Optional[Callable[[Optional[str]], None]] = None,
+                 navigate: Optional[Callable[[tuple], None]] = None):
         super().__init__(parent, style="Page.TFrame")
         self._session = session
+        self._navigate = navigate
         self._on_open_class = on_open_class
         self._on_open_character = on_open_character
         self._index: Optional[int] = None
         self._vars: dict[str, tk.StringVar] = {}
+        self._texts: Optional[dict[str, str]] = None
         session.subscribe(self._session_changed)
 
         bar = ttk.Frame(self, style="Page.TFrame")
@@ -69,35 +81,63 @@ class Fe10CharacterForm(ttk.Frame):
 
         top = ttk.Frame(self._body, style="Page.TFrame")
         top.pack(fill="x")
+        # The Path of Radiance arrangement: Identity with the map models under it, then Skills with the
+        # weapon ranks (the rank table is what makes Skills wide).
         left = ttk.Frame(top, style="Page.TFrame")
         left.pack(side="left", fill="both", padx=(0, 12))
         identity = self._group(left, "Identity")
         for row, key in enumerate(IDENTITY_FIELDS):
             self._field(identity, row, definitions[key], record.values.get(key))
         if record.values.get("jid") and self._on_open_class:
-            Link(identity, "Open class", lambda jid=record.values["jid"]: self._on_open_class(jid)).grid(
-                row=4, column=2, sticky="w", padx=(8, 0))
+            ttk.Button(identity, text="Open", command=lambda jid=record.values["jid"]: self._on_open_class(jid)).grid(
+                row=IDENTITY_FIELDS.index("jid"), column=2, sticky="w", padx=(6, 0))
+        if self._navigate is not None and record.values.get("pid"):
+            pid = record.values["pid"]
+            ttk.Button(identity, text="Open", command=lambda: self._navigate(("asset", "portraits", pid))).grid(
+                row=IDENTITY_FIELDS.index("fid"), column=2, sticky="w", padx=(6, 0))
+            tip(ttk.Button(identity, text="Supports", command=lambda: self._navigate(("character", pid, "supports"))),
+                "The affinity is also set on the Supports tab, with the support partners.").grid(
+                row=IDENTITY_FIELDS.index("affinity"), column=2, sticky="w", padx=(6, 0))
 
-        animations = self._group(left, "Animations")
+        animations = self._group(left, "Map models", "The unit's map animation sets (AID), one per tier; an "
+                                                     "empty first one uses the class's own.")
         animations.master.pack(fill="x", pady=(12, 0))
         for row, key in enumerate(ANIMATION_FIELDS):
             self._field(animations, row, definitions[key], record.values.get(key))
+            if self._navigate is not None:
+                ttk.Button(animations, text="Open", command=lambda k=key: self._open_map_model(k)).grid(
+                    row=row, column=2, sticky="w", padx=(6, 0))
 
         skills = self._group(top, "Skills")
         skills.master.pack(side="left", fill="both", expand=True)
         ttk.Label(skills, text="Personal skills", style="Surface.TLabel").grid(row=0, column=0, sticky="nw",
                                                                                 padx=(0, 8))
-        self._skills = tk.StringVar(value=", ".join(v for v in record.lists.get("skills", []) if v))
+        own = [v for v in record.lists.get("skills", []) if v]
+        self._skills = tk.StringVar(value=", ".join(own))
         skill_entry = ttk.Combobox(skills, textvariable=self._skills,
-                                   values=self._session.labels_by_prefix.get("SID_", []), width=70)
+                                   values=self._session.labels_by_prefix.get("SID_", []), width=52)
         skill_entry.grid(row=0, column=1, sticky="w")
         ttk.Label(skills, text="Separate multiple IDs with commas.", style="SurfaceMuted.TLabel").grid(
-            row=1, column=1, sticky="w", pady=(2, 8))
-        ttk.Label(skills, text="Class innate skills", style="SurfaceMuted.TLabel").grid(
-            row=2, column=0, sticky="w", padx=(0, 8))
-        innate = ", ".join(v for v in (cls.lists.get("skills", []) if cls else []) if v)
-        ttk.Label(skills, text=innate or "None", style="SurfaceMuted.TLabel", wraplength=430,
-                  justify="left").grid(row=2, column=1, sticky="w")
+            row=1, column=1, sticky="w", pady=(2, 4))
+        innate = [v for v in (cls.lists.get("skills", []) if cls else []) if v]
+        for row, (label, sids) in enumerate((("Open skill", own), ("Class innate skills", innate)), 2):
+            ttk.Label(skills, text=label, style="SurfaceMuted.TLabel").grid(row=row, column=0, sticky="w",
+                                                                            padx=(0, 8), pady=2)
+            links = ttk.Frame(skills, style="Surface.TFrame")
+            links.grid(row=row, column=1, sticky="w")
+            if not sids:
+                ttk.Label(links, text="None", style="SurfaceMuted.TLabel").pack(side="left")
+            for sid in sids:
+                if self._navigate is not None:
+                    Link(links, sid, lambda sid=sid: self._navigate(("data", "skills", sid)),
+                         bg_token="surface").pack(side="left", padx=(0, 10))
+                else:
+                    ttk.Label(links, text=sid, style="SurfaceMuted.TLabel").pack(side="left", padx=(0, 10))
+        weapon_rank_grid(skills, 4, record.values.get("weapon_ranks"), cls.values.get("weapon_ranks") if cls else None,
+                         WEAPON_TYPES, self._vars,
+                         "The game starts from the class's ranks; a letter here replaces the class's for that "
+                         "weapon type. - keeps the class's rank, * makes the type usable without a set rank, E to S "
+                         "set the starting rank.", short=3)
 
         unit = self._group(self._body, "Level, unit details and stats")
         unit.master.pack(fill="x", pady=(12, 0))
@@ -145,10 +185,22 @@ class Fe10CharacterForm(ttk.Frame):
         for row, definition in enumerate(d for d in fe10data.field_defs("character") if d.key not in KNOWN_FIELDS):
             self._field(other, row, definition, record.values.get(definition.key))
 
-    def _group(self, parent: tk.Misc, title: str) -> ttk.Frame:
+    def _open_map_model(self, key: str) -> None:
+        """The map model of an AID field; an empty first AID opens the class's own."""
+        from .character_form import open_map_model
+
+        aid = self._vars[key].get().strip()
+        if not aid and key == "aid_1":
+            db = self._session.fe10
+            jid = db.characters[self._index].values.get("jid")
+            cls = next((r for r in db.classes if r.id == jid), None)
+            aid = (cls.values.get("aid") if cls else None) or ""
+        open_map_model(self, self._session.project, self._navigate, aid)
+
+    def _group(self, parent: tk.Misc, title: str, help_text: str = "") -> ttk.Frame:
         outer = ttk.Frame(parent, style="Surface.TFrame", padding=14)
         outer.pack(fill="x")
-        ttk.Label(outer, text=title, style="SurfaceHeading.TLabel").pack(anchor="w", pady=(0, 8))
+        tip(ttk.Label(outer, text=title, style="SurfaceHeading.TLabel"), help_text).pack(anchor="w", pady=(0, 8))
         inner = ttk.Frame(outer, style="Surface.TFrame")
         inner.pack(fill="both", expand=True)
         return inner
@@ -164,10 +216,28 @@ class Fe10CharacterForm(ttk.Frame):
         else:
             widget = ttk.Entry(parent, textvariable=var, width=12)
         widget.grid(row=row, column=1, sticky="w", pady=2)
+        if definition.key in MESSAGE_FIELDS:
+            shown = tk.StringVar()
+
+            def update(*_args):
+                key = var.get().strip()
+                text = self._message_texts().get(key, "")
+                shown.set(message_reference.preview(text, fe10=True) if text else
+                          "(message not found)" if key else "")
+            var.trace_add("write", update)
+            update()
+            ttk.Label(parent, textvariable=shown, style="SurfaceCaption.TLabel", wraplength=260,
+                      justify="left").grid(row=row, column=2, sticky="w", padx=(6, 0))
         note = fe10data.FIELD_NOTES.get(definition.key)
         if note:
             ttk.Label(parent, text=note, style="SurfaceMuted.TLabel", wraplength=360, justify="left").grid(
                 row=row, column=2, sticky="w", padx=(10, 0))
+
+    def _message_texts(self) -> dict[str, str]:
+        if self._texts is None:
+            project = self._session.project
+            self._texts = {**message_reference.epilogue_texts(project), **message_reference.message_texts(project)}
+        return self._texts
 
     def _entry(self, parent, row: int, column: int, key: str, value, width: int) -> None:
         var = self._vars[key] = tk.StringVar(value="" if value is None else str(value))
@@ -296,215 +366,6 @@ class Fe10CharacterForm(ttk.Frame):
         if not self._status.cget("text") or not dirty:
             self._status.configure(text=f"Unsaved changes in {self._session.file_label}" if dirty else "",
                                    style="Warn.TLabel" if dirty else "Muted.TLabel")
-
-
-class Fe10CharacterSupportsPanel(ttk.Frame):
-    """RD support speeds and personal bonds for the character page."""
-
-    def __init__(self, parent: tk.Misc, session: Fe10DataSession, display_name: Callable[[str], str],
-                 open_character: Callable[[str], None]):
-        super().__init__(parent, style="Page.TFrame")
-        self._session, self._display_name, self._open_character = session, display_name, open_character
-        self._pid: Optional[str] = None
-        self._support_rows: dict[str, tuple[int, int]] = {}
-        self._bond_rows: dict[str, int] = {}
-        session.subscribe(self._session_changed)
-
-    def show(self, pid: Optional[str]) -> None:
-        self._pid = pid
-        for child in self.winfo_children():
-            child.destroy()
-        db = self._session.fe10
-        if db is None or not pid:
-            ttk.Label(self, text=self._session.unavailable_reason, style="Muted.TLabel").pack(anchor="w")
-            return
-        character = next((r for r in db.characters if r.id == pid), None)
-        affinity_row = ttk.Frame(self, style="Page.TFrame")
-        affinity_row.pack(fill="x", pady=(0, 14))
-        ttk.Label(affinity_row, text="Affinity").pack(side="left")
-        self._affinity = tk.StringVar(value=(character.values.get("affinity") or "") if character else "")
-        affinities = [r.values.get("affinity") for r in db.table("affinity") if r.values.get("affinity")]
-        affinity = ttk.Combobox(affinity_row, textvariable=self._affinity, values=affinities,
-                                state="readonly", width=22)
-        affinity.pack(side="left", padx=(8, 0))
-        affinity.bind("<<ComboboxSelected>>", lambda _e: self._apply_affinity())
-        ttk.Label(affinity_row, text="The character's affinity also appears on the Stats tab.",
-                  style="Muted.TLabel").pack(side="left", padx=(12, 0))
-        support = next((r for r in db.table("support") if r.values.get("pid") == pid), None)
-        ttk.Label(self, text="Support partners", style="Heading.TLabel").pack(anchor="w")
-        ttk.Label(self, text="Select a partner to edit the support flag and growth speed.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
-        self._support_tree = self._tree(("partner", "name", "flag", "speed"), (190, 190, 70, 70))
-        self._support_rows = {}
-        if support:
-            for k, (partner, flag, speed) in enumerate(support.lists["partners"]):
-                iid = str(k)
-                self._support_tree.insert("", "end", iid=iid,
-                                          values=(partner, self._display_name(partner or ""), flag, speed))
-                self._support_rows[iid] = (support.index, k)
-        self._support_tree.bind("<<TreeviewSelect>>", lambda _e: self._select_support())
-        edit = ttk.Frame(self, style="Page.TFrame")
-        edit.pack(fill="x", pady=(6, 14))
-        self._support_target = ttk.Label(edit, text="Pick a partner", style="Muted.TLabel")
-        self._support_target.pack(side="left")
-        self._flag, self._speed = tk.StringVar(), tk.StringVar()
-        for label, var in (("Flag", self._flag), ("Speed", self._speed)):
-            ttk.Label(edit, text=label).pack(side="left", padx=(12, 4))
-            ttk.Entry(edit, textvariable=var, width=6).pack(side="left")
-        ttk.Button(edit, text="Apply", command=self._apply_support).pack(side="left", padx=(8, 0))
-
-        ttk.Label(self, text="Bonds", style="Heading.TLabel").pack(anchor="w")
-        self._bond_tree = self._tree(("partner", "name", "bonus"), (190, 190, 80), height=6)
-        self._bond_rows = {}
-        for bond in db.table("bond"):
-            a, b = bond.values.get("pid"), bond.values.get("partner")
-            if pid not in (a, b):
-                continue
-            partner = b if a == pid else a
-            iid = str(bond.index)
-            self._bond_tree.insert("", "end", iid=iid,
-                                   values=(partner, self._display_name(partner or ""), bond.values.get("bonus")))
-            self._bond_rows[iid] = bond.index
-        self._bond_tree.bind("<<TreeviewSelect>>", lambda _e: self._select_bond())
-        self._bond_tree.bind("<Return>", lambda _e: self._open_selected(self._bond_tree))
-        bond_edit = ttk.Frame(self, style="Page.TFrame")
-        bond_edit.pack(fill="x", pady=(6, 0))
-        self._bond_target = ttk.Label(bond_edit, text="Pick a bond", style="Muted.TLabel")
-        self._bond_target.pack(side="left")
-        ttk.Label(bond_edit, text="Bonus").pack(side="left", padx=(12, 4))
-        self._bond_bonus = tk.StringVar()
-        ttk.Entry(bond_edit, textvariable=self._bond_bonus, width=6).pack(side="left")
-        ttk.Button(bond_edit, text="Apply", command=self._apply_bond).pack(side="left", padx=(8, 0))
-        ttk.Button(bond_edit, text="New bond…", command=self._add_bond).pack(side="left", padx=(18, 0))
-        ttk.Button(bond_edit, text="Remove bond", command=self._remove_bond).pack(side="left", padx=(6, 0))
-
-    def _apply_affinity(self) -> None:
-        db = self._session.fe10
-        character = next((r for r in db.characters if r.id == self._pid), None) if db else None
-        if character is None or self._affinity.get() == (character.values.get("affinity") or ""):
-            return
-        self._session.replace(fe10data.patch_field(
-            self._session.data, "character", character.index, "affinity", self._affinity.get() or None), self)
-        self.show(self._pid)
-
-    def _tree(self, columns, widths, height=10):
-        holder = ttk.Frame(self, style="Page.TFrame")
-        holder.pack(fill="both", expand=True)
-        tree = ttk.Treeview(holder, columns=columns, show="headings", height=height, selectmode="browse")
-        for key, width in zip(columns, widths):
-            tree.heading(key, text=key.title())
-            tree.column(key, width=width, stretch=key == "name")
-        scroll = ttk.Scrollbar(holder, command=tree.yview)
-        tree.configure(yscrollcommand=scroll.set)
-        tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        tree.bind("<Double-Button-1>", lambda _e: self._open_selected(tree))
-        return tree
-
-    def _open_selected(self, tree) -> None:
-        selected = tree.selection()
-        if selected:
-            partner = tree.item(selected[0], "values")[0]
-            if partner:
-                self._open_character(partner)
-
-    def _select_support(self) -> None:
-        selected = self._support_tree.selection()
-        if not selected:
-            return
-        values = self._support_tree.item(selected[0], "values")
-        self._support_target.configure(text=values[0])
-        self._flag.set(str(values[2]))
-        self._speed.set(str(values[3]))
-
-    def _apply_support(self) -> None:
-        selected = self._support_tree.selection()
-        if not selected:
-            return
-        record, partner = self._support_rows[selected[0]]
-        try:
-            flag, speed = int(self._flag.get(), 0), int(self._speed.get(), 0)
-            current = self._session.fe10.table("support")[record].lists["partners"][partner]
-            if (flag, speed) == tuple(current[1:]):
-                return
-            data = fe10data.set_support(self._session.data, record, partner, flag, speed)
-        except ValueError as exc:
-            messagebox.showerror("Invalid support", str(exc), parent=self)
-            return
-        self._session.replace(data, self)
-        self.show(self._pid)
-
-    def _select_bond(self) -> None:
-        selected = self._bond_tree.selection()
-        if not selected:
-            return
-        values = self._bond_tree.item(selected[0], "values")
-        self._bond_target.configure(text=values[0])
-        self._bond_bonus.set(str(values[2]))
-
-    def _apply_bond(self) -> None:
-        selected = self._bond_tree.selection()
-        if not selected:
-            return
-        index = self._bond_rows[selected[0]]
-        try:
-            bonus = int(self._bond_bonus.get(), 0)
-            data = fe10data.patch_field(self._session.data, "bond", index, "bonus", bonus)
-        except ValueError as exc:
-            messagebox.showerror("Invalid bond", str(exc), parent=self)
-            return
-        self._session.replace(data, self)
-        self.show(self._pid)
-
-    def _add_bond(self) -> None:
-        db = self._session.fe10
-        if db is None or not self._pid or not db.table("bond"):
-            return
-        partner = simpledialog.askstring("New bond", "Partner PID:", initialvalue="PID_", parent=self)
-        if not partner or partner == "PID_":
-            return
-        if partner == self._pid or not any(r.id == partner for r in db.characters):
-            messagebox.showerror("New bond", "Choose a different existing character PID.", parent=self)
-            return
-        if any({r.values.get("pid"), r.values.get("partner")} == {self._pid, partner}
-               for r in db.table("bond")):
-            messagebox.showerror("New bond", f"A bond with {partner} already exists.", parent=self)
-            return
-        try:
-            data, index = fe10data.add_record(self._session.data, "bond", 0)
-            data = fe10data.patch_field(data, "bond", index, "pid", self._pid)
-            data = fe10data.patch_field(data, "bond", index, "partner", partner)
-            data = fe10data.patch_field(data, "bond", index, "bonus", 10)
-        except ValueError as exc:
-            messagebox.showerror("New bond", str(exc), parent=self)
-            return
-        self._session.replace(data, self)
-        self.show(self._pid)
-
-    def _remove_bond(self) -> None:
-        selected = self._bond_tree.selection()
-        if not selected:
-            return
-        index = self._bond_rows[selected[0]]
-        if not messagebox.askyesno("Remove bond", "Remove the selected bond?", parent=self):
-            return
-        try:
-            data = fe10data.remove_record(self._session.data, "bond", index)
-        except ValueError as exc:
-            messagebox.showerror("Remove bond", str(exc), parent=self)
-            return
-        self._session.replace(data, self)
-        self.show(self._pid)
-
-    def reload(self) -> None:
-        self.show(self._pid)
-
-    def flush(self) -> None:
-        pass
-
-    def _session_changed(self, source) -> None:
-        if source is not self and self._pid and self.winfo_exists():
-            self.show(self._pid)
 
 
 def _references(db: fe10data.Fe10Data, label: str, skip: tuple[str, int]) -> list[str]:

@@ -76,7 +76,7 @@ def _stats(prefix: str, kind: str, group: str, names: Sequence[str] = STAT_NAMES
 # -- character (PersonData) ------------------------------------------------------------------------
 # +0x00 skill count, +0x01 unknown, +0x02 level, +0x03 sex; 7 labels; skills; 5 labels; 28 bytes.
 CHARACTER_HEAD = _bytes("u8", (("unknown_01", "Unknown +0x01"), ("level", "Level"), ("sex", "Sex (1 = female)")), "Unit")
-CHARACTER_LABELS = _labels(("pid", "ID"), ("mpid", "Name key"), ("mnpid", "Help key"), ("fid", "Portrait"),
+CHARACTER_LABELS = _labels(("pid", "ID"), ("mpid", "Name key"), ("mnpid", "Epilogue title key"), ("fid", "Portrait"),
                            ("jid", "Class"), ("affinity", "Affinity"), ("weapon_ranks", "Weapon ranks"),
                            group="Identity")
 CHARACTER_AFTER_SKILLS = _labels(("unknown_label", "Unknown label"), ("aid_1", "Animation 1"),
@@ -108,7 +108,7 @@ CLASS_LABELS = _labels(("jid", "ID"), ("mjid", "Name key"), ("japanese_name", "J
 CLASS_FIXED = _bytes("u8", (
     ("unknown_00", "Unknown +0"), ("unknown_01", "Unknown +1"), ("unknown_02", "Unknown +2"),
     ("unknown_03", "Unknown +3"), ("unknown_04", "Unknown +4"), ("skill_count", "Skill count"),
-    ("sound_count", "Sound class count"), ("unknown_07", "Unknown +7"), ("unknown_08", "Unknown +8"),
+    ("sound_count", "Sound class count"), ("unknown_07", "Unknown +7"), ("movement_type", "Movement type"),
     ("movement", "Movement"), ("skill_capacity", "Skill capacity"), ("weight", "Weight")), "Class")
 CLASS_BEFORE_SKILLS = _labels(("unknown_label", "Unknown label"), group="Class")
 CLASS_AFTER_SKILLS = _labels(("extra_skill", "Extra skill"), group="Class")
@@ -282,7 +282,26 @@ def _read_label_list(data: bytes, record: Record, key: str, at: int, count: int)
     return at + 4 * count
 
 
+_WALK_CACHE: dict[tuple[str, bytes], list[Record]] = {}
+_WALK_CACHE_SIZE = 16
+
+
 def _walk(data: bytes, kind: str) -> list[Record]:
+    """Every ``kind`` record of ``data``. Forms read one field at a time (``record``), so the last
+    tables walked are kept, keyed by the (immutable) file bytes; a bytearray is walked each time."""
+    if not isinstance(data, bytes):
+        return _walk_uncached(data, kind)
+    key = (kind, data)
+    records = _WALK_CACHE.get(key)
+    if records is None:
+        records = _walk_uncached(data, kind)
+        if len(_WALK_CACHE) >= _WALK_CACHE_SIZE:
+            _WALK_CACHE.pop(next(iter(_WALK_CACHE)))
+        _WALK_CACHE[key] = records
+    return list(records)
+
+
+def _walk_uncached(data: bytes, kind: str) -> list[Record]:
     if kind == "skill":
         return _read_skills(data)
     if kind in FIXED_TABLES:
@@ -657,11 +676,17 @@ def _chapter_fields() -> tuple:
     fields += [_f("number", "Number", "u8", 0x84, "Settings")]
     # +0x89 selects the party-state gold account (FUN_800615dc/FUN_80061808/
     # FUN_800626e0); +0x8A selects the warehouse pointer (FUN_801059b0).
-    # Keep the remaining bytes conservatively named until their semantics are confirmed.
+    # +0x8B..+0x8F: research/rd/CHAPTER_DATA_NOTES.md (the keys keep their offsets so Excel
+    # sheets exported before the names stay importable); +0x88 is still unknown.
     fields += [_f("unknown_88", "Unknown +0x88", "u8", 0x88, "Settings"),
                _f("gold_account", "Gold account", "u8", 0x89, "Settings"),
                _f("convoy", "Convoy", "u8", 0x8A, "Settings")]
-    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x8B, 0x90)]
+    fields += [_f(key, label, "u8", o, "Settings") for key, label, o in (
+        ("unknown_8b", "Movement change (mounted and beast units)", 0x8B),
+        ("unknown_8c", "Preparations", 0x8C),
+        ("unknown_8d", "Skipped by the next-chapter step", 0x8D),
+        ("unknown_8e", "Part", 0x8E),
+        ("unknown_8f", "Player army group", 0x8F))]
     fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
                _f("base_scene", "Base scene", "label", 0x94, "Settings"),
                _f("battle_background", "Battle background", "label", 0x98, "Settings"),
@@ -881,6 +906,41 @@ def set_battle_scenery(data: bytes, index: int, terrain: int, scenery: int) -> b
     return bytes(out)
 
 
+def add_battle_scenery(data: bytes, copy_of: int, map_name: str) -> tuple[bytes, int]:
+    """Append a BattleTerrIndex row for map folder ``map_name`` with row ``copy_of``'s backgrounds
+    (the map count, a u16 at +2, goes up by one); returns the file and the new row's index."""
+    records = _read_battle_scenery(data)
+    if any(r.values["map"] == map_name for r in records):
+        raise ValueError(f"{map_name} already has a battle-scenery row.")
+    source = records[copy_of]
+    block = bytearray(data[source.start:source.end])
+    struct.pack_into(">I", block, 0, 0)
+    data = insert_bytes(data, records[-1].end, bytes(block), [0])
+    out = bytearray(data)
+    start = fe8data.section_start(data, "BattleTerrIndex")
+    struct.pack_into(">H", out, start + 2, len(records) + 1)
+    data, ptr = _label_value(bytes(out), map_name)
+    out = bytearray(data)
+    fe8data._pack_pointer(out, _read_battle_scenery(data)[-1].start, ptr)
+    return bytes(out), len(records)
+
+
+def add_battle_scenery_name(data: bytes, name: str) -> tuple[bytes, int]:
+    """Append ``name`` to BattleTerrName and return the file and its index. The executable indexes the
+    list with no count (8011d3a4 reads entry ``index * 4``), so the list may grow; the backdrop itself
+    is the FE10Battle.cms ``FE10BMapData`` record of that name."""
+    names = battle_scenery_names(data)
+    if name in names:
+        return data, names.index(name)
+    if len(names) >= 0xFFFF:
+        raise ValueError("BattleTerrName is full.")
+    data = insert_bytes(data, fe8data.section_start(data, "RelianceData"), bytes(4), [0])
+    data, ptr = _label_value(data, name)
+    out = bytearray(data)
+    fe8data._pack_pointer(out, fe8data.section_start(data, "BattleTerrName") + 4 * len(names), ptr)
+    return bytes(out), len(names)
+
+
 # -- adding and removing records -------------------------------------------------------------------
 
 #: Tables whose records can be added and removed: the ones with a count word the engine loops on.
@@ -889,6 +949,24 @@ def set_battle_scenery(data: bytes, index: int, terrain: int, scenery: int) -> b
 ADDABLE_KINDS = ("character", "class", "item", "chapter", "group", "bond", "affinity_pair", "triangle")
 #: A save stores these records by number: removing one renumbers the ones after it.
 SAVED_BY_NUMBER = ("character", "class", "item")
+
+
+def remove_battle_scenery(data: bytes, index: int) -> bytes:
+    """Remove BattleTerrIndex row ``index`` (the rows after it move up one; the map count, a u16 at
+    +2, goes down by one)."""
+    records = _read_battle_scenery(data)
+    if len(records) <= 1:
+        raise ValueError("The last battle-scenery row cannot be removed.")
+    rec = records[index]
+    out = bytearray(data)
+    for f in sorted(fe8data.listed_pointer_fields(data)):
+        if rec.start <= f < rec.end:
+            fe8data._pack_pointer(out, f, 0)
+    data = delete_bytes(bytes(out), rec.start, rec.end - rec.start)
+    out = bytearray(data)
+    start = fe8data.section_start(data, "BattleTerrIndex")
+    struct.pack_into(">H", out, start + 2, len(records) - 1)
+    return bytes(out)
 
 
 def _count_offset(data: bytes, kind: str) -> int:

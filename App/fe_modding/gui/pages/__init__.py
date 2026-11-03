@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .assets import ASSET_TOOLS, AssetPage, AssetsHub
+from .assets import ASSET_TOOLS, AssetPage, AssetsHub, tool_applies
 from .chapters import ChapterPage, ChaptersHub
 from .check import CheckPage
 from .code import CodePage
@@ -20,4 +20,4 @@ PAGE_FACTORIES = {
                  AssetsHub, AssetPage, CodePage, CheckPage, DiscPage)
 }
 
-__all__ = ["ASSET_TOOLS", "PAGE_FACTORIES"]
+__all__ = ["ASSET_TOOLS", "PAGE_FACTORIES", "tool_applies"]
