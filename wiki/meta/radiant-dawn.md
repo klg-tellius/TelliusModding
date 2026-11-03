@@ -69,7 +69,7 @@ source_path: "meta/radiant-dawn.md"
 
   The speed (0 to 4) picks one of five extra amounts in `RelianceParam` that the game adds to every support-point gain of the pair: +2, +1, 0, -1 and -2 in the retail data, so 0 is the fastest and 4 the slowest. The gains themselves are also in `RelianceParam`: 15 at each map start (30 in part IV), 3 per phase next to the partner, 5 while carrying it, 4 per staff, 1 per Shove and 2 per Smite. Ranks C, B and A open at 50, 100 and 150 points. Retail pairs mostly use speed 2.
 
-  The flag is 255 on 151 pairs and 0 on the others, always the same in both characters' lists. No game code reads it. <span class="confidence confidence--probable">engine</span>
+  The flag is 255 on 151 pairs and 0 on the others, always the same in both characters' lists. No game code reads it. <span class="confidence confidence--strong">engine</span>
 
 ## Battle backdrops
 
