@@ -38,6 +38,19 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(rd_armies.transfers_of(bodies["TEAM_0402_ED"]), [(5, 9), (10, 5)])
         self.assertEqual(rd_armies.transfers_of(bodies["TEAM_0406_ED"]), [(5, 10)])
 
+    def test_fit_sorties_swaps_leaders_and_sets_members_aside(self):
+        from fe_modding.game_code.rd_story import Army
+
+        members = {Army.DIVISION_1: {"PID_MICAIAH", "PID_SOTHE"}, Army.DIVISION_2: {"PID_IKE", "PID_MIST"},
+                   Army.DIVISION_3: {"PID_TIBARN", "PID_ERINCIA"}}
+        source = ('def f():\n    UnitForcedSallyByPID("PID_TIBARN")\n    UnitDontMoveSallyByPID("PID_TIBARN")\n'
+                  '    UnitForcedSallyByPID("PID_ERINCIA")\n    UnitForcedSallyByPID("PID_OTHER")')
+        ike = rd_armies.fit_sorties(source, Army.DIVISION_2, members)
+        self.assertEqual(ike.split("\n")[1:], ['    UnitForcedSallyByPID("PID_IKE")', '    UnitDontMoveSallyByPID("PID_IKE")',
+                                               '    # rd_armies: UnitForcedSallyByPID("PID_ERINCIA")',
+                                               '    UnitForcedSallyByPID("PID_OTHER")'])
+        self.assertEqual(rd_armies.fit_sorties(ike, Army.DIVISION_3, members), source)  # back to retail
+
     def test_with_transfers_keeps_the_other_lines(self):
         lines = rd_armies.function_bodies(STARTUP)["TEAM_0402_ED"]
         out = rd_armies._with_transfers(lines, [(5, 8), (9, 5)])
@@ -91,8 +104,10 @@ class RetailTests(unittest.TestCase):
         flow.set_army("0403", Army.DIVISION_2)
         flow = self._flow()
         plan = rd_armies.plan(self.project, flow, self.project.read_logical("game_data"))
-        self.assertEqual(plan.functions, {"TEAM_0401_ED": [], "TEAM_0402_ED": [(5, 8), (9, 5)],
+        self.assertEqual(plan.functions, {"TEAM_0401_ED": [(5, 8), (8, 5)], "TEAM_0402_ED": [(5, 8), (9, 5)],
                                           "TEAM_0403_ED": [(5, 9), (8, 5)]})
+        self.assertIn('UnitForcedSallyByPID("PID_MICAIAH")', plan.sorties["0402"])
+        self.assertNotIn('UnitForcedSallyByPID("PID_IKE")', plan.sorties["0402"])
         self.assertEqual(plan.records, {"C0402": {"player_group": 18, "lord": "PID_MICAIAH"},
                                         "C0403": {"player_group": 19, "lord": "PID_IKE"}})
         rd_armies.apply_scripts(self.project, plan)

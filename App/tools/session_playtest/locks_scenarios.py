@@ -116,17 +116,22 @@ SCENARIOS: list[Scenario] = [
         "Micaiah)",
         steps=["At the title screen, Continue and load File 5 (Hard; it was at the Endgame, chapter {was_chapter}; "
                "the test moved it back to Part 4's Prologue, so the file menu shows chapter 4-P).",
-               "Let 4-P's opening play (Start skips talks). The army-splitting screen appears: accept it as it is.",
+               "Let 4-P's opening play (Start skips talks). The army-splitting screen appears: before accepting it "
+               "as it is, note which army Ike and Tibarn are listed under.",
+               "In 4-P's preparations, open the unit list and note whether Ike or Tibarn is there.",
                "In 4-P's battle, end the player phase (Z menu, End). The chapter clears itself when the enemy "
                "phase starts.",
                "Go through the end of 4-P and the save menu, up to 4-1's base or preparations screen.",
                "Open the unit list (Manage units / the army list)."],
         checks=["File 5 shows 4-P in the file menu, 4-P starts and its splitting screen shows the three armies "
                 "(no freeze when loading it).",
+                "On the splitting screen Ike is under Ike's army and Tibarn under Tibarn's (note where they are "
+                "if not).",
+                "4-P's unit list (Micaiah's army) has neither Ike nor Tibarn.",
                 "4-1's units are Micaiah's army: Micaiah, Sothe, Naesala, Sanaki and the rest of the Silver "
                 "Army group from 4-P. Ike, Mist and Tibarn are not in the list.",
-                "4-1's map loads with them deployed (Micaiah on a starting tile), and the game runs through "
-                "one player phase.",
+                "4-1's map loads with every deployed unit on the blue starting tiles inside the grid (none below "
+                "the grid or up in the clouds), Micaiah among them, and the game runs through one player phase.",
                 "The army is named the Silver Army in 4-1 (unit or army screens)."],
         build=build_army, card=card_army, boot="title", difficulty="Hard", anim_speed=None, region=RD,
         minutes=15,

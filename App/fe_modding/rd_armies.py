@@ -41,6 +41,10 @@ MERGE = [(8, PLAYING), (9, PLAYING), (10, PLAYING)]
 DIVIDE_CHAPTER = "0401"
 
 _TRANSFER = re.compile(r"^(\s*)UnitTransferToForceALL\((\d+),\s*(\d+)\)\s*$")
+#: A chapter's forced sortie of a character by name (4-1 forces Ike: ``UnitForcedSallyByPID("PID_IKE")``),
+#: or one this module set aside with the ``# rd_armies:`` marker.
+_FORCED = re.compile(r'^(\s*)(# rd_armies: )?(UnitForcedSallyByPID|UnitDontMoveSallyByPID)\("(PID_\w+)"\)\s*$')
+_SET_ASIDE = "# rd_armies: "
 
 
 @dataclass
@@ -51,11 +55,13 @@ class ArmyPlan:
     renames: dict[str, tuple[str, str]] = field(default_factory=dict)
     #: ChapterData record id (``C0402``) -> fields to set (``player_group``, ``lord``).
     records: dict[str, dict] = field(default_factory=dict)
+    #: chapter page id -> its script source with the forced sorties fitted to its army.
+    sorties: dict[str, str] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
-        return not (self.functions or self.renames or self.records)
+        return not (self.functions or self.renames or self.records or self.sorties)
 
 
 def _script_source(project, chapter: str) -> Optional[str]:
@@ -89,6 +95,45 @@ def transfers_of(lines: list[str]) -> list[tuple[int, int]]:
     return [(int(m.group(2)), int(m.group(3))) for m in (_TRANSFER.match(line) for line in lines) if m]
 
 
+def division_members(startup: dict[str, list[str]]) -> dict[Army, set[str]]:
+    """Who belongs to each division, from retail 4-P's split (``TEAM_0401_OP``): the names assigned
+    since the previous loop go to the store that loop moves them to."""
+    stores = {store: army for army, store in STORE.items()}
+    members: dict[Army, set[str]] = {army: set() for army in STORE}
+    pending: list[str] = []
+    for line in startup.get(f"TEAM_{DIVIDE_CHAPTER}_OP", []):
+        name = re.match(r'\s*v\d+ = "(PID_\w+)"', line)
+        loop = re.search(r"UnitCheckTransferPID\(\w+\[\w+\], 7, (\d+)\)", line)
+        if name:
+            pending.append(name.group(1))
+        elif loop and int(loop.group(1)) in stores:
+            members[stores[int(loop.group(1))]].update(pending)
+            pending = []
+    return members
+
+
+def fit_sorties(source: str, army: Army, members: dict[Army, set[str]]) -> str:
+    """``source`` with its forced sorties fitted to ``army``: another division's leader becomes this
+    army's, another division's members are set aside (commented with ``# rd_armies:``, so a later
+    change back restores them)."""
+    others = {pid for other, pids in members.items() if other != army for pid in pids}
+    leaders = {LORD[other] for other in STORE if other != army}
+    out = []
+    for line in source.split("\n"):
+        match = _FORCED.match(line)
+        if not match:
+            out.append(line)
+            continue
+        indent, aside, call, pid = match.groups()
+        if pid in leaders:
+            out.append(f'{indent}{call}("{LORD[army]}")')
+        elif pid in others and pid not in members.get(army, ()):
+            out.append(f'{indent}{_SET_ASIDE}{call}("{pid}")')
+        else:
+            out.append(f'{indent}{call}("{pid}")')
+    return "\n".join(out)
+
+
 def _team_calls(source: Optional[str], suffix: str) -> list[str]:
     return sorted(set(re.findall(rf"\b(TEAM_\w+_{suffix})\(\)", source or "")))
 
@@ -99,6 +144,7 @@ def plan(project, flow, fe10: Optional[bytes] = None) -> ArmyPlan:
     order = flow.order()
     armies = {c: flow.effective_army(c) for c in order}
     startup = function_bodies(script_sources.peek(project, _startup_path(project)))
+    members = division_members(startup)
     divided = merged = False
     for i, chapter in enumerate(order):
         army = armies[chapter]
@@ -114,6 +160,9 @@ def plan(project, flow, fe10: Optional[bytes] = None) -> ArmyPlan:
                 continue
             result.records[f"C{chapter}" if chapter != "final" else "CFINAL"] = {
                 "player_group": GROUP[army], "lord": LORD[army]}
+            source = _script_source(project, chapter)
+            if source is not None and fit_sorties(source, army, members) != source:
+                result.sorties[chapter] = fit_sorties(source, army, members)
         elif divided and army == Army.MAIN and i and armies[order[i - 1]] in STORE:
             merged = True
         if chapter == DIVIDE_CHAPTER and army in STORE:
@@ -127,7 +176,9 @@ def plan(project, flow, fe10: Optional[bytes] = None) -> ArmyPlan:
         following = order[i + 1] if i + 1 < len(order) else None
         nxt = armies.get(following) if following else None
         if nxt == army:
-            want = []
+            # the same army plays on: away and back, so it gets the reset every retail hand-over gives
+            # (UnitBreakup, UnitResetStatus): without it the units keep their places on the last map
+            want = [(PLAYING, STORE[army]), (STORE[army], PLAYING)]
         elif nxt in STORE:
             want = [(PLAYING, STORE[army]), (STORE[nxt], PLAYING)]
         else:
@@ -172,7 +223,8 @@ def _with_transfers(lines: list[str], transfers: list[tuple[int, int]]) -> list[
 
 
 def apply_scripts(project, result: ArmyPlan) -> list[str]:
-    """Write the planned startup.cmb functions and chapter renames; the files written."""
+    """Write the planned startup.cmb functions, chapter renames and forced sorties; the files
+    written."""
     written = []
     if result.functions:
         path = _startup_path(project)
@@ -189,10 +241,14 @@ def apply_scripts(project, result: ArmyPlan) -> list[str]:
                 lines += [f"    UnitTransferToForceALL({a}, {b})" for a, b in transfers] or ["    pass"]
         script_sources.save(project, loaded, "\n".join(lines))
         written.append(path.name)
-    for chapter, (old, new) in result.renames.items():
+    for chapter in sorted(set(result.renames) | set(result.sorties)):
         path = chapters.chapter_paths(project, chapter).script
         loaded = script_sources.load(project, path)
-        script_sources.save(project, loaded, re.sub(rf"\b{re.escape(old)}\(\)", f"{new}()", loaded.source))
+        source = result.sorties.get(chapter, loaded.source)
+        if chapter in result.renames:
+            old, new = result.renames[chapter]
+            source = re.sub(rf"\b{re.escape(old)}\(\)", f"{new}()", source)
+        script_sources.save(project, loaded, source)
         written.append(path.name)
     return written
 
