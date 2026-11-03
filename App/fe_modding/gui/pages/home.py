@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import DATA_TABLES, GAME_DATA
 from ..shell import Page
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 
@@ -49,13 +48,9 @@ class HomePage(Page):
         browse.pack(fill="x")
         chapters = f"{len(index.chapters)} chapters" if index else "Indexing…"
         playable = len(index.main_characters("playable")) if index and index.characters else 0
-        rd_tables = project.profile.supports(DATA_TABLES) and not project.profile.supports(GAME_DATA)
-        characters = ((f"{len(index.main_characters())} named records" if rd_tables else
-                       f"{playable} playable, {len(index.main_characters())} in all") if index else "Indexing…")
-        data_subtitle = ("Classes · Items · Skills · Growth · Rules · AI" if rd_tables else
-                         "Classes · Items · Skills · Flags · AI")
-        data_caption = (f"Shared tables in {project.profile.file_label('game_data')}" if rd_tables else
-                        "Everything else in FE8Data.bin, plus script flags")
+        characters = (f"{playable} playable, {len(index.main_characters())} in all" if index else "Indexing…")
+        data_subtitle = "Classes · Items · Skills · Flags · AI"
+        data_caption = f"Everything else in {project.profile.file_label('game_data')}, plus script flags"
         tiles = (
             ("chapters", "▦", "Chapters", chapters, "Maps, deployment, dialogue and scripts, per chapter"),
             ("characters", "☺", "Characters", characters, "Stats, portrait, models and every appearance"),

@@ -7,8 +7,6 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from .. import campaign
-from ..game_code.rd_story import (ARMY_RUNTIME_READY, Army, ChapterStep, DivideArmiesStep,
-                                  PartBoundaryStep)
 
 
 class NewCampaignDialog(tk.Toplevel):
@@ -119,22 +117,22 @@ class NewCampaignDialog(tk.Toplevel):
 
 
 class StoryOrderDialog(tk.Toplevel):
-    """Reorder the added chapters (above 31). Retail chapters keep their place. ``result`` is the new
-    full order or None."""
+    """Reorder the added chapters; retail chapters (``locked``) keep their place. ``order`` is the
+    story's chapter ids, ``labels`` their text. ``result`` is the new full order or None."""
 
-    def __init__(self, parent: tk.Misc, order: list, labels: dict):
+    def __init__(self, parent: tk.Misc, order: list, labels: dict, locked):
         super().__init__(parent)
         self.title("Story order")
         self.transient(parent.winfo_toplevel())
         self.result = None
-        self._order, self._labels, self._original = list(order), labels, list(order)
+        self._order, self._labels, self._original, self._locked = list(order), labels, list(order), locked
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, justify="left", text="The order a new game plays the added chapters. Retail chapters\n"
-                                              "(1-31) keep their place; move the others with the buttons.").pack(anchor="w")
+                                              "(🔒) keep their place; move the others with the buttons.").pack(anchor="w")
         body = ttk.Frame(frame)
         body.pack(fill="both", expand=True, pady=8)
-        self._list = tk.Listbox(body, height=18, width=54, exportselection=False)
+        self._list = tk.Listbox(body, height=18, width=64, exportselection=False)
         self._list.pack(side="left", fill="both", expand=True)
         side = ttk.Frame(body)
         side.pack(side="left", padx=(8, 0))
@@ -150,7 +148,7 @@ class StoryOrderDialog(tk.Toplevel):
     def _fill(self, select: int | None = None) -> None:
         self._list.delete(0, "end")
         for chapter in self._order:
-            self._list.insert("end", ("    " if chapter > 31 else "🔒 ") + self._labels.get(chapter, f"{chapter:02d}"))
+            self._list.insert("end", ("🔒 " if self._locked(chapter) else "    ") + self._labels.get(chapter, chapter))
         if select is not None:
             self._list.selection_set(select)
             self._list.see(select)
@@ -161,104 +159,11 @@ class StoryOrderDialog(tk.Toplevel):
             return
         i = selection[0]
         j = i + delta
-        if not (0 <= j < len(self._order)) or self._order[i] <= 31 or self._order[j] <= 31:
+        if not (0 <= j < len(self._order)) or self._locked(self._order[i]) or self._locked(self._order[j]):
             return
         self._order[i], self._order[j] = self._order[j], self._order[i]
         self._fill(j)
 
     def _ok(self) -> None:
         self.result = self._order if self._order != self._original else None
-        self.destroy()
-
-
-class RDStoryOrderDialog(tk.Toplevel):
-    """Edit RFEE01 chapters, movable structural steps and chapter army choices."""
-
-    def __init__(self, parent: tk.Misc, steps: list, labels: dict[int, str]):
-        super().__init__(parent)
-        self.title("Story order")
-        self.transient(parent.winfo_toplevel())
-        self.result = None
-        self._steps, self._original, self._labels = list(steps), list(steps), labels
-
-        frame = ttk.Frame(self, padding=16)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(frame, justify="left", text=(
-            "Move chapters within each verified story segment with the buttons.\n"
-            "Part/division movement and army switching stay locked until their RFEE01 runtime is verified."
-        )).pack(anchor="w")
-        body = ttk.Frame(frame)
-        body.pack(fill="both", expand=True, pady=8)
-        self._list = tk.Listbox(body, height=24, width=72, exportselection=False)
-        self._list.pack(side="left", fill="both", expand=True)
-        self._list.bind("<<ListboxSelect>>", lambda _event: self._selected())
-        side = ttk.Frame(body)
-        side.pack(side="left", padx=(8, 0), fill="y")
-        ttk.Button(side, text="Move up", command=lambda: self._move(-1)).pack(fill="x")
-        ttk.Button(side, text="Move down", command=lambda: self._move(1)).pack(fill="x", pady=(4, 12))
-        ttk.Label(side, text="Chapter army", style="Muted.TLabel").pack(anchor="w")
-        self._army = tk.StringVar()
-        self._army_box = ttk.Combobox(side, textvariable=self._army,
-                                      values=[army.label for army in Army], state="disabled", width=22)
-        self._army_box.pack(fill="x", pady=(3, 0))
-        self._army_box.bind("<<ComboboxSelected>>", lambda _event: self._set_army())
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x")
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Apply", style="Accent.TButton", command=self._ok).pack(
-            side="right", padx=(0, 6))
-        self._fill()
-        self.grab_set()
-
-    def _text(self, step) -> str:
-        if isinstance(step, PartBoundaryStep):
-            return "──── Part boundary ────"
-        if isinstance(step, DivideArmiesStep):
-            return "◆ Divide armies"
-        return f"{self._labels.get(step.chapter, step.chapter_id)}    ·    {step.army.label}"
-
-    def _fill(self, select: int | None = None) -> None:
-        self._list.delete(0, "end")
-        for step in self._steps:
-            self._list.insert("end", self._text(step))
-        if select is not None:
-            self._list.selection_set(select)
-            self._list.see(select)
-        self._selected()
-
-    def _selected(self) -> None:
-        selected = self._list.curselection()
-        step = self._steps[selected[0]] if selected else None
-        if isinstance(step, ChapterStep):
-            self._army.set(step.army.label)
-            self._army_box.configure(state="readonly" if ARMY_RUNTIME_READY else "disabled")
-        else:
-            self._army.set("")
-            self._army_box.configure(state="disabled")
-
-    def _move(self, delta: int) -> None:
-        selected = self._list.curselection()
-        if not selected:
-            return
-        i, j = selected[0], selected[0] + delta
-        if not 0 <= j < len(self._steps):
-            return
-        if isinstance(self._steps[i], (PartBoundaryStep, DivideArmiesStep)) or \
-                isinstance(self._steps[j], (PartBoundaryStep, DivideArmiesStep)):
-            return
-        self._steps[i], self._steps[j] = self._steps[j], self._steps[i]
-        self._fill(j)
-
-    def _set_army(self) -> None:
-        selected = self._list.curselection()
-        if not selected or not isinstance(self._steps[selected[0]], ChapterStep):
-            return
-        i = selected[0]
-        old = self._steps[i]
-        army = next(army for army in Army if army.label == self._army.get())
-        self._steps[i] = ChapterStep(old.chapter, old.chapter_id, army)
-        self._fill(i)
-
-    def _ok(self) -> None:
-        self.result = self._steps if self._steps != self._original else None
         self.destroy()

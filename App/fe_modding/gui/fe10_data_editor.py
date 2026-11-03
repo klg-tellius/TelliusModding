@@ -30,17 +30,22 @@ from .widgets import SaveDiscardBar, ScrollFrame, TileBrowser
 from ..game_profile import files_root_of
 
 TAB_KEYS = ("characters", "classes", "items", "skills", "growth", "chapters", "terrain", "battle_scenery",
-            "supports", "groups", "bonds", "affinities", "affinity_pairs", "triangle", "difficulty", "biorhythm")
+            "supports", "groups", "bonds", "affinities", "affinity_pairs", "triangle", "difficulty", "biorhythm",
+            "biorhythm_bands", "support_params", "no_battle", "blessing")
 KIND_OF_TAB = {"characters": "character", "classes": "class", "items": "item", "skills": "skill",
                "chapters": "chapter", "terrain": "terrain", "supports": "support", "groups": "group",
                "bonds": "bond", "affinities": "affinity", "affinity_pairs": "affinity_pair",
                "triangle": "triangle", "difficulty": "difficulty", "growth": "growth",
-               "battle_scenery": "battle_scenery", "biorhythm": "biorhythm"}
+               "battle_scenery": "battle_scenery", "biorhythm": "biorhythm",
+               "biorhythm_bands": "biorhythm_band", "support_params": "support_param", "no_battle": "no_battle",
+               "blessing": "blessing"}
 TAB_TITLES = {"characters": "Characters", "classes": "Classes", "items": "Items", "skills": "Skills",
               "chapters": "Chapters", "terrain": "Terrain", "supports": "Supports", "groups": "Army groups",
               "bonds": "Bonds", "affinities": "Affinities", "affinity_pairs": "Affinity pairs",
               "triangle": "Weapon triangle", "difficulty": "Difficulty constants", "growth": "Stats per level",
-              "battle_scenery": "Battle scenery", "biorhythm": "Biorhythm"}
+              "battle_scenery": "Battle scenery", "biorhythm": "Biorhythm",
+              "biorhythm_bands": "Biorhythm bands", "support_params": "Support points", "no_battle": "No-battle lists",
+              "blessing": "Yune's blessing"}
 NAME_KEY = {"character": "mpid", "class": "mjid", "item": "miid", "skill": "msid", "chapter": "title",
             "terrain": "name_key", "group": "name_key"}
 
@@ -57,7 +62,7 @@ LABEL_PREFIXES = {
 KEY_PREFIXES = (("win", "MW_"), ("lose", "ML_"))
 HELP_PREFIX = {"character": "MNPID_", "class": "MH_J_", "item": "MH_I_", "skill": "MH_SKILL_"}
 LIST_PREFIXES = {"skills": ("SID_",), "sounds": ("SFXC_",), "requirements": ("SFXC_",),
-                 "conditions": ("SID_", "JID_", "PID_")}
+                 "conditions": ("SID_", "JID_", "PID_"), "characters": ("PID_",)}
 
 
 def read_names(project: ModProject) -> dict[str, str]:
@@ -88,7 +93,7 @@ class Fe10DataEditor(EditorPanel):
         self._growth: list[fe10data.Record] = []
         self._growth_dirty = False
         self._names = read_names(project)
-        self._message_texts = message_reference.message_texts(project)
+        self._message_texts = {**message_reference.epilogue_texts(project), **message_reference.message_texts(project)}
         self._tab = "characters"
         self._selected: dict[str, Optional[int]] = {key: None for key in TAB_KEYS}
         self._vars: dict[str, tk.StringVar] = {}
@@ -298,14 +303,27 @@ class Fe10DataEditor(EditorPanel):
         if changed:
             self._browser.show_grid()
 
+    def _adapter(self):
+        """The table operations of this file (game_adapter.RdDataAdapter)."""
+        from types import SimpleNamespace
+        from ..game_adapter import RdDataAdapter, data_adapter
+
+        if self._session is not None:
+            return data_adapter(self._session)
+        return RdDataAdapter(SimpleNamespace(data=self._data, fe10=self._db, project=self._project))
+
     def _sync_growth_excel_buttons(self) -> None:
         for button in (self._growth_export_button, self._growth_import_button):
             button.pack_forget()
-        if self._tab == "growth" and self._growth_data:
+        if (self._tab == "growth" and self._growth_data) or (
+                self._db is not None and self._adapter().excel_sheet(KIND_OF_TAB[self._tab]) is not None):
             self._growth_export_button.pack(side="left", padx=(6, 0))
             self._growth_import_button.pack(side="left", padx=(6, 0))
 
     def _export_growth_excel(self) -> None:
+        if self.kind != "growth":
+            self._export_table_excel()
+            return
         path = filedialog.asksaveasfilename(
             parent=self, title="Export FE10Growth stats", defaultextension=".xlsx",
             filetypes=(("Excel workbook", "*.xlsx"),))
@@ -317,7 +335,44 @@ class Fe10DataEditor(EditorPanel):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not export Excel", str(exc), parent=self)
 
+    def _export_table_excel(self) -> None:
+        title = TAB_TITLES[self._tab]
+        path = filedialog.asksaveasfilename(parent=self, title=f"Export {title.lower()}", defaultextension=".xlsx",
+                                            filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        self.focus_set()  # the field being edited applies first
+        try:
+            self._adapter().export_excel(path, self.kind)
+            self._status.configure(text=f"Exported {Path(path).name}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not export Excel", str(exc), parent=self)
+
+    def _import_table_excel(self) -> None:
+        title = TAB_TITLES[self._tab]
+        path = filedialog.askopenfilename(parent=self, title=f"Import {title.lower()}",
+                                          filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        self.focus_set()
+        try:
+            data, errors = self._adapter().import_excel(path, self.kind)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import Excel", str(exc), parent=self)
+            return
+        if errors:
+            messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+            return
+        if data == self._data:
+            self._status.configure(text=f"Imported {Path(path).name}; nothing changed")
+            return
+        self._replace(data, f"Imported {title.lower()} from {Path(path).name}")
+        self._refresh_list()
+
     def _import_growth_excel(self) -> None:
+        if self.kind != "growth":
+            self._import_table_excel()
+            return
         path = filedialog.askopenfilename(
             parent=self, title="Import FE10Growth stats",
             filetypes=(("Excel workbook", "*.xlsx"),))
@@ -369,6 +424,12 @@ class Fe10DataEditor(EditorPanel):
                     if r.index < len(fe10data.DIFFICULTY_ROW_NAMES) else f"Row {r.index + 1}")
         if r.kind == "biorhythm":
             return f"Row {r.index + 1}"
+        if r.kind == "biorhythm_band":
+            return f"Band {r.index + 1} (from {r.values.get('threshold')})"
+        if r.kind == "support_param":
+            return "Support point rules"
+        if r.kind == "blessing":
+            return fe10data.DIFFICULTY_NAMES[r.index] if r.index < len(fe10data.DIFFICULTY_NAMES) else f"Row {r.index + 1}"
         if r.kind in ("bond", "affinity_pair", "triangle"):
             other = r.values.get("partner") or r.values.get("against") or ""
             return f"{r.id or '-'} / {other}"
@@ -397,7 +458,8 @@ class Fe10DataEditor(EditorPanel):
         labels = [f"{self._record_name(r) or self._record_label(r)}  ·  {self._record_label(r)}" for r in records]
         haystacks = [f"{r.id or ''} {self._record_name(r)} {self._project.profile.file_label(file_key)}"
                      for r in records]
-        self._browser.set_entries(labels, haystacks)
+        chips = self._adapter().categories(self.kind)
+        self._browser.set_entries(labels, haystacks, *(chips or (None, None)))
         index = self._selected.get(self._tab)
         if index is not None and 0 <= index < len(records):
             self._browser.select(index, notify=False)
@@ -525,7 +587,7 @@ class Fe10DataEditor(EditorPanel):
                         except (OSError, ValueError) as exc:
                             messagebox.showerror("Create message", str(exc), parent=self)
                             return
-                        self._message_texts = message_reference.message_texts(self._project)
+                        self._message_texts = {**message_reference.epilogue_texts(self._project), **message_reference.message_texts(self._project)}
                         self._names = read_names(self._project)
                         self._changelog.append(message_reference.common_path(self._project).name,
                                                f"Created message {name}")

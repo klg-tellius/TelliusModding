@@ -64,6 +64,14 @@ disassembly of the game's actual map-loading code) said this word gets
 float32 instead of an int gives exactly `2000.0` on a real chapter file,
 confirmed against `zmap/bmap01/map.cmp` - so `scale_unit` is a float field,
 fixed here rather than left as a suspiciously large integer.
+
+Radiant Dawn's map.bin is the same container with renamed sections, each
+prefixed with the map folder (``bmap0101:mapdata``), wider records and a
+merged header section; :class:`MapLayout` describes both games and
+:func:`map_layout` picks one from a file's own section names. Every function
+here takes Path of Radiance's section names (``mapcapacity``,
+``panelindexRoof``...) and resolves them through the file's layout, so the
+editors work on either game. See ``research/rd/MAP_NOTES.md``.
 """
 
 from __future__ import annotations
@@ -79,6 +87,87 @@ from .common import HEADER_SIZE, read_section_table
 
 class MapFileError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class MapLayout:
+    """Where a game keeps each map.bin section and how wide its records are.
+
+    ``sections`` maps Path of Radiance's section name (the name every
+    function in this module takes) to ``(name in the file, byte offset in
+    that section)``; Radiant Dawn keeps the capacity, ``mapextra`` and
+    ``mapgrid`` records together in one ``mapdata`` section."""
+    game: str
+    sections: dict
+    prefix: str = ""          # Radiant Dawn: "bmap0101:"
+    size_format: str = ">HH"  # x_size, y_size at size_at in the capacity record
+    size_at: int = 0
+    desc_size: int = 32       # mapbuilddesc record
+    inst_size: int = 12       # mapbuildinst record
+    link_count: str = ">H"    # record count heading maplink/maplinkAt/maplinkAbs
+    half_round_up: bool = True  # mapextra half sizes: ceil (FE9) or floor (FE10) of the size / 2
+    decoded_light: bool = True  # maplight / mapfog in FE9's layout
+
+    def __hash__(self) -> int:
+        return hash((self.game, self.prefix))
+
+    def file_name(self, name: str) -> str:
+        """The section name stored in the file for ``name`` (a PoR name or already a file name)."""
+        if self.prefix and name.startswith(self.prefix):
+            return name
+        return self.prefix + self.sections.get(name, (name, 0))[0]
+
+    def offset(self, name: str) -> int:
+        return self.sections.get(name, (name, 0))[1]
+
+    def canonical(self, file_name: str) -> str:
+        """Path of Radiance's name for a section name read from the file."""
+        short = file_name[len(self.prefix):] if self.prefix and file_name.startswith(self.prefix) else file_name
+        for name, (stored, offset) in self.sections.items():
+            if stored == short and offset == 0:
+                return name
+        return short
+
+
+_FE9_SECTIONS = {name: (name, 0) for name in (
+    "mapcapacity", "mapbuilddesc", "mapbuildinst", "panelindex", "uniquepanel", "panelindexRoof",
+    "uniquepanelRoof", "panelindexBase", "uniquepanelBase", "maplight", "mapfog", "mapgrid", "mapextra",
+    "maplink", "maplinkAt", "maplinkAbs")}
+
+POR_LAYOUT = MapLayout("fe9", _FE9_SECTIONS)
+
+# Radiant Dawn: mapdata = version byte (2/3/4), 0, x_size u8, y_size u8, desc count u16, inst count u16,
+# scale f32, then FE9's mapextra (12 bytes at +0x0C) and mapgrid (4 bytes at +0x18); versions 3 and 4
+# append one and two more words. Its mapdesc records add 4 bytes and mapinst records grow to 20.
+_FE10_SECTIONS = {
+    "mapcapacity": ("mapdata", 0), "mapextra": ("mapdata", 0x0C), "mapgrid": ("mapdata", 0x18),
+    "mapbuilddesc": ("mapdesc", 0), "mapbuildinst": ("mapinst", 0),
+    "panelindex": ("panelindex", 0), "uniquepanel": ("uniquepanel", 0),
+    "panelindexRoof": ("roofindex", 0), "uniquepanelRoof": ("roofpanel", 0),
+    "panelindexBase": ("baseindex", 0), "uniquepanelBase": ("basepanel", 0),
+    "maplight": ("maplight", 0), "mapfog": ("mapfog", 0),
+    "maplink": ("maplink", 0), "maplinkAt": ("maplinkAt", 0), "maplinkAbs": ("maplinkAbs", 0),
+}
+
+
+def rd_layout(prefix: str = "") -> MapLayout:
+    """Radiant Dawn's layout; ``prefix`` is the map folder plus a colon (``bmap0101:``)."""
+    return MapLayout("fe10", _FE10_SECTIONS, prefix=prefix, size_format=">BB", size_at=2, desc_size=36,
+                     inst_size=20, link_count=">I", half_round_up=False, decoded_light=False)
+
+
+def _layout_from_names(names) -> MapLayout:
+    for name in names:
+        head, colon, tail = name.rpartition(":")
+        if tail == "mapdata":
+            return rd_layout(head + colon)
+    return POR_LAYOUT
+
+
+def map_layout(data: bytes) -> MapLayout:
+    """The layout of a map.bin, recognised from its section names."""
+    named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+    return _layout_from_names(name for _address, name in named)
 
 
 @dataclass(frozen=True)
@@ -185,6 +274,9 @@ class MapObject:
     effect_type: int
     filename: str
     address: int = 0
+    #: Radiant Dawn's 4 extra bytes: footprint tiles along x and z (``round(size / 5)`` on most
+    #: records, see :func:`footprint_tiles`), then two zero bytes. Empty on Path of Radiance.
+    footprint: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -241,6 +333,12 @@ class MapBuildInstance:
     end_y2: int
     unused: tuple[int, int, int, int]  # read together as one big-endian int32 - see world_transform()
     address: int = 0
+    # Radiant Dawn's 20-byte record only (0 on Path of Radiance): a lead byte (0 or 1), a signed sub-tile
+    # offset along x and y (its scale is not decoded) and a trailing word (0x40000000 on most records).
+    lead: int = 0
+    offset_x: int = 0
+    offset_y: int = 0
+    tail: int = 0
 
     def height_raw(self) -> int:
         """The 4 ``unused`` bytes combined into one big-endian unsigned
@@ -538,6 +636,7 @@ class MapData:
     link_at: Optional[Grid] = None
     link_abs: Optional[Grid] = None
     unknown_sections: dict[str, int] = field(default_factory=dict)  # name -> file offset, for sections not handled below
+    layout: MapLayout = POR_LAYOUT
 
 
 def is_base_terrain_object(obj: MapObject) -> bool:
@@ -722,15 +821,20 @@ def read_map(stream: BinaryIO) -> MapData:
     section_table_start = sec_table_ptr + 4 * sec_table_count + HEADER_SIZE
 
     sections = sorted(read_section_table(stream, section_table_start, filesize))
+    layout = _layout_from_names(name for _address, name in sections)
 
-    data = MapData()
-    for address, name in sections:
+    data = MapData(layout=layout)
+    for address, file_name in sections:
+        name = layout.canonical(file_name)
         if name == "mapcapacity":
-            data.capacity = _read_capacity(stream, address)
+            data.capacity = _read_capacity(stream, address, layout)
+            if layout.offset("mapextra"):  # Radiant Dawn's mapdata also holds mapextra and mapgrid
+                data.extra = _read_extra(stream, address + layout.offset("mapextra"))
+                data.grid = _read_grid_colors(stream, address + layout.offset("mapgrid"))
         elif name == "mapbuilddesc":
-            data.build_desc = _read_build_desc(stream, address, data.capacity)
+            data.build_desc = _read_build_desc(stream, address, data.capacity, layout)
         elif name == "mapbuildinst":
-            data.build_inst = _read_build_inst(stream, address, data.capacity)
+            data.build_inst = _read_build_inst(stream, address, data.capacity, layout)
         elif name == "panelindex":
             data.panel_index = _read_grid_u16(stream, address, data.capacity)
         elif name == "uniquepanel":
@@ -743,20 +847,20 @@ def read_map(stream: BinaryIO) -> MapData:
             data.panel_index_base = _read_grid_u16(stream, address, data.capacity)
         elif name == "uniquepanelBase":
             data.unique_panel_base = _read_unique_panel(stream, address, _max_index(data.panel_index_base))
-        elif name == "maplight":
+        elif name == "maplight" and layout.decoded_light:
             data.light = _read_light(stream, address)
-        elif name == "mapfog":
+        elif name == "mapfog" and layout.decoded_light:
             data.fog = _read_fog(stream, address)
         elif name == "mapgrid":
             data.grid = _read_grid_colors(stream, address)
         elif name == "mapextra":
             data.extra = _read_extra(stream, address)
         elif name == "maplink":
-            data.link = _read_link_grid(stream, address, data.capacity)
+            data.link = _read_link_grid(stream, address, data.capacity, layout)
         elif name == "maplinkAt":
-            data.link_at = _read_link_grid(stream, address, data.capacity)
+            data.link_at = _read_link_grid(stream, address, data.capacity, layout)
         elif name == "maplinkAbs":
-            data.link_abs = _read_link_grid(stream, address, data.capacity)
+            data.link_abs = _read_link_grid(stream, address, data.capacity, layout)
         else:
             data.unknown_sections[name] = address
 
@@ -778,9 +882,11 @@ def _max_index(grid: Optional[Grid]) -> int:
     return max(max(row) for row in grid)
 
 
-def _read_capacity(stream: BinaryIO, address: int) -> MapCapacity:
+def _read_capacity(stream: BinaryIO, address: int, layout: MapLayout = POR_LAYOUT) -> MapCapacity:
     stream.seek(address)
-    x, y, desc_count, inst_count, scale_unit = struct.unpack(">HHHHf", stream.read(12))
+    record = stream.read(12)
+    x, y = struct.unpack_from(layout.size_format, record, layout.size_at)
+    desc_count, inst_count, scale_unit = struct.unpack_from(">HHf", record, 4)
     return MapCapacity(x, y, desc_count, inst_count, scale_unit, address=address)
 
 
@@ -798,35 +904,50 @@ def _get_string(stream: BinaryIO, pointer: int) -> str:
         return b"".join(chunks).decode("latin-1")
 
 
-def _read_build_desc(stream: BinaryIO, address: int, capacity: Optional[MapCapacity]) -> list[MapObject]:
+def _read_build_desc(stream: BinaryIO, address: int, capacity: Optional[MapCapacity],
+                     layout: MapLayout = POR_LAYOUT) -> list[MapObject]:
     if capacity is None:
         raise MapFileError("mapbuilddesc section found before mapcapacity.")
     result = []
     pos = address
     for _ in range(capacity.build_desc_count):
         stream.seek(pos)
-        ox, oy, oz, sx, sy, sz, fa, fb, fc, effect_type, name_ptr = struct.unpack(">ffffffBBBBI", stream.read(32))
+        record = stream.read(layout.desc_size)
+        ox, oy, oz, sx, sy, sz, fa, fb, fc, effect_type, name_ptr = struct.unpack_from(">ffffffBBBBI", record)
         result.append(
-            MapObject(ox, oy, oz, sx, sy, sz, fa, fb, fc, effect_type, _get_string(stream, name_ptr), address=pos)
+            MapObject(ox, oy, oz, sx, sy, sz, fa, fb, fc, effect_type, _get_string(stream, name_ptr), address=pos,
+                      footprint=tuple(record[32:]))
         )
-        pos += 32
+        pos += layout.desc_size
     return result
 
 
-def _read_build_inst(stream: BinaryIO, address: int, capacity: Optional[MapCapacity]) -> list[MapBuildInstance]:
+# Radiant Dawn's 20-byte mapbuildinst record: lead, x, y, angle, sub-tile offset x/y, desc index u16,
+# the footprint rectangle, the height float's 4 bytes and a trailing word.
+_FE10_INST = ">BbbBbbHbbbbbbbbI"
+
+
+def _read_build_inst(stream: BinaryIO, address: int, capacity: Optional[MapCapacity],
+                     layout: MapLayout = POR_LAYOUT) -> list[MapBuildInstance]:
     if capacity is None:
         raise MapFileError("mapbuildinst section found before mapcapacity.")
     result = []
     pos = address
     for _ in range(capacity.build_inst_count):
         stream.seek(pos)
-        x, y, angle, desc_index, x2, y2, end_x2, end_y2, u0, u1, u2, u3 = struct.unpack(
-            ">bbbbbbbbbbbb", stream.read(12)
-        )
-        result.append(
-            MapBuildInstance(x, y, angle, desc_index, x2, y2, end_x2, end_y2, (u0, u1, u2, u3), address=pos)
-        )
-        pos += 12
+        if layout.inst_size == 20:
+            (lead, x, y, angle, off_x, off_y, desc_index, x2, y2, end_x2, end_y2,
+             u0, u1, u2, u3, tail) = struct.unpack(_FE10_INST, stream.read(20))
+            result.append(MapBuildInstance(x, y, angle, desc_index, x2, y2, end_x2, end_y2, (u0, u1, u2, u3),
+                                           address=pos, lead=lead, offset_x=off_x, offset_y=off_y, tail=tail))
+        else:
+            x, y, angle, desc_index, x2, y2, end_x2, end_y2, u0, u1, u2, u3 = struct.unpack(
+                ">bbbbbbbbbbbb", stream.read(12)
+            )
+            result.append(
+                MapBuildInstance(x, y, angle, desc_index, x2, y2, end_x2, end_y2, (u0, u1, u2, u3), address=pos)
+            )
+        pos += layout.inst_size
     return result
 
 
@@ -876,11 +997,12 @@ def _read_extra(stream: BinaryIO, address: int) -> MapExtra:
     return MapExtra(b0, b1, half_x, half_y, b4, buffer_, (u0, u1), tail, address=address)
 
 
-def _read_link_grid(stream: BinaryIO, address: int, capacity: Optional[MapCapacity]) -> Grid:
+def _read_link_grid(stream: BinaryIO, address: int, capacity: Optional[MapCapacity],
+                    layout: MapLayout = POR_LAYOUT) -> Grid:
     if capacity is None:
         raise MapFileError("link section found before mapcapacity.")
     stream.seek(address)
-    (num_entries,) = struct.unpack(">H", stream.read(2))
+    (num_entries,) = struct.unpack(layout.link_count, stream.read(struct.calcsize(layout.link_count)))
     grid: Grid = [[-1] * capacity.y_size for _ in range(capacity.x_size)]
     for _ in range(num_entries):
         x, y, value = struct.unpack(">BBB", stream.read(3))
@@ -985,8 +1107,23 @@ def patch_object_field(data: bytes, record: MapObject, field_name: str, value) -
     return _patch_field(data, record.address, field_name, value, _OBJECT_FIELDS, "mapbuilddesc")
 
 
+_FE10_BUILD_INST_FIELDS = {
+    "x": (1, ">b"),
+    "y": (2, ">b"),
+    "angle": (3, ">B"),
+    "offset_x": (4, ">b"),
+    "offset_y": (5, ">b"),
+    "desc_index": (6, ">H"),
+    "x2": (8, ">b"),
+    "y2": (9, ">b"),
+    "end_x2": (10, ">b"),
+    "end_y2": (11, ">b"),
+}
+
+
 def patch_build_inst_field(data: bytes, record: MapBuildInstance, field_name: str, value) -> bytes:
-    return _patch_field(data, record.address, field_name, value, _BUILD_INST_FIELDS, "mapbuildinst")
+    table = _FE10_BUILD_INST_FIELDS if map_layout(data).inst_size == 20 else _BUILD_INST_FIELDS
+    return _patch_field(data, record.address, field_name, value, table, "mapbuildinst")
 
 
 def patch_unique_panel_field(data: bytes, record: UniquePanel, field_name: str, value) -> bytes:
@@ -1024,9 +1161,15 @@ def _sections(data: bytes) -> tuple[list[tuple[int, int]], int]:
 
 def section_bytes(data: bytes, name: str) -> tuple[int, int]:
     """``(file offset, length)`` of a named section; its length runs to the
-    next section, or to the string pool / pointer list for the last one."""
-    for address, section in sorted(read_section_table(io.BytesIO(data), _sections(data)[1], len(data))):
-        if section == name:
+    next section, or to the string pool / pointer list for the last one.
+    ``name`` is Path of Radiance's name, resolved through the file's layout."""
+    named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+    layout = _layout_from_names(n for _a, n in named)
+    if layout.offset(name):
+        raise MapFileError(f"{name} is part of the {layout.file_name(name)} section in this map.")
+    wanted = layout.file_name(name)
+    for address, section in sorted(named):
+        if section == wanted:
             starts = sorted(a for a, _ in read_section_table(io.BytesIO(data), _sections(data)[1], len(data)))
             later = [a for a in starts if a > address]
             pointers = _pointer_offsets(data)
@@ -1096,6 +1239,8 @@ def insert_section_before(data: bytes, before_name: str, name: str, payload: byt
     if len(payload) % 4:
         raise MapFileError("A section must be a multiple of 4 bytes.")
     named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+    layout = _layout_from_names(n for _a, n in named)
+    name, before_name = layout.file_name(name), layout.file_name(before_name)
     if any(existing == name for _address, existing in named):
         raise MapFileError(f"Section {name!r} already exists.")
     match = next((address for address, existing in named if existing == before_name), None)
@@ -1144,21 +1289,24 @@ def set_link_openings(data: bytes, x: int, y: int, openings: int) -> bytes:
         raise MapFileError("Openings must be a four-bit value (0-15).")
     if parsed.link_abs is not None and parsed.link_abs[x][y] != -1:
         raise MapFileError("This tile has a maplinkAbs override; its maplink openings cannot be edited here.")
+    layout = parsed.layout
+    head = struct.calcsize(layout.link_count)
     if parsed.link is None:
         if openings == LINK_DEFAULT_OPEN:
             return data
-        payload = struct.pack(">HBBB", 1, x, y, openings)
+        payload = struct.pack(layout.link_count, 1) + bytes((x, y, openings))
         payload += bytes(-len(payload) % 4)
         named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
-        before = next((name for _address, name in named if name == "mapextra"), named[-1][1])
+        names = [layout.canonical(name) for _address, name in named]
+        before = next((name for name in ("mapextra", "maplinkAt", "maplinkAbs") if name in names), named[-1][1])
         return insert_section_before(data, before, "maplink", payload)
     start, length = section_bytes(data, "maplink")
-    count = struct.unpack_from(">H", data, start)[0]
-    if 2 + 3 * count > length:
+    count = struct.unpack_from(layout.link_count, data, start)[0]
+    if head + 3 * count > length:
         raise MapFileError("maplink record count exceeds section length.")
     payload = bytearray(data[start:start + length])
     for i in range(count):
-        at = 2 + 3 * i
+        at = head + 3 * i
         if payload[at] == x and payload[at + 1] == y:
             payload[at + 2] = (payload[at + 2] & 0xF0) | openings
             return data[:start] + bytes(payload) + data[start + length:]
@@ -1166,10 +1314,10 @@ def set_link_openings(data: bytes, x: int, y: int, openings: int) -> bytes:
         return data
     if count >= 0xFFFF:
         raise MapFileError("maplink has too many records.")
-    if length - (2 + 3 * count) > 3 or any(payload[2 + 3 * count:]):
+    if length - (head + 3 * count) > 3 or any(payload[head + 3 * count:]):
         raise MapFileError("maplink has trailing data beyond alignment padding; cannot safely add a record.")
-    payload = payload[:2 + 3 * count] + bytes((x, y, openings))
-    struct.pack_into(">H", payload, 0, count + 1)
+    payload = payload[:head + 3 * count] + bytes((x, y, openings))
+    struct.pack_into(layout.link_count, payload, 0, count + 1)
     payload += bytes(-len(payload) % 4)
     return replace_section(data, "maplink", bytes(payload))
 
@@ -1218,12 +1366,12 @@ def _grid_u16_payload(grid: Grid) -> bytes:
     return bytes(payload)
 
 
-def _link_payload(grid: Grid, width: int, height: int) -> bytes:
+def _link_payload(grid: Grid, width: int, height: int, layout: MapLayout = POR_LAYOUT) -> bytes:
     records = [(x, y, grid[x][y]) for x in range(min(width, len(grid)))
                for y in range(min(height, len(grid[x]))) if grid[x][y] != -1]
     if len(records) > 0xFFFF:
         raise MapFileError("A link grid has too many explicit records.")
-    payload = bytearray(struct.pack(">H", len(records)))
+    payload = bytearray(struct.pack(layout.link_count, len(records)))
     for x, y, value in records:
         payload += struct.pack(">BBB", x, y, value)
     payload += bytes(-len(payload) % 4)
@@ -1239,14 +1387,14 @@ def resize_grid(data: bytes, width: int, height: int) -> bytes:
     shrunken grid are dropped. Placed objects are deliberately untouched,
     so shrinking may leave objects off-grid for the user to move or delete.
     """
-    if (not isinstance(width, int) or not isinstance(height, int)
-            or not (1 <= width <= MAX_GRID_SIZE and 1 <= height <= MAX_GRID_SIZE)):
-        raise MapFileError(f"Map width and height must be whole numbers from 1 to {MAX_GRID_SIZE} tiles.")
     parsed = read_map_bytes(data)
     if parsed.capacity is None:
         raise MapFileError("This map has no mapcapacity section.")
     if (width, height) == (parsed.capacity.x_size, parsed.capacity.y_size):
-        return data
+        return data  # also for the vanilla 64-tile maps, past MAX_GRID_SIZE
+    if (not isinstance(width, int) or not isinstance(height, int)
+            or not (1 <= width <= MAX_GRID_SIZE and 1 <= height <= MAX_GRID_SIZE)):
+        raise MapFileError(f"Map width and height must be whole numbers from 1 to {MAX_GRID_SIZE} tiles.")
 
     for section, grid in (("panelindex", parsed.panel_index),
                           ("panelindexRoof", parsed.panel_index_roof),
@@ -1256,24 +1404,26 @@ def resize_grid(data: bytes, width: int, height: int) -> bytes:
     for section, grid in (("maplink", parsed.link), ("maplinkAt", parsed.link_at),
                           ("maplinkAbs", parsed.link_abs)):
         if grid is not None:
-            data = replace_section(data, section, _link_payload(grid, width, height))
+            data = replace_section(data, section, _link_payload(grid, width, height, parsed.layout))
 
+    layout = parsed.layout
     capacity_at, _length = section_bytes(data, "mapcapacity")
     out = bytearray(data)
-    struct.pack_into(">HH", out, capacity_at, width, height)
+    struct.pack_into(layout.size_format, out, capacity_at + layout.size_at, width, height)
     data = bytes(out)
     current = read_map_bytes(data)
     if current.extra is not None:
-        data = patch_extra_field(data, current.extra, "half_x_size", (width + 1) // 2)
+        up = 1 if layout.half_round_up else 0
+        data = patch_extra_field(data, current.extra, "half_x_size", (width + up) // 2)
         current = read_map_bytes(data)
-        data = patch_extra_field(data, current.extra, "half_y_size", (height + 1) // 2)
+        data = patch_extra_field(data, current.extra, "half_y_size", (height + up) // 2)
     return data
 
 
 def patch_build_inst_height(data: bytes, record: "MapBuildInstance", height: float) -> bytes:
     """Set an instance's height float (``pos_y = -5 * height``)."""
     out = bytearray(data)
-    struct.pack_into(">f", out, record.address + 8, height)
+    struct.pack_into(">f", out, record.address + (12 if map_layout(data).inst_size == 20 else 8), height)
     return bytes(out)
 
 
@@ -1361,12 +1511,19 @@ def _set_counts(data: bytes, desc_count: int, inst_count: int) -> bytes:
 
 
 def _desc_payload(data: bytes, objects: list[MapObject], pointers: list[int]) -> tuple[bytes, list[int]]:
+    size = map_layout(data).desc_size
+
+    def tail(o: MapObject) -> bytes:
+        if size == 32:
+            return b""
+        return bytes(o.footprint) if len(o.footprint) == size - 32 else bytes((*footprint_tiles(o), 0, 0))
+
     payload = b"".join(
         struct.pack(">ffffffBBBBI", o.offset_x, o.offset_y, o.offset_z, o.size_x, o.size_y, o.size_z,
-                    o.flag_bits_a, o.flag_bits_b, o.flag_bits_c, o.effect_type, p)
+                    o.flag_bits_a, o.flag_bits_b, o.flag_bits_c, o.effect_type, p) + tail(o)
         for o, p in zip(objects, pointers)
     )
-    return payload, [32 * i + 28 for i in range(len(objects))]
+    return payload, [size * i + 28 for i in range(len(objects))]
 
 
 def add_build_object(data: bytes, obj: MapObject) -> tuple[bytes, int]:
@@ -1405,13 +1562,31 @@ def instance_record(obj: MapObject, desc_index: int, x: int, y: int, angle: int,
     return struct.pack(">bbBbbbbbf", x, y, angle % 256, desc_index, x2, y2, x_end, y_end, height)
 
 
+#: Trailing word of a new Radiant Dawn mapbuildinst record (the value most vanilla records hold).
+FE10_INST_TAIL = 0x40000000
+
+
+def fe10_instance_record(record: bytes) -> bytes:
+    """A Path of Radiance 12-byte ``mapbuildinst`` record (:func:`instance_record`) as Radiant Dawn's
+    20 bytes: no sub-tile offset and the common trailing word."""
+    if len(record) == 20:
+        return record
+    x, y, angle, desc_index, x2, y2, end_x2, end_y2 = struct.unpack_from(">bbBBbbbb", record)
+    head = struct.pack(">BbbBbbHbbbb", 0, x, y, angle, 0, 0, desc_index, x2, y2, end_x2, end_y2)
+    return head + record[8:12] + struct.pack(">I", FE10_INST_TAIL)
+
+
 def set_build_instances(data: bytes, records: list[bytes]) -> bytes:
-    """Replace every ``mapbuildinst`` record (12 bytes each) and the count."""
+    """Replace every ``mapbuildinst`` record and the count. Records are the file's own
+    (:func:`instance_records`) or new ones from :func:`instance_record`, widened to the file's layout."""
     parsed = read_map_bytes(data)
+    if parsed.layout.inst_size == 20:
+        records = [fe10_instance_record(r) for r in records]
     data = replace_section(data, "mapbuildinst", b"".join(records))
     return _set_counts(data, len(parsed.build_desc), len(records))
 
 
 def instance_records(data: bytes) -> list[bytes]:
     parsed = read_map_bytes(data)
-    return [data[i.address : i.address + 12] for i in parsed.build_inst]
+    size = parsed.layout.inst_size
+    return [data[i.address : i.address + size] for i in parsed.build_inst]

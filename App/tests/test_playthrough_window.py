@@ -113,6 +113,30 @@ class PlaythroughWindowTests(unittest.TestCase):
         w.back_command()
         self.assertFalse(w.sim.at_end)
 
+    def test_a_runtime_error_shows_as_a_stopped_run(self):
+        from fe_modding.playthrough import engine
+
+        w = self.window
+        self._settle()
+        errors = []
+        self.root.report_callback_exception = lambda *exc: errors.append(exc)
+        original = engine.step
+
+        def failing(world, state):
+            raise RuntimeError("Unsupported state-changing RFEE01 native: Mystery()")
+
+        engine.step = failing
+        try:
+            w.end_phase()
+            for _ in range(50):
+                self.root.update()
+        finally:
+            engine.step = original
+        self.assertEqual(errors, [])
+        self.assertIsNone(w._running)
+        self.assertEqual(w.sim.state.over, "stopped")
+        self.assertIn("Mystery()", w._log_text.get("1.0", "end"))
+
 
 if __name__ == "__main__":
     unittest.main()

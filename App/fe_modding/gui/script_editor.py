@@ -171,10 +171,12 @@ class ScriptEditor(EditorPanel):
         self._search_status = ttk.Label(search_row, style="Muted.TLabel")
         self._search_status.pack(side="left", padx=(8, 0))
 
-        bottom = ttk.Frame(right)
-        right.add(bottom, weight=1)
-        self._hint = ttk.Label(bottom, text="", style="Ok.TLabel")
-        self._hint.pack(anchor="w")
+        # The editor's hints get a line above the search row; the problems list is a pane under the
+        # code only while Check has problems to list, so the code fills the column otherwise.
+        self._hint = ttk.Label(right_frame, text="", style="Ok.TLabel")
+        self._hint.pack(side="bottom", fill="x", before=right, pady=(2, 0))
+        self._code_panes = right
+        self._problems_pane = bottom = ttk.Frame(right)
         self._problems = tk.Listbox(bottom, height=5)
         self._problems.pack(fill="both", expand=True)
         self._problems.bind("<<ListboxSelect>>", lambda e: self._goto_problem())
@@ -482,6 +484,11 @@ class ScriptEditor(EditorPanel):
             self._problems.insert("end", f"{'✖' if d.severity == 'error' else '⚠'}  line {d.line}: {d.message}")
             self._problems.itemconfig("end", foreground=theme.color("danger") if d.severity == "error" else theme.color("warn"))
             self._problem_lines.append(d.line)
+        shown = str(self._problems_pane) in self._code_panes.panes()
+        if diagnostics and not shown:
+            self._code_panes.add(self._problems_pane, weight=1)
+        elif not diagnostics and shown:
+            self._code_panes.forget(self._problems_pane)
 
     def _goto_problem(self) -> None:
         sel = self._problems.curselection()

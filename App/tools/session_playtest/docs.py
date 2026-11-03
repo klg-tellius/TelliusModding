@@ -18,7 +18,7 @@ def test_text(test: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_docs(package: Path, manifest: dict) -> None:
+def write_docs(package: Path, manifest: dict, scenarios=None) -> None:
     tests = [manifest["tests"][t] for t in manifest["order"] if t in manifest["tests"]]
     total = sum(t["minutes"] for t in tests if not t.get("optional"))
     size = sum(t.get("patch_bytes", 0) for t in tests)
@@ -53,7 +53,9 @@ def write_docs(package: Path, manifest: dict) -> None:
         if t.get("steps"):
             out += ["**In the game**", ""] + [f"{i}. {s}" for i, s in enumerate(t["steps"], 1)] + [""]
         out += ["**PASS when**", ""] + [f"- [ ] {c}" for c in t["checks"]]
-    from .scenarios import NOT_COVERED
+    if scenarios is None:
+        from . import scenarios
+    NOT_COVERED = scenarios.NOT_COVERED
     out += ["", "## Not in this session", "", "| Open question | Why it is left out |", "| --- | --- |"]
     out += [f"| {what} | {why} |" for what, why in NOT_COVERED]
     write_lf(package / "START-HERE.md", "\n".join(out) + "\n")

@@ -6,7 +6,7 @@ Script tab. A shared script (``startup.cmb``) opens in a chapter's Script tab
 too, whose File box is made for it. A message file that is no chapter's
 (``common.m``) has no chapter page, so it opens here, in the same editor the
 Dialogue tab uses (route ``("asset", "conversations", file name)``). While a
-game has no chapter pages (Radiant Dawn until its chapters are decoded), every
+game needs an all-files view in addition to its chapter pages, every
 file opens here: scripts in the Script tab's editor (route ``("asset",
 "scripts", file name)``)."""
 
@@ -166,7 +166,7 @@ class ConversationsPanel(_FileList):
 
     def _opens_here(self, chapter_id) -> bool:
         """A file without a chapter page opens in this panel: one that is no chapter's, or any file
-        while the game has no chapter pages yet (Radiant Dawn until its chapters are decoded)."""
+        as a project-wide alternative to opening one chapter at a time."""
         return chapter_id is None or not profile_of(self._project).supports(CHAPTERS)
 
     def _card(self, grid, path, chapter_id):
@@ -210,7 +210,7 @@ class ConversationsPanel(_FileList):
 
 class ScriptsPanel(_FileList):
     """Every event script; each opens in a chapter's Script tab, or here where
-    the game has no chapter pages yet. Its unsaved state is the hosted editor's."""
+    an all-files view is useful. Its unsaved state is the hosted editor's."""
 
     title = "Scripts"
     shared_heading = "Shared scripts"

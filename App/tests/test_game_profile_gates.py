@@ -74,7 +74,7 @@ class UnavailableStateTests(unittest.TestCase):
         with patch.object(data, "GameDataPage", return_value=sentinel) as page:
             self.assertIs(data.game_data_page(shell), sentinel)
         page.assert_called_once_with(shell)
-        self.assertFalse(any("characters" in keys for _heading, keys in data.FE10_SECTIONS))
+        self.assertNotIn("characters", data.FE10_DATA_TILES)
 
     def test_phase_two_to_four_routes_keep_shared_surface_owners(self):
         from fe_modding.gui.cp_data_editor import CpDataPanel
@@ -189,8 +189,8 @@ class UnavailableStateTests(unittest.TestCase):
     def test_asset_tools_without_a_decoder_are_listed_for_gating(self):
         from fe_modding.gui.pages.assets import ASSET_FEATURES, TOOLS_BY_KEY
         from fe_modding.game_profile import (
-            AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, CHAPTERS, EFFECTS, ICONS, MODELS, VIDEO,
-            PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE,
+            AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_WEAPONS, CHAPTERS, EFFECTS, ICONS, MODELS,
+            VIDEO, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE,
         )
 
         self.assertTrue(set(ASSET_FEATURES) <= set(TOOLS_BY_KEY))
@@ -198,7 +198,8 @@ class UnavailableStateTests(unittest.TestCase):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), key)
             # Phase 5 maps and Phase 6 icons/models/effects use shared browsers. Unsafe RD model
             # and effect mutation remains locked inside the individual viewers.
-            if feature not in (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, CHAPTERS, EFFECTS,
+            # Parity Phase 7: Battle Weapons reads FE10Battle.cms rows on RD.
+            if feature not in (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_WEAPONS, CHAPTERS, EFFECTS,
                                 ICONS, MODELS, VIDEO):
                 self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature), key)
 

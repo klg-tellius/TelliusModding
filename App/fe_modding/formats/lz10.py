@@ -22,11 +22,15 @@ class LZ10Error(Exception):
     pass
 
 
-def decompress(data: bytes) -> bytes:
+def decompress(data: bytes, limit: int | None = None) -> bytes:
+    """The decompressed stream; with ``limit``, only its first ``limit`` bytes (matches only look
+    back, so the rest is never decoded)."""
     if len(data) < 4 or data[0] != MAGIC:
         raise LZ10Error(f"Not an LZ10 stream (expected marker byte 0x{MAGIC:02X} first).")
 
     decompressed_length = data[1] | (data[2] << 8) | (data[3] << 16)
+    if limit is not None:
+        decompressed_length = min(decompressed_length, max(limit, 0))
     out = bytearray(decompressed_length)
     out_pos = 0
     in_pos = 4

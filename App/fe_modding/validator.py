@@ -291,7 +291,8 @@ def _check_scripts(project: ModProject, known: set, issues: list) -> None:
 
 def _check_script_globals(project: ModProject, issues: list) -> None:
     """``startup.cmb`` stays loaded under every other script, and global opcodes address the
-    engine's one 32-slot table absolutely: the two reservations must fit together (else the
+    engine's one 32-slot table absolutely (both games: ``init_script_global_state(0x20, ...)``, on
+    Radiant Dawn ``init_script_tables(0x20, 0x300)`` at 0x8009CF74): the two reservations must fit together (else the
     later script's functions are never registered) and must not share a slot."""
     from .formats.cmb import read_cmb_path
     from .formats.cmb.compiler import GLOBAL_TABLE_SLOTS
@@ -329,17 +330,18 @@ def _check_script_globals(project: ModProject, issues: list) -> None:
 
 
 def _check_shops(project: ModProject, iids: set, issues: list) -> None:
-    folder = profile_of(project).shop_folder(files_root_of(project))
+    profile = profile_of(project)
+    folder = profile.shop_folder(files_root_of(project))
     for path in sorted(folder.glob("*.bin")) if folder.is_dir() else []:
         try:
             doc = shop.parse_shop(path.read_bytes())
         except Exception as exc:  # noqa: BLE001
-            issues.append(Issue(ERROR, "Shops", f"shop/{path.name}", f"The file could not be read ({exc})."))
+            issues.append(Issue(ERROR, "Shops", f"{profile.shop_dir}/{path.name}", f"The file could not be read ({exc})."))
             continue
         for section in doc.sections:
             for item in section.items:
                 if isinstance(item, str) and item.startswith("IID_") and item not in iids:
-                    issues.append(Issue(ERROR, "Shops", f"shop/{path.name}",
+                    issues.append(Issue(ERROR, "Shops", f"{profile.shop_dir}/{path.name}",
                                         f"{section.name} sells {item}, which does not exist."))
 
 

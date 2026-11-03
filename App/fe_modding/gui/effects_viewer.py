@@ -186,8 +186,7 @@ class EffectsViewer(EditorPanel):
         self._register_btn.config(state="normal" if writable and not entry.registered else "disabled")
         self._registry_btn.config(state="normal" if writable and entry.registered else "disabled")
         self._restore_btn.config(state="normal" if writable and self._has_original(entry) else "disabled")
-        removable = (self._project.game is Game.RADIANT_DAWN and entry.registered
-                     and not self._is_vanilla_registry_entry(entry.name))
+        removable = writable and entry.registered and not self._is_vanilla_registry_entry(entry.name)
         self._remove_btn.config(state="normal" if removable else "disabled")
         registry_name = effects.REGISTRY_FILES[self._project.game]
         lines = [f"Registry flags: {entry.flags:#010x}" if entry.registered else f"Not in {registry_name}"]
@@ -535,19 +534,20 @@ class EffectsViewer(EditorPanel):
 
     def _remove(self) -> None:
         entry = self._selected()
-        if entry is None or self._project.game is not Game.RADIANT_DAWN:
+        if entry is None:
             return
         if self._is_vanilla_registry_entry(entry.name):
             messagebox.showerror("Remove effect", "The game's original registry rows are protected.", parent=self)
             return
         if not messagebox.askyesno(
-                "Remove added effect", f"Remove {entry.name} from FE10Effect.cms and delete its added pack?",
+                "Remove added effect",
+                f"Remove {entry.name} from {effects.REGISTRY_FILES[self._project.game]} and delete its added pack?",
                 parent=self):
             return
         registry = effects.registry_path(self._files, self._project.game)
         pack = self._pack_file(entry)
         try:
-            rebuilt = effects.remove_rd_registry_record(registry.read_bytes(), entry.name)
+            rebuilt = effects.remove_registry_record(registry.read_bytes(), entry.name, self._project.game)
             self._project.write_keeping_original(registry, rebuilt)
             if pack.is_file() and self._project.is_added_file(pack):
                 pack.unlink()

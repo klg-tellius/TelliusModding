@@ -157,7 +157,7 @@ class FunctionTrigger:
 # What each ScriptFunction.type value actually triggers on, and what its
 # `params` mean. The trigger *descriptions* are not reverse-engineered by
 # this codebase - they're the user's own prior research
-# (C:\Users\Julien\Documents\FE9\fct.xlsx, "New type" sheet), carried over
+# (the research fct.xlsx, "New type" sheet), carried over
 # the same way dispo.py/map_file.py originally carried over findings from
 # that same external FE9 folder's one-off scripts. Treat an
 # unfamiliar/unexpected type value with the same suspicion the module's

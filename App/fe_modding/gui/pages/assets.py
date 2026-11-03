@@ -8,15 +8,16 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_TABLES, CHAPTERS, EFFECTS,
-                             ICONS, MODELS, VIDEO, profile_of)
+from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_SKIES, BATTLE_TABLES, BATTLE_WEAPONS,
+                             CHAPTERS,
+                             EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
 from ..animation_data_viewer import AnimationDataViewer
 from ..background_viewer import BackgroundViewer
 from ..fe10_camera_viewer import battle_camera_viewer
 from ..battle_params_viewer import BattleParamsViewer
 from ..battle_scenery_viewer import BattleSceneryViewer
 from ..battle_simulator import BattleSimulator
-from ..battle_weapons_viewer import BattleWeaponsViewer
+from ..battle_weapons_viewer import battle_weapons_panel
 from ..fe10_battle_viewer import battle_data_viewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
@@ -75,7 +76,7 @@ ASSET_TOOLS = [
      "Packed backdrop textures (zbg/): view and replace", BattleSceneryGraphicsViewer),
     ("music", "Music", "♫", "Music streams: preview, export, replace and manage supported cues", MusicEditor),
     ("effects", "Visual Effects", "✺", "Spell and battle effects (effect registry, yme/): inspect and preview", EffectsViewer),
-    ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle (zdbx.cmp xwp/): type, flight, effects", BattleWeaponsViewer),
+    ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle: type, effects, model", battle_weapons_panel),
     ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", BattleSceneryViewer),
     ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action clips (camera data, xcam/)", battle_camera_viewer),
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
@@ -83,7 +84,7 @@ ASSET_TOOLS = [
     ("dbx_files", "Battle Data", "▤", "Browse the game's native battle tables (DBX on Path of Radiance)", battle_data_viewer),
     ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
-    ("tutorials", "Tutorials", "?", "The in-game tutorial list (tut_data_en.bin): groups, order, start flags", TutorialsEditor),
+    ("tutorials", "Tutorials", "?", "The in-game tutorial lists (tut_data): groups, order, start flags", TutorialsEditor),
     ("staff_credits", "Staff Credits", "≡", "The end credits (ending/staffroll_noa.bin): edit, add and reorder lines", StaffRollEditor),
     ("sound_room_tracks", "Soundroom Tracks", "♬", "The Sound Room's music cues: pick and reorder",
      SoundRoomTracksEditor),
@@ -97,7 +98,7 @@ ASSET_FEATURES = {
     "map_objects": CHAPTERS,
     "icons": ICONS,
     "effects": EFFECTS,
-    "battle_weapons": BATTLE_TABLES, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_CAMERAS,
+    "battle_weapons": BATTLE_WEAPONS, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_CAMERAS,
     "battle_sim": BATTLE_SIM, "battle_params": BATTLE_TABLES,
     "dbx_files": BATTLE_DATA,
     "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO, "sound_room_tracks": AUDIO,
@@ -106,6 +107,18 @@ ASSET_FEATURES = {
 #: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
 #: and "not available" for a game without it.
 ASSET_FILES = {"conversation_lists": "conversation_data"}
+#: Tools for data only some games have (``GameProfile.features``): absent from the hub, search and
+#: routes on a game without it, rather than "not available".
+ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
+                 "tutorials": TUTORIALS, "staff_credits": STAFF_CREDITS}
+
+
+def tool_applies(project, key: str) -> bool:
+    """Whether the Assets tool ``key`` exists for this project's game."""
+    feature = ASSET_APPLIES.get(key)
+    return feature is None or profile_of(project).supports(feature)
+
+
 #: Tools that list files for other pages to open (they take the shell).
 LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
@@ -132,6 +145,8 @@ class AssetsHub(Page):
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")
             for key in keys:
+                if not tool_applies(shell.project, key):
+                    continue
                 if key in ASSET_FILES and not profile_of(shell.project).has_file(ASSET_FILES[key]):
                     continue
                 _k, label, icon, description, _cls = TOOLS_BY_KEY[key]
@@ -160,7 +175,7 @@ class AssetPage(Page):
 
     def show(self, route) -> bool:
         key = route[1] if len(route) > 1 else None
-        if key not in TOOLS_BY_KEY:
+        if key not in TOOLS_BY_KEY or not tool_applies(self.project, key):
             return False
         if key == "models" and len(route) > 2 and str(route[2]).startswith("zmap/"):
             # chapter maps live in Map Models only

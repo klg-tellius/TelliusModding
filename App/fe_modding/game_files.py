@@ -134,7 +134,8 @@ class GameFiles:
         """``rel`` with each part spelled as the first of ``trees`` that has it spells it, so one
         file has one name however its case was given (the file system ignores case, and the
         game's own paths mix ``Mess`` and ``mess``). Folder listings are cached; a name the cache
-        lacks lists the folder again."""
+        lacks lists the folder again only when the folder changed since (its modification time),
+        so asking for files that don't exist (every chapter's optional files) stays cheap."""
         if not rel:
             return rel
         cache = self.__dict__.setdefault("_names", {})
@@ -143,13 +144,19 @@ class GameFiles:
             key, real = part.lower(), None
             for tree in trees:
                 folder = tree.joinpath(*out)
-                names = cache.get(folder)
+                entry = cache.get(folder)
+                names = entry[1] if entry is not None else None
                 if names is None or key not in names:
                     try:
-                        names = {name.lower(): name for name in os.listdir(folder)}
+                        stamp = os.stat(folder).st_mtime_ns
                     except OSError:
-                        names = {}
-                    cache[folder] = names
+                        stamp = None
+                    if entry is None or stamp is None or entry[0] != stamp:
+                        try:
+                            names = {name.lower(): name for name in os.listdir(folder)}
+                        except OSError:
+                            names = {}
+                        cache[folder] = (stamp, names)
                 real = names.get(key)
                 if real is not None:
                     break

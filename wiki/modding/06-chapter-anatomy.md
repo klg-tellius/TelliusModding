@@ -188,7 +188,7 @@ Your finished trace:
 
 | Part | What it shows |
 | --- | --- |
-| **Story flow** | **Played after:**, **Next chapter:** and **The next chapter is this chapter's second part** ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)). |
+| **Story flow** | **Played after:**, **Next chapter:** and **Carry straight on into the next chapter (no save, no army clean-up)** ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)). |
 | **Cast** | The units of the shown map phase, by section, for the chosen **Deployment file** (*Normal*, *Hard*, *Maniac*, *Common*). *No units in this deployment file.* when the file is empty; *This chapter has no map folder.* when there is none. |
 | **Edit in Build ›** | Opens the section's first unit on **Build**. |
 | Unit card | Name, class, PID and tile; opens the character. |

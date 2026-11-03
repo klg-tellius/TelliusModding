@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from fe_modding.formats.fe8data import BattleTerrainRow
+from fe_modding import game_adapter
 from fe_modding.gui import battle_scene_editor as bse
 
 ROWS = [BattleTerrainRow("Map6", ["map01_woods", "map01_plain"]),
@@ -104,7 +105,7 @@ class Fe10BattleSceneTests(unittest.TestCase):
                                        changed=lambda source: None)
         self.log = []
         self.panel = _fe10_panel(self.session, self.log)
-        self.names = mock.patch.object(bse.fe10data, "battle_scenery_names", return_value=["bgA", "bgB"])
+        self.names = mock.patch.object(game_adapter.fe10data, "battle_scenery_names", return_value=["bgA", "bgB"])
         self.names.start()
 
     def tearDown(self):
@@ -122,15 +123,29 @@ class Fe10BattleSceneTests(unittest.TestCase):
             calls.append((index, terrain, scenery))
             return data + b"!"
 
-        with mock.patch.object(bse.fe10data, "set_battle_scenery", side_effect=set_scenery):
-            bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", [None, "bgA", "bgA"])], "edit")
-        self.assertEqual(calls, [(0, 0, 0xFFFF), (0, 1, 0)])
-        self.assertEqual(self.session.data, b"data!!")
+        with mock.patch.object(game_adapter.fe10data, "set_battle_scenery", side_effect=set_scenery):
+            bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", ["bgA", "bgA", None])], "edit")
+        self.assertEqual(calls, [(0, 0, 0), (0, 1, 0), (0, 2, 0xFFFF)])
+        self.assertEqual(self.session.data, b"data!!!")
         self.assertEqual(self.log, [("FE10Data.cms", "edit")])
 
-    def test_write_refuses_a_name_outside_the_table(self):
-        with self.assertRaises(ValueError):
+    def test_write_refuses_a_name_it_cannot_check(self):
+        # no FE10Battle.cms to read: only BattleTerrName's own names are accepted
+        with self.assertRaisesRegex(ValueError, "FE10Battle"):
             bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", ["bgB", "new_bg", "bgA"])], "edit")
+
+    def test_first_cell_needs_a_backdrop(self):
+        # 8011d3a4: an empty cell reads the row's first cell, and an empty first cell reads before the list
+        with self.assertRaisesRegex(ValueError, "first terrain type"):
+            bse.BattleScenePanel._write(self.panel, [BattleTerrainRow("bmap0101", [None, "bgA", "bgA"])], "edit")
+
+    def test_maps_without_a_row_use_one_backdrop(self):
+        adapter = game_adapter.RdDataAdapter(self.session)
+        rows = adapter.battle_scenery_rows()
+        self.assertEqual(bse.effective_scene(rows, "bmap0999", 2, adapter.no_row_scene), "bg魔法")
+        self.assertEqual(bse.effective_scene(rows, "bmap0101", 1, adapter.no_row_scene), "bgB")
+        self.assertEqual(adapter.new_scenery_row("bmap0999", 3).scenes, ["bg魔法", None, None])
+        self.assertIsNone(game_adapter.PorDataAdapter(self.session).no_row_scene)
 
 
 @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"),

@@ -561,7 +561,7 @@ This course targets US Path of Radiance. A new chapter-selection system, new eng
 
 Radiant Dawn scripts use the same language, and everything above about flags, triggers, functions and `startup.cmb` carries over, with these differences. The full list is in [the script language](script-language.md#radiant-dawn).
 
-- **Where to edit.** Radiant Dawn has no chapter pages yet: open a script from **Assets › Scripts** (`C0101.cmb` is Part 1's Prologue, `C0407a`–`C0407e` the five parts of the last chapter, `CFINAL` the endgame) and its flags from **Game Data › Flags**.
+- **Where to edit.** Open a Radiant Dawn chapter's Script tab or use **Assets › Scripts** (`C0101.cmb` is Part 1's Prologue, `C0407a`–`C0407e` the five parts of the last chapter, `CFINAL` the endgame). Registrations are in **Game Data › Flags**; a NAND save's 128-bit bank is in **Tools › Saves**.
 - **Flags.** The table has 128 slots; 27 are campaign flags in vanilla, so a chapter has about 100.
 - **New triggers.** A rescue, a give/take and a unit walking through a tile can start an event, and talk and battle events can test a function instead of a flag:
 

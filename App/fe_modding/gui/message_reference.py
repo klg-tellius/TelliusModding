@@ -28,14 +28,44 @@ def raw_id(shown: str) -> str:
     return shown.encode("shift_jis").decode(message.ENCODING)
 
 
+_TEXTS_CACHE: dict[str, tuple[tuple, dict[str, str]]] = {}
+
+
 def message_texts(project) -> dict[str, str]:
     path = common_path(project)
-    if not path.is_file():
-        return {}
+    return file_texts(path) if path.is_file() else {}
+
+
+def epilogue_texts(project) -> dict[str, str]:
+    """Radiant Dawn's ``Mess/e_epilogue.m`` (``MNPID_`` epilogue titles and endings), else the
+    Japanese ``epilogue.m``; empty on Path of Radiance."""
+    folder = files_root_of(project) / "Mess"
+    for name in ("e_epilogue.m", "epilogue.m"):
+        path = folder / name
+        if path.is_file():
+            return file_texts(path)
+    return {}
+
+
+def file_texts(path) -> dict[str, str]:
+    """One message file's texts by ID. Every game-data form asks for them; reading e_common.m takes a
+    quarter of a second, so the parsed table is kept until the file changes (size or modification
+    time)."""
     try:
-        return {display_id(m.speaker): m.text for m in message.read_messages_path(path)}
+        stat = path.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = None
+    cached = _TEXTS_CACHE.get(str(path))
+    if stamp is not None and cached is not None and cached[0] == stamp:
+        return dict(cached[1])
+    try:
+        texts = {display_id(m.speaker): m.text for m in message.read_messages_path(path)}
     except (OSError, ValueError, IndexError):
         return {}
+    if stamp is not None:
+        _TEXTS_CACHE[str(path)] = (stamp, texts)
+    return dict(texts)
 
 
 def preview(text: str, fe10: bool = False) -> str:

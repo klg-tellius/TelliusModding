@@ -17,8 +17,8 @@ class Phase10ProfileTests(unittest.TestCase):
     def test_capabilities_are_distinct_and_enabled(self):
         for profile in (PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE):
             self.assertTrue(profile.supports(PLAY))
-            self.assertTrue(profile.supports(PLAYTHROUGH))
             self.assertTrue(profile.supports(BATTLE_SIM))
+            self.assertTrue(profile.supports(PLAYTHROUGH))
 
     def test_rd_dialect_contract(self):
         dialect = dialect_for(RADIANT_DAWN_PROFILE)

@@ -20,7 +20,7 @@ source_path: "modding/65-chapter-parts-and-phases.md"
 ---
 # Manage chapter parts and phases
 
-**Route:** a chapter's header → **Map phase** / **Parts**, **+ Phase…**, **Remove phase…**; **Overview** → **The next chapter is this chapter's second part**
+**Route:** a chapter's header → **Map phase** / **Parts**, **+ Phase…**, **Remove phase…**; **Overview** → **Carry straight on into the next chapter (no save, no army clean-up)**
 
 ## What you will make
 
@@ -40,7 +40,7 @@ A chapter can use several map folders, `bmapNN`, `bmapNN_2`, `bmapNN_3`… Each 
 | --- | --- | --- | --- |
 | **Map phase** | The script switches maps inside one battle or cutscene, e.g. an opening scene on another map | Ch.5 opens on `bmap06_2`, then fights on `bmap06`; Ch.8 has five folders | **+ Phase…** › **Map phase only**, then your own `MapLoad` calls |
 | **Playable part** | One chapter number, several battles. Each battle but the last ends with `Complete18(part)`: no new chapter, the save menu opens, then `Opening18_2`, `_3` or `_4` sets up the next battle | Ch.17: Day Breaks (slot 18), four battles | **+ Phase…** › **Next playable chapter part** |
-| **Two-part chapter** | Two chapter numbers played as one: no save menu between them, the army is not sorted out, support points are not counted again, the war record shows two rows | Ch.27 is slots 28 and 29 | **Overview** › **The next chapter is this chapter's second part** ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)) |
+| **Two-part chapter** | Two chapter numbers played as one: no save menu between them, the army is not sorted out, support points are not counted again, the war record shows two rows | Ch.27 is slots 28 and 29 | **Overview** › **Carry straight on into the next chapter (no save, no army clean-up)** ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)) |
 
 A chapter has at most four playable parts. When the script loads a folder from a numbered part opening, the header calls the list **Parts** instead of **Map phase**.
 
@@ -150,7 +150,7 @@ The second battle reuses part 1's script: its turn events (`@on_phase(turn_from=
 | **Create** / **Cancel** | Make the copy / close | |
 | **Remove phase…** | Deletes the shown folder and its Battle scenes row. Refused while a script names the folder; disabled on the first. | |
 | Part status | *Part N: script links found*, or *needs deployment*, *needs previous victory*, or both | Follow it until it says *script links found* |
-| **The next chapter is this chapter's second part** (Overview) | Makes the transition to the next chapter work like Ch.27's 28 → 29 | Two records that should play as one chapter |
+| **Carry straight on into the next chapter (no save, no army clean-up)** (Overview) | Makes the transition to the next chapter work like Ch.27's 28 → 29 | Two records that should play as one chapter |
 
 Refusals of **Next playable chapter part**: *Chapter part openings have a gap* (an `Opening18_3` without `Opening18_2`), *The game supports at most four playable parts per chapter.*, *This chapter has no script to hold a playable part.*
 

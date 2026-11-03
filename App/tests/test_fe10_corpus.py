@@ -331,13 +331,11 @@ class Fe10FilesTest(unittest.TestCase):
         for rel in DATA_FILES:
             walker.child(rel, (FILES / rel).read_bytes())
         totals = report.formats["fe10 container"]
-        cp_totals = report.formats.get("cp_data")
-        self.assertEqual(totals.files + (cp_totals.files if cp_totals else 0), len(DATA_FILES))
-        self.assertEqual(totals.failures, [])
-        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
-        if cp_totals:
-            self.assertEqual(cp_totals.failures, [])
-            self.assertEqual(cp_totals.counts[UNCLASSIFIED], 0)
+        own = [report.formats[f] for f in ("cp_data", "FE10Data.cms") if f in report.formats]
+        self.assertEqual(totals.files + sum(t.files for t in own), len(DATA_FILES))
+        for t in [totals] + own:
+            self.assertEqual(t.failures, [])
+            self.assertEqual(t.counts[UNCLASSIFIED], 0)
 
     def test_every_mess_file_parses(self):
         paths = sorted((FILES / "Mess").glob("*.m"))

@@ -14,16 +14,17 @@ from .catalog import CATALOG, CAVE_ADDRESS, Edit, Field, Patch, Tunable, in_cave
 RFEE01 = "RFEE01"
 TEXT1_DELTA = 0x800042C0
 
-G_RD_SKILLS = "Radiant Dawn skills"
-G_RD_RULES = "Radiant Dawn rules"
-G_RD_COMBAT = "Radiant Dawn combat"
-G_RD_EXP = "Radiant Dawn experience"
-G_RD_GROWTH = "Radiant Dawn growth"
-G_RD_LAGUZ = "Radiant Dawn transformation"
-G_RD_TRIANGLE = "Radiant Dawn Triangle Attack"
-G_RD_RANDOM = "Radiant Dawn random numbers"
-G_RD_ECONOMY = "Radiant Dawn economy"
-G_RD_PROMOTION = "Radiant Dawn promotion"
+# Path of Radiance's group names (entries.py), so the Game Code page reads the same on both games
+G_RD_SKILLS = "Skill activation"
+G_RD_RULES = "Map and camera"
+G_RD_COMBAT = "Combat rules"
+G_RD_EXP = "Experience and growth"
+G_RD_GROWTH = "Level-up growth"
+G_RD_LAGUZ = "Laguz transformation"
+G_RD_TRIANGLE = "Triangle Attack"
+G_RD_RANDOM = "Random numbers"
+G_RD_ECONOMY = "Gold and forge"
+G_RD_PROMOTION = "Promotion"
 
 
 def _at(file_offset: int) -> int:
@@ -410,6 +411,9 @@ _RD_NUMERIC_PROCS = (
 )
 
 assert in_cave(_RD_PROC_STUB_BASE, len(_RD_NUMERIC_PROCS) * _RD_PROC_STUB_SIZE)
+#: The Skill activation grid's rows: (skill, activates on, scale tunable id, bonus tunable id).
+PROC_ROWS = tuple((name, formula, f"rd.skill.{key}.activation_scale", f"rd.skill.{key}.activation_bonus")
+                  for key, name, formula, _site in _RD_NUMERIC_PROCS)
 
 for _index, (_key, _name, _formula, _roll_site) in enumerate(_RD_NUMERIC_PROCS):
     _stub_address = _RD_PROC_STUB_BASE + _index * _RD_PROC_STUB_SIZE
