@@ -522,7 +522,12 @@ class CharacterPage(Page):
                               "Replacing the face file changes it for every character that uses this portrait."),
                   style="SurfaceCaption.TLabel", wraplength=520).pack(anchor="w", pady=(10, 0))
 
-        section_header(body, "Models", "what the game loads for this character").pack(anchor="w", pady=(24, 8))
+        head = ttk.Frame(body, style="Page.TFrame")
+        head.pack(anchor="w", pady=(24, 8))
+        section_header(head, "Models", "what the game loads for this character").pack(side="left")
+        help_mark(head, "Models are shared by every unit that resolves to them. To give this character a model "
+                        "of their own, open the model and use New slot…; Model tables… shows the lines that "
+                        "pick it.").pack(side="left", padx=(6, 0))
         models = ttk.Frame(body, style="Surface.TFrame", padding=14)
         models.pack(fill="x")
         rows = [
@@ -541,9 +546,6 @@ class CharacterPage(Page):
             if model:
                 ttk.Button(models, text="Open in 3D Models", command=lambda m=model: self.shell.navigate(
                     ("asset", "models", m))).grid(row=r, column=3, sticky="w")
-        help_mark(models, "Models are shared by every unit that resolves to them. To give this character a model "
-                          "of their own, open the model and use New slot…; Model tables… shows the lines that "
-                          "pick it.", bg_token="surface").grid(row=len(rows), column=0, sticky="w", pady=(10, 0))
         actions = ttk.Frame(body, style="Page.TFrame")
         actions.pack(anchor="w", pady=(16, 0))
         ttk.Button(actions, text="Simulate a battle…", command=lambda: self.shell.navigate(

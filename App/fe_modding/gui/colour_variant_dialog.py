@@ -26,6 +26,7 @@ from ..game_adapter import data_adapter
 from ..project import ModProject
 from ..recolour import Recolour, recolour_tpl
 from ..formats import tpl
+from .widgets import info
 
 PREVIEW_SIZE = 260
 ARMY_LABELS = {key: f"{name} army ({key})" for key, name in colour_variants.ARMY_NAMES.items()}
@@ -150,18 +151,26 @@ class ColourVariantDialog(tk.Toplevel):
                     self._also[other] = var
                     ttk.Checkbutton(also, text=other, variable=var, command=self._schedule_plan).pack(anchor="w")
             self._army.set(ARMY_LABELS["自軍"])
-            label = "Colours where nothing of the character's own picks one"
+            label = "Start from the colours of"
+            label_help = ("A character with no texture of their own is drawn in their class's texture, in the "
+                          "colours of the army they are in. Pick which army's version is copied and recoloured: "
+                          "usually the player army. Parts of the character that already have their own texture "
+                          "are recoloured from it instead.")
         else:
             self._army.set(ARMY_LABELS["敵軍"])
             ttk.Checkbutton(box, text="Its promoted class too", variable=self._promoted,
                             command=self._schedule_plan).pack(anchor="w", pady=(6, 0))
             label = "Army whose colours change"
+            label_help = "Every unit of this class in this army, except characters with a texture of their own."
         if "armies" not in self._options:
             # Radiant Dawn: a character's colours follow its own animation IDs, whatever its army
             ttk.Label(box, text="Every tier of the character: its map and battle models and its portrait.",
                       style="Muted.TLabel", wraplength=300).pack(anchor="w", pady=(6, 0))
             return
-        ttk.Label(box, text=label).pack(anchor="w", pady=(6, 0))
+        head = ttk.Frame(box)
+        head.pack(anchor="w", pady=(6, 0))
+        ttk.Label(head, text=label).pack(side="left")
+        info(head, label_help).pack(side="left", padx=(4, 0))
         army = ttk.Combobox(box, textvariable=self._army, values=list(ARMY_LABELS.values()), state="readonly",
                             width=30)
         army.pack(anchor="w")

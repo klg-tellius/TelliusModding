@@ -95,7 +95,7 @@ Each **Map flags** box is one bit of the map's flag word: **Water surface** (`0x
 
 Open **Chapter data** for the same chapter record. Confirm **Chapter ID**, **Map**, **Script**, and **Message file** before changing anything. These are links between major resources, not cosmetic labels.
 
-Change the **Map music** or a background only if the referenced asset exists. For the tutorial, focus on **Objectives (text keys)**:
+Pick the **Map music** or a background from its drop-down or with **Choose…**. For the tutorial, focus on **Objectives (text keys)**:
 
 - Goal
 - Goal second line
@@ -154,7 +154,7 @@ The flag word is shown as check boxes. **Water surface** draws the animated wate
 
 ### Chapter identity and assets
 
-**Chapter ID** is the numeric record identity. **Map** selects `zmap/<name>`, **Script** selects `Scripts/<name>.cmb`, and **Message file** selects the chapter message resource. **Map music**, **Base background**, **Conversation background**, **Class-change scene map**, and **Class-change scene sky** name their respective assets.
+**Chapter ID** is the numeric record identity. **Map** selects `zmap/<name>`, **Script** selects `Scripts/<name>.cmb`, and **Message file** selects the chapter message resource. **Map music**, **Base background**, **Conversation background**, **Class-change scene map**, and **Class-change scene sky** name their respective assets. Each of these fields is a drop-down of what the project holds; **Choose…** (music, backgrounds) and **Browse in 3D…** (the class-change scene and sky) open a picker with a preview, and the **Open in …** buttons jump to the asset's editor.
 
 ### Enemy levels and trial grades
 

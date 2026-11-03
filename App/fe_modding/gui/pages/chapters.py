@@ -1200,13 +1200,17 @@ class ChapterPage(Page):
         parts = flow.parts
         if parts is not None and int(chapter) != chapter_flow.CONTINUED_PART:
             continued = tk.BooleanVar(value=int(chapter) in parts.continued())
-            check = ttk.Checkbutton(box, text="The next chapter is this chapter's second part", variable=continued,
-                                    command=lambda: self._set_continued(chapter, continued.get()))
-            check.pack(anchor="w", pady=(6, 0))
-            if continued.get():
-                notes.append("Like chapters 28 and 29: no save menu before the next chapter, the army isn't sorted "
-                             "out (units that joined keep their army), support points aren't counted again, and the "
-                             "war record lists the two as separate rows.")
+            line = ttk.Frame(box, style="Surface.TFrame")
+            line.pack(anchor="w", pady=(6, 0))
+            check = ttk.Checkbutton(line, text="Carry straight on into the next chapter (no save, no army clean-up)",
+                                    variable=continued, command=lambda: self._set_continued(chapter, continued.get()))
+            check.pack(side="left")
+            info(line, "What retail does between chapters 28 and 29 (Ch.27's two maps), for any chapter: no save "
+                       "menu before the next chapter, the army is not sorted out (units that joined keep their "
+                       "army, guests stay), and support points are not counted again at its start. The war record "
+                       "still lists the two as separate rows. Ticking it on another chapter patches main.dol "
+                       "(Two-part chapters), which replaces the game's chapter-28 test by a list.",
+                 bg_token="surface").pack(side="left", padx=(4, 0))
         if flow.armies:
             line = ttk.Frame(box, style="Surface.TFrame")
             line.pack(fill="x", pady=(6, 0))

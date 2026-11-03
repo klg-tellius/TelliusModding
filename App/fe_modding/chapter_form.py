@@ -39,6 +39,9 @@ class ChapterField:
     name_help: dict = field(default_factory=dict)
     low: int = 0
     high: int = 255
+    #: Where the field's choices come from in the project ("maps", "scripts", "messages", "music",
+    #: "backgrounds", "scenes"): the form shows them in a drop-down, with a picker for the last three.
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -69,20 +72,23 @@ def por_sections(data: bytes, index: int) -> list[ChapterSection]:
     identity = (title,
                 ChapterField("Chapter id", "chapter_id", NUMBER,
                              "Scripts change to a chapter by this id; 90 and up are the trial maps."),
-                ChapterField("Map", "map_name", note="The map folder: zmap/<name>/."),
-                ChapterField("Script", "script", note="The event script: Scripts/<name>.cmb."),
-                ChapterField("Message file", "message", note="The text file: Mess/<name>.m; empty: none."),
-                ChapterField("Map music", "bgm", link=("Open in Music ›", ("asset", "music"))))
+                ChapterField("Map", "map_name", note="The map folder: zmap/<name>/.", source="maps"),
+                ChapterField("Script", "script", note="The event script: Scripts/<name>.cmb.", source="scripts"),
+                ChapterField("Message file", "message", note="The text file: Mess/<name>.m; empty: none.",
+                             source="messages"),
+                ChapterField("Map music", "bgm", note="A BGM cue of Sound/gcfesnd.bin.",
+                             link=("Open in Music ›", ("asset", "music")), source="music"))
     objectives = [ChapterField(label, f"objective{k}", prefix="ML_" if k >= 2 else "MW_")
                   for k, label in enumerate(_SLOTS)]
     for mode, key in (("Hard", "hard_objective"), ("Maniac", "maniac_objective")):
         objectives += [ChapterField(f"{mode}: {_SLOTS[slot].lower()}", f"{key}{k}",
                                     prefix="ML_" if slot == 3 else "MW_") for k, slot in enumerate((0, 1, 3))]
     backgrounds = ("Open in Backgrounds ›", ("asset", "backgrounds"))
-    scenes = (ChapterField("Base background", "base_background", link=backgrounds),
-              ChapterField("Conversation background", "talk_background", link=backgrounds),
-              ChapterField("Class-change scene map", "scene_map"),
-              ChapterField("Class-change scene sky", "scene_sky", note="A Battle scenes sky name."))
+    scenes = (ChapterField("Base background", "base_background", link=backgrounds, source="backgrounds"),
+              ChapterField("Conversation background", "talk_background", link=backgrounds, source="backgrounds"),
+              ChapterField("Class-change scene map", "scene_map", note="The battle scene drawn behind a class "
+                           "change in this chapter.", source="scenes"),
+              ChapterField("Class-change scene sky", "scene_sky", note="The sky of that scene.", source="scenes"))
     grades = ("A", "B", "C", "D")
     levels = (
         ChapterField("Enemy levels +", "enemy_bonus_level{i}", BYTES,
@@ -128,9 +134,10 @@ def rd_sections(data: bytes, index: int) -> list[ChapterSection]:
                 ChapterField("Number", "number", NUMBER,
                              "The chapter's number: setting the current chapter looks the record up by it (0-55: "
                              "the story, 80-83: the tutorials). Each record needs its own."),
-                ChapterField("Map", "map", note="The map folder: zmap/<name>/."),
-                ChapterField("Script", "script", note="The event script: Scripts/<name>.cmb."),
-                ChapterField("Message file", "messages", note="The text files: Mess/<name>.m and e_<name>.m."))
+                ChapterField("Map", "map", note="The map folder: zmap/<name>/.", source="maps"),
+                ChapterField("Script", "script", note="The event script: Scripts/<name>.cmb.", source="scripts"),
+                ChapterField("Message file", "messages", note="The text files: Mess/<name>.m and e_<name>.m.",
+                             source="messages"))
     objectives = []
     for d in range(3):
         mode = f"Difficulty {d + 1}"

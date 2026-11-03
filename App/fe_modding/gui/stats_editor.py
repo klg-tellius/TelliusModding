@@ -1498,6 +1498,7 @@ class StatsEditor(EditorPanel):
     def _show_chapter(self, index: int) -> None:
         """A ``ChapterData`` record, laid out by the game adapter (:mod:`chapter_form`)."""
         form, parent = self._new_form("chapters", "chapter", index)
+        self.__dict__.pop("_choice_cache", None)  # files may have been added since the last record
         adapter = data_adapter(self._session)
         columns = 8
         row = 0
@@ -1525,6 +1526,10 @@ class StatsEditor(EditorPanel):
         number = spec.kind == chapter_form.NUMBER
         if spec.prefix:
             widget, var = self._pointer_combo(parent, spec.prefix)
+        elif spec.source:
+            var = tk.StringVar()
+            widget = ttk.Combobox(parent, textvariable=var, values=["", *self._chapter_choices(spec.source)],
+                                  state="readonly", width=32)
         elif spec.kind == chapter_form.CHOICE:
             var = tk.StringVar()
             widget = ttk.Combobox(parent, textvariable=var, values=["", *spec.options], width=32)
@@ -1535,17 +1540,96 @@ class StatsEditor(EditorPanel):
         form.add(widget, spec.label, var, lambda: adapter.chapter_value(self._data, index, key),
                  (lambda data, v: adapter.write_chapter_value(data, index, key, _number(v, spec.low, spec.high)))
                  if number else (lambda data, v: adapter.write_chapter_value(data, index, key, v)))
+        buttons = ttk.Frame(parent)
         if spec.prefix:
             self._message_preview(parent, var, row, 4, columns - 4)
-        elif spec.link and self._navigate is not None:
+        if spec.source in ("scenes", "backgrounds", "music"):
+            ttk.Button(buttons, text="Browse in 3D…" if spec.source == "scenes" else "Choose…",
+                       command=lambda: self._choose_for(spec.source, var, widget)).pack(side="left")
+        if spec.link and self._navigate is not None and not spec.prefix:
             text, route = spec.link
-            link = ttk.Button(parent, text=text, command=lambda: self._navigate((*route, var.get().strip())))
-            link.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+            link = ttk.Button(buttons, text=text, command=lambda: self._navigate((*route, var.get().strip())))
+            link.pack(side="left", padx=(6, 0) if spec.source else 0)
             var.trace_add("write", lambda *_: link.configure(state="normal" if var.get().strip() else "disabled"))
             link.configure(state="normal" if var.get().strip() else "disabled")
+        if buttons.winfo_children():
+            buttons.grid(row=row, column=4, columnspan=columns - 4, sticky="w", padx=(8, 0))
+        else:
+            buttons.destroy()
         if spec.note:
             tip(label, spec.note)
         return row + 1
+
+    def _chapter_choices(self, source: str) -> list[str]:
+        """What a chapter field with ``source`` can name in this project (cached per form build)."""
+        cache = self.__dict__.setdefault("_choice_cache", {})
+        if source in cache:
+            return cache[source]
+        root = files_root_of(self._project)
+        names: list[str] = []
+        try:
+            if source == "maps":
+                names = sorted(p.name for p in (root / "zmap").iterdir() if p.is_dir())
+            elif source == "scripts":
+                names = sorted(p.stem for p in (root / "Scripts").glob("*.cmb") if p.stem != "startup")
+            elif source == "messages":
+                stems = {p.stem for p in (root / "Mess").glob("*.m")}
+                names = {s[2:] if s.startswith("e_") and s[2:] in stems else s for s in stems}
+                # chapter records spell c05.m as "C05" (the disc lookup ignores case)
+                names = sorted(n.upper() if n[:1] == "c" and n[1:3].isdigit() else n for n in names)
+            elif source == "music":
+                from ..formats import gcfesnd
+
+                names = [cue.name for cue in gcfesnd.read_bgm_cues_path(root / "Sound" / "gcfesnd.bin")]
+            elif source == "backgrounds":
+                from .scene_editor import SUPPORT_BACKGROUND, background_names
+
+                # the record names a rect by its full RID; the support-room entry is not a rect
+                names = ["RID_" + n for n in background_names(self._background_assets()) if n != SUPPORT_BACKGROUND]
+            elif source == "scenes":
+                from .battle_scene_editor import scene_models
+
+                names = sorted(scene_models(self._project))
+        except (OSError, ValueError, AttributeError):
+            names = []
+        except Exception:  # a format reader's own error: offer no list rather than break the form
+            names = []
+        cache[source] = names
+        return names
+
+    def _background_assets(self):
+        assets = self.__dict__.get("_bg_assets")
+        if assets is None:
+            from ..formats.fe9_conversation_assets import ConversationAssets
+            from ..game_profile import disc_root_of
+
+            assets = self._bg_assets = ConversationAssets(disc_root_of(self._project))
+        return assets
+
+    def _choose_for(self, source: str, var: tk.StringVar, widget) -> None:
+        """Pick a value for a chapter field from a browser window, then put it in the field."""
+        names = self._chapter_choices(source)
+        current = var.get().strip()
+        result = None
+        if source == "scenes":
+            from .battle_scene_editor import BattleSceneBrowser
+
+            dialog = BattleSceneBrowser(self, self._project, names, current or None, title="Battle scenes")
+            self.wait_window(dialog)
+            result = dialog.result
+        elif source == "backgrounds":
+            from .scene_editor import _Picker, _Thumbnails
+
+            assets, thumbs = self._background_assets(), _Thumbnails()
+            result = _Picker(self, "Choose background", [(n, "") for n in names],
+                             lambda name: thumbs.background(assets, name.removeprefix("RID_")), current).result
+        elif source == "music":
+            from .scene_editor import _Picker
+
+            result = _Picker(self, "Choose map music", [(n, "") for n in names], lambda name: None, current).result
+        if result is not None:
+            var.set(result)
+            widget.event_generate("<<ComboboxSelected>>")  # the form commits on it
 
     def _title_card(self, adapter, index: int) -> None:
         """Draw a chapter's title card from its title (Radiant Dawn's ``window/title`` cards)."""
