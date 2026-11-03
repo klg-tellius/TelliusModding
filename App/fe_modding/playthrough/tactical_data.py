@@ -94,8 +94,9 @@ def fe10_data(data) -> TacticalData:
         v = r.values
         sounds = list(r.lists.get("sounds", ()))
         categories = [s.removeprefix("SFXC_").lower() for s in sounds if isinstance(s, str)]
-        classes.append(SimpleNamespace(jid=v.get("jid"), mjid=v.get("mjid"), movement=int(v.get("movement", 0)), movement_type=0,
-                                       build=int(v.get("weight", 0)), innate_weapon=v.get("innate_weapon"),
+        classes.append(SimpleNamespace(jid=v.get("jid"), mjid=v.get("mjid"), movement=int(v.get("movement", 0)),
+                                       movement_type=int(v.get("movement_type", 0)),
+                                       build=int(v.get("base_weight", 0)), innate_weapon=v.get("innate_weapon"),
                                        weapon_ranks=v.get("weapon_ranks") or "", max_weapon_ranks=v.get("max_weapon_ranks") or "",
                                        promotes_to=v.get("promotes_to"), demotes_to=v.get("demotes_to"), other_form=v.get("other_form"),
                                        skills=list(r.lists.get("skills", ())) + ([v.get("extra_skill")] if v.get("extra_skill") else []),

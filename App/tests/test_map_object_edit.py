@@ -19,6 +19,33 @@ class PakNameTests(unittest.TestCase):
             self.assertTrue(all(label and "bit " not in label.lower() for _mask, label in controls))
             self.assertTrue(all("unknown" not in label.lower() for _mask, label in controls))
 
+    def test_rd_controls_expose_every_retail_active_traced_bit(self):
+        groups = map_props.prop_flag_groups("fe10")
+        self.assertEqual(
+            {field: {mask for mask, _label in controls} for field, _title, controls in groups},
+            {"flag_bits_a": {0x01, 0x08, 0x10, 0x20, 0x40},
+             "flag_bits_b": {0x01, 0x02, 0x04, 0x40, 0x80},
+             "flag_bits_c": {0x02, 0x04, 0x08, 0x10, 0x20, 0x40},
+             "effect_type": {0x02, 0x10, 0x20, 0x80}},
+        )
+        self.assertIs(map_props.prop_flag_groups("fe9"), map_props.PROP_FLAG_GROUPS)
+
+    def test_rd_toggle_merge_preserves_every_unexposed_bit(self):
+        from fe_modding.formats import map_file
+        obj = map_file.MapObject(0, 0, 0, 1, 1, 1, 0xA5, 0xDA, 0xE3, 0xA1,
+                                 "door", layout="fe10")
+        values = map_props.merge_prop_flag_toggles(
+            obj, (("flag_bits_a", 0x01, False), ("flag_bits_a", 0x08, True),
+                  ("flag_bits_b", 0x01, True), ("flag_bits_b", 0x40, True),
+                  ("flag_bits_b", 0x80, False), ("flag_bits_c", 0x02, False),
+                  ("flag_bits_c", 0x10, True), ("flag_bits_c", 0x20, False),
+                  ("effect_type", 0x02, True), ("effect_type", 0x10, False),
+                  ("effect_type", 0x20, False), ("effect_type", 0x80, True)))
+        self.assertEqual(values, {"flag_bits_a": 0xAC, "flag_bits_b": 0x5B,
+                                  "flag_bits_c": 0xD1, "effect_type": 0x83})
+        self.assertEqual((obj.flag_bits_a, obj.flag_bits_b, obj.flag_bits_c,
+                          obj.effect_type), (0xA5, 0xDA, 0xE3, 0xA1))
+
     def test_full_width_name_round_trips(self):
         from fe_modding.formats import pak
         files = [("ｆlowerpot_01.g", b"abc"), ("map.bin", b"x")]

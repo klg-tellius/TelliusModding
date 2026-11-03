@@ -53,12 +53,73 @@ class ByteMoveTests(unittest.TestCase):
 
 
 class FixedTableSchemaTests(unittest.TestCase):
+    def test_person_loader_fields_have_runtime_meanings_and_signed_increment(self):
+        fields = {field.key: field.kind for field in
+                  (*fe10data.CHARACTER_HEAD, *fe10data.CHARACTER_AFTER_SKILLS,
+                   *fe10data.CHARACTER_TAIL)}
+        self.assertEqual(fields["reserved_01"], "u8")
+        self.assertEqual(fields["extra_skill"], "label")
+        self.assertEqual(fields["biorhythm_phase_selector"], "u8")
+        self.assertEqual(fields["biorhythm_increment"], "s8")
+        self.assertEqual(fields["withdrawal_part_mask"], "u8")
+        self.assertNotIn("unknown_t3", fields)
+
+    def test_job_loader_fields_expose_weight_parts_and_reserved_word(self):
+        fields = {field.key: field.kind for field in (*fe10data.CLASS_FIXED, *fe10data.CLASS_RESERVED)}
+        self.assertEqual(fields["base_weight"], "u8")
+        self.assertEqual(fields["weight_part_1_kind"], "u8")
+        self.assertEqual(fields["weight_part_1"], "s8")
+        self.assertEqual(fields["weight_part_2_kind"], "u8")
+        self.assertEqual(fields["weight_part_2"], "s8")
+        self.assertEqual(fields["promotion_level"], "u8")
+        self.assertEqual(fields["movement_type"], "u8")
+        self.assertEqual(fields["vision"], "u8")
+        self.assertEqual(fields["reserved_0c"], "u32")
+        self.assertNotIn("unknown_label", fields)
+
+    def test_item_loader_fields_expose_article_colour_and_optional_flags(self):
+        fields = {field.key: field.kind for field in fe10data.ITEM_FIXED}
+        self.assertEqual(fields["article"], "s8")
+        self.assertEqual(fields["colour"], "u8")
+        self.assertEqual(fields["optional_flags"], "u8")
+        self.assertEqual([fields[f"reserved_{offset}"] for offset in (13, 14, 15)], ["u8"] * 3)
+        self.assertNotIn("bonus_count", fields)
+
+    def test_skill_article_and_alignment_padding_have_runtime_names(self):
+        fields = {field.key: field.kind for field in fe10data.SKILL_FIXED}
+        self.assertEqual(fields["article"], "s8")
+        self.assertEqual((fields["reserved_22"], fields["reserved_23"]), ("u8", "u8"))
+        self.assertNotIn("unknown_1d", fields)
+
     def test_affinity_exposes_all_six_combat_bonus_channels(self):
         fields = {field.key: field.offset for field in fe10data.FIXED_TABLES["affinity"].fields}
         self.assertEqual({key: fields[key] for key in
                           ("attack", "defense", "hit", "avoid", "critical", "critical_avoid")},
                          {"attack": 4, "defense": 5, "hit": 6, "avoid": 7,
                           "critical": 8, "critical_avoid": 9})
+
+    def test_relationship_tables_expose_executable_consumed_fields(self):
+        pair = {field.key: (field.kind, field.offset) for field in fe10data.FIXED_TABLES["affinity_pair"].fields}
+        bond = {field.key: (field.kind, field.offset) for field in fe10data.FIXED_TABLES["bond"].fields}
+        self.assertEqual(pair["hit_bonus"], ("s8", 8))
+        self.assertEqual(pair["avoid_bonus"], ("s8", 9))
+        self.assertNotIn("value_2", pair)
+        self.assertEqual(bond["kind"], ("u8", 8))
+        self.assertEqual(bond["bonus"], ("s8", 9))
+
+    def test_chapter_runtime_fields_replace_the_old_unknown_bytes(self):
+        fields = {field.key: (field.kind, field.offset)
+                  for field in fe10data.FIXED_TABLES["chapter"].fields}
+        self.assertEqual([fields[f"enemy_level_bonus_{difficulty}"] for difficulty in
+                          ("easy", "normal", "hard", "maniac")],
+                         [("u8", offset) for offset in range(0x85, 0x89)])
+        self.assertEqual(fields["movement_change"], ("s8", 0x8B))
+        self.assertEqual(fields["preparations_mode"], ("u8", 0x8C))
+        self.assertEqual(fields["advance_difficulty_mask"], ("u8", 0x8D))
+        self.assertEqual(fields["part_flags"], ("u8", 0x8E))
+        self.assertEqual(fields["player_group"], ("u8", 0x8F))
+        self.assertNotIn("unknown_8b", fields)
+        self.assertNotIn("unknown_88", fields)
 
 
 def _files() -> Path | None:
@@ -95,28 +156,59 @@ class RetailFe10DataTests(unittest.TestCase):
     def test_known_values(self):
         ike = self.db.characters[0]
         self.assertEqual((ike.values["pid"], ike.values["jid"], ike.values["level"]), ("PID_IKE", "JID_BRAVE", 11))
+        sothe = next(r for r in self.db.characters if r.id == "PID_SOTHE")
+        self.assertEqual((ike.values["biorhythm_phase_selector"], ike.values["biorhythm_increment"]), (3, 8))
+        self.assertEqual(sothe.values["withdrawal_part_mask"], 31)
         self.assertEqual(ike.lists["skills"], ["SID_HERO", "SID_EQ_A"])
         self.assertEqual([ike.values[f"growth_{s.lower()}"] for s in fe10data.STAT_NAMES],
                          [65, 55, 10, 60, 35, 30, 40, 15])
         items = {r.id: r for r in self.db.items}
         iron = items["IID_IRONSWORD"].values
         self.assertEqual((iron["might"], iron["hit"], iron["weight"], iron["uses"], iron["range_max"]), (6, 90, 7, 50, 1))
+        self.assertEqual((iron["article"], iron["colour"]), (2, 4))
+        self.assertEqual(items["IID_RAGNELL"].values["article"], -1)
+        self.assertTrue(all(item.values["reserved_13"] == item.values["reserved_14"] ==
+                            item.values["reserved_15"] == 0 for item in self.db.items))
         self.assertEqual(items["IID_ANGELROBE"].bonuses[0], 7)       # HP
         self.assertEqual(items["IID_RAGNELL"].bonuses[6], 5)         # Def
         self.assertEqual(items["IID_BOOTS"].bonuses[8], 2)           # Mov
         classes = {r.id: r for r in self.db.classes}
         self.assertEqual(classes["JID_BRAVE"].values["promotes_to"], "JID_VANGUARD")
         self.assertEqual(classes["JID_VANGUARD"].values["skill_capacity"], 60)
+        self.assertEqual((classes["JID_BRAVE"].values["base_weight"],
+                          classes["JID_BRAVE"].values["weight_part_1_kind"],
+                          classes["JID_BRAVE"].values["weight_part_1"],
+                          classes["JID_BRAVE"].values["promotion_level"],
+                          classes["JID_BRAVE"].values["movement_type"],
+                          classes["JID_BRAVE"].values["vision"]), (12, 1, 1, 21, 0, 3))
+        self.assertEqual(classes["JID_VANGUARD"].values["weight_part_1"], 3)
+        self.assertTrue(all(record.values["reserved_0c"] == 0 for record in self.db.classes))
         skills = {r.id: r for r in self.db.skills}
+        self.assertEqual((skills["SID_PARITY"].values["article"],
+                          skills["SID_ASTRA"].values["article"],
+                          skills["SID_HERO"].values["article"]), (1, 2, 3))
+        self.assertTrue(all(skill.values["reserved_22"] == skill.values["reserved_23"] == 0
+                            for skill in self.db.skills))
         self.assertIn((1, "JID_PRIEST"), skills["SID_PARITY"].lists["conditions"])
         self.assertIn((0, "SFXC_HUMAN"), skills["SID_PARITY"].lists["requirements"])
+
+    def test_tactical_adapter_uses_rd_class_weight_and_movement_type(self):
+        from fe_modding.playthrough.tactical_data import fe10_data
+
+        classes = {record.jid: record for record in fe10_data(self.db).classes}
+        self.assertEqual((classes["JID_BRAVE"].build, classes["JID_BRAVE"].movement_type), (12, 0))
+        self.assertEqual(classes["JID_LANCEARMOR"].movement_type, 4)
 
     def test_field_edit(self):
         out = fe10data.patch_field(self.data, "character", 0, "level", 20)
         out = fe10data.patch_field(out, "character", 0, "bonus_str", -3)
+        out = fe10data.patch_field(out, "class", 0, "weight_part_1", -3)
+        out = fe10data.patch_field(out, "class", 0, "vision", 9)
         out = fe10data.patch_field(out, "item", 2, "price", 600)
         ike = fe10data.record(out, "character", 0)
         self.assertEqual((ike.values["level"], ike.values["bonus_str"]), (20, -3))
+        brave = fe10data.record(out, "class", 0)
+        self.assertEqual((brave.values["weight_part_1"], brave.values["vision"]), (-3, 9))
         self.assertEqual(fe10data.record(out, "item", 2).values["price"], 600)
         with self.assertRaises(ValueError):
             fe10data.patch_field(self.data, "character", 0, "level", 300)
@@ -137,8 +229,8 @@ class RetailFe10DataTests(unittest.TestCase):
         for kind in fe10data.KINDS:  # nothing else changed
             before = self.db.table(kind)[1:] if kind == "character" else self.db.table(kind)
             after = db.table(kind)[1:] if kind == "character" else db.table(kind)
-            self.assertEqual([(r.values, r.lists, r.bonuses) for r in before],
-                             [(r.values, r.lists, r.bonuses) for r in after], kind)
+            self.assertEqual([(r.values, r.lists, r.bonuses, r.item_extra) for r in before],
+                             [(r.values, r.lists, r.bonuses, r.item_extra) for r in after], kind)
         self.assertEqual(fe10data.set_list(grown, "character", 0, "skills", ["SID_HERO", "SID_EQ_A"]), self.data)
 
     def test_class_list_and_item_bonus_round_trips(self):
@@ -150,6 +242,23 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(fe10data.record(out, "item", iron).bonuses[1], 2)
         self._ends_match(out, fe10data.read_fe10data(out))
         self.assertEqual(fe10data.set_item_bonuses(out, iron, None), self.data)
+
+    def test_item_second_optional_block_is_preserved_when_bonuses_change(self):
+        iron = next(r.index for r in self.db.items if r.id == "IID_IRONSWORD")
+        rec = fe10data.record(self.data, "item", iron)
+        extra = bytes(range(1, fe10data.ITEM_EXTRA_BLOCK_SIZE + 1))
+        data = fe10data.insert_bytes(self.data, rec.offsets["bonuses"], extra)
+        out = bytearray(data)
+        out[rec.offsets["optional_flags"]] = 2
+        data = bytes(out)
+        self.assertEqual(fe10data.record(data, "item", iron).item_extra, extra)
+        data = fe10data.set_item_bonuses(data, iron, [1] * len(fe10data.BONUS_NAMES))
+        rec = fe10data.record(data, "item", iron)
+        self.assertEqual((rec.values["optional_flags"], rec.bonuses, rec.item_extra),
+                         (3, [1] * len(fe10data.BONUS_NAMES), extra))
+        data = fe10data.set_item_bonuses(data, iron, None)
+        rec = fe10data.record(data, "item", iron)
+        self.assertEqual((rec.values["optional_flags"], rec.bonuses, rec.item_extra), (2, None, extra))
 
     def test_skill_condition_list_is_rewritten_and_relisted(self):
         parity = next(r for r in self.db.skills if r.id == "SID_PARITY")
@@ -174,6 +283,10 @@ class RetailFe10DataTests(unittest.TestCase):
     def test_fixed_table_values(self):
         chapter = {r.id: r for r in self.db.table("chapter")}["C0101"].values
         self.assertEqual((chapter["map"], chapter["lord"], chapter["number"]), ("bmap0101", "PID_MICAIAH", 1))
+        chapters = {r.id: r.values for r in self.db.table("chapter")}
+        self.assertEqual([chapters["C0101"][f"enemy_level_bonus_{difficulty}"] for difficulty in
+                          ("easy", "normal", "hard", "maniac")], [0, 0, 0, 2])
+        self.assertEqual(chapters["C0105"]["movement_change"], -2)
         affinities = {r.id: r.values for r in self.db.table("affinity")}
         self.assertEqual([affinities["fire"][k] for k in ("attack", "defense", "hit", "avoid")], [1, 0, 5, 0])
         self.assertTrue(all(k in affinities["fire"] for k in ("critical", "critical_avoid")))

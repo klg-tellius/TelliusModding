@@ -37,10 +37,8 @@ class MapEditor(EditorPanel):
 
     @property
     def verified_us_map_layout(self) -> bool:
-        """Whether the open project's map flags match the traced build: GFEE01, and GFEP01/GFEJ01
-        whose load_map_data and apply_map_extra_flags read the same fields (and whose map files
-        are byte-identical to the US ones)."""
-        return read_disc_id(disc_root_of(self._project)) in ("GFEE01", "GFEP01", "GFEJ01")
+        """Whether the open project's object flags have a traced schema."""
+        return read_disc_id(disc_root_of(self._project)) in ("GFEE01", "GFEP01", "GFEJ01", "RFEE01")
 
     def __init__(self, parent, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)

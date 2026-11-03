@@ -40,9 +40,11 @@ from .fe8data import HEADER_SIZE
 from ..game_files import as_path
 
 STAT_NAMES = ("HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res")
-#: An item's stat-bonus block: the eight stats, then movement and weight, then two unused bytes.
+#: An item's stat-bonus block: the eight stats, then movement and weight; disk padding follows the
+#: complete optional tail rather than belonging to this block.
 BONUS_NAMES = STAT_NAMES + ("Mov", "Wt")
-BONUS_BLOCK_SIZE = 12
+BONUS_BLOCK_SIZE = 10
+ITEM_EXTRA_BLOCK_SIZE = 8
 
 KINDS = ("character", "class", "item", "skill")
 SYMBOLS = {"character": "PersonData", "class": "JobData", "item": "ItemData", "skill": "SkillData"}
@@ -74,18 +76,20 @@ def _stats(prefix: str, kind: str, group: str, names: Sequence[str] = STAT_NAMES
 
 
 # -- character (PersonData) ------------------------------------------------------------------------
-# +0x00 skill count, +0x01 unknown, +0x02 level, +0x03 sex; 7 labels; skills; 5 labels; 28 bytes.
-CHARACTER_HEAD = _bytes("u8", (("unknown_01", "Unknown +0x01"), ("level", "Level"), ("sex", "Sex (1 = female)")), "Unit")
+# +0x00 skill count, +0x01 reserved, +0x02 level, +0x03 sex; 7 labels; skills; 5 labels; 28 bytes.
+CHARACTER_HEAD = _bytes("u8", (("reserved_01", "Reserved +0x01"), ("level", "Level"), ("sex", "Sex (1 = female)")), "Unit")
 CHARACTER_LABELS = _labels(("pid", "ID"), ("mpid", "Name key"), ("mnpid", "Help key"), ("fid", "Portrait"),
                            ("jid", "Class"), ("affinity", "Affinity"), ("weapon_ranks", "Weapon ranks"),
                            group="Identity")
-CHARACTER_AFTER_SKILLS = _labels(("unknown_label", "Unknown label"), ("aid_1", "Animation 1"),
+CHARACTER_AFTER_SKILLS = _labels(("extra_skill", "Extra skill"), ("aid_1", "Animation 1"),
                                  ("aid_2", "Animation 2"), ("aid_3", "Animation 3"), ("aid_4", "Animation 4"),
                                  group="Animations")
 CHARACTER_TAIL = (
-    _bytes("u8", (("biorhythm", "Biorhythm type"), ("unknown_t1", "Unknown tail +1"),
-                  ("unknown_t2", "Unknown tail +2"), ("unknown_t3", "Unknown tail +3 (bit mask)"),
-                  ("authority", "Authority stars")), "Unit")
+    _bytes("u8", (("biorhythm", "Biorhythm type"),
+                  ("biorhythm_phase_selector", "Initial biorhythm phase selector")), "Unit")
+    + _bytes("s8", (("biorhythm_increment", "Biorhythm counter increment"),), "Unit")
+    + _bytes("u8", (("withdrawal_part_mask", "Withdrawal chapter-part mask"),
+                    ("authority", "Authority stars")), "Unit")
     + _bytes("s8", (("gauge_turn", "Gauge per turn"), ("gauge_battle", "Gauge per battle"),
                     ("gauge_turn_transformed", "Gauge per turn (transformed)"),
                     ("gauge_battle_transformed", "Gauge per battle (transformed)")), "Laguz gauge")
@@ -93,33 +97,39 @@ CHARACTER_TAIL = (
     + _bytes("s8", (("bonus_weight", "Wt"),), "Stats over class bases")
     + _bytes("u8", (("unknown_t18", "Unknown tail +18"),), "Unit")
     + _stats("growth", "u8", "Growth rates (%)")
-    + _bytes("u8", (("unknown_t27", "Unknown tail +27"),), "Unit")
+    + _bytes("u8", (("padding_t27", "Padding"),), "Unit")
 )
 CHARACTER_TAIL_SIZE = 28
 
 # -- class (JobData) -------------------------------------------------------------------------------
-# 11 labels; 12 bytes (+5 skill count, +6 sound-class count); a label; skills; a label; sound
+# 11 labels; 16 bytes (+5 skill count, +6 sound-class count, +12 reserved word); skills; a label; sound
 # classes; 32 bytes (caps, bases, growths, promotion gains).
 CLASS_LABELS = _labels(("jid", "ID"), ("mjid", "Name key"), ("japanese_name", "Japanese name"),
                        ("help", "Help key"), ("demotes_to", "Previous tier"), ("promotes_to", "Promotes to"),
                        ("other_form", "Other form"), ("innate_weapon", "Innate weapon"),
                        ("aid", "Default animation"), ("weapon_ranks", "Starting weapon ranks"),
                        ("max_weapon_ranks", "Maximum weapon ranks"), group="Identity")
-CLASS_FIXED = _bytes("u8", (
-    ("unknown_00", "Unknown +0"), ("unknown_01", "Unknown +1"), ("unknown_02", "Unknown +2"),
-    ("unknown_03", "Unknown +3"), ("unknown_04", "Unknown +4"), ("skill_count", "Skill count"),
-    ("sound_count", "Sound class count"), ("unknown_07", "Unknown +7"), ("unknown_08", "Unknown +8"),
-    ("movement", "Movement"), ("skill_capacity", "Skill capacity"), ("weight", "Weight")), "Class")
-CLASS_BEFORE_SKILLS = _labels(("unknown_label", "Unknown label"), group="Class")
+CLASS_FIXED = (
+    _bytes("u8", (("base_weight", "Base weight"),
+                  ("weight_part_1_kind", "Weight modifier 1 kind")), "Class")
+    + _bytes("s8", (("weight_part_1", "Weight modifier 1"),), "Class")
+    + _bytes("u8", (("weight_part_2_kind", "Weight modifier 2 kind"),), "Class")
+    + _bytes("s8", (("weight_part_2", "Weight modifier 2"),), "Class")
+    + _bytes("u8", (("skill_count", "Skill count"), ("sound_count", "Sound class count"),
+                    ("promotion_level", "Promotion level"), ("movement_type", "Movement type"),
+                    ("movement", "Movement"), ("skill_capacity", "Skill capacity"),
+                    ("vision", "Vision")), "Class")
+)
+CLASS_RESERVED = _bytes("u32", (("reserved_0c", "Reserved +0x0C"),), "Class")
 CLASS_AFTER_SKILLS = _labels(("extra_skill", "Extra skill"), group="Class")
 CLASS_TAIL = (_stats("cap", "u8", "Stat caps") + _stats("base", "u8", "Base stats")
               + _stats("growth", "u8", "Growth rates (%)") + _stats("promotion", "u8", "Promotion gains"))
 CLASS_TAIL_SIZE = 32
-CLASS_FIXED_SIZE = 12
+CLASS_FIXED_SIZE = 16
 
 # -- item (ItemData) -------------------------------------------------------------------------------
-# 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 bonus-block count);
-# attributes; effectivenesses; 0 or 1 stat-bonus block of 12 bytes.
+# 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 optional-block flags);
+# attributes; effectivenesses; optional ten-byte stat and eight-byte extension blocks; word padding.
 ITEM_LABELS = _labels(("iid", "ID"), ("miid", "Name key"), ("help", "Help key"), ("weapon_type", "Weapon type"),
                       ("display_type", "Displayed type"), ("rank", "Weapon rank"), ("effect", "Effect"),
                       ("effect_2", "Effect 2"), ("effect_3", "Effect 3"), group="Identity")
@@ -127,20 +137,25 @@ ITEM_FIXED = (
     _bytes("u16", (("icon", "Icon"), ("price", "Price per use")), "Item")
     + _bytes("u8", (("might", "Might"), ("hit", "Hit"), ("crit", "Critical"), ("weight", "Weight"),
                     ("uses", "Uses"), ("wexp", "Weapon experience"), ("range_min", "Minimum range"),
-                    ("range_max", "Maximum range"), ("unknown_12", "Unknown +12"),
-                    ("unknown_13", "Unknown +13"), ("unknown_14", "Unknown +14"), ("unknown_15", "Unknown +15"),
-                    ("unknown_16", "Unknown +16"), ("attribute_count", "Attribute count"),
-                    ("effective_count", "Effectiveness count"), ("bonus_count", "Bonus blocks")), "Item")
+                    ("range_max", "Maximum range")), "Item")
+    + _bytes("s8", (("article", "English article"),), "Item")
+    + _bytes("u8", (("reserved_13", "Reserved +13"), ("reserved_14", "Reserved +14"),
+                    ("reserved_15", "Reserved +15"), ("colour", "Display colour"),
+                    ("attribute_count", "Attribute count"), ("effective_count", "Effectiveness count"),
+                    ("optional_flags", "Optional blocks")), "Item")
 )
 ITEM_FIXED_SIZE = 20
 
 # -- skill (SkillData) -----------------------------------------------------------------------------
 SKILL_LABELS = _labels(("sid", "ID"), ("msid", "Name key"), ("help", "Help key"), ("help_2", "Help key 2"),
                        ("effect", "Effect"), ("effect_2", "Effect 2"), ("item", "Scroll item"), group="Identity")
-SKILL_FIXED = _bytes("u8", (("number", "Number"), ("unknown_1d", "Unknown +0x1D"), ("capacity", "Capacity"),
-                            ("icon", "Icon"), ("condition_count", "Condition count"),
-                            ("requirement_count", "Requirement count"), ("unknown_22", "Unknown +0x22"),
-                            ("unknown_23", "Unknown +0x23")), "Skill")
+SKILL_FIXED = (
+    _bytes("u8", (("number", "Number"),), "Skill")
+    + _bytes("s8", (("article", "English article"),), "Skill")
+    + _bytes("u8", (("capacity", "Capacity"), ("icon", "Icon"),
+                    ("condition_count", "Condition count"), ("requirement_count", "Requirement count"),
+                    ("reserved_22", "Reserved +0x22"), ("reserved_23", "Reserved +0x23")), "Skill")
+)
 
 #: Lists per kind: key -> label shown in the editor.
 LISTS = {
@@ -150,16 +165,31 @@ LISTS = {
     "skill": {"conditions": "Conditions", "requirements": "Requirements"},
 }
 #: Fields a list or block owns (kept in step by set_list / set_item_bonuses, not edited directly).
-COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "bonus_count",
+COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "optional_flags",
                 "condition_count", "requirement_count"}
 
 FIELD_NOTES = {
     "biorhythm": "0-9 picks a biorhythm curve; 255 has none.",
-    "unknown_t3": "A bit mask (0, 3, 7, 15 or 31), set on royals and a few others.",
+    "reserved_01": "Skipped by build_person_data_table; zero in every retail record.",
+    "extra_skill": "An additional skill pointer consumed after the counted skill list when non-null.",
+    "biorhythm_phase_selector": "0-6 select fixed initial phases; other values use RNG.",
+    "biorhythm_increment": "Signed counter increment used at the end of the unit's force phase; -1 uses the runtime override.",
+    "withdrawal_part_mask": "Low chapter-part bits in ChapterData are ANDed with this mask to choose withdrawal instead of death.",
+    "padding_t27": "Skipped by the retail PersonData loader.",
     "authority": "0-5 authority stars.",
     "bonus_hp": "Starting stat = class base + this, capped at the class cap (checked in game: Micaiah "
                 "with +19 HP over the Light Mage's 16 starts at its cap, 30).",
     "gauge_turn": "Laguz gauge change per turn and per battle, untransformed and transformed.",
+    "base_weight": "Added to PersonData weight and the unit's runtime weight adjustment by get_unit_weight.",
+    "weight_part_1_kind": "First conditional class-weight modifier kind; its signed value is stored in weight_part_1.",
+    "weight_part_2_kind": "Second conditional class-weight modifier kind; its signed value is stored in weight_part_2.",
+    "promotion_level": "A level-up reaching this level sets the promotion flag; zero means no promotion threshold.",
+    "movement_type": "Indexes the TerrainData movement-cost column used by the class.",
+    "vision": "Base sight radius used by get_unit_vision before unit, skill, and torch additions.",
+    "article": "English article selector: -1 chooses automatically; 0 none; 1 a; 2 an; 3 the.",
+    "colour": "Index 0-8 into the item-list colour palette; forged weapons override it per instance.",
+    "optional_flags": "Bit 0 adds the ten-byte stat block; bit 1 adds a separate eight-byte block whose semantics remain open.",
+    "reserved_0c": "Skipped as a word by the retail JobData loader; zero in every retail record.",
     "skill_capacity": "Retail values are 15 (first tier), 30 (second) and 60 (third), more for laguz.",
     "capacity": "Capacity cost of the skill (probable: occult skills read 30, most others 10-20).",
     "conditions": "Mode 1 entries: who cannot have the skill (skills, classes, characters).",
@@ -179,6 +209,7 @@ class Record:
     offsets: dict = field(default_factory=dict)
     lists: dict = field(default_factory=dict)
     bonuses: Optional[list] = None
+    item_extra: Optional[bytes] = None
 
     @property
     def id(self) -> Optional[str]:
@@ -320,7 +351,7 @@ def _read_class(data: bytes, index: int, at: int) -> Record:
     r = Record("class", index, at, at)
     pos = _read_fields(data, r, CLASS_LABELS, at)
     pos = _read_fields(data, r, CLASS_FIXED, pos)
-    pos = _read_fields(data, r, CLASS_BEFORE_SKILLS, pos)
+    pos = _read_fields(data, r, CLASS_RESERVED, pos)
     pos = _read_label_list(data, r, "skills", pos, r.values["skill_count"])
     pos = _read_fields(data, r, CLASS_AFTER_SKILLS, pos)
     pos = _read_label_list(data, r, "sounds", pos, r.values["sound_count"])
@@ -336,9 +367,13 @@ def _read_item(data: bytes, index: int, at: int) -> Record:
     pos = _read_label_list(data, r, "attributes", pos, r.values["attribute_count"])
     pos = _read_label_list(data, r, "effective", pos, r.values["effective_count"])
     r.offsets["bonuses"] = pos
-    if r.values["bonus_count"]:
+    if r.values["optional_flags"] & 1:
         r.bonuses = [struct.unpack_from(">b", data, pos + i)[0] for i in range(len(BONUS_NAMES))]
-        pos += BONUS_BLOCK_SIZE * r.values["bonus_count"]
+        pos += BONUS_BLOCK_SIZE
+    if r.values["optional_flags"] & 2:
+        r.item_extra = data[pos:pos + ITEM_EXTRA_BLOCK_SIZE]
+        pos += ITEM_EXTRA_BLOCK_SIZE
+    pos = (pos + 3) & ~3
     r.end = pos
     return r
 
@@ -386,7 +421,7 @@ def field_defs(kind: str) -> list[FieldDef]:
     """Every editable field of a kind, in record order (counts excluded)."""
     defs = {
         "character": CHARACTER_HEAD + CHARACTER_LABELS + CHARACTER_AFTER_SKILLS + CHARACTER_TAIL,
-        "class": CLASS_LABELS + CLASS_FIXED + CLASS_BEFORE_SKILLS + CLASS_AFTER_SKILLS + CLASS_TAIL,
+        "class": CLASS_LABELS + CLASS_FIXED + CLASS_RESERVED + CLASS_AFTER_SKILLS + CLASS_TAIL,
         "item": ITEM_LABELS + ITEM_FIXED,
         "skill": SKILL_LABELS + SKILL_FIXED,
     }.get(kind)
@@ -573,22 +608,28 @@ def set_item_bonuses(data: bytes, index: int, bonuses: Optional[Sequence[int]]) 
     """Give an item a stat-bonus block (``BONUS_NAMES`` order), change it, or (None) remove it."""
     rec = record(data, "item", index)
     at = rec.offsets["bonuses"]
-    count_offset = rec.offsets["bonus_count"]
+    flags_offset = rec.offsets["optional_flags"]
     if bonuses is not None:
         bonuses = [int(v) for v in bonuses]
         if len(bonuses) != len(BONUS_NAMES) or not all(-128 <= v <= 127 for v in bonuses):
             raise ValueError(f"A bonus block holds {len(BONUS_NAMES)} values between -128 and 127.")
-        block = struct.pack(f">{len(bonuses)}b", *bonuses) + bytes(BONUS_BLOCK_SIZE - len(bonuses))
-    if rec.bonuses is not None and bonuses is not None:
-        out = bytearray(data)
-        out[at:at + len(block)] = block
-        return bytes(out)
-    if rec.bonuses is not None:
-        data = delete_bytes(data, at, BONUS_BLOCK_SIZE * rec.values["bonus_count"])
-    elif bonuses is not None:
+    if bonuses == rec.bonuses:
+        return data
+    flags = int(rec.values["optional_flags"])
+    flags = (flags | 1) if bonuses is not None else (flags & ~1)
+    block = b""
+    if bonuses is not None:
+        block += struct.pack(f">{len(bonuses)}b", *bonuses)
+    if rec.item_extra is not None:
+        block += rec.item_extra
+    block += bytes((-(at + len(block))) & 3)
+    old_size = rec.end - at
+    if old_size:
+        data = delete_bytes(data, at, old_size)
+    if block:
         data = insert_bytes(data, at, block)
     out = bytearray(data)
-    out[count_offset] = 0 if bonuses is None else 1
+    out[flags_offset] = flags
     return bytes(out)
 
 
@@ -654,14 +695,21 @@ def _chapter_fields() -> tuple:
         fields += [_f(f"win_{d}", "Victory", "label", base + 0x04, group),
                    _f(f"win2_{d}", "Victory 2", "label", base + 0x08, group)]
         fields += [_f(f"lose{i}_{d}", f"Defeat {i + 1}", "label", base + 0x10 + 4 * i, group) for i in range(4)]
-    fields += [_f("number", "Number", "u8", 0x84, "Settings")]
+    fields += [_f("number", "Number", "u8", 0x84, "Settings"),
+               _f("enemy_level_bonus_easy", "Enemy level bonus (Easy)", "u8", 0x85, "Settings"),
+               _f("enemy_level_bonus_normal", "Enemy level bonus (Normal)", "u8", 0x86, "Settings"),
+               _f("enemy_level_bonus_hard", "Enemy level bonus (Hard)", "u8", 0x87, "Settings"),
+               _f("enemy_level_bonus_maniac", "Enemy level bonus (Maniac)", "u8", 0x88, "Settings")]
     # +0x89 selects the party-state gold account (FUN_800615dc/FUN_80061808/
     # FUN_800626e0); +0x8A selects the warehouse pointer (FUN_801059b0).
-    # Keep the remaining bytes conservatively named until their semantics are confirmed.
-    fields += [_f("unknown_88", "Unknown +0x88", "u8", 0x88, "Settings"),
-               _f("gold_account", "Gold account", "u8", 0x89, "Settings"),
+    # +0x8B..+0x8F are traced in research/rd/CHAPTER_DATA_NOTES.md.
+    fields += [_f("gold_account", "Gold account", "u8", 0x89, "Settings"),
                _f("convoy", "Convoy", "u8", 0x8A, "Settings")]
-    fields += [_f(f"unknown_{o:02x}", f"Unknown +0x{o:02X}", "u8", o, "Settings") for o in range(0x8B, 0x90)]
+    fields += [_f("movement_change", "Mounted/beast movement change", "s8", 0x8B, "Settings"),
+               _f("preparations_mode", "Preparations mode", "u8", 0x8C, "Settings"),
+               _f("advance_difficulty_mask", "Story-advance difficulty mask", "u8", 0x8D, "Settings"),
+               _f("part_flags", "Part / withdrawal flags", "u8", 0x8E, "Settings"),
+               _f("player_group", "Player army group", "u8", 0x8F, "Settings")]
     fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
                _f("base_scene", "Base scene", "label", 0x94, "Settings"),
                _f("battle_background", "Battle background", "label", 0x98, "Settings"),
@@ -711,7 +759,7 @@ FIXED_TABLES = {
         _f("name_key", "Name key", "label", 8, "Army"))),
     "bond": FixedTable("KiznaData", 0x0C, (
         _f("pid", "Character", "label", 0, "Bond"), _f("partner", "Partner", "label", 4, "Bond"),
-        _f("unknown_08", "Unknown +8", "u8", 8, "Bond"), _f("bonus", "Bonus", "u8", 9, "Bond"))),
+        _f("kind", "Kind", "u8", 8, "Bond"), _f("bonus", "Critical bonus", "s8", 9, "Bond"))),
     "affinity": FixedTable("DivineData", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Affinity"), _f("attack", "Attack", "s8", 4, "Affinity"),
         _f("defense", "Defense", "s8", 5, "Affinity"), _f("hit", "Hit", "s8", 6, "Affinity"),
@@ -719,8 +767,7 @@ FIXED_TABLES = {
         _f("critical_avoid", "Critical avoid", "s8", 9, "Affinity"))),
     "affinity_pair": FixedTable("DivineParam", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Pair"), _f("partner", "Partner affinity", "label", 4, "Pair"),
-        _f("value_0", "Value 1", "s8", 8, "Pair"), _f("value_1", "Value 2", "s8", 9, "Pair"),
-        _f("value_2", "Value 3", "s8", 10, "Pair"), _f("value_3", "Value 4", "s8", 11, "Pair"))),
+        _f("hit_bonus", "Hit bonus", "s8", 8, "Pair"), _f("avoid_bonus", "Avoid bonus", "s8", 9, "Pair"))),
     "triangle": FixedTable("3SukumiData", 0x0C, (
         _f("weapon", "Weapon type", "label", 0, "Weapon triangle"),
         _f("against", "Against", "label", 4, "Weapon triangle"),
@@ -741,7 +788,8 @@ ID_FIELD = {"character": "pid", "class": "jid", "item": "iid", "skill": "sid", "
 ALL_KINDS = KINDS + tuple(FIXED_TABLES) + ("support", "battle_scenery")
 FIELD_NOTES.update({
     "flags": "Bit flags of the terrain type (byte 7 of Path of Radiance's block marks object tiles).",
-    "bonus": "Bonus between bonded units (5 or 10 in the retail data).",
+    "kind": "Bond kind. Executable consumers currently recognize kind 1.",
+    "bonus": "Signed Critical and Critical-avoid bonus while a kind-1 pair is adjacent on the same force (5 or 10 in retail data).",
     "damage": "Weapon-triangle damage and hit change (+1/+10 with the advantage, -1/-10 against).",
 })
 

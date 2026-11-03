@@ -18,6 +18,7 @@ from typing import Callable, Optional
 
 from .. import chapters, map_props, mesh_reduce
 from ..formats import map_file
+from ..games import Game
 from . import map_scene
 from .editor_panel import EditorPanel
 from .model_viewer import _ModelPreview
@@ -278,6 +279,8 @@ class MapObjectsPanel(EditorPanel):
         self._project = project
         self._changelog = changelog
         self._info: Optional[map_props.PropInfo] = None
+        layout = "fe10" if project.game == Game.RADIANT_DAWN else "fe9"
+        self._flag_groups = map_props.prop_flag_groups(layout)
         top = ttk.Frame(self, style="Page.TFrame")
         top.pack(fill="x", pady=(0, 6))
         self._export = ttk.Button(top, text="Export .glb...", state="disabled", command=lambda: self.browser.export_selected())
@@ -303,7 +306,7 @@ class MapObjectsPanel(EditorPanel):
         self._toggles = []
         flags = ttk.Frame(frame)
         flags.grid(row=0, column=5, rowspan=5, sticky="nw", padx=(18, 0))
-        for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+        for column, (field, title, controls) in enumerate(self._flag_groups):
             group = ttk.LabelFrame(flags, text=title, padding=5)
             group.grid(row=0, column=column, sticky="nw", padx=(0, 6))
             for row, (mask, label) in enumerate(controls):
@@ -351,11 +354,8 @@ class MapObjectsPanel(EditorPanel):
         for key in map_props.PROP_FIELDS[:6]:
             text = self._vars[key].get().strip()
             values[key] = float(text)
-        for field, _title, _controls in map_props.PROP_FLAG_GROUPS:
-            values[field] = 0
-        for field, mask, var in self._toggles:
-            if var.get():
-                values[field] |= mask
+        values.update(map_props.merge_prop_flag_toggles(
+            obj, ((field, mask, var.get()) for field, mask, var in self._toggles)))
         return {k: v for k, v in values.items() if v != getattr(obj, k)}
 
     def _apply(self) -> None:

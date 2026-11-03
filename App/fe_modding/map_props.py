@@ -343,12 +343,11 @@ def move_instance(files: dict[str, bytes], index: int, x: int, y: int) -> None:
     dx, dy = x - inst.x, y - inst.y
     old_ground, new_ground = tile_heights(files, data, [(inst.x, inst.y), (x, y)])
     height = inst.height() + new_ground - old_ground
-    records = map_file.instance_records(files["map.bin"])
-    records[index] = struct.pack(
-        ">bbBbbbbbf", x, y, inst.angle % 256, inst.desc_index,
-        inst.x2 + dx, inst.y2 + dy, inst.end_x2 + dx, inst.end_y2 + dy, height,
-    )
-    files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    out = files["map.bin"]
+    for field, value in (("x", x), ("y", y), ("x2", inst.x2 + dx), ("y2", inst.y2 + dy),
+                         ("end_x2", inst.end_x2 + dx), ("end_y2", inst.end_y2 + dy)):
+        out = map_file.patch_build_inst_field(out, inst, field, value)
+    files["map.bin"] = map_file.patch_build_inst_height(out, inst, height)
 
 
 def rotate_instance(files: dict[str, bytes], index: int, angle: int) -> None:
@@ -356,9 +355,13 @@ def rotate_instance(files: dict[str, bytes], index: int, angle: int) -> None:
     192 for quarter turns), recomputing its covered-tiles rectangle."""
     data = map_file.read_map_bytes(files["map.bin"])
     inst = data.build_inst[index]
-    records = map_file.instance_records(files["map.bin"])
-    records[index] = map_file.instance_record(data.build_desc[inst.desc_index], inst.desc_index, inst.x, inst.y, angle, inst.height())
-    files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    fresh = map_file.instance_record(data.build_desc[inst.desc_index], inst.desc_index,
+                                     inst.x, inst.y, angle, inst.height())
+    rect = struct.unpack(">bbbb", fresh[8:12] if inst.layout == "fe10" else fresh[4:8])
+    out = map_file.patch_build_inst_field(files["map.bin"], inst, "angle", angle % 256)
+    for field, value in zip(("x2", "y2", "end_x2", "end_y2"), rect):
+        out = map_file.patch_build_inst_field(out, inst, field, value)
+    files["map.bin"] = out
 
 
 def set_instance_object(files: dict[str, bytes], index: int, desc_index: int) -> None:
@@ -366,9 +369,12 @@ def set_instance_object(files: dict[str, bytes], index: int, desc_index: int) ->
     data = map_file.read_map_bytes(files["map.bin"])
     inst = data.build_inst[index]
     obj = data.build_desc[desc_index]
-    records = map_file.instance_records(files["map.bin"])
-    records[index] = map_file.instance_record(obj, desc_index, inst.x, inst.y, inst.angle, inst.height())
-    files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    fresh = map_file.instance_record(obj, desc_index, inst.x, inst.y, inst.angle, inst.height())
+    rect = struct.unpack(">bbbb", fresh[8:12] if inst.layout == "fe10" else fresh[4:8])
+    out = map_file.patch_build_inst_field(files["map.bin"], inst, "desc_index", desc_index)
+    for field, value in zip(("x2", "y2", "end_x2", "end_y2"), rect):
+        out = map_file.patch_build_inst_field(out, inst, field, value)
+    files["map.bin"] = out
 
 
 def remove_instance(files: dict[str, bytes], index: int) -> None:
@@ -817,6 +823,57 @@ PROP_FLAG_GROUPS = (
         (0x80, "Exclude from tile-object lookup"),
     )),
 )
+
+#: RFEE01 controls include every retail-set bit with an instruction-traced
+#: consumer.  Bits absent from retail, and legacy bits with no effective
+#: reader, remain hidden and are merged from the original descriptor unchanged.
+RD_PROP_FLAG_GROUPS = (
+    ("flag_bits_a", "RD instance behavior", (
+        (0x01, "Alternate animation-end playback"),
+        (0x08, "Extend transformed bounds downward"),
+        (0x10, "Use per-instance fade and special rotation"),
+        (0x20, "Hide objective marker on an empty map-mask tile"),
+        (0x40, "Start instance hidden"),
+    )),
+    ("flag_bits_b", "RD animation setup", (
+        (0x01, "Draw priority-0x84 object overlay"),
+        (0x02, "Destroyed-house priority and initial hidden state"),
+        (0x04, "Use type-9 location trigger for house animation"),
+        (0x40, "Delay animation reseed; with B7 randomize orientation"),
+        (0x80, "Randomize initial .ga animation position"),
+    )),
+    ("flag_bits_c", "RD object behavior", (
+        (0x02, "Load matching .ga animation"),
+        (0x04, "Advance and stagger animation"),
+        (0x08, "Apply roof/footprint terrain"),
+        (0x10, "Openable door and footprint terrain"),
+        (0x20, "Use map_trans rendering priority"),
+        (0x40, "Exclude final key from B7 random animation range"),
+    )),
+    ("effect_type", "RD terrain and render behavior", (
+        (0x02, "Copy roof terrain to the base layer"),
+        (0x10, "Exclude footprint tests; use render priority 0x80"),
+        (0x20, "Use render priority 0x95"),
+        (0x80, "Use render priority 0x8B"),
+    )),
+)
+
+
+def prop_flag_groups(layout: str = "fe9"):
+    """Return only flag controls verified for the selected map layout."""
+    return RD_PROP_FLAG_GROUPS if layout == "fe10" else PROP_FLAG_GROUPS
+
+
+def merge_prop_flag_toggles(obj: map_file.MapObject, toggles) -> dict[str, int]:
+    """Apply ``(field, mask, enabled)`` states without clearing hidden bits."""
+    states = list(toggles)
+    values = {field: getattr(obj, field) for field, _mask, _enabled in states}
+    for field, mask, enabled in states:
+        if enabled:
+            values[field] |= mask
+        else:
+            values[field] &= ~mask
+    return values
 
 #: Flat compatibility view used by editors and third-party callers.
 PROP_FLAG_TOGGLES = tuple(

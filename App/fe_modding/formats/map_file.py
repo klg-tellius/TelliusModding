@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import io
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import BinaryIO, Optional
 
@@ -89,6 +89,34 @@ class MapCapacity:
     build_inst_count: int
     scale_unit: float  # a float32, always seen as 2000.0; the engine uses 1/scale_unit elsewhere
     address: int = 0
+    layout: str = "fe9"
+    version: int = 0
+    wrap_enabled: Optional[int] = None
+    wrap_step_x: Optional[int] = None
+    wrap_step_y: Optional[int] = None
+    wrap_duration_frames: Optional[int] = None
+    affinity_name_ptr: Optional[int] = None
+    affinity_name: Optional[str] = None
+    terrain_height_ceiling: Optional[float] = None
+
+    @property
+    def rd_value_1c(self) -> Optional[int]:
+        """Compatibility view of the four decoded map-wrapping bytes."""
+        if self.wrap_enabled is None:
+            return None
+        return struct.unpack(">I", struct.pack(">BbbB", self.wrap_enabled,
+                                                self.wrap_step_x, self.wrap_step_y,
+                                                self.wrap_duration_frames))[0]
+
+    @property
+    def rd_value_20(self) -> Optional[int]:
+        """Compatibility alias for the now-decoded affinity-name pointer."""
+        return self.affinity_name_ptr
+
+    @property
+    def rd_value_24(self) -> Optional[float]:
+        """Compatibility alias for the now-decoded terrain-height ceiling."""
+        return self.terrain_height_ceiling
 
 
 @dataclass(frozen=True)
@@ -121,9 +149,9 @@ class MapObject:
     placement transform - that was a separate, later investigation, now
     resolved (see `MapBuildInstance.world_transform()`).
 
-    flag_bits_a/b/c are the three raw flag bytes rather than named booleans,
-    since several of their bit meanings are hedged by the source research
-    itself:
+    flag_bits_a/b/c are the three raw flag bytes rather than named booleans.
+    The following meanings are for Path of Radiance; Radiant Dawn reuses the
+    record shape but not every bit assignment:
       - flag_bits_a: bit 7-6 = map-wide object; other bits unused. CONFIRMED
         (a follow-up pass) to specifically mean "this object *is* the map's
         own base terrain/water-plane model", not just "a large object" as
@@ -162,7 +190,7 @@ class MapObject:
         a matching `.ga` file. Reader scans found no direct or immediate-
         mask test of bit 0 in the US, PAL or Japanese map code, so it is
         treated as ignored legacy data; preserve it for file compatibility.
-    effect_type is a bitfield, not an enum. Bit 0 selects one of two actor
+    In Path of Radiance, effect_type is a bitfield, not an enum. Bit 0 selects one of two actor
     update passes; bit 1 copies roof-panel corner heights into the base
     elevation buffer as well as the combined buffer in
     ``load_uniquepanel_sections``; bit 3 selects an extended frustum-overlap test and is
@@ -171,6 +199,29 @@ class MapObject:
     placed-object drawing; bit 7 excludes tile-object lookup. Bit 5 selects
     render sub-list 2 and bits 4/5/7 contribute to the optional object sort
     key. Bit 2 is never set in the US, PAL or Japanese retail map corpus.
+
+    RFEE01's constructor/update path accounts for every bit.  Retail-active
+    meanings are: A0 selects alternate animation-end playback; A3 extends the
+    transformed vertical bounds downward; A4 enables the per-instance fade
+    gate and its special rotation path; A5 conditionally hides objective
+    markers on an empty map-mask tile; A6 starts the instance hidden; B0 adds
+    a priority-0x84 overlay callback; B1 selects actor priority 0x8A and starts
+    destroyed-house instances hidden; B2 makes house animation depend on a
+    type-9 location trigger; B6 delays animation reseeding (and, with B7,
+    randomizes orientation); B7 randomizes the initial `.ga` position; C1
+    loads the animation; C2 advances it; C3/C4 apply terrain footprints (C4
+    is an openable door); C5 selects actor priority 0x93/map_trans handling;
+    C6 shortens B7's random range by one final key; E1 selects the roof/base
+    terrain copy; E4 excludes footprint lookup and selects actor priority
+    0x80; E5 and E7 select actor priorities 0x95 and 0x8B.
+
+    A1, A2 and E6 have executable consumers but occur on no retail descriptor
+    (unit-reactive mesh/height update, alternate-loader priority 0x93, and
+    actor priority 0x8C respectively), so they remain unexposed.  A7, B3-B5,
+    C0, C7, E0, E2 and E3 have no effective RFEE01 reader; B3/B4, C0, E0 and
+    E2 are nevertheless common legacy authoring tags and must be preserved.
+    PoR's A6+A7 base-terrain identity does not carry over: A7 is absent from
+    all 1,635 retail RD descriptors.
     """
 
     offset_x: float
@@ -185,6 +236,10 @@ class MapObject:
     effect_type: int
     filename: str
     address: int = 0
+    layout: str = "fe9"
+    footprint_x: int = 0
+    footprint_y: int = 0
+    map_prefix: str = ""
 
 
 @dataclass(frozen=True)
@@ -241,6 +296,24 @@ class MapBuildInstance:
     end_y2: int
     unused: tuple[int, int, int, int]  # read together as one big-endian int32 - see world_transform()
     address: int = 0
+    layout: str = "fe9"
+    lead: int = 0  # RFEE01 bit 0 mirrors the model across its X footprint
+    sub_x: int = 0  # RFEE01 signed 1/64-tile X offset
+    sub_y: int = 0  # RFEE01 signed 1/64-tile Y/Z offset
+    trailing_word: int = 0x40000000  # RFEE01 loader-skipped reserved word
+
+    @property
+    def mirror_x(self) -> bool:
+        """Whether RFEE01 mirrors this placement across its X footprint."""
+        return bool(self.lead & 1)
+
+    @property
+    def sub_tile_x(self) -> float:
+        return self.sub_x / 64.0
+
+    @property
+    def sub_tile_y(self) -> float:
+        return self.sub_y / 64.0
 
     def height_raw(self) -> int:
         """The 4 ``unused`` bytes combined into one big-endian unsigned
@@ -259,7 +332,8 @@ class MapBuildInstance:
         :meth:`world_transform` uses."""
         return struct.unpack(">f", struct.pack(">I", self.height_raw()))[0]
 
-    def world_transform(self, map_scale: float, parent_matrix=None):
+    def world_transform(self, map_scale: float, parent_matrix=None,
+                        footprint_x: int = 1, footprint_y: int = 1):
         """The confirmed placement transform (`GAME_NOTES.md` §12, Twentieth
         finding) as a 4x4 row-major matrix (list of 4 lists of 4 floats),
         composed the same way `main.dol`'s own `FUN_80045d50` builds it:
@@ -276,8 +350,11 @@ class MapBuildInstance:
         (identity for backdrops). The app draws chapter maps at scale 1.0 with no
         rotation, the same picture up to one global transform.
 
-        Confirmed constants: tile scale = 5.0 world units/tile, pivot = 2.5
-        (half the tile scale).
+        RFEE01 additionally adds ``sub_x / 64`` and ``sub_y / 64`` to the
+        tile coordinates. Its lead bit 0 mirrors X around the descriptor's
+        footprint width; pass the descriptor's footprint dimensions for
+        multi-tile objects. Confirmed constants: tile scale = 5.0 world
+        units/tile and the rotation pivot is half the footprint size.
         """
         import math
 
@@ -285,11 +362,12 @@ class MapBuildInstance:
         angle_rad = math.radians(angle_deg)
 
         tile_scale = 5.0
-        pivot = tile_scale / 2.0
+        pivot_x = tile_scale * footprint_x / 2.0
+        pivot_y = tile_scale * footprint_y / 2.0
 
-        pos_x = tile_scale * self.x
+        pos_x = tile_scale * (self.x + (self.sub_tile_x if self.layout == "fe10" else 0.0))
         pos_y = -tile_scale * self.height()
-        pos_z = tile_scale * self.y
+        pos_z = tile_scale * (self.y + (self.sub_tile_y if self.layout == "fe10" else 0.0))
 
         def _identity():
             return [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
@@ -319,9 +397,14 @@ class MapBuildInstance:
 
         local = _translate(pos_x, pos_y, pos_z)
         local = _matmul(local, _scale(map_scale))
-        local = _matmul(local, _translate(pivot, 0.0, pivot))
+        if self.layout == "fe10" and self.mirror_x:
+            mirror = _identity()
+            mirror[0][0] = -1.0
+            local = _matmul(local, _translate(tile_scale * footprint_x, 0.0, 0.0))
+            local = _matmul(local, mirror)
+        local = _matmul(local, _translate(pivot_x, 0.0, pivot_y))
         local = _matmul(local, _rotate_y(angle_rad))
-        local = _matmul(local, _translate(-pivot, 0.0, -pivot))
+        local = _matmul(local, _translate(-pivot_x, 0.0, -pivot_y))
 
         if parent_matrix is None:
             return local
@@ -381,6 +464,74 @@ class MapFog:
     blue: int
     unused2: int
     address: int = 0
+
+
+@dataclass(frozen=True)
+class RdMapLight:
+    """RFEE01's fixed 32-byte ``maplight`` record.
+
+    The three signed values and eight RGB triplets are structurally confirmed. Their renderer roles
+    remain deliberately neutral until the Radiant Dawn consumer is traced.
+    """
+
+    flags: int
+    angles: tuple[int, int, int]
+    colours: tuple[tuple[int, int, int], ...]
+    address: int = 0
+
+    def to_bytes(self) -> bytes:
+        if len(self.angles) != 3 or len(self.colours) != 8 or any(len(rgb) != 3 for rgb in self.colours):
+            raise MapFileError("RD maplight requires three angles and eight RGB triplets.")
+        try:
+            return struct.pack(">Hhhh", self.flags, *self.angles) + bytes(
+                component for rgb in self.colours for component in rgb)
+        except (struct.error, ValueError) as exc:
+            raise MapFileError(f"Invalid RD maplight value: {exc}") from exc
+
+
+@dataclass(frozen=True)
+class RdMapFog:
+    """RFEE01's fixed 12-byte ``mapfog`` record."""
+
+    enabled: int
+    mode_code: int
+    start_distance: int
+    end_distance: int
+    colour: tuple[int, int, int]
+    trailing: tuple[int, int, int]
+    address: int = 0
+
+    def to_bytes(self) -> bytes:
+        if len(self.colour) != 3 or len(self.trailing) != 3:
+            raise MapFileError("RD mapfog requires RGB and three trailing bytes.")
+        try:
+            return struct.pack(">BBhhBBBBBB", self.enabled, self.mode_code,
+                               self.start_distance, self.end_distance,
+                               *self.colour, *self.trailing)
+        except struct.error as exc:
+            raise MapFileError(f"Invalid RD mapfog value: {exc}") from exc
+
+
+@dataclass(frozen=True)
+class RdMapShader:
+    """Lossless structural view of RFEE01's variable ``mapshader`` record.
+
+    Byte zero counts four-byte entries after a fixed 16-byte header. The other header and entry
+    meanings are still open, so both remain byte-preserving rather than speculatively named.
+    """
+
+    settings: bytes
+    entries: tuple[bytes, ...]
+    address: int = 0
+
+    @property
+    def entry_count(self) -> int:
+        return len(self.entries)
+
+    def to_bytes(self) -> bytes:
+        if len(self.settings) != 15 or len(self.entries) > 0xFF or any(len(item) != 4 for item in self.entries):
+            raise MapFileError("RD mapshader requires 15 setting bytes and four-byte entries.")
+        return bytes((len(self.entries),)) + self.settings + b"".join(self.entries)
 
 
 @dataclass(frozen=True)
@@ -515,6 +666,8 @@ LINK_HEIGHT_BLOCK_THRESHOLD = 400
 
 @dataclass
 class MapData:
+    layout: str = "fe9"
+    section_prefix: str = ""
     capacity: Optional[MapCapacity] = None
     build_desc: list[MapObject] = field(default_factory=list)
     build_inst: list[MapBuildInstance] = field(default_factory=list)
@@ -526,6 +679,9 @@ class MapData:
     unique_panel_base: list[UniquePanel] = field(default_factory=list)
     light: Optional[MapLight] = None
     fog: Optional[MapFog] = None
+    rd_light: Optional[RdMapLight] = None
+    rd_fog: Optional[RdMapFog] = None
+    shader: Optional[RdMapShader] = None
     grid: Optional[MapGrid] = None
     extra: Optional[MapExtra] = None
     # link/link_at/link_abs together build one per-tile "tile status" value,
@@ -544,7 +700,14 @@ def is_base_terrain_object(obj: MapObject) -> bool:
     """Whether a mapbuilddesc object IS the map's own base terrain or
     water-plane model, rather than a placed prop - flag_bits_a's top two
     bits, always set together. See MapObject's docstring for how this was
-    confirmed (every real match is literally named after its own map)."""
+    confirmed (every real match is literally named after its own map).
+
+    RFEE01 has no equivalent A6+A7 identity. Its section prefix is retained
+    on each descriptor, so the conservative RD classification only accepts an
+    exact model/prefix match; differently named shared terrain stays a normal
+    object until its loader/render path is traced."""
+    if obj.layout == "fe10":
+        return bool(obj.map_prefix and obj.filename == obj.map_prefix)
     return (obj.flag_bits_a & 0b11000000) == 0b11000000
 
 
@@ -554,6 +717,27 @@ def has_ga_animation(obj: MapObject) -> bool:
     with zero exceptions against real archive contents (and why bit 0,
     previously guessed to mean "no .ga file", does not track this)."""
     return bool(obj.flag_bits_c & 0b00000010)
+
+
+def randomizes_animation_start(obj: MapObject) -> bool:
+    """Whether RFEE01 chooses a random initial keyframe from `.ga` track 0x37."""
+    return obj.layout == "fe10" and bool(obj.flag_bits_b & 0x80)
+
+
+def delays_animation_reseed(obj: MapObject) -> bool:
+    """Whether RFEE01 B6 delays reseeding and B6+B7 randomizes orientation."""
+    return obj.layout == "fe10" and bool(obj.flag_bits_b & 0x40)
+
+
+def uses_terrain_footprint(obj: MapObject) -> bool:
+    """Whether RD applies this descriptor's rectangle to roof/base terrain."""
+    return (obj.layout == "fe10" and not (obj.effect_type & 0x10)
+            and bool(obj.flag_bits_c & 0x18))
+
+
+def is_openable_door(obj: MapObject) -> bool:
+    """Whether an RFEE01 descriptor has the directly traced C4 door bit."""
+    return obj.layout == "fe10" and bool(obj.flag_bits_c & 0x10)
 
 
 def compose_link_status_grid(data: "MapData", apply_height_rules: bool = True) -> Grid:
@@ -723,14 +907,40 @@ def read_map(stream: BinaryIO) -> MapData:
 
     sections = sorted(read_section_table(stream, section_table_start, filesize))
 
-    data = MapData()
-    for address, name in sections:
+    is_rd = any(":" in name or name.rsplit(":", 1)[-1] == "mapdata" for _address, name in sections)
+    prefix = next((name.rsplit(":", 1)[0] for _address, name in sections if ":" in name), "")
+    data = MapData(layout="fe10" if is_rd else "fe9", section_prefix=prefix)
+    aliases = {"mapdata": "mapcapacity", "mapdesc": "mapbuilddesc", "mapinst": "mapbuildinst",
+               "roofindex": "panelindexRoof", "roofpanel": "uniquepanelRoof",
+               "baseindex": "panelindexBase", "basepanel": "uniquepanelBase"}
+    stream.seek(HEADER_SIZE + sec_table_ptr)
+    pointer_offsets = struct.unpack(f">{sec_table_count}I", stream.read(4 * sec_table_count))
+    pointer_targets = []
+    for pointer_offset in pointer_offsets:
+        stream.seek(HEADER_SIZE + pointer_offset)
+        pointer_targets.append(HEADER_SIZE + struct.unpack(">I", stream.read(4))[0])
+    data_end = HEADER_SIZE + sec_table_ptr
+    section_ends = {}
+    for index, (address, _name) in enumerate(sections):
+        if index + 1 < len(sections):
+            section_ends[address] = sections[index + 1][0]
+        else:
+            section_ends[address] = min([target for target in pointer_targets if target > address] +
+                                        [data_end])
+    for address, stored_name in sections:
+        bare = stored_name.rsplit(":", 1)[-1]
+        name = aliases.get(bare, bare)
         if name == "mapcapacity":
-            data.capacity = _read_capacity(stream, address)
+            if is_rd:
+                data.capacity, data.extra, data.grid = _read_rd_mapdata(stream, address)
+            else:
+                data.capacity = _read_capacity(stream, address)
         elif name == "mapbuilddesc":
-            data.build_desc = _read_build_desc(stream, address, data.capacity)
+            data.build_desc = (_read_rd_build_desc(stream, address, data.capacity, prefix) if is_rd else
+                               _read_build_desc(stream, address, data.capacity))
         elif name == "mapbuildinst":
-            data.build_inst = _read_build_inst(stream, address, data.capacity)
+            data.build_inst = (_read_rd_build_inst(stream, address, data.capacity) if is_rd else
+                               _read_build_inst(stream, address, data.capacity))
         elif name == "panelindex":
             data.panel_index = _read_grid_u16(stream, address, data.capacity)
         elif name == "uniquepanel":
@@ -744,21 +954,29 @@ def read_map(stream: BinaryIO) -> MapData:
         elif name == "uniquepanelBase":
             data.unique_panel_base = _read_unique_panel(stream, address, _max_index(data.panel_index_base))
         elif name == "maplight":
-            data.light = _read_light(stream, address)
+            if is_rd:
+                data.rd_light = _read_rd_light(stream, address, section_ends[address] - address)
+            else:
+                data.light = _read_light(stream, address)
         elif name == "mapfog":
-            data.fog = _read_fog(stream, address)
+            if is_rd:
+                data.rd_fog = _read_rd_fog(stream, address, section_ends[address] - address)
+            else:
+                data.fog = _read_fog(stream, address)
+        elif name == "mapshader" and is_rd:
+            data.shader = _read_rd_shader(stream, address, section_ends[address] - address)
         elif name == "mapgrid":
             data.grid = _read_grid_colors(stream, address)
         elif name == "mapextra":
             data.extra = _read_extra(stream, address)
         elif name == "maplink":
-            data.link = _read_link_grid(stream, address, data.capacity)
+            data.link = _read_link_grid(stream, address, data.capacity, 4 if is_rd else 2)
         elif name == "maplinkAt":
-            data.link_at = _read_link_grid(stream, address, data.capacity)
+            data.link_at = _read_link_grid(stream, address, data.capacity, 4 if is_rd else 2)
         elif name == "maplinkAbs":
             data.link_abs = _read_link_grid(stream, address, data.capacity)
         else:
-            data.unknown_sections[name] = address
+            data.unknown_sections[bare] = address
 
     return data
 
@@ -782,6 +1000,32 @@ def _read_capacity(stream: BinaryIO, address: int) -> MapCapacity:
     stream.seek(address)
     x, y, desc_count, inst_count, scale_unit = struct.unpack(">HHHHf", stream.read(12))
     return MapCapacity(x, y, desc_count, inst_count, scale_unit, address=address)
+
+
+def _read_rd_mapdata(stream: BinaryIO, address: int) -> tuple[MapCapacity, MapExtra, MapGrid]:
+    """RFEE01's versioned mapdata prefix, including embedded mapextra/grid records."""
+    stream.seek(address)
+    version, _zero, x, y, desc_count, inst_count, scale = struct.unpack(">BBBBHHf", stream.read(12))
+    if version not in (2, 3, 4):
+        raise MapFileError(f"Unsupported Radiant Dawn mapdata version {version}.")
+    extra = _read_extra(stream, address + 0x0C)
+    grid = _read_grid_colors(stream, address + 0x18)
+    affinity_ptr = affinity_name = height_ceiling = None
+    wrap_enabled = wrap_step_x = wrap_step_y = wrap_duration = None
+    if version >= 3:
+        stream.seek(address + 0x1C)
+        wrap_enabled, wrap_step_x, wrap_step_y, wrap_duration = struct.unpack(">BbbB", stream.read(4))
+    if version >= 4:
+        stream.seek(address + 0x20)
+        affinity_ptr, height_ceiling = struct.unpack(">If", stream.read(8))
+        affinity_name = _get_string(stream, affinity_ptr)
+    capacity = MapCapacity(x, y, desc_count, inst_count, scale, address=address,
+                           layout="fe10", version=version, wrap_enabled=wrap_enabled,
+                           wrap_step_x=wrap_step_x, wrap_step_y=wrap_step_y,
+                           wrap_duration_frames=wrap_duration,
+                           affinity_name_ptr=affinity_ptr, affinity_name=affinity_name,
+                           terrain_height_ceiling=height_ceiling)
+    return capacity, extra, grid
 
 
 def _get_string(stream: BinaryIO, pointer: int) -> str:
@@ -813,6 +1057,22 @@ def _read_build_desc(stream: BinaryIO, address: int, capacity: Optional[MapCapac
     return result
 
 
+def _read_rd_build_desc(stream: BinaryIO, address: int,
+                        capacity: Optional[MapCapacity], map_prefix: str = "") -> list[MapObject]:
+    if capacity is None:
+        raise MapFileError("mapdesc section found before mapdata.")
+    result = []
+    for index in range(capacity.build_desc_count):
+        pos = address + index * 36
+        stream.seek(pos)
+        values = struct.unpack(">ffffffBBBBIBBBB", stream.read(36))
+        ox, oy, oz, sx, sy, sz, fa, fb, fc, effect, name_ptr, fx, fy, _z0, _z1 = values
+        result.append(MapObject(ox, oy, oz, sx, sy, sz, fa, fb, fc, effect,
+                                _get_string(stream, name_ptr), address=pos, layout="fe10",
+                                footprint_x=fx, footprint_y=fy, map_prefix=map_prefix))
+    return result
+
+
 def _read_build_inst(stream: BinaryIO, address: int, capacity: Optional[MapCapacity]) -> list[MapBuildInstance]:
     if capacity is None:
         raise MapFileError("mapbuildinst section found before mapcapacity.")
@@ -827,6 +1087,23 @@ def _read_build_inst(stream: BinaryIO, address: int, capacity: Optional[MapCapac
             MapBuildInstance(x, y, angle, desc_index, x2, y2, end_x2, end_y2, (u0, u1, u2, u3), address=pos)
         )
         pos += 12
+    return result
+
+
+def _read_rd_build_inst(stream: BinaryIO, address: int,
+                        capacity: Optional[MapCapacity]) -> list[MapBuildInstance]:
+    if capacity is None:
+        raise MapFileError("mapinst section found before mapdata.")
+    result = []
+    for index in range(capacity.build_inst_count):
+        pos = address + index * 20
+        stream.seek(pos)
+        lead, x, y, angle, sub_x, sub_y, desc, x2, y2, end_x2, end_y2, height, tail = struct.unpack(
+            ">BbbBbbHbbbbfI", stream.read(20))
+        height_bytes = struct.unpack(">bbbb", struct.pack(">f", height))
+        result.append(MapBuildInstance(x, y, angle, desc, x2, y2, end_x2, end_y2,
+                                       height_bytes, address=pos, layout="fe10", lead=lead,
+                                       sub_x=sub_x, sub_y=sub_y, trailing_word=tail))
     return result
 
 
@@ -865,6 +1142,37 @@ def _read_fog(stream: BinaryIO, address: int) -> MapFog:
     return MapFog(enabled, mode_code, start_distance, end_distance, r, g, b, unused2, address=address)
 
 
+def _read_rd_light(stream: BinaryIO, address: int, size: int) -> RdMapLight:
+    if size != 32:
+        raise MapFileError(f"RD maplight must be 32 bytes, found {size}.")
+    stream.seek(address)
+    raw = stream.read(size)
+    flags, *angles = struct.unpack(">Hhhh", raw[:8])
+    colours = tuple(tuple(raw[offset:offset + 3]) for offset in range(8, 32, 3))
+    return RdMapLight(flags, tuple(angles), colours, address)
+
+
+def _read_rd_fog(stream: BinaryIO, address: int, size: int) -> RdMapFog:
+    if size != 12:
+        raise MapFileError(f"RD mapfog must be 12 bytes, found {size}.")
+    stream.seek(address)
+    values = struct.unpack(">BBhhBBBBBB", stream.read(size))
+    return RdMapFog(*values[:4], tuple(values[4:7]), tuple(values[7:10]), address)
+
+
+def _read_rd_shader(stream: BinaryIO, address: int, size: int) -> RdMapShader:
+    if size < 16:
+        raise MapFileError(f"RD mapshader must be at least 16 bytes, found {size}.")
+    stream.seek(address)
+    raw = stream.read(size)
+    count = raw[0]
+    expected = 16 + count * 4
+    if size != expected:
+        raise MapFileError(f"RD mapshader count requires {expected} bytes, found {size}.")
+    entries = tuple(raw[offset:offset + 4] for offset in range(16, size, 4))
+    return RdMapShader(raw[1:16], entries, address)
+
+
 def _read_grid_colors(stream: BinaryIO, address: int) -> MapGrid:
     stream.seek(address)
     return MapGrid(*struct.unpack(">BBBB", stream.read(4)), address=address)
@@ -876,11 +1184,12 @@ def _read_extra(stream: BinaryIO, address: int) -> MapExtra:
     return MapExtra(b0, b1, half_x, half_y, b4, buffer_, (u0, u1), tail, address=address)
 
 
-def _read_link_grid(stream: BinaryIO, address: int, capacity: Optional[MapCapacity]) -> Grid:
+def _read_link_grid(stream: BinaryIO, address: int, capacity: Optional[MapCapacity],
+                    count_size: int = 2) -> Grid:
     if capacity is None:
         raise MapFileError("link section found before mapcapacity.")
     stream.seek(address)
-    (num_entries,) = struct.unpack(">H", stream.read(2))
+    (num_entries,) = struct.unpack(">I" if count_size == 4 else ">H", stream.read(count_size))
     grid: Grid = [[-1] * capacity.y_size for _ in range(capacity.x_size)]
     for _ in range(num_entries):
         x, y, value = struct.unpack(">BBB", stream.read(3))
@@ -917,6 +1226,20 @@ _BUILD_INST_FIELDS = {
     "y2": (5, ">b"),
     "end_x2": (6, ">b"),
     "end_y2": (7, ">b"),
+}
+
+_RD_BUILD_INST_FIELDS = {
+    "lead": (0, ">B"),
+    "x": (1, ">b"),
+    "y": (2, ">b"),
+    "angle": (3, ">B"),
+    "sub_x": (4, ">b"),
+    "sub_y": (5, ">b"),
+    "desc_index": (6, ">H"),
+    "x2": (8, ">b"),
+    "y2": (9, ">b"),
+    "end_x2": (10, ">b"),
+    "end_y2": (11, ">b"),
 }
 
 _UNIQUE_PANEL_FIELDS = {
@@ -986,7 +1309,11 @@ def patch_object_field(data: bytes, record: MapObject, field_name: str, value) -
 
 
 def patch_build_inst_field(data: bytes, record: MapBuildInstance, field_name: str, value) -> bytes:
-    return _patch_field(data, record.address, field_name, value, _BUILD_INST_FIELDS, "mapbuildinst")
+    fields = _RD_BUILD_INST_FIELDS if record.layout == "fe10" else _BUILD_INST_FIELDS
+    if record.layout == "fe9" and field_name == "angle" and 128 <= value <= 255:
+        value -= 256
+    return _patch_field(data, record.address, field_name, value, fields,
+                        "mapinst" if record.layout == "fe10" else "mapbuildinst")
 
 
 def patch_unique_panel_field(data: bytes, record: UniquePanel, field_name: str, value) -> bytes:
@@ -1001,6 +1328,27 @@ def patch_light_field(data: bytes, record: MapLight, field_name: str, value) -> 
 
 def patch_fog_field(data: bytes, record: MapFog, field_name: str, value) -> bytes:
     return _patch_field(data, record.address, field_name, value, _FOG_FIELDS, "mapfog")
+
+
+def patch_rd_light(data: bytes, record: RdMapLight) -> bytes:
+    return _patch_rd_environment_record(data, record.address, record.to_bytes(), "maplight")
+
+
+def patch_rd_fog(data: bytes, record: RdMapFog) -> bytes:
+    return _patch_rd_environment_record(data, record.address, record.to_bytes(), "mapfog")
+
+
+def patch_rd_shader(data: bytes, record: RdMapShader) -> bytes:
+    return _patch_rd_environment_record(data, record.address, record.to_bytes(), "mapshader")
+
+
+def _patch_rd_environment_record(data: bytes, address: int, encoded: bytes, name: str) -> bytes:
+    section_address, section_size = section_bytes(data, name)
+    if address != section_address or len(encoded) != section_size:
+        raise MapFileError(f"RD {name} edit must retain its {section_size}-byte section shape.")
+    out = bytearray(data)
+    out[address:address + section_size] = encoded
+    return bytes(out)
 
 
 def patch_grid_field(data: bytes, record: MapGrid, field_name: str, value) -> bytes:
@@ -1025,9 +1373,14 @@ def _sections(data: bytes) -> tuple[list[tuple[int, int]], int]:
 def section_bytes(data: bytes, name: str) -> tuple[int, int]:
     """``(file offset, length)`` of a named section; its length runs to the
     next section, or to the string pool / pointer list for the last one."""
-    for address, section in sorted(read_section_table(io.BytesIO(data), _sections(data)[1], len(data))):
-        if section == name:
-            starts = sorted(a for a, _ in read_section_table(io.BytesIO(data), _sections(data)[1], len(data)))
+    named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
+    aliases = {"mapcapacity": "mapdata", "mapbuilddesc": "mapdesc", "mapbuildinst": "mapinst",
+               "panelindexRoof": "roofindex", "uniquepanelRoof": "roofpanel",
+               "panelindexBase": "baseindex", "uniquepanelBase": "basepanel"}
+    wanted = aliases.get(name, name)
+    for address, section in sorted(named):
+        if section == name or section.rsplit(":", 1)[-1] == wanted:
+            starts = sorted(a for a, _ in named)
             later = [a for a in starts if a > address]
             pointers = _pointer_offsets(data)
             targets = [HEADER_SIZE + struct.unpack(">I", data[HEADER_SIZE + p : HEADER_SIZE + p + 4])[0] for p in pointers]
@@ -1096,9 +1449,15 @@ def insert_section_before(data: bytes, before_name: str, name: str, payload: byt
     if len(payload) % 4:
         raise MapFileError("A section must be a multiple of 4 bytes.")
     named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
-    if any(existing == name for _address, existing in named):
+    before_stored = next((existing for _address, existing in named
+                          if existing == before_name or existing.rsplit(":", 1)[-1] == before_name), None)
+    prefix = before_stored.rsplit(":", 1)[0] if before_stored and ":" in before_stored else ""
+    stored_name = f"{prefix}:{name}" if prefix else name
+    if any(existing == stored_name or existing.rsplit(":", 1)[-1] == name
+           for _address, existing in named):
         raise MapFileError(f"Section {name!r} already exists.")
-    match = next((address for address, existing in named if existing == before_name), None)
+    match = next((address for address, existing in named
+                  if existing == before_name or existing.rsplit(":", 1)[-1] == before_name), None)
     if match is None:
         raise MapFileError(f"No section {before_name!r}.")
     _size, data_size, _pointer_count, section_count = struct.unpack_from(">IIII", data)
@@ -1122,7 +1481,7 @@ def insert_section_before(data: bytes, before_name: str, name: str, payload: byt
     for address, offset in entries:
         tail += struct.pack(">II", address + (delta if HEADER_SIZE + address >= match else 0), offset)
     tail += struct.pack(">II", match - HEADER_SIZE, name_offset)
-    tail += old_tail + name.encode("ascii") + b"\x00"
+    tail += old_tail + stored_name.encode("ascii") + b"\x00"
     new_data_size = data_size + delta
     header = struct.pack(">IIII", HEADER_SIZE + new_data_size + len(tail), new_data_size,
                          len(pointer_offsets), section_count + 1)
@@ -1147,29 +1506,31 @@ def set_link_openings(data: bytes, x: int, y: int, openings: int) -> bytes:
     if parsed.link is None:
         if openings == LINK_DEFAULT_OPEN:
             return data
-        payload = struct.pack(">HBBB", 1, x, y, openings)
+        payload = struct.pack(">IBBB" if parsed.layout == "fe10" else ">HBBB", 1, x, y, openings)
         payload += bytes(-len(payload) % 4)
         named = read_section_table(io.BytesIO(data), _sections(data)[1], len(data))
-        before = next((name for _address, name in named if name == "mapextra"), named[-1][1])
+        before = next((name for _address, name in named if name.rsplit(":", 1)[-1] == "mapextra"),
+                      named[-1][1].rsplit(":", 1)[-1])
         return insert_section_before(data, before, "maplink", payload)
     start, length = section_bytes(data, "maplink")
-    count = struct.unpack_from(">H", data, start)[0]
-    if 2 + 3 * count > length:
+    count_size = 4 if parsed.layout == "fe10" else 2
+    count = struct.unpack_from(">I" if count_size == 4 else ">H", data, start)[0]
+    if count_size + 3 * count > length:
         raise MapFileError("maplink record count exceeds section length.")
     payload = bytearray(data[start:start + length])
     for i in range(count):
-        at = 2 + 3 * i
+        at = count_size + 3 * i
         if payload[at] == x and payload[at + 1] == y:
             payload[at + 2] = (payload[at + 2] & 0xF0) | openings
             return data[:start] + bytes(payload) + data[start + length:]
     if openings == LINK_DEFAULT_OPEN:
         return data
-    if count >= 0xFFFF:
+    if count >= (0xFFFFFFFF if count_size == 4 else 0xFFFF):
         raise MapFileError("maplink has too many records.")
-    if length - (2 + 3 * count) > 3 or any(payload[2 + 3 * count:]):
+    if length - (count_size + 3 * count) > 3 or any(payload[count_size + 3 * count:]):
         raise MapFileError("maplink has trailing data beyond alignment padding; cannot safely add a record.")
-    payload = payload[:2 + 3 * count] + bytes((x, y, openings))
-    struct.pack_into(">H", payload, 0, count + 1)
+    payload = payload[:count_size + 3 * count] + bytes((x, y, openings))
+    struct.pack_into(">I" if count_size == 4 else ">H", payload, 0, count + 1)
     payload += bytes(-len(payload) % 4)
     return replace_section(data, "maplink", bytes(payload))
 
@@ -1218,12 +1579,12 @@ def _grid_u16_payload(grid: Grid) -> bytes:
     return bytes(payload)
 
 
-def _link_payload(grid: Grid, width: int, height: int) -> bytes:
+def _link_payload(grid: Grid, width: int, height: int, *, count_size: int = 2) -> bytes:
     records = [(x, y, grid[x][y]) for x in range(min(width, len(grid)))
                for y in range(min(height, len(grid[x]))) if grid[x][y] != -1]
-    if len(records) > 0xFFFF:
+    if len(records) > (0xFFFFFFFF if count_size == 4 else 0xFFFF):
         raise MapFileError("A link grid has too many explicit records.")
-    payload = bytearray(struct.pack(">H", len(records)))
+    payload = bytearray(struct.pack(">I" if count_size == 4 else ">H", len(records)))
     for x, y, value in records:
         payload += struct.pack(">BBB", x, y, value)
     payload += bytes(-len(payload) % 4)
@@ -1256,24 +1617,30 @@ def resize_grid(data: bytes, width: int, height: int) -> bytes:
     for section, grid in (("maplink", parsed.link), ("maplinkAt", parsed.link_at),
                           ("maplinkAbs", parsed.link_abs)):
         if grid is not None:
-            data = replace_section(data, section, _link_payload(grid, width, height))
+            data = replace_section(data, section, _link_payload(
+                grid, width, height, count_size=4 if parsed.layout == "fe10" else 2))
 
     capacity_at, _length = section_bytes(data, "mapcapacity")
     out = bytearray(data)
-    struct.pack_into(">HH", out, capacity_at, width, height)
+    if parsed.layout == "fe10":
+        struct.pack_into(">BB", out, capacity_at + 2, width, height)
+    else:
+        struct.pack_into(">HH", out, capacity_at, width, height)
     data = bytes(out)
     current = read_map_bytes(data)
     if current.extra is not None:
-        data = patch_extra_field(data, current.extra, "half_x_size", (width + 1) // 2)
+        data = patch_extra_field(data, current.extra, "half_x_size",
+                                 width // 2 if parsed.layout == "fe10" else (width + 1) // 2)
         current = read_map_bytes(data)
-        data = patch_extra_field(data, current.extra, "half_y_size", (height + 1) // 2)
+        data = patch_extra_field(data, current.extra, "half_y_size",
+                                 height // 2 if parsed.layout == "fe10" else (height + 1) // 2)
     return data
 
 
 def patch_build_inst_height(data: bytes, record: "MapBuildInstance", height: float) -> bytes:
     """Set an instance's height float (``pos_y = -5 * height``)."""
     out = bytearray(data)
-    struct.pack_into(">f", out, record.address + 8, height)
+    struct.pack_into(">f", out, record.address + (12 if record.layout == "fe10" else 8), height)
     return bytes(out)
 
 
@@ -1361,11 +1728,19 @@ def _set_counts(data: bytes, desc_count: int, inst_count: int) -> bytes:
 
 
 def _desc_payload(data: bytes, objects: list[MapObject], pointers: list[int]) -> tuple[bytes, list[int]]:
-    payload = b"".join(
-        struct.pack(">ffffffBBBBI", o.offset_x, o.offset_y, o.offset_z, o.size_x, o.size_y, o.size_z,
-                    o.flag_bits_a, o.flag_bits_b, o.flag_bits_c, o.effect_type, p)
-        for o, p in zip(objects, pointers)
-    )
+    rd = bool(objects and objects[0].layout == "fe10")
+    if rd:
+        payload = b"".join(
+            struct.pack(">ffffffBBBBIBBBB", o.offset_x, o.offset_y, o.offset_z,
+                        o.size_x, o.size_y, o.size_z, o.flag_bits_a, o.flag_bits_b,
+                        o.flag_bits_c, o.effect_type, p, o.footprint_x, o.footprint_y, 0, 0)
+            for o, p in zip(objects, pointers)
+        )
+        return payload, [36 * i + 28 for i in range(len(objects))]
+    payload = b"".join(struct.pack(">ffffffBBBBI", o.offset_x, o.offset_y, o.offset_z,
+                                         o.size_x, o.size_y, o.size_z, o.flag_bits_a,
+                                         o.flag_bits_b, o.flag_bits_c, o.effect_type, p)
+                       for o, p in zip(objects, pointers))
     return payload, [32 * i + 28 for i in range(len(objects))]
 
 
@@ -1378,6 +1753,9 @@ def add_build_object(data: bytes, obj: MapObject) -> tuple[bytes, int]:
     parsed = read_map_bytes(data)
     start, _length = section_bytes(data, "mapbuilddesc")
     pointers = [struct.unpack(">I", data[o.address + 28 : o.address + 32])[0] for o in parsed.build_desc]
+    if parsed.layout == "fe10":
+        fx, fy = footprint_tiles(obj)
+        obj = replace(obj, layout="fe10", footprint_x=fx, footprint_y=fy)
     payload, fields = _desc_payload(data, [*parsed.build_desc, obj], [*pointers, name_pointer])
     data = replace_section(data, "mapbuilddesc", payload, fields)
     return _set_counts(data, len(parsed.build_desc) + 1, len(parsed.build_inst)), len(parsed.build_desc)
@@ -1402,16 +1780,23 @@ def instance_record(obj: MapObject, desc_index: int, x: int, y: int, angle: int,
         (x - (w - 1), y - (d - 1), x, y),
         (x, y - (w - 1), x + d - 1, y),
     )[quarter]
+    if obj.layout == "fe10":
+        return struct.pack(">BbbBbbHbbbbfI", 0, x, y, angle % 256, 0, 0, desc_index,
+                           x2, y2, x_end, y_end, height, 0x40000000)
     return struct.pack(">bbBbbbbbf", x, y, angle % 256, desc_index, x2, y2, x_end, y_end, height)
 
 
 def set_build_instances(data: bytes, records: list[bytes]) -> bytes:
     """Replace every ``mapbuildinst`` record (12 bytes each) and the count."""
     parsed = read_map_bytes(data)
+    size = 20 if parsed.layout == "fe10" else 12
+    if any(len(record) != size for record in records):
+        raise MapFileError(f"{parsed.layout} instance records must be {size} bytes.")
     data = replace_section(data, "mapbuildinst", b"".join(records))
     return _set_counts(data, len(parsed.build_desc), len(records))
 
 
 def instance_records(data: bytes) -> list[bytes]:
     parsed = read_map_bytes(data)
-    return [data[i.address : i.address + 12] for i in parsed.build_inst]
+    size = 20 if parsed.layout == "fe10" else 12
+    return [data[i.address : i.address + size] for i in parsed.build_inst]

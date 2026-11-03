@@ -319,8 +319,9 @@ class MapObjectsWindow(_Window):
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
         checks = []
+        flag_groups = map_props.prop_flag_groups(obj.layout)
         if self.map.verified_us_map_layout:
-            for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+            for column, (field, title, controls) in enumerate(flag_groups):
                 group = ttk.LabelFrame(frame, text=title, padding=6)
                 group.grid(row=1 + column // 2, column=column % 2, sticky="nsew", padx=(0, 6), pady=(0, 6))
                 for row, (mask, label) in enumerate(controls):
@@ -339,10 +340,8 @@ class MapObjectsWindow(_Window):
             if not self.map.verified_us_map_layout:
                 return
             try:
-                values = {field: 0 for field, _title, _controls in map_props.PROP_FLAG_GROUPS}
-                for field, mask, var in checks:
-                    if var.get():
-                        values[field] |= mask
+                values = map_props.merge_prop_flag_toggles(
+                    obj, ((field, mask, var.get()) for field, mask, var in checks))
                 changed = {field: value for field, value in values.items() if value != getattr(obj, field)}
                 if changed:
                     def edit(files):

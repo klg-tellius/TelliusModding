@@ -62,10 +62,14 @@ class Fe10SaveEditor(ttk.Frame):
         notebook.pack(fill="both", expand=True, padx=28, pady=(8, 20))
         overview = ttk.Frame(notebook, padding=12)
         convoy = ttk.Frame(notebook, padding=8)
+        units = ttk.Frame(notebook, padding=8)
+        flags = ttk.Frame(notebook, padding=8)
         sections = ttk.Frame(notebook, padding=8)
         raw = ttk.Frame(notebook, padding=8)
         notebook.add(overview, text="Overview")
         notebook.add(convoy, text="Convoy")
+        notebook.add(units, text="Units")
+        notebook.add(flags, text="Flags")
         notebook.add(sections, text="Sections")
         notebook.add(raw, text="Raw")
 
@@ -92,8 +96,9 @@ class Fe10SaveEditor(ttk.Frame):
 
         ttk.Label(convoy, style="Muted.TLabel", wraplength=900, justify="left", text=(
             "All 316 serialized storage slots are shown. Item numbers refer to FE10Data.cms. "
-            "Ordinary items can be edited; forged items are preserved and remain read-only until "
-            "their FE10-only suffix is fully decoded.")).pack(anchor="w", pady=(0, 6))
+            "Ordinary items expose their state word. Existing forged items also expose their custom "
+            "name, Might/Hit/Critical/Weight step counts, and RGBA colour; their pool-owning state "
+            "word remains fixed.")).pack(anchor="w", pady=(0, 6))
         convoy_frame = ttk.Frame(convoy)
         convoy_frame.pack(fill="both", expand=True)
         self._convoy_tree = ttk.Treeview(convoy_frame, columns=("slot", "item", "name", "state", "forge"),
@@ -120,6 +125,71 @@ class Fe10SaveEditor(ttk.Frame):
         self._convoy_state_entry.pack(side="left", padx=(5, 8))
         self._convoy_apply = ttk.Button(edit, text="Apply", command=self._apply_convoy)
         self._convoy_apply.pack(side="left")
+        forge_edit = ttk.Frame(convoy)
+        forge_edit.pack(fill="x", pady=(6, 0))
+        self._forge_name = tk.StringVar()
+        self._forge_might = tk.StringVar()
+        self._forge_hit = tk.StringVar()
+        self._forge_critical = tk.StringVar()
+        self._forge_weight = tk.StringVar()
+        self._forge_colour = tk.StringVar()
+        self._forge_entries = []
+        for label, variable, width in (
+                ("Forge name", self._forge_name, 18), ("Mt", self._forge_might, 5),
+                ("Hit", self._forge_hit, 5), ("Crit", self._forge_critical, 5),
+                ("Wt−", self._forge_weight, 5), ("RGBA", self._forge_colour, 12)):
+            ttk.Label(forge_edit, text=label).pack(side="left", padx=(10 if self._forge_entries else 0, 4))
+            entry = ttk.Entry(forge_edit, textvariable=variable, width=width)
+            entry.pack(side="left")
+            self._forge_entries.append(entry)
+
+        ttk.Label(units, style="Muted.TLabel", wraplength=900, justify="left", text=(
+            "UNIP is framed from the native 254-slot writer. Character and class names come from "
+            "this save's ITBL; RelianceData from the open workspace determines which units carry "
+            "the conditional support tail. Remaining unit substructures are preserved read-only."
+        )).pack(anchor="w", pady=(0, 6))
+        unit_frame = ttk.Frame(units)
+        unit_frame.pack(fill="both", expand=True)
+        self._unit_tree = ttk.Treeview(
+            unit_frame, columns=("slot", "pid", "jid", "army", "skills", "items", "supports", "bytes"),
+            show="headings", height=16)
+        for key, title, width in (
+                ("slot", "Slot", 55), ("pid", "Character", 190), ("jid", "Class", 170),
+                ("army", "Army", 55), ("skills", "Skills", 60), ("items", "Items", 55),
+                ("supports", "Support slots", 90), ("bytes", "Bytes", 65)):
+            self._unit_tree.heading(key, text=title)
+            self._unit_tree.column(key, width=width, stretch=key in ("pid", "jid"))
+        unit_scroll = ttk.Scrollbar(unit_frame, command=self._unit_tree.yview)
+        self._unit_tree.configure(yscrollcommand=unit_scroll.set)
+        unit_scroll.pack(side="right", fill="y")
+        self._unit_tree.pack(side="left", fill="both", expand=True)
+        self._unit_status = ttk.Label(units, style="Muted.TLabel")
+        self._unit_status.pack(anchor="w", pady=(6, 0))
+
+        ttk.Label(flags, style="Muted.TLabel", wraplength=900, justify="left", text=(
+            "BMST stores 128 event-script bits. Slots are shown in native order: campaign flags "
+            "are registered from the low end and chapter flags from the high end. The exact name "
+            "of a slot depends on the scripts used by this save, so editing is intentionally by "
+            "stable slot number.")).pack(anchor="w", pady=(0, 6))
+        flag_frame = ttk.Frame(flags)
+        flag_frame.pack(fill="both", expand=True)
+        self._flag_tree = ttk.Treeview(flag_frame, columns=("slot", "state"), show="headings",
+                                       selectmode="browse", height=15)
+        self._flag_tree.heading("slot", text="Slot")
+        self._flag_tree.heading("state", text="State")
+        self._flag_tree.column("slot", width=100, stretch=False)
+        self._flag_tree.column("state", width=140, stretch=True)
+        flag_scroll = ttk.Scrollbar(flag_frame, command=self._flag_tree.yview)
+        self._flag_tree.configure(yscrollcommand=flag_scroll.set)
+        flag_scroll.pack(side="right", fill="y")
+        self._flag_tree.pack(side="left", fill="both", expand=True)
+        self._flag_tree.bind("<Double-1>", lambda _event: self._toggle_flag())
+        flag_actions = ttk.Frame(flags)
+        flag_actions.pack(fill="x", pady=(6, 0))
+        self._flag_toggle = ttk.Button(flag_actions, text="Toggle selected", command=self._toggle_flag,
+                                       state="disabled")
+        self._flag_toggle.pack(side="left")
+        self._flag_tree.bind("<<TreeviewSelect>>", lambda _event: self._sync_flag_button())
 
         self._section_tree = ttk.Treeview(sections, columns=("offset", "size"), show="tree headings", height=11)
         self._section_tree.heading("#0", text="Tag")
@@ -222,7 +292,7 @@ class Fe10SaveEditor(ttk.Frame):
             self._sync()
             return
         if record.empty:
-            summary = f"Offset 0x{record.offset:06X}\nEmpty rotating record (0xFF-filled)."
+            summary = f"Offset 0x{record.offset:06X}\nEmpty file record (0xFF-filled)."
         else:
             summary = (f"Offset 0x{record.offset:06X}\nMagic {record.magic.decode('ascii', 'replace')} · "
                        f"version 0x{record.version:08X} · format 0x{record.format_version:08X}\n"
@@ -246,6 +316,8 @@ class Fe10SaveEditor(ttk.Frame):
                                       values=(f"0x{section.data_offset:05X}", f"{section.size} (0x{section.size:X})"))
         self._fill_section_preview()
         self._fill_convoy()
+        self._fill_units()
+        self._fill_flags()
         self._fill_hex(self._raw_text, record.build())
         self._sync()
 
@@ -293,13 +365,66 @@ class Fe10SaveEditor(ttk.Frame):
         self._select_convoy()
 
     def _set_convoy_controls(self, item: Optional[sf.ConvoyItem]) -> None:
-        enabled = item is not None and not item.forged
+        enabled = item is not None
+        forged = enabled and item.forged
         self._convoy_item.set(str(item.item_number) if item is not None else "")
         self._convoy_state.set(f"0x{item.state:04X}" if item is not None else "")
-        state = "normal" if enabled else "disabled"
-        self._convoy_item_entry.configure(state=state)
-        self._convoy_state_entry.configure(state=state)
-        self._convoy_apply.configure(state=state)
+        self._convoy_item_entry.configure(state="normal" if enabled else "disabled")
+        self._convoy_state_entry.configure(state="normal" if enabled and not forged else "disabled")
+        self._convoy_apply.configure(state="normal" if enabled else "disabled")
+        values = item.forge_values if forged else None
+        self._forge_name.set(item.forge_name_bytes.decode("shift_jis") if forged else "")
+        self._forge_might.set(str(values.might_steps) if values else "")
+        self._forge_hit.set(str(values.hit_steps) if values else "")
+        self._forge_critical.set(str(values.critical_steps) if values else "")
+        self._forge_weight.set(str(values.weight_reduction_steps) if values else "")
+        self._forge_colour.set(
+            f"#{values.red:02X}{values.green:02X}{values.blue:02X}{values.alpha:02X}" if values else "")
+        for entry in self._forge_entries:
+            entry.configure(state="normal" if forged else "disabled")
+
+    def _fill_units(self) -> None:
+        self._unit_tree.delete(*self._unit_tree.get_children())
+        record = self._record()
+        if record is None or record.empty or record.section("UNIP") is None:
+            self._unit_status.configure(text="No serialized unit table in this record.")
+            return
+        session = getattr(self.shell, "session", None)
+        database = getattr(session, "fe10", None)
+        if database is None:
+            self._unit_status.configure(
+                text="Open an extracted Radiant Dawn workspace to frame RelianceData support tails.")
+            return
+        try:
+            tables = record.id_tables()
+            counts_by_pid = {
+                row.values["pid"]: len(row.lists["partners"])
+                for row in database.table("support")
+            }
+            support_counts = {
+                number: counts_by_pid.get("PID_" + short_name, 0)
+                for number, short_name in enumerate(tables.characters, 1)
+            }
+            parsed = record.unit_records(support_counts)
+            occupied = [unit for unit in parsed if not unit.empty]
+            for unit in occupied:
+                pid = ("PID_" + tables.characters[unit.person_number - 1]
+                       if 0 < unit.person_number <= len(tables.characters)
+                       else f"#{unit.person_number}")
+                jid = ("JID_" + tables.classes[unit.class_number - 1]
+                       if 0 < unit.class_number <= len(tables.classes)
+                       else f"#{unit.class_number}")
+                item_count = sum(item.item_number != 0 for item in unit.items)
+                self._unit_tree.insert(
+                    "", "end", iid=str(unit.slot),
+                    values=(unit.slot + 1, pid, jid, unit.army, len(unit.skills), item_count,
+                            unit.support_slot_count, unit.size))
+            consumed = sum(unit.size for unit in parsed)
+            self._unit_status.configure(
+                text=f"{len(occupied)} occupied of {len(parsed)} slots · structurally consumed "
+                     f"{consumed} bytes")
+        except (KeyError, ValueError, IndexError, UnicodeError) as exc:
+            self._unit_status.configure(text=f"Could not decode UNIP: {exc}")
 
     def _select_convoy(self) -> None:
         record = self._record()
@@ -320,8 +445,22 @@ class Fe10SaveEditor(ttk.Frame):
         if record is None or not selected:
             return
         try:
-            record.set_convoy_item(int(selected[0]), int(self._convoy_item.get(), 0),
-                                   int(self._convoy_state.get(), 0))
+            slot = int(selected[0])
+            item = record.convoy_items()[slot]
+            if item.forged:
+                colour_text = self._forge_colour.get().strip().removeprefix("#").removeprefix("0x")
+                if len(colour_text) != 8:
+                    raise ValueError("RGBA must contain exactly eight hexadecimal digits")
+                colour = bytes.fromhex(colour_text)
+                payload = sf.ForgePayload(
+                    int(self._forge_might.get(), 0), int(self._forge_hit.get(), 0),
+                    int(self._forge_critical.get(), 0), int(self._forge_weight.get(), 0), *colour)
+                record.update_forged_convoy_item(
+                    slot, item_number=int(self._convoy_item.get(), 0),
+                    name=self._forge_name.get(), payload=payload)
+            else:
+                record.set_convoy_item(slot, int(self._convoy_item.get(), 0),
+                                       int(self._convoy_state.get(), 0))
         except (ValueError, IndexError) as exc:
             messagebox.showerror("Invalid convoy item", str(exc), parent=self)
             return
@@ -329,6 +468,44 @@ class Fe10SaveEditor(ttk.Frame):
         if self._convoy_tree.exists(selected[0]):
             self._convoy_tree.selection_set(selected[0])
             self._convoy_tree.see(selected[0])
+
+    def _fill_flags(self) -> None:
+        selected = self._flag_tree.selection()
+        self._flag_tree.delete(*self._flag_tree.get_children())
+        record = self._record()
+        if record is None or record.empty or record.section("BMST") is None:
+            self._sync_flag_button()
+            return
+        try:
+            bits = record.script_flags()
+        except ValueError:
+            self._sync_flag_button()
+            return
+        for index, enabled in enumerate(bits):
+            self._flag_tree.insert("", "end", iid=str(index),
+                                   values=(index, "On" if enabled else "Off"))
+        if selected and self._flag_tree.exists(selected[0]):
+            self._flag_tree.selection_set(selected[0])
+        self._sync_flag_button()
+
+    def _sync_flag_button(self) -> None:
+        self._flag_toggle.configure(state="normal" if self._flag_tree.selection() else "disabled")
+
+    def _toggle_flag(self) -> None:
+        record = self._record()
+        selected = self._flag_tree.selection()
+        if record is None or not selected:
+            return
+        index = int(selected[0])
+        try:
+            record.set_script_flag(index, not record.script_flags()[index])
+        except (ValueError, IndexError) as exc:
+            messagebox.showerror("Could not edit flag", str(exc), parent=self)
+            return
+        self._refresh()
+        if self._flag_tree.exists(str(index)):
+            self._flag_tree.selection_set(str(index))
+            self._flag_tree.see(str(index))
 
     @staticmethod
     def _set_text(widget: tk.Text, value: str) -> None:

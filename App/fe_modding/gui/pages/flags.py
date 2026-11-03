@@ -7,9 +7,9 @@
 * **Chapter flags** - what one chapter's ``Startup`` registers, where each is
   used, and how many slots are left. New ones are appended after the last
   registration.
-* **Save file** - the flags of a ``.gci`` save block, by name; ticking one
-  rewrites the block and its checksum (Path of Radiance only: Radiant Dawn's
-  saves are not decoded yet).
+* **Save file** - Path of Radiance names and edits the flags of a ``.gci``
+  block here. Radiant Dawn's verified 128-bit BMST bank is edited by stable
+  slot number in Tools › Saves.
 
 Adding a flag rewrites the script right away (compiled onto the current
 ``.cmb``, source kept in ``script_sources/``). The Script tab of a chapter

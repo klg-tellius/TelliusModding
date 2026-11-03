@@ -6,6 +6,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
@@ -283,6 +284,17 @@ class MapFileFlagBitsTests(unittest.TestCase):
         self.assertTrue(map_file.has_ga_animation(_build_map_object(flag_bits_c=0b00000010)))
         self.assertFalse(map_file.has_ga_animation(_build_map_object(flag_bits_c=0b00000001)))
         self.assertFalse(map_file.has_ga_animation(_build_map_object(flag_bits_c=0)))
+
+    def test_rd_flags_use_traced_predicates_not_por_base_bits(self):
+        obj = replace(_build_map_object(flag_bits_a=0xC0, flag_bits_c=0x18),
+                      layout="fe10", effect_type=0, filename="bmap0101",
+                      map_prefix="bmap0101")
+        self.assertTrue(map_file.is_base_terrain_object(obj))
+        self.assertTrue(map_file.uses_terrain_footprint(obj))
+        self.assertTrue(map_file.is_openable_door(obj))
+        self.assertFalse(map_file.is_base_terrain_object(
+            replace(obj, filename="prop", map_prefix="bmap0101")))
+        self.assertFalse(map_file.uses_terrain_footprint(replace(obj, effect_type=0x10)))
 
 
 def _build_minimal_map_bytes(sections: list[tuple[str, bytes]]) -> bytes:
@@ -797,6 +809,22 @@ class MapBuildInstanceTransformTests(unittest.TestCase):
         self.assertAlmostEqual(m[0][3], 100.0 + 5.0 * 1)
         self.assertAlmostEqual(m[1][3], 200.0)
         self.assertAlmostEqual(m[2][3], 300.0 + 5.0 * 1)
+
+    def test_rd_sub_tile_offsets_are_sixty_fourths_of_a_tile(self):
+        inst = replace(_build_map_build_instance(x=2, y=3), layout="fe10",
+                       sub_x=32, sub_y=-16)
+        m = inst.world_transform(map_scale=1.0)
+        self.assertAlmostEqual(inst.sub_tile_x, 0.5)
+        self.assertAlmostEqual(inst.sub_tile_y, -0.25)
+        self.assertAlmostEqual(m[0][3], 5.0 * 2.5)
+        self.assertAlmostEqual(m[2][3], 5.0 * 2.75)
+
+    def test_rd_lead_bit_zero_mirrors_across_descriptor_footprint(self):
+        inst = replace(_build_map_build_instance(), layout="fe10", lead=1)
+        m = inst.world_transform(map_scale=1.0, footprint_x=2, footprint_y=1)
+        self.assertTrue(inst.mirror_x)
+        self.assertAlmostEqual(m[0][0], -1.0)
+        self.assertAlmostEqual(m[0][3], 10.0)
 
 
 class Lz10Tests(unittest.TestCase):
