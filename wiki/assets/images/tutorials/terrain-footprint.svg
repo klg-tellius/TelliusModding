@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 650" role="img" aria-labelledby="title desc">
+  <title id="title">Paint movement terrain under a solid prop</title>
+  <desc id="desc">Before: a house covers four ordinary ground tiles, so its visible model alone does not block movement. After: select Paint terrain and paint those four tiles with the intended blocking terrain. Save Chapter and test the footprint with different movement types. The grid is an illustrative example, not a screenshot.</desc>
+  <defs>
+    <pattern id="grid" width="62" height="62" patternUnits="userSpaceOnUse"><rect width="62" height="62" fill="#dce9cf" stroke="#879f7b" stroke-width="2"/></pattern>
+    <pattern id="blocked" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#f7ddd2"/><path d="M-3 3L3-3M0 12L12 0M9 15L15 9" stroke="#a64e30" stroke-width="2"/></pattern>
+    <g id="house"><path d="M0 36L58 0L116 36" fill="#a56c45" stroke="#623d29" stroke-width="3"/><rect x="12" y="36" width="92" height="72" fill="#f0e1ba" stroke="#623d29" stroke-width="3"/><rect x="48" y="66" width="24" height="42" fill="#694a34"/><rect x="24" y="51" width="16" height="18" fill="#83b0be"/></g>
+  </defs>
+  <rect width="920" height="650" rx="18" fill="#f4f3ec"/>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#123c50">
+    <text x="30" y="34" font-size="14" font-weight="700">WORKED EXAMPLE · A FOUR-TILE HOUSE FOOTPRINT</text>
+    <text x="30" y="76" font-size="29" font-weight="700">Paint the tiles beneath the model</text>
+    <text x="30" y="108" font-size="19">Build → Paint terrain → select type → paint footprint → Save Chapter</text>
+    <text x="64" y="161" font-size="22" font-weight="700">BEFORE · ordinary ground</text>
+    <text x="544" y="161" font-size="22" font-weight="700">AFTER · blocking terrain</text>
+    <g transform="translate(64 186)">
+      <rect width="310" height="248" fill="url(#grid)"/>
+      <rect x="62" y="62" width="124" height="124" fill="none" stroke="#b2502b" stroke-width="4" stroke-dasharray="8 5"/>
+      <use href="#house" x="66" y="67"/>
+      <circle cx="31" cy="155" r="16" fill="#246a8d"/>
+      <path d="M31 155H112" fill="none" stroke="#246a8d" stroke-width="5"/>
+      <path d="M101 146L114 155L101 164" fill="none" stroke="#246a8d" stroke-width="5"/>
+    </g>
+    <g transform="translate(544 186)">
+      <rect width="310" height="248" fill="url(#grid)"/>
+      <rect x="62" y="62" width="124" height="124" fill="url(#blocked)" stroke="#a64e30" stroke-width="4"/>
+      <use href="#house" x="66" y="67" opacity=".38"/>
+      <path d="M124 62V186M62 124H186" stroke="#a64e30" stroke-width="2"/>
+      <circle cx="31" cy="155" r="16" fill="#246a8d"/>
+      <path d="M31 155V217H217V155" fill="none" stroke="#246a8d" stroke-width="5"/>
+      <path d="M208 166L217 153L226 166" fill="none" stroke="#246a8d" stroke-width="5"/>
+    </g>
+    <path d="M410 310H502M490 300L503 310L490 320" fill="none" stroke="#26728a" stroke-width="4"/>
+    <text x="64" y="466" font-size="18">The house draws over walkable tiles.</text>
+    <text x="544" y="466" font-size="18">Paint all four covered tiles.</text>
+    <rect x="30" y="498" width="860" height="120" rx="10" fill="white" stroke="#c7d3ce"/>
+    <text x="50" y="529" font-size="19" font-weight="700">1. Toggle the terrain/grid layers to inspect the footprint.</text>
+    <text x="50" y="560" font-size="19">2. Choose terrain with the intended movement rules, then paint and save.</text>
+    <text x="50" y="591" font-size="19">3. In Play, try entering and routing around it with different movement types.</text>
+  </g>
+</svg>

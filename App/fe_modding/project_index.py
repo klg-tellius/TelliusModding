@@ -1,0 +1,672 @@
+"""Cross-references for the workspace's chapter and character pages.
+
+The editors each read one format; this module joins them so a page can show
+everything about one chapter or one character:
+
+* **characters** - every FE9 ``FE8Data.bin`` or FE10 ``FE10Data.cms`` character record with its English
+  name (``MPID_`` key in ``common.m``), class names (``MJID_``), portrait file
+  (``FID_`` -> ``face/facedata.bin``), battle model (``zdbx`` job list, the
+  engine's AID -> JID+PID -> JID order) and map model folder
+  (``FE8Anim.bin``), grouped by name key so story copies (``PID_BOLE_MAP1``)
+  sit under their main record;
+* **deployments** - every unit of every ``zmap/bmapNN*/dispos.cmp``
+  difficulty file, by PID;
+* **dialogue** - every chapter message that loads a portrait (``$FC``/``$FCL_``)
+  or names a speaker (``$cN``) belonging to a character;
+* **scripts** - every chapter script function that pushes a ``PID_``/``MPID_``
+  string (read lazily: decoding every script is the slow part).
+
+Nothing here writes. Sources that are not decoded for a game (currently RD deployments and models)
+stay empty while the shared pages continue to expose the decoded character data.
+"""
+
+from __future__ import annotations
+
+import re
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from . import chapters
+from .formats import (anim_registry, dispo, fe8data, fe10_anim, fe10_battle, fe10data,
+                      fe10_message, game_text, lz10, message, pak, zdbx)
+from .formats.fe10_faces import read_face_data as read_fe10_face_data
+from .formats.fe9_portraits import read_face_table
+from .game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, profile_of, disc_root_of, files_root_of
+from .project import ModProject
+
+PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
+CATEGORY_LABELS = {PLAYABLE: "Playable", NAMED: "Named NPCs & bosses", GENERIC: "Generic"}
+
+# dispos_c.bin is the common file: its sections are read on every difficulty (the Build tab's "Common").
+_DIFFICULTY_NAMES = {"n": "Normal", "h": "Hard", "m": "Maniac", "c": "Common"}
+_PORTRAIT_CODE_RE = re.compile(r"\$FC(?:L_)?([^|$]*)\|")
+_SPEAKER_CODE_RE = re.compile(r"\$c[0-9]([^|$]*)\|")
+_TRAILING_DIGITS_RE = re.compile(r"\d+$")
+
+
+def supported(project: ModProject) -> bool:
+    """Whether the project's game has decoded game data (the character index needs it)."""
+    profile = profile_of(project)
+    return profile.supports(GAME_DATA) or profile.supports(DATA_TABLES)
+
+
+def difficulty_name(code: str) -> str:
+    return _DIFFICULTY_NAMES.get(code, code)
+
+
+def _fe10_playable_name_keys(characters, supports) -> set[str]:
+    """Name-group keys for RD characters present in the playable support roster."""
+    playable_pids = {r.values.get("pid") for r in supports if r.values.get("pid")}
+    return {
+        r.values.get("mpid") or r.values.get("pid")
+        for r in characters if r.values.get("pid") in playable_pids
+    }
+
+
+def _fe10_message_cast_hits(text: str) -> dict[str, str]:
+    """Cast name (without ``FID_``) -> portrait/speaker use in one RD message."""
+    cast: list[str] = []
+    current: Optional[int] = None
+    hits: dict[str, str] = {}
+    for step in fe10_message.decompile(text):
+        if step.kind == "FL|":
+            cast = list(step.fields["items"])
+        elif step.kind in ("speaker", "seat"):
+            current = int(step.fields["a"], 16)
+            if step.kind == "speaker" and current < len(cast):
+                hits[cast[current]] = "speaker"
+        elif step.kind in ("show", "show_now") and current is not None and current < len(cast):
+            hits.setdefault(cast[current], "portrait")
+    return hits
+
+
+@dataclass(frozen=True)
+class CharacterInfo:
+    index: int
+    pid: str
+    mpid: Optional[str]
+    name: str
+    fid: Optional[str]
+    jid: Optional[str]
+    class_name: str
+    promoted_jid: Optional[str]
+    promoted_class_name: str
+    aid_unpromoted: Optional[str]
+    aid_promoted: Optional[str]
+    portrait_file: Optional[str]
+    battle_model: Optional[str]  # zu/<code>
+    promoted_battle_model: Optional[str]
+    map_model: Optional[str]  # ymu/<folder>
+    promoted_map_model: Optional[str]
+    category: str
+    main_pid: str  # the first record with the same name key (itself when it is the main one)
+    variants: tuple[str, ...] = ()  # the other records sharing the name key (main record only)
+    # a playable unit in an unpromoted human class: the only units with a promotion ahead of them
+    # (promoted_jid is the class's two-way link, so on a promoted class it points back down)
+    promotes: bool = False
+
+    @property
+    def label(self) -> str:
+        return f"{self.name} ({self.pid})" if self.name else self.pid
+
+
+@dataclass(frozen=True)
+class Deployment:
+    chapter_id: Optional[str]
+    folder: str  # zmap folder, e.g. bmap06_2
+    difficulty: str  # n/h/m/c
+    section: str
+    unit_index: int
+    pid: str
+    jid: str
+    x: int
+    y: int
+
+
+@dataclass(frozen=True)
+class MessageRef:
+    chapter_id: str
+    message_id: str
+    how: str  # "portrait" or "speaker"
+
+
+@dataclass(frozen=True)
+class ScriptRef:
+    chapter_id: str
+    function: str
+    label: str  # the PID_/MPID_ string the function pushes
+
+
+@dataclass(frozen=True)
+class ChapterInfo:
+    id: str
+    title: str
+    phases: tuple[str, ...]
+    message_count: int
+    units_by_difficulty: dict = field(default_factory=dict, hash=False)
+    has_script: bool = False
+    has_map: bool = False
+    has_deployment: bool = False
+    function_count: int = 0
+
+
+class ProjectIndex:
+    """Built once (:meth:`build`, slow: run it off the UI thread) and then
+    queried. :meth:`invalidate` marks it stale after a save; the next
+    :meth:`build` re-reads everything."""
+
+    def __init__(self, project: ModProject):
+        self.project = project
+        self.files = files_root_of(project)
+        game_text.use_for_extraction(disc_root_of(project))
+        self.profile = profile_of(project)
+        self._lock = threading.Lock()
+        self.ready = False
+        self.error: Optional[str] = None
+        self.characters: list[CharacterInfo] = []
+        self.by_pid: dict[str, CharacterInfo] = {}
+        self.chapters: list[ChapterInfo] = []
+        self.by_chapter: dict[str, ChapterInfo] = {}
+        self.titles: dict[str, str] = {}
+        self.class_names: dict[str, str] = {}  # JID -> English name
+        self.item_names: dict[str, str] = {}  # IID -> English name
+        self.texts: dict[str, str] = {}
+        self.deployments: list[Deployment] = []
+        self.message_refs: dict[str, list[MessageRef]] = {}  # pid -> refs
+        self.messages_by_chapter: dict[str, list[tuple[str, str]]] = {}  # id -> [(message id, text)]
+        self._script_refs: Optional[dict[str, list[ScriptRef]]] = None
+        self._script_functions: dict[str, list[tuple[str, int]]] = {}
+
+    # -- building -------------------------------------------------------------
+    def build(self) -> None:
+        try:
+            self._build()
+            self.error = None
+        except Exception as exc:  # noqa: BLE001 - shown on the pages, never fatal
+            self.error = f"{type(exc).__name__}: {exc}"
+        self.ready = True
+
+    def invalidate(self) -> None:
+        self.ready = False
+        self._script_refs = None
+
+    def _build(self) -> None:
+        self.titles = chapters.chapter_titles(self.project)
+        self.texts = self._read_texts()
+        self.deployments = self._read_deployments()
+        self._build_messages()
+        self._build_chapters()
+        if supported(self.project):
+            self._build_characters()
+            self._build_message_refs()
+        self._script_refs = None
+
+    def _read_texts(self) -> dict[str, str]:
+        if self.profile.supports(DATA_TABLES) and not self.profile.supports(GAME_DATA):
+            return fe10data.message_names(self.files / "Mess")
+        if not self.profile.has_file("system_archive"):
+            return {}
+        system_cmp = self.profile.path(self.files, "system_archive")
+        # The loose Mess/common.m holds the names added since the last build (the build copies
+        # it into system.cmp), so it wins when it exists.
+        loose = chapters._common_messages_path(self.project)
+        if loose is not None:
+            try:
+                return {key: m.text for key, m in chapters._common_messages(loose).items()}
+            except Exception:  # noqa: BLE001 - fall back to the archive's copy
+                pass
+        try:
+            return fe8data.read_message_texts(system_cmp) if system_cmp.exists() else {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def text(self, key: Optional[str]) -> str:
+        if not key:
+            return ""
+        try:
+            return game_text.from_raw(self.texts.get(key) or "").strip()
+        except UnicodeError:
+            return (self.texts.get(key) or "").strip()
+
+    def _read_deployments(self) -> list[Deployment]:
+        out = []
+        zmap = self.files / "zmap"
+        if not self.profile.supports(CHAPTERS):
+            return out
+        if not zmap.is_dir():
+            return out
+        if "{diff}" in self.profile.deployment:
+            for path in sorted(zmap.glob("*/dispos_*.bin")):
+                match = re.fullmatch(r"dispos_(\w)\.bin", path.name)
+                if not match:
+                    continue
+                try:
+                    document = dispo.parse_dispo(path.read_bytes())
+                except Exception:  # noqa: BLE001
+                    continue
+                folder = path.parent.name
+                for section in document.sections:
+                    for ui, unit in enumerate(section.units):
+                        out.append(Deployment(
+                            chapter_id=chapters.chapter_of_map_folder(folder), folder=folder,
+                            difficulty=match.group(1), section=section.name, unit_index=ui,
+                            pid=str(unit[dispo.FIELD["pid"]]), jid=str(unit[dispo.FIELD["jid"]]),
+                            x=int(unit[dispo.FIELD["pos_x"]]), y=int(unit[dispo.FIELD["pos_y"]]),
+                        ))
+            return out
+        for path in sorted(zmap.glob("*/dispos.cmp")):
+            folder = path.parent.name
+            try:
+                decompressed = lz10.decompress(path.read_bytes())
+                entries = pak.read_pak_entries(decompressed)
+            except Exception:  # noqa: BLE001 - one bad file must not hide the rest
+                continue
+            for entry in entries:
+                match = re.fullmatch(r"dispos_(\w)\.bin", entry.name)
+                if not match:
+                    continue
+                try:
+                    sections = dispo.read_dispo_bytes(pak.read_pak_file_content(decompressed, entry))
+                except Exception:  # noqa: BLE001
+                    continue
+                for section in sections:
+                    for ui, unit in enumerate(section.units):
+                        f = unit.fields
+                        out.append(Deployment(
+                            chapter_id=chapters.chapter_of_map_folder(folder), folder=folder,
+                            difficulty=match.group(1), section=section.name, unit_index=ui,
+                            pid=f[0].display, jid=f[1].display,
+                            x=f[32].value if len(f) > 32 else -1, y=f[33].value if len(f) > 33 else -1,
+                        ))
+        return out
+
+    def _build_messages(self) -> None:
+        self.messages_by_chapter = {}
+        for chapter_id in chapters.list_chapter_ids(self.project):
+            path = self.profile.mess_path(self.files, chapter_id)
+            try:
+                self.messages_by_chapter[chapter_id] = [(m.speaker, m.text) for m in message.read_messages_path(path)]
+            except Exception:  # noqa: BLE001
+                self.messages_by_chapter[chapter_id] = []
+
+    def _build_chapters(self) -> None:
+        self.chapters = []
+        for chapter_id in chapters.list_chapter_ids(self.project):
+            paths = chapters.chapter_paths(self.project, chapter_id)
+            phases = tuple(chapters.chapter_phases(self.project, chapter_id))
+            units: dict[str, int] = {}
+            first = phases[0] if phases else None
+            for d in self.deployments:
+                if d.folder == first:
+                    units[d.difficulty] = units.get(d.difficulty, 0) + 1
+            self.chapters.append(ChapterInfo(
+                id=chapter_id,
+                title=chapters.chapter_display_title(chapter_id, self.titles),
+                phases=phases,
+                message_count=len(self.messages_by_chapter.get(chapter_id, [])),
+                units_by_difficulty=units,
+                has_script=paths.script is not None,
+                has_map=paths.map is not None,
+                has_deployment=paths.deployment is not None,
+                function_count=self._function_count(paths.script),
+            ))
+        self.by_chapter = {c.id: c for c in self.chapters}
+
+    @staticmethod
+    def _function_count(path) -> int:
+        from .formats.cmb.binary import count_functions
+
+        try:
+            return count_functions(path.read_bytes()) if path is not None else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _build_characters(self) -> None:
+        if self.profile.supports(DATA_TABLES) and not self.profile.supports(GAME_DATA):
+            self._build_fe10_characters()
+            return
+        data = self.project.read_logical("game_data")
+        fe8 = fe8data.read_fe8data(data)
+        classes = {c.jid: c for c in fe8.classes if c.jid}
+        self.class_names = {jid: self.text(c.mjid) for jid, c in classes.items()}
+        self.item_names = {it.iid: self.text(it.miid) for it in fe8.items if it.iid}
+        faces = self._read_faces()
+        battle_models = self._read_battle_models()
+        map_folders = self._read_map_folders()
+
+        def class_name(jid: Optional[str]) -> str:
+            entry = classes.get(jid)
+            return self.text(entry.mjid) if entry else ""
+
+        def promoted(jid: Optional[str]) -> Optional[str]:
+            entry = classes.get(jid)
+            return entry.promotes_to if entry and entry.promotes_to != jid else None
+
+        # tutorial records borrow real portraits (the tutorial heron uses Reyson's), and some
+        # characters have two MPIDs with the same displayed name (MPID_DARKKNIGHT/MPID_BLACKKNIGHT),
+        # so a portrait counts as shared only across distinct, non-empty displayed names outside the
+        # tutorial
+        def is_tutorial(mpid: Optional[str]) -> bool:
+            return (mpid or "").startswith("MPID_TUT_")
+
+        fid_names: dict[str, set] = {}
+        for c in fe8.characters:
+            name = self.text(c.mpid)
+            if c.fid and name and not is_tutorial(c.mpid):
+                fid_names.setdefault(c.fid, set()).add(name)
+
+        first_by_mpid: dict[str, str] = {}
+        records = []
+        for c in fe8.characters:
+            if not c.pid:
+                continue
+            key = c.mpid or c.pid
+            main = first_by_mpid.setdefault(key, c.pid)
+            # A portrait shared by several names is a generic soldier's, unless the record levels up
+            # on the player side (no retail generic does): a renamed copy of Boyd keeps both playable.
+            shared_face = len(fid_names.get(c.fid, ())) > 1 and sum(c.fixed_growth_start) == 0
+            if c.fid is None or shared_face or (c.mpid or "").endswith("DUMMY") or is_tutorial(c.mpid):
+                category = GENERIC
+            # 0x49-0x50 are the fixed-mode level-up accumulators (fe8data.CharacterEntry.fixed_growth_start);
+            # only units that level up on the player side have them
+            # non-zero, while bosses also have growth rates
+            elif sum(c.fixed_growth_start) > 0:
+                category = PLAYABLE
+            else:
+                category = NAMED
+            pro = promoted(c.jid)
+            face = faces.get(c.fid) if c.fid else None
+            records.append(dict(
+                index=c.index, pid=c.pid, mpid=c.mpid, name=self.text(c.mpid), fid=c.fid, jid=c.jid,
+                class_name=class_name(c.jid), promoted_jid=pro, promoted_class_name=class_name(pro),
+                aid_unpromoted=c.aid_unpromoted, aid_promoted=c.aid_promoted,
+                portrait_file=face.filename if face else None,
+                battle_model=_zu(zdbx.battle_model_for(battle_models, c.jid, c.pid, c.aid_unpromoted) if c.jid else None),
+                promoted_battle_model=_zu(zdbx.battle_model_for(battle_models, pro, c.pid, c.aid_promoted) if pro else None),
+                map_model=_ymu(map_folders.get(c.aid_unpromoted or (classes[c.jid].aid if c.jid in classes else None))),
+                promoted_map_model=_ymu(map_folders.get(c.aid_promoted or (classes[pro].aid if pro in classes else None))),
+                category=category, main_pid=main,
+                promotes=(category == PLAYABLE and pro is not None
+                          and fe8data.class_category(classes[c.jid], fe8.classes) == "Unpromoted"),
+            ))
+        variants: dict[str, list[str]] = {}
+        for r in records:
+            if r["main_pid"] != r["pid"]:
+                variants.setdefault(r["main_pid"], []).append(r["pid"])
+        self.characters = [CharacterInfo(**r, variants=tuple(variants.get(r["pid"], ()))) for r in records]
+        self.by_pid = {c.pid: c for c in self.characters}
+
+    def _build_fe10_characters(self) -> None:
+        """Build the shared character index from RD's decoded FE10Data tables.
+
+        Deployments and model registries are deliberately optional until their later parity phases;
+        the shared Characters page can still provide names, portraits, classes, variants and links.
+        """
+        db = fe10data.read_fe10data(self.project.read_logical("game_data"))
+        classes = {r.values.get("jid"): r for r in db.classes if r.values.get("jid")}
+        self.class_names = {jid: self.text(r.values.get("mjid")) for jid, r in classes.items()}
+        self.item_names = {r.values.get("iid"): self.text(r.values.get("miid"))
+                           for r in db.items if r.values.get("iid")}
+        faces = {}
+        face_path = self.files / "Face" / "facedata.bin"
+        try:
+            faces = {r.fid: r for r in read_fe10_face_data(face_path.read_bytes())}
+        except (OSError, ValueError, IndexError):
+            pass
+
+        map_folders: dict[str, str] = {}
+        battle_rows: list[tuple[str | None, str | None, str | None, str]] = []
+        try:
+            animations = fe10_anim.read_fe10_anim(self.project.read_logical("anim_data"))
+            map_folders = {
+                header.aid_name: animations.models[header.model_index].folder
+                for header in animations.headers
+            }
+            battle = fe10_battle.read_fe10_battle(self.project.read_logical("battle_data"))
+            units = {dict(record.strings).get(0): dict(record.strings).get(4, "")
+                     for record in battle.table("FE10BUnit").records}
+            for record in battle.table("FE10BAnimData").records:
+                strings = dict(record.strings)
+                model = units.get(strings.get(12))
+                if model:
+                    battle_rows.append((strings.get(0), strings.get(4), strings.get(8), model))
+        except (OSError, ValueError, IndexError, KeyError):
+            pass
+
+        def battle_model(aid: str | None, pid: str | None, jid: str | None) -> str | None:
+            for position, value in ((0, aid), (1, pid), (2, jid)):
+                if value:
+                    match = next((row[3] for row in battle_rows if row[position] == value), None)
+                    if match:
+                        return _zu(match)
+            return None
+
+        first_by_name: dict[str, str] = {}
+        playable_names = _fe10_playable_name_keys(db.characters, db.table("support"))
+        records = []
+        for r in db.characters:
+            v = r.values
+            pid = v.get("pid")
+            if not pid:
+                continue
+            mpid, fid, jid = v.get("mpid"), v.get("fid"), v.get("jid")
+            main = first_by_name.setdefault(mpid or pid, pid)
+            cls = classes.get(jid)
+            promoted_jid = cls.values.get("promotes_to") if cls else None
+            if promoted_jid == jid:
+                promoted_jid = None
+            generic = (not mpid or not fid or "DUMMY" in (mpid or "") or "ZAKO" in pid
+                       or "GENERIC" in pid or "TUTORIAL" in pid)
+            category = (PLAYABLE if (mpid or pid) in playable_names else
+                        GENERIC if generic else NAMED)
+            face = faces.get(fid)
+            aid_1, aid_2 = v.get("aid_1"), v.get("aid_2")
+            class_aid = cls.values.get("aid") if cls else None
+            promoted_class = classes.get(promoted_jid)
+            promoted_class_aid = promoted_class.values.get("aid") if promoted_class else None
+            records.append(dict(
+                index=r.index, pid=pid, mpid=mpid, name=self.text(mpid), fid=fid, jid=jid,
+                class_name=self.class_names.get(jid, ""), promoted_jid=promoted_jid,
+                promoted_class_name=self.class_names.get(promoted_jid, ""),
+                aid_unpromoted=aid_1, aid_promoted=aid_2,
+                portrait_file=face.filename if face else None,
+                battle_model=battle_model(aid_1, pid, jid),
+                promoted_battle_model=battle_model(aid_2, pid, promoted_jid),
+                map_model=_ymu(map_folders.get(aid_1 or class_aid)),
+                promoted_map_model=_ymu(map_folders.get(aid_2 or promoted_class_aid)),
+                category=category, main_pid=main,
+                promotes=bool(promoted_jid),
+            ))
+        variants: dict[str, list[str]] = {}
+        for record in records:
+            if record["main_pid"] != record["pid"]:
+                variants.setdefault(record["main_pid"], []).append(record["pid"])
+        self.characters = [CharacterInfo(**r, variants=tuple(variants.get(r["pid"], ()))) for r in records]
+        self.by_pid = {c.pid: c for c in self.characters}
+
+    def _read_faces(self) -> dict:
+        try:
+            packed = lz10.decompress(self.profile.path(self.files, "system_archive").read_bytes())
+            for entry in pak.read_pak_entries(packed):
+                if entry.name.replace("\\", "/").casefold() == "face/facedata.bin":
+                    # The portrait editors change the loose copy; the build copies it into system.cmp.
+                    loose = self.files / entry.name
+                    return read_face_table(loose.read_bytes() if loose.is_file()
+                                           else pak.read_pak_file_content(packed, entry))
+        except Exception:  # noqa: BLE001
+            pass
+        return {}
+
+    def _read_battle_models(self) -> dict[str, str]:
+        try:
+            tables = dict(zdbx.read_zdbx_files(self.profile.path(self.files, "battle_data").read_bytes()))
+            return zdbx.job_list_models(tables[zdbx.JOB_LIST].decode("shift_jis"))
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _read_map_folders(self) -> dict[str, str]:
+        """Base AID -> ymu folder name."""
+        try:
+            records = anim_registry.read_anim_registry_path(self.profile.path(self.files, "anim_data"))
+        except Exception:  # noqa: BLE001
+            return {}
+        return {r.base_aid: r.class_folder.rstrip("/") for r in records}
+
+    def _build_message_refs(self) -> None:
+        by_face: dict[str, list[str]] = {}
+        by_speaker: dict[str, list[str]] = {}
+        for c in self.characters:
+            if c.fid:
+                by_face.setdefault(c.fid, []).append(c.pid)
+            by_speaker.setdefault(c.pid.removeprefix("PID_"), []).append(c.pid)
+        refs: dict[str, list[MessageRef]] = {}
+        for chapter_id, messages in self.messages_by_chapter.items():
+            for msg_id, text in messages:
+                hits: dict[str, str] = {}
+                if self.profile.message_dialect == "fe10":
+                    for name, how in _fe10_message_cast_hits(text).items():
+                        fid = name if name.startswith("FID_") else "FID_" + name
+                        for pid in by_face.get(fid) or by_face.get(_TRAILING_DIGITS_RE.sub("", fid)) or ():
+                            # Speaker is the more useful description when the same actor is also shown.
+                            if how == "speaker" or pid not in hits:
+                                hits[pid] = how
+                else:
+                    for name in _PORTRAIT_CODE_RE.findall(text):
+                        fid = "FID_" + name
+                        for pid in by_face.get(fid) or by_face.get(_TRAILING_DIGITS_RE.sub("", fid)) or ():
+                            hits.setdefault(pid, "portrait")
+                    for name in _SPEAKER_CODE_RE.findall(text):
+                        for pid in by_speaker.get(name, ()):
+                            hits.setdefault(pid, "speaker")
+                for pid, how in hits.items():
+                    refs.setdefault(pid, []).append(MessageRef(chapter_id, msg_id, how))
+        self.message_refs = refs
+
+    # -- queries --------------------------------------------------------------
+    def main_characters(self, category: Optional[str] = None) -> list[CharacterInfo]:
+        return [c for c in self.characters
+                if c.main_pid == c.pid and (category is None or c.category == category)]
+
+    def family(self, pid: str) -> list[CharacterInfo]:
+        """The record and every other record sharing its name key."""
+        info = self.by_pid.get(pid)
+        if info is None:
+            return []
+        main = self.by_pid.get(info.main_pid, info)
+        return [main] + [self.by_pid[p] for p in main.variants if p in self.by_pid]
+
+    def deployments_of(self, pids) -> list[Deployment]:
+        wanted = set(pids)
+        return [d for d in self.deployments if d.pid in wanted]
+
+    def cast(self, folder: str, difficulty: str) -> list[Deployment]:
+        return [d for d in self.deployments if d.folder == folder and d.difficulty == difficulty]
+
+    def messages_of(self, pids) -> list[MessageRef]:
+        out = []
+        for pid in pids:
+            out.extend(self.message_refs.get(pid, ()))
+        return sorted(set(out), key=lambda r: (self.profile.chapter_sort_key(r.chapter_id), r.message_id))
+
+    def script_refs_of(self, pids) -> list[ScriptRef]:
+        """Scripts pushing one of these PIDs or their name keys (MPID_)."""
+        refs = self._ensure_script_refs()
+        labels = set(pids) | {self.by_pid[p].mpid for p in pids if p in self.by_pid and self.by_pid[p].mpid}
+        out = []
+        for label in labels:
+            out.extend(refs.get(label, ()))
+        return sorted(set(out), key=lambda r: (self.profile.chapter_sort_key(r.chapter_id), r.function))
+
+    def script_functions(self, chapter_id: str) -> list[tuple[str, int]]:
+        """``(function name, trigger type)`` of a chapter script, named as the
+        decompiler names them."""
+        self._ensure_script_refs()
+        return self._script_functions.get(chapter_id, [])
+
+    def _ensure_script_refs(self) -> dict[str, list[ScriptRef]]:
+        with self._lock:
+            if self._script_refs is None:
+                self._script_refs = self._read_script_refs()
+            return self._script_refs
+
+    def _read_script_refs(self) -> dict[str, list[ScriptRef]]:
+        from .formats.cmb.binary import read_cmb_path
+        from .formats.cmb.decompiler import _Names
+
+        refs: dict[str, list[ScriptRef]] = {}
+        self._script_functions = {}
+        for chapter_id in chapters.list_chapter_ids(self.project):
+            path = self.profile.script_path(self.files, chapter_id)
+            if not path.exists():
+                continue
+            try:
+                script = read_cmb_path(path)
+                names = _saved_source_names(self.project, path, len(script.functions)) or _Names(script).defs
+                pool_text = _pool_text(script)
+            except Exception:  # noqa: BLE001
+                continue
+            self._script_functions[chapter_id] = [(names[i], fn.type) for i, fn in enumerate(script.functions)]
+            # characters named by a trigger (@on_talk, @on_battle, @on_death...) and not pushed by its code
+            for i, fn in enumerate(script.functions):
+                for label in _trigger_labels(script, fn, pool_text):
+                    if label.startswith(("PID_", "MPID_")):
+                        refs.setdefault(label, []).append(ScriptRef(chapter_id, names[i], label))
+            for i, fn in enumerate(script.functions):
+                for instr in fn.code:
+                    for operand in getattr(instr, "operands", ()):
+                        if isinstance(operand, str) and operand.startswith(("PID_", "MPID_")):
+                            refs.setdefault(operand, []).append(ScriptRef(chapter_id, names[i], operand))
+        return {label: list(dict.fromkeys(found)) for label, found in refs.items()}
+
+
+def _pool_text(script) -> dict:
+    """String-pool offset -> text of a script (what trigger parameters point to)."""
+    from .formats.cmb.binary import _pool_layout
+    _size, offsets = _pool_layout(script)
+    text = {}
+    for value, offset in offsets.items():
+        text.setdefault(offset, value)
+    return text
+
+
+def _trigger_labels(script, fn, pool_text: dict) -> list:
+    """The label parameters (``pid1``, ``pid2``, ``pid``, ``mpid``...) of a function's trigger."""
+    from .formats.cmb.catalog import triggers
+    kind = triggers("fe9").get(fn.type)
+    if kind is None or fn.type == 0 or len(fn.params) != len(kind.params):
+        return []
+    return [pool_text[value] for spec, value in zip(kind.params, fn.params)
+            if spec.kind in ("pid", "mpid") and value and value in pool_text]
+
+
+def _saved_source_names(project, path: Path, count: int) -> Optional[list]:
+    """The function names of the script's saved source (``script_sources/<name>.fe9s``, written by the
+    Script tab's Save) when it still compiles to the file, so the index names functions as the Script
+    tab does (``TutorialGuardTalk``, not ``func_29``). None: no matching saved source."""
+    from . import script_sources
+    from .formats.cmb import compile_source, write_cmb
+    from .formats.cmb.binary import read_cmb
+    from .formats.cmb import source_tools
+
+    sidecar = script_sources.sidecar_path(project, path)
+    if not sidecar.is_file():
+        return None
+    try:
+        text = sidecar.read_text(encoding="utf-8")
+        data = path.read_bytes()
+        if write_cmb(compile_source(text, base=read_cmb(data)).script) != data:
+            return None
+        names = [span.name for span in source_tools.function_spans(text)]
+    except Exception:  # noqa: BLE001 - a stale or broken source: fall back to the decompiler's names
+        return None
+    return names if len(names) == count else None
+
+
+def _zu(code: Optional[str]) -> Optional[str]:
+    return f"zu/{code}" if code else None
+
+
+def _ymu(folder: Optional[str]) -> Optional[str]:
+    return f"ymu/{folder}" if folder else None

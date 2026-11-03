@@ -1,0 +1,833 @@
+"""Game Data › Flags: the named on/off switches event scripts remember things with
+(``formats/event_flags.py``; 96 on Path of Radiance, 128 on Radiant Dawn), in three sub-tabs.
+
+* **Campaign flags** - the engine's eight ``gf_*`` flags and the ones
+  ``startup.cmb`` registers in ``RegistGlobalFlags``. New ones are appended
+  (or a reserved slot renamed), so saves keep their meaning.
+* **Chapter flags** - what one chapter's ``Startup`` registers, where each is
+  used, and how many slots are left. New ones are appended after the last
+  registration.
+* **Save file** - Path of Radiance names and edits the flags of a ``.gci``
+  block here. Radiant Dawn's verified 128-bit BMST bank is edited by stable
+  slot number in Tools › Saves.
+
+Adding a flag rewrites the script right away (compiled onto the current
+``.cmb``, source kept in ``script_sources/``). The Script tab of a chapter
+shows the change the next time the file is opened there, and a file with
+unsaved edits in that tab is left alone."""
+
+from __future__ import annotations
+
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Optional
+
+from ... import chapters, flag_excel, script_sources
+from ...exceptions import ProjectError
+from ...game_profile import EXTENDED_FLAGS, SAVES, profile_of
+from ...formats import event_flags as ef
+from ...formats.extended_flags import HUB_ALIASES, MANIFEST_NAME
+from ...formats.cmb import CompileError, compile_source, read_cmb
+from ...formats.cmb.parser import ParseError, parse
+from .chapters import open_script
+from .. import theme
+from ..widgets import info
+
+TABS = {"campaign": "Campaign flags", "chapter": "Chapter flags", "save": "Save file"}
+ON, OFF = "☑", "☐"
+
+
+class FlagsPanel(ttk.Frame):
+    """The Flags tab of Game Data (a panel, not a page: the Game Data page hosts it)."""
+
+    def __init__(self, parent: tk.Misc, shell):
+        super().__init__(parent, style="Page.TFrame")
+        self.shell = shell
+        self.table = ef.flag_table(profile_of(shell.project).script_dialect)
+        slots = self.table.slot_count
+        head = ttk.Frame(self, style="Page.TFrame", padding=(8, 8, 8, 4))
+        head.pack(fill="x")
+        actions = ttk.Frame(head, style="Page.TFrame")
+        actions.pack(anchor="w", pady=(0, 6))
+        ttk.Button(actions, text="Export Excel…", command=self._export_excel).pack(side="left")
+        ttk.Button(actions, text="Import Excel…", command=self._import_excel).pack(side="left", padx=(6, 0))
+        info(actions, f"Scripts remember things (a chest opened, a character recruited) in {slots} named on/off "
+                      "flags. Campaign flags last the whole playthrough; chapter flags last one chapter. A save "
+                      "stores flags by slot, so a flag's meaning in a save is its slot: new flags are "
+                      f"always added after the existing ones. The engine's table has {slots} slots, so there can "
+                      "be no more in the vanilla bank. Verified extended projects have separate campaign and "
+                      "chapter banks; new flags default to Extended. Extended renames keep their slot, and "
+                      "deleting an unused flag reserves its slot permanently.\n\nGrey rows: slots the engine registers itself (0-7) or reserved and unused "
+                      "ones. The Excel workbook holds the campaign and chapter registrations; existing slots stay "
+                      "fixed. A save's flags are edited in Tools › Saves.").pack(side="left", padx=(10, 0))
+        self._notebook = ttk.Notebook(self)
+        self._notebook.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self._campaign = _CampaignTab(self._notebook, self)
+        self._chapter = _ChapterTab(self._notebook, self)
+        tabs = [("campaign", self._campaign), ("chapter", self._chapter)]
+        self._save = None  # a save's flags are edited in Tools › Saves
+        self._tab_keys = [key for key, _tab in tabs]
+        for key, tab in tabs:
+            self._notebook.add(tab, text=TABS[key])
+        self._tab = "campaign"
+        self._budget: Optional[dict] = None  # chapter id -> chapter flag count, from a background scan
+        self._scan_running = False
+        self._titles: Optional[dict] = None
+        self._layout = None
+
+    @property
+    def project(self):
+        return self.shell.project
+
+    def show_sub(self, route_tail: tuple) -> None:
+        """Select a sub-tab (``route_tail``: ``(tab[, chapter id])``) and refresh."""
+        tab = route_tail[0] if route_tail and route_tail[0] in self._tab_keys else self._tab
+        self._tab = tab
+        self._notebook.select(self._tab_keys.index(tab))
+        if tab == "chapter" and len(route_tail) > 1:
+            self._chapter.select(route_tail[1])
+        self.refresh()
+
+    def refresh(self) -> None:
+        from ...game_code.extended_flag_installation import inspect_project, RuntimeState
+        previous = self._layout
+        self._layout = None
+        if (self.project.directory / MANIFEST_NAME).exists():
+            status = inspect_project(self.project)
+            if status.state == RuntimeState.MATCHING:
+                self._layout = status.layout
+        if previous != self._layout:
+            self._budget = None
+        self._campaign.refresh()
+        self._chapter.refresh()
+        self._scan_budget()
+
+    def index_changed(self) -> None:
+        self._chapter.fill_chapters()
+
+    # -- shared services ------------------------------------------------------------------
+    def edit_extended_flag(self, name, chapter=None, *, delete=False):
+        if self._layout is None or self._layout.find(name, chapter) is None:
+            messagebox.showinfo("Extended flag", "Select an extended flag to rename or delete.", parent=self)
+            return
+        editor = self.script_editor()
+        if editor is not None and editor.dirty:
+            messagebox.showwarning("Unsaved script", "Save or revert the open script before editing flags.", parent=self)
+            return
+        new_name = None
+        if not delete:
+            new_name = _ask_name(self, "Rename extended flag", "New name (the saved slot stays the same):", [name])
+            if new_name is None:
+                return
+        try:
+            from ...extended_project import prepare_flag_edit
+            from ...extended_hub import commit_project_update
+            update = prepare_flag_edit(self.project, name, chapter=chapter, new_name=new_name)
+            commit_project_update(self.project, update)
+            if editor is not None:
+                for change in update.changes:
+                    editor.reload_if_open(change.path)
+            self.shell.changelog.append("Flags", f"Retired {name}" if delete else f"Renamed {name} to {new_name}")
+            self._budget = None
+            self.refresh()
+        except (OSError, ValueError, ProjectError, CompileError, ParseError) as exc:
+            messagebox.showerror("Could not edit flag", str(exc), parent=self)
+
+    def add_banked_flag(self, name, scope, chapter, storage):
+        editor = self.script_editor()
+        if editor is not None and editor.dirty:
+            messagebox.showwarning("Unsaved script", "Save or revert the open script before adding flags.", parent=self)
+            return
+        try:
+            from ...extended_project import prepare_flag_add
+            from ...extended_hub import commit_project_update
+            update = prepare_flag_add(self.project, name, scope, chapter=chapter, storage=storage.lower())
+            commit_project_update(self.project, update)
+            for change in update.changes:
+                if editor is not None:
+                    editor.reload_if_open(change.path)
+            self.shell.changelog.append("Flags", f"Added {storage.lower()} {scope} flag {name}")
+            self._budget = None
+            self.refresh()
+        except (OSError, ValueError, ProjectError, CompileError) as exc:
+            messagebox.showerror("Could not add flag", str(exc), parent=self)
+
+    def global_flags(self) -> list[str]:
+        """The project's global flags (engine flags first), from its startup.cmb."""
+        path = script_sources.startup_path(self.project)
+        try:
+            return ef.global_flags(parse(script_sources.peek(self.project, path)), self.table)
+        except (OSError, ValueError, ParseError, ProjectError):
+            return ef.global_flags_vanilla(self.table)
+
+    def _registration_data(self) -> tuple[list[str], dict[str, list[str]]]:
+        startup = script_sources.startup_path(self.project)
+        campaign = ef.global_flags(parse(script_sources.peek(self.project, startup)), self.table)
+        chapter_flags = {}
+        for chapter_id in chapters.list_chapter_ids(self.project):
+            path = script_sources.chapter_script(self.project, chapter_id)
+            if path is not None:
+                chapter_flags[chapter_id] = ef.local_flags(parse(script_sources.peek(self.project, path)))
+        return campaign, chapter_flags
+
+    def _export_excel(self) -> None:
+        path = filedialog.asksaveasfilename(parent=self, title="Export flags", defaultextension=".xlsx",
+                                            filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            campaign, chapter_flags = self._registration_data()
+            flag_excel.export_flags(path, campaign, chapter_flags, layout=self._layout)
+        except (OSError, ValueError, ParseError, ProjectError) as exc:
+            messagebox.showerror("Could not export flags", str(exc), parent=self)
+
+    def _import_excel(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Import flags",
+                                          filetypes=(("Excel workbook", "*.xlsx"),))
+        if not path:
+            return
+        try:
+            campaign, chapter_flags = self._registration_data()
+            if self._layout is not None:
+                layout, additions = flag_excel.plan_banked_import(path, campaign, chapter_flags, self._layout)
+                editor = self.script_editor()
+                if editor is not None and editor.dirty:
+                    messagebox.showwarning("Unsaved script", "Save or revert the open script before importing flags.", parent=self)
+                    return
+                sources = {}
+                for group, names in additions.items():
+                    if not names:
+                        continue
+                    script_path = (script_sources.startup_path(self.project) if group == "campaign" else
+                                   script_sources.chapter_script(self.project, group))
+                    source = script_sources.peek(self.project, script_path)
+                    for name in names:
+                        source = ef.append_registration(source, "RegistGlobalFlags" if group == "campaign" else "Startup",
+                                                        "global" if group == "campaign" else "regist", name)
+                    sources[script_path] = source
+                if not sources:
+                    messagebox.showinfo("Import flags", "This workbook contains no new flags.", parent=self)
+                    return
+                from ...extended_project import prepare_runtime_update
+                from ...extended_hub import commit_project_update
+                update = prepare_runtime_update(self.project, layout, sources)
+                commit_project_update(self.project, update)
+                if editor is not None:
+                    for script_path in sources:
+                        editor.reload_if_open(script_path)
+                self.shell.changelog.append("Flags", f"Imported flags into {len(sources)} scripts")
+                self._budget = None
+                self.refresh()
+                return
+            additions, errors = flag_excel.plan_flag_import(
+                path, campaign, chapter_flags, self.table.slot_count, ef.check_flag_name)
+            if errors:
+                messagebox.showerror("Excel import has errors", "\n".join(errors[:30]), parent=self)
+                return
+            changes = []
+            if additions["campaign"]:
+                changes.append((script_sources.startup_path(self.project), "RegistGlobalFlags",
+                                "global", additions["campaign"]))
+            for chapter_id in chapter_flags:
+                if additions[chapter_id]:
+                    changes.append((script_sources.chapter_script(self.project, chapter_id),
+                                    "Startup", "regist", additions[chapter_id]))
+            if not changes:
+                messagebox.showinfo("Import flags", "This workbook contains no new flags.", parent=self)
+                return
+            editor = self.script_editor()
+            if editor is not None and editor.dirty and any(editor.current_path == item[0] for item in changes):
+                messagebox.showwarning("Unsaved script", "Save or revert the open script before importing flags.",
+                                       parent=self)
+                return
+            # Compile every changed script before writing the first one.
+            imported_globals = campaign + additions["campaign"]
+            for script_path, entry, native, names in changes:
+                source = script_sources.peek(self.project, script_path)
+                for name in names:
+                    source = ef.append_registration(source, entry, native, name)
+                context = script_sources.CompileContext.for_script(self.project, script_path, source)
+                compile_source(source, base=read_cmb(script_path.read_bytes()),
+                               known_script_functions=context.helpers, global_flags=imported_globals)
+            changed = 0
+            for script_path, entry, native, names in changes:
+                def add_names(source, entry=entry, native=native, names=names):
+                    for name in names:
+                        source = ef.append_registration(source, entry, native, name)
+                    return source
+                if not self.edit_script(script_path, add_names, f"Imported {len(names)} flags from Excel"):
+                    messagebox.showwarning("Flag import stopped",
+                                           f"Updated {changed} script(s) before an error stopped the import.",
+                                           parent=self)
+                    return
+                changed += 1
+            messagebox.showinfo("Import flags", f"Imported flags into {changed} script(s).", parent=self)
+        except CompileError as exc:
+            errors = [str(d) for d in exc.diagnostics if d.severity == "error"]
+            messagebox.showerror("Could not import flags", "\n".join(errors[:8]), parent=self)
+        except (OSError, ValueError, ParseError, ProjectError) as exc:
+            messagebox.showerror("Could not import flags", str(exc), parent=self)
+
+    def chapter_title(self, chapter_id: str) -> str:
+        index = self.shell.index
+        if index is not None and chapter_id in index.by_chapter:
+            return index.by_chapter[chapter_id].title
+        if self._titles is None:  # no chapter index for this game yet: the titles alone
+            try:
+                self._titles = chapters.chapter_titles(self.project)
+            except Exception:  # noqa: BLE001 - titles are cosmetic
+                self._titles = {}
+        return chapters.chapter_display_title(chapter_id, self._titles) if self._titles else f"Chapter {chapter_id}"
+
+    def edit_script(self, path: Path, transform, what: str) -> bool:
+        """Rewrite ``path``'s source with ``transform`` and save it. Refuses when
+        the Script tab holds unsaved edits of the same file."""
+        editor = self.script_editor()
+        if editor is not None and editor.current_path == path and editor.dirty:
+            messagebox.showwarning(
+                "Unsaved script", f"{path.name} has unsaved changes in the Script tab. Save or revert them first.",
+                parent=self)
+            return False
+        try:
+            loaded = script_sources.load(self.project, path)
+            new_source = transform(loaded.source)
+            result = script_sources.save(self.project, loaded, new_source)
+        except CompileError as e:
+            errors = [str(d) for d in e.diagnostics if d.severity == "error"]
+            messagebox.showerror("Could not update the script", "\n".join(errors[:8]), parent=self)
+            return False
+        except (OSError, ValueError, ParseError) as exc:
+            messagebox.showerror("Could not update the script", str(exc), parent=self)
+            return False
+        self.shell.changelog.append(path.name, what)
+        flag_warnings = [str(d) for d in result.warnings if "flag" in d.message or "slot" in d.message]
+        if flag_warnings:
+            messagebox.showwarning("Saved with warnings", "\n".join(flag_warnings[:6]), parent=self)
+        if editor is not None:
+            editor.reload_if_open(path)
+        self._budget = None
+        self.refresh()
+        return True
+
+    def open_in_script_editor(self, path: Path, function: Optional[str] = None,
+                              chapter_id: Optional[str] = None) -> None:
+        """Show ``path`` in a chapter's Script tab (startup.cmb opens in the
+        current or first chapter's)."""
+        open_script(self.shell, path, function, chapter_id)
+
+    def script_editor(self):
+        """The open script editor: a chapter page's Script tab, else Assets › Scripts' (Radiant Dawn)."""
+        page = self.shell.existing_page("chapter")
+        editor = getattr(page, "_script", None) if page is not None else None
+        if editor is None:
+            assets = self.shell.existing_page("asset")
+            panel = getattr(assets, "_panels", {}).get("scripts") if assets is not None else None
+            editor = getattr(panel, "editor", None)
+        return editor
+
+    # -- chapter budget scan ----------------------------------------------------------------
+    def budget(self) -> Optional[dict]:
+        return self._budget
+
+    def _scan_budget(self) -> None:
+        if self._budget is not None or self._scan_running:
+            return
+        self._scan_running = True
+        project = self.project
+        ids = chapters.list_chapter_ids(project)
+        layout = self._layout
+        result: dict = {}
+
+        def work():
+            for chapter_id in ids:
+                path = script_sources.chapter_script(project, chapter_id)
+                if path is None:
+                    continue
+                try:
+                    names = ef.local_flags(parse(script_sources.peek(project, path)))
+                    result[chapter_id] = len(layout.vanilla_names(names, "chapter", int(chapter_id)) if layout else names)
+                except Exception:  # noqa: BLE001 - one broken script shouldn't stop the scan
+                    continue
+
+        def done():
+            self._scan_running = False
+            if layout != self._layout:
+                self._budget = None
+                self._scan_budget()
+                return
+            self._budget = result
+            self._campaign.refresh_budget()
+
+        thread = threading.Thread(target=lambda: (work(), self.after(0, done)), daemon=True)
+        thread.start()
+
+
+def _tree(parent: tk.Misc, columns: dict, height: int = 12) -> ttk.Treeview:
+    frame = ttk.Frame(parent)
+    frame.pack(fill="both", expand=True, pady=(6, 6))
+    tree = ttk.Treeview(frame, columns=list(columns), show="headings", selectmode="browse", height=height)
+    for key, (title, width, stretch) in columns.items():
+        tree.heading(key, text=title)
+        tree.column(key, width=width, stretch=stretch, anchor="w")
+    scroll = ttk.Scrollbar(frame, command=tree.yview)
+    tree.configure(yscrollcommand=scroll.set)
+    scroll.pack(side="right", fill="y")
+    tree.pack(side="left", fill="both", expand=True)
+    tree.tag_configure("muted", foreground=theme.color("muted"))
+    return tree
+
+
+def _ask_name(parent: tk.Misc, title: str, prompt: str, taken, initial: str = "") -> Optional[str]:
+    while True:
+        name = simpledialog.askstring(title, prompt, initialvalue=initial, parent=parent)
+        if name is None:
+            return None
+        name = name.strip()
+        problem = ef.check_flag_name(name, taken)
+        if problem is None:
+            return name
+        messagebox.showerror(title, f"Can't use this name: {problem}.", parent=parent)
+        initial = name
+
+
+class _CampaignTab(ttk.Frame):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
+        super().__init__(parent, padding=12)
+        self._page = page
+        bar = ttk.Frame(self)
+        bar.pack(side="bottom", fill="x")
+        info(bar, "Registered once at power-on: slots 0-7 by the engine, the rest by RegistGlobalFlags in "
+                  "startup.cmb. Any chapter can set, clear or test them with set(\"name\"), clr(\"name\"), "
+                  "get(\"name\"). Each campaign flag takes one slot away from every chapter.").pack(
+            side="right", padx=(6, 0))
+        ttk.Button(bar, text="Add campaign flag…", command=self._add).pack(side="left")
+        self._storage = tk.StringVar(value="Extended")
+        self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
+        extended = profile_of(page.project).supports(EXTENDED_FLAGS)
+        if extended:
+            self._bank.pack(side="left", padx=(6, 0))
+        self._rename_button = ttk.Button(bar, text="Rename reserved slot…", command=self._rename, state="disabled")
+        self._rename_button.pack(side="left", padx=(6, 0))
+        if extended:
+            ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+            ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(
+                side="left", padx=(6, 0))
+        ttk.Button(bar, text="Open startup.cmb in the Script editor",
+                   command=self._open_startup).pack(side="left", padx=(6, 0))
+        self._budget = ttk.Label(bar, style="Muted.TLabel")
+        self._budget.pack(side="right")
+        self._tree = _tree(self, {"bank": ("Storage", 80, False), "slot": ("Slot", 60, False), "name": ("Name", 280, False),
+                                  "meaning": ("Meaning", 360, True), "source": ("Registered by", 150, False)})
+        self._tree.bind("<<TreeviewSelect>>", lambda e: self._sync_buttons())
+        self._tree.bind("<Double-1>", lambda e: self._rename() if self._rename_button.instate(["!disabled"]) else None)
+        self._flags: list[str] = []
+        self._sites: list[ef.Registration] = []
+
+    def refresh(self) -> None:
+        project = self._page.project
+        path = script_sources.startup_path(project)
+        try:
+            module = parse(script_sources.peek(project, path))
+            self._sites = ef.registration_sites(module, "RegistGlobalFlags", "global")
+        except (OSError, ValueError, ParseError, ProjectError):
+            self._sites = []
+        table = self._page.table
+        engine = table.engine_flags
+        self._flags = list(engine) + [s.name for s in self._sites]
+        self._tree.delete(*self._tree.get_children())
+        layout = self._page._layout
+        if layout and str(self._bank.cget("state")) != "readonly":
+            self._storage.set("Extended")
+        elif layout is None:
+            self._storage.set("Vanilla")
+        self._bank.configure(state="readonly" if layout else "disabled")
+        seen = set()
+        vanilla_slot = 0
+        for slot, name in enumerate(self._flags):
+            if slot < len(engine):
+                meaning, source = table.glosses.get(name, ""), "engine"
+            else:
+                meaning = table.glosses.get(name, "")
+                if name == table.reserved_global:
+                    meaning = "Reserved, unused" + (" (and unreachable by name)" if name in seen else "")
+                source = "startup.cmb"
+            seen.add(name)
+            tags = ("muted",) if name == table.reserved_global or slot < len(engine) else ()
+            assigned = layout.find(name) if layout else None
+            bank = "Hub" if layout and name in HUB_ALIASES else "Extended" if assigned else "Vanilla"
+            actual_slot = assigned.slot if assigned else ".".join(map(str, HUB_ALIASES[name])) if bank == "Hub" else vanilla_slot
+            if bank == "Vanilla":
+                vanilla_slot += 1
+            self._tree.insert("", "end", iid=str(slot), values=(bank, actual_slot, name, meaning, source), tags=tags)
+        self.refresh_budget()
+        self._sync_buttons()
+
+    def refresh_budget(self) -> None:
+        budget = self._page.budget()
+        layout = self._page._layout
+        used = len(layout.vanilla_names(self._flags, "campaign") if layout else self._flags)
+        extended = f" · Extended: {layout.remaining('campaign')} free" if layout else ""
+        slots = self._page.table.slot_count
+        if not budget:
+            self._budget.config(text=f"{used} of {slots} vanilla slots{extended} · counting chapter flags…")
+            return
+        chapter_id, most = max(budget.items(), key=lambda kv: kv[1])
+        free = slots - used - most - 1
+        self._budget.config(
+            text=f"{used} of {slots} slots · busiest chapter: {self._page.chapter_title(chapter_id)} with {most} "
+                 f"chapter flags · {free} slot(s) to spare{extended}", style="Muted.TLabel" if free > 0 else "Warn.TLabel")
+
+    def _selected_slot(self) -> Optional[int]:
+        sel = self._tree.selection()
+        return int(sel[0]) if sel else None
+
+    def _edit_extended(self, *, delete=False):
+        slot = self._selected_slot()
+        if slot is not None:
+            self._page.edit_extended_flag(self._flags[slot], delete=delete)
+
+    def _sync_buttons(self) -> None:
+        slot = self._selected_slot()
+        table = self._page.table
+        renamable = (slot is not None and slot >= len(table.engine_flags) and table.reserved_global is not None
+                     and self._flags[slot] == table.reserved_global)
+        self._rename_button.configure(state="normal" if renamable else "disabled")
+
+    def _add(self) -> None:
+        name = _ask_name(self, "Add campaign flag",
+                         "Name of the new campaign flag (it is added at the end of RegistGlobalFlags):", self._flags)
+        if name is None:
+            return
+        if self._page._layout is not None:
+            self._page.add_banked_flag(name, "campaign", None, self._storage.get())
+            return
+        budget = self._page.budget() or {}
+        most = max(budget.values(), default=0)
+        problem = ef.capacity_problem(len(self._flags) + 1, most, self._page.table.slot_count)
+        if problem and not messagebox.askyesno("Table nearly full", f"{problem}.\n\nAdd it anyway?", parent=self):
+            return
+        self._page.edit_script(script_sources.startup_path(self._page.project),
+                               lambda src: ef.append_registration(src, "RegistGlobalFlags", "global", name),
+                               f"Added campaign flag {name}")
+
+    def _rename(self) -> None:
+        slot = self._selected_slot()
+        engine = self._page.table.engine_flags
+        if slot is None or slot < len(engine):
+            return
+        site = self._sites[slot - len(engine)]
+        name = _ask_name(self, "Rename reserved slot",
+                         f"New name for slot {slot} (unused in vanilla, so no save depends on it):", self._flags)
+        if name is None:
+            return
+        self._page.edit_script(script_sources.startup_path(self._page.project),
+                               lambda src: ef.rename_registration(src, site, site.name, name),
+                               f"Renamed campaign flag slot {slot} to {name}")
+
+    def _open_startup(self) -> None:
+        self._page.open_in_script_editor(script_sources.startup_path(self._page.project), "RegistGlobalFlags")
+
+
+class _ChapterTab(ttk.Frame):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
+        super().__init__(parent, padding=12)
+        self._page = page
+        top = ttk.Frame(self)
+        top.pack(fill="x")
+        ttk.Label(top, text="Chapter").pack(side="left")
+        self._chapter_var = tk.StringVar()
+        self._combo = ttk.Combobox(top, textvariable=self._chapter_var, state="readonly", width=48)
+        self._combo.pack(side="left", padx=(6, 12))
+        self._combo.bind("<<ComboboxSelected>>", lambda e: self.refresh())
+        self._summary = ttk.Label(top, style="Muted.TLabel")
+        self._summary.pack(side="left")
+        info(top, f"Registered by the chapter's Startup, from slot {page.table.slot_count - 1} downward, and "
+                  "cleared when the next chapter starts. Talk, battle and base-conversation events use a flag "
+                  "named by their label to run only once.").pack(side="left", padx=(8, 0))
+        bar = ttk.Frame(self)
+        bar.pack(side="bottom", fill="x")
+        ttk.Button(bar, text="Add chapter flag…", command=self._add).pack(side="left")
+        self._storage = tk.StringVar(value="Extended")
+        self._bank = ttk.Combobox(bar, textvariable=self._storage, values=("Extended", "Vanilla"), width=10, state="disabled")
+        extended = profile_of(page.project).supports(EXTENDED_FLAGS)
+        if extended:
+            self._bank.pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Open in the Script editor", command=self._open).pack(side="left", padx=(6, 0))
+        if extended:
+            ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
+            ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(
+                side="left", padx=(6, 0))
+        self._tree = _tree(self, {"bank": ("Storage", 80, False), "slot": ("Slot", 60, False), "name": ("Name", 260, False),
+                                  "where": ("Registered in", 170, False), "uses": ("Used by", 420, True)})
+        self._tree.bind("<Double-1>", lambda e: self._open())
+        self._choices: list[tuple[str, str]] = []  # (label, chapter id)
+        self._sites: list[ef.Registration] = []
+        self._chapter_id: Optional[str] = None
+
+    def fill_chapters(self) -> None:
+        project = self._page.project
+        ids = [c for c in chapters.list_chapter_ids(project) if script_sources.chapter_script(project, c)]
+        self._choices = [(f"{c} · {self._page.chapter_title(c)}", c) for c in ids]
+        self._combo.configure(values=[label for label, _c in self._choices])
+        if self._chapter_id not in ids:
+            self._chapter_id = ids[0] if ids else None
+        self._chapter_var.set(next((label for label, c in self._choices if c == self._chapter_id), ""))
+
+    def select(self, chapter_id: str) -> None:
+        self._chapter_id = chapter_id
+        self.fill_chapters()
+
+    def refresh(self) -> None:
+        layout = self._page._layout
+        if layout and str(self._bank.cget("state")) != "readonly":
+            self._storage.set("Extended")
+        elif layout is None:
+            self._storage.set("Vanilla")
+        self._bank.configure(state="readonly" if layout else "disabled")
+        if not self._choices:
+            self.fill_chapters()
+        picked = dict(self._choices).get(self._chapter_var.get())
+        if picked:
+            self._chapter_id = picked
+        self._tree.delete(*self._tree.get_children())
+        self._sites = []
+        path = script_sources.chapter_script(self._page.project, self._chapter_id) if self._chapter_id else None
+        if path is None:
+            self._summary.config(text="No script for this chapter.")
+            return
+        try:
+            module = parse(script_sources.peek(self._page.project, path))
+        except (OSError, ValueError, ParseError) as exc:
+            self._summary.config(text=f"Could not read {path.name}: {exc}")
+            return
+        self._sites = ef.registration_sites(module, "Startup", "regist")
+        uses = ef.flag_uses(module)
+        globals_ = self._page.global_flags()
+        count = self._page.table.slot_count
+        local_names = [s.name for s in self._sites]
+        if layout:
+            globals_ = layout.vanilla_names(globals_, "campaign")
+            local_names = layout.vanilla_names(local_names, "chapter", int(self._chapter_id))
+        slots = ef.slot_names(globals_, local_names, count)
+        # Registration i lands in the i-th filled slot counting down from the top (none if the table is full).
+        positions = [n for n in range(count - 1, len(globals_) - 1, -1) if slots[n] is not None]
+        vanilla_index = 0
+        for i, site in enumerate(self._sites):
+            users = sorted({f"{fn} ({kind})" for fn, kind in uses.get(site.name, [])
+                            if not (fn == site.function and kind == "regist")})
+            assigned = layout.find(site.name, int(self._chapter_id)) if layout else None
+            slot = assigned.slot if assigned else positions[vanilla_index] if vanilla_index < len(positions) else "none"
+            if not assigned:
+                vanilla_index += 1
+            self._tree.insert("", "end", iid=str(i), values=("Extended" if assigned else "Vanilla", slot, site.name, site.function, ", ".join(users) or "—"),
+                              tags=() if users else ("muted",))
+        summary = self._capacity_text(len(globals_), len(local_names))
+        if layout:
+            summary += f" · Extended: {layout.remaining('chapter', int(self._chapter_id))} free"
+        self._summary.config(text=summary)
+
+    def _capacity_text(self, global_count: int, local_count: int) -> str:
+        count = self._page.table.slot_count
+        free = count - global_count - local_count - 1
+        problem = ef.capacity_problem(global_count, local_count, count)
+        if problem:
+            return problem
+        return f"{local_count} chapter flags · {global_count} campaign flags · {free} slot(s) free"
+
+    def _edit_extended(self, *, delete=False):
+        selection = self._tree.selection()
+        if selection and self._chapter_id:
+            self._page.edit_extended_flag(self._sites[int(selection[0])].name,
+                                          int(self._chapter_id), delete=delete)
+
+    def _add(self) -> None:
+        if not self._chapter_id:
+            return
+        path = script_sources.chapter_script(self._page.project, self._chapter_id)
+        if path is None:
+            return
+        taken = [s.name for s in self._sites] + self._page.global_flags()
+        name = _ask_name(self, "Add chapter flag",
+                         f"Name of the new flag for chapter {self._chapter_id} (added after the last "
+                         "registration in Startup):", taken)
+        if name is None:
+            return
+        if self._page._layout is not None:
+            self._page.add_banked_flag(name, "chapter", int(self._chapter_id), self._storage.get())
+            return
+        problem = ef.capacity_problem(len(self._page.global_flags()), len(self._sites) + 1,
+                                      self._page.table.slot_count)
+        if problem:
+            messagebox.showerror("Table full", f"{problem}.", parent=self)
+            return
+        self._page.edit_script(path, lambda src: ef.append_registration(src, "Startup", "regist", name),
+                               f"Added chapter flag {name}")
+
+    def _open(self) -> None:
+        if not self._chapter_id:
+            return
+        path = script_sources.chapter_script(self._page.project, self._chapter_id)
+        if path is None:
+            return
+        sel = self._tree.selection()
+        function = self._sites[int(sel[0])].function if sel else "Startup"
+        self._page.open_in_script_editor(path, function, self._chapter_id)
+
+
+class _SaveTab(ttk.Frame):
+    def __init__(self, parent: tk.Misc, page: FlagsPanel):
+        super().__init__(parent, padding=12)
+        self._page = page
+        top = ttk.Frame(self)
+        top.pack(fill="x")
+        ttk.Button(top, text="Open save file…", command=self._open).pack(side="left")
+        self._file_label = ttk.Label(top, text="No save open (.gci, as exported by Dolphin or GCMM).",
+                                     style="Muted.TLabel")
+        self._file_label.pack(side="left", padx=(10, 0))
+        row = ttk.Frame(self)
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Label(row, text="Save block").pack(side="left")
+        self._block_var = tk.StringVar()
+        self._block_box = ttk.Combobox(row, textvariable=self._block_var, state="readonly", width=70)
+        self._block_box.pack(side="left", padx=(6, 12))
+        self._block_box.bind("<<ComboboxSelected>>", lambda e: self._show_block())
+        self._only_set = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row, text="Only named or set flags", variable=self._only_set,
+                        command=self._show_block).pack(side="left")
+        ttk.Label(self, style="Muted.TLabel", wraplength=980, justify="left",
+                  text="Double-click a flag (or press Space) to switch it. Chapter flags are named from the "
+                       "script of the block's map. Keep the game closed while you overwrite a save it uses."
+                  ).pack(anchor="w", pady=(8, 0))
+        bar = ttk.Frame(self)
+        bar.pack(side="bottom", fill="x")
+        self._save_button = ttk.Button(bar, text="Save", command=self._save, state="disabled")
+        self._save_button.pack(side="left")
+        self._save_as_button = ttk.Button(bar, text="Save as…", command=self._save_as, state="disabled")
+        self._save_as_button.pack(side="left", padx=(6, 0))
+        self._status = ttk.Label(bar, style="Muted.TLabel")
+        self._status.pack(side="left", padx=(12, 0))
+        self._tree = _tree(self, {"on": ("Set", 50, False), "slot": ("Slot", 60, False),
+                                  "name": ("Name", 280, False), "meaning": ("Meaning", 420, True)})
+        self._tree.bind("<Double-1>", lambda e: self._toggle())
+        self._tree.bind("<space>", lambda e: self._toggle())
+        self._path: Optional[Path] = None
+        self._data: Optional[bytearray] = None
+        self._blocks: list[ef.SaveBlock] = []
+        self._block: Optional[ef.SaveBlock] = None
+        self._bits: list[bool] = []
+        self._names: list[Optional[str]] = []
+        self._dirty = False
+
+    def _open(self) -> None:
+        if self._dirty and not messagebox.askyesno("Discard changes?", "The open save has unsaved flag changes. "
+                                                   "Discard them?", parent=self):
+            return
+        chosen = filedialog.askopenfilename(title="Open a save file", parent=self,
+                                            filetypes=[("GameCube saves", "*.gci"), ("All files", "*.*")])
+        if not chosen:
+            return
+        try:
+            data = bytearray(Path(chosen).read_bytes())
+        except OSError as exc:
+            messagebox.showerror("Could not open the save", str(exc), parent=self)
+            return
+        blocks = ef.save_blocks(bytes(data))
+        if not blocks:
+            messagebox.showerror("Not a Path of Radiance save", "No save blocks were found in this file.", parent=self)
+            return
+        self._path, self._data, self._blocks, self._dirty = Path(chosen), data, blocks, False
+        self._file_label.config(text=str(self._path))
+        labels = [self._block_label(b) for b in blocks]
+        self._block_box.configure(values=labels)
+        newest = max(range(len(blocks)), key=lambda i: blocks[i].sequence)
+        self._block_var.set(labels[newest])
+        self._show_block()
+
+    @staticmethod
+    def _block_label(b: ef.SaveBlock) -> str:
+        kind = "checkpoint" if b.size == 0x6000 else "file"
+        crc = "" if b.crc_ok else " · CHECKSUM BAD"
+        return f"{kind} @0x{b.offset:05x} · chapter {b.chapter:02d} · sequence {b.sequence} · " \
+               f"kind {b.save_kind} resume {b.resume_point}{crc}"
+
+    def _chapter_names(self, block: ef.SaveBlock) -> list[Optional[str]]:
+        globals_ = self._page.global_flags()
+        locals_: list[str] = []
+        if block.chapter:
+            path = script_sources.chapter_script(self._page.project, f"{block.chapter:02d}")
+            if path is not None:
+                try:
+                    locals_ = ef.local_flags(parse(script_sources.peek(self._page.project, path)))
+                except (OSError, ValueError, ParseError):
+                    pass
+        return ef.slot_names(globals_, locals_)
+
+    def _show_block(self) -> None:
+        if self._data is None:
+            return
+        labels = [self._block_label(b) for b in self._blocks]
+        if self._block_var.get() not in labels:
+            return
+        block = self._blocks[labels.index(self._block_var.get())]
+        if block is not self._block:
+            self._block = block
+            self._bits = ef.read_flag_bits(bytes(self._data), block)
+            self._names = self._chapter_names(block)
+        self._tree.delete(*self._tree.get_children())
+        for slot in range(ef.SLOT_COUNT):
+            name, on = self._names[slot], self._bits[slot]
+            if self._only_set.get() and not on and name is None:
+                continue
+            meaning = ef.FLAG_GLOSSES.get(name or "", "")
+            if name is None:
+                meaning = "No name in this chapter"
+            elif name == ef.RESERVED_GLOBAL:
+                meaning = "Reserved, unused"
+            self._tree.insert("", "end", iid=str(slot), values=(ON if on else OFF, slot, name or "", meaning),
+                              tags=() if name else ("muted",))
+        self._sync()
+
+    def _toggle(self) -> None:
+        sel = self._tree.selection()
+        if not sel or self._block is None:
+            return
+        slot = int(sel[0])
+        self._bits[slot] = not self._bits[slot]
+        self._tree.set(sel[0], "on", ON if self._bits[slot] else OFF)
+        ef.write_flag_bits(self._data, self._block, self._bits)
+        self._dirty = True
+        self._sync()
+
+    def _sync(self) -> None:
+        state = "normal" if self._data is not None else "disabled"
+        self._save_as_button.configure(state=state)
+        self._save_button.configure(state="normal" if self._dirty else "disabled")
+        count = sum(self._bits) if self._bits else 0
+        self._status.config(text=(f"{count} flag(s) set" + (" · unsaved changes" if self._dirty else ""))
+                            if self._block is not None else "")
+
+    def _save(self) -> None:
+        if self._path is not None:
+            self._write(self._path)
+
+    def _save_as(self) -> None:
+        if self._data is None:
+            return
+        chosen = filedialog.asksaveasfilename(title="Save the edited save as", parent=self, defaultextension=".gci",
+                                              initialfile=self._path.name if self._path else "save.gci",
+                                              filetypes=[("GameCube saves", "*.gci")])
+        if chosen:
+            self._write(Path(chosen))
+
+    def _write(self, path: Path) -> None:
+        try:
+            path.write_bytes(bytes(self._data))
+        except OSError as exc:
+            messagebox.showerror("Could not write the save", str(exc), parent=self)
+            return
+        self._path, self._dirty = path, False
+        self._file_label.config(text=str(path))
+        self._page.shell.changelog.append(path.name, "Edited save flags")
+        self._sync()

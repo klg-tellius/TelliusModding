@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tellius Archive">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1f5c78"/><stop offset="1" stop-color="#3f6b4a"/></linearGradient></defs>
+  <rect width="64" height="64" rx="13" fill="url(#g)"/>
+  <path d="M16 15h25a7 7 0 0 1 7 7v27H23a7 7 0 0 1-7-7V15Z" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M24 25h16M24 33h16M24 41h10" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+</svg>

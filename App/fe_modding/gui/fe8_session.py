@@ -1,0 +1,220 @@
+"""One in-memory ``FE8Data.bin`` shared by every view that edits it.
+
+The character page and the Game Data page (classes, items, skills, terrain)
+both patch this file. Each keeping its own copy would let one save silently
+drop the other's edits, so both work on this session: patches go to
+``session.data``, :meth:`changed` tells every other view, and :meth:`save`
+writes once for all of them.
+
+Nothing is lost by switching pages - the edits stay here until saved, and the
+workspace asks about them when the project closes.
+"""
+
+from __future__ import annotations
+
+from typing import Callable, Optional
+
+from ..formats import fe8data, fe10data, item_rules
+from ..game_adapter import PorDataAdapter, RdDataAdapter
+from ..game_profile import DATA_TABLES, GAME_DATA, disc_root_of, sys_root_of
+from ..game_code.dol import Dol
+from ..game_code import item_restrictions as rule_code, versions
+from ..project import ModProject
+from .changelog import ChangeLog
+
+
+class Fe8DataSession:
+    def __init__(self, project: ModProject, changelog: ChangeLog):
+        self.project = project
+        self.changelog = changelog
+        self.path = project.logical_path("game_data")
+        #: the game's own file name for messages ("FE8Data.bin" / "FE10Data.cms")
+        self.file_label = project.profile.file_label("game_data")
+        self.data: bytes = b""
+        self.fe8: Optional[fe8data.Fe8Data] = None
+        self.labels_by_prefix: dict = {}
+        self.dirty = False
+        self._listeners: list[Callable[[object], None]] = []
+        #: run after every save (the workspace re-indexes: records may have been added or removed)
+        self.on_saved: list[Callable[[], None]] = []
+        #: the per-game table operations the shared pages use (game_adapter.py)
+        self.adapter = PorDataAdapter(self)
+        self.load()
+
+    @property
+    def available(self) -> bool:
+        return self.fe8 is not None
+
+    @property
+    def unavailable_reason(self) -> str:
+        """Why :attr:`available` is false, for the pages that show it."""
+        if not self.project.profile.supports(GAME_DATA):
+            return self.project.profile.unavailable(GAME_DATA)
+        return f"{self.file_label} not found. Extract the project first."
+
+    def load(self) -> None:
+        if not self.project.profile.supports(GAME_DATA):
+            return  # no record layouts for this game yet: the file would parse as the wrong game's
+        if self.path.exists():
+            self.data = self.project.read_logical("game_data")
+            self.reparse()
+            self.dirty = False
+
+    def reparse(self) -> None:
+        self.fe8 = fe8data.read_fe8data(self.data)
+        self.labels_by_prefix = fe8data.label_index_by_prefix(self.fe8, self.data)
+
+    def subscribe(self, listener: Callable[[object], None]) -> None:
+        """``listener(source)`` runs after every change or save; ``source``
+        is whoever made it (views skip their own changes)."""
+        self._listeners.append(listener)
+
+    def unsubscribe(self, listener: Callable[[object], None]) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
+    def changed(self, source: object = None) -> None:
+        """Call after patching ``data``: reparses, marks unsaved, notifies."""
+        self.reparse()
+        self.dirty = True
+        self._notify(source)
+
+    def save(self) -> None:
+        """Write the file (keeping the extracted one in ``originals/``). Raises OSError."""
+        rules = item_rules.read_item_rules(self.data)
+        item_rules.validate_item_rules(self.data, rules)
+        dol_path = sys_root_of(self.project) / "main.dol"
+        old_dol = dol_path.read_bytes() if dol_path.is_file() else None
+        patched_dol = None
+        if old_dol is not None:
+            dol = Dol(old_dol)
+            ident = versions.identify(dol, versions.read_boot_code(disc_root_of(self.project)))
+            if ident.version is None:
+                if any(not rule.empty for rule in rules.values()):
+                    raise ValueError(ident.note or "Unsupported FE9 main.dol for item restrictions.")
+            else:
+                if any(not rule.empty for rule in rules.values()):
+                    rule_code.install(dol, ident.version.code)
+                else:
+                    rule_code.uninstall(dol, ident.version.code)
+                if bytes(dol.data) != old_dol:
+                    patched_dol = bytes(dol.data)
+        elif any(not rule.empty for rule in rules.values()):
+            raise ValueError("FE9 main.dol is needed to enforce custom item restrictions.")
+        if patched_dol is not None:
+            self.project.write_keeping_original(dol_path, patched_dol)
+        try:
+            self.project.write_logical("game_data", self.data)
+        except Exception:
+            if patched_dol is not None:
+                dol_path.write_bytes(old_dol)
+            raise
+        self.dirty = False
+        self.changelog.append(self.file_label, "Saved character/class/item/skill/terrain data")
+        self._notify(None)
+        for callback in list(self.on_saved):
+            callback()
+
+    def revert(self) -> None:
+        """Drop every unsaved edit: read the file again and tell every view."""
+        self.load()
+        self._notify(None)
+
+    def character_index(self, pid: str) -> Optional[int]:
+        if self.fe8 is None:
+            return None
+        for c in self.fe8.characters:
+            if c.pid == pid:
+                return c.index
+        return None
+
+    def _notify(self, source: object) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener(source)
+            except Exception:  # noqa: BLE001 - a dead view must not block the others
+                pass
+
+
+class Fe10DataSession:
+    """One in-memory ``FE10Data.cms`` shared by the RD Characters and Game Data pages."""
+
+    def __init__(self, project: ModProject, changelog: ChangeLog):
+        self.project = project
+        self.changelog = changelog
+        self.path = project.logical_path("game_data")
+        self.file_label = project.profile.file_label("game_data")
+        self.data: bytes = b""
+        self.fe8 = None  # compatibility: PoR-only callers can reject this session cleanly
+        self.fe10: Optional[fe10data.Fe10Data] = None
+        self.labels_by_prefix: dict[str, list[str]] = {}
+        self.dirty = False
+        self._listeners: list[Callable[[object], None]] = []
+        self.on_saved: list[Callable[[], None]] = []
+        self.adapter = RdDataAdapter(self)
+        self.load()
+
+    @property
+    def available(self) -> bool:
+        return self.fe10 is not None
+
+    @property
+    def unavailable_reason(self) -> str:
+        if not self.project.profile.supports(DATA_TABLES):
+            return self.project.profile.unavailable(DATA_TABLES)
+        return f"{self.file_label} not found. Extract the project first."
+
+    def load(self) -> None:
+        if not self.project.profile.supports(DATA_TABLES):
+            return
+        if self.path.exists():
+            self.data = self.project.read_logical("game_data")
+            self.reparse()
+            self.dirty = False
+
+    def reparse(self) -> None:
+        self.fe10 = fe10data.read_fe10data(self.data)
+        self.labels_by_prefix = {
+            prefix: fe10data.labels_with_prefix(self.data, prefix)
+            for prefix in ("PID_", "MPID_", "MNPID_", "FID_", "JID_", "SID_", "AID_")
+        }
+
+    def subscribe(self, listener: Callable[[object], None]) -> None:
+        self._listeners.append(listener)
+
+    def unsubscribe(self, listener: Callable[[object], None]) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
+    def changed(self, source: object = None) -> None:
+        self.reparse()
+        self.dirty = True
+        self._notify(source)
+
+    def save(self) -> None:
+        self.project.write_logical("game_data", self.data)
+        self.dirty = False
+        self.changelog.append(self.file_label, "Saved character/class/item/skill and related data")
+        self._notify(None)
+        for callback in list(self.on_saved):
+            callback()
+
+    def revert(self) -> None:
+        self.load()
+        self._notify(None)
+
+    def character_index(self, pid: str) -> Optional[int]:
+        if self.fe10 is None:
+            return None
+        return next((r.index for r in self.fe10.characters if r.values.get("pid") == pid), None)
+
+    def replace(self, data: bytes, source: object = None) -> None:
+        self.data = data
+        self.changed(source)
+
+    def _notify(self, source: object) -> None:
+        for listener in list(self._listeners):
+            try:
+                listener(source)
+            except Exception:  # noqa: BLE001 - a dead view must not block the others
+                pass

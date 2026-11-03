@@ -1,0 +1,12 @@
+FFmpeg (essentials build), v9.0.1
+Source: https://www.gyan.dev/ffmpeg/builds/ (official static Windows build page)
+Direct package: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip
+Upstream project: https://ffmpeg.org
+License: GPL v3 (see LICENSE in this folder)
+
+Only ffmpeg.exe is kept (the original archive also bundles ffplay.exe, ffprobe.exe,
+and HTML docs, none of which this project uses). Used exclusively to decode an
+arbitrary input video (whatever container/codec) into a frame image sequence and a
+WAV audio track - the actual THP-specific encoding (JPEG frame packaging, DSP-ADPCM
+audio, frame chain headers) is this project's own code
+(fe_modding/formats/thp.py), not ffmpeg's.

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 680" role="img" aria-labelledby="title desc">
+<title id="title">From source disc to a playable mod</title>
+<desc id="desc">1 · SOURCE DISC. Your original image. Choose disc image… → Extract. Keep this file for patch comparison.. 2 · PROJECT FILES. The editable working copy. Edit → commit field → named Save. Reopen the record to prove it saved.. 3 · BUILD OUTPUT. A newly packed game image. Build disc / Build and play in Dolphin. Launch this output and test the change.. Saving an editor does not rebuild an older disc image.</desc>
+<rect width="920" height="680" rx="18" fill="#f4f3ec"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="36" font-size="14" fill="#456575" font-weight="600">TELLIUS MODDING · EXPLANATORY DIAGRAM</text>
+<text x="32" y="72" font-size="27" fill="#123c50" font-weight="700">From source disc to a playable mod</text>
+<rect x="32" y="126" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="126" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="152" font-size="14" fill="#26728a" font-weight="700">1 · SOURCE DISC</text>
+<text x="55" y="183" font-size="23" fill="#123c50" font-weight="600">Your original image</text>
+<text x="55" y="213" font-size="19" fill="#243c48" font-weight="400">Choose disc image… → Extract</text>
+<text x="55" y="240" font-size="18" fill="#496557" font-weight="400">Keep this file for patch comparison.</text>
+<path d="M460 265 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="284" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="284" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="310" font-size="14" fill="#26728a" font-weight="700">2 · PROJECT FILES</text>
+<text x="55" y="341" font-size="23" fill="#123c50" font-weight="600">The editable working copy</text>
+<text x="55" y="371" font-size="19" fill="#243c48" font-weight="400">Edit → commit field → named Save</text>
+<text x="55" y="398" font-size="18" fill="#496557" font-weight="400">Reopen the record to prove it saved.</text>
+<path d="M460 423 v12 m-5 -5 l5 5 5 -5" fill="none" stroke="#26728a" stroke-width="2"/>
+<rect x="32" y="442" width="856" height="134" rx="10" fill="#ffffff" stroke="#c7d3ce"/>
+<rect x="32" y="442" width="7" height="134" rx="3" fill="#26728a"/>
+<text x="55" y="468" font-size="14" fill="#26728a" font-weight="700">3 · BUILD OUTPUT</text>
+<text x="55" y="499" font-size="23" fill="#123c50" font-weight="600">A newly packed game image</text>
+<text x="55" y="529" font-size="19" fill="#243c48" font-weight="400">Build disc / Build and play in Dolphin</text>
+<text x="55" y="556" font-size="18" fill="#496557" font-weight="400">Launch this output and test the change.</text>
+<text x="32" y="626" font-size="18" fill="#123c50" font-weight="600">Saving an editor does not rebuild an older disc image.</text>
+</g></svg>

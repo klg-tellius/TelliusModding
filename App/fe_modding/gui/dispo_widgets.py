@@ -1,0 +1,147 @@
+"""Form pieces shared by the Deployment and Build tabs for the deployment
+bytes that are not plain numbers or labels: the unit flags (field 38), the
+per-item flags (fields 40-47), the army (field 37) and a section's header
+(its ``GroupData`` army, the occupied-tile byte and the mode byte).
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+from pathlib import Path
+from tkinter import messagebox, ttk
+from typing import Optional
+
+from ..formats import dispo, fe8data
+from ..game_profile import PATH_OF_RADIANCE_PROFILE
+from .widgets import tip
+
+
+class FlagChecks(ttk.Frame):
+    """One checkbox per bit of ``bits`` (``(mask, label, help)`` rows).
+    :meth:`value` returns ``original`` with those bits set or cleared, so
+    bits the list doesn't name are kept."""
+
+    def __init__(self, parent: tk.Misc, original: int, bits, *, columns: int = 1, show_help: bool = False):
+        super().__init__(parent)
+        self._original = int(original)
+        self._vars: dict[int, tk.BooleanVar] = {}
+        self._cells: dict[int, ttk.Frame] = {}
+        for i, (mask, label, help_text) in enumerate(bits):
+            var = tk.BooleanVar(value=bool(self._original & mask))
+            self._vars[mask] = var
+            cell = ttk.Frame(self)
+            self._cells[mask] = cell
+            cell.grid(row=i // columns, column=i % columns, sticky="w", padx=(0, 8))
+            check = ttk.Checkbutton(cell, text=label, variable=var)
+            check.pack(anchor="w")
+            if not show_help:
+                tip(check, help_text)
+            else:
+                ttk.Label(cell, text=help_text, style="Muted.TLabel", wraplength=340,
+                          justify="left").pack(anchor="w", padx=(22, 0))
+
+    def set_visible(self, mask: int, visible: bool) -> None:
+        """Show or hide one checkbox; a hidden one keeps its value."""
+        cell = self._cells.get(mask)
+        if cell is not None:
+            cell.grid() if visible else cell.grid_remove()
+
+    def value(self) -> int:
+        value = self._original
+        for mask, var in self._vars.items():
+            value = (value | mask) if var.get() else (value & ~mask)
+        return value
+
+
+def faction_choices() -> list[str]:
+    return [f"{k} {name}" for k, name in dispo.FACTION_NAMES.items()]
+
+
+def faction_text(value: int) -> str:
+    return f"{value} {dispo.FACTION_NAMES[value]}" if value in dispo.FACTION_NAMES else str(value)
+
+
+def parse_leading_int(text: str) -> int:
+    """``"3 Partner"`` -> 3; also plain numbers (``"0x10"`` too)."""
+    token = text.strip().split(" ", 1)[0]
+    return int(token, 0)
+
+
+def read_group_keys(files_root: Path) -> list[Optional[str]]:
+    """The project's ``GroupData`` keys, or an empty list when unreadable."""
+    try:
+        return fe8data.read_group_keys(PATH_OF_RADIANCE_PROFILE.path(files_root, "game_data").read_bytes())
+    except Exception:  # noqa: BLE001 - a broken FE8Data.bin just leaves numbers
+        return []
+
+
+def group_choices(keys: list[Optional[str]]) -> list[str]:
+    return [fe8data.group_label(i, keys) for i in range(max(len(keys), 1))]
+
+
+def group_text(value: int, keys: list[Optional[str]]) -> str:
+    return fe8data.group_label(value, keys) if keys or value == 0 else str(value)
+
+
+class SectionHeaderFrame(ttk.Frame):
+    """Army, occupied-tile and mode controls for one section header."""
+
+    def __init__(self, parent: tk.Misc, header: dispo.SectionHeader, keys: list[Optional[str]]):
+        super().__init__(parent)
+        self._keys = keys
+        tip(ttk.Label(self, text="Army"), "The army name every unit of the section joins, as the army list shows it "
+                                          "(0 keeps each unit's current one).").grid(
+            row=0, column=0, sticky="w", pady=2, padx=(0, 6))
+        self._group = tk.StringVar(value=group_text(header.group, keys))
+        ttk.Combobox(self, textvariable=self._group, values=group_choices(keys), width=28).grid(
+            row=0, column=1, sticky="w", pady=2)
+        self._occupied = tk.BooleanVar(value=bool(header.occupied_ok))
+        self._occupied_raw = header.occupied_ok
+        tip(ttk.Checkbutton(self, text="Place units even on occupied tiles", variable=self._occupied),
+            "Off: a unit whose tile is taken goes to the nearest free tile.").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(6, 2))
+        # The mode byte is 4 on every vanilla section: it tells the reader that the
+        # occupied-tile and army bytes follow. It is kept as it is, not edited.
+        self._mode = header.mode
+
+    def header(self) -> dispo.SectionHeader:
+        """The edited header; raises ValueError on bad input."""
+        try:
+            group = parse_leading_int(self._group.get())
+            mode = self._mode
+        except ValueError:
+            raise ValueError("Pick an army from the list.") from None
+        occupied = (self._occupied_raw or 1) if self._occupied.get() else 0
+        header = dispo.SectionHeader(mode, occupied, group)
+        for value in (header.mode, header.group):
+            if not 0 <= value <= 255:
+                raise ValueError(f"{value} is outside 0..255.")
+        return header
+
+
+class SectionDialog(tk.Toplevel):
+    """Edit a unit section's header; ``result`` is the new header or None."""
+
+    def __init__(self, parent: tk.Misc, section_name: str, header: dispo.SectionHeader, keys):
+        super().__init__(parent)
+        self.title(f"Section {section_name}")
+        self.resizable(False, False)
+        self.result: Optional[dispo.SectionHeader] = None
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        self._form = SectionHeaderFrame(frame, header, keys)
+        self._form.pack(anchor="w")
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Apply", command=self._apply).pack(side="right", padx=(0, 6))
+        self.transient(parent)
+        self.grab_set()
+
+    def _apply(self) -> None:
+        try:
+            self.result = self._form.header()
+        except ValueError as exc:
+            messagebox.showerror("Section", str(exc), parent=self)
+            return
+        self.destroy()

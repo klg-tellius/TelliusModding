@@ -1,0 +1,497 @@
+"""Every map's props in one list, with a 3D preview of the selected one.
+
+Shared by the Game Data page's **Map Objects** tab (browse, export) and the
+Build tab's **Add from another map...** dialog (pick a prop to copy into the
+open chapter map). The catalog is ``map_props.prop_catalog()``, read on a
+worker thread the first time the browser is shown (each ``map.cmp`` is
+decompressed once and cached until it changes on disk). It reflects the
+saved maps: unsaved edits of an open chapter don't show until saved."""
+
+from __future__ import annotations
+
+import queue
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Callable, Optional
+
+from .. import chapters, map_props, mesh_reduce
+from ..formats import map_file
+from . import map_scene
+from .editor_panel import EditorPanel
+from .model_viewer import _ModelPreview
+from .widgets import info
+from ..game_profile import disc_root_of
+
+ALL_MAPS = "All maps"
+COLUMNS = (("map", "Map", 150), ("name", "Object", 190), ("placed", "Placed", 60), ("tiles", "Tiles", 60),
+           ("height", "Height", 60), ("kind", "Kind", 110))
+LIST_WIDTH = sum(column[2] for column in COLUMNS) + 24
+PREVIEW_MIN_WIDTH = 320
+
+
+def _kind(info: map_props.PropInfo) -> str:
+    obj = info.obj
+    if (obj.flag_bits_b >> 2) & 7:
+        return "Goal marker"
+    if obj.effect_type:
+        return "Animated, effect" if info.animated else "Effect"
+    return "Animated" if info.animated else "Static"
+
+
+class PropBrowser(ttk.Frame):
+    """Search box, map filter, the props table and a 3D preview.
+    ``on_activate(info)`` runs on a double-click; ``exclude`` leaves one
+    map (the one being edited) out of the list."""
+
+    def __init__(self, parent: tk.Misc, project, exclude: Optional[Path] = None,
+                 on_activate: Optional[Callable[[map_props.PropInfo], None]] = None,
+                 on_select: Optional[Callable[[Optional[map_props.PropInfo]], None]] = None) -> None:
+        super().__init__(parent)
+        self._project = project
+        self._exclude = Path(exclude) if exclude is not None else None
+        self._on_activate = on_activate
+        self._on_select = on_select
+        self._props: list[map_props.PropInfo] = []
+        self._rows: dict[str, map_props.PropInfo] = {}
+        self._sort = ("map", False)
+        self._scanning = False
+        self._loaded_path: Optional[Path] = None
+        self._loaded_files: dict[str, bytes] = {}
+        self._titles: dict[str, str] | None = None
+        self._sash_initialized = False
+        self._build_widgets()
+        self.bind("<Map>", lambda e: self._first_show(), add="+")
+
+    # -- layout ------------------------------------------------------------------------
+    def _build_widgets(self) -> None:
+        bar = ttk.Frame(self, padding=(0, 0, 0, 6))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Search").pack(side="left")
+        self._search = tk.StringVar()
+        self._search.trace_add("write", lambda *_: self._fill())
+        ttk.Entry(bar, textvariable=self._search, width=24).pack(side="left", padx=(6, 12))
+        ttk.Label(bar, text="Map").pack(side="left")
+        self._map_var = tk.StringVar(value=ALL_MAPS)
+        self._map_combo = ttk.Combobox(bar, textvariable=self._map_var, state="readonly", width=40, values=[ALL_MAPS])
+        self._map_combo.pack(side="left", padx=(6, 12))
+        self._map_combo.bind("<<ComboboxSelected>>", lambda e: self._fill())
+        self._unique = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bar, text="One row per name", variable=self._unique, command=self._fill).pack(side="left")
+        ttk.Button(bar, text="Rescan", command=self.scan).pack(side="right")
+        self._status = ttk.Label(bar, text="", style="Muted.TLabel")
+        self._status.pack(side="right", padx=(0, 10))
+
+        self._paned = paned = ttk.PanedWindow(self, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+        paned.bind("<Configure>", self._initialize_sash, add="+")
+        left = ttk.Frame(paned)
+        paned.add(left, weight=1)
+        ttk.Label(left, text="Select an object", style="Subtitle.TLabel").pack(anchor="w", pady=(0, 4))
+        self._tree = ttk.Treeview(left, columns=[c[0] for c in COLUMNS], show="headings", selectmode="browse")
+        for key, title, width in COLUMNS:
+            self._tree.heading(key, text=title, command=lambda k=key: self._sort_by(k))
+            self._tree.column(key, width=width, stretch=key == "name",
+                              anchor="w" if key in ("map", "name", "kind") else "e")
+        ybar = ttk.Scrollbar(left, orient="vertical", command=self._tree.yview)
+        self._tree.configure(yscrollcommand=ybar.set)
+        ybar.pack(side="right", fill="y")
+        self._tree.pack(side="left", fill="both", expand=True)
+        self._tree.bind("<<TreeviewSelect>>", lambda e: self._selected_changed())
+        self._tree.bind("<Double-1>", lambda e: self._activate())
+
+        right = ttk.Frame(paned)
+        paned.add(right, weight=1)
+        self._preview = _ModelPreview(right)
+        self._preview.pack(fill="both", expand=True)
+        # a prop is looked at as it stands on the map: animated, without its bones drawn over it
+        # ("Show skeleton" brings them back)
+        self._preview.set_show_skeleton(False)
+        self._preview.show(None, "Select a prop to preview it.")
+
+    # -- catalog -----------------------------------------------------------------------
+    def _initialize_sash(self, event) -> None:
+        """Set the initial split once the paned window has a real width."""
+        if self._sash_initialized or event.width <= 1:
+            return
+        preview_width = min(PREVIEW_MIN_WIDTH, event.width // 2)
+        self._paned.sashpos(0, min(LIST_WIDTH, event.width - preview_width))
+        self._sash_initialized = True
+
+    def _first_show(self) -> None:
+        if not self._props and not self._scanning:
+            self.scan()
+
+    def scan(self) -> None:
+        if self._scanning:
+            return
+        self._scanning = True
+        self._status.configure(text="Reading maps...")
+        results: "queue.Queue" = queue.Queue()
+        extracted = disc_root_of(self._project)
+
+        def worker() -> None:
+            try:
+                props = map_props.prop_catalog(extracted, progress=lambda done, total: results.put(("progress", done, total)))
+                results.put(("done", props))
+            except Exception as exc:  # noqa: BLE001
+                results.put(("error", exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self.after(100, lambda: self._poll(results))
+
+    def _poll(self, results: "queue.Queue") -> None:
+        if not self.winfo_exists():
+            return
+        while True:
+            try:
+                message = results.get_nowait()
+            except queue.Empty:
+                self.after(100, lambda: self._poll(results))
+                return
+            if message[0] == "progress":
+                self._status.configure(text=f"Reading maps... {message[1]}/{message[2]}")
+                continue
+            self._scanning = False
+            if message[0] == "error":
+                self._status.configure(text=f"Could not read the maps: {message[1]}")
+                return
+            self._set_props(message[1])
+            return
+
+    def _map_label(self, map_name: str) -> str:
+        if self._titles is None:
+            self._titles = chapters.chapter_titles(self._project)
+        chapter = chapters.chapter_of_map_folder(map_name)
+        return f"{map_name} · {chapters.chapter_display_title(chapter, self._titles)}" if chapter else map_name
+
+    def _set_props(self, props: list[map_props.PropInfo]) -> None:
+        self._props = [p for p in props if self._exclude is None or p.path != self._exclude]
+        maps = list(dict.fromkeys(p.map_name for p in self._props))
+        self._map_labels = {self._map_label(m): m for m in maps}
+        self._map_combo.configure(values=[ALL_MAPS, *self._map_labels])
+        if self._map_var.get() not in self._map_labels:
+            self._map_var.set(ALL_MAPS)
+        self._fill()
+
+    def _visible(self) -> list[map_props.PropInfo]:
+        text = self._search.get().strip().lower()
+        wanted = self._map_labels.get(self._map_var.get()) if self._map_var.get() != ALL_MAPS else None
+        props = [p for p in self._props if (wanted is None or p.map_name == wanted) and (not text or text in p.name.lower())]
+        if self._unique.get():
+            props = list({p.name: p for p in reversed(props)}.values())[::-1]
+        key, reverse = self._sort
+        getters = {
+            "map": lambda p: (p.map_name, p.name), "name": lambda p: (p.name, p.map_name),
+            "placed": lambda p: p.instances, "tiles": lambda p: p.footprint[0] * p.footprint[1],
+            "height": lambda p: p.obj.size_y - p.obj.offset_y, "kind": _kind,
+        }
+        return sorted(props, key=getters[key], reverse=reverse)
+
+    def _fill(self) -> None:
+        if not hasattr(self, "_map_labels"):
+            return
+        previous = self.selected()
+        self._tree.delete(*self._tree.get_children())
+        self._rows = {}
+        visible = self._visible()
+        selected_row = None
+        for info in visible:
+            w, d = info.footprint
+            row = self._tree.insert("", "end", values=(
+                info.map_name, info.name, info.instances, f"{w}×{d}", f"{(info.obj.size_y - info.obj.offset_y) / 5:.1f}",
+                _kind(info)))
+            self._rows[row] = info
+            if previous is not None and (info.path, info.name) == (previous.path, previous.name):
+                selected_row = row
+        if selected_row is None and visible:
+            selected_row = next(iter(self._rows))
+        if selected_row is not None:
+            self._tree.selection_set(selected_row)
+            self._tree.see(selected_row)
+        maps = len({p.map_name for p in self._props})
+        self._status.configure(text=f"{len(visible)} of {len(self._props)} props, {maps} maps")
+
+    def _sort_by(self, key: str) -> None:
+        self._sort = (key, not self._sort[1] if self._sort[0] == key else key in ("placed", "tiles", "height"))
+        self._fill()
+
+    # -- selection ---------------------------------------------------------------------
+    def selected(self) -> Optional[map_props.PropInfo]:
+        selection = self._tree.selection()
+        return self._rows.get(selection[0]) if selection else None
+
+    def files_of(self, info: map_props.PropInfo) -> dict[str, bytes]:
+        """The unpacked ``map.cmp`` holding ``info`` (the last one is kept)."""
+        if info.path != self._loaded_path:
+            _entries, self._loaded_files = map_props.read_map_container(info.path)
+            self._loaded_path = info.path
+        return self._loaded_files
+
+    def _selected_changed(self) -> None:
+        info = self.selected()
+        if self._on_select is not None:
+            self._on_select(info)
+        if info is None:
+            self._preview.show(None, "Select a prop to preview it.")
+            return
+        try:
+            files = self.files_of(info)
+            data = map_file.read_map_bytes(files["map.bin"])
+            loaded = map_scene.load_map_prop(files, data, info.name, label=f"{info.map_name}/{info.name}")
+        except Exception as exc:  # noqa: BLE001
+            self._preview.show(None, f"Could not load {info.name}: {exc}")
+            return
+        self._preview.show(loaded, "No model data.")
+        self._preview.play_first_animation()
+
+    def _activate(self) -> None:
+        info = self.selected()
+        if info is not None and self._on_activate is not None:
+            self._on_activate(info)
+
+    def export_selected(self) -> None:
+        info = self.selected()
+        if info is None:
+            return
+        target = filedialog.asksaveasfilename(title="Export prop", defaultextension=".glb", initialfile=f"{info.name}.glb",
+                                              filetypes=[("glTF binary", "*.glb")], parent=self)
+        if not target:
+            return
+        try:
+            Path(target).write_bytes(map_props.export_prop_glb(self.files_of(info), info.name))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not export", str(exc), parent=self)
+
+    def cleanup(self) -> None:
+        self._preview.cleanup()
+
+
+class MapObjectsPanel(EditorPanel):
+    """Game Data › Map Objects: every map's props, with the selected prop's
+    definition (bounds and flags) edited in its saved map, or in every map
+    holding the same prop."""
+
+    def __init__(self, parent: tk.Misc, project, changelog=None) -> None:
+        super().__init__(parent, style="Page.TFrame", padding=(12, 10))
+        self._project = project
+        self._changelog = changelog
+        self._info: Optional[map_props.PropInfo] = None
+        top = ttk.Frame(self, style="Page.TFrame")
+        top.pack(fill="x", pady=(0, 6))
+        self._export = ttk.Button(top, text="Export .glb...", state="disabled", command=lambda: self.browser.export_selected())
+        self._export.pack(side="left")
+        self._import = ttk.Button(top, text="Import .glb...", state="disabled", command=self._import_glb)
+        self._import.pack(side="left", padx=(6, 0))
+        info(top, "Every prop of every chapter map. To use one on another map, open that chapter's Build tab, "
+                  "choose Place prop and Add from another map...").pack(side="left", padx=(10, 0))
+        self._form = ttk.LabelFrame(self, text="Object definition (affects every placement of it on the map)", padding=8)
+        self._form.pack(side="bottom", fill="x", pady=(8, 0))
+        self._build_form(self._form)
+        self.browser = PropBrowser(self, project, on_select=self._selected)
+        self.browser.pack(fill="both", expand=True)
+
+    def _build_form(self, frame: ttk.Frame) -> None:
+        self._vars: dict[str, tk.StringVar] = {}
+        for column, (title, keys) in enumerate((("Origin offset (x, y, z)", ("offset_x", "offset_y", "offset_z")),
+                                                ("Size (x, y, z)", ("size_x", "size_y", "size_z")))):
+            ttk.Label(frame, text=title).grid(row=column, column=0, sticky="w", padx=(0, 8))
+            for k, key in enumerate(keys):
+                self._vars[key] = tk.StringVar()
+                ttk.Entry(frame, textvariable=self._vars[key], width=9).grid(row=column, column=1 + k, sticky="w", padx=2)
+        self._toggles = []
+        flags = ttk.Frame(frame)
+        flags.grid(row=0, column=5, rowspan=5, sticky="nw", padx=(18, 0))
+        for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+            group = ttk.LabelFrame(flags, text=title, padding=5)
+            group.grid(row=0, column=column, sticky="nw", padx=(0, 6))
+            for row, (mask, label) in enumerate(controls):
+                var = tk.BooleanVar()
+                ttk.Checkbutton(group, text=label, variable=var).grid(row=row, column=0, sticky="w")
+                self._toggles.append((field, mask, var))
+        self._everywhere = tk.BooleanVar(value=False)
+        self._everywhere_check = ttk.Checkbutton(frame, text="Also in the other maps with the same prop",
+                                                 variable=self._everywhere)
+        self._everywhere_check.grid(row=2, column=0, columnspan=5, sticky="w", pady=(6, 0))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=3, column=0, columnspan=6, sticky="w", pady=(6, 0))
+        self._apply_button = ttk.Button(buttons, text="Apply", command=self._apply, state="disabled")
+        self._apply_button.pack(side="left")
+        self._form_status = ttk.Label(buttons, text="", style="Muted.TLabel")
+        self._form_status.pack(side="left", padx=(10, 0))
+        info(buttons, "Sizes are in world units (5 per tile). Written to the saved map.cmp at once; a chapter "
+                      "open with unsaved Build edits would overwrite this when saved, so save or discard it first. "
+                      "The map's model, textures and placements are not touched.").pack(side="left", padx=(10, 0))
+
+    def _selected(self, prop: Optional[map_props.PropInfo]) -> None:
+        self._info = prop
+        self._export.configure(state="normal" if prop is not None else "disabled")
+        if hasattr(self, "_import"):
+            self._import.configure(state="normal" if prop is not None else "disabled")
+        self._apply_button.configure(state="normal" if prop is not None else "disabled")
+        if prop is None:
+            for var in self._vars.values():
+                var.set("")
+            for _field, _mask, var in self._toggles:
+                var.set(False)
+            self._form_status.configure(text="Select an object above.")
+            return
+        obj = prop.obj
+        for key in map_props.PROP_FIELDS[:6]:
+            value = getattr(obj, key)
+            self._vars[key].set(f"{value:g}")
+        for field, mask, var in self._toggles:
+            var.set(bool(getattr(obj, field) & mask))
+        self._form_status.configure(text=f"{prop.map_name}/{prop.name}")
+
+    def _changes(self) -> dict:
+        obj = self._info.obj
+        values = {}
+        for key in map_props.PROP_FIELDS[:6]:
+            text = self._vars[key].get().strip()
+            values[key] = float(text)
+        for field, _title, _controls in map_props.PROP_FLAG_GROUPS:
+            values[field] = 0
+        for field, mask, var in self._toggles:
+            if var.get():
+                values[field] |= mask
+        return {k: v for k, v in values.items() if v != getattr(obj, k)}
+
+    def _apply(self) -> None:
+        prop = self._info
+        if prop is None:
+            return
+        try:
+            changes = self._changes()
+        except ValueError as exc:
+            messagebox.showerror("Map Objects", f"Not a number: {exc}", parent=self)
+            return
+        if not changes:
+            self._form_status.configure(text="Nothing changed.")
+            return
+        paths = [prop.path]
+        if self._everywhere.get():
+            paths += map_props.maps_with_same_prop(disc_root_of(self._project), prop.path, prop.name)
+        written = []
+        try:
+            for path in paths:
+                if map_props.edit_prop(self._project, path, prop.name, changes):
+                    written.append(path.parent.name)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Map Objects", str(exc), parent=self)
+        if written and self._changelog is not None:
+            self._changelog.append(prop.name, f"Edited object definition in {', '.join(written)}")
+        self._form_status.configure(text=f"Saved in {len(written)} map(s): {', '.join(written)}" if written else "Nothing written.")
+        self.browser.scan()
+
+    def _import_glb(self) -> None:
+        """Import a new/replacement prop into the selected row's map.
+
+        The catalog supplies the destination map; the import owns mesh
+        reduction and world scale here instead of on the chapter Build tab.
+        """
+        target = self._info
+        if target is None:
+            return
+        chosen = filedialog.askopenfilename(
+            title=f"Import a prop into {target.map_name}",
+            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")], parent=self)
+        if not chosen:
+            return
+        path = Path(chosen)
+        default = "".join(c if c.isalnum() else "_" for c in path.stem)
+        name = simpledialog.askstring(
+            "Prop name", "Object name (an existing name replaces its model):",
+            initialvalue=default, parent=self)
+        if not name:
+            return
+        try:
+            gltf_data = path.read_bytes()
+            triangles = mesh_reduce.glb_triangle_count(gltf_data, path.parent)
+            if triangles < 1:
+                raise ValueError("The glTF contains no triangles.")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read prop", str(exc), parent=self)
+            return
+        triangle_target = simpledialog.askinteger(
+            "Triangle count",
+            f"The model has {triangles:,} triangles. Maximum triangles to keep (same value keeps all):",
+            initialvalue=triangles, minvalue=1, maxvalue=max(1, triangles), parent=self)
+        if triangle_target is None:
+            return
+        scale_tiles = simpledialog.askfloat(
+            "Prop scale", "Width of the prop's widest horizontal side in tiles (0 keeps its current scale):",
+            initialvalue=0.0, minvalue=0.0, maxvalue=100.0, parent=self)
+        if scale_tiles is None:
+            return
+        warnings = []
+        try:
+            if triangle_target < triangles:
+                reduced = mesh_reduce.reduce_glb(gltf_data, triangle_target, path.parent)
+                gltf_data = reduced.glb
+                warnings.append(
+                    f"Reduced from {reduced.triangles_before:,} to {reduced.triangles_after:,} triangles.")
+                warnings.extend(reduced.warnings)
+            entries, files = map_props.read_map_container(target.path)
+            loop = True
+            if map_props._has_skin_and_animation(gltf_data, path.parent):
+                loop = messagebox.askyesno(
+                    "Animated prop", "The glTF is animated. Loop the animation (No: play it once)?", parent=self)
+            warnings.extend(map_props.import_prop(
+                entries, files, gltf_data, name, path.parent, loop=loop,
+                scale_tiles=scale_tiles or None))
+            map_props.write_map_container(self._project, target.path, entries, files)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import prop", str(exc), parent=self)
+            return
+        if self._changelog is not None:
+            self._changelog.append(f"{target.map_name}/{name}", f"Imported map object from {path.name}")
+        message = f"Imported {name} into {target.map_name}."
+        if warnings:
+            message += "\n\n" + "\n".join(warnings)
+        messagebox.showinfo("Prop imported", message, parent=self)
+        self.browser.scan()
+
+    def cleanup(self) -> None:
+        self.browser.cleanup()
+
+
+class PropPickerDialog(tk.Toplevel):
+    """Pick a prop of another map. ``result`` is ``(info, files)`` (the
+    source map's unpacked ``map.cmp``) or None."""
+
+    def __init__(self, parent: tk.Misc, project, exclude: Optional[Path]) -> None:
+        super().__init__(parent)
+        self.title("Add a prop from another map")
+        self.geometry("1400x800")
+        self.transient(parent.winfo_toplevel())
+        self.result = None
+        buttons = ttk.Frame(self, padding=8)
+        buttons.pack(side="bottom", fill="x")
+        ttk.Button(buttons, text="Cancel", command=self._close).pack(side="right")
+        self._ok = ttk.Button(buttons, text="Add to this map", state="disabled", command=self._accept)
+        self._ok.pack(side="right", padx=(0, 6))
+        ttk.Label(buttons, text="The prop's model, animation and textures are copied into this map. "
+                                "Its flags and effect come with it.", style="Muted.TLabel").pack(side="left")
+        self._browser = PropBrowser(self, project, exclude=exclude, on_activate=lambda info: self._accept(),
+                                    on_select=lambda info: self._ok.configure(state="normal" if info else "disabled"))
+        self._browser.pack(fill="both", expand=True, padx=8, pady=(8, 0))
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.grab_set()
+
+    def _accept(self) -> None:
+        info = self._browser.selected()
+        if info is None:
+            return
+        try:
+            files = self._browser.files_of(info)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read map", str(exc), parent=self)
+            return
+        self.result = (info, files)
+        self._close()
+
+    def _close(self) -> None:
+        self._browser.cleanup()
+        self.destroy()

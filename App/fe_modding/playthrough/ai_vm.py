@@ -1,0 +1,1155 @@
+"""The enemy and NPC AI: a unit's turn runs its ``cp_data.bin`` scripts one
+entry per step.
+
+What follows the engine as :mod:`fe_modding.formats.cp_ops` documents it:
+
+- a turn is the heal check, then the attack script, then the move script,
+  stopping at the first that found an action; each script resumes at the
+  unit's saved program counter and runs until END/STOP (which sets where the
+  next run starts) or SET_SCRIPTS replaces it; after 256 entries the built-in
+  fallback runs (``attack(chance=100)``, ``move_nearest()``);
+- a non-zero ``b`` word sets the threat limit before the entry runs (Radiant
+  Dawn copies it before every entry, and reads ``0xFFFF`` as the acting unit's
+  current HP rather than no limit). Moves only stop on tiles whose ``ai_threat_map`` value is at most that ceiling
+  (:func:`enemy_threat_map`: the summed expected damage of the hostile units
+  that could strike the tile, built for each deciding unit);
+- jumps go to the first LABEL entry with that number, reading on past the
+  end of the script into the sections that follow it (``fallthrough``);
+- action entries roll their chance (``rn <= chance``; Radiant Dawn
+  ``rn < chance``), register a candidate
+  and set the found flag; a later action replaces the candidate.
+
+The target and tile of an attack are picked like ``ai_score_attack_tile_mtype_a``
+(0x800F5B14), each term ``(int)(value x MTYPE weight / 32)``: the expected damage
+(damage x hit^1.75, 2 x damage x (1-(1-hit)^2)^1.75 on a double attack; +50 when
+the weighted value reaches the target's HP, the kill bonus; under 1, minus the
+expected counter instead, at most 15), how wounded the target already is (0-10),
+the weighted units of the unit's side around the tile (table 0x80272F44), the
+foe's class bonuses, the turn number, the foe's Provoke (+50) or Shade (-50);
+minus the expected counter (hit^2.125, the same +50 near the attacker's death),
+the tile's threat (``ai_threat_map`` >> 4) and how wounded the attacker is. The
+best wins (ties: the shorter walk). Not reproduced: the Warp staff routine (which
+rebuilds the map mid-phase; the simulator has no Warp) and the order of equal
+scores. Movement towards a goal takes the reachable tile with the shortest
+remaining path; on Radiant Dawn it follows RFEE01's reverse-route/threat
+frontier, including its safe and unsafe fallback order and stable Y/X ties.
+
+Before the attack script runs, the heal step, staves (each staff's own
+routine), Steal, item use and the skill routines follow :mod:`.ai_actions`.
+Ballistas, rocks, breakable objects, Chant and Flutter are logged as not
+simulated; a sleeping unit loses its turn.
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from ..formats import cp_data
+from ..formats.cp_ai_lang import entry_source
+from ..formats.cp_ops import FE10_OPS, FE9_OPS
+from . import ai_actions, combat, movement, triggers
+from .actions import Act, apply as apply_command, can_shove
+from .state import AiTurn, GameState, SimUnit, hostile
+from .world import IMPASSABLE, World
+
+MAX_ENTRIES = 256
+MAX_RESTARTS = 8
+NO_LIMIT = 0xFFFF
+ATTACK, MOVE = 0, 1
+FALLBACK = {ATTACK: [cp_data.Entry(101, a=100), cp_data.Entry(1001)],
+            MOVE: [cp_data.Entry(206), cp_data.Entry(1001)]}
+DEFAULT_SCRIPTS = {ATTACK: "SEQ_NOATTACK", MOVE: "SEQ_NOMOVE"}
+#: Class category tokens -> the bit of the class flag halfword the MTYPE class_flag_N bonuses read
+#: (``ai_score_attack_tile_mtype_*``, class +0x3A).
+CLASS_FLAG_BITS = {"mage": 0, "fly": 1, "knight": 2, "armor": 3, "alize": 4, "human": 5, "beast": 6, "dragon": 7,
+                   "bird": 8, "hero": 10}
+#: Attack candidates kept with the chosen one, for the window.
+RANKING_SIZE = 12
+
+
+# -- programs ---------------------------------------------------------------------------------------
+
+
+class Program:
+    """A script's entries followed by whatever the label search would read after it."""
+
+    def __init__(self, entries: list, owners: list, name: str, ops=FE9_OPS):
+        self.entries, self.owners, self.name = entries, owners, name
+        self.lines = []
+        previous = None
+        for e in entries:
+            try:
+                self.lines.append(entry_source(e, previous, ops=ops))
+            except Exception:  # noqa: BLE001 - garbage words read past the end
+                self.lines.append(f"op({e.op})")
+            if e.op != 1:
+                previous = e
+        self.body = sum(1 for o in owners if o == name)
+
+    def label(self, number) -> Optional[int]:
+        if not number:
+            return 0
+        for i, e in enumerate(self.entries):
+            if e.op == 0 and e.c == number:
+                return i
+        return None
+
+
+def program(world: World, name) -> Optional[Program]:
+    cache = getattr(world, "_ai_programs", None)
+    if cache is None:
+        cache = world._ai_programs = {}
+    if name in cache:
+        return cache[name]
+    result = None
+    doc = world.cp
+    if doc is not None and isinstance(name, str):
+        names = [s.name for s in doc.sections]
+        if name in names:
+            index = names.index(name)
+            section = doc.sections[index]
+            dialect = world.dialect.cp
+            ops = FE10_OPS if dialect is cp_data.FE10 else FE9_OPS
+            width = dialect.entry_words
+            if cp_data.is_script_section(section, dialect):
+                script = cp_data.read_script(section, dialect)
+                entries, owners = list(script.entries), [name] * len(script.entries)
+                words, word_owners = [], []
+                for s in doc.sections[index + 1:]:
+                    words += s.words
+                    word_owners += [s.name] * len(s.words)
+                    if len(words) >= width * MAX_ENTRIES:
+                        break
+                skip = (width - len(section.words) % width) % width
+                for i in range(skip, len(words) - (width - 1), width):
+                    try:
+                        entries.append(cp_data.Entry.from_words(words[i:i + width], dialect))
+                    except Exception:  # noqa: BLE001
+                        break
+                    owners.append(word_owners[i])
+                result = Program(entries, owners, name, ops)
+    cache[name] = result
+    return result
+
+
+def _fallback_program(kind: int) -> Program:
+    entries = FALLBACK[kind]
+    name = "(built-in fallback)"
+    return Program(list(entries), [name] * len(entries), name)
+
+
+def script_name(world: World, unit: SimUnit, kind: int):
+    value = unit.seq_attack if kind == ATTACK else unit.seq_move
+    if isinstance(value, str) and value:
+        return value
+    return DEFAULT_SCRIPTS[kind]
+
+
+# -- helpers ----------------------------------------------------------------------------------------
+
+
+def pid_table(world: World, name) -> Optional[set]:
+    if not isinstance(name, (str, cp_data.SectionRef)) or not world.cp:
+        return None
+    section = world.cp.section(name if isinstance(name, str) else name.name)
+    if section is None:
+        return None
+    try:
+        return {str(p) for p in cp_data.read_list(section)}
+    except ValueError:
+        return None
+
+
+def targets(world: World, state: GameState, unit: SimUnit, table=None, exclude: bool = False) -> list:
+    pids = pid_table(world, table)
+    out = []
+    for other in state.living():
+        if other.uid == unit.uid:
+            continue
+        if pids is None:
+            ok = hostile(unit.faction, other.faction)
+        elif exclude:
+            ok = hostile(unit.faction, other.faction) and other.pid not in pids
+        else:
+            ok = other.pid in pids
+        if ok:
+            out.append(other)
+    return out
+
+
+#: The MTYPE weights the attack score reads (cp_data.MTYPE_FIELDS), in its order.
+SCORE_TERMS = ("damage_dealt", "hp_ratio", "adjacent_foes", "class_bonus", "turn_number", "skill_bonus",
+               "damage_taken", "terrain", "hp_after_ratio")
+WEIGHT_SCALE = 0.03125  # 0x8036A06C: every weight is in 32nds
+ATTACK_CURVE, COUNTER_CURVE = 1.75, 2.125  # 0x8036A098 / 0x8036A088: pow() exponents on the hit chance
+NEAR_KILL_BONUS = 50  # added when a damage term reaches the HP it is compared with
+NO_DAMAGE_CAP = 15  # 0x80366E68 / 0x80366E6C
+#: 0x80272F44: (dx, dy, weight) around the attack tile counted by the adjacent-units term.
+NEAR_TABLE = ((0, -3, 1), (-3, 1, 0), (0, -2, 2), (1, -2, 1), (-2, -1, 1), (-1, -1, 2), (0, -1, 3), (1, -1, 2),
+              (2, -1, 1), (-3, 0, 1), (-2, 0, 2), (-1, 0, 3), (1, 0, 3), (2, 0, 2), (3, 0, 1), (-2, 1, 1),
+              (-1, 1, 2), (0, 1, 3), (1, 1, 2), (2, 1, 1), (-1, 2, 1), (0, 2, 2), (1, 2, 1), (0, 3, 1))
+
+
+def _weighted(value: float, weight: int) -> int:
+    """``(int)(0.03125 * value * weight)``, as every term is weighted."""
+    return int(WEIGHT_SCALE * value * weight)
+
+
+def _hurt(unit: SimUnit) -> int:
+    """``(int)(10 * (max HP - HP) / max HP)``: how wounded a unit already is, 0-10."""
+    top = max(1, unit.stats[0])
+    return int(10 * (top - unit.hp) / top)
+
+
+def _expected(side, curve: float) -> int:
+    """Expected damage of one side of a forecast: damage x hit^curve, or on a double attack (attack speed
+    4 or more above) 2 x damage x (1 - (1 - hit)^2)^curve; truncated."""
+    if side is None:
+        return 0
+    p = min(1.0, max(0.0, side.hit / 100))
+    if side.doubles:
+        return int(2.0 * side.damage * (1 - (1 - p) ** 2) ** curve)
+    return int(side.damage * p ** curve)
+
+
+def _damage_term(side, other, side_hp: int, other_hp: int, weight: int, counter: bool = False) -> tuple:
+    """``compute_range_gated_curve_stat`` (``counter`` False: the attack, MTYPE +5) and
+    ``ai_score_damage_taken_term`` (True: the counter, +0xB). ``side`` deals the damage to the unit with
+    ``other_hp`` HP; ``other`` is the opposite side (None when it can't strike back). Returns (points,
+    near kill): the expected damage, weighted; when that is under 1 the term is instead minus the
+    other side's expected damage (at most 15, +50 first when it reaches ``side_hp``); +50 when the
+    result reaches ``other_hp``."""
+    curve, other_curve = (COUNTER_CURVE, ATTACK_CURVE) if counter else (ATTACK_CURVE, COUNTER_CURVE)
+    value = _weighted(_expected(side, curve), weight)
+    if value < 1:
+        back = _expected(other, other_curve)
+        if side_hp <= back:
+            back += NEAR_KILL_BONUS
+        value = -min(back, NO_DAMAGE_CAP)
+    near = other_hp <= value
+    if near:
+        value += NEAR_KILL_BONUS
+    return value, near
+
+
+def skill_term(foe: SimUnit) -> int:
+    """``compute_skill_based_stat_modifier_0x3d_0x3e`` on the target: +50 with Provoke (skill 0x3D),
+    -50 with Shade (0x3E, which wins when both are held), else 0."""
+    if "SID_SHADE" in foe.skills:
+        return -50
+    if "SID_PROVOKE" in foe.skills:
+        return 50
+    return 0
+
+
+#: Terrain types an ally (green) phase leaves out of the threat map (``build_enemy_threat_map``).
+ALLY_PHASE_SKIPPED_TERRAIN = frozenset({0x26, 0x27, 0x28, 0x2A})
+THREAT_CAP = 255  # 0x80366E70 / 0x80366E72, and the per-tile sum
+
+
+def threat_weapons(world: World, unit: SimUnit) -> list:
+    """The weapons ``FUN_800fd774`` / ``build_ai_weapon_threat_map`` count for a unit: among its first
+    four items, the best close weapon (max range under 2: the highest might, the first on a tie) and
+    the best ranged one (the longest max range, then the highest might). [(index, item)]."""
+    close = ranged = None
+    for index, item in combat.weapon_items(world, unit):
+        if index >= 4:
+            continue
+        high = combat.item_range(unit, item)[1]
+        if high < 2:
+            if close is None or item.might > close[1].might:
+                close = (index, item)
+        else:
+            best = combat.item_range(unit, ranged[1])[1] if ranged is not None else -1
+            if ranged is None or high > best or (high == best and item.might > ranged[1].might):
+                ranged = (index, item)
+    return [w for w in (close, ranged) if w is not None]
+
+
+def expected_hit_damage(side) -> int:
+    """``FUN_800fd774``'s expected damage, linear in the hit chance: damage x hit, or on a double attack
+    2 x damage x (1 - (1 - hit)^2); truncated."""
+    p = min(1.0, max(0.0, side.hit * 0.01))
+    damage = max(0, side.damage)
+    if side.doubles:
+        return int(2.0 * damage * (1.0 - (1.0 - p) * (1.0 - p)))
+    return int(damage * p)
+
+
+def enemy_threat_map(world: World, state: GameState, unit: SimUnit) -> dict:
+    """``ai_threat_map`` as ``E_CP_Decide`` builds it for the deciding ``unit`` (``FUN_800fd774`` then
+    ``build_enemy_threat_map``), tile -> 0..255: on every tile the unit can move to, the sum over the
+    hostile units of the expected damage of their close or ranged weapon (the larger where both reach)
+    on the unit as it stands, for each weapon that passes the reach gate (distance <= both Movs + the
+    weapon's max range) and on the tiles it could strike from a free tile it can move to."""
+    def standable(tile) -> bool:
+        """Byte 7 of the terrain's stats (``init_full_map_passability_grid`` copies it to the grid at
+        +0xE18E: object tiles) is 0, and in an ally phase not an objective-like terrain
+        (``check_terrain_type_during_enemy_phase``)."""
+        t = world.terrain_at(*tile)
+        if t is None:
+            return True
+        if getattr(t, "flag7", 0):
+            return False
+        return not (state.phase == 2 and t.index in ALLY_PHASE_SKIPPED_TERRAIN)
+
+    reach = {t for t in movement.destinations(world, state, unit) if standable(t)}
+    occupied = {u.tile for u in state.units.values() if u.on_map}
+    total: dict = {}
+    original = unit.tile
+    for other in state.living():
+        if not other.on_map or not hostile(unit.faction, other.faction):
+            continue
+        best: dict = {}
+        stands = None
+        for _index, item in threat_weapons(world, other):
+            low, high = combat.item_range(other, item)
+            if movement.distance(original, other.tile) > unit.move + other.move + high:
+                continue  # check_reachability_with_movement
+            forecast = combat.forecast(world, other, unit, item, max(1, low))
+            value = min(THREAT_CAP, expected_hit_damage(forecast.attacker))
+            if value == 0:
+                continue
+            if stands is None:  # ai_build_weapon_threat_range_map: free tiles it can move to
+                stands = [t for t in movement.destinations(world, state, other)
+                          if t not in occupied and standable(t)]
+            for stand in stands:
+                for tile in movement.tiles_in_range(world, stand, low, high):
+                    if tile in reach and best.get(tile, 0) < value:
+                        best[tile] = value
+        for tile, value in best.items():
+            total[tile] = min(THREAT_CAP, total.get(tile, 0) + value)
+    return total
+
+
+
+def _mtype(world: World, unit: SimUnit) -> dict:
+    defaults = {"damage_dealt": 64, "hp_ratio": 16, "adjacent_foes": 32, "class_bonus": 32, "turn_number": 32,
+                "skill_bonus": 32, "damage_taken": 32, "terrain": 32, "hp_after_ratio": 16,
+                "class_flag_0": 5, "class_flag_10": 10}  # retail MTYPE_NORMAL
+    if world.cp is None or not isinstance(unit.mtype, str):
+        return defaults
+    section = world.cp.section(unit.mtype)
+    if section is None or not cp_data.is_mtype_section(section):
+        return defaults
+    return cp_data.read_mtype(section).values
+
+
+def _hold(unit: SimUnit) -> bool:
+    from ..formats import dispo
+
+    return bool(unit.flags & dispo.FLAG_HOLD_POSITION)
+
+
+def _goal_distances(world: World, state: GameState, unit: SimUnit, goals: set) -> dict:
+    """Path cost from every tile to the nearest goal tile, for ``unit``'s movement type (units ignored)."""
+    import heapq
+
+    best = {g: 0 for g in goals if world.inside(*g)}
+    heap = [(0, g) for g in best]
+    heapq.heapify(heap)
+    while heap:
+        cost, (x, y) = heapq.heappop(heap)
+        if cost > best.get((x, y), 1 << 30):
+            continue
+        step = world.move_cost(x, y, unit.movement_type)
+        step = 1 if (x, y) in state.opened else step
+        if step >= IMPASSABLE and (x, y) not in goals:
+            continue
+        for dx, dy in movement.NEIGHBOURS:
+            n = (x + dx, y + dy)
+            if not world.inside(*n) or not world.linked(n[0], n[1], x, y):
+                continue
+            total = cost + (step if (x, y) not in goals else 1)
+            if total < best.get(n, 1 << 30):
+                best[n] = total
+                heapq.heappush(heap, (total, n))
+    return best
+
+
+# -- the turn ---------------------------------------------------------------------------------------
+
+
+class AiStep(ai_actions.ActionRoutines):
+    def __init__(self, world: World, state: GameState, turn: AiTurn):
+        self.world, self.state, self.turn = world, state, turn
+        self.unit: SimUnit = state.units[turn.uid]
+        self._jumped = False
+
+    def emit(self, text: str, **data) -> None:
+        self.state.emit("ai", text, uid=self.unit.uid, script=self.turn.script, pc=self.turn.pc, **data)
+
+    # -- driving ---------------------------------------------------------------------------------
+    def step(self) -> bool:
+        t, unit = self.turn, self.unit
+        if not unit.on_map:
+            return True
+        if t.stage == "start":
+            t.found, t.candidate = False, None
+            self.emit(f"{self.world.name(unit.pid)}'s turn")
+            if unit.status == "sleep":
+                self.emit("asleep: the turn is lost")
+                t.stage = "act"
+                return False
+            cand = self.heal_step()
+            if cand is not None:
+                self._register(cand)
+                t.stage = "act"
+                return False
+            self._begin(ATTACK)
+            return False
+        if t.stage in ("attack", "move"):
+            self._entry()
+            return False
+        if t.stage == "act":
+            self._act()
+            t.stage = "done"
+            return True
+        return True
+
+    def _kind(self) -> int:
+        return ATTACK if self.turn.stage == "attack" else MOVE
+
+    def _program(self) -> Program:
+        if self.turn.fallback:
+            return _fallback_program(self._kind())
+        return program(self.world, self.turn.script) or _fallback_program(self._kind())
+
+    def _begin(self, kind: int) -> None:
+        t = self.turn
+        t.stage = "attack" if kind == ATTACK else "move"
+        t.script = script_name(self.world, self.unit, kind)
+        t.fallback = program(self.world, t.script) is None
+        t.pc = self.unit.ai_pc[kind] if not t.fallback else 0
+        t.steps, t.threat_limit = 0, NO_LIMIT
+        self.emit(f"{t.stage} script {t.script}" + (" (not found: built-in fallback)" if t.fallback else ""))
+
+    def _finish_script(self) -> None:
+        t = self.turn
+        if t.found:
+            t.stage = "act"
+        elif t.stage == "attack":
+            self._begin(MOVE)
+        else:
+            t.stage = "act"
+
+    def _entry(self) -> None:
+        t = self.turn
+        prog = self._program()
+        if t.steps >= MAX_ENTRIES and not t.fallback:
+            self.emit(f"{MAX_ENTRIES} entries without END: built-in fallback")
+            t.fallback, t.pc, t.steps = True, 0, 0
+            return
+        if t.pc >= len(prog.entries):
+            self.emit("ran off the end of the readable data: built-in fallback")
+            t.fallback, t.pc, t.steps = True, 0, 0
+            return
+        entry = prog.entries[t.pc]
+        line = prog.lines[t.pc]
+        owner = prog.owners[t.pc]
+        where = f"{t.script}#{t.pc}" + (f" (in {owner})" if owner != t.script else "")
+        t.steps += 1
+        if isinstance(entry.b, int):
+            if self.world.dialect.name == "fe10":
+                # RFEE01 copies word b before every descriptor dispatch, even when the opcode also
+                # interprets that word as a comparison code or another operand.
+                t.threat_limit = entry.b & 0xFFFF
+            elif entry.b and entry.op not in (1000, 1001, 500, 501, 502, 600):
+                t.threat_limit = entry.b & 0xFFFF
+        handler = getattr(self, f"_op_{entry.op}", None)
+        before = t.pc
+        if handler is None:
+            if self.world.dialect.name == "fe10":
+                raise RuntimeError(f"Unsupported RFEE01 AI opcode {entry.op} at {where}: {line}. "
+                                   "Add its handler-confirmed runtime behavior before this chapter can continue.")
+            self.emit(f"{where}: {line}  - not simulated", line=line)
+            t.pc += 1
+            return
+        mark = len(self.state.out)
+        note = handler(entry, prog)
+        later = self.state.out[mark:]  # what the entry started (a new script) is logged after the entry
+        del self.state.out[mark:]
+        self.emit(f"{where}: {line}" + (f"  -> {note}" if note else ""), line=line)
+        self.state.out.extend(later)
+        if t.pc == before and t.stage in ("attack", "move") and not getattr(self, "_jumped", False):
+            t.pc += 1
+        self._jumped = False
+
+    def _jump(self, prog: Program, label) -> str:
+        index = prog.label(label)
+        if index is None:
+            self.turn.pc = len(prog.entries)
+            return f"label {label} not found"
+        self.turn.pc = index
+        self._jumped = True
+        return f"goto L{label}"
+
+    def _roll(self, chance) -> bool:
+        if self.world.dialect.name == "fe10":
+            return self.state.rng.rn() < int(chance or 0)  # RFEE01: strict
+        return self.state.rng.rn() <= int(chance or 0)
+
+    def _register(self, candidate: dict) -> None:
+        self.turn.found = True
+        self.turn.candidate = candidate
+
+    # -- flow opcodes ----------------------------------------------------------------------------
+    def _op_0(self, e, prog):
+        return ""
+
+    def _op_1(self, e, prog):
+        reg = self.turn.registers[int(e.a) & 3]
+        value = e.c if isinstance(e.c, int) else 0
+        value = value - (1 << 32) if value & 0x80000000 else value
+        ok = {0: reg > value, 1: reg >= value, 2: reg == value, 3: reg <= value, 4: reg < value,
+              5: reg != value}.get(int(e.b), False)
+        return self._jump(prog, e.d) if ok else f"r{int(e.a) & 3} = {reg}: no jump"
+
+    def _op_2(self, e, prog):
+        return "native call not simulated"
+
+    def _op_3(self, e, prog):
+        unit, t = self.unit, self.turn
+        replaced = False
+        if isinstance(e.e, str) and e.e:
+            unit.seq_attack, unit.ai_pc[ATTACK] = e.e, 0
+            replaced |= t.stage == "attack"
+        if isinstance(e.f, str) and e.f:
+            unit.seq_move, unit.ai_pc[MOVE] = e.f, 0
+            replaced |= t.stage == "move"
+        if replaced:
+            t.fallback = False
+            t.restarts += 1
+            if t.restarts > MAX_RESTARTS:
+                self._finish_script()
+                return "too many script changes: run ends"
+            kind = self._kind()
+            self._begin(kind)
+            self._jumped = True
+            return "scripts replaced: the run restarts"
+        return "scripts set"
+
+    def _op_4(self, e, prog):
+        return self._jump(prog, e.d)
+
+    def _op_5(self, e, prog):
+        self.turn.registers[int(e.a) & 3] = 9
+        return "event action not simulated: r = 9"
+
+    def _op_6(self, e, prog):
+        want = bool(e.a)
+        return self._jump(prog, e.d) if self.turn.found == want else "no jump"
+
+    def _op_7(self, e, prog):
+        self.turn.found, self.turn.candidate = False, None
+        return "found cleared"
+
+    def _end(self, e, prog):
+        index = prog.label(e.d)
+        kind = self._kind()
+        if not self.turn.fallback:
+            self.unit.ai_pc[kind] = index if index is not None else 0
+        self._finish_script()
+        self._jumped = True
+        return "run ends" + (f", next run at L{e.d}" if e.d else "")
+
+    _op_1000 = _end
+    _op_1001 = _end
+
+    # -- attacks ---------------------------------------------------------------------------------
+    def _tiles(self, in_place: bool) -> dict:
+        if in_place or _hold(self.unit):
+            return {self.unit.tile: (0, None)}
+        return movement.destinations(self.world, self.state, self.unit)
+
+    def _best_attack(self, foes: list, in_place: bool, tiles: Optional[dict] = None) -> Optional[dict]:
+        """Score every (weapon, foe, tile) the unit could attack with, as the engine's
+        ``ai_score_attack_tile_mtype_*`` do: sum(MTYPE weight x term) / 16, best first. The best
+        carries ``ranking``, the top candidates with their terms, for the window's AI tab."""
+        world, unit = self.world, self.unit
+        weights = _mtype(world, unit)
+        tiles = self._tiles(in_place) if tiles is None else tiles
+        original = unit.tile
+        flag_bonus = {token: weights.get(f"class_flag_{bit}", 0) for token, bit in CLASS_FLAG_BITS.items()}
+        threat = enemy_threat_map(world, self.state, unit) if weights.get("terrain", 0) else {}
+        w = {key: weights.get(key, 0) for key in SCORE_TERMS}
+        own_hurt = _hurt(unit)
+        candidates = []
+        for index, item in combat.weapon_items(world, unit):
+            low, high = combat.item_range(unit, item)
+            for foe in foes:
+                class_sum = sum(flag_bonus[c] for c in set(foe.categories) if c in flag_bonus)
+                for tile in tiles:
+                    d = movement.distance(tile, foe.tile)
+                    if not low <= d <= high:
+                        continue
+                    unit.x, unit.y = tile
+                    try:
+                        f = combat.forecast(world, unit, foe, item, d)
+                    finally:
+                        unit.x, unit.y = original
+                    a, b = f.attacker, f.defender
+                    dealt, kill = _damage_term(a, b if b.can_attack else None, unit.hp, foe.hp, w["damage_dealt"])
+                    taken, death = _damage_term(b if b.can_attack else None, a, foe.hp, unit.hp,
+                                                w["damage_taken"], counter=True)
+                    terms = {  # term -> (the value before weighting, its points in the score)
+                        "damage_dealt": (dealt, dealt),  # already weighted, +50 kill bonus included
+                        "hp_ratio": (_hurt(foe), _weighted(_hurt(foe), w["hp_ratio"])),
+                        "adjacent_foes": (n := self._allies_near(tile), _weighted(n, w["adjacent_foes"])),
+                        "class_bonus": (class_sum, _weighted(class_sum, w["class_bonus"])),
+                        "turn_number": (self.state.turn, _weighted(self.state.turn, w["turn_number"])),
+                        "skill_bonus": (s := skill_term(foe), _weighted(s, w["skill_bonus"])),
+                        "damage_taken": (taken, -taken),  # already weighted, +50 death risk included
+                        # ai_threat_map read as (value >> 4) & 0xFFF
+                        "terrain": (t := (threat.get(tile, 0) >> 4) & 0xFFF, -_weighted(t, w["terrain"])),
+                        "hp_after_ratio": (own_hurt, -_weighted(own_hurt, w["hp_after_ratio"])),
+                    }
+                    score = sum(points for _value, points in terms.values())
+                    candidates.append({
+                        "action": "attack", "dest": tile, "target": foe.uid, "item": index,
+                        "score": score, "path": tiles[tile][0], "terms": terms, "weights": w,
+                        "text": f"attack {world.name(foe.pid)} from {tile} (hit {a.hit}, dmg {a.damage})",
+                        "row": f"{world.name(foe.pid)} at {foe.tile}, from {tile}, {world.item_name(item.iid)}: "
+                               f"hit {a.hit} dmg {a.damage}{' x2' if a.doubles else ''}"
+                               + (", kill bonus +50" if kill else "") + (", death risk -50" if death else ""),
+                    })
+        if not candidates:
+            return None
+        candidates.sort(key=lambda c: (-c["score"], c["path"]))  # ties: the shorter walk
+        best = dict(candidates[0])
+        best["ranking"] = [{k: c[k] for k in ("score", "terms", "row", "weights")} for c in candidates[:RANKING_SIZE]]
+        best["ranking_total"] = len(candidates)
+        return best
+
+    def _allies_near(self, tile: tuple) -> int:
+        """The adjacent-units term (MTYPE +7): the 0x80272F44 weights of the tiles around ``tile`` that hold
+        a unit not hostile to this one (``compare_faction_byte_fields`` != 1; the unit itself counts on
+        its own tile)."""
+        occupied = {u.tile: u for u in self.state.units.values() if u.on_map}
+        total = 0
+        for dx, dy, weight in NEAR_TABLE:
+            other = occupied.get((tile[0] + dx, tile[1] + dy))
+            if other is not None and not ((other.faction == 1) != (self.unit.faction == 1)):
+                total += weight
+        return total
+
+    def _attack(self, e, foes, in_place=False):
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        best = self._best_attack(foes, in_place)
+        if best is None:
+            return "no target in reach"
+        self._register(best)
+        return best["text"] + "".join(f"\n    {i}. {c['score']:7.1f}  {c['row']}"
+                                      for i, c in enumerate(best["ranking"][:5], 1))
+
+    def _op_100(self, e, prog):
+        pid = e.e
+        if e.d:
+            foes = [u for u in targets(self.world, self.state, self.unit) if u.pid != pid]
+        else:
+            target = self.state.unit_by_pid(pid)
+            if target is None or not target.on_map:
+                self.turn.registers[0] = 1
+                return "character not on the map: r0 = 1"
+            foes = [target]
+        return self._attack(e, foes)
+
+    def _op_101(self, e, prog):
+        return self._attack(e, targets(self.world, self.state, self.unit, e.e, bool(e.d)))
+
+    def _op_103(self, e, prog):
+        return self._attack(e, targets(self.world, self.state, self.unit, e.e, bool(e.d)), in_place=True)
+
+    def _op_104(self, e, prog):
+        foes = targets(self.world, self.state, self.unit)
+        foes = [u for u in foes if (u.jid != e.e) == bool(e.d)]
+        return self._attack(e, foes)
+
+    _op_116 = _op_101
+
+    def _staff(self, e, in_place: bool):
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        cand = self.try_use_staff(self._predicate(e.e, bool(e.d)), in_place)
+        notes = "; ".join(getattr(self, "_staff_notes", []))
+        if cand is None:
+            return "no staff use" + (f" ({notes})" if notes else "")
+        self._register(cand)
+        return cand["text"] + (f"  [{notes}]" if notes else "")
+
+    def _op_105(self, e, prog):
+        return self._staff(e, False)
+
+    def _op_106(self, e, prog):
+        return self._staff(e, True)
+
+    def _steal(self, e, in_place: bool):
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        cand = self.try_steal(self._predicate(e.e, bool(e.d)), self._reach(in_place))
+        if cand is None:
+            return "nothing to steal" if "SID_STEAL" in self.unit.skills else "no Steal skill"
+        self._register(cand)
+        return cand["text"]
+
+    def _op_107(self, e, prog):
+        return self._steal(e, False)
+
+    def _op_108(self, e, prog):
+        return self._steal(e, True)
+
+    def _skill(self, e, in_place: bool):
+        """``lookup_and_invoke_skill_callback``: only Gamble's routine does something here (a weapon attack,
+        action 21); Flutter's (action 0x1D on an ally) is not simulated; the other listed skills' routines
+        return nothing."""
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        sid = e.f if isinstance(e.f, str) else getattr(e.f, "name", "")
+        if sid not in self.unit.skills:
+            return f"doesn't have {sid}"
+        if sid == "SID_GAMBLE":
+            best = self._best_attack(targets(self.world, self.state, self.unit, e.e, bool(e.d)), in_place)
+            if best is None:
+                return "no target in reach"
+            best["text"] = "Gamble: " + best["text"]
+            self._register(best)
+            return best["text"]
+        if sid == "SID_FLUTTER":
+            return "Flutter not simulated"
+        return f"{sid} has no AI routine"
+
+    def _op_110(self, e, prog):
+        return self._skill(e, False)
+
+    def _op_111(self, e, prog):
+        return self._skill(e, True)
+
+    def _op_115(self, e, prog):
+        if not self._roll(e.a):
+            return f"chance {e.a}%: no"
+        foes = sorted(targets(self.world, self.state, self.unit, e.e, bool(e.d)), key=lambda u: u.level)
+        tiles = self._tiles(False)
+        for foe in foes:
+            for tile in tiles:
+                if movement.distance(tile, foe.tile) == 1:
+                    original = self.unit.tile
+                    self.unit.x, self.unit.y = tile
+                    try:
+                        ok = can_shove(self.world, self.state, self.unit, tile, foe)
+                    finally:
+                        self.unit.x, self.unit.y = original
+                    if ok:
+                        self._register({"action": "shove", "dest": tile, "target": foe.uid,
+                                        "text": f"shove {self.world.name(foe.pid)} from {tile}"})
+                        return self.turn.candidate["text"]
+        return "nobody to shove"
+
+    def _not_simulated(self, e, prog):
+        self.turn.registers[0] = 9
+        return "not simulated (r0 = 9)"
+
+    _op_112 = _op_113 = _op_114 = _op_212 = _not_simulated
+
+    def _nop(self, e, prog):
+        return ""
+
+    _op_102 = _op_109 = _op_208 = _op_213 = _op_214 = _nop
+
+    # -- movement --------------------------------------------------------------------------------
+    def _threat_ceiling(self) -> int:
+        """RFEE01 ``get_ai_threat_ceiling``: 0xFFFF falls back to current HP."""
+        limit = self.turn.threat_limit
+        return self.unit.hp if limit == NO_LIMIT else limit
+
+    def _move_towards(self, goals: set, *, limit: bool = True, fallback: bool = True, text: str = "") -> Optional[tuple]:
+        world, state, unit = self.world, self.state, self.unit
+        if not goals or _hold(unit):
+            return None
+        reach = movement.destinations(world, state, unit)
+        dist = _goal_distances(world, state, unit, goals)
+        if world.dialect.name != "fe10":
+            return self._move_towards_fe9(reach, dist, limit=limit, fallback=fallback, text=text)
+        if unit.tile in goals:
+            best = unit.tile
+        else:
+            ceiling = self._threat_ceiling() if limit else 0xFFFF
+            threat = enemy_threat_map(world, state, unit) if limit else {}
+            best_route = dist.get(unit.tile, 0x7FFF)
+            best_threat = -1
+            best = None
+            farther, farther_route = None, 0x7FFF
+            unsafe, unsafe_threat = None, 0xFFFF
+            # The native rectangle walk is Y-major then X-major and all comparisons are strict,
+            # so exact ties retain the first (lower Y, then lower X) tile.
+            for tile in sorted((t for t in reach if t in dist), key=lambda t: (t[1], t[0])):
+                route = dist[tile]
+                danger = threat.get(tile, 0)
+                if danger > ceiling:
+                    if danger < unsafe_threat:
+                        unsafe, unsafe_threat = tile, danger
+                elif route > best_route:
+                    if route < farther_route:
+                        farther, farther_route = tile, route
+                elif route < best_route or danger < best_threat:
+                    best, best_route, best_threat = tile, route, danger
+            if best is None and fallback:
+                best = farther if farther is not None else unsafe
+        if best is None:
+            return None
+        self._register({"action": "wait", "dest": best, "text": text or f"move to {best}"})
+        return best
+
+    def _move_towards_fe9(self, reach: dict, dist: dict, *, limit: bool, fallback: bool, text: str) -> Optional[tuple]:
+        """GFEE01: 0xFFFF is no threat limit; the reachable tile with the shortest remaining path."""
+        world, state, unit = self.world, self.state, self.unit
+        threat = enemy_threat_map(world, state, unit) if limit and self.turn.threat_limit != NO_LIMIT else {}
+        here = dist.get(unit.tile, 1 << 30)
+        candidates = [t for t in reach if t in dist]
+        if threat:
+            safe = [t for t in candidates if threat.get(t, 0) <= self.turn.threat_limit]
+            if not safe or min(dist[t] for t in safe) >= here:
+                if not fallback:
+                    return None
+                safe = candidates
+            candidates = safe
+        if not candidates:
+            return None
+        best = min(candidates, key=lambda t: (dist[t], reach[t][0]))
+        if best == unit.tile:
+            return None
+        self._register({"action": "wait", "dest": best, "text": text or f"move to {best}"})
+        return best
+
+    def _foe_goals(self, foes: list) -> set:
+        goals = set()
+        for foe in foes:
+            for dx, dy in movement.NEIGHBOURS:
+                goals.add((foe.x + dx, foe.y + dy))
+        return goals
+
+    def _op_200(self, e, prog):
+        goal = (int(e.c), int(e.d))
+        near = int(e.a or 0)
+        dest = self._move_towards({goal}, text=f"move towards {goal}")
+        where = dest or self.unit.tile
+        if movement.distance(where, goal) <= near:
+            self.turn.registers[0] = 8
+            return f"arrives near {goal}: r0 = 8"
+        return f"moves to {dest}" if dest else "can't get closer"
+
+    def _toward_character(self, pid, talk: bool):
+        target = self.state.unit_by_pid(pid)
+        if target is None:
+            self.turn.registers[0] = 9
+            return None, "not found: r0 = 9"
+        if not target.on_map:
+            self.turn.registers[0] = 1
+            return None, "not on the map: r0 = 1"
+        return target, ""
+
+    def _op_201(self, e, prog):
+        target, note = self._toward_character(e.e, False)
+        if target is None:
+            return note
+        if movement.distance(self.unit.tile, target.tile) == 1:
+            self.turn.registers[0] = 2
+            return "next to it: r0 = 2"
+        dest = self._move_towards(self._foe_goals([target]), text=f"walk towards {self.world.name(target.pid)}")
+        if dest is not None and movement.distance(dest, target.tile) == 1:
+            self.turn.found, self.turn.candidate = False, None
+            self.turn.registers[0] = 2
+            return "can reach it: r0 = 2"
+        return f"walks to {dest}" if dest else "can't get closer"
+
+    def _op_202(self, e, prog):
+        if self.world.dialect.name != "fe10":
+            return ""
+        self._register({"action": "wait", "dest": self.unit.tile, "text": "stay in place"})
+        return "stays"
+
+    def _op_203(self, e, prog):
+        foes = [u for u in self.state.living() if u.jid == e.e and u.uid != self.unit.uid]
+        dest = self._move_towards(self._foe_goals(foes))
+        return f"moves to {dest}" if dest else "nothing to move to"
+
+    def _op_204(self, e, prog):
+        villages = [t for t in triggers.index(self.world) if t.type == 5 and t.params.get("action") in (9, 37)
+                    and (t.params.get("x"), t.params.get("y")) not in self.state.visited]
+        if not villages:
+            self.turn.registers[0] = 9
+            return "no village: r0 = 9"
+        goals = {(t.params["x"], t.params["y"]) for t in villages}
+        reach = movement.destinations(self.world, self.state, self.unit)
+        here = [g for g in goals if g in reach]
+        if here:
+            self._register({"action": "destroy", "dest": here[0], "text": f"destroy the village at {here[0]}"})
+            return self.turn.candidate["text"]
+        dest = self._move_towards(goals, text="move towards a village")
+        return f"moves to {dest}" if dest else "can't get closer"
+
+    def _op_205(self, e, prog):
+        reach = movement.destinations(self.world, self.state, self.unit)
+        threat = enemy_threat_map(self.world, self.state, self.unit)
+        if self.world.dialect.name != "fe10":
+            best = min(reach, key=lambda t: (threat.get(t, 0), reach[t][0]))
+            if best != self.unit.tile and not _hold(self.unit):
+                self._register({"action": "wait", "dest": best, "text": f"move to the safest tile {best}"})
+                return self.turn.candidate["text"]
+            return "stays"
+        ceiling = self._threat_ceiling()
+        order = sorted(reach, key=lambda t: (t[1], t[0]))
+        safe = [t for t in order if threat.get(t, 0) < ceiling]
+        # Native SAFETYMOVE first minimizes movement spent among strictly-safe tiles. Only when
+        # none exists does it minimize threat; strict comparisons preserve Y/X scan ties.
+        best = min(safe, key=lambda t: reach[t][0]) if safe else min(order, key=lambda t: threat.get(t, 0))
+        if best != self.unit.tile and not _hold(self.unit):
+            self._register({"action": "wait", "dest": best, "text": f"move to the safest tile {best}"})
+            return self.turn.candidate["text"]
+        return "stays"
+
+    def _op_206(self, e, prog):
+        foes = targets(self.world, self.state, self.unit, e.e, bool(e.d))
+        dest = self._move_towards(self._foe_goals(foes), fallback=bool(e.c), text="move towards the nearest target")
+        return f"moves to {dest}" if dest else "stays"
+
+    _op_207 = _op_206
+    _op_217 = _op_206
+
+    def _op_209(self, e, prog):
+        events = [t for t in triggers.index(self.world) if t.type == 5 and t.params.get("action") == e.c]
+        reg = int(e.a) & 3
+        if not events:
+            self.turn.registers[reg] = 9
+            return "no such event: r = 9"
+        goals = {(t.params["x"], t.params["y"]) for t in events}
+        reach = movement.destinations(self.world, self.state, self.unit)
+        if goals & set(reach):
+            self.turn.registers[reg] = 8
+        dest = self._move_towards(goals, text="move towards an event tile")
+        return f"moves to {dest}" if dest else "stays"
+
+    def _op_210(self, e, prog):
+        reach = sorted(movement.destinations(self.world, self.state, self.unit))
+        if not reach or _hold(self.unit):
+            return "stays"
+        dest = reach[self.state.rng._next() % len(reach)]
+        self._register({"action": "wait", "dest": dest, "text": f"move to the random tile {dest}"})
+        return self.turn.candidate["text"]
+
+    def _op_211(self, e, prog):
+        exits = {(t.params["x"], t.params["y"]) for t in triggers.index(self.world)
+                 if t.type == 5 and t.params.get("action") == 44}
+        if not exits:
+            return "no escape point"
+        reach = movement.destinations(self.world, self.state, self.unit)
+        here = [g for g in exits if g in reach]
+        if here:
+            self._register({"action": "escape_ai", "dest": here[0], "text": f"escape at {here[0]}"})
+            return self.turn.candidate["text"]
+        dest = self._move_towards(exits, text="move towards the escape point")
+        return f"moves to {dest}" if dest else "stays"
+
+    def _talk(self, e, move: bool):
+        target, note = self._toward_character(e.e, True)
+        if target is None:
+            return note
+        if not triggers.talk_events(self.world, self.state, self.unit.pid, target.pid):
+            self.turn.registers[0] = 9
+            return "no talk event: r0 = 9"
+        tiles = self._tiles(not move)
+        spot = next((t for t in sorted(tiles, key=lambda t: tiles[t][0])
+                     if movement.distance(t, target.tile) == 1), None)
+        if spot is None:
+            if move:
+                dest = self._move_towards(self._foe_goals([target]), text="walk towards the talk partner")
+                return f"walks to {dest}" if dest else "can't get closer"
+            return "not next to it"
+        self.turn.registers[0] = 3
+        self._register({"action": "talk", "dest": spot, "target": target.uid,
+                        "text": f"talk to {self.world.name(target.pid)} from {spot}"})
+        return self.turn.candidate["text"] + ": r0 = 3"
+
+    def _op_215(self, e, prog):
+        return self._talk(e, True)
+
+    def _op_218(self, e, prog):
+        return self._talk(e, False)
+
+    def _op_216(self, e, prog):
+        section = self.world.cp.section(e.e if isinstance(e.e, str) else getattr(e.e, "name", "")) \
+            if self.world.cp else None
+        try:
+            points = cp_data.read_route(section) if section is not None else []
+        except ValueError:
+            points = []
+        if not points:
+            return "no route"
+        unit = self.unit
+        index = unit.route % len(points)
+        if movement.distance(unit.tile, points[index]) <= int(e.a or 0):
+            unit.route = (index + 1) % len(points)
+            index = unit.route
+        dest = self._move_towards({points[index]}, text=f"follow the route to {points[index]}")
+        return f"moves to {dest}" if dest else "stays"
+
+    # -- registers -------------------------------------------------------------------------------
+    def _op_500(self, e, prog):
+        factor = (int(e.b) & 0xFFFFFFFF) / 65536 if isinstance(e.b, int) else 1.0
+        budget = int(self.unit.move * factor)
+        reach = movement.destinations(self.world, self.state, self.unit, budget=budget)
+        extra = max((r[1] for r in combat.attack_ranges(self.world, self.unit)), default=1) if e.c else 1
+        foes = targets(self.world, self.state, self.unit, e.e, bool(e.d))
+        count = sum(1 for f in foes if any(movement.distance(t, f.tile) <= extra for t in reach))
+        self.turn.registers[int(e.a) & 3] = count
+        return f"r{int(e.a) & 3} = {count}"
+
+    def _op_501(self, e, prog):
+        value = 11 if "SID_LYCANTHROPE" in self.unit.skills else 0
+        self.turn.registers[int(e.a) & 3] = value
+        return f"r{int(e.a) & 3} = {value}"
+
+    def _op_502(self, e, prog):
+        """``cp_op_use_item``: held and usable -> use it where the registered move ends (or here); otherwise
+        the found flag is cleared."""
+        iid = e.e if isinstance(e.e, str) else getattr(e.e, "name", "")
+        index = next((i for i, it in enumerate(self.unit.items) if it[0] == iid), None)
+        if index is None or not self.item_usable(iid):
+            self.turn.found, self.turn.candidate = False, None
+            return ("doesn't hold it" if index is None else "can't use it now") + ": found cleared"
+        cand = self.turn.candidate
+        if self.turn.found and cand is not None and cand.get("action") == "wait":
+            dest = cand["dest"]
+        elif self.turn.found and cand is not None:
+            return "an action is already registered"
+        else:
+            dest = self.unit.tile
+        self._register({"action": "item", "dest": dest, "item": index,
+                        "text": f"use {self.world.item_name(iid)} at {dest}"})
+        return self.turn.candidate["text"]
+
+    def _op_600(self, e, prog):
+        change = int(e.d or 0)
+        change = change - (1 << 32) if change & 0x80000000 else change  # signed: Black Knight scripts use -3
+        self.unit.move = max(0, self.unit.move + change)
+        self.turn.registers[int(e.a) & 3] = self.unit.move
+        return f"Mov = {self.unit.move}"
+
+    # -- retreat and acting ----------------------------------------------------------------------
+    def _act(self) -> None:
+        unit, cand = self.unit, self.turn.candidate
+        if cand is None:
+            cand = {"action": "wait", "dest": unit.tile, "text": "wait"}
+        action = cand["action"]
+        if action == "escape_ai":
+            unit.x, unit.y = cand["dest"]
+            unit.hidden, unit.done = True, True
+            self.state.emit("action", f"{self.world.name(unit.pid)} escapes", uid=unit.uid)
+            return
+        command = Act(unit.uid, cand["dest"], action, cand.get("target"), cand.get("item"), cand.get("to"))
+        self.emit(f"acts: {cand['text']}", decision={k: cand[k] for k in ("text", "ranking", "ranking_total")
+                                                      if k in cand})
+        try:
+            apply_command(self.world, self.state, command, by_ai=True)
+        except ValueError as exc:
+            self.state.emit("warn", f"AI action failed ({exc}); the unit waits")
+            unit.done = True
+
+
+def _fe10_if_moved(self, e, prog):
+    moved = bool(self.turn.candidate and self.turn.candidate.get("dest") != self.unit.tile)
+    if moved == bool(e.a):
+        return self._jump(prog, e.d)
+    return f"moved = {int(moved)}"
+
+
+def _fe10_rescue(self, e, prog):
+    allies = [u for u in self.state.living() if u.uid != self.unit.uid
+              and not self.world.hostile(self.unit.faction, u.faction) and u.rescue_partner is None]
+    reach = self._tiles(False)
+    for ally in allies:
+        spot = next((tile for tile in reach if movement.distance(tile, ally.tile) == 1), None)
+        if spot is not None:
+            self._register({"action": "rescue", "dest": spot, "target": ally.uid,
+                            "text": f"rescue {self.world.name(ally.pid)}"})
+            return self.turn.candidate["text"]
+    return "nobody to rescue"
+
+
+def _fe10_check_hp(self, e, prog):
+    self.turn.registers[int(e.c) & 3] = self.unit.hp
+    self.turn.registers[int(e.d) & 3] = self.unit.hp * 100 // max(1, self.unit.stats[0])
+    return "HP registers updated"
+
+
+def _fe10_check_gauge(self, e, prog):
+    self.turn.registers[int(e.c) & 3] = self.unit.laguz_gauge
+    self.turn.registers[int(e.d) & 3] = min(100, self.unit.laguz_gauge * 100 // 30)
+    return f"gauge = {self.unit.laguz_gauge}"
+
+
+def _fe10_transform(self, e, prog):
+    self.unit.transformed = not self.unit.transformed
+    return "transformed" if self.unit.transformed else "reverted"
+
+
+def _fe10_linked(self, e, prog):
+    value = int(self.unit.rescue_partner is not None)
+    self.turn.registers[int(e.a) & 3] = value
+    return f"linked = {value}"
+
+
+def _fe10_yield(self, e, prog):
+    return self._end(e, prog)
+
+
+# Handler-confirmed FE10 opcodes that share an existing action primitive.  The
+# distinct opcode remains visible in logs and corpus audits; only its tactical
+# primitive is shared here.
+AiStep._op_8 = _fe10_if_moved
+for _op in (117, 118, 119, 120, 122):
+    setattr(AiStep, f"_op_{_op}", AiStep._op_101)
+AiStep._op_121 = AiStep._op_105
+AiStep._op_123 = AiStep._op_124 = _fe10_rescue
+for _op in (220, 221, 223, 224, 225, 229):
+    setattr(AiStep, f"_op_{_op}", AiStep._op_206)
+AiStep._op_219 = AiStep._op_201
+AiStep._op_222 = AiStep._op_200
+AiStep._op_226 = AiStep._op_209
+AiStep._op_227 = AiStep._op_210
+AiStep._op_228 = AiStep._op_205
+AiStep._op_503 = AiStep._op_502
+AiStep._op_504 = _fe10_check_hp
+AiStep._op_505 = _fe10_check_gauge
+AiStep._op_506 = _fe10_check_gauge
+AiStep._op_507 = _fe10_transform
+AiStep._op_508 = _fe10_linked
+AiStep._op_509 = AiStep._op_500
+AiStep._op_601 = AiStep._op_600
+AiStep._op_602 = AiStep._op_600
+AiStep._op_1002 = _fe10_yield
+
+
+def unsupported_fe10_opcodes() -> list[int]:
+    """FE10 engine-table rows without a runtime method (empty at release)."""
+    from ..formats.cp_ops import FE10_OPS
+    return [op for op in FE10_OPS if op >= 0 and not hasattr(AiStep, f"_op_{op}")]
+
+
+def step(world: World, state: GameState, turn: AiTurn) -> bool:
+    """One step of an AI unit's turn. Returns True when the turn is over."""
+    return AiStep(world, state, turn).step()
+
+
+def phase_order(world: World, state: GameState, faction: int) -> list:
+    """The units of ``faction`` in the order they act: ``ai_order`` first,
+    then faster units, then units with a staff or a weaker weapon."""
+    rules = world.rules
+
+    def key(u: SimUnit):
+        _i, item = combat.equipped(world, u)
+        speed = rules.attack_speed(combat.combatant(world, u, item))
+        staff = 0 if combat.staff_items(world, u) else 1
+        return (u.ai_order, -speed, staff, item.might if item is not None else 0, u.uid)
+
+    return sorted((u for u in state.living(faction) if not u.done), key=key)
