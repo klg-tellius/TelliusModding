@@ -11,13 +11,15 @@ get a copy of another chapter's.
 
 The armory and vendor lists show each item's icon (``window/icon.tpl``, see
 :mod:`fe_modding.formats.icons`) and price. The price is not a shop setting:
-the game charges an item's cost per use times its uses, both in the item's
-``FE8Data.bin`` record, so **Edit price...** changes that cost in the shared
+the game charges an item's cost per use times its uses. On Path of Radiance,
+**Edit price...** changes that cost in the shared
 :class:`~.fe8_session.Fe8DataSession` - the same price in every chapter and
-difficulty - after warning so. Save writes FE8Data.bin too when it has
-unsaved edits.
+difficulty - after warning so. Radiant Dawn prices are displayed from the
+shared FE10Data session but edited on the Game Data item form.
 
-Path of Radiance only: Radiant Dawn's shop files use a different layout.
+Radiant Dawn uses the same editor over its three-word item rows, six forge
+families (including knives) and ten bases. The format layer preserves the
+game-specific row shape and section names.
 """
 
 from __future__ import annotations

@@ -40,9 +40,11 @@ from .fe8data import HEADER_SIZE
 from ..game_files import as_path
 
 STAT_NAMES = ("HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res")
-#: An item's stat-bonus block: the eight stats, then movement and weight, then two unused bytes.
+#: An item's stat-bonus block: the eight stats, then movement and weight; disk padding follows the
+#: complete optional tail rather than belonging to this block.
 BONUS_NAMES = STAT_NAMES + ("Mov", "Wt")
-BONUS_BLOCK_SIZE = 12
+BONUS_BLOCK_SIZE = 10
+ITEM_EXTRA_BLOCK_SIZE = 8
 
 KINDS = ("character", "class", "item", "skill")
 SYMBOLS = {"character": "PersonData", "class": "JobData", "item": "ItemData", "skill": "SkillData"}
@@ -94,7 +96,7 @@ CHARACTER_TAIL = (
     + _bytes("s8", (("bonus_weight", "Wt"),), "Stats over class bases")
     + _bytes("u8", (("unknown_t18", "Unknown tail +18"),), "Unit")
     + _stats("growth", "u8", "Growth rates (%)")
-    + _bytes("u8", (("unknown_t27", "Unknown tail +27"),), "Unit")
+    + _bytes("u8", (("padding_t27", "Padding"),), "Unit")
 )
 CHARACTER_TAIL_SIZE = 28
 
@@ -124,8 +126,8 @@ CLASS_TAIL_SIZE = 32
 CLASS_FIXED_SIZE = 16
 
 # -- item (ItemData) -------------------------------------------------------------------------------
-# 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 bonus-block count);
-# attributes; effectivenesses; 0 or 1 stat-bonus block of 12 bytes.
+# 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 optional-block flags);
+# attributes; effectivenesses; optional ten-byte stat and eight-byte extension blocks; word padding.
 ITEM_LABELS = _labels(("iid", "ID"), ("miid", "Name key"), ("help", "Help key"), ("weapon_type", "Weapon type"),
                       ("display_type", "Displayed type"), ("rank", "Weapon rank"), ("effect", "Effect"),
                       ("effect_2", "Effect 2"), ("effect_3", "Effect 3"), group="Identity")
@@ -156,7 +158,7 @@ LISTS = {
     "skill": {"conditions": "Conditions", "requirements": "Requirements"},
 }
 #: Fields a list or block owns (kept in step by set_list / set_item_bonuses, not edited directly).
-COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "bonus_count",
+COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "optional_flags",
                 "condition_count", "requirement_count"}
 
 FIELD_NOTES = {
@@ -219,6 +221,7 @@ class Record:
     offsets: dict = field(default_factory=dict)
     lists: dict = field(default_factory=dict)
     bonuses: Optional[list] = None
+    item_extra: Optional[bytes] = None
 
     @property
     def id(self) -> Optional[str]:
@@ -661,7 +664,7 @@ def set_item_bonuses(data: bytes, index: int, bonuses: Optional[Sequence[int]]) 
     elif bonuses is not None:
         data = insert_bytes(data, at, block)
     out = bytearray(data)
-    out[count_offset] = 0 if bonuses is None else 1
+    out[flags_offset] = flags
     return bytes(out)
 
 
@@ -801,7 +804,7 @@ FIXED_TABLES = {
         _f("name_key", "Name key", "label", 8, "Army"))),
     "bond": FixedTable("KiznaData", 0x0C, (
         _f("pid", "Character", "label", 0, "Bond"), _f("partner", "Partner", "label", 4, "Bond"),
-        _f("kind", "Kind", "u8", 8, "Bond"), _f("bonus", "Bonus", "u8", 9, "Bond"))),
+        _f("kind", "Kind", "u8", 8, "Bond"), _f("bonus", "Critical bonus", "s8", 9, "Bond"))),
     "affinity": FixedTable("DivineData", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Affinity"), _f("attack", "Attack", "s8", 4, "Affinity"),
         _f("defense", "Defense", "s8", 5, "Affinity"), _f("hit", "Hit", "s8", 6, "Affinity"),
@@ -809,8 +812,7 @@ FIXED_TABLES = {
         _f("critical_avoid", "Critical avoid", "s8", 9, "Affinity"))),  # per support rank (0x8012ec2c)
     "affinity_pair": FixedTable("DivineParam", 0x0C, (
         _f("affinity", "Affinity", "label", 0, "Pair"), _f("partner", "Partner affinity", "label", 4, "Pair"),
-        _f("value_0", "Value 1", "s8", 8, "Pair"), _f("value_1", "Value 2", "s8", 9, "Pair"),
-        _f("value_2", "Value 3", "s8", 10, "Pair"), _f("value_3", "Value 4", "s8", 11, "Pair"))),
+        _f("hit_bonus", "Hit bonus", "s8", 8, "Pair"), _f("avoid_bonus", "Avoid bonus", "s8", 9, "Pair"))),
     "triangle": FixedTable("3SukumiData", 0x0C, (
         _f("weapon", "Weapon type", "label", 0, "Weapon triangle"),
         _f("against", "Against", "label", 4, "Weapon triangle"),
@@ -851,7 +853,8 @@ ID_FIELD = {"character": "pid", "class": "jid", "item": "iid", "skill": "sid", "
 ALL_KINDS = KINDS + tuple(FIXED_TABLES) + ("support", "battle_scenery", "no_battle")
 FIELD_NOTES.update({
     "flags": "Bit flags of the terrain type (byte 7 of Path of Radiance's block marks object tiles).",
-    "bonus": "Bonus between bonded units (5 or 10 in the retail data).",
+    "kind": "Bond kind. Executable consumers currently recognize kind 1.",
+    "bonus": "Signed Critical and Critical-avoid bonus while a kind-1 pair is adjacent on the same force (5 or 10 in retail data).",
     "damage": "Weapon-triangle damage and hit change (+1/+10 with the advantage, -1/-10 against).",
     "points_c": "Support points a pair needs for each level. Points stop at the next level's value "
                 "until that level is reached; past A they stop at the limit.",
