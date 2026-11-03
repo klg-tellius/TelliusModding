@@ -85,11 +85,11 @@ The **Battle sky** row maps that same weather ID to a scenery sky name in FE8Dat
 
 Select **Fog of war** only for a deliberate difficulty test. In US/PAL behavior it is retained on Hard only; the Japanese release uses it above Normal. This selector is distinct from distance fog.
 
-### 5. Inspect advanced values without casual edits
+### 5. Inspect advanced values and map flags without casual edits
 
-Record **Texture projection**, **Panel offset X/Y**, **Objects already sorted**, and **Other map flags**. Keep panel offsets unchanged because their full visual effect is not decoded.
+Record **Start on terrain X/Y** (in the Grid group), **Ground texture size**, and the **Map flags** check boxes. Keep the start values as they are unless you move the terrain model with them.
 
-`Other map flags` is a combined hexadecimal bit field. Known examples include `0x20` for water callbacks, `0x04`/`0x10` for texture effects, and `0x10000000` for roof/object-footprint tests. Preserve unrelated bits when changing a known feature through its dedicated workflow.
+Each **Map flags** box is one bit of the map's flag word: **Water surface** (`0x20`), **Ground texture overlay** (`0x04`), **Object texture effect** (`0x10`), **Roof and door hit tests** (`0x10000000`), **Objects already sorted**, and **Flag 0x02**, which the game never reads. Bits with no known meaning are listed under the boxes and kept as they are.
 
 ### 6. Edit chapter presentation
 
@@ -144,9 +144,13 @@ If you want new objective logic, edit and test the chapter script in a later les
 
 ### Advanced
 
-**Texture projection** stores twice the size used by the projected ground-texture path. **Panel offsets** feed a 2D panel draw whose complete effect is not decoded. **Objects already sorted** matches all vanilla maps; when clear, the game sorts placed objects during load and sets it.
+**Start on terrain X/Y** (Grid group) is where the grid's first tile sits on the terrain model, in tiles: the game places the terrain at minus these values. On every vanilla map it matches the terrain's own position, so change it only together with the terrain.
 
-**Other map flags** preserves bits not separated into Weather, Fog of war, or object-order controls. Entering a replacement value can remove water, roof, or material behavior, so edit only from a recorded baseline.
+**Ground texture size** stores twice the size of the texture projected over the whole ground; the game uses half of it.
+
+### Map flags
+
+The flag word is shown as check boxes. **Water surface** draws the animated water pass and is set on every map with water. **Ground texture overlay** draws the map's last texture over the terrain. **Object texture effect** adds a material pass on objects marked for it. **Roof and door hit tests** tests the footprint of roof, door, house and rock objects. **Objects already sorted** is set on all vanilla maps; when clear, the game sorts placed objects during load and sets it. **Flag 0x02** is set on every vanilla map and never read. Weather and fog of war use other bits of the same word and have their own controls.
 
 ### Chapter identity and assets
 
@@ -192,7 +196,7 @@ For objectives, trace Normal text keys, difficulty overrides, resolved message t
 
 **One difficulty shows an old line.** Inspect its explicit override and inheritance. Remember there is no one-to-one override for all four Normal slots.
 
-**Water or roofs stopped working.** Restore the original Other map flags and use dedicated water/prop workflows that preserve unrelated bits.
+**Water or roofs stopped working.** Check that **Water surface** and **Roof and door hit tests** are still ticked under Map flags.
 
 ## Save, build, and revert
 

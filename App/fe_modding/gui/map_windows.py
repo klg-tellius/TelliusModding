@@ -441,8 +441,8 @@ SETTINGS_SECTIONS = [
     ]),
     ("extra", "Grid size & map extra (mapextra)", map_file.patch_extra_field, [
         ("grid_buffer", "Grid border (tiles)"), ("half_x_size", "Half width"), ("half_y_size", "Half height"),
-        ("panel_offset_x", "Panel offset X"), ("panel_offset_y", "Panel offset Y"),
-        ("texture_projection_extent_x2", "Texture extent ×2"),
+        ("panel_offset_x", "Grid start on the terrain X"), ("panel_offset_y", "Grid start on the terrain Y"),
+        ("texture_projection_extent_x2", "Ground texture size ×2"),
         ("sight_code", "Sight code (difficulty 1)"), ("weather_id", "Weather ID (0–17)"),
         ("preserve_object_order", "Keep object file order (0/1)"),
         ("unknown_tail", "Raw map flags"),
@@ -480,6 +480,21 @@ WEATHER_NAMES = {
 #: and keeps it only on Hard (US/PAL; any difficulty but Normal in JP).
 SIGHT_NAMES = {0: "None", 1: "Fog of war, mode 3 (unused in vanilla)", 2: "Fog of war, mode 1 (as Ch.5)",
                3: "Fog of war, mode 2 (as Ch.14)"}
+#: Map flag bits (mapextra bytes 8-11) the form shows as check boxes: bit, label, help, US layout only.
+#: Sight (bits 18-19) and weather (bits 20-24) have their own controls.
+MAP_FLAG_BITS = (
+    (0x20, "Water surface", "Draws the animated water pass (map_water). Set on every vanilla map with water and "
+                            "on none without.", False),
+    (0x04, "Ground texture overlay", "Draws the map's last texture as an overlay on the terrain.", False),
+    (0x10, "Object texture effect", "Runs an extra material pass on the map objects marked for it (object "
+                                    "flag 0x2000).", False),
+    (0x10000000, "Roof and door hit tests", "Tests the footprint of roof, door, house and rock objects, so "
+                                            "they can hide or show what is under them.", False),
+    (map_file.MAP_EXTRA_OBJECT_ORDER_MASK, "Objects already sorted",
+     "Set on every vanilla map. When off, the game sorts the placed objects when the map loads and then "
+     "sets it; leave it on.", True),
+    (0x02, "Flag 0x02 (not read)", "Set on every vanilla map; no game code reads it. Kept as it is.", False),
+)
 SECTION_HELP = {
     "grid": "The tactical grid: the playable area and how its lines are drawn.",
     "light": "The directional light on the map's models.",
@@ -487,14 +502,15 @@ SECTION_HELP = {
            "during the chapter (SetFog).",
     "weather": "Weather and fog of war of the map.",
     "advanced": "Values the engine reads but that rarely need changing.",
+    "flags": "On/off switches stored with the map (mapextra): which drawing passes and tests it uses.",
 }
 
 
 class MapSettingsForm(ttk.Frame):
     """The open map's map-wide settings, grouped by what they do: the grid
     (size, playable border, line colour), lighting, distance fog, weather and
-    fog of war, and an Advanced group (texture projection, panel offsets,
-    object order, the other map flag bits); then its water surface. Edits go
+    fog of war, an Advanced group (ground texture size) and the map flags
+    as check boxes; then its water surface. Edits go
     through the builder (``edit_map``), so they are on the Build tab's
     Undo/Redo and Save Chapter writes them. Follows the builder's map.
 
@@ -576,6 +592,14 @@ class MapSettingsForm(ttk.Frame):
             self._number(row, 0, "extra:grid_buffer", "Border", extra.grid_buffer,
                          "Tiles along each edge that units and the cursor cannot enter.", "tiles  " + playable)
             row += 1
+            start_help = ("Where the grid's first tile sits on the terrain model, in tiles: the terrain is "
+                          "placed at minus this value (on every vanilla map it matches the terrain's own "
+                          "position). Change it only together with the terrain, or the map shifts under the grid.")
+            self._number(row, 0, "extra:panel_offset_x", "Start on terrain X", extra.panel_offset_x,
+                         start_help, "tiles")
+            self._number(row, 2, "extra:panel_offset_y", "Start on terrain Y", extra.panel_offset_y,
+                         start_help, "tiles")
+            row += 1
         if data.grid is not None:
             row = self._colour_row(row, "grid", data.grid, "Line colour", ("red", "green", "blue"),
                                    "Colour of the grid lines (their strength is set by scripts with SetGrid).")
@@ -621,27 +645,29 @@ class MapSettingsForm(ttk.Frame):
             row += 1
         if extra is not None:
             row = self._section(row, "advanced", "Advanced")
-            self._number(row, 0, "extra:texture_projection_extent_x2", "Texture projection",
+            self._number(row, 0, "extra:texture_projection_extent_x2", "Ground texture size",
                          extra.texture_projection_extent_x2,
-                         "Twice the size of the map's projected ground texture (the engine uses half of it).")
+                         "Twice the size of the texture the game projects over the whole ground; the game uses "
+                         "half of this value (bmap01: 64, so 32). Keep the vanilla value unless you replace "
+                         "the ground texture.")
             row += 1
-            self._number(row, 0, "extra:panel_offset_x", "Panel offset X", extra.panel_offset_x,
-                         "Read by a 2D panel draw; its effect is not decoded. Keep the vanilla value.")
-            self._number(row, 2, "extra:panel_offset_y", "Panel offset Y", extra.panel_offset_y,
-                         "Read by a 2D panel draw; its effect is not decoded. Keep the vanilla value.")
-            row += 1
+            row = self._section(row, "flags", "Map flags")
+            col = 0
+            for bit, label, help_text, us_only in MAP_FLAG_BITS:
+                if us_only and not us:
+                    continue
+                self._check(row, col, f"flag:{bit:#x}", label, extra.unknown_tail & bit,
+                            help_text if us else help_text + " (Checked on the US release.)")
+                col = 2 if col == 0 else 0
+                row += col == 0
+            row += col != 0
+            rest = extra.unknown_tail & ~self._flag_mask(us)
             if us:
-                self._check(row, 0, "extra:preserve_object_order", "Objects already sorted",
-                            extra.preserve_object_order,
-                            "Set on every vanilla map. When off, the game sorts the placed objects on load "
-                            "and sets it.")
+                rest &= ~(map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK)
+            if rest:
+                ttk.Label(self, text=f"Other bits set: {rest:#x} (meaning not known; kept as they are)",
+                          style="Muted.TLabel").grid(row=row, column=0, columnspan=6, sticky="w", pady=1)
                 row += 1
-            other = extra.unknown_tail & ~(map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK
-                                           | map_file.MAP_EXTRA_OBJECT_ORDER_MASK) if us else extra.unknown_tail
-            self._number(row, 0, "extra:other_flags", "Other map flags", hex(other),
-                         "0x20 draws water, 0x04 and 0x10 pick texture effects, 0x10000000 tests object "
-                         "footprints (roofs). 0x02 is set on every vanilla map and not read.")
-            row += 1
         ttk.Button(self, text="Apply", style="Accent.TButton", command=self._apply).grid(
             row=row, column=0, sticky="w", pady=(12, 0))
         row += 1
@@ -761,6 +787,15 @@ class MapSettingsForm(ttk.Frame):
         text = var.get().strip()
         return int(text.split(" ·", 1)[0], 0)
 
+    @staticmethod
+    def _flag_mask(us: bool) -> int:
+        """The map flag bits the form shows as check boxes."""
+        mask = 0
+        for bit, _label, _help, us_only in MAP_FLAG_BITS:
+            if not us_only or us:
+                mask |= bit
+        return mask
+
     def _apply(self) -> None:
         data = self.map.map_data
         if data is None:
@@ -777,7 +812,7 @@ class MapSettingsForm(ttk.Frame):
                 prefix, f = key.split(":", 1)
                 if prefix == "capacity":
                     continue
-                if prefix == "extra" and f in ("sight_code", "weather_id", "preserve_object_order", "other_flags"):
+                if prefix == "flag" or (prefix == "extra" and f in ("sight_code", "weather_id")):
                     continue
                 record = getattr(data, prefix)
                 value = self._value(key)
@@ -785,15 +820,15 @@ class MapSettingsForm(ttk.Frame):
                     pending.append((prefix, f, value))
             extra = data.extra
             if extra is not None:
-                flags = self._value("extra:other_flags")
-                if not 0 <= flags <= 0xFFFFFFFF:
-                    raise ValueError("Other map flags must be a 32-bit value.")
-                if self.map.verified_us_map_layout:
-                    known = (map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK
-                             | map_file.MAP_EXTRA_OBJECT_ORDER_MASK)
+                us = self.map.verified_us_map_layout
+                flags = extra.unknown_tail & ~self._flag_mask(us)
+                for bit, _label, _help, us_only in MAP_FLAG_BITS:
+                    if (not us_only or us) and self._value(f"flag:{bit:#x}"):
+                        flags |= bit
+                if us:
+                    known = map_file.MAP_EXTRA_SIGHT_MASK | map_file.MAP_EXTRA_WEATHER_MASK
                     flags = ((flags & ~known) | (self._value("extra:sight_code") << 18)
-                             | (self._value("extra:weather_id") << 20)
-                             | (self._value("extra:preserve_object_order") << 29))
+                             | (self._value("extra:weather_id") << 20))
                 if flags != extra.unknown_tail:
                     pending.append(("extra", "unknown_tail", flags))
                 if data.capacity is not None:  # keep the half sizes in step with the requested map size
