@@ -173,5 +173,58 @@ class ProjectExtractTests(unittest.TestCase):
             build.assert_called_once_with(project.disc_tree(), output, overwrite=True)
 
 
+class ShiftJisNameTests(unittest.TestCase):
+    """WIT extracts a Shift-JIS disc name byte per character (``knight1_sp_\\x82\\x86``); Dolphin opens
+    the file by its real name (``knight1_sp_ｆ``) and 4-P's opening crashed without it."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        model = self.root / "files" / "ymu" / "knight1_sp_\x82\x86"
+        model.mkdir(parents=True)
+        (model / "pack.cmp").write_bytes(b"model")
+        (self.root / "files" / "ymu" / "armor2_\x82\x94.tpl").write_bytes(b"tex")
+        (self.root / "files" / "plain.bin").write_bytes(b"x")
+
+    def names(self):
+        return sorted(str(p.relative_to(self.root)).replace("\\", "/") for p in (self.root / "files").rglob("*"))
+
+    def test_extracted_names_are_fixed_once(self):
+        fixed = tools.fix_extracted_names(self.root)
+        self.assertEqual(len(fixed), 2)
+        self.assertEqual(self.names(), ["files/plain.bin", "files/ymu", "files/ymu/armor2_ｔ.tpl",
+                                        "files/ymu/knight1_sp_ｆ", "files/ymu/knight1_sp_ｆ/pack.cmp"])
+        self.assertEqual(tools.fix_extracted_names(self.root), [])
+
+    def test_build_hands_wit_the_byte_form_and_restores_the_names(self):
+        tools.fix_extracted_names(self.root)
+        seen = {}
+
+        def run(args, **_kwargs):
+            seen["names"] = self.names()
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with mock.patch.object(tools, "wit_path", return_value=Path("wit.exe")), \
+                mock.patch.object(tools.subprocess, "run", side_effect=run):
+            tools.build_disc(self.root, self.root / "out.wbfs")
+        self.assertIn("files/ymu/knight1_sp_\x82\x86/pack.cmp", seen["names"])
+        self.assertIn("files/ymu/knight1_sp_ｆ/pack.cmp", self.names())
+
+    def test_a_failed_build_still_restores_the_names(self):
+        tools.fix_extracted_names(self.root)
+        with mock.patch.object(tools, "wit_path", return_value=Path("wit.exe")), \
+                mock.patch.object(tools.subprocess, "run",
+                                  return_value=subprocess.CompletedProcess([], 1, "", "boom")):
+            with self.assertRaises(ToolError):
+                tools.build_disc(self.root, self.root / "out.wbfs")
+        self.assertIn("files/ymu/knight1_sp_ｆ/pack.cmp", self.names())
+
+    def test_latin_1_names_that_are_not_shift_jis_are_left_alone(self):
+        (self.root / "files" / "caf\xe9.txt").write_bytes(b"x")  # 0xE9 alone is not a whole SJIS character
+        tools.fix_extracted_names(self.root)
+        self.assertIn("files/caf\xe9.txt", self.names())
+
+
 if __name__ == "__main__":
     unittest.main()

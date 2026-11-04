@@ -32,10 +32,19 @@ FLAG_TESTS = (
                                         "starting units"),
 )
 TUTORIAL_FILE = "Tutorial/tut_data_n_en.bin"
+MADE_4P = "rd/made_4P_start_FE10_US.dat"
 #: The Part 4 save (see the module docstring) and the slot moved back to 4-P.
 ARMY_SAVE = "rd/gamefaqs_30509_FE10_US.dat"
 ARMY_FILE_SLOT = 4           # File 5 (slots count from 0): saved before the Endgame opens, no battle state
 FOUR_P = 32                  # C0401's chapter number
+
+
+def build_growth(ctx):
+    """Every stat gains 3 per growth success, and Bonus EXP level-ups roll the ordinary random growth."""
+    from fe_modding.game_code import entries_fe10  # noqa: F401 - registers the RD catalogue
+    for stat in range(8):
+        ctx.tune(**{f"rd.growth.random.{stat}": 3})
+    ctx.patch("rd.growth.force_random")
 
 
 def build_l1(ctx):
@@ -113,6 +122,17 @@ TUTORIAL_STEPS = ["Skip the opening talk with Start. When the map appears, wait 
                   "Note whether a tutorial window (a help box explaining the controls) opens by itself."]
 
 SCENARIOS: list[Scenario] = [
+    Scenario(
+        "G2", "Radiant Dawn: locked controls", "Level-up growth: 3 points per success (Bonus EXP)",
+        "Game Code > Level-up growth on RFEE01 (rd.growth.random.N), through a Bonus EXP level-up with "
+        "rd.growth.force_random so it rolls the ordinary random growth",
+        steps=["At the title screen choose Continue and load File 5 (4-P's base).",
+               "In the base choose Manage, then Bonus EXP, and give Micaiah enough to level up.",
+               "Watch the level-up screen."],
+        checks=["Every stat that rises on the level-up screen rises by 3, not 1."],
+        build=build_growth, card=lambda ctx: {"FE10_US.dat": (ctx.saves / MADE_4P).read_bytes()},
+        boot="title", difficulty="Hard", anim_speed=None, region=RD, minutes=5,
+        notes=["File 5 is a save the game made right after 4-P's army split (made in Dolphin, 2026-11-04)."]),
     Scenario(
         "S0", "Radiant Dawn: locked controls", "Make a save at the start of Part 4",
         "A file saved after 3-E (the end of Part 3), which A1 and the Supports test start from",

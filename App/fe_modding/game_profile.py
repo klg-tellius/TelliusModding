@@ -292,8 +292,9 @@ RADIANT_DAWN_PROFILE = GameProfile(
     # read the file while 1-1 played; the offers come from the scripts (TutorialRunTypeA, Normal only).
     tutorial_flag_names=("Slot 1", "Slot 2", "Slot 3", "Slot 4"),
     tutorial_flag_note=("On Radiant Dawn the chapter scripts offer each tutorial (on Normal only). A test "
-                        "in the game found these start flags change nothing in the Prologue, so which "
-                        "slot a new game reads is still unknown."),
+                        "in the game found these start flags change nothing in the Prologue: the game loads this "
+                        "file (the _n or _h one by the running game's mode), but the Prologue's offers "
+                        "come from its script, so which slot does what is still unknown."),
 )
 
 PROFILES: dict[Game, GameProfile] = {
