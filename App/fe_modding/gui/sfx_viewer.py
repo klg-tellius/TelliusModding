@@ -19,7 +19,7 @@ import tempfile
 import tkinter as tk
 import wave
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import numpy as np
 
@@ -302,9 +302,7 @@ class SfxViewer(EditorPanel):
     def _open_import(self, cue: gcfesnd.SfxCue | None) -> None:
         if self._fe10:
             if cue is None:
-                messagebox.showinfo("Sound effects", "A new Radiant Dawn sound effect needs a new embedded wave "
-                                    "sound in sound_us.brsar, which the app cannot add yet (new music tracks it "
-                                    "can). Existing embedded wave sounds can be replaced.", parent=self)
+                self._add_rd_sfx()
                 return
             sound = self._rd_sounds.get(cue.resource)
             if self._rd_archive is None or sound is None or sound.sound_type != 3:
@@ -358,6 +356,34 @@ class SfxViewer(EditorPanel):
     def _add_cue(self) -> None:
         self._open_import(None)
 
+    def _add_rd_sfx(self) -> None:
+        """Radiant Dawn: a new SFX_ cue with its own wave sound (rd_music.add_sfx), copying the
+        selected sound effect's settings and load group (else the menu select sound's)."""
+        from .. import rd_music
+        from ..exceptions import ProjectError
+
+        selected = self._selected_cue()
+        template = rd_music.wave_template(self._project, selected.name if selected is not None else None)
+        name = simpledialog.askstring(
+            "Add sound effect", f"Cue name (SFX_ and capitals). It copies the settings of {template}:",
+            initialvalue="SFX_", parent=self)
+        if not name:
+            return
+        name = name.strip().upper()
+        chosen = filedialog.askopenfilename(title="Choose the sound effect's WAV",
+                                            filetypes=[("WAV audio", "*.wav")], parent=self)
+        if not chosen:
+            return
+        self._stop()
+        try:
+            audio = brstm.wav_path_to_brstm_audio(chosen)
+            sound = rd_music.add_sfx(self._project, name, audio.sample_rate, audio.channels, template)
+        except (OSError, ValueError, ProjectError) as exc:
+            messagebox.showerror("Add sound effect", str(exc), parent=self)
+            return
+        self._changelog.append(name, f"Added sound effect ({sound}, like {template})")
+        self._after_edit(name)
+
     def _replace_cue(self) -> None:
         cue = self._selected_cue()
         if cue is not None:
@@ -377,8 +403,26 @@ class SfxViewer(EditorPanel):
         if cue is None:
             return
         if self._fe10:
-            messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "
-                                "the game plays it, so it can't be deleted. Replace its audio instead.", parent=self)
+            from .. import rd_music
+            from ..exceptions import ProjectError
+
+            if cue.name not in rd_music.added_cues(self._project):
+                messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "
+                                    "the game plays it, so it can't be deleted. Replace its audio instead.",
+                                    parent=self)
+                return
+            if not messagebox.askyesno("Delete sound effect", f"Delete {cue.name}? Scripts that play it then "
+                                       "play nothing.", icon="warning", parent=self):
+                return
+            self._stop()
+            try:
+                rd_music.remove_sfx(self._project, cue.name)
+            except ProjectError as exc:
+                messagebox.showerror("Delete sound effect", str(exc), parent=self)
+                return
+            self._changelog.append(cue.name, "Deleted sound effect")
+            self._load()
+            self._play_status.config(text=f"Deleted {cue.name}.")
             return
         if cue.name in self._original_cue_names():
             messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "

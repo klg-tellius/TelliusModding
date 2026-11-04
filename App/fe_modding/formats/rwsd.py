@@ -312,3 +312,112 @@ def replace_wave(document: RwsdFile, wave_index: int, audio: RwsdAudio) -> tuple
             any(len(channel) != sample_count for channel in check.channels)):
         raise RwsdError("Rebuilt RWSD replacement did not validate")
     return bytes(header), bytes(payload)
+
+
+# -- a new one-entry RWSD ---------------------------------------------------------------------
+#
+# DATA (after its 8-byte header, every reference relative to that point): a count and references
+# to the entries. An entry (0x18) references its wave sound info (0x20: pitch, pan, sends, then
+# envelope and randomizer references), its track table (count, references to 8-byte track infos,
+# each referencing a table of 0x10-byte note events: position, length, note index) and its note
+# table (count, references to 0x30-byte note infos: wave index, ADSR, key, volume, pan, pitch,
+# then LFO, envelope and randomizer references). WAVE: a count, offsets from WAVE's start to each
+# wave info (0x1C, then its channel table, channel infos and DSP-ADPCM states).
+
+_REF = 0x01000000
+
+
+def _wave_block(header: bytes, wave_at: int) -> bytes:
+    """A wave info with everything it points at (offsets inside it are relative to ``wave_at``)."""
+    channel_count = header[wave_at + 2]
+    table_at = wave_at + _u32(header, wave_at + 0x10, "channel table offset")
+    end = table_at + 4 * channel_count
+    for index in range(channel_count):
+        channel_at = wave_at + _u32(header, table_at + 4 * index, "channel offset")
+        end = max(end, channel_at + 0x1C, wave_at + _u32(header, channel_at + 4, "ADPCM offset") + 0x30)
+    return header[wave_at:end]
+
+
+def single_entry_rwsd(document: RwsdFile, entry_index: int) -> tuple[bytes, bytes]:
+    """An RWSD holding only ``document``'s entry ``entry_index``: its wave sound info, its first
+    track with its first note event, its first note (pointing at wave 0) and a copy of its wave.
+    Envelope, randomizer and LFO references are left out (null). Replace the wave's audio with
+    :func:`replace_wave`."""
+    header = document.header
+    if not 0 <= entry_index < len(document.entries):
+        raise RwsdError("RWSD entry index is out of range")
+    data_offset, _data_size, wave_offset, _wave_size = struct.unpack_from(">4I", header, 0x10)
+    base = data_offset + 8
+    entry_at = _reference_list(header, base, base, "DATA entry")[entry_index]
+    wsd_at = _reference(header, entry_at, base, "WSD info")
+    track_at = _reference_list(header, _reference(header, entry_at + 8, base, "track table"), base, "track")[0]
+    event_at = _reference_list(header, _reference(header, track_at, base, "event table"), base, "event")[0]
+    note_at = _reference_list(header, _reference(header, entry_at + 0x10, base, "note table"), base, "note")[0]
+    wave_index = _u32(header, note_at, "wave index")
+
+    body = bytearray()
+
+    def put(raw: bytes) -> int:
+        at = len(body)
+        body.extend(raw)
+        return at
+
+    def ref(at: int) -> bytes:
+        return struct.pack(">2I", _REF, at)
+
+    put(bytes(4 + 8))                           # the entry list, filled below
+    entry_rel = put(bytes(0x18))
+    wsd = bytearray(header[wsd_at:wsd_at + 0x20])
+    wsd[0x0C:0x1C] = bytes(0x10)                 # no envelope, no randomizer
+    wsd_rel = put(wsd)
+    track_table_rel = put(struct.pack(">I", 1) + bytes(8))
+    track_rel = put(bytes(8))
+    event_table_rel = put(struct.pack(">I", 1) + bytes(8))
+    event = bytearray(header[event_at:event_at + 0x10])
+    struct.pack_into(">I", event, 8, 0)          # the first (only) note
+    event_rel = put(event)
+    note_table_rel = put(struct.pack(">I", 1) + bytes(8))
+    note = bytearray(header[note_at:note_at + 0x30])
+    struct.pack_into(">I", note, 0, 0)           # wave 0
+    note[0x14:0x2C] = bytes(0x18)                # no LFO, envelope or randomizer
+    note_rel = put(note)
+    struct.pack_into(">I", body, 0, 1)
+    body[4:12] = ref(entry_rel)
+    body[entry_rel:entry_rel + 0x18] = ref(wsd_rel) + ref(track_table_rel) + ref(note_table_rel)
+    body[track_table_rel + 4:track_table_rel + 12] = ref(track_rel)
+    body[track_rel:track_rel + 8] = ref(event_table_rel)
+    body[event_table_rel + 4:event_table_rel + 12] = ref(event_rel)
+    body[note_table_rel + 4:note_table_rel + 12] = ref(note_rel)
+    data = bytearray(b"DATA" + bytes(4)) + body
+    data += bytes(-len(data) % 0x20)
+    struct.pack_into(">I", data, 4, len(data))
+
+    wave_at = wave_offset + _u32(header, wave_offset + 12 + 4 * wave_index, "wave offset")
+    block = bytearray(_wave_block(header, wave_at))
+    template = document.waves[wave_index]
+    stored = _u32(block, 0x0C, "sample count")  # nibbles for DSP-ADPCM, as read_rwsd measures it
+    bytes_per_channel = ((stored + 1) // 2 if template.encoding == 2 else
+                         template.sample_count * (1 if template.encoding == 0 else 2))
+    payload = bytearray()
+    struct.pack_into(">I", block, 0x14, 0)
+    table_offset = _u32(block, 0x10, "channel table offset")
+    for index, channel in enumerate(template.channels):
+        payload += bytes(-len(payload) % 0x20)
+        channel_at = _u32(block, table_offset + 4 * index, "channel offset")
+        struct.pack_into(">I", block, channel_at, len(payload))
+        start = template.data_offset + channel.data_offset
+        payload += document.wave_data[start:start + bytes_per_channel]
+    wave = bytearray(b"WAVE" + bytes(4)) + struct.pack(">II", 1, 0x10) + block  # the block at WAVE + 0x10
+    wave += bytes(-len(wave) % 0x20)
+    struct.pack_into(">I", wave, 4, len(wave))
+
+    out = bytearray(0x20)
+    out[0:4] = b"RWSD"
+    struct.pack_into(">HHIHH", out, 4, 0xFEFF, struct.unpack_from(">H", header, 6)[0], 0, 0x20, 2)
+    struct.pack_into(">4I", out, 0x10, 0x20, len(data), 0x20 + len(data), len(wave))
+    out += data + wave
+    struct.pack_into(">I", out, 8, len(out))
+    built = read_rwsd(bytes(out), bytes(payload))
+    if len(built.entries) != 1 or decode_wave(built, 0) != decode_wave(document, wave_index):
+        raise RwsdError("The new RWSD did not validate")
+    return bytes(out), bytes(payload)

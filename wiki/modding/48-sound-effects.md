@@ -99,6 +99,14 @@ Trigger the cue beside music, voice, and other effects. Compare loudness, timing
 - **Sound macro** messages: *No FX entry for this sound id.* when no bank has an effect for the cue's sound id; *Sequenced song N (gcfesnd.slib): no FX macro.* for ids above 255, which are sequenced songs.
 - **Add** / **Replace** (dialog): encodes and writes; *Encoding...* shows while it runs (roughly twice the clip's length). **Cancel** closes without writing.
 
+### On Radiant Dawn
+
+Radiant Dawn's sound effects are `SFX_*` cues in `Sound/sound_data_en.cms`. Each names a sound of `Sound/sound_us.brsar`, most of them a wave in one of the archive's embedded wave banks (RWSD). The banks are loaded in groups: `GROUP_STATIC` always, the others by scene.
+
+- **Replace audio…** re-encodes the wave of an embedded wave sound. When other sounds share that wave, the page lists them first.
+- **Add sound effect…** asks for a cue name (`SFX_...`) and a WAV. The new effect gets a wave bank of its own holding one sound, `SE_<NAME>`. It copies the settings of the selected sound effect: its player, priorities, 3D settings and load group. With nothing selected it copies the menu select sound (`SFX_SYS_SELECT1`, always loaded). Pick a template that is loaded where the effect will play. The audio is mixed down to the template's channel count.
+- **Delete** removes an effect the project added: its cue, and its sound when no other cue plays it. The game's own effects can only be replaced.
+
 ## Things to try next
 
 1. **Replace a menu sound.** Select `SFX_SYS_SELECT1`, **Replace audio...** with a short click, and listen in the title menu after a build.

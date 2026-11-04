@@ -89,6 +89,8 @@ source_path: "meta/radiant-dawn.md"
 
   A stream sound and a cue added this way played in Dolphin: 1-1's player and enemy phase entries named the new cue, and the dumped audio was the new 440 Hz stream, looping. <span class="confidence confidence--confirmed">in game</span>
 
+  An embedded RWSD's DATA section (references relative to DATA + 8) lists its entries. An entry references its wave sound info (0x20: pitch, pan, sends, then envelope and randomizer references), its track table (8-byte track infos, each with a table of 0x10-byte note events: position, length, note) and its note table (0x30-byte note infos: wave, ADSR, key, volume, pan, pitch, then LFO, envelope and randomizer references). A wave sound's 16-byte info gives the RWSD entry, the track allocation and the priorities; the file's position table gives the groups that load it. A new sound effect made as its own one-entry RWSD in `GROUP_STATIC` played in Dolphin through the menu sound cues. <span class="confidence confidence--confirmed">in game</span>
+
 ## Battle sceneries
 
   Path of Radiance gives each backdrop a `zbg/<scenery>/param.dbx` (indoor flag, footstep effect and sound). Radiant Dawn has one 24-byte `FE10BMapModel` row per placed backdrop model in `FE10Battle.cms` (146 rows); an `FE10BMapData` background picks up to five rows, its variants. <span class="confidence confidence--confirmed">engine</span>
