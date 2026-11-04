@@ -93,6 +93,15 @@ class Fe10SaveEditor(ttk.Frame):
             entry.bind("<Return>", self._commit_bmst)
             entry.bind("<FocusOut>", self._commit_bmst)
         self._field_entries = list(fields.winfo_children())[1::2]
+        start = ttk.Frame(overview)
+        start.pack(anchor="w", pady=(10, 0))
+        self._start_button = ttk.Button(start, text="Start a chapter from its opening…",
+                                        command=self._start_chapter, state="disabled")
+        self._start_button.pack(side="left")
+        ttk.Label(start, style="Muted.TLabel", wraplength=640, justify="left", text=(
+            "Makes the file a save from the end of the chapter before: the file menu offers Start Chapter "
+            "and the chapter's opening plays (4-P's army split, for example). Changing only the chapter "
+            "number keeps a base or preparations file where it was saved.")).pack(side="left", padx=(10, 0))
 
         ttk.Label(convoy, style="Muted.TLabel", wraplength=900, justify="left", text=(
             "All 316 serialized storage slots are shown. Item numbers refer to FE10Data.cms. "
@@ -593,6 +602,43 @@ class Fe10SaveEditor(ttk.Frame):
             messagebox.showinfo("Check", "All populated records have supported headers and valid checksums.",
                                 parent=self)
 
+    def _start_chapter(self) -> None:
+        record = self._record()
+        session = getattr(self.shell, "session", None)
+        database = getattr(session, "fe10", None)
+        if record is None or record.empty or record.section("BMST") is None:
+            return
+        if database is None:
+            messagebox.showinfo("Start a chapter", "Open an extracted Radiant Dawn workspace first: the "
+                                "chapter list comes from its FE10Data.", parent=self)
+            return
+        chapters = sorted((row for row in database.table("chapter") if row.values.get("number")),
+                          key=lambda row: row.values["number"])
+        choices = [f"{row.values['cid']} ({row.values.get('map') or 'no map'})" for row in chapters]
+        from tkinter import simpledialog
+        current = next((i for i, row in enumerate(chapters) if row.values["number"] == record.chapter_number), 0)
+        answer = simpledialog.askstring(
+            "Start a chapter", "Chapter id to start from its opening (C0401 is 4-P):",
+            initialvalue=chapters[current].values["cid"], parent=self)
+        if not answer:
+            return
+        chosen = next((i for i, row in enumerate(chapters) if row.values["cid"].lower() == answer.strip().lower()),
+                      None)
+        if chosen is None:
+            messagebox.showerror("Start a chapter", f"No chapter {answer!r}. Known: {', '.join(choices[:12])}…",
+                                 parent=self)
+            return
+        target, before = chapters[chosen], chapters[chosen - 1] if chosen else chapters[chosen]
+        affinity = next((row.index for row in database.table("affinity")
+                         if row.values.get("affinity") == target.values.get("affinity")), 0)
+        try:
+            record.start_at_chapter(target.values["number"], before.values.get("map") or target.values["map"],
+                                    affinity)
+        except ValueError as exc:
+            messagebox.showerror("Start a chapter", str(exc), parent=self)
+            return
+        self._refresh()
+
     def _play(self) -> None:
         if self._save is None:
             return
@@ -610,4 +656,7 @@ class Fe10SaveEditor(ttk.Frame):
         self._copy_button.configure(state="normal" if has else "disabled")
         self._check_button.configure(state="normal" if has else "disabled")
         self._play_button.configure(state="normal" if has and self.shell.extracted else "disabled")
+        record = self._record() if has else None
+        self._start_button.configure(state="normal" if record is not None and not record.empty
+                                     and record.section("BMST") is not None else "disabled")
         self._status.configure(text="Unsaved changes" if self.dirty else "")
