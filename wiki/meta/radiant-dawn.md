@@ -89,6 +89,12 @@ source_path: "meta/radiant-dawn.md"
 
   The tutorial lists use Path of Radiance's `tut_data` layout, one file per difficulty set: `Tutorial/tut_data_n_en.bin` and `tut_data_h_en.bin`, plus the Japanese `tut_data_n.bin` and `tut_data_h.bin`. Each entry has the same four start-flag slots as Path of Radiance's; retail English entries are 0, 2, 2, 0 (only slots 2 and 3 unlocked). Which game each slot stands for has not been checked in game. <span class="confidence confidence--confirmed">files</span>
 
+  The game reads them through a 2 × 6 table of names (`0x8036DA88`): the row is BMST +0x11 of the running game (0 the `_n` files, 1 the `_h` files) and the column the language. Four functions load from it (`0x801B00C0`, `0x801B01E4`, `0x801B0304`, `0x801B3ACC`). Setting every tutorial learned in any of the four slots did not stop 1-1's tutorial offers, which come from the chapter script (`TutorialRunTypeA`). <span class="confidence confidence--confirmed">in game</span>
+
+## Weather
+
+  ChapterData +0x9C names the chapter's weather: one of 22 names (`晴れ` clear, `曇り` cloudy, `雪` snow, `夜` night, `室内` indoors, `なし` none, and others). `0x801347B0` turns the name into its number (21, `なし`, for an unknown name) and `0x80134624` turns it back. The only caller is the battle scene setup (`0x801861A0`), which reads the battle background at +0x98 and the weather at +0x9C together. On 1-1, snow in place of cloudy drew no snow on the map or in battle, but the bandit's displayed hit rate on Micaiah went from 54 to 69. <span class="confidence confidence--confirmed">in game</span>
+
 ## Saves
 
   `FE10_US.dat` holds a system record, six files and six checkpoints. Each file is a record of its own: its header holds the file number, the difficulty and the chapter number the file menu shows, which `BMST` repeats. <span class="confidence confidence--confirmed">files</span>

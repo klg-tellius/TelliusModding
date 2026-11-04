@@ -586,6 +586,8 @@ class MapExtra:
 MAP_EXTRA_SIGHT_MASK = 0x000C0000
 MAP_EXTRA_WEATHER_MASK = 0x01F00000
 MAP_EXTRA_OBJECT_ORDER_MASK = 0x20000000
+#: Largest weather id a Radiant Dawn story map uses (bmap0308); the field holds up to 31.
+RD_WEATHER_MAX = 21
 
 
 def patch_extra_mode(data: bytes, record: MapExtra, field: str, value: int) -> bytes:
@@ -596,6 +598,8 @@ def patch_extra_mode(data: bytes, record: MapExtra, field: str, value: int) -> b
     if field not in masks:
         raise MapFileError(f"Unknown mapextra mode {field!r}.")
     mask, shift, maximum = masks[field]
+    if field == "weather_id" and map_layout(data).game == "fe10":
+        maximum = RD_WEATHER_MAX  # Radiant Dawn's maps use ids up to 21 (1-6's sandstorm is 18)
     if not isinstance(value, int) or not 0 <= value <= maximum:
         raise MapFileError(f"{field} must be between 0 and {maximum}.")
     current = struct.unpack_from(">I", data, record.address + 8)[0]

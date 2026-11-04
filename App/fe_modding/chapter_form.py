@@ -150,7 +150,10 @@ def rd_sections(data: bytes, index: int) -> list[ChapterSection]:
               ChapterField("Second scene", "scene_2", CHOICE, options=_rd_used(data, "scene_2")),
               ChapterField("Battle background", "battle_background", CHOICE,
                            "A BattleTerrName entry (Game Data › Battle scenery).", options=scenery),
-              ChapterField("Weather", "weather", CHOICE, options=_rd_used(data, "weather")),
+              ChapterField("Weather", "weather", CHOICE,
+                           "The battle scenes' weather; it can change battle numbers. Nothing is drawn "
+                           "on the map: a map's own weather is in Build › Map settings.",
+                           options=_rd_used(data, "weather")),
               ChapterField("Affinity", "affinity", CHOICE, options=_rd_used(data, "affinity")),
               ChapterField("Lord", "lord", CHOICE,
                            options=tuple(fe10data.labels_with_prefix(data, "PID_")),
