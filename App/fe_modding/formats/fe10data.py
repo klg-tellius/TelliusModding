@@ -43,7 +43,6 @@ STAT_NAMES = ("HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res")
 #: An item's stat-bonus block: the eight stats, then movement and weight; disk padding follows the
 #: complete optional tail rather than belonging to this block.
 BONUS_NAMES = STAT_NAMES + ("Mov", "Wt")
-BONUS_BLOCK_SIZE = 10
 ITEM_EXTRA_BLOCK_SIZE = 8
 
 KINDS = ("character", "class", "item", "skill")
@@ -647,22 +646,28 @@ def set_item_bonuses(data: bytes, index: int, bonuses: Optional[Sequence[int]]) 
     """Give an item a stat-bonus block (``BONUS_NAMES`` order), change it, or (None) remove it."""
     rec = record(data, "item", index)
     at = rec.offsets["bonuses"]
-    count_offset = rec.offsets["bonus_count"]
-    if rec.values["bonus_count"] & ~1:
+    flags_offset = rec.offsets["bonus_count"]
+    flags = rec.values["bonus_count"]
+    if flags & ~1:
         raise ValueError("This item has a second bonus block (bit 1 of its block byte); edit it as raw bytes.")
     if bonuses is not None:
         bonuses = [int(v) for v in bonuses]
         if len(bonuses) != len(BONUS_NAMES) or not all(-128 <= v <= 127 for v in bonuses):
             raise ValueError(f"A bonus block holds {len(BONUS_NAMES)} values between -128 and 127.")
-        block = struct.pack(f">{len(bonuses)}b", *bonuses) + bytes(BONUS_BLOCK_SIZE - len(bonuses))
+        # the block is padded to a word, like every retail one (_bonus_blocks_size)
+        block = struct.pack(f">{len(bonuses)}b", *bonuses) + bytes(_bonus_blocks_size(1) - len(bonuses))
     if rec.bonuses is not None and bonuses is not None:
         out = bytearray(data)
-        out[at:at + len(block)] = block
+        out[at:at + len(bonuses)] = block[:len(bonuses)]
         return bytes(out)
     if rec.bonuses is not None:
-        data = delete_bytes(data, at, _bonus_blocks_size(rec.values["bonus_count"]))
+        data = delete_bytes(data, at, _bonus_blocks_size(flags))
+        flags &= ~1
     elif bonuses is not None:
         data = insert_bytes(data, at, block)
+        flags |= 1
+    else:
+        return data
     out = bytearray(data)
     out[flags_offset] = flags
     return bytes(out)

@@ -87,8 +87,8 @@ def _mark_variable_tables(cov: CoverageMap, data: bytes) -> None:
             if kind == "item" and r.bonuses is not None:
                 at = r.offsets["bonuses"]
                 cov.mark(at, len(fe10data.BONUS_NAMES), DECODED, "item.bonuses")
-                _pad(cov, at + len(fe10data.BONUS_NAMES), fe10data.BONUS_BLOCK_SIZE - len(fe10data.BONUS_NAMES),
-                     "item.bonuses_pad")
+                _pad(cov, at + len(fe10data.BONUS_NAMES),
+                     fe10data._bonus_blocks_size(1) - len(fe10data.BONUS_NAMES), "item.bonuses_pad")
 
 
 def _mark_skills(cov: CoverageMap, data: bytes) -> None:
