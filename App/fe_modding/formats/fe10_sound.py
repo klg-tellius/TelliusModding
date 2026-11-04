@@ -17,6 +17,7 @@ import struct
 from dataclasses import dataclass
 
 from .common import HEADER_SIZE
+from . import fe8data
 from .fe8data import _symbol_entries
 
 RECORD_SIZE = 0x24
@@ -121,3 +122,67 @@ def repoint_cue(data: bytes, cue_name: str, resource: str) -> bytes:
         raise Fe10SoundError("Repointed cue did not validate")
     return rebuilt
 
+
+
+def _raw_symbols(data: bytes) -> list[tuple[int, bytes]]:
+    """(data offset, name bytes) of every export; one retail name is not ASCII, so names stay raw."""
+    _size, data_size, pointer_count, count = struct.unpack_from(">IIII", data, 0)
+    table = HEADER_SIZE + data_size + 4 * pointer_count
+    names = table + 8 * count
+    result = []
+    for index in range(count):
+        offset, name_at = struct.unpack_from(">II", data, table + 8 * index)
+        start = names + name_at
+        result.append((offset, bytes(data[start:data.index(b"\0", start)])))
+    return result
+
+
+def _set_symbols(data: bytes, symbols: list[tuple[int, bytes]]) -> bytes:
+    """``data`` with its symbol table rebuilt from (data offset, name bytes), sorted by name like
+    retail."""
+    _size, data_size, pointer_count, _count = struct.unpack_from(">IIII", data, 0)
+    table = HEADER_SIZE + data_size + 4 * pointer_count
+    entries, names = bytearray(), bytearray()
+    for offset, name in sorted(symbols, key=lambda item: item[1]):
+        entries += struct.pack(">II", offset, len(names))
+        names += name + b"\0"
+    out = bytearray(data[:table]) + entries + names
+    struct.pack_into(">I", out, 0, len(out))
+    struct.pack_into(">I", out, 12, len(symbols))
+    return bytes(out)
+
+
+def add_cue(data: bytes, name: str, resource: str, template: str) -> bytes:
+    """``data`` with a new cue ``name`` playing BRSAR sound ``resource``: a 36-byte record (the
+    name, the resource, then ``template``'s seven other words) appended to the data section and
+    exported under its name. The game finds a cue through that export (RFEE01 0x80076F54 looks
+    the name up in the global name hash every loaded container's symbols go into), so the new
+    cue needs no place in the SND_* tables."""
+    if not name.isascii() or not name.startswith(CUE_PREFIXES) or not name.replace("_", "").isalnum():
+        raise Fe10SoundError("A cue name is BGM_, SFX_ or VOICE_ followed by capitals, digits and _.")
+    cues = cue_map(data)
+    if name in cues or name.encode("ascii") in {symbol for _o, symbol in _raw_symbols(data)}:
+        raise Fe10SoundError(f"{name} already exists")
+    if template not in cues:
+        raise Fe10SoundError(f"Unknown template cue {template}")
+    out, name_at = fe8data._append_label(data, name)
+    out, resource_at = fe8data._append_label(out, resource)
+    record = struct.pack(">9I", name_at, resource_at, *cues[template].raw_words)
+    out, record_at = fe8data.append_block(out, record, pointer_fields=(0, 4))
+    rebuilt = _set_symbols(out, _raw_symbols(out) + [(record_at, name.encode("ascii"))])
+    added = cue_map(rebuilt).get(name)
+    if added is None or added.resource != resource:
+        raise Fe10SoundError("The new cue did not validate")
+    return rebuilt
+
+
+def remove_cue(data: bytes, name: str, vanilla: bytes) -> bytes:
+    """``data`` without the export of cue ``name``, one the mod added (its record stays behind,
+    unused). Cues of the extracted file refuse."""
+    if name in cue_map(vanilla):
+        raise Fe10SoundError(f"{name} is one of the game's own cues")
+    key = name.encode("ascii")
+    symbols = _raw_symbols(data)
+    if key not in {symbol for _o, symbol in symbols}:
+        raise Fe10SoundError(f"No cue {name}")
+    return _set_symbols(data, [(offset, symbol) for offset, symbol in symbols if symbol != key])

@@ -44,8 +44,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from .. import tools
-from ..exceptions import ModdingError
+from .. import rd_music, tools
+from ..exceptions import ModdingError, ProjectError
 from ..formats import brsar, brstm, fe10_sound, gcfesnd, lz10, stm
 from ..games import Game
 from ..media_references import executable_bgm_cues, front_end_track_cues
@@ -304,7 +304,8 @@ class MusicEditor(EditorPanel):
 
     def _added_cues(self, cues: list[gcfesnd.BgmCue]) -> list[gcfesnd.BgmCue]:
         if self._fe10:
-            return []
+            added = rd_music.added_cues(self._project)
+            return [cue for cue in cues if cue.name in added]
         original = self._project.extracted_bytes(self._catalog())
         try:
             retail = {c.name for c in gcfesnd.read_bgm_cues(original)} if original else set()
@@ -317,8 +318,7 @@ class MusicEditor(EditorPanel):
             return
         cues = self._cues_of(self._current_path)
         self._cue_label.config(text=", ".join(c.name for c in cues) or "none: the game cannot play this track yet")
-        self._new_cue_button.config(state="disabled" if self._fe10 else
-                                    ("normal" if self._catalog().is_file() else "disabled"))
+        self._new_cue_button.config(state="normal" if self._catalog().is_file() else "disabled")
         self._repoint_button.config(state="normal" if self._fe10 and self._rd_resources_for(self._current_path)
                                     else "disabled")
         self._remove_cue_button.config(state="normal" if self._added_cues(cues) else "disabled")
@@ -330,9 +330,13 @@ class MusicEditor(EditorPanel):
 
     def _add_cue(self, path: Path, name: str) -> bool:
         if self._fe10:
-            messagebox.showinfo("New music cue", "Adding new Radiant Dawn BRSAR resources is not enabled yet. "
-                                "Existing cues can be repointed through decoded sound data.", parent=self)
-            return False
+            try:
+                resource = rd_music.add_cue(self._project, name, path)
+            except ProjectError as exc:
+                messagebox.showerror("Could not add the music cue", str(exc), parent=self)
+                return False
+            self._changelog.append(name, f"Added music cue for {path.name} ({resource})")
+            return True
         try:
             data = self._catalog().read_bytes()
             data = gcfesnd.add_bgm_cue(data, name, f"sound/{path.stem}")
@@ -400,9 +404,12 @@ class MusicEditor(EditorPanel):
                                    "nothing.", parent=self):
             return
         try:
-            data = gcfesnd.remove_bgm_cue(self._catalog().read_bytes(), cue.name)
-            self._project.write_keeping_original(self._catalog(), data)
-        except (OSError, gcfesnd.GcfesndError, ValueError) as exc:
+            if self._fe10:
+                rd_music.remove_cue(self._project, cue.name)
+            else:
+                data = gcfesnd.remove_bgm_cue(self._catalog().read_bytes(), cue.name)
+                self._project.write_keeping_original(self._catalog(), data)
+        except (OSError, gcfesnd.GcfesndError, ValueError, ProjectError) as exc:
             messagebox.showerror("Could not remove the cue", str(exc), parent=self)
             return
         self._changelog.append(cue.name, "Removed music cue")
@@ -462,8 +469,7 @@ class MusicEditor(EditorPanel):
 
     def _add_new_track(self) -> None:
         if self._fe10:
-            messagebox.showinfo("New track", "Adding a new Radiant Dawn track also requires a new BRSAR stream "
-                                "entry and is not enabled yet. Replace an existing track instead.", parent=self)
+            self._add_rd_track()
             return
         sound_dir = files_root_of(self._project) / "Sound"
         if not sound_dir.exists():
@@ -492,13 +498,81 @@ class MusicEditor(EditorPanel):
             return
         self._confirm_and_encode(new_audio, dest, verb="create", on_success=lambda audio: self._on_new_track_added(dest, audio))
 
+    def _add_rd_track(self) -> None:
+        """Radiant Dawn: a new stream, its STRM sound in sound_us.brsar and a BGM_ cue
+        (rd_music.add_track). The selected track is the template for the stream's settings."""
+        template = self._current_path or (self._all_files[0] if self._all_files else None)
+        if template is None:
+            messagebox.showerror("New track", "Extract the project first.", parent=self)
+            return
+        name = simpledialog.askstring(
+            "New track name", "File name in Sound/strm/ (no extension; lowercase letters, digits and _):\n"
+            f"It copies the settings of {template.name}.", parent=self)
+        if not name:
+            return
+        name = name.strip().lower()
+        if not rd_music.TRACK_RE.fullmatch(name):
+            messagebox.showerror("Invalid name", "Use lowercase letters, digits and _ only.", parent=self)
+            return
+        if (template.parent / f"{name}.brstm").exists():
+            messagebox.showerror("Already exists", f"{name}.brstm already exists.", parent=self)
+            return
+        audio = self._prompt_for_audio(should_ask_loop=True, already_loops=False)
+        if audio is None:
+            return
+        duration = len(audio.channels[0]) / audio.sample_rate
+        if not messagebox.askyesno("Encode?", f"This will encode {duration:.1f}s of audio "
+                                   f"({len(audio.channels)} channel(s)) into strm/{name}.brstm and register it in "
+                                   "sound_us.brsar and the sound data. Continue?", parent=self):
+            return
+
+        def work():
+            data = brstm.write_brstm(audio, template.read_bytes())
+            return rd_music.add_track(self._project, name, data, template, len(audio.channels))
+
+        def done(result) -> None:
+            cue, sound = result
+            self._rd_streams = None
+            self._changelog.append(name, f"Added track strm/{name}.brstm ({sound}, cue {cue})")
+            self._load_track_list()
+            self._status_label.config(text=f"Added strm/{name}.brstm, played by the music cue {cue}: name it as "
+                                           "a chapter's music or in a script's BGM command.")
+            dest = next((path for path in self._filtered_files if path.stem == name), None)
+            if dest is not None:
+                index = self._filtered_files.index(dest)
+                self._file_list.selection_clear(0, "end")
+                self._file_list.selection_set(index)
+                self._file_list.see(index)
+                self._on_file_selected()
+
+        self._run_task("Encoding...", work, on_success=done)
+
     def _delete_track(self) -> None:
         path = self._current_path
         if path is None:
             return
         if self._fe10:
-            messagebox.showinfo("Remove track", "Retail Radiant Dawn streams cannot be removed until BRSAR "
-                                "resource rebuilding is enabled. Replace the stream instead.", parent=self)
+            if not rd_music.is_added_stream(self._project, path):
+                messagebox.showinfo("Remove track", "This is one of the game's own streams: replace its audio "
+                                    "instead. Tracks added with New track can be removed.", parent=self)
+                return
+            if not messagebox.askyesno("Remove track", f"Remove {path.name}, its sound in sound_us.brsar and its "
+                                       "cues? Chapters and scripts naming them will play nothing.", parent=self):
+                return
+            self._stop()
+            try:
+                removed = rd_music.remove_track(self._project, path)
+            except ProjectError as exc:
+                messagebox.showerror("Could not remove the track", str(exc), parent=self)
+                return
+            self._rd_streams = None
+            self._changelog.append(path.stem, "Deleted track" + (f" and cues {', '.join(removed)}" if removed else ""))
+            self._current_path = None
+            self._track_label.config(text="(no track selected)")
+            self._info_label.config(text="")
+            for button in (self._play_button, self._export_button, self._import_button, self._delete_button):
+                button.config(state="disabled")
+            self._load_track_list()
             return
         catalog = path.parent / "gcfesnd.bin"
         try:

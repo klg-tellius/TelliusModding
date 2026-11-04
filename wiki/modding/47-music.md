@@ -119,6 +119,16 @@ For one-shot music, listen through its final sample and the following scene acti
 - **New cue…:** appends another callable BGM record.
 - **Remove cue:** removes a project-added cue; callers naming it become silent/unresolved.
 
+### On Radiant Dawn
+
+Radiant Dawn's music is in `Sound/strm/*.brstm`, and a cue reaches it in two steps: the `BGM_*` cue in `Sound/sound_data_en.cms` names a stream sound of `Sound/sound_us.brsar` (`STRM_BGM_*`), which names the `.brstm`. The page lists the streams some `BGM_` cue plays.
+
+- **New track…** encodes the audio into `Sound/strm/<name>.brstm` and adds the other two: a stream sound `STRM_BGM_<NAME>` and a cue `BGM_<NAME>`. The new sound copies the settings of the track selected when you press it: its player, volume and 3D settings.
+- **New cue…** adds another `BGM_` cue for the selected track's sound. **Repoint cue…** points an existing cue at it.
+- **Remove cue** and **Delete** work on what the project added. Deleting an added track also removes its cues and its stream sound. The game's own tracks and cues can be replaced but not deleted.
+
+A chapter's map music on Radiant Dawn is named in `sound_data`'s `SND_MAP_BGM_DATA`, one row per chapter, not in the chapter data. Scripts name cues directly.
+
 ## Things to try next
 
 1. **A cue alias.** Select your new track, **New cue…** `BGM_TUTORIAL_THEME_ALT`, and use it in one chapter while the first cue stays on another.
