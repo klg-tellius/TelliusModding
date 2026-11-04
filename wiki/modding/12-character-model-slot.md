@@ -147,6 +147,13 @@ For a whole army of a class, open the class in **Game Data** › **Classes** and
 | **Battle textures** | Per battle model: which texture file is used for a key (animation ID, character, or army: 自軍 player, 敵軍 enemy, 中立 other, 味方 ally); **Set** / **Remove**; **Remove this slot...** deletes a battle model the mod added |
 | **Map models** | Per animation ID: its folder and one texture number per army; **Set textures** writes them (every weapon set of the ID loads `ymu/<folder>tex_<n>.tpl`, `n` picked by the unit's army); **Remove this slot...** deletes an AID the mod added and puts characters that used it back on their previous or class model |
 
+On Radiant Dawn the same dialog edits `FE10Battle.cms` and `FE10Anim.cms`:
+
+- **Battle job list** shows the `FE10BAnimData` rows, numbered, each with its animation ID, character and class (the ones it has), its battle model, and in **Comment** its description and the model used in the air (pegasi, wyverns, bird laguz). The game takes the first row with the unit's animation ID, else the first with its character and class, else its character, else its class. A character's own row counts for its class too: on retail, a class-only Light Mage line would never be reached, because Micaiah's row comes first. **Set line** changes the row with exactly those keys, or adds one. It refuses a line that an earlier row would win, and names that row.
+- **Which models does a character get?** has a **Tier** (1-4) instead of **Promoted**: the character's `aid_<tier>`, else the class's animation ID.
+- **Battle textures** are the model's `FE10BTex` rows: one per army key, plus character rows (`PID_ISAIYA`), which come before the army rows.
+- **Map models** shows one texture name per animation ID (its `FE10AnimHeader` row) instead of one number per army. **Set texture** changes it; the texture must be in the ID's `ymu/` folder.
+
 ### Colour variant (character page) and Army colours (class form)
 
 | Control | What it does |
