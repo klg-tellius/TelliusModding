@@ -101,7 +101,10 @@ def card_army(ctx):
     save = sf.SaveFile.from_bytes((ctx.saves / ARMY_SAVE).read_bytes())
     record = next(r for r in save.active_records() if not r.checkpoint and r.logical_slot == ARMY_FILE_SLOT)
     ctx.facts["was_chapter"] = record.chapter_number
-    record.move_to_chapter(FOUR_P, chapter.values["map"], affinity)
+    three_e = next(r for r in tables.table("chapter") if r.values.get("number") == FOUR_P - 1)
+    # a preparations file moved to 4-P reopens the saved preparations; written as a chapter-end
+    # file after 3-E it starts 4-P from its opening, where the split runs
+    record.start_at_chapter(FOUR_P, three_e.values["map"], affinity)
     return {"FE10_US.dat": save.to_bytes([record])}
 
 
@@ -111,11 +114,41 @@ TUTORIAL_STEPS = ["Skip the opening talk with Start. When the map appears, wait 
 
 SCENARIOS: list[Scenario] = [
     Scenario(
+        "S0", "Radiant Dawn: locked controls", "Make a save at the start of Part 4",
+        "A file saved after 3-E (the end of Part 3), which A1 and the Supports test start from",
+        steps=["Skip the opening talk with Start and go through the preparations (Start, then Fight).",
+               "End the player phase (Z menu, End). The chapter clears itself when the enemy phase starts.",
+               "Go through the end of the chapter. When the game offers to save, save to File 1."],
+        checks=["The game saves to File 1 after 3-E (the next file menu shows Part 4)."],
+        build=None, chapter="0315", difficulty="Hard", anim_speed=None, region=RD, auto_win={"0315": 1},
+        minutes=10,
+        notes=[RD_JUMP_NOTE.replace("Part 1, Chapter 1 (the Prologue)", "Part 3's Endgame (3-E)"),
+               "The jump starts 3-E with the chapter's own forced units, not a played-through army."]),
+    Scenario(
+        "S1", "Radiant Dawn: locked controls", "Make a chapter-end save (after 1-9)",
+        "A file saved at a chapter's end, to compare with the preparations saves (where a file resumes)",
+        steps=["Leave the base (Yes), skip the talks with Start, answer No to the tutorial, Fight.",
+               "End the player phase (Z menu, End). The chapter clears itself when the enemy phase starts.",
+               "Go through the end of the chapter. When the game offers to save, save to File 1."],
+        checks=["The game saves to File 1 after 1-9."],
+        build=None, chapter="0109", difficulty="Normal", anim_speed=None, region=RD, auto_win={"0109": 1},
+        minutes=10, notes=[RD_JUMP_NOTE.replace("Part 1, Chapter 1 (the Prologue)", "Part 1, Chapter 9")]),
+    Scenario(
+        "S2", "Radiant Dawn: locked controls", "Make a chapter-end save (New Game, after the Prologue)",
+        "A file the game saves itself at a chapter's end (the chapter jump skips that prompt)",
+        steps=["At the title screen start a New Game (Normal) and skip the talks with Start.",
+               "End the player phase (Z menu, End). The chapter clears itself when the enemy phase starts.",
+               "When the game offers to save after the chapter, save to File 1."],
+        checks=["The game saves to File 1 after the Prologue."],
+        build=None, boot="title", difficulty="Normal", anim_speed=None, region=RD, auto_win={"0101": 1},
+        minutes=10),
+    Scenario(
         "A1", "Radiant Dawn: locked controls", "Army switching: Micaiah's army plays 4-1",
         "Chapter › Overview › Army on RD (rd_armies: TEAM_0401_ED / TEAM_0402_ED, C0402 group 18 and lord "
         "Micaiah)",
-        steps=["At the title screen, Continue and load File 5 (Hard; it was at the Endgame, chapter {was_chapter}; "
-               "the test moved it back to Part 4's Prologue, so the file menu shows chapter 4-P).",
+        steps=["At the title screen choose Start Chapter and load File 5 (Hard; it was at the Endgame, chapter "
+               "{was_chapter}; the test made it a file saved after 3-E, so the file menu shows Part III Endgame, "
+               "Clear).",
                "Let 4-P's opening play (Start skips talks). The army-splitting screen appears: before accepting it "
                "as it is, note which army Ike and Tibarn are listed under.",
                "In 4-P's preparations, open the unit list and note whether Ike or Tibarn is there.",
@@ -141,10 +174,11 @@ SCENARIOS: list[Scenario] = [
                "army switching.",
                "Changes: {handover}. Test only: 4-P's split also collects forces 0 and 5, where this "
                "Endgame save keeps units.",
-               "Known limit (unattended run, 2026-11-03): File 5 was saved in the Endgame's preparations, so "
-               "it resumes 4-P's preparations with the Endgame's armies and unit positions and 4-P's opening "
-               "(where the split runs) never plays. Clearing the chapter flags or the saved map name does "
-               "not change that. A real check needs a file saved at the end of 3-E."]),
+               "File 5 was saved in the Endgame's preparations; the fixture rewrites it as a file saved at the "
+               "end of 3-E (resume step 9), so the file menu offers Start Chapter and 4-P's opening plays.",
+               "Unattended run 2026-11-04: checks 1-5 pass (Micaiah forced at the leader's slot once the "
+               "deployment group names her); the army's name was not looked at. The extracted test disc needs its "
+               "four Shift-JIS file names fixed first (ymu/knight1_sp_ｆ is loaded in 4-P's opening)."]),
     Scenario(
         "L1", "Radiant Dawn: locked controls", "Object flags on a Radiant Dawn map",
         "Build > Object flags… on RD (kept read-only until these bits behave as on Path of Radiance)",

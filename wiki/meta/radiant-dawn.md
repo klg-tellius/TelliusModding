@@ -51,6 +51,10 @@ source_path: "meta/radiant-dawn.md"
 
   4-P splits the army with `DivideForce` and brings Micaiah's army (force 8) into force 5. Each later Part 4 chapter calls its own `startup.cmb` function `TEAM_<chapter>_ED` when it ends, which puts force 5 back into its store and brings out the next chapter's army: `TEAM_0402_ED` moves 5 to 9 and 10 to 5. The Endgame's `TEAM_0407a_OP` merges the three stores back into force 5. ChapterData +0x8F and the lord at +0xA4 name the army for the chapter: 18 and Micaiah, 19 and Ike, 20 and Tibarn. <span class="confidence confidence--confirmed">files</span>
 
+  A chapter's player deployment group (`<map>_mikata` in `dispos_n/h.bin`) is a ranked list of sortie slots that names the retail army, leader first: 4-1's names Ike and eleven of his army. A unit the group doesn't name is given a free slot in roster order, and the chapter's forced sortie of its lord (`UnitForcedSallyByPID`) only marks a unit that already has a slot. When another army plays the chapter, its leader must take the old leader's slot, or a full party leaves them behind. <span class="confidence confidence--confirmed">in game</span>
+
+  Where a file resumes is kept at BMST +0x9B, mirrored in the record header at +0x37: 2 in a base or the preparations, 9 after a chapter's end, 0x0B after a chapter's opening event. A file at 9 offers Start Chapter and plays the next chapter's opening; a file at 2 reopens its preparations, whatever its chapter byte says. <span class="confidence confidence--confirmed">in game</span>
+
 ## Chapter rules
 
   Five bytes of each `ChapterData` record set rules for the whole chapter. <span class="confidence confidence--confirmed">engine</span>

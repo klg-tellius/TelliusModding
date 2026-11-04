@@ -70,6 +70,9 @@ REGULAR_BASE = SYSTEM_SIZE
 CHECKPOINT_BASE = SYSTEM_SIZE + RECORDS_PER_BANK * BLOCK_SIZE  # 0x94000
 HEADER_CHAPTER = 0x36
 BMST_AFFINITY = 0x92      # state +0x92: the chapter's DivineData row (0x80061584 sets it with the chapter)
+BMST_RESUME_STEP = 0x9B   # where the file resumes in its chapter; +0x9C is the preparations flag
+HEADER_RESUME_STEP = 0x37  # the same step, for the file menu (Start Chapter / Continue)
+RESUME_CHAPTER_END = 9    # what the game writes when it saves at a chapter's end
 BMST_PREFIX = 0xD8
 MAP_NAME_SIZE = 0x18      # state +0x914, the C string the file load gives load_map (0x800CD9F0)
 _MAP_NAME = re.compile(rb"[be]map[0-9A-Za-z_]+\0")
@@ -831,6 +834,30 @@ class SaveRecord:
         self.replace_section_bytes("BMST", at, encoded.ljust(MAP_NAME_SIZE, b"\0"))
         self.replace_section_bytes("BMST", BMST_AFFINITY, bytes([affinity_row]))
         self.chapter_number = number
+
+    @property
+    def resume_step(self) -> int:
+        """Where in its chapter the file resumes (BMST +0x9B, mirrored in header +0x37 for the file
+        menu). Files the game wrote: 2 in a base or preparations (with :attr:`in_preparations` set),
+        9 after a chapter's end, 0x0B after a chapter's opening event (4-P, right after the army split)."""
+        return self._bmst_value(BMST_RESUME_STEP, 1)
+
+    @property
+    def in_preparations(self) -> bool:
+        """BMST +0x9C: set on files saved in a base or the preparations screen."""
+        return bool(self._bmst_value(BMST_RESUME_STEP + 1, 1))
+
+    def start_at_chapter(self, number: int, previous_map: str, affinity_row: int) -> None:
+        """Make the file start chapter ``number`` from its beginning, as a file the game saved at the
+        end of the chapter before: the file menu offers Start Chapter and the chapter's opening plays.
+        :meth:`move_to_chapter` alone keeps a preparations file's resume point, so the game reopens the
+        saved preparations instead. ``previous_map`` is the finished chapter's map folder (the game keeps
+        it in a chapter-end file). Checked in Dolphin: File 5 of an Endgame save started 4-P this way."""
+        self.move_to_chapter(number, previous_map, affinity_row)
+        self.army_phase = 1
+        self._set_bmst_value(BMST_RESUME_STEP, 1, RESUME_CHAPTER_END)
+        self._set_bmst_value(BMST_RESUME_STEP + 1, 1, 0)
+        self.set_header_u8(HEADER_RESUME_STEP, RESUME_CHAPTER_END)
 
     @property
     def army_phase(self) -> int:

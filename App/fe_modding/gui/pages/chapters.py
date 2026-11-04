@@ -1226,6 +1226,8 @@ class ChapterPage(Page):
                       style="SurfaceMuted.TLabel").pack(side="left", padx=(10, 0))
             if not flow.armies_editable:
                 notes.append(flow.armies_note)
+            elif getattr(flow, "armies_info", "") and flow.armies_info not in notes:
+                notes.append(flow.armies_info)
         for note in notes:
             ttk.Label(box, text=note, style="SurfaceMuted.TLabel", wraplength=820, justify="left").pack(
                 anchor="w", pady=(6, 0))
