@@ -147,8 +147,8 @@ def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangl
     centres = []
     for inst in placed.build_inst:
         obj = placed.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(placed.build_desc) else None
-        if obj is None or map_file.is_base_terrain_object(obj):
-            continue
+        if obj is None or obj.filename == terrain_name or map_file.is_base_terrain_object(obj):
+            continue  # the ground itself (named, as Radiant Dawn records carry no terrain flag)
         centres.append((inst, (TILE_SIZE * (inst.x - ox) + TILE_SIZE / 2, TILE_SIZE * (inst.y - oy) + TILE_SIZE / 2)))
     if centres:
         points = [p for _, p in centres]
@@ -267,7 +267,7 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
     from . import map_props  # map_props imports this module
 
     terrain = next((o.filename for o in data.build_desc
-                    if map_file.is_base_terrain_object(o) and "water" not in o.filename.lower()), "")
+                    if map_file.is_base_terrain_object(o, files) and "water" not in o.filename.lower()), "")
     ox, oy = terrain_origin(data, terrain)
     terrain_tris = map_props.terrain_triangles(files, data)
     tiles = list(tiles)
@@ -275,7 +275,7 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
     models: dict[str, "np.ndarray"] = {}
     for inst in data.build_inst:
         obj = data.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(data.build_desc) else None
-        if obj is None or map_file.is_base_terrain_object(obj) or f"{obj.filename}.gs" not in files:
+        if obj is None or map_file.is_base_terrain_object(obj, files) or f"{obj.filename}.gs" not in files:
             continue
         hit = [(x, y) for x in range(inst.x2, inst.end_x2 + 1) for y in range(inst.y2, inst.end_y2 + 1) if (x, y) in covering]
         if not hit:

@@ -252,6 +252,8 @@ For exact rollback, restore the pre-import `map.cmp`. Removing the visible water
 
 Recognition, donor behavior, material conversion, vanilla flags/effect type, map callback flag, scroll-table format/range, coordinate scale, and mismatch audit are source-reviewed. The water shader's layers, fade projection and opacity are decoded from the game's code, and the kit's round trip is tested in Blender. Exact native appearance across unusual materials, maps with several water objects, bridge layering, kit-made fades and moved waves, and regional/runtime rendering remains **unknown** until tested in the target game. The speed of the map clock that drives the flow is not measured, so the Blender preview's flow speed is approximate.
 
+**Radiant Dawn.** The same tools read Radiant Dawn maps that have a ground model (33 of the 43 story maps). They find the ground and water by their `map_base` / `map_water` materials, because Radiant Dawn's map objects carry no terrain flag. A painted import rebuilds 1-1's terrain in the app's tests. The Blender side and the game drawing the result are **not yet checked** on Radiant Dawn. Indoor, desert and Tower maps have no ground model, so there is no terrain to export; edit their props instead.
+
 ## Things to try next
 
 - Create still-looking water with very small opposed layer motions.

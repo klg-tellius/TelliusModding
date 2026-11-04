@@ -190,7 +190,7 @@ class MapObjectsWindow(_Window):
             obj = data.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(data.build_desc) else None
             name = obj.filename if obj is not None else f"? (object {inst.desc_index})"
             on_grid = cap is not None and 0 <= inst.x < cap.x_size and 0 <= inst.y < cap.y_size
-            terrain = obj is not None and map_file.is_base_terrain_object(obj)
+            terrain = obj is not None and map_file.is_base_terrain_object(obj, self.map.pak_contents)
             if text and text not in name.lower() or self._grid_only.get() and (not on_grid or terrain):
                 continue
             note = "map terrain" if terrain else "" if on_grid else "off the grid"
@@ -315,7 +315,7 @@ class MapObjectsWindow(_Window):
         scroll = ScrollFrame(dialog, padding=12)
         scroll.pack(fill="both", expand=True)
         frame = scroll.body
-        ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
+        ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj, self.map.pak_contents) else "Base terrain: no")
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
         checks = []
@@ -939,7 +939,7 @@ class Map3DWindow(_Window):
             self._status.configure(text=f"Could not render: {payload}")
             return
         self._preview.show(payload)
-        self._preview.set_grid(map_scene.compute_grid_overlay(data))
+        self._preview.set_grid(map_scene.compute_grid_overlay(data, files=self.map.pak_contents))
         self._preview.set_gameplay_grid(map_scene.compute_gameplay_grid_overlay(data))
         cap = data.capacity
         self._status.configure(text=f"{len(payload.triangles):,} triangles" + (f" · grid {cap.x_size}×{cap.y_size}" if cap else ""))
