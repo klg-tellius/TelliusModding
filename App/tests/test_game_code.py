@@ -389,6 +389,24 @@ class RetailCatalogTests(unittest.TestCase):
         self.assertTrue(in_cave(crown_only.versions["RFEE01"][1].address,
                                 len(crown_only.versions["RFEE01"][1].patched)))
 
+    def test_rd_fog_controls_set_the_sight_code_at_map_load(self):
+        # 0x8013A364 `rlwinm r4,r4,0,12,13` reads mapextra's sight bits; "on" forces sight 2 (3-1's fog),
+        # "off" forces 0 and also makes the script native store 0
+        off = CATALOG.entries["rd.map.fog_off"].versions["RFEE01"]
+        on = CATALOG.entries["rd.map.fog_on"].versions["RFEE01"]
+        self.assertEqual([(e.address, e.original.hex()) for e in off],
+                         [(0x8013A364, "5484031a"), (0x800DC0D8, "7fc3f378")])
+        self.assertEqual([e.patched for e in off], [ppc.li(4, 0).to_bytes(4, "big"), ppc.li(3, 0).to_bytes(4, "big")])
+        self.assertEqual([(e.address, e.patched) for e in on], [(0x8013A364, ppc.lis(4, 8).to_bytes(4, "big"))])
+
+    def test_rd_entries_verify_on_the_retail_dol(self):
+        import os
+        files = os.environ.get("FE10_EXTRACTED_FILES")
+        path = Path(files).parent / "sys" / "main.dol" if files else None
+        if path is None or not path.is_file():
+            self.skipTest("set FE10_EXTRACTED_FILES to an extracted RFEE01 files/ directory")
+        self.assertEqual(verify.verify(Dol.open(path)), [])
+
     def test_rd_no_terrain_bonus_uses_native_parity_clearer(self):
         patch = CATALOG.entries["rd.combat.no_terrain_bonus"]
         edit, = patch.versions["RFEE01"]
