@@ -645,6 +645,23 @@ for _id, _name, _offset, _original, _changed, _description in (
            f"Makes {_name} deal {_description}.", ((_offset, _original, _changed),))
 
 
+# Fog of war: the map loader (0x8013A35C, called from 0x8013632C) decodes mapextra bits 18-19 into the
+# fog mode byte at r13-0x6810 (sight 1 -> 3, 2 -> 1, 3 -> 2), with no difficulty test, unlike Path of
+# Radiance. `rlwinm r4,r4,0,12,13` becomes a constant sight code. Scripts set the byte through the
+# native whose argument copy is at 0x800DC0D8 (`mr r3,r30`); "off" makes it store 0 too. A file
+# resumed mid-chapter reloads its saved mode (0x80134BA8) until the next map load.
+_FOG_DECODE, _FOG_SCRIPT = 0x8013A364, 0x800DC0D8
+CATALOG.add(Patch(
+    "rd.map.fog_off", G_RD_RULES, "Fog of war off everywhere",
+    "Removes the fog of war on every map, including the scripts that turn it on during a chapter.",
+    {RFEE01: (Edit(_FOG_DECODE, _raw("5484031A"), _word(ppc.li(4, 0))),
+              Edit(_FOG_SCRIPT, _raw("7FC3F378"), _word(ppc.li(3, 0))))}))
+CATALOG.add(Patch(
+    "rd.map.fog_on", G_RD_RULES, "Fog of war on every map",
+    "Every map starts with the fog of war (the mode of 3-1 and 4-2's night maps). A chapter script can "
+    "change it during the chapter.",
+    {RFEE01: (Edit(_FOG_DECODE, _raw("5484031A"), _word(ppc.lis(4, 8))),)}))
+
 _patch("rd.hard_mode.show_information", G_RD_RULES,
        "Hard mode: show triangle, affinity and ranges",
        "Restores weapon-triangle indicators, map-affinity information and enemy range display in Hard mode.",
