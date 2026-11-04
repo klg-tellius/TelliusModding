@@ -190,7 +190,7 @@ class MapObjectsWindow(_Window):
             obj = data.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(data.build_desc) else None
             name = obj.filename if obj is not None else f"? (object {inst.desc_index})"
             on_grid = cap is not None and 0 <= inst.x < cap.x_size and 0 <= inst.y < cap.y_size
-            terrain = obj is not None and map_file.is_base_terrain_object(obj)
+            terrain = obj is not None and map_file.is_base_terrain_object(obj, self.map.pak_contents)
             if text and text not in name.lower() or self._grid_only.get() and (not on_grid or terrain):
                 continue
             note = "map terrain" if terrain else "" if on_grid else "off the grid"
@@ -315,12 +315,13 @@ class MapObjectsWindow(_Window):
         scroll = ScrollFrame(dialog, padding=12)
         scroll.pack(fill="both", expand=True)
         frame = scroll.body
-        ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj) else "Base terrain: no")
+        ttk.Label(frame, text=("Base terrain: yes" if map_file.is_base_terrain_object(obj, self.map.pak_contents) else "Base terrain: no")
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
         checks = []
-        if self.map.verified_us_map_layout:
-            for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+        groups = map_props.prop_flag_groups(data=data)
+        if self.map.object_flags_editable:
+            for column, (field, title, controls) in enumerate(groups):
                 group = ttk.LabelFrame(frame, text=title, padding=6)
                 group.grid(row=1 + column // 2, column=column % 2, sticky="nsew", padx=(0, 6), pady=(0, 6))
                 for row, (mask, label) in enumerate(controls):
@@ -336,10 +337,10 @@ class MapObjectsWindow(_Window):
             row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         def apply() -> None:
-            if not self.map.verified_us_map_layout:
+            if not self.map.object_flags_editable:
                 return
             try:
-                values = {field: 0 for field, _title, _controls in map_props.PROP_FLAG_GROUPS}
+                values = {field: 0 for field, _title, _controls in groups}
                 for field, mask, var in checks:
                     if var.get():
                         values[field] |= mask
@@ -357,7 +358,7 @@ class MapObjectsWindow(_Window):
             dialog.destroy()
 
         ttk.Button(frame, text="Apply", command=apply,
-                   state="normal" if self.map.verified_us_map_layout else "disabled").grid(
+                   state="normal" if self.map.object_flags_editable else "disabled").grid(
                        row=4, column=0, sticky="w", pady=(10, 0))
         frame.update_idletasks()
         width = min(frame.winfo_reqwidth() + 24, dialog.winfo_screenwidth() - 80)
@@ -603,7 +604,27 @@ class MapSettingsForm(ttk.Frame):
         if data.grid is not None:
             row = self._colour_row(row, "grid", data.grid, "Line colour", ("red", "green", "blue"),
                                    "Colour of the grid lines (their strength is set by scripts with SetGrid).")
-        if data.light is not None:
+        if isinstance(data.light, map_file.RdMapLight):
+            row = self._section(row, "light", "Lighting")
+            light = data.light
+            vector_help = ("The light's direction as three numbers, shared by every light set (Radiant Dawn "
+                           "stores a vector where Path of Radiance stores two angles).")
+            for col, axis in ((0, "x"), (2, "y")):
+                self._number(row, col, f"light:vector_{axis}", f"Direction {axis.upper()}",
+                             getattr(light, f"vector_{axis}"), vector_help)
+            row += 1
+            self._number(row, 0, "light:vector_z", "Direction Z", light.vector_z, vector_help)
+            row += 1
+            for n in range(1, map_file.RD_LIGHT_SETS + 1):
+                which = ("the map's models" if n == 1 else
+                         f"light set {n} (which models use it has not been traced)")
+                row = self._colour_row(row, "light", light, f"Set {n} model colour",
+                                       tuple(f"set{n}_model_{c}" for c in ("red", "green", "blue")),
+                                       f"Base colour of {which}.")
+                row = self._colour_row(row, "light", light, f"Set {n} light colour",
+                                       tuple(f"set{n}_light_{c}" for c in ("red", "green", "blue")),
+                                       f"Colour of the directional light on {which}.")
+        elif data.light is not None:
             row = self._section(row, "light", "Lighting")
             light = data.light
             self._number(row, 0, "light:angle_y", "Direction", light.angle_y,
@@ -939,7 +960,7 @@ class Map3DWindow(_Window):
             self._status.configure(text=f"Could not render: {payload}")
             return
         self._preview.show(payload)
-        self._preview.set_grid(map_scene.compute_grid_overlay(data))
+        self._preview.set_grid(map_scene.compute_grid_overlay(data, files=self.map.pak_contents))
         self._preview.set_gameplay_grid(map_scene.compute_gameplay_grid_overlay(data))
         cap = data.capacity
         self._status.configure(text=f"{len(payload.triangles):,} triangles" + (f" · grid {cap.x_size}×{cap.y_size}" if cap else ""))

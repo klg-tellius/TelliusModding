@@ -105,7 +105,7 @@ def _flat_model(width: int, height: int, texture_id: int, white_id: int,
 
 def _ground(files: dict[str, bytes]) -> tuple[map_file.MapData, map_file.MapObject]:
     data = map_file.read_map_bytes(files["map.bin"])
-    ground = next((obj for obj in data.build_desc if map_file.is_base_terrain_object(obj)
+    ground = next((obj for obj in data.build_desc if map_file.is_base_terrain_object(obj, files)
                    and f"{obj.filename}.gs" in files and "water" not in obj.filename.lower()), None)
     if ground is None:
         raise ValueError("The hub map has no usable ground model.")
@@ -197,7 +197,7 @@ def blank_map(compressed: bytes, width: int, height: int, *,
     parsed = map_file.read_map_bytes(data)
     if parsed.capacity is None or parsed.panel_index is None or not parsed.unique_panel:
         raise ValueError("The starter map has no editable terrain grid.")
-    ground = next((obj for obj in parsed.build_desc if map_file.is_base_terrain_object(obj)
+    ground = next((obj for obj in parsed.build_desc if map_file.is_base_terrain_object(obj, content)
                    and f"{obj.filename}.gs" in content and "water" not in obj.filename.lower()), None)
     if ground is None:
         raise ValueError("The starter map has no usable ground model.")

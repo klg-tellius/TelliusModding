@@ -83,10 +83,13 @@ def _flat_on_panels(t: ImportedTriangle, corner, x0: float, z0: float, tile: flo
     return bool(block.size) and not np.isnan(block).any() and float(np.max(np.abs(block - ys[0]))) <= FLAT
 
 
-def conform_to_tiles(scene: ImportedScene, x0: float, x1: float, z0: float, z1: float, tile: float = 5.0) -> int:
+def conform_to_tiles(scene: ImportedScene, x0: float, x1: float, z0: float, z1: float, tile: float = 5.0,
+                     corner_heights=None) -> int:
     """Cut and flatten the scene's triangles over ``[x0, x1] x [z0, z1]``
     (whole tiles, in mesh coordinates) onto the tile panels. Returns how
-    many triangles were cut."""
+    many triangles were cut. ``corner_heights`` (mesh ``(x, z)`` points ->
+    heights) gives the tile corners' heights instead of the scene's own
+    surface there."""
     nx, nz = round((x1 - x0) / tile), round((z1 - z0) / tile)
     all_tris = [t for tris in scene.triangles.values() for t in tris]
     if nx <= 0 or nz <= 0 or not all_tris:
@@ -94,6 +97,9 @@ def conform_to_tiles(scene: ImportedScene, x0: float, x1: float, z0: float, z1: 
     surface = np.array([t.positions for t in all_tris], dtype=float)
     grid_points = [(x0 + tile * i, z0 + tile * j) for i in range(nx + 1) for j in range(nz + 1)]
     corner = map_heights.surface_heights(surface, grid_points).reshape(nx + 1, nz + 1)
+    if corner_heights is not None:
+        wanted = np.asarray(corner_heights(grid_points), np.float64).reshape(nx + 1, nz + 1)
+        corner = np.where(np.isnan(wanted), corner, wanted)
 
     def panel_height(x: float, z: float):
         if not (x0 - EPS <= x <= x1 + EPS and z0 - EPS <= z <= z1 + EPS):

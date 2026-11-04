@@ -79,7 +79,7 @@ def read_terrain(container: Path) -> TerrainSource:
     images = tpl.read_tpl_images(io.BytesIO(files[map_props.texpack_name(files)]))
     atlas_id = material.textures[0].tex_id
     light_id = material.textures[-1].tex_id
-    projection = map_scene.compute_map_texture_projection(name, map_data)
+    projection = map_scene.compute_map_texture_projection(name, map_data, files)
     return TerrainSource(
         name, positions, uv0, uv1,
         images[atlas_id].convert("RGBA"),
@@ -692,12 +692,43 @@ def read_paint_dir(folder: Path) -> PaintData:
         raise ValueError("The terrain kit has no layers.")
     atlas = Image.fromarray(np.load(folder / "atlas.npy"), "RGBA")
     light = Image.fromarray(np.load(folder / manifest["light"]), "L") if manifest.get("light") else None
-    known = {"layout", "layers", "custom_atlas", "light", "slope_degrees"}
+    known = {"layout", "layers", "custom_atlas", "light", "slope_degrees", "sculpt_change"}
+    extra = {k: v for k, v in manifest.items() if k not in known}
+    change = manifest.get("sculpt_change")
+    if change and (folder / change["file"]).is_file():
+        extra["sculpt_change"] = SculptChange(float(change["x0"]), float(change["z0"]), float(change["spacing"]),
+                                              np.load(folder / change["file"]))
     return PaintData(
         layout, layers, atlas, bool(manifest.get("custom_atlas")), light,
-        float(manifest.get("slope_degrees", tp.SLOPE_DEGREES)),
-        {k: v for k, v in manifest.items() if k not in known},
+        float(manifest.get("slope_degrees", tp.SLOPE_DEGREES)), extra,
     )
+
+
+@dataclass
+class SculptChange:
+    """How far the user moved the kit's sculpt grid up (``grid[row z, column x]``, in mesh units) since
+    the kit was made. The import follows this, not the difference between the old terrain and the
+    re-made mesh, so the grid's own smoothing of walls and cliffs moves no tile height."""
+
+    x0: float
+    z0: float
+    spacing: float
+    grid: np.ndarray
+
+    def at(self, points) -> np.ndarray:
+        """The change at mesh ``(x, z)`` points, bilinear; 0 outside the grid."""
+        pts = np.asarray(points, np.float64).reshape(-1, 2)
+        nz, nx = self.grid.shape
+        fx = np.clip((pts[:, 0] - self.x0) / self.spacing, 0.0, nx - 1.0)
+        fz = np.clip((pts[:, 1] - self.z0) / self.spacing, 0.0, nz - 1.0)
+        i, j = np.minimum(fx.astype(int), nx - 2), np.minimum(fz.astype(int), nz - 2)
+        u, v = fx - i, fz - j
+        g = self.grid.astype(np.float64)
+        value = (g[j, i] * (1 - u) * (1 - v) + g[j, i + 1] * u * (1 - v)
+                 + g[j + 1, i] * (1 - u) * v + g[j + 1, i + 1] * u * v)
+        inside = ((pts[:, 0] >= self.x0 - 1e-6) & (pts[:, 0] <= self.x0 + self.spacing * (nx - 1) + 1e-6)
+                  & (pts[:, 1] >= self.z0 - 1e-6) & (pts[:, 1] <= self.z0 + self.spacing * (nz - 1) + 1e-6))
+        return np.where(inside, value, 0.0)
 
 
 def kit_paint(source: TerrainSource, layout: tp.AtlasLayout, atlas: Image.Image, custom: bool,

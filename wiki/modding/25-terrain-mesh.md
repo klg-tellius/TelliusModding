@@ -236,6 +236,8 @@ For rollback, restore the entire pre-import `map.cmp`. Reimporting the old mesh 
 
 The coordinate scale, importer options, map-texturing pipeline, mask span, height/prop following, grid conformance, bounds update, warning calculations, and texture constraints are source-reviewed. Exact native rendering limits above observed vanilla sizes, unusual material callbacks, and every imported topology remain **unknown** until tested on the target build.
 
+**Radiant Dawn.** The same tools read Radiant Dawn maps that have a ground model (33 of the 43 story maps). They find the ground and water by their `map_base` / `map_water` materials, because Radiant Dawn's map objects carry no terrain flag. A kit of 1-1 was exported, edited in Blender (a painted stripe and a hill outside the grid), imported, and played in Dolphin: the map loads and plays, with the kit's paint on the ground. The ground's baked shading looked lighter than the original's and still needs a look. A kit remembers its sculpt's starting heights, and the import moves tile heights only by what you sculpted: a height grid slopes the vertical walls of Radiant Dawn's terraced towns, and before this an untouched 1-1 kit moved about 500 tile corners by up to 17 units. Indoor, desert and Tower maps have no ground model, so there is no terrain to export; edit their props instead.
+
 ## Things to try next
 
 - Raise a decorative hill outside the playable grid with heights disabled.

@@ -1100,7 +1100,7 @@ class MapBuilder(EditorPanel):
             if not 0 <= inst.desc_index < len(data.build_desc):
                 continue
             obj = data.build_desc[inst.desc_index]
-            if map_file.is_base_terrain_object(obj) or not (0 <= inst.x < cap.x_size and 0 <= inst.y < cap.y_size):
+            if map_file.is_base_terrain_object(obj, self._map.pak_contents) or not (0 <= inst.x < cap.x_size and 0 <= inst.y < cap.y_size):
                 continue  # the terrain itself, and scenery beyond the grid (not editable here)
             rect = (inst.x2, inst.y2, inst.end_x2, inst.end_y2)
             if not (rect[0] <= inst.x <= rect[2] and rect[1] <= inst.y <= rect[3]):
@@ -1211,7 +1211,7 @@ class MapBuilder(EditorPanel):
     def _start_render(self) -> None:
         self._render_after = None
         data = self._map.map_data
-        camera = map_scene.topdown_camera(data, BACKDROP_PX_PER_TILE) if data is not None else None
+        camera = map_scene.topdown_camera(data, BACKDROP_PX_PER_TILE, self._map.pak_contents) if data is not None else None
         if camera is None:
             return
         if not self._gpu_checked:
@@ -1428,14 +1428,14 @@ class MapBuilder(EditorPanel):
     _edit_map = edit_map
 
     @staticmethod
-    def _covered(data, index: int | None) -> set:
+    def _covered(data, index: int | None, files: dict | None = None) -> set:
         """The grid tiles instance ``index`` covers (none for the terrain)."""
         cap = data.capacity
         if index is None or cap is None or not 0 <= index < len(data.build_inst):
             return set()
         inst = data.build_inst[index]
         obj = data.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(data.build_desc) else None
-        if obj is None or map_file.is_base_terrain_object(obj):
+        if obj is None or map_file.is_base_terrain_object(obj, files):
             return set()
         return {(x, y) for x in range(inst.x2, inst.end_x2 + 1) for y in range(inst.y2, inst.end_y2 + 1)
                 if 0 <= x < cap.x_size and 0 <= y < cap.y_size}
@@ -1455,10 +1455,10 @@ class MapBuilder(EditorPanel):
         source = self._script.chapter_source() if self._script is not None else None
 
         def edit(files):
-            before = self._covered(map_file.read_map_bytes(files["map.bin"]), index)
+            before = self._covered(map_file.read_map_bytes(files["map.bin"]), index, files)
             out["index"] = op(files)
             data = map_file.read_map_bytes(files["map.bin"])
-            tiles = sorted(before | self._covered(data, out["index"]))
+            tiles = sorted(before | self._covered(data, out["index"], files))
             if tiles:
                 files["map.bin"] = map_heights.set_tile_corners(
                     files["map.bin"], map_heights.deduce_corners(files, data, tiles))

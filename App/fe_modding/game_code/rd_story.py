@@ -50,9 +50,12 @@ FLAG_DIVIDE_ARMIES = 0x02
 
 # Army switching is scripted, not part of this hook: Part 4 chapters end with startup.cmb's
 # TEAM_<id>_ED, which moves the played army (force 5) back to its store (8 Micaiah, 9 Ike,
-# 10 Tibarn) and the next one out. ``rd_armies`` rewrites those functions from this table, so the
-# army combo is live; the result still needs its Dolphin check (workspace/locks-playtest, A1).
-ARMY_RUNTIME_READY = True
+# 10 Tibarn) and the next one out. ``rd_armies`` rewrites those functions from this table.
+# Locked until a Dolphin check passes: playtest A1's only save is an Endgame preparations file, which
+# resumes preparations with the Endgame's armies and positions, so 4-P's split never runs and the
+# check cannot be made (2026-11-03: with the hand-over every unit reached 4-1 and it crashed; with
+# retail scripts 4-1 started with nobody). It needs a file saved at the end of 3-E.
+ARMY_RUNTIME_READY = False
 
 # RFEE01 addresses confirmed against SHA-1 d1b8deabfec5a96bf38945665ffe203867612c1c.
 _ADVANCE = 0x80067EE8

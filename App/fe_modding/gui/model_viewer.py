@@ -1309,12 +1309,18 @@ def is_map_container(path: Path) -> bool:
 def map_terrain_name(files: dict[str, bytes], map_data: map_file.MapData, folder: str) -> str:
     """The chapter's land terrain model: the base terrain object named after
     its folder (``bmap01``), else the only non-water base terrain object."""
-    names = [o.filename for o in map_data.build_desc if map_file.is_base_terrain_object(o) and f"{o.filename}.gs" in files]
+    names = [o.filename for o in map_data.build_desc if map_file.is_base_terrain_object(o, files) and f"{o.filename}.gs" in files]
     if folder in names:
         return folder
     land = [n for n in names if "water" not in n.lower()]
     if len(land) == 1:
         return land[0]
+    if not land:
+        raise gltf_import.GltfImportError(
+            f"{folder} has no ground model marked as its terrain, so there is no painted terrain to export "
+            "or edit. Some maps are open sea, and some build their floor from props only (indoor rooms, "
+            "desert tiles, tower floors): edit those props instead."
+        )
     raise gltf_import.GltfImportError(f"Could not tell which model is the terrain of {folder} ({', '.join(names) or 'none'}).")
 
 
@@ -1397,8 +1403,8 @@ def export_map_terrain_glb(container_path: Path, object_names: tuple[str, ...] |
     from . import map_scene
 
     placements = {}
-    terrain_indices = map_scene._base_terrain_desc_indices(map_data)
-    anchor = map_scene._find_prop_anchor(map_data, 1.0)
+    terrain_indices = map_scene._base_terrain_desc_indices(map_data, files)
+    anchor = map_scene._find_prop_anchor(map_data, 1.0, files)
     for candidate in selected:
         indices = {i for i, obj in enumerate(map_data.build_desc) if obj.filename == candidate}
         if indices & terrain_indices:
@@ -1414,7 +1420,7 @@ def export_map_terrain_glb(container_path: Path, object_names: tuple[str, ...] |
         ] or [(candidate, None)]
     # The terrain's one bone is the identity: exported without a skeleton,
     # the mesh re-imports as the static mesh it is.
-    projection = map_scene.compute_map_texture_projection(name, map_data)
+    projection = map_scene.compute_map_texture_projection(name, map_data, files)
     bake = (
         gltf_export.MapTextureBake(projection.selector_matrix, projection.last_matrix)
         if projection is not None else None
@@ -1442,7 +1448,7 @@ def export_map_blend(
         material for material in gs_model.materials
         if material.name in gltf_import.UV2_MATERIALS and len(material.textures) >= 2
     ]
-    projection = map_scene.compute_map_texture_projection(terrain, map_data)
+    projection = map_scene.compute_map_texture_projection(terrain, map_data, files)
     if projected and projection is None:
         raise gltf_import.GltfImportError(
             f"The projected texture coordinates of {terrain} could not be derived from map.bin."
@@ -1771,9 +1777,17 @@ def replace_map_terrain_with_glb(
     baked = _bake_untextured_material_colors(scene, exclude=skipped_projected)
     warnings += [f"Material {name}'s solid colour was baked into a texture for in-game rendering."
                  for name in baked]
+    sculpt_change = paint.extra.get("sculpt_change") if paint is not None else None
+    old_set = load_named_model_set(current, name) if sculpt_change is not None else None
+    old_surface = _triangle_array(old_set.triangles) if old_set is not None else None
+    corner_heights = None
+    if sculpt_change is not None and old_surface is not None:
+        # the playable ground is the old ground plus what was sculpted: a height grid slopes the walls
+        def corner_heights(points):
+            return map_heights.surface_heights(old_surface, points) + sculpt_change.at(points)
     area = map_playable_area(map_data, name) if conform else None
     if area is not None:
-        cut = terrain_conform.conform_to_tiles(scene, *area)
+        cut = terrain_conform.conform_to_tiles(scene, *area, corner_heights=corner_heights)
         if cut:
             warnings.append(
                 f"The playable area was fitted to the tile grid ({cut} triangles cut): the move grid and units use "
@@ -1783,7 +1797,7 @@ def replace_map_terrain_with_glb(
     if paint is not None:
         from . import map_scene
 
-        projection = map_scene.compute_map_texture_projection(name, map_data)
+        projection = map_scene.compute_map_texture_projection(name, map_data, files)
         light_matrix = projection.last_matrix if projection is not None else None
         shown_light = light
         if shown_light is None and keep_light and last_record is not None:
@@ -1923,7 +1937,8 @@ def replace_map_terrain_with_glb(
                 )
         if follow_heights:
             open_before = _open_passages(map_file.read_map_bytes(files["map.bin"]))
-            update = map_heights.follow_terrain(files["map.bin"], name, old_tris, new_tris)
+            update = map_heights.follow_terrain(files["map.bin"], name, old_tris, new_tris,
+                                                sculpt_change.at if sculpt_change is not None else None)
             files["map.bin"] = update.map_bin
             if update.corners_changed:
                 warnings.append(

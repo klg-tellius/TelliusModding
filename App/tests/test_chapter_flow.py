@@ -328,7 +328,7 @@ class AddStoryChapterTests(unittest.TestCase):
         files = self.project.extracted_dir / "files"
         (files / "Mess").mkdir(parents=True)
         (files / "Scripts").mkdir()
-        for name in ("c09.m", "common.m"):
+        for name in ("c08.m", "c09.m", "common.m"):  # 08 must exist: deleting 09 relinks only existing chapters
             shutil.copy(source / "Mess" / name, files / "Mess" / name)
         shutil.copy(source / "Scripts" / "C09.cmb", files / "Scripts" / "C09.cmb")
         for folder in ("bmap09", "bmap09_2", "bmap09_3", "bmap09_4", "bmap09_5", "bmap08"):

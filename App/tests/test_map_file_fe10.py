@@ -95,10 +95,21 @@ class Fe10MapReadTests(unittest.TestCase):
         self.assertAlmostEqual(prop.height(), -0.5)
         self.assertEqual(prop.tail, 0x40000000)
 
-    def test_light_fog_and_shader_stay_raw(self):
-        self.assertIsNone(self.data.light)
-        self.assertIsNone(self.data.fog)
-        self.assertEqual(set(self.data.unknown_sections), {"maplight", "mapfog", "mapshader"})
+    def test_light_and_fog_decode_and_shader_stays_raw(self):
+        light = self.data.light  # the fixture's maplight is bytes 0..31
+        self.assertIsInstance(light, map_file.RdMapLight)
+        self.assertEqual((light.skipped, light.vector_x, light.vector_y, light.vector_z), (0x0001, 0x0203, 0x0405, 0x0607))
+        self.assertEqual((light.set1_model_red, light.set1_light_blue, light.set4_light_blue), (8, 13, 31))
+        self.assertEqual(self.data.fog.address, light.address + 32 + 1)  # RD's fog skips a leading byte
+        self.assertEqual(set(self.data.unknown_sections), {"mapshader"})
+
+    def test_light_and_fog_patch_in_place(self):
+        out = map_file.patch_light_field(self.raw, self.data.light, "vector_y", -150)
+        out = map_file.patch_light_field(out, self.data.light, "set2_light_green", 200)
+        out = map_file.patch_fog_field(out, self.data.fog, "end_distance", 85)
+        data = map_file.read_map_bytes(out)
+        self.assertEqual((data.light.vector_y, data.light.set2_light_green, data.fog.end_distance), (-150, 200, 85))
+        self.assertEqual(sum(a != b for a, b in zip(out, self.raw)), 4)  # two bytes of the s16, one, one
 
     def test_terrain_names_resolve(self):
         self.assertEqual(map_file.terrain_grid(self.raw)[2][1], "平地")
@@ -195,6 +206,35 @@ class DiscFe10MapTests(unittest.TestCase):
                 self.assertEqual(len(map_file.terrain_grid(raw)), cap.x_size)
                 count += 1
         self.assertGreaterEqual(count, 120)
+
+    def test_light_and_fog_on_every_map(self):
+        enabled = 0
+        for folder, files in _rd_maps():
+            with self.subTest(folder):
+                raw = files["map.bin"]
+                data = map_file.read_map_bytes(raw)
+                self.assertEqual(data.light.skipped, 0)  # the loader reads past these two bytes
+                self.assertIn(data.fog.enabled, (0, 1))
+                self.assertIn(data.fog.mode_code, (0, 2))
+                light, fog = data.light, data.fog
+                # rewriting every field with its own value changes nothing
+                out = raw
+                for name in map_file._RD_LIGHT_FIELDS:
+                    out = map_file.patch_light_field(out, light, name, getattr(light, name))
+                for name in map_file._FOG_FIELDS:
+                    out = map_file.patch_fog_field(out, fog, name, getattr(fog, name))
+                self.assertEqual(out, raw)
+                enabled += fog.enabled
+        self.assertEqual(enabled, 100)  # 28 maps have no fog
+
+    def test_prologue_light_and_fog_values(self):
+        files = dict(_rd_maps())["bmap0101"]
+        data = map_file.read_map_bytes(files["map.bin"])
+        light, fog = data.light, data.fog
+        self.assertEqual((light.vector_x, light.vector_y, light.vector_z), (-30, -150, -40))
+        self.assertEqual((light.set1_model_red, light.set1_model_green, light.set1_model_blue), (0x91, 0xA0, 0xC8))
+        self.assertEqual((light.set1_light_red, light.set1_light_green, light.set1_light_blue), (255, 255, 255))
+        self.assertEqual((fog.enabled, fog.mode_code, fog.start_distance, fog.end_distance), (1, 0, 30, 85))
 
 
 if __name__ == "__main__":

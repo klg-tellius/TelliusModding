@@ -116,6 +116,10 @@ class TutorialsEditor(EditorPanel):
             for c, var in enumerate(pair):
                 ttk.Checkbutton(flags, variable=var, command=self._apply).grid(row=i + 1, column=c + 1)
             self._flags.append(pair)
+        note = self._project.profile.tutorial_flag_note
+        if note:
+            ttk.Label(flags, text=note, style="Muted.TLabel", wraplength=300, justify="left").grid(
+                row=len(self._flag_names) + 1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         buttons = ttk.Frame(form)
         buttons.grid(row=len(rows) + 2, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ttk.Button(buttons, text="Duplicate", command=self._duplicate).pack(side="left", padx=(0, 4))

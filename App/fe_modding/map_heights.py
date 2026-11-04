@@ -79,12 +79,16 @@ class HeightUpdate:
     corners_on_props: int = 0  # corners kept because they sit on a bridge/floor, not the old terrain
 
 
-def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangles) -> HeightUpdate:
+def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangles, change=None) -> HeightUpdate:
     """``map_bin`` with its ground/combined elevations and prop heights moved
     by the change between the old and new terrain surfaces. A tile corner
     moves only when it lay on the old terrain surface: corners standing on
     a prop (a bridge, a castle floor; 14% of ``bmap07``'s and 23% of
-    ``bmap12``'s playable corners) keep their height."""
+    ``bmap12``'s playable corners) keep their height.
+
+    ``change`` (mesh ``(x, z)`` points -> how far each moved up) replaces the
+    surface difference: a terrain kit passes its sculpt's own change, since
+    re-making a mesh from a height grid slopes every vertical wall."""
     data = map_file.read_map_bytes(map_bin)
     cap = data.capacity
     if cap is None:
@@ -93,7 +97,10 @@ def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangl
     corners = [(x, y) for x in range(cap.x_size + 1) for y in range(cap.y_size + 1)]
     points = [(TILE_SIZE * (x - ox), TILE_SIZE * (y - oy)) for x, y in corners]
     old_surface = surface_heights(old_triangles, points)
-    delta_list = surface_heights(new_triangles, points) - old_surface
+    if change is not None:
+        delta_list = np.where(np.isnan(old_surface), np.nan, np.asarray(change(points), np.float64))
+    else:
+        delta_list = surface_heights(new_triangles, points) - old_surface
     delta = {c: d for c, d in zip(corners, delta_list) if not np.isnan(d) and abs(d) > TOLERANCE}
     old_at = dict(zip(corners, old_surface))
     kept: set[tuple[int, int]] = set()
@@ -147,14 +154,15 @@ def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangl
     centres = []
     for inst in placed.build_inst:
         obj = placed.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(placed.build_desc) else None
-        if obj is None or map_file.is_base_terrain_object(obj):
-            continue
+        if obj is None or obj.filename == terrain_name or map_file.is_base_terrain_object(obj):
+            continue  # the ground itself (named, as Radiant Dawn records carry no terrain flag)
         centres.append((inst, (TILE_SIZE * (inst.x - ox) + TILE_SIZE / 2, TILE_SIZE * (inst.y - oy) + TILE_SIZE / 2)))
     if centres:
         points = [p for _, p in centres]
         before = surface_heights(old_triangles, points)
-        change = surface_heights(new_triangles, points) - before
-        for (inst, _), d, ground in zip(centres, change, before):
+        moved_by = (np.asarray(change(points), np.float64) if change is not None
+                    else surface_heights(new_triangles, points) - before)
+        for (inst, _), d, ground in zip(centres, moved_by, before):
             if np.isnan(d) or abs(d) <= TOLERANCE:
                 continue
             # only a prop standing on the old ground (pos_y = -5 * height) follows it
@@ -267,7 +275,7 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
     from . import map_props  # map_props imports this module
 
     terrain = next((o.filename for o in data.build_desc
-                    if map_file.is_base_terrain_object(o) and "water" not in o.filename.lower()), "")
+                    if map_file.is_base_terrain_object(o, files) and "water" not in o.filename.lower()), "")
     ox, oy = terrain_origin(data, terrain)
     terrain_tris = map_props.terrain_triangles(files, data)
     tiles = list(tiles)
@@ -275,7 +283,7 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
     models: dict[str, "np.ndarray"] = {}
     for inst in data.build_inst:
         obj = data.build_desc[inst.desc_index] if 0 <= inst.desc_index < len(data.build_desc) else None
-        if obj is None or map_file.is_base_terrain_object(obj) or f"{obj.filename}.gs" not in files:
+        if obj is None or map_file.is_base_terrain_object(obj, files) or f"{obj.filename}.gs" not in files:
             continue
         hit = [(x, y) for x in range(inst.x2, inst.end_x2 + 1) for y in range(inst.y2, inst.end_y2 + 1) if (x, y) in covering]
         if not hit:
