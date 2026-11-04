@@ -75,6 +75,10 @@ class RetailTests(unittest.TestCase):
         files.mkdir(parents=True, exist_ok=True)
         shutil.copy(source / "FE10Data.cms", files / "FE10Data.cms")
         shutil.copytree(source / "Scripts", files / "Scripts")
+        for folder in ("bmap0402", "bmap0403"):
+            (files / "zmap" / folder).mkdir(parents=True)
+            for dispos in (source / "zmap" / folder).glob("dispos_*.bin"):
+                shutil.copy(dispos, files / "zmap" / folder / dispos.name)
         sys_dir = self.project.extracted_dir / "sys"
         sys_dir.mkdir(exist_ok=True)
         for name in ("main.dol", "boot.bin"):
@@ -110,7 +114,15 @@ class RetailTests(unittest.TestCase):
         self.assertNotIn('UnitForcedSallyByPID("PID_IKE")', plan.sorties["0402"])
         self.assertEqual(plan.records, {"C0402": {"player_group": 18, "lord": "PID_MICAIAH"},
                                         "C0403": {"player_group": 19, "lord": "PID_IKE"}})
+        # 4-1's player group is a ranked list of slots naming Ike's army: Micaiah takes Ike's leader slot
+        self.assertEqual(sorted(p.name for p in plan.deployments if p.parent.name == "bmap0402"),
+                         ["dispos_h.bin", "dispos_n.bin"])  # dispos_c holds the opening's groups, no Ike
         rd_armies.apply_scripts(self.project, plan)
+        from fe_modding.formats import dispo
+        group = next(s for s in dispo.parse_dispo(
+            (self.project.files_dir / "zmap" / "bmap0402" / "dispos_h.bin").read_bytes()).sections
+            if "_mikata" in s.name)
+        self.assertEqual([u[0] for u in group.units][:2], ["PID_MICAIAH", "PID_SENERIO"])
         self.project.write_logical("game_data", rd_armies.apply_records(self.project.read_logical("game_data"),
                                                                         plan))
         again = rd_armies.plan(self.project, self._flow(), self.project.read_logical("game_data"))

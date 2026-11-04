@@ -57,11 +57,13 @@ class ArmyPlan:
     records: dict[str, dict] = field(default_factory=dict)
     #: chapter page id -> its script source with the forced sorties fitted to its army.
     sorties: dict[str, str] = field(default_factory=dict)
+    #: deployment file -> its bytes with the player groups' leader slot given to the chapter's army.
+    deployments: dict = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
-        return not (self.functions or self.renames or self.records or self.sorties)
+        return not (self.functions or self.renames or self.records or self.sorties or self.deployments)
 
 
 def _script_source(project, chapter: str) -> Optional[str]:
@@ -163,6 +165,11 @@ def plan(project, flow, fe10: Optional[bytes] = None) -> ArmyPlan:
             source = _script_source(project, chapter)
             if source is not None and fit_sorties(source, army, members) != source:
                 result.sorties[chapter] = fit_sorties(source, army, members)
+            for path in _deployment_paths(project, chapter):
+                data = path.read_bytes()
+                fitted = fit_deployment(data, army)
+                if fitted != data:
+                    result.deployments[path] = fitted
         elif divided and army == Army.MAIN and i and armies[order[i - 1]] in STORE:
             merged = True
         if chapter == DIVIDE_CHAPTER and army in STORE:
@@ -250,7 +257,39 @@ def apply_scripts(project, result: ArmyPlan) -> list[str]:
             source = re.sub(rf"\b{re.escape(old)}\(\)", f"{new}()", source)
         script_sources.save(project, loaded, source)
         written.append(path.name)
+    for path, data in sorted(result.deployments.items()):
+        project.write_keeping_original(path, data)
+        written.append(f"{path.parent.name}/{path.name}")
     return written
+
+
+def _deployment_paths(project, chapter: str) -> list:
+    from .game_profile import profile_of
+
+    folder = files_root_of(project) / "zmap" / profile_of(project).map_folder(chapter)
+    return sorted(folder.glob("dispos_*.bin")) if folder.is_dir() else []
+
+
+def fit_deployment(data: bytes, army: Army) -> bytes:
+    """A ``dispos_*.bin`` variant with another division's leader replaced by ``army``'s in the player
+    groups (``<map>_mikata``). The group is a ranked list of sortie slots naming the retail army; the
+    chapter's forced sortie of its lord only marks a unit that already has a slot, so with 4-1's 12
+    slots filled from the roster Micaiah stayed behind (Dolphin, 2026-11-04). The new leader takes the
+    old one's slot and its place on the map. ``data`` comes back as it is when no slot names another
+    division's leader."""
+    from .formats import dispo
+
+    leaders = {LORD[other] for other in STORE if other != army}
+    doc = dispo.parse_dispo(data)
+    changed = False
+    for section in doc.sections:
+        if "_mikata" not in section.name:
+            continue
+        for unit in section.units:
+            if unit[0] in leaders:
+                unit[0] = LORD[army]
+                changed = True
+    return dispo.build_dispo(doc) if changed else data
 
 
 def apply_records(fe10: bytes, result: ArmyPlan) -> bytes:

@@ -176,8 +176,8 @@ SCENARIOS: list[Scenario] = [
                "Endgame save keeps units.",
                "File 5 was saved in the Endgame's preparations; the fixture rewrites it as a file saved at the "
                "end of 3-E (resume step 9), so the file menu offers Start Chapter and 4-P's opening plays.",
-               "Unattended run 2026-11-04: checks 1-4 pass and 4-1 plays a full turn; in 4-1 Micaiah, Sothe, "
-               "Sanaki and five others are listed but cannot be deployed. The extracted test disc needs its "
+               "Unattended run 2026-11-04: checks 1-5 pass (Micaiah forced at the leader's slot once the "
+               "deployment group names her); the army's name was not looked at. The extracted test disc needs its "
                "four Shift-JIS file names fixed first (ymu/knight1_sp_ｆ is loaded in 4-P's opening)."]),
     Scenario(
         "L1", "Radiant Dawn: locked controls", "Object flags on a Radiant Dawn map",

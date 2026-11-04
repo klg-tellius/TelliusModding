@@ -51,11 +51,11 @@ FLAG_DIVIDE_ARMIES = 0x02
 # Army switching is scripted, not part of this hook: Part 4 chapters end with startup.cmb's
 # TEAM_<id>_ED, which moves the played army (force 5) back to its store (8 Micaiah, 9 Ike,
 # 10 Tibarn) and the next one out. ``rd_armies`` rewrites those functions from this table.
-# Locked until a Dolphin check passes. Playtest A1, rerun 2026-11-04 from a file rewritten to start 4-P
-# (``SaveRecord.start_at_chapter``): 4-P's split, its roster and 4-1's roster (Micaiah's army, no Ike or
-# Tibarn) pass, and 4-1 plays a full turn. Not yet explained: in 4-1 Micaiah, Sothe, Sanaki and five
-# others are listed but cannot be deployed, though the hand-over makes Micaiah the chapter's lord.
-ARMY_RUNTIME_READY = False
+# Checked in Dolphin (playtest A1, 2026-11-04, from a file rewritten to start 4-P with
+# ``SaveRecord.start_at_chapter``): 4-P's split, its roster, 4-1's roster (Micaiah's army, no Ike or
+# Tibarn), Micaiah forced into 4-1 at the leader's slot (``rd_armies.fit_deployment``) and a full turn.
+# Not checked: the army's name on 4-1's screens.
+ARMY_RUNTIME_READY = True
 
 # RFEE01 addresses confirmed against SHA-1 d1b8deabfec5a96bf38945665ffe203867612c1c.
 _ADVANCE = 0x80067EE8

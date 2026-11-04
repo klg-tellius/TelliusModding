@@ -217,6 +217,8 @@ class RdStoryFlow(StoryFlow):
     armies_editable = rd_story.ARMY_RUNTIME_READY
     armies_note = ("Choosing the army of a Part 4 chapter is not available yet: the hand-over it rewrites "
                    "(startup.cmb's TEAM_<chapter>_ED) has not been checked in the game.")
+    armies_info = ("Changing a chapter's army moves the units, the lord and the deployment's leader slot. The "
+                   "chapter's talks and events stay as written for its original army: edit them in its script.")
 
     def __init__(self, editor, chapter_ids: dict[int, str]):
         super().__init__(editor)
