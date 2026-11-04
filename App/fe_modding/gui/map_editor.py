@@ -42,6 +42,12 @@ class MapEditor(EditorPanel):
         are byte-identical to the US ones)."""
         return read_disc_id(disc_root_of(self._project)) in ("GFEE01", "GFEP01", "GFEJ01")
 
+    @property
+    def object_flags_editable(self) -> bool:
+        """The object-flag bits are traced on these builds; Radiant Dawn's US build also passed its
+        Dolphin check (playtest L1)."""
+        return self.verified_us_map_layout or read_disc_id(disc_root_of(self._project)) == "RFEE01"
+
     def __init__(self, parent, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
         self._project = project

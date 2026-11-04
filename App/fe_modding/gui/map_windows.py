@@ -319,8 +319,9 @@ class MapObjectsWindow(_Window):
                   + ("   ·   .ga animation: yes" if map_file.has_ga_animation(obj) else "   ·   .ga animation: no"),
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 8))
         checks = []
-        if self.map.verified_us_map_layout:
-            for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+        groups = map_props.prop_flag_groups(data=data)
+        if self.map.object_flags_editable:
+            for column, (field, title, controls) in enumerate(groups):
                 group = ttk.LabelFrame(frame, text=title, padding=6)
                 group.grid(row=1 + column // 2, column=column % 2, sticky="nsew", padx=(0, 6), pady=(0, 6))
                 for row, (mask, label) in enumerate(controls):
@@ -336,10 +337,10 @@ class MapObjectsWindow(_Window):
             row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         def apply() -> None:
-            if not self.map.verified_us_map_layout:
+            if not self.map.object_flags_editable:
                 return
             try:
-                values = {field: 0 for field, _title, _controls in map_props.PROP_FLAG_GROUPS}
+                values = {field: 0 for field, _title, _controls in groups}
                 for field, mask, var in checks:
                     if var.get():
                         values[field] |= mask
@@ -357,7 +358,7 @@ class MapObjectsWindow(_Window):
             dialog.destroy()
 
         ttk.Button(frame, text="Apply", command=apply,
-                   state="normal" if self.map.verified_us_map_layout else "disabled").grid(
+                   state="normal" if self.map.object_flags_editable else "disabled").grid(
                        row=4, column=0, sticky="w", pady=(10, 0))
         frame.update_idletasks()
         width = min(frame.winfo_reqwidth() + 24, dialog.winfo_screenwidth() - 80)

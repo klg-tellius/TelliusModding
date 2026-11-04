@@ -818,6 +818,24 @@ PROP_FLAG_GROUPS = (
     )),
 )
 
+#: Radiant Dawn's map-role byte: no map-wide object bit (the ground is found by its material) and bit 6
+#: starts the object hidden. Its other groups were checked against Path of Radiance's labels in Dolphin
+#: (playtest L1, 2026-11-03: B0, B1 and effect bit 6 each hide 1-1's carts and market stall).
+_RD_MAP_ROLE = ("flag_bits_a", "Map role", (
+    *PROP_FLAG_GROUPS[0][2][:6],
+    (0x40, "Start hidden (Radiant Dawn)"),
+    (0x80, "Reserved A7 (never set by retail maps)"),
+))
+RD_PROP_FLAG_GROUPS = (_RD_MAP_ROLE, *PROP_FLAG_GROUPS[1:])
+
+
+def prop_flag_groups(data=None) -> tuple:
+    """The object-flag groups for a map: Radiant Dawn's when its records carry footprints."""
+    if data is not None and getattr(getattr(data, "layout", None), "game", "fe9") == "fe10":
+        return RD_PROP_FLAG_GROUPS
+    return PROP_FLAG_GROUPS
+
+
 #: Flat compatibility view used by editors and third-party callers.
 PROP_FLAG_TOGGLES = tuple(
     (field, mask, label)

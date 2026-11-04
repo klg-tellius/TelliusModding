@@ -63,5 +63,17 @@ class MapObjectEditTests(unittest.TestCase):
             map_props.edit_prop(self.project, self.path, "no_such_prop", {"size_y": 1.0})
 
 
+class FlagGroupTests(unittest.TestCase):
+    def test_radiant_dawn_maps_get_their_own_map_role_labels(self):
+        from types import SimpleNamespace
+        rd = SimpleNamespace(layout=SimpleNamespace(game="fe10"))
+        por = SimpleNamespace(layout=SimpleNamespace(game="fe9"))
+        self.assertIs(map_props.prop_flag_groups(por), map_props.PROP_FLAG_GROUPS)
+        groups = map_props.prop_flag_groups(rd)
+        self.assertEqual(dict(groups[0][2])[0x40], "Start hidden (Radiant Dawn)")
+        self.assertEqual(groups[1:], map_props.PROP_FLAG_GROUPS[1:])  # the masks L1 checked are shared
+        self.assertEqual([m for m, _l in groups[0][2]], [m for m, _l in map_props.PROP_FLAG_GROUPS[0][2]])
+
+
 if __name__ == "__main__":
     unittest.main()
