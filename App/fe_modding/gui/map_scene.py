@@ -105,12 +105,13 @@ _RAM_BACKED_MAP_TEXTURE_PROJECTIONS: dict[str, MapTextureProjection] = {
 
 
 def _find_base_terrain_instance(
-    map_name: str, map_data: map_file.MapData
+    map_name: str, map_data: map_file.MapData, files: dict[str, bytes] | None = None
 ) -> map_file.MapBuildInstance | None:
+    base = _base_terrain_desc_indices(map_data, files)
     terrain_desc_indices = {
         i
         for i, obj in enumerate(map_data.build_desc)
-        if i in _base_terrain_desc_indices(map_data) and obj.filename.lower() == map_name.lower()
+        if i in base and obj.filename.lower() == map_name.lower()
     }
     for inst in map_data.build_inst:
         if inst.desc_index in terrain_desc_indices:
@@ -118,16 +119,18 @@ def _find_base_terrain_instance(
     return None
 
 
-def _base_terrain_desc_indices(map_data: map_file.MapData) -> set[int]:
+def _base_terrain_desc_indices(map_data: map_file.MapData, files: dict[str, bytes] | None = None) -> set[int]:
     """Return map terrain/water descriptors for scene rendering.
 
     Most maps mark their terrain/water objects with `flag_bits_a == 0xc0`.
     `bmap31*` is a real exception in the extracted FE9 data: its main terrain
     is the largest descriptor (`bmap30*`) but the flag is clear. Keep the
     file-format predicate strict, and use this renderer-side fallback only
-    when no flagged terrain exists at all.
+    when no flagged terrain exists at all. Radiant Dawn has no such flag:
+    pass the map's ``files`` to find its ground by material
+    (`map_file.is_base_terrain_object`).
     """
-    flagged = {i for i, obj in enumerate(map_data.build_desc) if map_file.is_base_terrain_object(obj)}
+    flagged = {i for i, obj in enumerate(map_data.build_desc) if map_file.is_base_terrain_object(obj, files)}
     if flagged:
         return flagged
     if not map_data.build_desc:
@@ -141,8 +144,9 @@ def _base_terrain_desc_indices(map_data: map_file.MapData) -> set[int]:
     return {largest_index}
 
 
-def _find_terrain_instance(map_data: map_file.MapData) -> map_file.MapBuildInstance | None:
-    terrain_indices = _base_terrain_desc_indices(map_data)
+def _find_terrain_instance(map_data: map_file.MapData, files: dict[str, bytes] | None = None
+                           ) -> map_file.MapBuildInstance | None:
+    terrain_indices = _base_terrain_desc_indices(map_data, files)
     for inst in map_data.build_inst:
         if inst.desc_index in terrain_indices:
             return inst
@@ -169,12 +173,12 @@ def _native_file_projection_matrix(
 
 
 def _compute_file_derived_map_texture_projection(
-    map_name: str, map_data: map_file.MapData
+    map_name: str, map_data: map_file.MapData, files: dict[str, bytes] | None = None
 ) -> MapTextureProjection | None:
     if map_data.extra is None:
         return None
 
-    inst = _find_base_terrain_instance(map_name, map_data)
+    inst = _find_base_terrain_instance(map_name, map_data, files)
     if inst is None:
         return None
 
@@ -197,7 +201,7 @@ def _compute_file_derived_map_texture_projection(
 
 
 def compute_map_texture_projection(
-    map_name: str, map_data: map_file.MapData | None = None
+    map_name: str, map_data: map_file.MapData | None = None, files: dict[str, bytes] | None = None
 ) -> MapTextureProjection | None:
     """Return a native map texture projection when one is known.
 
@@ -208,7 +212,7 @@ def compute_map_texture_projection(
     """
 
     if map_data is not None:
-        derived = _compute_file_derived_map_texture_projection(map_name, map_data)
+        derived = _compute_file_derived_map_texture_projection(map_name, map_data, files)
         if derived is not None:
             return derived
 
@@ -264,21 +268,23 @@ def _translation_matrix(tx: float, ty: float, tz: float):
     ]
 
 
-def _find_prop_anchor(map_data: map_file.MapData, map_scale: float):
+def _find_prop_anchor(map_data: map_file.MapData, map_scale: float, files: dict[str, bytes] | None = None):
     """The negated translation of the terrain's own `mapbuildinst` entry -
     see this module's own docstring for why every prop needs this as its
     `parent_matrix`. Land/water share the same instance offset in every
     real chapter checked, so the first terrain instance found is enough.
     Returns `None` (identity - the old, wrong-but-harmless default) if a
     chapter genuinely has no terrain instance to anchor to."""
+    terrain_indices = _base_terrain_desc_indices(map_data, files)
     for inst in map_data.build_inst:
-        if inst.desc_index in _base_terrain_desc_indices(map_data):
+        if inst.desc_index in terrain_indices:
             m = inst.world_transform(map_scale=map_scale)
             return _translation_matrix(-m[0][3], -m[1][3], -m[2][3])
     return None
 
 
-def compute_grid_overlay(map_data: map_file.MapData, tile_scale: float = 5.0) -> "GridOverlay | None":
+def compute_grid_overlay(map_data: map_file.MapData, tile_scale: float = 5.0,
+                         files: dict[str, bytes] | None = None) -> "GridOverlay | None":
     """Derive the placement-grid lattice (see `GridOverlay`'s own docstring)
     covering the terrain's own raw mesh footprint - used by both the "3D
     Terrain" and "Map View" tabs to show a "hide/show grid + coordinates"
@@ -291,7 +297,7 @@ def compute_grid_overlay(map_data: map_file.MapData, tile_scale: float = 5.0) ->
     smaller water plane normally sits inside) rather than an arbitrary pick.
     Returns `None` if the chapter has no resolvable terrain instance - same
     "nothing to anchor to" case `_find_prop_anchor()` documents."""
-    terrain_indices = _base_terrain_desc_indices(map_data)
+    terrain_indices = _base_terrain_desc_indices(map_data, files)
     if not terrain_indices:
         return None
     origin: tuple[float, float] | None = None
@@ -415,7 +421,7 @@ def _loaded_for_map_model(
         cache[filename] = load_named_model_set(
             pak_contents,
             filename,
-            map_projection=compute_map_texture_projection(filename, map_data),
+            map_projection=compute_map_texture_projection(filename, map_data, pak_contents),
         )
     return cache[filename]
 
@@ -442,7 +448,7 @@ def build_map_terrain_scene(
         cache = _loaded_model_cache()
 
     triangles: list[_Triangle] = []
-    terrain_indices = _base_terrain_desc_indices(map_data)
+    terrain_indices = _base_terrain_desc_indices(map_data, pak_contents)
     for index, obj in enumerate(map_data.build_desc):
         if index not in terrain_indices:
             continue
@@ -471,8 +477,8 @@ def build_map_scene(
     terrain_scene = build_map_terrain_scene(pak_contents, map_data, cache=cache, label="map scene")
     triangles: list[_Triangle] = list(terrain_scene.triangles)
 
-    anchor = _find_prop_anchor(map_data, map_scale)
-    terrain_indices = _base_terrain_desc_indices(map_data)
+    anchor = _find_prop_anchor(map_data, map_scale, pak_contents)
+    terrain_indices = _base_terrain_desc_indices(map_data, pak_contents)
     stills: dict[str, list[_Triangle]] = {}
 
     for inst in map_data.build_inst:
@@ -526,7 +532,7 @@ def load_map_prop(pak_contents: dict[str, bytes], map_data: map_file.MapData, na
     picture shows it (:func:`_still_triangles`: ``wave_99``'s foam is otherwise invisible until its
     animation plays, which then sets the alpha itself)."""
     loaded = load_named_model_set(pak_contents, name, label=label,
-                                  map_projection=compute_map_texture_projection(name, map_data))
+                                  map_projection=compute_map_texture_projection(name, map_data, pak_contents))
     return replace(loaded, triangles=_still_triangles(loaded)) if loaded is not None else None
 
 
@@ -550,7 +556,8 @@ class TopdownCamera:
     extent: float
 
 
-def topdown_camera(map_data: map_file.MapData, px_per_tile: int) -> TopdownCamera | None:
+def topdown_camera(map_data: map_file.MapData, px_per_tile: int,
+                   files: dict[str, bytes] | None = None) -> TopdownCamera | None:
     """The orthographic camera that puts tile ``(x, y)`` of the full
     ``mapcapacity`` grid on pixels ``[x * px_per_tile, (x + 1) * px_per_tile)``
     (and the same for y), from the terrain instance's placement origin - the
@@ -559,7 +566,7 @@ def topdown_camera(map_data: map_file.MapData, px_per_tile: int) -> TopdownCamer
     if cap is None or cap.x_size <= 0 or cap.y_size <= 0:
         return None
     terrain = next((o.filename for o in map_data.build_desc
-                    if map_file.is_base_terrain_object(o) and "water" not in o.filename.lower()), "")
+                    if map_file.is_base_terrain_object(o, files) and "water" not in o.filename.lower()), "")
     ox, oy = map_heights.terrain_origin(map_data, terrain)
     tile = map_heights.TILE_SIZE
     return TopdownCamera(

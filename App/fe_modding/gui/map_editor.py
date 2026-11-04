@@ -226,7 +226,7 @@ class MapEditor(EditorPanel):
             return
         try:
             obj = next(o for o in self._map_data.build_desc if o.filename == name)
-            if map_file.is_base_terrain_object(obj) and name not in self.water_names():
+            if map_file.is_base_terrain_object(obj, self._pak_contents) and name not in self.water_names():
                 raise ValueError("Export the terrain from the 3D Models panel (zmap/<map>).")
             Path(target).write_bytes(map_props.export_prop_glb(self._pak_contents, name))
         except Exception as exc:  # noqa: BLE001

@@ -106,7 +106,7 @@ def _place_images(files: dict[str, bytes], gs: gs_file.GsFile, images: list, bas
 
 def prop_names(files: dict[str, bytes], data: map_file.MapData) -> list[str]:
     """Placeable objects that have a model: every non-terrain object's name."""
-    return [o.filename for o in data.build_desc if not map_file.is_base_terrain_object(o) and f"{o.filename}.gs" in files]
+    return [o.filename for o in data.build_desc if not map_file.is_base_terrain_object(o, files) and f"{o.filename}.gs" in files]
 
 
 #: ``mapbuilddesc`` flag byte c bit 1: ``load_map_data`` loads ``<name>.ga``
@@ -162,7 +162,7 @@ def _one_bone_skeleton(files: dict[str, bytes], data: map_file.MapData) -> bytes
     """A prop skeleton to copy: vanilla props use one identity bone."""
     for o in data.build_desc:
         g = files.get(f"{o.filename}.g")
-        if g is not None and not map_file.is_base_terrain_object(o):
+        if g is not None and not map_file.is_base_terrain_object(o, files):
             return g
     for o in data.build_desc:
         g = files.get(f"{o.filename}.g")
@@ -193,7 +193,7 @@ def import_prop(
         raise gltf_import.GltfImportError(f"A prop name is ASCII letters, digits or _ (got {name!r}).")
     data = map_file.read_map_bytes(files["map.bin"])
     existing = next((o for o in data.build_desc if o.filename == name), None)
-    if existing is not None and map_file.is_base_terrain_object(existing):
+    if existing is not None and map_file.is_base_terrain_object(existing, files):
         raise gltf_import.GltfImportError(f"{name} is the map's terrain; use the terrain import.")
 
     scene = gltf_import.read_gltf(gltf_data, base_dir)
@@ -297,7 +297,7 @@ def _gltf_has_skin(gltf_data: bytes) -> bool:
 def terrain_triangles(files: dict[str, bytes], data: map_file.MapData) -> np.ndarray:
     """The land terrain's triangles, for placing props on its surface."""
     for o in data.build_desc:
-        if map_file.is_base_terrain_object(o) and "water" not in o.filename.lower() and f"{o.filename}.gs" in files:
+        if map_file.is_base_terrain_object(o, files) and "water" not in o.filename.lower() and f"{o.filename}.gs" in files:
             m = model.read_model_bytes(files[f"{o.filename}.gs"])
             tris = [
                 [v.position for v in (s[k], s[k + 1], s[k + 2])]
@@ -312,7 +312,7 @@ def terrain_triangles(files: dict[str, bytes], data: map_file.MapData) -> np.nda
 def tile_heights(files: dict[str, bytes], data: map_file.MapData, tiles) -> list[float]:
     """The instance height value (``pos_y = -5 * height``) of the terrain
     surface at the centre of each tile ``(x, y)``; 0 off the terrain."""
-    terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o) and "water" not in o.filename.lower()), "")
+    terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o, files) and "water" not in o.filename.lower()), "")
     ox, oy = map_heights.terrain_origin(data, terrain)
     centres = [(map_heights.TILE_SIZE * (x - ox) + 2.5, map_heights.TILE_SIZE * (y - oy) + 2.5) for x, y in tiles]
     surfaces = map_heights.surface_heights(terrain_triangles(files, data), centres)
@@ -491,7 +491,7 @@ def copy_prop(
         raise map_file.MapFileError(f"A prop name is ASCII letters, digits or _ (got {name!r}).")
     source_data = map_file.read_map_bytes(source_files["map.bin"])
     obj = next((o for o in source_data.build_desc if o.filename == source_name), None)
-    if obj is None or f"{source_name}.gs" not in source_files or map_file.is_base_terrain_object(obj):
+    if obj is None or f"{source_name}.gs" not in source_files or map_file.is_base_terrain_object(obj, source_files):
         raise map_file.MapFileError(f"{source_name} is not a prop of that map.")
     data = map_file.read_map_bytes(files["map.bin"])
     if any(o.filename == name for o in data.build_desc) or f"{name}.gs" in files:
@@ -546,7 +546,7 @@ def water_names(files: dict[str, bytes], data: map_file.MapData) -> list[str]:
     names = []
     for o in data.build_desc:
         gs = files.get(f"{o.filename}.gs")
-        if gs is not None and map_file.is_base_terrain_object(o) and o.filename not in names:
+        if gs is not None and map_file.is_base_terrain_object(o, files) and o.filename not in names:
             if any(m.name == "map_water" for m in gs_file.read_gs(gs).materials):
                 names.append(o.filename)
     return names
@@ -566,7 +566,7 @@ def water_terrain_mismatch(files: dict[str, bytes]) -> tuple[int, int]:
     names = water_names(files, data)
     if grid is None:
         return 0, 0
-    terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o) and o.filename not in names), "")
+    terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o, files) and o.filename not in names), "")
     tris = [_water_triangles(files[f"{n}.gs"]) for n in names]
     tris = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
     covered = water_kit.covered_tiles(tris, len(grid), len(grid[0]), map_heights.terrain_origin(data, terrain))
@@ -620,7 +620,7 @@ def import_water_scene(
         donor_waters = water_names(donor, donor_data)
         if not donor_waters:
             raise gltf_import.GltfImportError("The chosen map has no water either.")
-        terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o)), None)
+        terrain = next((o.filename for o in data.build_desc if map_file.is_base_terrain_object(o, files)), None)
         if terrain is None:
             raise gltf_import.GltfImportError("This map has no base terrain object.")
         name = name or f"{terrain}_water0"

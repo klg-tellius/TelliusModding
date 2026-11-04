@@ -639,12 +639,55 @@ class MapData:
     layout: MapLayout = POR_LAYOUT
 
 
-def is_base_terrain_object(obj: MapObject) -> bool:
+#: Materials the map loader gives its terrain texture-projection callbacks
+#: (``setup_map_texture_material_callbacks``): a model with one of them is the
+#: map's ground (``map_base``, ``map_wall``) or water plane (``map_water``).
+MAP_TERRAIN_MATERIALS = frozenset({"map_base", "map_wall", "map_water"})
+
+
+def is_base_terrain_object(obj: MapObject, files: Optional[dict] = None) -> bool:
     """Whether a mapbuilddesc object IS the map's own base terrain or
-    water-plane model, rather than a placed prop - flag_bits_a's top two
-    bits, always set together. See MapObject's docstring for how this was
-    confirmed (every real match is literally named after its own map)."""
-    return (obj.flag_bits_a & 0b11000000) == 0b11000000
+    water-plane model, rather than a placed prop.
+
+    Path of Radiance records: flag_bits_a's top two bits, always set
+    together. See MapObject's docstring for how this was confirmed (every
+    real match is literally named after its own map).
+
+    Radiant Dawn records (they carry a ``footprint``) have no such flag: A7
+    is never set and A6 means "initially hidden" (``research/rd/MAP_NOTES.md``),
+    and the ground's effect type (18) is shared with stairs and floor tiles.
+    The game finds the ground by its material names instead, so an RD object
+    is base terrain when its model in ``files`` (the unpacked ``map.cmp``)
+    has a ``map_base``, ``map_wall`` or ``map_water`` material. That holds on
+    every retail RFEE01 map: 95 ground and 19 water objects, no prop. Without
+    ``files`` an RD object is never base terrain."""
+    if not obj.footprint:
+        return (obj.flag_bits_a & 0b11000000) == 0b11000000
+    if files is None:
+        return False
+    model = files.get(f"{obj.filename}.gs")
+    return model is not None and bool(_model_material_names(model) & MAP_TERRAIN_MATERIALS)
+
+
+_MATERIAL_NAME_CACHE: dict[int, tuple[bytes, frozenset]] = {}
+
+
+def _model_material_names(model: bytes) -> frozenset:
+    """The material names of a ``.gs`` model, cached per model object (the
+    same bytes are asked about once per prop on every call site)."""
+    cached = _MATERIAL_NAME_CACHE.get(id(model))
+    if cached is not None and cached[0] is model:
+        return cached[1]
+    from .model import read_model_bytes  # model imports nothing from here; kept lazy for start-up
+
+    try:
+        names = frozenset(m.name for m in read_model_bytes(model).materials)
+    except Exception:  # noqa: BLE001 - an unreadable model is not the terrain
+        names = frozenset()
+    if len(_MATERIAL_NAME_CACHE) > 128:  # it holds the models alive, so keep it to about one map's worth
+        _MATERIAL_NAME_CACHE.clear()
+    _MATERIAL_NAME_CACHE[id(model)] = (model, names)
+    return names
 
 
 def has_ga_animation(obj: MapObject) -> bool:

@@ -79,7 +79,7 @@ def read_terrain(container: Path) -> TerrainSource:
     images = tpl.read_tpl_images(io.BytesIO(files[map_props.texpack_name(files)]))
     atlas_id = material.textures[0].tex_id
     light_id = material.textures[-1].tex_id
-    projection = map_scene.compute_map_texture_projection(name, map_data)
+    projection = map_scene.compute_map_texture_projection(name, map_data, files)
     return TerrainSource(
         name, positions, uv0, uv1,
         images[atlas_id].convert("RGBA"),

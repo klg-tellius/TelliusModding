@@ -236,6 +236,8 @@ For rollback, restore the entire pre-import `map.cmp`. Reimporting the old mesh 
 
 The coordinate scale, importer options, map-texturing pipeline, mask span, height/prop following, grid conformance, bounds update, warning calculations, and texture constraints are source-reviewed. Exact native rendering limits above observed vanilla sizes, unusual material callbacks, and every imported topology remain **unknown** until tested on the target build.
 
+**Radiant Dawn.** The same tools read Radiant Dawn maps that have a ground model (33 of the 43 story maps). They find the ground and water by their `map_base` / `map_water` materials, because Radiant Dawn's map objects carry no terrain flag. A painted import rebuilds 1-1's terrain in the app's tests. The Blender side and the game drawing the result are **not yet checked** on Radiant Dawn. Indoor, desert and Tower maps have no ground model, so there is no terrain to export; edit their props instead.
+
 ## Things to try next
 
 - Raise a decorative hill outside the playable grid with heights disabled.
