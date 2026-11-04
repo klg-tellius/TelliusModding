@@ -2927,9 +2927,18 @@ class _ModelTablesDialog(tk.Toplevel):
         self.geometry("900x560")
         self._project = project
         self._on_change = on_change
-        fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
-        self._characters = {c.pid: c for c in fe8.characters if c.pid}
-        self._classes = {c.jid: c for c in fe8.classes if c.jid}
+        self._rd = project.game is Game.RADIANT_DAWN
+        if self._rd:
+            rd = fe10data.read_fe10data(project.read_logical("game_data"))
+            self._characters = {c.values["pid"]: c for c in rd.characters if c.values.get("pid")}
+            self._classes = {c.values["jid"]: c for c in rd.classes if c.values.get("jid")}
+        else:
+            fe8 = fe8data.read_fe8data(logical_game_path_of(project, "game_data").read_bytes())
+            self._characters = {c.pid: c for c in fe8.characters if c.pid}
+            self._classes = {c.jid: c for c in fe8.classes if c.jid}
+        profile = project.profile
+        self._battle_label = profile.file_label("battle_data") if self._rd else "zdbx/jobList.dbx"
+        self._anim_label = profile.file_label("anim_data")
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=8, pady=8)
         self._build_job_tab(notebook)
@@ -2962,11 +2971,15 @@ class _ModelTablesDialog(tk.Toplevel):
         scroll.pack(side="right", fill="y")
         return tree
 
-    def _base_aid_of(self, pid: str, promoted: bool) -> str | None:
-        """The base animation ID the engine uses: the character's, else its class's."""
+    def _base_aid_of(self, pid: str, promoted) -> str | None:
+        """The base animation ID the engine uses: the character's, else its class's. On Radiant Dawn
+        ``promoted`` is the tier (1-4): ``aid_<tier>``, else the class's ``aid`` (RFEE01 0x800F416C)."""
         character = self._characters.get(pid)
         if character is None:
             return None
+        if self._rd:
+            job = self._classes.get(character.values.get("jid"))
+            return character.values.get(f"aid_{promoted}") or (job.values.get("aid") if job else None)
         aid = character.aid_promoted if promoted else character.aid_unpromoted
         job = self._classes.get(character.jid)
         return aid or (job.aid if job else None)
@@ -2982,7 +2995,10 @@ class _ModelTablesDialog(tk.Toplevel):
         notebook.add(tab, text="Battle job list")
         ttk.Label(
             tab, style="Muted.TLabel",
-            text="The battle model of a unit: its animation ID's line, else its class plus character, else its class.",
+            text=("The game takes the first line with the unit's animation ID, else character and class, else the "
+                  "character, else the class (a character's own line counts for its class too)." if self._rd else
+                  "The battle model of a unit: its animation ID's line, else its class plus character, else its class."),
+            wraplength=860, justify="left",
         ).pack(anchor="w")
         self._job_tree = self._tree(tab, (("key", "Class / character / animation ID", 320), ("code", "Model", 80),
                                           ("comment", "Comment", 200)))
@@ -3006,11 +3022,19 @@ class _ModelTablesDialog(tk.Toplevel):
         check.pack(fill="x", pady=(8, 0))
         self._check_pid = tk.StringVar()
         self._check_promoted = tk.BooleanVar(value=False)
+        self._check_tier = tk.StringVar(value="1")
         box = ttk.Combobox(check, textvariable=self._check_pid, values=sorted(self._characters), width=28)
         box.pack(side="left")
         box.bind("<<ComboboxSelected>>", lambda e: self._check_character())
-        ttk.Checkbutton(check, text="Promoted", variable=self._check_promoted,
-                        command=self._check_character).pack(side="left", padx=(8, 0))
+        if self._rd:
+            ttk.Label(check, text="Tier").pack(side="left", padx=(8, 0))
+            tier = ttk.Combobox(check, textvariable=self._check_tier, values=["1", "2", "3", "4"], width=3,
+                                state="readonly")
+            tier.pack(side="left", padx=(4, 0))
+            tier.bind("<<ComboboxSelected>>", lambda e: self._check_character())
+        else:
+            ttk.Checkbutton(check, text="Promoted", variable=self._check_promoted,
+                            command=self._check_character).pack(side="left", padx=(8, 0))
         self._check_result = ttk.Label(check, text="")
         self._check_result.pack(side="left", padx=(12, 0))
 
@@ -3027,20 +3051,31 @@ class _ModelTablesDialog(tk.Toplevel):
         aid, code = self._job_aid.get().strip() or None, self._job_code.get().strip()
         who = aid or (f"{jid} + {pid}" if pid else jid)
         self._run(lambda: model_slots.assign_battle_model(self._project, code, jid=jid, pid=pid, aid=aid),
-                  "zdbx/jobList.dbx", f"Battle model of {who} set to {code}")
+                  self._battle_label, f"Battle model of {who} set to {code}")
 
     def _remove_job_line(self) -> None:
         selection = self._job_tree.selection()
         if selection:
             key = selection[0]
             self._run(lambda: model_slots.remove_job_line(self._project, key),
-                      "zdbx/jobList.dbx", f"Removed the job-list line {key}")
+                      self._battle_label, f"Removed the job-list line {key}")
 
     def _check_character(self) -> None:
         pid = self._check_pid.get().strip()
         character = self._characters.get(pid)
         if character is None:
             self._check_result.config(text="")
+            return
+        if self._rd:
+            jid = character.values.get("jid")
+            aid = self._base_aid_of(pid, self._check_tier.get())
+            ground, air = model_slots.rd_battle_model_for(self._project, aid, pid, jid)
+            folders = sorted({r.class_folder for r in model_slots.map_model_records(self._project)
+                              if r.base_aid == aid})
+            self._check_result.config(
+                text=f"class {jid}, animation ID {aid or '-'}: battle zu/{ground or '?'}"
+                     + (f" (in the air zu/{air})" if air else "")
+                     + f", map ymu/{', ymu/'.join(folders) if folders else '?'}")
             return
         aid = self._base_aid_of(pid, self._check_promoted.get())
         models = {key: code for key, code, _comment in model_slots.job_list(self._project)}
@@ -3067,7 +3102,9 @@ class _ModelTablesDialog(tk.Toplevel):
         self._remove_code_button.pack(side="right")
         ttk.Label(
             tab, style="Muted.TLabel",
-            text="zu/<code>/<texture>.tpl is picked by the unit's animation ID, then its character, then its army.",
+            text=("zu/<code>/<texture>.tpl is picked by the unit's character line, then its army (FE10BTex rows "
+                  "of the model)." if self._rd else
+                  "zu/<code>/<texture>.tpl is picked by the unit's animation ID, then its character, then its army."),
         ).pack(anchor="w", pady=(4, 0))
         self._tex_tree = self._tree(tab, (("key", "Key", 260), ("texture", "Texture (.tpl)", 200)))
         form = ttk.Frame(tab)
@@ -3142,6 +3179,20 @@ class _ModelTablesDialog(tk.Toplevel):
         self._map_aid_box.bind("<<ComboboxSelected>>", lambda e: self._refresh_records())
         self._remove_aid_button = ttk.Button(top, text="Remove this slot...", command=self._remove_map_slot)
         self._remove_aid_button.pack(side="right")
+        if self._rd:
+            self._map_tree = self._tree(tab, (("aid", "Animation ID", 240), ("folder", "ymu/ folder", 160),
+                                              ("texture", "Texture (.tpl)", 200)))
+            form = ttk.Frame(tab)
+            form.pack(fill="x", pady=(6, 0))
+            self._map_texture_name = tk.StringVar()
+            ttk.Label(form, text="Texture").grid(row=0, column=0, sticky="w")
+            self._map_texture_box = ttk.Combobox(form, textvariable=self._map_texture_name, width=24)
+            self._map_texture_box.grid(row=0, column=1, padx=(6, 0))
+            ttk.Button(form, text="Set texture", command=self._set_map_texture_name).grid(row=0, column=2, padx=(8, 0))
+            ttk.Label(form, style="Muted.TLabel",
+                      text="The ID's FE10AnimHeader row draws ymu/<folder>/<texture>.tpl for every army.").grid(
+                row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+            return
         self._map_tree = self._tree(tab, (
             ("aid", "Record", 200), ("folder", "ymu/ folder", 110), ("textures", "tex_<n> per army", 140),
             ("blend", "Blend", 50), ("b0b", "+0x0B", 50), ("actions", "Animations", 330)))
@@ -3169,6 +3220,15 @@ class _ModelTablesDialog(tk.Toplevel):
         aid = self._map_aid.get()
         self._map_tree.delete(*self._map_tree.get_children())
         records = [r for r in model_slots.map_model_records(self._project) if r.base_aid == aid]
+        vanilla = aid in model_slots.vanilla_map_aids(self._project)
+        self._remove_aid_button.config(state="disabled" if vanilla or not aid else "normal")
+        if self._rd:
+            for i, r in enumerate(records):
+                self._map_tree.insert("", "end", iid=str(i), values=(r.aid_name, r.class_folder, r.texture_name))
+            folder = files_root_of(self._project) / "ymu" / (records[0].class_folder.rstrip("/") if records else "")
+            self._map_texture_box.config(values=sorted(p.stem for p in folder.glob("*.tpl")) if records else [])
+            self._map_texture_name.set(records[0].texture_name if records else "")
+            return
         for i, r in enumerate(records):
             signed = r.body_type - 256 if r.body_type > 127 else r.body_type
             self._map_tree.insert("", "end", iid=str(i), values=(
@@ -3188,7 +3248,12 @@ class _ModelTablesDialog(tk.Toplevel):
             messagebox.showerror("Model tables", "Texture numbers are whole numbers 0-255.", parent=self)
             return
         self._run(lambda: model_slots.set_map_textures(self._project, aid, ids),
-                  "FE8Anim.bin", f"Map textures of {aid} set to {ids}")
+                  self._anim_label, f"Map textures of {aid} set to {ids}")
+
+    def _set_map_texture_name(self) -> None:
+        aid, name = self._map_aid.get(), self._map_texture_name.get().strip()
+        self._run(lambda: model_slots.set_map_texture_name(self._project, aid, name),
+                  self._anim_label, f"Map texture of {aid} set to {name}.tpl")
 
     def _remove_map_slot(self) -> None:
         aid = self._map_aid.get()
@@ -3204,7 +3269,7 @@ class _ModelTablesDialog(tk.Toplevel):
         def remove() -> None:
             changes.extend(model_slots.remove_map_model(self._project, aid))
 
-        if self._run(remove, "FE8Anim.bin", f"Removed the map model {aid}"):
+        if self._run(remove, self._anim_label, f"Removed the map model {aid}"):
             messagebox.showinfo("Map model removed", "\n".join(changes), parent=self)
 
 
@@ -5303,10 +5368,6 @@ class ModelViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        # Existing RD slots are safe to rewrite: their member names and CMS
-        # references do not move. New-slot/table operations remain gated on
-        # variable-size FE10Anim/FE10Battle rebuilding.
-        self._rd_structural_read_only = project.game is Game.RADIANT_DAWN and not self.map_only
         # New slot… and Model tables… write FE8Data.bin themselves (a character's animation ID);
         # the shared copy every other editor works on is saved before and reloaded after.
         self._session = session
@@ -5346,13 +5407,6 @@ class ModelViewer(EditorPanel):
         left = ttk.Frame(paned, padding=8)
         paned.add(left, weight=1)
         ttk.Label(left, text=self.list_heading).pack(anchor="w")
-        if self._rd_structural_read_only:
-            ttk.Label(
-                left,
-                text="Radiant Dawn slots can be imported, re-rigged, cloned and restored. The raw model-table "
-                     "management dialog remains Path of Radiance-specific.",
-                style="Muted.TLabel", wraplength=280, justify="left",
-            ).pack(anchor="w", pady=(3, 5))
 
         self._new_map_button = None
         self._new_map_file_button = None
@@ -5405,8 +5459,7 @@ class ModelViewer(EditorPanel):
         self._new_slot_button = ttk.Button(buttons, text="New slot...", command=self._new_slot, state="disabled")
         self._remove_slot_button = ttk.Button(
             buttons, text="Remove added slot...", command=self._remove_slot, state="disabled")
-        self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables,
-                                         state="disabled" if self._rd_structural_read_only else "normal")
+        self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables)
         self._paint_kit_button = ttk.Button(
             buttons, text="Sculpt & paint kit...", command=self._export_paint_kit, state="disabled"
         )

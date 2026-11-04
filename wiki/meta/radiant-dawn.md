@@ -132,7 +132,9 @@ source_path: "meta/radiant-dawn.md"
 
   A map animation ID (`FE10AnimHeader` in `FE10Anim.cms`) names one texture and one model folder: `AID_MIKAYA1` draws `ymu/mikaya1/mikaya1.tpl`. Map colours belong to the ID, not to an army: `AID_SOLDIER` (Begnion) is `soldier1_b`, `AID_SOLDIER_De` (Daein) is `soldier1_d`. A character's IDs are its `aid_1` to `aid_4`, one per tier. <span class="confidence confidence--confirmed">engine</span>
 
-  In battle, an `FE10BAnimData` row of `FE10Battle.cms` picks the battle unit by animation ID, then PID and class. Each `FE10BUnit` owns a run of `FE10BTex` rows, one per army or per character, naming a loose `zu/<model>/<texture>.tpl`. `PID_ISAIYA` → `ISAIYA` gives one character her own look on a shared model. <span class="confidence confidence--confirmed">engine</span>
+  The animation ID a unit uses is the character's `aid_<tier>`, else the class's: the tier is 1-3 by the class's tier skill, or for a laguz by its level (`0x800F416C`). <span class="confidence confidence--confirmed">engine</span>
+
+  In battle, `0x800A7770` picks an `FE10BAnimData` row (20 bytes: AID, PID, JID, then two `FE10BUnit` descriptions). It takes the first row whose AID is the unit's; else the first whose PID and JID both match; else the first whose PID matches; else the first whose JID matches, which may be a character's own row. +0x0C names the battle unit; +0x10, set on pegasus, wyvern and bird rows, names the one used in the air. Each `FE10BUnit` owns a run of `FE10BTex` rows, one per army or per character, naming a loose `zu/<model>/<texture>.tpl`. `PID_ISAIYA` → `ISAIYA` gives one character her own look on a shared model. <span class="confidence confidence--confirmed">engine</span>
 
 ## Game database
 

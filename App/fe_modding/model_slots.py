@@ -71,6 +71,69 @@ def _write_zdbx(project: ModProject, files: dict[str, bytes]) -> None:
     project.write_keeping_original(_logical(project, "battle_data"), zdbx.build_zdbx_archive(list(files.items())))
 
 
+def _rd_models(battle) -> dict[str, str]:
+    """FE10BUnit description -> model code."""
+    return {dict(r.strings).get(0): unit.model_name
+            for r, unit in zip(battle.table("FE10BUnit").records, battle.unit_texture_sets)}
+
+
+def _rd_unit_index(project: ModProject, data: bytes, code: str) -> int:
+    battle = fe10_battle.read_fe10_battle(data)
+    index = next((i for i, unit in enumerate(battle.unit_texture_sets) if unit.model_name == code), None)
+    if index is None:
+        raise ProjectError(f"No battle model {code!r}.")
+    return index
+
+
+def rd_battle_model_for(project: ModProject, aid: str | None, pid: str | None, jid: str | None
+                        ) -> tuple[str | None, str | None]:
+    """Radiant Dawn: the (ground, in the air) battle model codes the game picks for a unit
+    (``fe10_battle.select_battle_row``)."""
+    battle = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
+    row = fe10_battle.select_battle_row(battle, aid, pid, jid)
+    if row is None:
+        return None, None
+    models = _rd_models(battle)
+    strings = dict(battle.table("FE10BAnimData").records[row].strings)
+    return models.get(strings.get(12)), (models.get(strings[16]) if strings.get(16) else None)
+
+
+def _rd_assign(project: ModProject, code: str, *, aid: str | None, pid: str | None, jid: str | None) -> bytes:
+    """The FE10Battle.cms bytes with these unit keys selecting battle model ``code``: the row with
+    exactly these keys is pointed at it; else a model made by New slot moves its own row to the keys;
+    else a row is added. Refused when an earlier row would still win the game's lookup."""
+    if not any((aid, pid, jid)):
+        raise ProjectError("A job-list line needs a class, a character or an animation ID.")
+    data = project.read_logical("battle_data")
+    battle = fe10_battle.read_fe10_battle(data)
+    unit_index = _rd_unit_index(project, data, code)
+    description = dict(battle.table("FE10BUnit").records[unit_index].strings).get(0)
+    rows = [dict(r.strings) for r in battle.table("FE10BAnimData").records]
+    aerial = next((s.get(16) for s in rows if s.get(12) == description and s.get(16)), None)
+    keys = (aid, pid, jid)
+    try:
+        exact = next((i for i, s in enumerate(rows) if (s.get(0), s.get(4), s.get(8)) == keys), None)
+        own = next((i for i, s in enumerate(rows) if s.get(12) == description), None)
+        if exact is not None:
+            data = fe10_battle.set_battle_selector_target(data, exact, description, aerial)
+        elif own is not None and code not in vanilla_battle_codes(project):
+            data = fe10_battle.update_battle_selector(data, own, aid=aid, pid=pid, jid=jid)
+        else:
+            data, row = fe10_battle.clone_battle_selector(data, own if own is not None else 0, description,
+                                                          aid=aid, pid=pid, jid=jid)
+            data = fe10_battle.set_battle_selector_target(data, row, description, aerial)
+    except (ValueError, IndexError) as exc:
+        raise ProjectError(str(exc)) from exc
+    after = fe10_battle.read_fe10_battle(data)
+    winner = fe10_battle.select_battle_row(after, aid, pid, jid)
+    target = dict(after.table("FE10BAnimData").records[winner].strings) if winner is not None else {}
+    if target.get(12) != description:
+        keys_text = " / ".join(k for k in keys if k)
+        raise ProjectError(f"Row {winner} ({target.get(12)}) comes first in the game's lookup for "
+                           f"{keys_text}; edit that line instead.")
+    return data
+
+
 def battle_model_codes(project: ModProject) -> list[str]:
     """Codes with both a ``zu/`` folder and a ``zu/<code>.dbx`` table."""
     if project.game is Game.RADIANT_DAWN:
@@ -157,23 +220,7 @@ def assign_battle_model(project: ModProject, code: str, *, jid: str | None = Non
                         pid: str | None = None, aid: str | None = None, comment: str = "") -> None:
     """Add or replace the job-list line selecting ``code`` (see ``zdbx.set_job_model``)."""
     if project.game is Game.RADIANT_DAWN:
-        data = project.read_logical("battle_data")
-        battle = fe10_battle.read_fe10_battle(data)
-        unit_index = next((i for i, unit in enumerate(battle.unit_texture_sets)
-                           if unit.model_name == code), None)
-        if unit_index is None:
-            raise ProjectError(f"No battle model {code!r}.")
-        description = dict(battle.table("FE10BUnit").records[unit_index].strings).get(0)
-        selector_index = next((i for i, record in enumerate(battle.table("FE10BAnimData").records)
-                               if dict(record.strings).get(12) == description), None)
-        if selector_index is None:
-            raise ProjectError(f"No battle selector for {code!r}.")
-        try:
-            data = fe10_battle.update_battle_selector(
-                data, selector_index, aid=aid, pid=pid, jid=jid)
-        except (ValueError, IndexError) as exc:
-            raise ProjectError(str(exc)) from exc
-        project.write_logical("battle_data", data)
+        project.write_logical("battle_data", _rd_assign(project, code, aid=aid, pid=pid, jid=jid))
         return
     tables = _read_zdbx(project)
     if f"zu/{code}.dbx" not in tables:
@@ -186,6 +233,14 @@ def assign_battle_model(project: ModProject, code: str, *, jid: str | None = Non
 def set_battle_texture(project: ModProject, code: str, key: str, texture: str) -> None:
     """Make ``zu/<code>/<texture>.tpl`` the texture for an army key (``自軍``,
     ``敵軍``, ``中立``, ``味方``), a ``PID_`` or an ``AID_``."""
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("battle_data")
+        try:
+            data = fe10_battle.set_unit_texture(data, _rd_unit_index(project, data, code), key, texture)
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(str(exc)) from exc
+        project.write_logical("battle_data", data)
+        return
     tables = _read_zdbx(project)
     name = f"zu/{code}_prm.dbx"
     if name not in tables:
@@ -195,6 +250,14 @@ def set_battle_texture(project: ModProject, code: str, key: str, texture: str) -
 
 
 def remove_battle_texture(project: ModProject, code: str, key: str) -> None:
+    if project.game is Game.RADIANT_DAWN:
+        data = project.read_logical("battle_data")
+        try:
+            data = fe10_battle.remove_unit_texture(data, _rd_unit_index(project, data, code), key)
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(str(exc)) from exc
+        project.write_logical("battle_data", data)
+        return
     tables = _read_zdbx(project)
     name = f"zu/{code}_prm.dbx"
     if name not in tables:
@@ -204,11 +267,33 @@ def remove_battle_texture(project: ModProject, code: str, key: str) -> None:
 
 
 def job_list(project: ModProject) -> list[tuple[str, str, str]]:
-    """The job list's ``(key, code, comment)`` lines."""
+    """The job list's ``(key, code, comment)`` lines. On Radiant Dawn a line is an ``FE10BAnimData``
+    row: key ``<row>: AID / PID / JID`` (the ones it has), code its FE10BUnit model, comment the
+    description (and the model used in the air)."""
+    if project.game is Game.RADIANT_DAWN:
+        battle = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
+        models = _rd_models(battle)
+        lines = []
+        for i, record in enumerate(battle.table("FE10BAnimData").records):
+            strings = dict(record.strings)
+            keys = " / ".join(strings[at] for at in (0, 4, 8) if strings.get(at))
+            comment = strings.get(12) or ""
+            if strings.get(16):
+                comment += f" · in the air: {models.get(strings[16], '?')}"
+            lines.append((f"{i}: {keys}", models.get(strings.get(12), "?"), comment))
+        return lines
     return zdbx.job_list_lines(_read_zdbx(project)[zdbx.JOB_LIST].decode("shift_jis"))
 
 
 def remove_job_line(project: ModProject, key: str) -> None:
+    if project.game is Game.RADIANT_DAWN:
+        try:
+            index = int(key.split(":", 1)[0])
+            data = fe10_battle.remove_battle_selector(project.read_logical("battle_data"), index)
+        except (ValueError, IndexError) as exc:
+            raise ProjectError(f"No job-list line {key!r}.") from exc
+        project.write_logical("battle_data", data)
+        return
     tables = _read_zdbx(project)
     text, removed = zdbx.remove_job_lines(tables[zdbx.JOB_LIST].decode("shift_jis"), key=key)
     if not removed:
@@ -269,6 +354,10 @@ def remove_battle_model(project: ModProject, code: str) -> int:
 
 
 def battle_textures(project: ModProject, code: str) -> dict[str, str]:
+    if project.game is Game.RADIANT_DAWN:
+        battle = fe10_battle.read_fe10_battle(project.read_logical("battle_data"))
+        unit = next((u for u in battle.unit_texture_sets if u.model_name == code), None)
+        return {m.condition: m.texture_name for m in unit.mappings} if unit else {}
     param = _read_zdbx(project).get(f"zu/{code}_prm.dbx")
     return zdbx.param_textures(param.decode("shift_jis")) if param else {}
 
@@ -285,6 +374,7 @@ class RdMapModelRecord:
     class_folder: str
     model_index: int
     texture_ids: tuple[int, int, int, int] = (0, 0, 0, 0)
+    texture_name: str = ""  # ymu/<folder>/<texture>.tpl; one texture per ID, not per army
 
     @property
     def base_aid(self) -> str:
@@ -295,7 +385,7 @@ def map_model_records(project: ModProject) -> list[anim_registry.AnimRecord | Rd
     if project.game is Game.RADIANT_DAWN:
         document = fe10_anim.read_fe10_anim(project.read_logical("anim_data"))
         return [RdMapModelRecord(header.aid_name, document.models[header.model_index].folder,
-                                 header.model_index)
+                                 header.model_index, texture_name=header.texture_name)
                 for header in document.headers]
     return anim_registry.read_anim_registry(_anim_path(project).read_bytes())
 
@@ -376,6 +466,19 @@ def set_map_textures(project: ModProject, base_aid: str, texture_ids: tuple[int,
         raise ProjectError(f"No map model {base_aid!r}.")
     records = [replace(r, texture_ids=tuple(texture_ids)) if r.base_aid == base_aid else r for r in records]
     project.write_keeping_original(_anim_path(project), anim_registry.build_anim_registry(records))
+
+
+def set_map_texture_name(project: ModProject, aid: str, texture: str) -> None:
+    """Radiant Dawn: make ``ymu/<folder>/<texture>.tpl`` the map texture of animation ID ``aid``
+    (its ``FE10AnimHeader`` row)."""
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,32}", texture or ""):
+        raise ProjectError("A texture name is letters, digits or _ (without .tpl).")
+    data = project.read_logical("anim_data")
+    document = fe10_anim.read_fe10_anim(data)
+    index = next((i for i, header in enumerate(document.headers) if header.aid_name == aid), None)
+    if index is None:
+        raise ProjectError(f"No map model {aid!r}.")
+    project.write_logical("anim_data", fe10_anim.update_anim_header(data, index, texture_name=texture))
 
 
 def vanilla_map_aids(project: ModProject) -> set[str]:

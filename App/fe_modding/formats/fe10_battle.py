@@ -725,3 +725,89 @@ def set_camera_dispatch_group(data: bytes, list_index: int, context_index: int,
     out = bytearray(data)
     out[offset] = 0xFF if group_index is None else group_index
     return bytes(out)
+
+
+# -- battle model selection (FE10BAnimData) ---------------------------------------------------
+
+def select_battle_row(document: Fe10Battle, aid: str | None, pid: str | None, jid: str | None) -> int | None:
+    """The ``FE10BAnimData`` row RFEE01 picks for a unit (``0x800A7770``): the first row whose AID
+    (+0x00) is the unit's; else the first whose PID (+0x04) and class (+0x08) both match; else the
+    first whose PID matches; else the first whose class matches (a character's own row counts too).
+    The row's +0x0C names the ``FE10BUnit`` description, +0x10 the one used in the air."""
+    rows = [dict(record.strings) for record in document.table("FE10BAnimData").records]
+    tiers = []
+    if aid:
+        tiers.append(lambda s: s.get(0) == aid)
+    if pid and jid:
+        tiers.append(lambda s: s.get(4) == pid and s.get(8) == jid)
+    if pid:
+        tiers.append(lambda s: s.get(4) == pid)
+    if jid:
+        tiers.append(lambda s: s.get(8) == jid)
+    for test in tiers:
+        found = next((i for i, strings in enumerate(rows) if test(strings)), None)
+        if found is not None:
+            return found
+    return None
+
+
+def set_battle_selector_target(data: bytes, index: int, description: str, aerial: str | None = None) -> bytes:
+    """Point ``FE10BAnimData`` row ``index`` at an ``FE10BUnit`` description (+0x0C) and its aerial
+    one (+0x10; None clears it)."""
+    document = read_fe10_battle(data)
+    table = document.table("FE10BAnimData")
+    if not 0 <= index < len(table.records):
+        raise IndexError("Battle animation selector index is out of range.")
+    descriptions = {dict(r.strings).get(0) for r in document.table("FE10BUnit").records}
+    for value in (description, aerial):
+        if value is not None and value not in descriptions:
+            raise ValueError(f"No FE10BUnit row is described {value!r}.")
+    record = table.records[index]
+    raw = bytearray(record.raw)
+    values = dict(record.strings)
+    values[12] = description
+    if aerial:
+        values[16] = aerial
+    else:
+        values.pop(16, None)
+        struct.pack_into(">I", raw, 16, 0)
+    records = list(table.records)
+    records[index] = replace(record, raw=bytes(raw), strings=tuple(sorted(values.items())))
+    return build_fe10_battle(_replace_table(document, table.name, tuple(records)))
+
+
+def set_unit_texture(data: bytes, index: int, condition: str, texture_name: str) -> bytes:
+    """Make ``texture_name`` the ``FE10BTex`` texture of ``condition`` for battle unit ``index``:
+    changes its row when it has one, else adds one (:func:`add_unit_texture`)."""
+    document = read_fe10_battle(data)
+    if not 0 <= index < len(document.unit_texture_sets):
+        raise IndexError("Battle unit-model index is out of range.")
+    unit = document.unit_texture_sets[index]
+    at = next((i for i, m in enumerate(unit.mappings) if m.condition == condition), None)
+    if at is None:
+        return add_unit_texture(data, index, condition, texture_name)
+    start = sum(len(item.mappings) for item in document.unit_texture_sets[:index])
+    return update_battle_record(data, "FE10BTex", start + at, strings={4: texture_name})
+
+
+def remove_unit_texture(data: bytes, index: int, condition: str) -> bytes:
+    """Remove battle unit ``index``'s ``FE10BTex`` row for ``condition`` (its count +0x14D goes
+    down by one)."""
+    document = read_fe10_battle(data)
+    if not 0 <= index < len(document.unit_texture_sets):
+        raise IndexError("Battle unit-model index is out of range.")
+    unit = document.unit_texture_sets[index]
+    at = next((i for i, m in enumerate(unit.mappings) if m.condition == condition), None)
+    if at is None:
+        raise ValueError(f"{unit.unit_name} has no {condition} texture.")
+    units = document.table("FE10BUnit")
+    textures = document.table("FE10BTex")
+    start = sum(len(item.mappings) for item in document.unit_texture_sets[:index])
+    raw = bytearray(units.records[index].raw)
+    raw[0x14D] -= 1
+    unit_records = list(units.records)
+    unit_records[index] = replace(units.records[index], raw=bytes(raw))
+    document = _replace_table(document, units.name, tuple(unit_records))
+    document = _replace_table(document, textures.name,
+                              textures.records[:start + at] + textures.records[start + at + 1:])
+    return build_fe10_battle(document)
