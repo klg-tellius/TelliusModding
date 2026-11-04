@@ -232,6 +232,11 @@ def _copy_run_tree(disc_dir: Path, run_dir: Path, main_dol: bytes) -> Path:
         if item.is_file() and item.name != "main.dol":
             shutil.copyfile(item, sys_dir / item.name)
     (sys_dir / "main.dol").write_bytes(main_dol)
+    try:  # a tree extracted before tools.fix_extracted_names: Dolphin needs the real Shift-JIS names
+        from .tools import fix_extracted_names
+        fix_extracted_names(disc_dir)
+    except OSError:
+        pass
     _link_directory(run_dir / "files", disc_dir / "files")
     # Wii DirectoryBlob needs the partition metadata beside ``sys`` and ``files``.  Different
     # extractors emit different subsets, so copy every known file that is present.

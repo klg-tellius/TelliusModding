@@ -131,6 +131,51 @@ def check_extracted_layout(dest_dir: Path, *, wii: bool) -> None:
         )
 
 
+def _wit_form_to_name(name: str) -> Optional[str]:
+    """The real name of a file WIT extracted from a Shift-JIS disc name, or None when ``name`` is not one.
+
+    WIT on Windows writes each byte of a disc name as one character (``82 86`` becomes ``\\x82\\x86``),
+    so Radiant Dawn's ``ymu/knight1_sp_ｆ`` is extracted as ``knight1_sp_\\x82\\x86``. Dolphin, which
+    looks the file up by its decoded name, then can't open it and 4-P's opening crashes."""
+    if not any(0x80 <= ord(c) <= 0xFF for c in name) or any(ord(c) > 0xFF for c in name):
+        return None
+    try:
+        real = name.encode("latin-1").decode("shift_jis")
+    except UnicodeDecodeError:
+        return None
+    return real if real != name else None
+
+
+def _name_to_wit_form(name: str) -> Optional[str]:
+    """The byte-per-character form WIT reads back as these Shift-JIS bytes (a real ``ｆ`` it turns into
+    ``F``), or None for a plain ASCII name."""
+    if name.isascii():
+        return None
+    try:
+        return name.encode("shift_jis").decode("latin-1")
+    except UnicodeEncodeError:
+        return None
+
+
+def _rename_tree(root: Path, rename) -> list[tuple[Path, Path]]:
+    """Rename every entry under ``root`` whose name ``rename`` maps, deepest first; the renames made."""
+    done = []
+    if not root.is_dir():
+        return done
+    for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        new = rename(path.name)
+        if new is not None and not (path.parent / new).exists():
+            path.rename(path.parent / new)
+            done.append((path.parent / new, path))
+    return done
+
+
+def fix_extracted_names(dest_dir: Path) -> list[str]:
+    """Give the files WIT extracted under byte-per-character names their real Shift-JIS names (four on the
+    US Radiant Dawn disc); the names fixed. Safe to run again. :func:`build_disc` turns them back for WIT."""
+    return [str(new.relative_to(dest_dir)) for new, _old in _rename_tree(Path(dest_dir) / "files", _wit_form_to_name)]
+
+
 def extract_disc(source: Path, dest_dir: Path, *, overwrite: bool = False, wii: bool = False) -> None:
     """Extract every file of a disc image into dest_dir (flat, no ID subfolder).
 
@@ -157,6 +202,7 @@ def extract_disc(source: Path, dest_dir: Path, *, overwrite: bool = False, wii: 
         args.append("-o")
     _run(args)
     check_extracted_layout(dest_dir, wii=wii)
+    fix_extracted_names(dest_dir)
 
 
 def build_disc(source_dir: Path, dest_file: Path, *, overwrite: bool = False) -> None:
@@ -169,7 +215,14 @@ def build_disc(source_dir: Path, dest_file: Path, *, overwrite: bool = False) ->
     args = ["COPY", str(source_dir), str(dest_file)]
     if overwrite:
         args.append("-o")
-    _run(args)
+    # WIT writes a name's characters back as bytes: give it the byte-per-character form of the
+    # Shift-JIS names for the build, then put the real names back
+    renamed = _rename_tree(source_dir / "files", _name_to_wit_form)
+    try:
+        _run(args)
+    finally:
+        for new, old in reversed(renamed):
+            new.rename(old)
 
 
 def ffmpeg_path() -> Path:
