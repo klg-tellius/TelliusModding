@@ -398,6 +398,36 @@ class Fe10RealSaveTests(unittest.TestCase):
         again = sf.SaveFile.from_bytes(save.to_bytes([prep]))
         self.assertEqual(sf.validate(again), [])
 
+    @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
+    def test_unit_level_exp_hp_and_stats(self):
+        # Edward in the game-made 4-P file: Lv 6, Exp 74, HP 21/21, Str 8 Mag 0 Skl 13 Spd 13 Lck 8 Def 6 Res 0
+        from fe_modding.formats import fe10data, lz10
+        root = Path(os.environ["FE10_SAVES"])
+        path = next(iter((root.parent if root.is_file() else root).rglob("made_4P_start_FE10_US.dat")), None)
+        if path is None:
+            self.skipTest("the game-made 4-P save is not in FE10_SAVES")
+        raw = lz10.decompress((Path(os.environ["FE10_EXTRACTED_FILES"]) / "FE10Data.cms").read_bytes())
+        db = fe10data.read_fe10data(raw)
+        save = sf.SaveFile.from_path(path)
+        record = next(r for r in save.active_records() if r.logical_slot == 4)
+        counts = record.support_slot_counts_from_fe10data(raw)
+        edward = next(u for u in record.unit_records(counts) if record.id_name("character", u.person_number) == "PID_EDDIE")
+        person = next(c for c in db.characters if c.id == "PID_EDDIE")
+        job = next(c for c in db.classes if c.id == "JID_BLADE")
+        shown = [person.values[f"bonus_{s}"] + job.values[f"base_{s}"] + g
+                 for s, g in zip(sf.UNIT_STATS, edward.stat_gains)]
+        self.assertEqual((edward.level, edward.experience, edward.current_hp), (6, 74, 21))
+        self.assertEqual(shown, [21, 8, 0, 13, 13, 8, 6, 0])
+        record.set_unit_state(edward, level=15, experience=50, current_hp=30,
+                              stat_gains=[11, 10, 0, 9, 8, 5, 8, 4])
+        after = next(u for u in record.unit_records(counts) if u.slot == edward.slot)
+        self.assertEqual((after.level, after.experience, after.current_hp, after.stat_gains),
+                         (15, 50, 30, (11, 10, 0, 9, 8, 5, 8, 4)))
+        self.assertEqual(len(after.raw), len(edward.raw))
+        self.assertEqual(sf.validate(sf.SaveFile.from_bytes(save.to_bytes([record]))), [])
+        with self.assertRaises(ValueError):
+            record.set_unit_state(after, level=0)
+
 
 if __name__ == "__main__":
     unittest.main()
