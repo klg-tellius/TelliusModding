@@ -234,6 +234,24 @@ class LayoutTests(unittest.TestCase):
             tp.build_atlas(base, [("Odd", np.zeros((100, 100, 3), np.uint8))])
 
 
+class DensityTests(unittest.TestCase):
+    @staticmethod
+    def planar(density: float):
+        positions = np.array([[[0, 0, 0], [4, 0, 0], [0, 0, 4]], [[4, 0, 0], [4, 0, 4], [0, 0, 4]]], float)
+        uvs = positions[:, :, [0, 2]] * density / (512, 1024)
+        return positions, uvs
+
+    def test_radiant_dawn_density_is_measured(self):
+        self.assertEqual(tp.measured_density(*self.planar(12.7), 512, 1024), 12.7)
+        self.assertEqual(tp.measured_density(*self.planar(3.2), 512, 1024), 3.2)
+
+    def test_path_of_radiance_densities_stay_at_6_4(self):
+        # indoor 6.0 and the trial maps' 9 keep the density their kits were made with
+        for density in (6.4, 6.0, 9.05):
+            self.assertEqual(tp.measured_density(*self.planar(density), 512, 1024), tp.DENSITY)
+        self.assertEqual(tp.measured_density(np.zeros((0, 3, 3)), np.zeros((0, 3, 2)), 512, 1024), tp.DENSITY)
+
+
 class AutoPaintAndLightTests(unittest.TestCase):
     def test_slope_and_height_weights(self):
         hill = grid(40, 5, lambda x, z: max(0.0, x - 20.0) * 2.0)

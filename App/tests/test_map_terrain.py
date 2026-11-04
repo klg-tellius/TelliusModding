@@ -39,6 +39,20 @@ class TplAppendTests(unittest.TestCase):
 
 
 class TerrainHelperTests(unittest.TestCase):
+    def test_map_base_records_follow_the_maps_own_layout(self):
+        T = gs_file.GsTexture
+        white = T((1, 0), -1, (0, 0, 0, 0, 0), 1.0, 1.0, 0)
+        first = T((1, 0), 40, (257, 0, 0, 0, 0), 1.0, 1.0, 0)
+        por = [T((1, 0), 0, (257, 0, 0, 0, 0), 1.0, 1.0, 0), T((1, 0), 1, (257, 0, 0, 0, 0), 1.0, 1.0, 0),
+               T((1, 0), 6, (28192, 0, 0, 0, 0), 1.0, 1.0, 0)]
+        got = mv._map_base_records(por, first, 40, white, 50)
+        self.assertEqual([(t.tex_id, t.flags, t.params[0]) for t in got], [(40, (1, 0), 257), (41, (1, 0), 257), (50, (1, 0), 0)])
+        # Radiant Dawn: atlas, mask, atlas again, light, each with its own flags
+        rd = [T((1, 1), 0, (257, 0, 0, 0, 0), 1.0, 1.0, 0), T((1, 5), 1, (257, 0, 0, 0, 0), 1.0, 1.0, 0),
+              T((1, 1), 0, (257, 0, 0, 0, 0), 1.0, 1.0, 0), T((1, 1), 25, (0, 0, 0, 0, 0), 1.0, 1.0, 0)]
+        got = mv._map_base_records(rd, first, 40, white, 50)
+        self.assertEqual([(t.tex_id, t.flags) for t in got], [(40, (1, 1)), (41, (1, 5)), (40, (1, 1)), (50, (1, 1))])
+
     def test_surface_heights_interpolate_and_take_the_top(self):
         low = mv._Triangle((0, 0, 0), (10, 0, 0), (0, 0, 10), (0, 1, 0), (0, 0, 0))
         slope = mv._Triangle((0, 0, 0), (10, 10, 0), (0, 0, 10), (0, 1, 0), (0, 0, 0))

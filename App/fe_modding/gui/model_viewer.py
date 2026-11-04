@@ -1692,6 +1692,24 @@ def _bake_untextured_material_colors(
     return baked
 
 
+def _map_base_records(template, first, atlas: int, white, white_id: int) -> list:
+    """A projected terrain material's texture records laid out like the map's own ``template``.
+
+    Path of Radiance has three: atlas, mask, light overlay. Radiant Dawn has four: atlas, mask, the atlas
+    again and the light overlay, with its own flags (``(1, 1)``, ``(1, 5)``, ``(1, 1)``, ``(1, 1)`` on every
+    story map). The records keep the template's flags and params; the atlas, its mask (``atlas + 1``) and
+    the light (the last record) get the new images."""
+    old_atlas = template[0].tex_id
+    records = []
+    for i, record in enumerate(template):
+        if i == len(template) - 1:
+            records.append(replace(white, tex_id=white_id, flags=record.flags))
+            continue
+        tex = atlas + 1 if record.tex_id == old_atlas + 1 and i else atlas
+        records.append(replace(first, tex_id=tex, flags=record.flags, params=record.params))
+    return records
+
+
 def replace_map_terrain_with_glb(
     container_path: Path,
     gltf_path: Path,
@@ -1849,12 +1867,13 @@ def replace_map_terrain_with_glb(
         material.textures[-1] = replace(white, tex_id=white_id)
     for material in textured:
         atlas = material.textures[0].tex_id
-        template = old_base.textures if old_base is not None else [material.textures[0], material.textures[0]]
-        material.textures = [
-            replace(material.textures[0], params=template[0].params),
-            replace(material.textures[0], tex_id=atlas + 1, params=template[1].params),
-            replace(white, tex_id=white_id),
-        ]
+        if old_base is None:
+            material.textures = [material.textures[0], replace(material.textures[0], tex_id=atlas + 1),
+                                 replace(white, tex_id=white_id)]
+            continue
+        material.textures = _map_base_records(old_base.textures, material.textures[0], atlas, white, white_id)
+        # the map's own lighting colours (both games: diffuse 204, ambient 76), not the glTF's
+        material.color0, material.color1 = old_base.color0, old_base.color1
     # Images identical to ones already in texpack.tpl (a re-imported export)
     # are reused, the atlas and its mask only as an adjacent pair.
     def pixels(img: Image.Image) -> tuple:

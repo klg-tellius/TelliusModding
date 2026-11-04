@@ -93,6 +93,19 @@ class RdKitTests(unittest.TestCase):
             self.assertEqual(map_file.map_layout(files["map.bin"]).prefix, "bmap0101:")
             self.assertIsNotNone(out.capacity)
             self.assertIsNotNone(terrain_kit.read_terrain(container).light_matrix)
+            # laid out like RD's own map_base: atlas, mask, atlas, light, with RD's flags and colours
+            from fe_modding.formats import gs_file
+            material = next(m for m in gs_file.read_gs(files["bmap0101.gs"]).materials if m.name == "map_base")
+            self.assertEqual([t.flags for t in material.textures], [(1, 1), (1, 5), (1, 1), (1, 1)])
+            ids = [t.tex_id for t in material.textures]
+            self.assertEqual((ids[1], ids[2]), (ids[0] + 1, ids[0]))
+            self.assertEqual((material.color0, material.color1), ((204, 204, 204, 255), (76, 76, 76, 255)))
+
+    def test_ground_density_is_measured(self):
+        # RD lays its ground at 12.7 texels a unit, twice PoR's 6.4: kits built at 6.4 doubled the cobbles
+        with tempfile.TemporaryDirectory() as folder:
+            source = terrain_kit.read_terrain(_copy(folder, "bmap0101"))
+        self.assertEqual(terrain_kit.detect_layout(source).density, 12.7)
 
     def test_water_reads_and_untouched_water_changes_nothing(self):
         with tempfile.TemporaryDirectory() as folder:
