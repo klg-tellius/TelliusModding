@@ -373,6 +373,31 @@ class Fe10RealSaveTests(unittest.TestCase):
                     self.assertEqual(b"".join(unit.raw for unit in units),
                                      candidate.section_bytes("UNIP"))
 
+    def test_resume_step_of_game_made_files_and_start_at_chapter(self):
+        # made_after_1-1: New Game, 1-1 won, saved at its end; made_4P_start: saved by the game right
+        # after 4-P's army split; gamefaqs_30509: three files saved in the Endgame's preparations
+        root = Path(os.environ["FE10_SAVES"])
+        folder = root.parent if root.is_file() else root
+        named = {name: next(iter(folder.rglob(name)), None) for name in
+                 ("made_after_1-1_FE10_US.dat", "made_4P_start_FE10_US.dat", "gamefaqs_30509_FE10_US.dat")}
+        if None in named.values():
+            self.skipTest("the game-made RD saves are not in FE10_SAVES")
+        def record(name, slot):
+            save = sf.SaveFile.from_path(named[name])
+            return save, next(r for r in save.active_records() if r.logical_slot == slot)
+        _save, end = record("made_after_1-1_FE10_US.dat", 0)
+        self.assertEqual((end.chapter_number, end.map_name, end.army_phase, end.resume_step, end.in_preparations),
+                         (2, "bmap0101", 1, sf.RESUME_CHAPTER_END, False))
+        _save, opening = record("made_4P_start_FE10_US.dat", 4)
+        self.assertEqual((opening.chapter_number, opening.resume_step, opening.in_preparations), (32, 0x0B, False))
+        save, prep = record("gamefaqs_30509_FE10_US.dat", 4)
+        self.assertEqual((prep.resume_step, prep.in_preparations, prep.header_u8(sf.HEADER_RESUME_STEP)), (2, True, 2))
+        prep.start_at_chapter(32, "bmap0315", 0)
+        self.assertEqual((prep.chapter_number, prep.map_name, prep.army_phase, prep.resume_step, prep.in_preparations,
+                          prep.header_u8(sf.HEADER_RESUME_STEP)), (32, "bmap0315", 1, sf.RESUME_CHAPTER_END, False, 9))
+        again = sf.SaveFile.from_bytes(save.to_bytes([prep]))
+        self.assertEqual(sf.validate(again), [])
+
 
 if __name__ == "__main__":
     unittest.main()
