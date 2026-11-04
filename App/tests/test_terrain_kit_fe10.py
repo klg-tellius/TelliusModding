@@ -118,6 +118,24 @@ class RdKitTests(unittest.TestCase):
         self.assertEqual({k for k in files if files[k] != before.get(k)}, set())
         self.assertIn("0 of 1 water surfaces rebuilt, 0 removed.", outcome.notes)
 
+    def test_raised_water_stays_in_the_blend_pass(self):
+        # rebuilt water used to come out opaque (chunk flags 0x3000): a dark sheet over 1-9's marsh
+        from dataclasses import replace
+        import numpy as np
+        from fe_modding.formats import gs_file
+        with tempfile.TemporaryDirectory() as folder:
+            water = terrain_kit.read_water(_copy(folder, "bmap0109"))
+        entries, files = map_props.read_map_container(Path(FILES) / "zmap" / "bmap0109" / "map.cmp")
+        raised = [replace(b, positions=np.asarray(b.positions) + (0.0, 1.5, 0.0), level=b.level + 1.5)
+                  for b in water.bodies]
+        edit = terrain_kit.WaterEdit(raised, [], water.fade, False, water.waves, water.origin)
+        terrain_kit.apply_water(entries, files, edit)
+        gs = gs_file.read_gs(files["bmap0109_water0.gs"])
+        self.assertEqual([[hex(c.flags) for c in chunks] for chunks in gs.chunk_lists], [[], [], ["0x7000"]])
+        from fe_modding.formats import model as model_fmt
+        heights = np.asarray(model_fmt.read_model_bytes(files["bmap0109_water0.gs"]).positions)[:, 1]
+        self.assertTrue(np.allclose(heights, 1.5))
+
     def test_story_maps_with_a_ground_model_all_read(self):
         read = failed = 0
         for folder in sorted((Path(FILES) / "zmap").glob("bmap*")):
