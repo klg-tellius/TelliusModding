@@ -141,6 +141,8 @@ class GameProfile:
     tutorial_files: tuple[tuple[str, str], ...] = (("English", "tut_data_en.bin"), ("Japanese", "tut_data.bin"))
     #: The names of a tutorial's four start-flag slots (``tut_data.DIFFICULTIES`` on Path of Radiance).
     tutorial_flag_names: tuple[str, ...] = ("Normal", "Hard", "Maniac", "Easy")
+    #: shown under the start flags when what they do in game differs from Path of Radiance
+    tutorial_flag_note: str = ""
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -285,8 +287,13 @@ RADIANT_DAWN_PROFILE = GameProfile(
     text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"),
     tutorial_files=(("Normal, English", "Tutorial/tut_data_n_en.bin"), ("Hard, English", "Tutorial/tut_data_h_en.bin"),
                     ("Normal, Japanese", "Tutorial/tut_data_n.bin"), ("Hard, Japanese", "Tutorial/tut_data_h.bin")),
-    # same record layout as Path of Radiance; which difficulty each slot stands for is not checked yet
+    # same record layout as Path of Radiance. Playtests L2-L6 (Dolphin, 2026-11-03): with every
+    # tutorial learned in any one slot, 1-1 on Normal still offers its tutorial, and the game never
+    # read the file while 1-1 played; the offers come from the scripts (TutorialRunTypeA, Normal only).
     tutorial_flag_names=("Slot 1", "Slot 2", "Slot 3", "Slot 4"),
+    tutorial_flag_note=("On Radiant Dawn the chapter scripts offer each tutorial (on Normal only). A test "
+                        "in the game found these start flags change nothing in the Prologue, so which "
+                        "slot a new game reads is still unknown."),
 )
 
 PROFILES: dict[Game, GameProfile] = {
