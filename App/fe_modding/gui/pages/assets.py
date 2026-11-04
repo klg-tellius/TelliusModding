@@ -8,16 +8,16 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_SKIES, BATTLE_TABLES, BATTLE_WEAPONS,
+from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_SKIES,
+                             BATTLE_WEAPONS,
                              CHAPTERS,
                              EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
 from ..animation_data_viewer import AnimationDataViewer
 from ..background_viewer import BackgroundViewer
 from ..fe10_camera_viewer import battle_camera_viewer
-from ..battle_params_viewer import BattleParamsViewer
-from ..battle_scenery_viewer import BattleSceneryViewer
 from ..battle_simulator import BattleSimulator
 from ..battle_weapons_viewer import battle_weapons_panel
+from ..fe10_battle_rows import battle_params_panel, battle_sceneries_panel
 from ..fe10_battle_viewer import battle_data_viewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
@@ -77,10 +77,10 @@ ASSET_TOOLS = [
     ("music", "Music", "♫", "Music streams: preview, export, replace and manage supported cues", MusicEditor),
     ("effects", "Visual Effects", "✺", "Spell and battle effects (effect registry, yme/): inspect and preview", EffectsViewer),
     ("battle_weapons", "Battle Weapons", "⚔", "Weapon actors in battle: type, effects, model", battle_weapons_panel),
-    ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", BattleSceneryViewer),
+    ("battle_sceneries", "Battle Sceneries", "▨", "Battle backdrops: indoor flag, footstep effect and sound (zbg/)", battle_sceneries_panel),
     ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action clips (camera data, xcam/)", battle_camera_viewer),
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
-    ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", BattleParamsViewer),
+    ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", battle_params_panel),
     ("dbx_files", "Battle Data", "▤", "Browse the game's native battle tables (DBX on Path of Radiance)", battle_data_viewer),
     ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
@@ -98,8 +98,8 @@ ASSET_FEATURES = {
     "map_objects": CHAPTERS,
     "icons": ICONS,
     "effects": EFFECTS,
-    "battle_weapons": BATTLE_WEAPONS, "battle_sceneries": BATTLE_TABLES, "battle_cameras": BATTLE_CAMERAS,
-    "battle_sim": BATTLE_SIM, "battle_params": BATTLE_TABLES,
+    "battle_weapons": BATTLE_WEAPONS, "battle_sceneries": BATTLE_SCENERIES, "battle_cameras": BATTLE_CAMERAS,
+    "battle_sim": BATTLE_SIM, "battle_params": BATTLE_PARAMS,
     "dbx_files": BATTLE_DATA,
     "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO, "sound_room_tracks": AUDIO,
     "videos": VIDEO,

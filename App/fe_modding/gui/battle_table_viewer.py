@@ -35,6 +35,7 @@ class BattleTableViewer(EditorPanel):
     fields: tuple = ()
     changelog_scope = ""
     can_add = True
+    form_columns = 1  # the form's label/box column pairs (long forms use 2)
 
     def __init__(self, parent: tk.Misc, project: ModProject, changelog: ChangeLog):
         super().__init__(parent)
@@ -117,14 +118,21 @@ class BattleTableViewer(EditorPanel):
 
         form = ttk.Frame(right)
         form.pack(anchor="w", fill="x")
-        form.columnconfigure(1, weight=1)
         self._vars: dict[str, tk.StringVar] = {}
-        for row, (label, key, choices) in enumerate(self.fields):
+        self._boxes: dict[str, ttk.Combobox] = {}
+        per_column = -(-len(self.fields) // self.form_columns) if self.fields else 1
+        for at, (label, key, choices) in enumerate(self.fields):
+            row, column = at % per_column, 2 * (at // per_column)
+            form.columnconfigure(column + 1, weight=1)
             self._vars[key] = tk.StringVar()
-            ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", pady=3,
+                                             padx=(0 if column == 0 else 12, 0))
             values = [choice_label(choices, k) for k in choices] if choices else []
-            ttk.Combobox(form, textvariable=self._vars[key], values=values, width=30,
-                         state="readonly" if choices else "normal").grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=3)
+            box = ttk.Combobox(form, textvariable=self._vars[key], values=values,
+                               width={1: 30, 2: 16}.get(self.form_columns, 9),
+                               state="readonly" if choices else "normal")
+            box.grid(row=row, column=column + 1, sticky="ew", padx=(8, 0), pady=3)
+            self._boxes[key] = box
         if self.note():
             ttk.Label(right, text=self.note(), style="Muted.TLabel", wraplength=360, justify="left").pack(anchor="w", pady=(4, 8))
 

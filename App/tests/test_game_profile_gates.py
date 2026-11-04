@@ -189,8 +189,8 @@ class UnavailableStateTests(unittest.TestCase):
     def test_asset_tools_without_a_decoder_are_listed_for_gating(self):
         from fe_modding.gui.pages.assets import ASSET_FEATURES, TOOLS_BY_KEY
         from fe_modding.game_profile import (
-            AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_WEAPONS, CHAPTERS, EFFECTS, ICONS, MODELS,
-            VIDEO, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE,
+            AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_WEAPONS,
+            CHAPTERS, EFFECTS, ICONS, MODELS, VIDEO, PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE,
         )
 
         self.assertTrue(set(ASSET_FEATURES) <= set(TOOLS_BY_KEY))
@@ -198,9 +198,10 @@ class UnavailableStateTests(unittest.TestCase):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), key)
             # Phase 5 maps and Phase 6 icons/models/effects use shared browsers. Unsafe RD model
             # and effect mutation remains locked inside the individual viewers.
-            # Parity Phase 7: Battle Weapons reads FE10Battle.cms rows on RD.
-            if feature not in (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_SIM, BATTLE_WEAPONS, CHAPTERS, EFFECTS,
-                                ICONS, MODELS, VIDEO):
+            # Parity Phase 7: Battle Weapons reads FE10Battle.cms rows on RD; RD audit round 2 Phase 4
+            # adds Battle Sceneries and Battle Unit Parameters the same way.
+            if feature not in (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM,
+                               BATTLE_WEAPONS, CHAPTERS, EFFECTS, ICONS, MODELS, VIDEO):
                 self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature), key)
 
 

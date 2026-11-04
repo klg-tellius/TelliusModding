@@ -148,6 +148,33 @@ The row now reads 1.6 and *edited*, and the status says *Edited model fig1.*
 
 An empty box removes the line from the file; flags are on (1) or absent. Speeds and ranges are engine units, not measured in tiles. Texture lines of the same files are edited in **Assets → 3D Models**.
 
+### On Radiant Dawn
+
+Radiant Dawn has no `.dbx` tables: the three pages edit rows of `FE10Battle.cms` with the same list, form, **Apply** and **Restore original**. Rows are edited in place, not added. A row is listed as its folder or model with its row number (`bg0101twn #1`, `swoL #0`), since several rows share one.
+
+**Battle Sceneries** lists the 146 `FE10BMapModel` rows, one per backdrop model placed in a fight. Each battle background (`bg0101街`) picks up to five of them, its variants; the description says which background and variant use a row. Variants 2 and 3 are the fights in the air.
+
+| Field | Meaning |
+| --- | --- |
+| **Footstep effect** | The `FE10BFootEffect` row played under the fighters' feet: None, Dust, Dust (night), Water spray, Snow spray, Rain spray, Coins |
+| **Footstep ground** | Which column of each fighter's footstep sound set plays: Plain, Sand, Water, Snow, Rain, Floor, Coins |
+| **Indoors** | The chapter's battle weather and sky are not applied |
+| **Mirrored** | The backdrop is drawn mirrored |
+| **Fighters run in** | The attacker may run up to the target (on variants 0 and 2) |
+| **Mirror / Turn 180° when they run in** | What happens to the backdrop when they do |
+| **Flag 0x01**, **Flag 0x04** | Set on retail rows, but no game code reading them was found |
+| **Flight height** | How high the fighters are on the aerial variants; 0 uses the default |
+| **Move limit**, **Camera limit** | How far the fighters and the camera may go; 0 uses the defaults (50 and 40) |
+| **Position X / Y / Z**, **Rotation (°)**, **Scale (1/256)** | Where the model stands; scale 0 means 768 (3.0) |
+
+**Battle Unit Parameters** lists the 240 `FE10BUnit` rows, one per battle model description (`剣士一般`, the swordmaster's `swoL`). Its form has three columns:
+
+- **Footstep sounds**: the unit's sound set (Normal, Armour, Light, Heavy, Horse, Pegasus, Wyvern, each laguz...).
+- Twenty values in steps of 1/256, named by the game's `FE10BParam` list: Blend ratio, Attack range, Hit height, Move speed, Height, Scale X / Y / Z, the 2D values and others.
+- Eighteen Yes/No flags named by the `FE10BFlags` list: Large, Flying, Left-handed, Two weapons, Heavy, Beast, Always on guard and others.
+
+The game finds a value or a flag by its name in those two lists, so the labels are the game's own; what each does in a fight beyond its name has not been traced further.
+
 ## Things to try next
 
 1. **A thrown weapon.** Compare `HANDAXE` (`7 - Thrown axe / sword`, `Projectile`) with `IRONAXE`, then render a fight at **Distance** 2 with a Hand Axe.

@@ -84,6 +84,8 @@ HUB = "hub"                    # Chapters › Create hub (a hub chapter with lin
 #: Dawn: its multi-map chapters are separate ChapterData records (0407a-e) and it has no part natives.
 MAP_PHASES = "map_phases"
 BATTLE_WEAPONS = "battle_weapons"  # Assets › Battle Weapons (xwp/ dbx tables or FE10BWeapon rows)
+BATTLE_SCENERIES = "battle_sceneries"  # Assets › Battle Sceneries (zbg/ param.dbx or FE10BMapModel rows)
+BATTLE_PARAMS = "battle_params"  # Assets › Battle Unit Parameters (zu/ _prm.dbx or FE10BUnit rows)
 
 FEATURE_LABELS = {
     GAME_DATA: "Game data editing", DATA_TABLES: "The character, class, item and skill tables", CHAPTERS: "Chapter editing", DIALOGUE: "Dialogue editing",
@@ -98,7 +100,8 @@ FEATURE_LABELS = {
     CHARACTER_FORM: "The character form", CHAPTER_RECORD_FORM: "The chapter data form",
     SUPPORT_LIST: "The support partner list", DATA_WORKSPACE: "The Game Data workspace",
     SAVE_UNITS: "Save unit, convoy and forge editing",
-    BATTLE_WEAPONS: "Battle weapons", CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
+    BATTLE_WEAPONS: "Battle weapons", BATTLE_SCENERIES: "Battle sceneries",
+    BATTLE_PARAMS: "Battle unit parameters", CHAPTER_FLOW: "Story flow editing", NEW_CAMPAIGN: "Campaign creation", HUB: "Hub chapters",
     MAP_PHASES: "Map phases",
 }
 
@@ -253,7 +256,7 @@ PATH_OF_RADIANCE_PROFILE = GameProfile(
                         ICONS, EFFECTS, AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC,
                         COLOUR_VARIANTS, MAP_DECODED, EXTENDED_FLAGS, TUTORIALS, STAFF_CREDITS, ENDING_ART,
                         CHARACTER_FORM, CHAPTER_RECORD_FORM, SUPPORT_LIST, DATA_WORKSPACE, SAVE_UNITS,
-                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES, BATTLE_WEAPONS}),
+                        CHAPTER_FLOW, NEW_CAMPAIGN, HUB, MAP_PHASES, BATTLE_WEAPONS, BATTLE_SCENERIES, BATTLE_PARAMS}),
     font_files=FONT_FILES,
     text_export_parts=("FE8Data", "deployments", "shops", "messages", "scripts", "sound", "faces", "zdbx"),
 )
@@ -277,7 +280,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     deployment_difficulties=("c", "n", "h"),
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
-                        MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS,
+                        MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS, BATTLE_SCENERIES, BATTLE_PARAMS,
                         NEW_CAMPAIGN, COLOUR_VARIANTS}),
     message_dialect="fe10",
     script_dialect="fe10",
