@@ -603,7 +603,27 @@ class MapSettingsForm(ttk.Frame):
         if data.grid is not None:
             row = self._colour_row(row, "grid", data.grid, "Line colour", ("red", "green", "blue"),
                                    "Colour of the grid lines (their strength is set by scripts with SetGrid).")
-        if data.light is not None:
+        if isinstance(data.light, map_file.RdMapLight):
+            row = self._section(row, "light", "Lighting")
+            light = data.light
+            vector_help = ("The light's direction as three numbers, shared by every light set (Radiant Dawn "
+                           "stores a vector where Path of Radiance stores two angles).")
+            for col, axis in ((0, "x"), (2, "y")):
+                self._number(row, col, f"light:vector_{axis}", f"Direction {axis.upper()}",
+                             getattr(light, f"vector_{axis}"), vector_help)
+            row += 1
+            self._number(row, 0, "light:vector_z", "Direction Z", light.vector_z, vector_help)
+            row += 1
+            for n in range(1, map_file.RD_LIGHT_SETS + 1):
+                which = ("the map's models" if n == 1 else
+                         f"light set {n} (which models use it has not been traced)")
+                row = self._colour_row(row, "light", light, f"Set {n} model colour",
+                                       tuple(f"set{n}_model_{c}" for c in ("red", "green", "blue")),
+                                       f"Base colour of {which}.")
+                row = self._colour_row(row, "light", light, f"Set {n} light colour",
+                                       tuple(f"set{n}_light_{c}" for c in ("red", "green", "blue")),
+                                       f"Colour of the directional light on {which}.")
+        elif data.light is not None:
             row = self._section(row, "light", "Lighting")
             light = data.light
             self._number(row, 0, "light:angle_y", "Direction", light.angle_y,

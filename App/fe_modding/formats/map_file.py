@@ -78,7 +78,7 @@ from __future__ import annotations
 
 import io
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, make_dataclass
 from pathlib import Path
 from typing import BinaryIO, Optional
 
@@ -106,7 +106,7 @@ class MapLayout:
     inst_size: int = 12       # mapbuildinst record
     link_count: str = ">H"    # record count heading maplink/maplinkAt/maplinkAbs
     half_round_up: bool = True  # mapextra half sizes: ceil (FE9) or floor (FE10) of the size / 2
-    decoded_light: bool = True  # maplight / mapfog in FE9's layout
+    light_format: str = "fe9"  # maplight / mapfog: FE9's records, or FE10's (RdMapLight, fog at +1)
 
     def __hash__(self) -> int:
         return hash((self.game, self.prefix))
@@ -153,7 +153,7 @@ _FE10_SECTIONS = {
 def rd_layout(prefix: str = "") -> MapLayout:
     """Radiant Dawn's layout; ``prefix`` is the map folder plus a colon (``bmap0101:``)."""
     return MapLayout("fe10", _FE10_SECTIONS, prefix=prefix, size_format=">BB", size_at=2, desc_size=36,
-                     inst_size=20, link_count=">I", half_round_up=False, decoded_light=False)
+                     inst_size=20, link_count=">I", half_round_up=False, light_format="fe10")
 
 
 def _layout_from_names(names) -> MapLayout:
@@ -481,6 +481,24 @@ class MapFog:
     address: int = 0
 
 
+#: Radiant Dawn's ``maplight`` (32 bytes), as RFEE01's loader at 0x80136348 reads it: two bytes it
+#: skips, three s16 values it copies as floats into every light set's light (+0x14..+0x1C), then
+#: four light sets of a model colour (the set's own colour, +2) and a light colour (its light, +4),
+#: in Path of Radiance's order. Set 1 is the one the map's models use, as on Path of Radiance.
+RD_LIGHT_SETS = 4
+_RD_LIGHT_FIELDS = {"vector_x": (2, ">h"), "vector_y": (4, ">h"), "vector_z": (6, ">h")}
+for _set in range(RD_LIGHT_SETS):
+    for _part, _base in (("model", 8 + 6 * _set), ("light", 11 + 6 * _set)):
+        for _i, _channel in enumerate(("red", "green", "blue")):
+            _RD_LIGHT_FIELDS[f"set{_set + 1}_{_part}_{_channel}"] = (_base + _i, ">B")
+del _set, _part, _base, _i, _channel
+
+RdMapLight = make_dataclass(
+    "RdMapLight", [("skipped", int)] + [(name, int) for name in _RD_LIGHT_FIELDS] + [("address", int, 0)],
+    frozen=True, module=__name__)
+RdMapLight.__doc__ = "Radiant Dawn's 32-byte ``maplight`` record (see ``_RD_LIGHT_FIELDS``)."
+
+
 @dataclass(frozen=True)
 class MapGrid:
     unknown: int  # stored RGBA alpha; the known draw path replaces it with SetGrid intensity
@@ -622,7 +640,7 @@ class MapData:
     unique_panel_roof: list[UniquePanel] = field(default_factory=list)
     panel_index_base: Optional[Grid] = None
     unique_panel_base: list[UniquePanel] = field(default_factory=list)
-    light: Optional[MapLight] = None
+    light: Optional["MapLight | RdMapLight"] = None
     fog: Optional[MapFog] = None
     grid: Optional[MapGrid] = None
     extra: Optional[MapExtra] = None
@@ -890,10 +908,13 @@ def read_map(stream: BinaryIO) -> MapData:
             data.panel_index_base = _read_grid_u16(stream, address, data.capacity)
         elif name == "uniquepanelBase":
             data.unique_panel_base = _read_unique_panel(stream, address, _max_index(data.panel_index_base))
-        elif name == "maplight" and layout.decoded_light:
+        elif name == "maplight" and layout.light_format == "fe10":
+            data.light = _read_rd_light(stream, address)
+        elif name == "maplight":
             data.light = _read_light(stream, address)
-        elif name == "mapfog" and layout.decoded_light:
-            data.fog = _read_fog(stream, address)
+        elif name == "mapfog":
+            # RFEE01 (0x80136778) skips a leading byte, then reads FE9's record byte for byte
+            data.fog = _read_fog(stream, address + (1 if layout.light_format == "fe10" else 0))
         elif name == "mapgrid":
             data.grid = _read_grid_colors(stream, address)
         elif name == "mapextra":
@@ -1021,6 +1042,15 @@ def _read_light(stream: BinaryIO, address: int) -> MapLight:
     stream.seek(address)
     enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, ua, ub, uc = struct.unpack(">BbbBBBBBBBBB", stream.read(12))
     return MapLight(enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, (ua, ub, uc), address=address)
+
+
+def _read_rd_light(stream: BinaryIO, address: int) -> RdMapLight:
+    stream.seek(address)
+    raw = stream.read(32)
+    if len(raw) != 32:
+        raise MapFileError("A Radiant Dawn maplight record is 32 bytes.")
+    values = {name: struct.unpack_from(fmt, raw, offset)[0] for name, (offset, fmt) in _RD_LIGHT_FIELDS.items()}
+    return RdMapLight(struct.unpack_from(">H", raw)[0], **values, address=address)
 
 
 def _read_fog(stream: BinaryIO, address: int) -> MapFog:
@@ -1175,7 +1205,9 @@ def patch_unique_panel_field(data: bytes, record: UniquePanel, field_name: str, 
     return _patch_field(data, record.address, field_name, value, _UNIQUE_PANEL_FIELDS, "uniquepanel")
 
 
-def patch_light_field(data: bytes, record: MapLight, field_name: str, value) -> bytes:
+def patch_light_field(data: bytes, record: "MapLight | RdMapLight", field_name: str, value) -> bytes:
+    if isinstance(record, RdMapLight):
+        return _patch_field(data, record.address, field_name, value, _RD_LIGHT_FIELDS, "maplight")
     return _patch_field(data, record.address, field_name, value, _LIGHT_FIELDS, "maplight")
 
 

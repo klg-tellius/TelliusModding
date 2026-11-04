@@ -49,7 +49,9 @@ Radiant Dawn's `map.bin` is the same container with the sections renamed, each n
     <tr><td><code>mapinst</code></td><td><code>mapbuildinst</code></td><td>20 bytes per placement: a lead byte, x, y, angle, a sub-tile offset along x and y, a 16-bit object index, the covered-tile rectangle, the height float and a trailing word</td></tr>
     <tr><td><code>roofindex</code>/<code>roofpanel</code>, <code>baseindex</code>/<code>basepanel</code></td><td><code>panelindexRoof</code>/<code>uniquepanelRoof</code>, <code>panelindexBase</code>/<code>uniquepanelBase</code></td><td>Same 12-byte panel records; <code>panelindex</code>/<code>uniquepanel</code> keep their names</td></tr>
     <tr><td><code>maplink</code>/<code>maplinkAt</code></td><td>same</td><td>32-bit record count; no map uses <code>maplinkAbs</code></td></tr>
-    <tr><td><code>maplight</code>, <code>mapfog</code>, <code>mapshader</code></td><td><code>maplight</code>, <code>mapfog</code>, none</td><td>Different layouts, not decoded yet <span class="confidence confidence--open">open</span></td></tr>
+    <tr><td><code>maplight</code></td><td><code>maplight</code></td><td>32 bytes: two bytes the loader skips, a light direction as three signed 16-bit numbers (Path of Radiance stores two angles), then four light sets of a model colour and a light colour. Set 1 lights the map's models; which models use sets 2 to 4 is not traced. <span class="confidence confidence--strong">engine</span></td></tr>
+    <tr><td><code>mapfog</code></td><td><code>mapfog</code></td><td>12 bytes: one byte the loader skips, then Path of Radiance's record byte for byte (on, curve, start, end, colour); the last four bytes are not read. 100 of the 128 maps have fog on. <span class="confidence confidence--confirmed">engine</span></td></tr>
+    <tr><td><code>mapshader</code></td><td>none</td><td>A count byte, 15 header bytes, then four bytes per entry. Not decoded. <span class="confidence confidence--open">open</span></td></tr>
   </tbody></table>
 </div>
 
