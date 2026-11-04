@@ -84,6 +84,9 @@ class RdKitTests(unittest.TestCase):
             self.assertEqual(list(result.outputs), [container])
             self.assertIn("Game", result.previews)
             self.assertTrue(any("Painted texturing" in w for w in result.warnings))
+            before = container.read_bytes()
+            container.write_bytes(result.outputs[container])  # the import returns the bytes; the caller writes
+            self.assertNotEqual(container.read_bytes(), before)
             # the rewritten map still reads with Radiant Dawn's section names
             _entries, files = map_props.read_map_container(container)
             out = map_file.read_map_bytes(files["map.bin"])
@@ -120,6 +123,57 @@ class RdKitTests(unittest.TestCase):
                 failed += 1
         self.assertEqual(failed, 0)
         self.assertEqual(read, 33)
+
+
+
+class SculptChangeTests(unittest.TestCase):
+    """A kit's sculpt is a height grid: re-made into a mesh it slopes every vertical wall, so the import
+    follows the sculpt's own change, not the difference between the old and new meshes."""
+
+    def test_change_is_bilinear_and_zero_outside(self):
+        import numpy as np
+        change = terrain_kit.SculptChange(10.0, 20.0, 2.0, np.array([[0, 2], [4, 6]], np.float32))
+        got = change.at([(10, 20), (12, 22), (11, 21), (9, 20), (13, 20)])
+        np.testing.assert_allclose(got, [0, 6, 3, 0, 0])
+
+    @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+    def test_an_unchanged_sculpt_moves_no_tile_height(self):
+        import numpy as np
+        from fe_modding import map_heights
+        _entries, files = map_props.read_map_container(Path(FILES) / "zmap" / "bmap0101" / "map.cmp")
+        source_tris = None
+        with tempfile.TemporaryDirectory() as folder:
+            source = terrain_kit.read_terrain(_copy(folder, "bmap0101"))
+            source_tris = np.asarray(source.positions, np.float64).reshape(-1, 3, 3)
+        sloped = source_tris.copy()
+        sloped[..., 1] *= 0.5  # what a height grid does to 1-1's terraces, exaggerated
+        still = terrain_kit.SculptChange(0.0, 0.0, 2.0, np.zeros((181, 201), np.float32))
+        update = map_heights.follow_terrain(files["map.bin"], "bmap0101", source_tris, sloped, still.at)
+        self.assertEqual((update.corners_changed, update.map_bin), (0, files["map.bin"]))
+        self.assertGreater(map_heights.follow_terrain(files["map.bin"], "bmap0101", source_tris, sloped).corners_changed, 100)
+
+
+
+@unittest.skipUnless(FILES and os.environ.get("FE9_BLENDER"),
+                     "set FE10_EXTRACTED_FILES and FE9_BLENDER (blender.exe) to build a real kit")
+class RdRealBlenderKitTests(unittest.TestCase):
+    def test_untouched_kit_keeps_every_tile_height(self):
+        # 1-1's terraces: without the sculpt's own change, 500+ corners moved by up to 17 units
+        from fe_modding import blender
+        from fe_modding.gui import model_viewer as mv
+        exe = os.environ["FE9_BLENDER"]
+        with tempfile.TemporaryDirectory() as folder:
+            container = _copy(folder, "bmap0101")
+            kit = Path(folder) / "kit.blend"
+            mv.export_terrain_kit(container, kit, (), exe, None)
+            converted = blender.blend_terrain_for_import(kit, "bmap0101", exe)
+            self.assertIn("sculpt_change", converted.paint.extra)
+            self.assertFalse(converted.paint.extra["sculpt_change"].grid.any())
+            glb = Path(folder) / "terrain.glb"
+            glb.write_bytes(converted.glb)
+            result = mv.replace_map_terrain_with_glb(container, glb, True, True, True, None, False,
+                                                     paint=converted.paint, light=converted.paint.light)
+        self.assertFalse(any("The ground moved" in w for w in result.warnings), result.warnings)
 
 
 if __name__ == "__main__":

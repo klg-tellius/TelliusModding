@@ -1777,9 +1777,17 @@ def replace_map_terrain_with_glb(
     baked = _bake_untextured_material_colors(scene, exclude=skipped_projected)
     warnings += [f"Material {name}'s solid colour was baked into a texture for in-game rendering."
                  for name in baked]
+    sculpt_change = paint.extra.get("sculpt_change") if paint is not None else None
+    old_set = load_named_model_set(current, name) if sculpt_change is not None else None
+    old_surface = _triangle_array(old_set.triangles) if old_set is not None else None
+    corner_heights = None
+    if sculpt_change is not None and old_surface is not None:
+        # the playable ground is the old ground plus what was sculpted: a height grid slopes the walls
+        def corner_heights(points):
+            return map_heights.surface_heights(old_surface, points) + sculpt_change.at(points)
     area = map_playable_area(map_data, name) if conform else None
     if area is not None:
-        cut = terrain_conform.conform_to_tiles(scene, *area)
+        cut = terrain_conform.conform_to_tiles(scene, *area, corner_heights=corner_heights)
         if cut:
             warnings.append(
                 f"The playable area was fitted to the tile grid ({cut} triangles cut): the move grid and units use "
@@ -1929,7 +1937,8 @@ def replace_map_terrain_with_glb(
                 )
         if follow_heights:
             open_before = _open_passages(map_file.read_map_bytes(files["map.bin"]))
-            update = map_heights.follow_terrain(files["map.bin"], name, old_tris, new_tris)
+            update = map_heights.follow_terrain(files["map.bin"], name, old_tris, new_tris,
+                                                sculpt_change.at if sculpt_change is not None else None)
             files["map.bin"] = update.map_bin
             if update.corners_changed:
                 warnings.append(

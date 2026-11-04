@@ -449,10 +449,42 @@ def build_sculpt_grid(scene, reference, spacing: float, kit):
     mesh.update()
     obj = bpy.data.objects.new(SCULPT_NAME, mesh)
     obj["fe9_terrain_sculpt"] = True
+    remember_sculpt_start(obj, heights, float(lo[0]), float(lo[2]), spacing, nx, nz)
     kit.objects.link(obj)
     for poly in mesh.polygons:
         poly.use_smooth = True
     return obj
+
+
+#: The sculpt grid's heights when the kit was made: the import follows only what changed since, so a
+#: heightfield's own smoothing of vertical walls (Radiant Dawn's terraced towns) moves no tile height.
+SCULPT_START = "fe9_start_height"
+
+
+def remember_sculpt_start(obj, heights, x0: float, z0: float, spacing: float, nx: int, nz: int) -> None:
+    attribute = obj.data.attributes.new(SCULPT_START, "FLOAT", "POINT")
+    attribute.data.foreach_set("value", np.asarray(heights, np.float32).ravel())
+    obj["fe9_sculpt_grid"] = [float(x0), float(z0), float(spacing), int(nx), int(nz)]
+
+
+def sculpt_change(obj):
+    """``(x0, z0, spacing, change[nz, nx])``: how far the user moved each sculpt grid vertex up, or None
+    when the sculpt has no starting heights (older kits) or no longer has one vertex per grid point."""
+    grid = obj.get("fe9_sculpt_grid")
+    start = obj.data.attributes.get(SCULPT_START)
+    if grid is None or start is None:
+        return None
+    x0, z0, spacing, nx, nz = (float(grid[0]), float(grid[1]), float(grid[2]), int(grid[3]), int(grid[4]))
+    count = len(obj.data.vertices)
+    if count != nx * nz:
+        return None
+    before = np.empty(count, np.float32)
+    start.data.foreach_get("value", before)
+    co = np.empty(count * 3, np.float64)
+    obj.data.vertices.foreach_get("co", co)
+    world = np.asarray(obj.matrix_world, np.float64)
+    co = co.reshape(-1, 3) @ world[:3, :3].T + world[:3, 3]
+    return x0, z0, spacing, (co[:, 2] - before).reshape(nz, nx).astype(np.float32)
 
 
 def build_flat_sculpt_grid(bounds, spacing: float, kit, height: float = 0.0):
@@ -1431,6 +1463,11 @@ def export_kit(source: str, folder: str) -> None:
                 np.clip(np.rint(array_from_image(light)[..., 0] * 255.0), 0, 255).astype(np.uint8))
     manifest = dict(data)
     manifest.update({"layers": layers, "light": "light.npy" if light is not None else None})
+    change = sculpt_change(sculpt) if sculpt is not None else None
+    if change is not None:
+        x0, z0, spacing, grid = change
+        np.save(folder / "sculpt_change.npy", grid)
+        manifest["sculpt_change"] = {"file": "sculpt_change.npy", "x0": x0, "z0": z0, "spacing": spacing}
     if data.get("water") is not None or water_objects(scene):
         manifest["water"] = export_water(scene, folder, data.get("water") or {})
     (folder / "kit.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
