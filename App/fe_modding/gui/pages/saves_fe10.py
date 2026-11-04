@@ -153,27 +153,43 @@ class Fe10SaveEditor(ttk.Frame):
             self._forge_entries.append(entry)
 
         ttk.Label(units, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "UNIP is framed from the native 254-slot writer. Character and class names come from "
-            "this save's ITBL; RelianceData from the open workspace determines which units carry "
-            "the conditional support tail. Remaining unit substructures are preserved read-only."
+            "Every unit of the file, as the game saved it. Select one to edit its level, EXP, current HP "
+            "and stats; stats are the numbers the game shows (the character's and the class's bases plus "
+            "what the unit has gained). The game shows a stat above the class cap at the cap. Skills, "
+            "items and supports are kept as they are."
         )).pack(anchor="w", pady=(0, 6))
         unit_frame = ttk.Frame(units)
         unit_frame.pack(fill="both", expand=True)
         self._unit_tree = ttk.Treeview(
-            unit_frame, columns=("slot", "pid", "jid", "army", "skills", "items", "supports", "bytes"),
-            show="headings", height=16)
+            unit_frame, columns=("slot", "pid", "jid", "army", "level", "exp", "hp", "skills", "items"),
+            show="headings", height=14, selectmode="browse")
         for key, title, width in (
-                ("slot", "Slot", 55), ("pid", "Character", 190), ("jid", "Class", 170),
-                ("army", "Army", 55), ("skills", "Skills", 60), ("items", "Items", 55),
-                ("supports", "Support slots", 90), ("bytes", "Bytes", 65)):
+                ("slot", "Slot", 50), ("pid", "Character", 180), ("jid", "Class", 160),
+                ("army", "Army", 50), ("level", "Lv", 40), ("exp", "Exp", 45), ("hp", "HP", 45),
+                ("skills", "Skills", 55), ("items", "Items", 50)):
             self._unit_tree.heading(key, text=title)
             self._unit_tree.column(key, width=width, stretch=key in ("pid", "jid"))
         unit_scroll = ttk.Scrollbar(unit_frame, command=self._unit_tree.yview)
         self._unit_tree.configure(yscrollcommand=unit_scroll.set)
         unit_scroll.pack(side="right", fill="y")
         self._unit_tree.pack(side="left", fill="both", expand=True)
+        self._unit_tree.bind("<<TreeviewSelect>>", lambda _e: self._select_unit())
+        unit_edit = ttk.Frame(units)
+        unit_edit.pack(anchor="w", pady=(6, 0))
+        self._unit_vars: dict[str, tk.StringVar] = {}
+        for col, (key, label) in enumerate((("level", "Lv"), ("experience", "Exp"), ("current_hp", "HP now"),
+                                            *((s, s.capitalize()) for s in sf.UNIT_STATS))):
+            ttk.Label(unit_edit, text=label).grid(row=0, column=col, sticky="w", padx=(0, 4))
+            var = tk.StringVar()
+            ttk.Entry(unit_edit, textvariable=var, width=5).grid(row=1, column=col, sticky="w", padx=(0, 4))
+            self._unit_vars[key] = var
+        self._unit_apply = ttk.Button(unit_edit, text="Apply", command=self._apply_unit, state="disabled")
+        self._unit_apply.grid(row=1, column=len(self._unit_vars), padx=(8, 0))
+        self._unit_caps = ttk.Label(units, style="Muted.TLabel")
+        self._unit_caps.pack(anchor="w")
         self._unit_status = ttk.Label(units, style="Muted.TLabel")
         self._unit_status.pack(anchor="w", pady=(6, 0))
+        self._units_by_slot: dict[int, sf.SavedUnit] = {}
 
         ttk.Label(flags, style="Muted.TLabel", wraplength=900, justify="left", text=(
             "BMST stores 128 event-script bits. Slots are shown in native order: campaign flags "
@@ -425,6 +441,8 @@ class Fe10SaveEditor(ttk.Frame):
             }
             parsed = record.unit_records(support_counts)
             occupied = [unit for unit in parsed if not unit.empty]
+            self._units_by_slot = {unit.slot: unit for unit in occupied}
+            self._unit_support_counts = support_counts
             for unit in occupied:
                 pid = ("PID_" + tables.characters[unit.person_number - 1]
                        if 0 < unit.person_number <= len(tables.characters)
@@ -435,14 +453,71 @@ class Fe10SaveEditor(ttk.Frame):
                 item_count = sum(item.item_number != 0 for item in unit.items)
                 self._unit_tree.insert(
                     "", "end", iid=str(unit.slot),
-                    values=(unit.slot + 1, pid, jid, unit.army, len(unit.skills), item_count,
-                            unit.support_slot_count, unit.size))
+                    values=(unit.slot + 1, pid, jid, unit.army, unit.level,
+                            "--" if unit.experience == 255 else unit.experience, unit.current_hp,
+                            len(unit.skills), item_count))
             consumed = sum(unit.size for unit in parsed)
             self._unit_status.configure(
                 text=f"{len(occupied)} occupied of {len(parsed)} slots · structurally consumed "
                      f"{consumed} bytes")
         except (KeyError, ValueError, IndexError, UnicodeError) as exc:
             self._unit_status.configure(text=f"Could not decode UNIP: {exc}")
+
+    def _unit_bases(self, unit: sf.SavedUnit) -> Optional[tuple[list[int], list[int]]]:
+        """(character bonus + class base, class cap) per stat for ``unit``, from the open workspace."""
+        database = getattr(getattr(self.shell, "session", None), "fe10", None)
+        record = self._record()
+        if database is None or record is None:
+            return None
+        tables = record.id_tables()
+        pid = "PID_" + tables.characters[unit.person_number - 1] if 0 < unit.person_number <= len(tables.characters) else None
+        jid = "JID_" + tables.classes[unit.class_number - 1] if 0 < unit.class_number <= len(tables.classes) else None
+        person = next((c for c in database.characters if c.id == pid), None)
+        job = next((c for c in database.classes if c.id == jid), None)
+        if person is None or job is None:
+            return None
+        bases = [person.values[f"bonus_{s}"] + job.values[f"base_{s}"] for s in sf.UNIT_STATS]
+        return bases, [job.values[f"cap_{s}"] for s in sf.UNIT_STATS]
+
+    def _select_unit(self) -> None:
+        selected = self._unit_tree.selection()
+        unit = self._units_by_slot.get(int(selected[0])) if selected else None
+        known = self._unit_bases(unit) if unit is not None else None
+        self._unit_apply.configure(state="normal" if known is not None else "disabled")
+        if unit is None or known is None:
+            for var in self._unit_vars.values():
+                var.set("")
+            self._unit_caps.configure(text="")
+            return
+        bases, caps = known
+        self._unit_vars["level"].set(str(unit.level))
+        self._unit_vars["experience"].set(str(unit.experience))
+        self._unit_vars["current_hp"].set(str(unit.current_hp))
+        for stat, base, gain in zip(sf.UNIT_STATS, bases, unit.stat_gains):
+            self._unit_vars[stat].set(str(base + gain))
+        self._unit_caps.configure(text="Class caps: " + ", ".join(
+            f"{s.capitalize()} {c}" for s, c in zip(sf.UNIT_STATS, caps)))
+
+    def _apply_unit(self) -> None:
+        record = self._record()
+        selected = self._unit_tree.selection()
+        unit = self._units_by_slot.get(int(selected[0])) if selected else None
+        known = self._unit_bases(unit) if unit is not None else None
+        if record is None or unit is None or known is None:
+            return
+        bases, _caps = known
+        try:
+            values = {k: int(v.get(), 0) for k, v in self._unit_vars.items()}
+            record.set_unit_state(unit, level=values["level"], experience=values["experience"],
+                                  current_hp=values["current_hp"],
+                                  stat_gains=[values[s] - b for s, b in zip(sf.UNIT_STATS, bases)])
+        except ValueError as exc:
+            messagebox.showerror("Unit", str(exc), parent=self)
+            return
+        slot = unit.slot
+        self._refresh()
+        if self._unit_tree.exists(str(slot)):
+            self._unit_tree.selection_set(str(slot))
 
     def _select_convoy(self) -> None:
         record = self._record()

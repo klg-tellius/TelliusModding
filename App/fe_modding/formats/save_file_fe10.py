@@ -31,7 +31,7 @@ import struct
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, Mapping, Optional, Sequence
 
 FILE_NAME = "FE10_US.dat"
 FILE_SIZE = 0x124000
@@ -58,6 +58,14 @@ UNIT_SLOT_COUNT = 0xFE
 OLD_UNIT_SLOT_COUNT = 0x9F
 UNIT_SKILL_SLOTS = 18
 UNIT_ITEM_SLOTS = 7
+# UNIP slot fixed header (2026-11-04, every unit of five saves within its class caps; Edward and
+# Micaiah matched in Dolphin): +0x09 level, +0x0A EXP (255 = maxed), +0x1B current HP, then at
+# +0x1E eight signed stat gains over PersonData's bonus + JobData's base.
+UNIT_LEVEL = 0x09
+UNIT_EXP = 0x0A
+UNIT_HP = 0x1B
+UNIT_STAT_GAINS = 0x1E
+UNIT_STATS = ("hp", "str", "mag", "skl", "spd", "lck", "def", "res")
 SYSTEM_MAGIC = b"FE10ASYS"
 DATA_MAGIC = b"FE10ADAT"
 SYSTEM_VERSION = 0x20061002
@@ -284,6 +292,27 @@ class SavedUnit:
     @property
     def size(self) -> int:
         return len(self.raw)
+
+    @property
+    def level(self) -> int:
+        return self.raw[UNIT_LEVEL] if not self.empty else 0
+
+    @property
+    def experience(self) -> int:
+        """0-99; 255 once the unit can gain no more (shown as --)."""
+        return self.raw[UNIT_EXP] if not self.empty else 0
+
+    @property
+    def current_hp(self) -> int:
+        return self.raw[UNIT_HP] if not self.empty else 0
+
+    @property
+    def stat_gains(self) -> tuple[int, ...]:
+        """The eight signed gains on top of the character's and the class's bases, in
+        :data:`UNIT_STATS` order: a shown stat is PersonData bonus + JobData base + this gain."""
+        if self.empty:
+            return (0,) * len(UNIT_STATS)
+        return tuple(struct.unpack_from(">8b", self.raw, UNIT_STAT_GAINS))
 
 
 @dataclass(frozen=True)
@@ -774,6 +803,37 @@ class SaveRecord:
             raise ValueError(f"RELD count requires {expected} bytes, found {len(data)}")
         return tuple(RuntimeRelation(*struct.unpack_from(">HHB", data, 4 + i * RUNTIME_RELATION_SIZE))
                      for i in range(count))
+
+    def set_unit_state(self, unit: SavedUnit, *, level: Optional[int] = None, experience: Optional[int] = None,
+                       current_hp: Optional[int] = None, stat_gains: Optional[Sequence[int]] = None) -> None:
+        """Edit one unit's level, EXP, current HP and stat gains in place (the record's size is unchanged).
+        ``unit`` comes from :meth:`unit_records`. The game shows a stat over its class cap at the cap
+        (Dolphin, 2026-11-04: Edward set to HP 40, Skill 21, Speed 22 showed 30, 20, 20 as a Myrmidon)."""
+        if unit.empty:
+            raise ValueError("this UNIP slot holds no unit")
+        section = self.section("UNIP")
+        if section is None:
+            raise KeyError("save record has no UNIP section")
+        edits = []
+        if level is not None:
+            if not 1 <= level <= 40:
+                raise ValueError("level must be 1..40")
+            edits.append((UNIT_LEVEL, bytes([level])))
+        if experience is not None:
+            if not (0 <= experience <= 99 or experience == 255):
+                raise ValueError("EXP must be 0..99, or 255 for a unit that gains no more")
+            edits.append((UNIT_EXP, bytes([experience])))
+        if current_hp is not None:
+            if not 1 <= current_hp <= 255:
+                raise ValueError("current HP must be 1..255")
+            edits.append((UNIT_HP, bytes([current_hp])))
+        if stat_gains is not None:
+            gains = list(stat_gains)
+            if len(gains) != len(UNIT_STATS) or any(not -128 <= g <= 127 for g in gains):
+                raise ValueError(f"stat gains are {len(UNIT_STATS)} values in -128..127")
+            edits.append((UNIT_STAT_GAINS, struct.pack(">8b", *gains)))
+        for offset, data in edits:
+            self.replace_section_bytes("UNIP", unit.offset + offset, data)
 
     def set_runtime_relation(self, index: int, relation: RuntimeRelation) -> None:
         """Replace one RELD record in place, preserving the section's shape."""
