@@ -215,8 +215,8 @@ class RdStoryFlow(StoryFlow):
     ending = "final"
     armies = True
     armies_editable = rd_story.ARMY_RUNTIME_READY
-    armies_note = ("Part 4's army hand-over happens when a chapter ends (startup.cmb's TEAM_<chapter>_ED), so "
-                   "changing an army rewrites those functions and the chapter's group and lord.")
+    armies_note = ("Choosing the army of a Part 4 chapter is not available yet: the hand-over it rewrites "
+                   "(startup.cmb's TEAM_<chapter>_ED) has not been checked in the game.")
 
     def __init__(self, editor, chapter_ids: dict[int, str]):
         super().__init__(editor)

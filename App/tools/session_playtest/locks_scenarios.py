@@ -140,7 +140,11 @@ SCENARIOS: list[Scenario] = [
                "before the split, fail the first check and note what you saw: that is the save edit, not "
                "army switching.",
                "Changes: {handover}. Test only: 4-P's split also collects forces 0 and 5, where this "
-               "Endgame save keeps units."]),
+               "Endgame save keeps units.",
+               "Known limit (unattended run, 2026-11-03): File 5 was saved in the Endgame's preparations, so "
+               "it resumes 4-P's preparations with the Endgame's armies and unit positions and 4-P's opening "
+               "(where the split runs) never plays. Clearing the chapter flags or the saved map name does "
+               "not change that. A real check needs a file saved at the end of 3-E."]),
     Scenario(
         "L1", "Radiant Dawn: locked controls", "Object flags on a Radiant Dawn map",
         "Build > Object flags… on RD (kept read-only until these bits behave as on Path of Radiance)",
