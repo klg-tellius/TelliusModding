@@ -643,6 +643,16 @@ def import_water_scene(
         files[texpack], first = tpl.append_images(files[texpack], added, tpl.typical_mip_count(donor_tpl))
         records = [replace(t, tex_id=first + ids.index(t.tex_id)) for t in records]
 
+    # every vanilla water is drawn in the blend pass (chunk flags 0x7000, alpha 127): copy the source's
+    # pass, blend bits and culling, or the rebuilt water is an opaque dark sheet
+    source_gs = gs_file.read_gs(source_files[f"{source_name}.gs"])
+    source_chunk = next((c for chunks in source_gs.chunk_lists for c in chunks), None)
+    if source_chunk is not None:
+        modes = {v: k for k, v in gltf_import.ALPHA_MODE_PASS.items()}
+        for material in scene.materials:
+            material.alpha_mode = modes.get((source_chunk.flags >> 13 & 3) - 1, material.alpha_mode)
+            material.shape_flags = source_chunk.flags & 0x3E0
+            material.double_sided = source_chunk.flags & 0x1800 == gltf_import.FLAG_CULL_NONE
     base = len(tpl.read_tpl_image_info(io.BytesIO(files[texpack])))
     build = gltf_import.build_static_gs(scene, bone=0, name=name, tex_id_base=base)
     warnings += build.warnings

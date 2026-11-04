@@ -703,6 +703,29 @@ def default_layout(width: int, height: int) -> AtlasLayout:
     return AtlasLayout(width, height, swatches, 0)
 
 
+def measured_density(positions: np.ndarray, uv0: np.ndarray, width: int, height: int) -> float:
+    """Atlas texels per world unit of a terrain's UV0, when it is far from :data:`DENSITY`.
+
+    Path of Radiance lays its ground at 6.4 (6.0 indoors, 9 on a few trial maps). Radiant Dawn
+    lays it twice as dense, 12.4-12.8 on most story maps (a few at 3.2, 6.4 or 25.4). The median
+    scale of the triangles' UV mapping is used only when it is at least 1.7x away from 6.4, so
+    the Path of Radiance kits keep the density they were made with."""
+    p = np.asarray(positions, float).reshape(-1, 3, 3)
+    t = np.asarray(uv0, float).reshape(-1, 3, 2) * (width, height)
+    if not len(p):
+        return DENSITY
+    a = np.stack([p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]], axis=1)[:, :, [0, 2]]
+    b = np.stack([t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]], axis=1)
+    area = np.linalg.det(a)
+    ok = np.abs(area) > 1e-3
+    if not ok.any():
+        return DENSITY
+    density = float(np.median(np.sqrt(np.abs(np.linalg.det(b[ok]) / area[ok]))))
+    if abs(math.log2(density / DENSITY)) < math.log2(1.7):
+        return DENSITY
+    return round(density, 2)
+
+
 def layout_from_uvs(positions: np.ndarray, uv0: np.ndarray, uv1: np.ndarray, width: int,
                     height: int) -> AtlasLayout:
     """Detect the swatches a terrain uses; the base is UV0's most used one."""
@@ -710,7 +733,7 @@ def layout_from_uvs(positions: np.ndarray, uv0: np.ndarray, uv1: np.ndarray, wid
     if not rects:
         return default_layout(width, height)
     swatches = [Swatch(f"Swatch {i + 1}", *(int(v) for v in r)) for i, r in enumerate(rects)]
-    layout = AtlasLayout(width, height, swatches, 0)
+    layout = AtlasLayout(width, height, swatches, 0, measured_density(positions, uv0, width, height))
     s0 = triangle_swatches(uv0, layout)
     layout.base = int(np.bincount(s0, minlength=len(swatches)).argmax())
     layout.swatches[layout.base].name = "Base"

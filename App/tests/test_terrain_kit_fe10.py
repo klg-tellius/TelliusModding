@@ -93,6 +93,19 @@ class RdKitTests(unittest.TestCase):
             self.assertEqual(map_file.map_layout(files["map.bin"]).prefix, "bmap0101:")
             self.assertIsNotNone(out.capacity)
             self.assertIsNotNone(terrain_kit.read_terrain(container).light_matrix)
+            # laid out like RD's own map_base: atlas, mask, atlas, light, with RD's flags and colours
+            from fe_modding.formats import gs_file
+            material = next(m for m in gs_file.read_gs(files["bmap0101.gs"]).materials if m.name == "map_base")
+            self.assertEqual([t.flags for t in material.textures], [(1, 1), (1, 5), (1, 1), (1, 1)])
+            ids = [t.tex_id for t in material.textures]
+            self.assertEqual((ids[1], ids[2]), (ids[0] + 1, ids[0]))
+            self.assertEqual((material.color0, material.color1), ((204, 204, 204, 255), (76, 76, 76, 255)))
+
+    def test_ground_density_is_measured(self):
+        # RD lays its ground at 12.7 texels a unit, twice PoR's 6.4: kits built at 6.4 doubled the cobbles
+        with tempfile.TemporaryDirectory() as folder:
+            source = terrain_kit.read_terrain(_copy(folder, "bmap0101"))
+        self.assertEqual(terrain_kit.detect_layout(source).density, 12.7)
 
     def test_water_reads_and_untouched_water_changes_nothing(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -104,6 +117,24 @@ class RdKitTests(unittest.TestCase):
         outcome = terrain_kit.apply_water(entries, files, edit)
         self.assertEqual({k for k in files if files[k] != before.get(k)}, set())
         self.assertIn("0 of 1 water surfaces rebuilt, 0 removed.", outcome.notes)
+
+    def test_raised_water_stays_in_the_blend_pass(self):
+        # rebuilt water used to come out opaque (chunk flags 0x3000): a dark sheet over 1-9's marsh
+        from dataclasses import replace
+        import numpy as np
+        from fe_modding.formats import gs_file
+        with tempfile.TemporaryDirectory() as folder:
+            water = terrain_kit.read_water(_copy(folder, "bmap0109"))
+        entries, files = map_props.read_map_container(Path(FILES) / "zmap" / "bmap0109" / "map.cmp")
+        raised = [replace(b, positions=np.asarray(b.positions) + (0.0, 1.5, 0.0), level=b.level + 1.5)
+                  for b in water.bodies]
+        edit = terrain_kit.WaterEdit(raised, [], water.fade, False, water.waves, water.origin)
+        terrain_kit.apply_water(entries, files, edit)
+        gs = gs_file.read_gs(files["bmap0109_water0.gs"])
+        self.assertEqual([[hex(c.flags) for c in chunks] for chunks in gs.chunk_lists], [[], [], ["0x7000"]])
+        from fe_modding.formats import model as model_fmt
+        heights = np.asarray(model_fmt.read_model_bytes(files["bmap0109_water0.gs"]).positions)[:, 1]
+        self.assertTrue(np.allclose(heights, 1.5))
 
     def test_story_maps_with_a_ground_model_all_read(self):
         read = failed = 0
@@ -151,6 +182,23 @@ class SculptChangeTests(unittest.TestCase):
         update = map_heights.follow_terrain(files["map.bin"], "bmap0101", source_tris, sloped, still.at)
         self.assertEqual((update.corners_changed, update.map_bin), (0, files["map.bin"]))
         self.assertGreater(map_heights.follow_terrain(files["map.bin"], "bmap0101", source_tris, sloped).corners_changed, 100)
+
+    @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+    def test_both_panel_layers_keep_valid_terrain_pointers(self):
+        # growing uniquepanel moves uniquepanelBase: its terrain pointers were written stale
+        import numpy as np
+        from fe_modding import map_heights
+        _entries, files = map_props.read_map_container(Path(FILES) / "zmap" / "bmap0101" / "map.cmp")
+        with tempfile.TemporaryDirectory() as folder:
+            tris = np.asarray(terrain_kit.read_terrain(_copy(folder, "bmap0101")).positions, np.float64).reshape(-1, 3, 3)
+        lower = tris.copy()
+        lower[..., 1] -= 3.0
+        update = map_heights.follow_terrain(files["map.bin"], "bmap0101", tris, lower)
+        out = map_file.read_map_bytes(update.map_bin)
+        self.assertGreater(len(out.unique_panel), 85)
+        self.assertGreater(len(out.unique_panel_base), 24)
+        self.assertLessEqual({p.terrain_type_ptr for p in out.unique_panel_base},
+                             {p.terrain_type_ptr for p in out.unique_panel})
 
 
 
