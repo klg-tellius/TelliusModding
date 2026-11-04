@@ -110,11 +110,18 @@ def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangl
 
     out = map_bin
     changed_tiles: set[tuple[int, int]] = set()
-    for index_name, panel_name, grid, panels in (
-        ("panelindex", "uniquepanel", data.panel_index, data.unique_panel),
-        ("panelindexBase", "uniquepanelBase", data.panel_index_base, data.unique_panel_base),
+    for index_name, panel_name, grid_attr, panels_attr in (
+        ("panelindex", "uniquepanel", "panel_index", "unique_panel"),
+        ("panelindexBase", "uniquepanelBase", "panel_index_base", "unique_panel_base"),
     ):
-        if grid is None or not panels or not delta:
+        if not delta:
+            continue
+        # read each layer from the bytes written so far: growing one panel section moves what follows it,
+        # and the terrain-type pointers of the next layer must be the moved ones (on Radiant Dawn's
+        # base layer stale pointers crashed the game when 1-1 was flattened)
+        current = map_file.read_map_bytes(out)
+        grid, panels = getattr(current, grid_attr), getattr(current, panels_attr)
+        if grid is None or not panels:
             continue
         records = [(p.top_left_elevation, p.top_right_elevation, p.bottom_left_elevation, p.bottom_right_elevation, p.terrain_type_ptr) for p in panels]
         index_of = {r: i for i, r in reversed(list(enumerate(records)))}

@@ -183,6 +183,23 @@ class SculptChangeTests(unittest.TestCase):
         self.assertEqual((update.corners_changed, update.map_bin), (0, files["map.bin"]))
         self.assertGreater(map_heights.follow_terrain(files["map.bin"], "bmap0101", source_tris, sloped).corners_changed, 100)
 
+    @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+    def test_both_panel_layers_keep_valid_terrain_pointers(self):
+        # growing uniquepanel moves uniquepanelBase: its terrain pointers were written stale
+        import numpy as np
+        from fe_modding import map_heights
+        _entries, files = map_props.read_map_container(Path(FILES) / "zmap" / "bmap0101" / "map.cmp")
+        with tempfile.TemporaryDirectory() as folder:
+            tris = np.asarray(terrain_kit.read_terrain(_copy(folder, "bmap0101")).positions, np.float64).reshape(-1, 3, 3)
+        lower = tris.copy()
+        lower[..., 1] -= 3.0
+        update = map_heights.follow_terrain(files["map.bin"], "bmap0101", tris, lower)
+        out = map_file.read_map_bytes(update.map_bin)
+        self.assertGreater(len(out.unique_panel), 85)
+        self.assertGreater(len(out.unique_panel_base), 24)
+        self.assertLessEqual({p.terrain_type_ptr for p in out.unique_panel_base},
+                             {p.terrain_type_ptr for p in out.unique_panel})
+
 
 
 @unittest.skipUnless(FILES and os.environ.get("FE9_BLENDER"),
