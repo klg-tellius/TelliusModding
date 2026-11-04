@@ -81,6 +81,31 @@ source_path: "meta/radiant-dawn.md"
 
   The name is a record of `FE10Battle.cms`'s `FE10BMapData`, whose first `FE10BMapModel` names the scenery folder in `zbg/` (`bg0101街` is `zbg/bg0101twn`). Of its 119 backdrops, 13 are missing from the retail `BattleTerrName`, so no row can name them yet, among them the generic `bg汎用01草原1`-`3` (plains), `bg汎用02森林` (forest) and `bg魔法` itself. <span class="confidence confidence--confirmed">files</span>
 
+## Battle sceneries
+
+  Path of Radiance gives each backdrop a `zbg/<scenery>/param.dbx` (indoor flag, footstep effect and sound). Radiant Dawn has one 24-byte `FE10BMapModel` row per placed backdrop model in `FE10Battle.cms` (146 rows); an `FE10BMapData` background picks up to five rows, its variants. <span class="confidence confidence--confirmed">engine</span>
+
+  | Offset | Field |
+  | --- | --- |
+  | +0x00 | The `zbg/` folder of the model |
+  | +0x04 | The map's sound group (`SND_GROUP_C0101`) |
+  | +0x08 | Flags: 0x02 indoors (the chapter's battle weather and sky are not applied), 0x08 mirrored (X scale −1), 0x10 the fighters may run in (the `突撃` motion; variants 0 and 2 only), 0x20 mirror and 0x40 turn 180° when they run in. 0x01 and 0x04 are set on retail rows but have no reader. |
+  | +0x09 | Flight height on the aerial variants 2 and 3; 0 uses FE10BSetup `上空高度` |
+  | +0x0A, +0x0B | Move and camera limits; 0 uses FE10BSetup `移動限界` (50) and `カメラ限界` (40) |
+  | +0x0C | The `FE10BFootEffect` row (none, dust, dust at night, water spray, snow spray, rain spray, coins) |
+  | +0x0D | The footstep ground: the column of the fighter's `FE10BSFXList` row (plain, sand, water, snow, rain, floor, coins, floor) |
+  | +0x0E-0x13 | Signed x, y, z position |
+  | +0x14 | Signed Y rotation in degrees |
+  | +0x16 | Signed scale in 1/256; 0 means 3.0 |
+
+  RFEE01 reads these in `0x800AA548` (setup), `0x800AB310` and `0x80185D0C` (weather), `0x800A95F4` (flight height), `0x800ABA28` (the run-in) and `0x800BA2C8` (footsteps). <span class="confidence confidence--confirmed">engine</span>
+
+## Battle unit parameters
+
+  Path of Radiance tunes each battle model in `zu/<code>_prm.dbx`. Radiant Dawn has one 340-byte `FE10BUnit` row per battle model description (240 rows): +0x00 the description (`剣士一般`), +0x04 the model code (`swoL`), +0x10 a flag mask, +0x18 twenty signed 16-bit values in 1/256, +0x14C the footstep sound set (an `FE10BSFXList` row) and +0x14D the number of `FE10BTex` rows it owns. <span class="confidence confidence--confirmed">engine</span>
+
+  The game reads a value or a flag by name. `0x800A7370` (row, name) finds the name among the 20 `FE10BParam` rows (`補間比率`, `間合い`, `命中高度`... `２Ｄスケール`) and returns value *i* / 256, or 0 for an unknown name. `0x800A7460` finds the name among the 18 `FE10BFlags` rows (`大型`, `飛行系`, `左利き`... `サウンド判定`) and tests bit *i* of the mask. <span class="confidence confidence--confirmed">engine</span>
+
 ## Battle weapons
 
   Path of Radiance gives each weapon a `xwp/<NAME>.dbx` table in `zdbx.cmp`. Radiant Dawn has one `FE10BWeapon` row per weapon in `FE10Battle.cms` (192 rows, 36 bytes each). Its string fields are, in order: a Japanese name, the weapon key (`IRONSWORD`; an arrow names its bow), the model (`xwp/<model>/`), the hit and critical-hit effects (`EID_K_ATTK1`, `EID_K_CRIT1`), the weapon's own effect (`EID_K_FIRE`), the effect on the target (`EID_K_HEAD_FIRE`), and on a few rows a magic class name. Byte +0x20 indexes `FE10BWeaponType`: no, sw, sp, ax, kn, ja (thrown lance), ha (hand axe), kt (thrown knife), ms (magic sword), mg (magic), bw (bow), bg (bowgun), cr (claw), br (breath), rd (staff), ar (arrow). <span class="confidence confidence--confirmed">files</span>
