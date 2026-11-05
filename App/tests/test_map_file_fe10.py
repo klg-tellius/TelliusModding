@@ -95,13 +95,14 @@ class Fe10MapReadTests(unittest.TestCase):
         self.assertAlmostEqual(prop.height(), -0.5)
         self.assertEqual(prop.tail, 0x40000000)
 
-    def test_light_and_fog_decode_and_shader_stays_raw(self):
+    def test_light_fog_and_shader_decode(self):
         light = self.data.light  # the fixture's maplight is bytes 0..31
         self.assertIsInstance(light, map_file.RdMapLight)
         self.assertEqual((light.skipped, light.vector_x, light.vector_y, light.vector_z), (0x0001, 0x0203, 0x0405, 0x0607))
         self.assertEqual((light.set1_model_red, light.set1_light_blue, light.set4_light_blue), (8, 13, 31))
         self.assertEqual(self.data.fog.address, light.address + 32 + 1)  # RD's fog skips a leading byte
-        self.assertEqual(set(self.data.unknown_sections), {"mapshader"})
+        self.assertIsInstance(self.data.shader, map_file.RdMapShader)  # read at 0x801369BC's layout
+        self.assertEqual(set(self.data.unknown_sections), set())
 
     def test_light_and_fog_patch_in_place(self):
         out = map_file.patch_light_field(self.raw, self.data.light, "vector_y", -150)

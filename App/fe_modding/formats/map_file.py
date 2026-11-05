@@ -498,6 +498,43 @@ RdMapLight = make_dataclass(
     frozen=True, module=__name__)
 RdMapLight.__doc__ = "Radiant Dawn's 32-byte ``maplight`` record (see ``_RD_LIGHT_FIELDS``)."
 
+#: Radiant Dawn's ``mapshader`` (16 + 4 x version bytes), as RFEE01's loader at 0x801369BC reads it
+#: into the map object (offsets in brackets). Version 0 has the first 14 bytes, version 1 adds four,
+#: version 2 a per-object part. Named from the game: ``water`` (+0x56: non-zero gives ``map_water`` a
+#: material callback and a 304 x 448 render texture, 0x80143D88; Dolphin: 0 on 1-9 changes the marsh)
+#: and ``tint`` (+0x64: 1 adds a ground pass in ``map_base``'s callback 0x80141650 coloured by
+#: ``tint_red..tint_alpha`` (+0x66..+0x69); Dolphin: red tints masked ground patches, colour inverted).
+#: The rest are kept under their map-object offsets: +0x54 (an amount below 255 in 0x801420B0), +0x55
+#: and +0x60 (switches there), the two hundredths (+0x58, +0x5C as value / 100).
+RD_SHADER_FIELDS = {
+    "value_54": (1, ">B", 0), "value_55": (2, ">B", 0), "water": (3, ">B", 0), "value_57": (4, ">B", 0),
+    "hundredths_58": (5, ">B", 0), "hundredths_5c": (6, ">h", 0), "tint": (8, ">B", 0), "value_65": (9, ">B", 0),
+    "tint_red": (10, ">B", 0), "tint_green": (11, ">B", 0), "tint_blue": (12, ">B", 0), "tint_alpha": (13, ">B", 0),
+    "value_60": (14, ">B", 1), "value_61": (15, ">B", 1), "value_62": (16, ">B", 1), "value_63": (17, ">B", 1),
+    "object": (18, ">B", 2), "object_byte": (19, ">B", 2), "object_value": (20, ">B", 2),
+    "object_red": (21, ">B", 2), "object_green": (22, ">B", 2), "object_blue": (23, ">B", 2),
+}
+
+
+@dataclass(frozen=True)
+class RdMapShader:
+    """Radiant Dawn's ``mapshader`` record (see ``RD_SHADER_FIELDS``); fields its version does not
+    have are None."""
+
+    version: int
+    values: dict  # RD_SHADER_FIELDS name -> value, or None past the record's version
+    address: int = 0
+
+    def get(self, name: str):
+        return self.values.get(name)
+
+    def __getattr__(self, name: str):
+        # fields read like a record's attributes (the Map settings form reads them that way)
+        values = self.__dict__.get("values") or {}
+        if name in values:
+            return values[name]
+        raise AttributeError(name)
+
 
 @dataclass(frozen=True)
 class MapGrid:
@@ -646,6 +683,7 @@ class MapData:
     unique_panel_base: list[UniquePanel] = field(default_factory=list)
     light: Optional["MapLight | RdMapLight"] = None
     fog: Optional[MapFog] = None
+    shader: Optional[RdMapShader] = None  # Radiant Dawn's mapshader
     grid: Optional[MapGrid] = None
     extra: Optional[MapExtra] = None
     # link/link_at/link_abs together build one per-tile "tile status" value,
@@ -916,6 +954,8 @@ def read_map(stream: BinaryIO) -> MapData:
             data.light = _read_rd_light(stream, address)
         elif name == "maplight":
             data.light = _read_light(stream, address)
+        elif name == "mapshader" and layout.light_format == "fe10":
+            data.shader = _read_rd_shader(stream, address)
         elif name == "mapfog":
             # RFEE01 (0x80136778) skips a leading byte, then reads FE9's record byte for byte
             data.fog = _read_fog(stream, address + (1 if layout.light_format == "fe10" else 0))
@@ -1046,6 +1086,37 @@ def _read_light(stream: BinaryIO, address: int) -> MapLight:
     stream.seek(address)
     enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, ua, ub, uc = struct.unpack(">BbbBBBBBBBBB", stream.read(12))
     return MapLight(enabled, angle_y, angle_z, mr, mg, mb, lr, lg, lb, (ua, ub, uc), address=address)
+
+
+def _read_rd_shader(stream: BinaryIO, address: int) -> RdMapShader:
+    stream.seek(address)
+    head = stream.read(1)
+    if len(head) != 1:
+        raise MapFileError("The mapshader record is empty.")
+    version = head[0]
+    size = 14 if version == 0 else 18 if version == 1 else 24
+    stream.seek(address)
+    raw = stream.read(size)
+    if len(raw) != size:
+        raise MapFileError(f"A version {version} mapshader record has {size} bytes.")
+    values = {name: (struct.unpack_from(fmt, raw, offset)[0] if version >= since else None)
+              for name, (offset, fmt, since) in RD_SHADER_FIELDS.items()}
+    return RdMapShader(version, values, address)
+
+
+def patch_shader_field(data: bytes, record: RdMapShader, field_name: str, value) -> bytes:
+    """Set one ``mapshader`` field; fields the record's version does not have refuse."""
+    if field_name not in RD_SHADER_FIELDS:
+        raise MapFileError(f"{field_name!r} is not a mapshader field.")
+    offset, fmt, since = RD_SHADER_FIELDS[field_name]
+    if record.version < since:
+        raise MapFileError(f"This map's mapshader (version {record.version}) has no {field_name}.")
+    low, high = (-32768, 32767) if fmt == ">h" else (0, 255)
+    if not isinstance(value, int) or not low <= value <= high:
+        raise MapFileError(f"{field_name} must be from {low} to {high}.")
+    out = bytearray(data)
+    struct.pack_into(fmt, out, record.address + offset, value)
+    return bytes(out)
 
 
 def _read_rd_light(stream: BinaryIO, address: int) -> RdMapLight:

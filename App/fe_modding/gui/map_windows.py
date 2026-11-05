@@ -517,7 +517,23 @@ SECTION_HELP = {
     "weather": "Weather and fog of war of the map.",
     "advanced": "Values the engine reads but that rarely need changing.",
     "flags": "On/off switches stored with the map (mapextra): which drawing passes and tests it uses.",
+    "shader": "Radiant Dawn's mapshader: extra drawing passes of the ground and the water. Two switches are "
+              "named from the game; the other values keep the map-object offset the game stores them at.",
 }
+
+#: mapshader values shown under their map-object offsets: (field, label, help)
+RD_SHADER_VALUES = (
+    ("value_54", "Value +0x54", "An amount below 255 in a map drawing pass (0x801420B0); 224 or 255 on retail maps."),
+    ("value_55", "Value +0x55", "A switch in the same pass; 0, 1 or 4 on retail maps."),
+    ("value_57", "Value +0x57", "Read by the water callback; 20 to 130 on retail maps."),
+    ("hundredths_58", "Value +0x58 (÷100)", "Stored as a hundredth; 100 on retail maps but one."),
+    ("hundredths_5c", "Value +0x5C (÷100)", "Signed, stored as a hundredth; 0 or small negatives on retail maps."),
+    ("value_65", "Value +0x65", "Read by the water callback; 0 on retail maps."),
+    ("value_60", "Value +0x60", "Version 1 and 2: a switch of the water and map passes; 0 to 3 on retail maps."),
+    ("value_61", "Value +0x61", "Version 1 and 2."),
+    ("value_62", "Value +0x62", "Version 1 and 2."),
+    ("value_63", "Value +0x63", "Version 1 and 2."),
+)
 
 
 class MapSettingsForm(ttk.Frame):
@@ -667,6 +683,30 @@ class MapSettingsForm(ttk.Frame):
                              "Every vanilla map uses 0.")
                 row += 1
             row = self._colour_row(row, "fog", fog, "Colour", ("red", "green", "blue"), "Colour of the fog.")
+        if data.shader is not None:
+            row = self._section(row, "shader", f"Map shading (mapshader, version {data.shader.version})")
+            shader = data.shader
+            self._check(row, 0, "shader:water", "Water effect", shader.water,
+                        "Gives the map_water material its extra pass and a render texture (Dolphin: turning it "
+                        "off on 1-9 changes how the marsh is drawn).")
+            self._check(row, 2, "shader:tint", "Ground tint pass", shader.tint == 1,
+                        "An extra ground pass in the tint colour, on the ground's masked areas (Dolphin: red "
+                        "shows as cyan-green patches on 1-9). Off on every retail map.")
+            row += 1
+            row = self._colour_row(row, "shader", shader, "Tint colour", ("tint_red", "tint_green", "tint_blue"),
+                                   "Colour of the ground tint pass (white on every retail map).")
+            self._number(row, 0, "shader:tint_alpha", "Tint alpha", shader.tint_alpha,
+                         "Fourth byte of the tint colour.")
+            row += 1
+            col = 0
+            for field, label, help_text in RD_SHADER_VALUES:
+                if shader.get(field) is None:
+                    continue
+                self._number(row, col, f"shader:{field}", label, shader.get(field), help_text)
+                col = 2 if col == 0 else 0
+                row += 1 if col == 0 else 0
+            if col:
+                row += 1
         if extra is not None and us:
             row = self._section(row, "weather", "Weather")
             self._choice(row, "extra:weather_id", "Weather", WEATHER_NAMES, extra.weather_id,
@@ -848,7 +888,8 @@ class MapSettingsForm(ttk.Frame):
         if data is None:
             return
         patches = {"light": map_file.patch_light_field, "fog": map_file.patch_fog_field,
-                   "grid": map_file.patch_grid_field, "extra": map_file.patch_extra_field}
+                   "grid": map_file.patch_grid_field, "extra": map_file.patch_extra_field,
+                   "shader": map_file.patch_shader_field}
         pending = []
         try:
             width, height = self._value("capacity:x_size"), self._value("capacity:y_size")
@@ -882,9 +923,10 @@ class MapSettingsForm(ttk.Frame):
                 if flags != extra.unknown_tail:
                     pending.append(("extra", "unknown_tail", flags))
                 if data.capacity is not None:  # keep the half sizes in step with the requested map size
+                    up = 1 if getattr(data.layout, "half_round_up", True) else 0  # FE9 ceil, FE10 floor
                     for f, size in (("half_x_size", width), ("half_y_size", height)):
-                        if getattr(extra, f) != (size + 1) // 2:
-                            pending.append(("extra", f, (size + 1) // 2))
+                        if getattr(extra, f) != (size + up) // 2:
+                            pending.append(("extra", f, (size + up) // 2))
         except ValueError as exc:
             messagebox.showerror("Map settings", str(exc), parent=self)
             return

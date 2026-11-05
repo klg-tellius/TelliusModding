@@ -152,6 +152,16 @@ If you want new objective logic, edit and test the chapter script in a later les
 
 The flag word is shown as check boxes. **Water surface** draws the animated water pass and is set on every map with water. **Ground texture overlay** draws the map's last texture over the terrain. **Object texture effect** adds a material pass on objects marked for it. **Roof and door hit tests** tests the footprint of roof, door, house and rock objects. **Objects already sorted** is set on all vanilla maps; when clear, the game sorts placed objects during load and sets it. **Flag 0x02** is set on every vanilla map and never read. Weather and fog of war use other bits of the same word and have their own controls.
 
+### Map shading (Radiant Dawn)
+
+Radiant Dawn maps that have a `mapshader` record show **Map shading**, with the record's version in the title.
+
+- **Water effect** gives the `map_water` material its extra pass. Turning it off on 1-9 changes how the marsh is drawn.
+- **Ground tint pass** draws the ground's masked areas again in **Tint colour**. It is off on every retail map, and in the game a red tint shows as cyan-green patches.
+- The other boxes are named by where the game stores them (**Value +0x54**...): the map's drawing passes read them, but what each one does is not traced.
+
+Version 1 and 2 records have four more values than version 0.
+
 ### Chapter identity and assets
 
 **Chapter ID** is the numeric record identity. **Map** selects `zmap/<name>`, **Script** selects `Scripts/<name>.cmb`, and **Message file** selects the chapter message resource. **Map music**, **Base background**, **Conversation background**, **Class-change scene map**, and **Class-change scene sky** name their respective assets. Each of these fields is a drop-down of what the project holds; **Choose…** (music, backgrounds) and **Browse in 3D…** (the class-change scene and sky) open a picker with a preview, and the **Open in …** buttons jump to the asset's editor.
