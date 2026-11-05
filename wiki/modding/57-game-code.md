@@ -122,6 +122,12 @@ Press **Reset** beside the field. The value returns to 4 and the card to *Vanill
 
 On Radiant Dawn, **Army phases** has the same four choices. The game writes the controllers at each chapter start from two places in its code, and both read the page's values. In the game, Enemy phase set to **No phase** made 1-1 go straight from the player's turn 1 to turn 2, without the bandits' phase. A chapter's script can still change the controllers during the chapter with `BMSetTanto`; no retail script does.
 
+Also on Radiant Dawn:
+
+- **Bandits do not destroy villages** (Map and camera). Radiant Dawn's looter AI looks for a village only for units with `SID_VILLAGEDESTROY`, which the Bandit class has. With this on, it never does.
+- **Second-tier level bonus** and **Third-tier level bonus** (Experience and growth, vanilla 20 and 40). A unit's effective level is its level plus this bonus; laguz get none. Combat EXP compares effective levels. So do one skill check in battle and some AI decisions, so these settings change those as well.
+- Not on Radiant Dawn: the reinforcement limit (`SID_CALL` is a combat skill there, not a reinforcement call), the free camera and the Animation group (Radiant Dawn's battle and animation timing code is built differently and needs tracing in the running game).
+
 ## Things to try next
 
 1. **A patch.** Tick **Bandits do not destroy villages**, build, and let a bandit reach a village in Ch.1.
