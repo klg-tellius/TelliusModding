@@ -132,6 +132,16 @@ To add one: **Duplicate** a similar entry, give it a free **Id**, its own title 
 | **▲** **▼** **Insert line** **Remove** | Edit the list |
 | **Save credits** / **Revert** | Write / reload the file |
 
+On Radiant Dawn the same page edits the credits in the ending message file: `Mess/e_ending.m` (English, 358 lines, the one the US game plays) or `Mess/ending.m` (Japanese, 341 lines). Each line is three messages, `MED_STAFFROLL_L000_L` (role), `_C` (heading) and `_R` (name). The page writes them back, and the line count in `MED_STAFFROLL_LINES`, which the game reads as text. Below the line form:
+
+| Control | What it does |
+| --- | --- |
+| **Language** | English or Japanese list |
+| **Title**, **Copyright 1–5** | `MED_STAFFROLL_TITLE` and the five copyright lines |
+| **Timings** | `StaffRollData.bin`'s 16 values: scroll speed, the waits before and after, when each song starts, fades and moves on (milliseconds in the retail values), and four `SOUND` numbers whose use is not traced |
+
+The song titles shown during the roll ("Awakening", "Tomorrow's Hope"...) are pictures in `window/staffroll_en.cms` (with `staffroll_w_en.cms` for widescreen), edited as images. The roll itself starts from the ending script's `StaffRoll` command.
+
 ### Tutorials
 
 | Control | What it does |

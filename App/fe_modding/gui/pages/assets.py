@@ -39,7 +39,7 @@ from ..music_editor import MusicEditor
 from ..portrait_viewer import PortraitViewer
 from ..sfx_viewer import SfxViewer
 from ..soundroom_editor import SoundRoomEditor
-from ..staffroll_editor import StaffRollEditor
+from ..staffroll_editor import staff_credits_panel
 from ..tutorials_editor import TutorialsEditor
 from ..tileset_manager import TilesetManager
 from ..soundroom_tracks_editor import SoundRoomTracksEditor
@@ -85,7 +85,7 @@ ASSET_TOOLS = [
     ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("tutorials", "Tutorials", "?", "The in-game tutorial lists (tut_data): groups, order, start flags", TutorialsEditor),
-    ("staff_credits", "Staff Credits", "≡", "The end credits (ending/staffroll_noa.bin): edit, add and reorder lines", StaffRollEditor),
+    ("staff_credits", "Staff Credits", "≡", "The end credits: edit, add and reorder lines", staff_credits_panel),
     ("sound_room_tracks", "Soundroom Tracks", "♬", "The Sound Room's music cues: pick and reorder",
      SoundRoomTracksEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
