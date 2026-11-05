@@ -9,7 +9,7 @@ from typing import Callable, Optional
 
 from ..formats import fe10data
 from . import message_reference
-from .character_form import weapon_rank_grid
+from .character_form import ROW_HELP, weapon_rank_grid
 from .fe8_session import Fe10DataSession
 from .widgets import Link, tip
 
@@ -158,8 +158,8 @@ class Fe10CharacterForm(ttk.Frame):
             ("Personal growth %", "growth", True),
         )
         for row, (label, prefix, editable) in enumerate(rows, 1):
-            ttk.Label(grid, text=label, style="Surface.TLabel" if editable else "SurfaceMuted.TLabel").grid(
-                row=row, column=0, sticky="w", padx=(0, 10), pady=2)
+            tip(ttk.Label(grid, text=label, style="Surface.TLabel" if editable else "SurfaceMuted.TLabel"),
+                ROW_HELP.get(label, "")).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=2)
             for column, key in enumerate(STAT_KEYS, 1):
                 value = record.values.get(f"{prefix}_{key}") if editable else (
                     cls.values.get(f"{prefix}_{key}") if cls else None)

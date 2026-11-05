@@ -114,6 +114,8 @@ Bond effects: an adjacent same-army pair each gains the configured Critical, or 
 | **Affinity bonuses** | **Bonus per support rank**: per **Affinity**, Attack, Defence, Hit, Avoid, Critical, Critical avoid |
 | **Conversations** | Every `MYELL_` support conversation |
 
+On Radiant Dawn, **Game Data › Supports** starts with **Pairs** too: every character against each partner in their list, with the partner's affinity, the support speed and the flag. Use **Search** to narrow it by name, and double-click a pair to open the character's Supports tab. The other buttons open the tables: Supports, Support points, Bonds, Affinities, Affinity pairs and No-battle lists. Radiant Dawn lists each supporting character against all the others, so its Pairs list is much longer than Path of Radiance's.
+
 ## Things to try next
 
 1. **A bond.** On the Guard's **Supports**, **Add bond with** Boyd and set its **Effect** and **Value**; compare in the **Battle Simulator** with the two units adjacent.

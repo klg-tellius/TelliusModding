@@ -239,7 +239,8 @@ class CharacterPage(Page):
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         stats = ScrollFrame(self._notebook, padding=(16, 12))
-        if not shell.project.profile.supports(CHARACTER_FORM):
+        # the same form on both games: Radiant Dawn's reads FE10Data.cms records (CHARACTER_FORM on both)
+        if shell.project.profile.supports(CHARACTER_FORM) and shell.project.profile.data_dialect == "fe10":
             self._form = Fe10CharacterForm(
                 stats.body, shell.session,
                 on_open_class=lambda jid: shell.navigate(("data", "classes", jid)),

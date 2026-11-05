@@ -19,7 +19,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from ...game_profile import AI, DATA_WORKSPACE, SCRIPTS, files_root_of
+from ...game_profile import AI, SCRIPTS, files_root_of
 from .flags import FlagsPanel
 from ..battle_scene_editor import BattleScenePanel
 from ..cp_data_editor import CpDataPanel
@@ -58,14 +58,16 @@ class GameDataPage(Page):
 
     def __init__(self, shell):
         super().__init__(shell)
-        # one table editor per game until Game Data converges on the tabbed workspace (parity plan, Phase 6)
-        self._fe10 = not self.project.profile.supports(DATA_WORKSPACE)
+        # the same hub and sections on both games (DATA_WORKSPACE); Radiant Dawn's tables are FE10Data.cms
+        # records, edited by Fe10DataEditor, with its Supports group led by the shared Pairs list
+        self._fe10 = self.project.profile.data_dialect == "fe10"
         self._hub = None
         self._supports = None
         self._flags = None
         self._rect_images = None
         self._group_strip = None
         self._scenery = None
+        self._pairs = None  # Radiant Dawn's Supports › Pairs (SupportPairsPanel)
         if self._fe10:
             self._editor = Fe10DataEditor(self, self.project, shell.changelog, session=shell.session,
                                           navigate=shell.navigate, toolbar_parent=self)
@@ -187,6 +189,8 @@ class GameDataPage(Page):
             self.flush()
             if self._hub is None:
                 self._hub = self._build_hub()
+            if self._pairs is not None:
+                self._pairs.pack_forget()
             self._editor.pack_forget()
             if self._flags is not None:
                 self._flags.pack_forget()
@@ -293,6 +297,29 @@ class GameDataPage(Page):
     def _show_fe10(self, route) -> bool:
         """Present FE10 tables through this shared page; only the form adapter differs."""
         self._show_group_strip("")
+        if self._pairs is not None:
+            self._pairs.pack_forget()
+        if len(route) > 1 and route[1] == "support_pairs" and self.shell.session.available:
+            if self._pairs is None:
+                from ...game_adapter import data_adapter
+                from ..support_editor import SupportPairsPanel
+
+                session = self.shell.session
+                self._pairs = SupportPairsPanel(
+                    self, get_data=lambda: session.data, model=data_adapter(session).supports_model,
+                    display_name=self._character_name,
+                    open_character=lambda pid: self.shell.navigate(("character", pid, "supports")))
+            else:
+                self._pairs.reload()
+            for widget in (self._rect_images, self._flags, self._ai):
+                if widget is not None:
+                    widget.pack_forget()
+            self._show_hub(False)
+            self._editor.pack_forget()
+            self._editor.toolbar.pack_forget()
+            self._show_group_strip("support_pairs")
+            self._pairs.pack(fill="both", expand=True)
+            return True
         if len(route) > 1 and route[1] == "rect_images":
             if self._rect_images is None:
                 self._rect_images = RectImagesPanel(self, self.project, self.shell.changelog, self.shell)
@@ -325,7 +352,9 @@ class GameDataPage(Page):
         if len(route) < 2 or (route[1] not in FE10_PAGE_TABS and route[1] not in FE10_GROUPS):
             self._show_hub(True)
             return True
-        tab = FE10_GROUPS[route[1]][0] if route[1] in FE10_GROUPS else route[1]
+        # a group's route opens its first table, unless the group is named after a table ("supports")
+        tab = route[1] if route[1] in FE10_PAGE_TABS else next(
+            key for key in FE10_GROUPS[route[1]] if key in FE10_PAGE_TABS)
         self._show_hub(False)
         self._show_group_strip(tab)
         self._editor.pack(fill="both", expand=True)
@@ -363,6 +392,8 @@ class GameDataPage(Page):
     def _fe10_title(route):
         if len(route) > 1 and route[1] in ("flags", "ai", "rect_images", "general"):
             return TABS[route[1]]
+        if len(route) > 1 and route[1] in FE10_PAGE_TITLES:
+            return FE10_PAGE_TITLES[route[1]]
         return FE10_TAB_TITLES.get(route[1]) if len(route) > 1 else None
 
     def _show_group_strip(self, tab: str) -> None:
@@ -375,9 +406,12 @@ class GameDataPage(Page):
         if group is None:
             return
         self._group_strip = ttk.Frame(self, style="Page.TFrame", padding=(8, 4, 8, 0))
-        self._group_strip.pack(fill="x", before=self._editor)
+        if self._editor.winfo_manager():
+            self._group_strip.pack(fill="x", before=self._editor)
+        else:
+            self._group_strip.pack(fill="x")
         for key in FE10_GROUPS[group]:
-            ttk.Button(self._group_strip, text=FE10_TAB_TITLES[key],
+            ttk.Button(self._group_strip, text=FE10_PAGE_TITLES.get(key) or FE10_TAB_TITLES[key],
                        style="Accent.TButton" if key == tab else "TButton",
                        command=lambda k=key: self.shell.navigate((self.kind, k))).pack(side="left", padx=(0, 6))
 
@@ -410,9 +444,12 @@ FE10_TILES = {
 FE10_DATA_TILES = ("classes", "items", "skills", "growth", "terrain", "chapters", "battle_scenery", "general",
                    "supports", "triangle", "biorhythm")
 FE10_GROUPS = {"general": ("difficulty", "groups", "blessing"),
-               "supports": ("supports", "support_params", "bonds", "affinities", "affinity_pairs", "no_battle"),
+               "supports": ("support_pairs", "supports", "support_params", "bonds", "affinities", "affinity_pairs",
+                            "no_battle"),
                "biorhythm": ("biorhythm", "biorhythm_bands")}
 FE10_PAGE_TABS = tuple(key for key in FE10_TAB_KEYS if key != "characters")
+#: Radiant Dawn group entries that are panels, not FE10Data tables
+FE10_PAGE_TITLES = {"support_pairs": "Pairs"}
 
 
 def game_data_page(shell) -> Page:
