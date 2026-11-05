@@ -475,14 +475,18 @@ def stream_spec(archive: BrsarArchive, template: int, name: str, external_path: 
     return StreamSoundSpec(name, external_path, file_size, entry, bytes(strm), param3d, ref_info[0])
 
 
-def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
-    """``data`` with a new STRM sound ``spec.name`` playing the external ``spec.external_path``."""
+def _append_sound(data: bytes, name: str, entry: bytes, info_ref: int, sound_info: bytes, param3d: bytes,
+                  file_record, groups: tuple[int, ...] = ()) -> tuple[bytes, int, int]:
+    """``data`` with a new sound ``name`` (its 0x2C ``entry`` copied, its sound info and 3D block
+    appended) and a new file (``file_record(rel, positions_at)`` gives its 0x1C entry), the name
+    put into SYMB's sound tree, and the file added to ``groups`` with empty placeholders (the
+    caller lays FILE out). Returns the bytes, the sound id and the file id."""
     archive = read_brsar(data)
-    if spec.name in {sound.name for sound in archive.sounds} or spec.name in archive.symbols:
-        raise BrsarError(f"{spec.name} is already in the sound archive")
+    if name in {sound.name for sound in archive.sounds} or name in archive.symbols:
+        raise BrsarError(f"{name} is already in the sound archive")
     symb, info, file_section = archive.sections
     strings, trees = _symb_layout(data, archive)
-    key = spec.name.encode("shift_jis")
+    key = name.encode("shift_jis")
     string_index, sound_id, file_id = len(strings), len(archive.sounds), len(archive.files)
     strings.append(key)
     root, nodes = trees[0]
@@ -506,41 +510,54 @@ def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
     new_symb += bytes(-len(new_symb) % 0x20)
     struct.pack_into(">I", new_symb, 4, len(new_symb))
 
-    # INFO: its old content, then the new records and moved copies of the two tables
+    # INFO: its old content, then the new records and moved copies of the tables that grow
     old_info = bytearray(data[info.offset:info.offset + info.size])
     new_info = bytearray(old_info)  # kept whole (its padding too): every old offset stays valid
 
     def rel() -> int:
         return len(new_info) - 8
 
-    def old_vector(which: int) -> tuple[bytes, int]:
-        at = 8 + struct.unpack_from(">2I", old_info, 8 + 8 * which)[1]
+    def old_vector(at: int) -> tuple[bytes, int]:
         count = struct.unpack_from(">I", old_info, at)[0]
         return bytes(old_info[at + 4:at + 4 + 8 * count]), count
 
     param_at = rel()
-    new_info += spec.param3d
-    strm_at = rel()
-    new_info += spec.strm_info
-    entry = bytearray(spec.entry)
+    new_info += param3d
+    info_at = rel()
+    new_info += sound_info
+    entry = bytearray(entry)
     struct.pack_into(">2I", entry, 0, string_index, file_id)
     struct.pack_into(">2I", entry, 0x0C, _REF, param_at)
-    struct.pack_into(">2I", entry, 0x18, spec.strm_info_ref, strm_at)
+    struct.pack_into(">2I", entry, 0x18, info_ref, info_at)
     entry_at = rel()
     new_info += entry
-    path_at = rel()
-    new_info += spec.external_path.encode("shift_jis") + b"\0"
-    new_info += bytes(-len(new_info) % 4)
+    # the file's position table: one (group, member) pair per group it joins
+    members = []
+    for group in groups:
+        members.append((group, len(archive.groups[group].entries)))
+    pairs_at = []
+    for group, member in members:
+        pairs_at.append(rel())
+        new_info += struct.pack(">2I", group, member)
     positions_at = rel()
-    new_info += bytes(4)  # an empty position table
+    new_info += struct.pack(">I", len(members)) + b"".join(struct.pack(">2I", _REF, at) for at in pairs_at)
+    record = file_record(rel, positions_at, new_info)  # may first append what it points at
     file_at = rel()
-    new_info += struct.pack(">IIi", spec.file_size, 0, -1) + struct.pack(">2I", _REF, path_at) + \
-        struct.pack(">2I", _REF, positions_at)
+    new_info += record
     for which, added in ((0, entry_at), (3, file_at)):
-        refs, count = old_vector(which)
+        refs, count = old_vector(8 + struct.unpack_from(">2I", old_info, 8 + 8 * which)[1])
         moved = rel()
         new_info += struct.pack(">I", count + 1) + refs + struct.pack(">2I", _REF, added)
         struct.pack_into(">2I", new_info, 8 + 8 * which, _REF, moved)
+    for group, _member in members:
+        # a placeholder member: the caller's FILE rebuild gives it its offsets and sizes
+        item_at = rel()
+        new_info += struct.pack(">6I", file_id, 0, 0, 0, 0, 0)
+        group_at = archive.groups[group].info_offset - info.offset
+        refs, count = old_vector(8 + struct.unpack_from(">2I", old_info, group_at + 0x20)[1])
+        moved = rel()
+        new_info += struct.pack(">I", count + 1) + refs + struct.pack(">2I", _REF, item_at)
+        struct.pack_into(">2I", new_info, group_at + 0x20, _REF, moved)
     new_info += bytes(-len(new_info) % 0x20)
     struct.pack_into(">I", new_info, 4, len(new_info))
 
@@ -556,7 +573,20 @@ def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
     struct.pack_into(">I", result, 8, len(result))
     struct.pack_into(">6I", result, 0x10, symb.offset, len(new_symb), symb.offset + len(new_symb), len(new_info),
                      symb.offset + len(new_symb) + len(new_info), file_section.size)
-    rebuilt = bytes(result)
+    return bytes(result), sound_id, file_id
+
+
+def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
+    """``data`` with a new STRM sound ``spec.name`` playing the external ``spec.external_path``."""
+    def external_file(rel, positions_at, info):
+        path_at = rel()
+        info += spec.external_path.encode("shift_jis") + b"\0"
+        info += bytes(-len(info) % 4)
+        return (struct.pack(">IIi", spec.file_size, 0, -1) + struct.pack(">2I", _REF, path_at) +
+                struct.pack(">2I", _REF, positions_at))
+
+    rebuilt, sound_id, _file_id = _append_sound(data, spec.name, spec.entry, spec.strm_info_ref, spec.strm_info,
+                                                spec.param3d, external_file)
     checked = read_brsar(rebuilt)
     sound = checked.sounds[sound_id]
     if (sound.name, sound.external_path, sound_id_of(rebuilt, spec.name)) != (spec.name, spec.external_path,
@@ -565,31 +595,105 @@ def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
     return rebuilt
 
 
-def added_stream_specs(current: bytes, vanilla: bytes) -> list[StreamSoundSpec]:
-    """The STRM sounds of ``current`` that ``vanilla`` lacks, as specs to add again."""
+@dataclass(frozen=True)
+class WaveSoundSpec:
+    """One wave sound to add, with its own embedded one-entry RWSD (``rwsd.single_entry_rwsd``),
+    loaded with the groups ``groups`` (those of the template sound's file)."""
+
+    name: str
+    header: bytes       # the RWSD
+    wave_data: bytes
+    entry: bytes        # the 0x2C sound entry (string and file fields are rewritten)
+    wave_info: bytes    # 16 bytes: RWSD entry (0 here), track allocation, priorities
+    param3d: bytes
+    wave_info_ref: int
+    groups: tuple[int, ...]
+
+
+def _records_of(archive: BrsarArchive, index: int) -> tuple[bytes, bytes, bytes, int]:
+    """A sound's 0x2C entry, the first 16 bytes of its sound info, its 3D block, and the
+    reference word of its sound info."""
+    data = archive.source
+    info_base = archive.sections[1].offset + 8
+    table = info_base + struct.unpack_from(">2I", data, info_base)[1]
+    entry_at = info_base + struct.unpack_from(">2I", data, table + 4 + 8 * index)[1]
+    ref3d = struct.unpack_from(">2I", data, entry_at + 0x0C)
+    ref_info = struct.unpack_from(">2I", data, entry_at + 0x18)
+    param3d = data[info_base + ref3d[1]:info_base + ref3d[1] + 12] if ref3d[0] else bytes(12)
+    return (data[entry_at:entry_at + 0x2C], data[info_base + ref_info[1]:info_base + ref_info[1] + 16], param3d,
+            ref_info[0])
+
+
+def wave_spec(archive: BrsarArchive, template: int, name: str, header: bytes, wave_data: bytes) -> WaveSoundSpec:
+    """A new wave sound copying sound ``template``'s player, volume, priorities and 3D settings and
+    loaded with its file's groups; ``header``/``wave_data`` are its own one-entry RWSD."""
+    if not 0 <= template < len(archive.sounds) or archive.sounds[template].sound_type != 3:
+        raise BrsarError("The template must be a wave (RWSD) sound")
+    entry, info, param3d, info_ref = _records_of(archive, template)
+    info = bytearray(info)
+    struct.pack_into(">I", info, 0, 0)  # the new RWSD's only entry
+    groups = tuple(dict.fromkeys(group for group, _member in
+                                 archive.files[archive.sounds[template].file_index].group_refs))
+    if not groups:
+        raise BrsarError("The template sound's file is in no group, so it is never loaded")
+    return WaveSoundSpec(name, bytes(header), bytes(wave_data), entry, bytes(info), param3d, info_ref, groups)
+
+
+def add_wave_sound(data: bytes, spec: WaveSoundSpec) -> bytes:
+    """``data`` with a new wave sound ``spec.name`` playing entry 0 of its own embedded RWSD, a new
+    file added to ``spec.groups``; FILE is laid out again (``replace_embedded_file``)."""
+    def embedded_file(_rel, positions_at, _info):
+        return (struct.pack(">IIi", len(spec.header), len(spec.wave_data), -1) + bytes(8) +
+                struct.pack(">2I", _REF, positions_at))
+
+    placeholder, sound_id, file_id = _append_sound(data, spec.name, spec.entry, spec.wave_info_ref,
+                                                   spec.wave_info, spec.param3d, embedded_file, spec.groups)
+    rebuilt = replace_embedded_file(read_brsar(placeholder), file_id, spec.header, spec.wave_data)
+    checked = read_brsar(rebuilt)
+    sound, file = checked.sounds[sound_id], checked.files[file_id]
+    if (sound.name, sound.sound_type, sound.info_index, sound_id_of(rebuilt, spec.name), file.header,
+            file.wave_data) != (spec.name, 3, 0, sound_id, spec.header, spec.wave_data):
+        raise BrsarError("The rebuilt sound archive did not validate")
+    return rebuilt
+
+
+def added_sound_specs(current: bytes, vanilla: bytes) -> list[StreamSoundSpec | WaveSoundSpec]:
+    """The sounds of ``current`` that ``vanilla`` lacks, as specs to add again (streams and the
+    one-entry wave sounds the app adds)."""
     archive, original = read_brsar(current), read_brsar(vanilla)
     known = {sound.name for sound in original.sounds}
     specs = []
     for sound in archive.sounds:
         if sound.name in known:
             continue
-        if sound.sound_type != 2 or not sound.external_path:
+        if sound.sound_type == 2 and sound.external_path:
+            size = struct.unpack_from(">I", current, archive.files[sound.file_index].info_offset)[0]
+            specs.append(stream_spec(archive, sound.index, sound.name, sound.external_path, size))
+        elif sound.sound_type == 3:
+            file = archive.files[sound.file_index]
+            specs.append(wave_spec(archive, sound.index, sound.name, file.header, file.wave_data))
+        else:
             raise BrsarError(f"{sound.name} is an added sound the app cannot rebuild")
-        size = struct.unpack_from(">I", current, archive.files[sound.file_index].info_offset)[0]
-        specs.append(stream_spec(archive, sound.index, sound.name, sound.external_path, size))
     return specs
+
+
+added_stream_specs = added_sound_specs  # the name the music code first used
+
+
+def add_sound(data: bytes, spec: StreamSoundSpec | WaveSoundSpec) -> bytes:
+    return add_wave_sound(data, spec) if isinstance(spec, WaveSoundSpec) else add_stream_sound(data, spec)
 
 
 def remove_added_sound(current: bytes, vanilla: bytes, name: str) -> bytes:
     """``vanilla`` with every sound ``current`` added except ``name`` (retail sounds refuse)."""
     if name in {sound.name for sound in read_brsar(vanilla).sounds}:
         raise BrsarError(f"{name} is one of the game's own sounds")
-    specs = added_stream_specs(current, vanilla)
+    specs = added_sound_specs(current, vanilla)
     if name not in {spec.name for spec in specs}:
         raise BrsarError(f"{name} is not a sound the mod added")
     result = vanilla
     for spec in specs:
         if spec.name != name:
-            result = add_stream_sound(result, spec)
+            result = add_sound(result, spec)
     return result
 

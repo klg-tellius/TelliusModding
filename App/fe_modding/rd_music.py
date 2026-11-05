@@ -1,4 +1,7 @@
-"""Radiant Dawn music: adding and removing tracks and cues.
+"""Radiant Dawn music and sound effects: adding and removing tracks, cues and sound effects.
+
+A sound effect is an ``SFX_*`` cue naming a wave sound of the archive; a new one gets its own
+one-entry RWSD (``rwsd.single_entry_rwsd``) loaded with the template sound's groups.
 
 A cue (``BGM_*`` in ``Sound/sound_data_en.cms``, :mod:`formats.fe10_sound`) names a sound of
 ``Sound/sound_us.brsar`` (``STRM_BGM_*``, :mod:`formats.brsar`), and that stream sound names a
@@ -120,6 +123,74 @@ def add_track(project, track: str, brstm_bytes: bytes, template_stream: Path, ch
     project.write_keeping_original(_archive_path(project), new_archive)
     project.write_logical("sound_data", new_cues)
     return cue, sound_name
+
+
+def wave_template(project, cue: str | None) -> str:
+    """The SFX cue a new sound effect copies: ``cue`` when it plays an embedded wave sound, else
+    ``SFX_SYS_SELECT1`` (the menu select sound, in the always-loaded GROUP_STATIC)."""
+    cues = fe10_sound.cue_map(_cues(project))
+    sounds = {sound.name: sound for sound in brsar.read_brsar(_archive(project)).sounds}
+    if cue in cues and getattr(sounds.get(cues[cue].resource), "sound_type", None) == 3:
+        return cue
+    return "SFX_SYS_SELECT1"
+
+
+def add_sfx(project, cue: str, sample_rate: int, channels, template_cue: str) -> str:
+    """A new sound effect ``cue`` (``SFX_...``) playing ``channels`` (lists of 16-bit samples): its
+    own one-entry RWSD and wave sound ``SE_<NAME>``, copying ``template_cue``'s wave sound (its
+    player, priorities and load groups). The audio is mixed to the template wave's channel count.
+    Returns the new wave sound's name."""
+    from .formats import rwsd
+
+    if not cue.startswith("SFX_") or not cue[4:] or not cue.replace("_", "").isalnum() or not cue.isascii():
+        raise ProjectError("A sound effect name is SFX_ followed by capitals, digits and _.")
+    cues = fe10_sound.cue_map(_cues(project))
+    if template_cue not in cues:
+        raise ProjectError(f"No sound effect {template_cue}.")
+    archive_bytes = _archive(project)
+    archive = brsar.read_brsar(archive_bytes)
+    template = next((sound for sound in archive.sounds if sound.name == cues[template_cue].resource), None)
+    if template is None or template.sound_type != 3:
+        raise ProjectError(f"{template_cue} is not an embedded wave sound.")
+    name = "SE_" + cue[4:]
+    source = archive.files[template.file_index]
+    try:
+        document = rwsd.read_rwsd(source.header, source.wave_data)
+        one = rwsd.read_rwsd(*rwsd.single_entry_rwsd(document, template.info_index))
+        wanted = len(one.waves[0].channels)
+        mixed = [list(channel) for channel in channels]
+        if len(mixed) > wanted:
+            mixed = [[int(sum(values) / len(values)) for values in zip(*mixed)]]
+        while len(mixed) < wanted:
+            mixed.append(list(mixed[0]))
+        header, wave = rwsd.replace_wave(one, 0, rwsd.RwsdAudio(sample_rate, tuple(tuple(c) for c in mixed)))
+        new_archive = brsar.add_wave_sound(archive_bytes, brsar.wave_spec(archive, template.index, name, header, wave))
+        new_cues = fe10_sound.add_cue(_cues(project), cue, name, template_cue)
+    except (brsar.BrsarError, rwsd.RwsdError, fe10_sound.Fe10SoundError) as exc:
+        raise ProjectError(str(exc)) from exc
+    project.write_keeping_original(_archive_path(project), new_archive)
+    project.write_logical("sound_data", new_cues)
+    return name
+
+
+def remove_sfx(project, cue: str) -> None:
+    """Remove a sound effect the mod added: its cue, and its wave sound when no other cue plays it."""
+    cues = fe10_sound.cue_map(_cues(project))
+    if cue not in added_cues(project):
+        raise ProjectError(f"{cue} is one of the game's own sound effects: replace its audio instead.")
+    resource = cues[cue].resource
+    data = _cues(project)
+    archive = _archive(project)
+    try:
+        data = fe10_sound.remove_cue(data, cue, _vanilla_cues(project))
+        added = {sound.name for sound in brsar.read_brsar(archive).sounds} - \
+            {sound.name for sound in brsar.read_brsar(_vanilla_archive(project)).sounds}
+        if resource in added and not any(other.resource == resource for name, other in cues.items() if name != cue):
+            archive = brsar.remove_added_sound(archive, _vanilla_archive(project), resource)
+    except (brsar.BrsarError, fe10_sound.Fe10SoundError) as exc:
+        raise ProjectError(str(exc)) from exc
+    project.write_logical("sound_data", data)
+    project.write_keeping_original(_archive_path(project), archive)
 
 
 def remove_track(project, stream: Path) -> list[str]:
