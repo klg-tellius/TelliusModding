@@ -13,8 +13,13 @@ whose player army is one dedicated avatar, taken out of the story order. Install
 - the activation chapter's win event, which turns the hub on once;
 - the router (:mod:`game_code.rd_hub`) with the hub's number and the flag bytes.
 
-Destinations are ChapterData story numbers. Not done on Radiant Dawn yet: entrance markers on the
-map, Visit descriptions, and removing the hub visit from the clear history.
+- an Arrive marker on each action tile: the retail ``tttu01`` object (到達, the one 1-2's Arrive tile
+  carries), copied from a chapter map that has it;
+- each destination's description, if any: a Visit event on its tile that shows ``MS_HUB_NN_INFO``
+  from the hub's message file in the in-map dialog box (``<R:ダイアログ会話>``, as 1-2's help line).
+
+Destinations are ChapterData story numbers. Not done on Radiant Dawn: removing the hub visit from
+the clear history.
 """
 
 from __future__ import annotations
@@ -25,17 +30,21 @@ from dataclasses import asdict
 from pathlib import Path
 
 from . import chapters, chapters_fe10, script_sources
-from .formats import dispo, event_flags as ef, fe10data
+from .formats import dispo, event_flags as ef, fe10_message, fe10data, lz10, map_file, message, pak
 from .formats.cmb import compile_source, read_cmb, write_cmb
 from .formats.cmb.parser import parse
 from .game_code import rd_hub, rd_story
 from .game_code.editor import CodeEditor
 from .game_profile import disc_root_of, files_root_of, profile_of
 from .hub import (ACTIVE, DEST, END_MARK, PENDING, START_MARK, STARTED, Destination, HubSetup,
-                  _remove_generated, _replace_generated, activation_script, config_path, draft_path,
-                  flag_names, saved_setup, setup_from)
+                  _remove_generated, _replace_generated, activation_script, config_path, description_key,
+                  draft_path, flag_names, saved_setup, setup_from)
 
 RELEASE_FORCE = 1
+MARKER = "tttu01"          # the retail Arrive marker object
+DESCRIPTION_LAYOUT = "ダイアログ会話"
+LINE_WIDTH = 30            # characters per line of the dialog box (retail help lines are 28-30)
+MAX_LINES = 4
 TEST_MAP = 0      # C0000, the developers' test map: not a story chapter
 
 
@@ -66,8 +75,101 @@ def hub_script(source: str, setup: HubSetup) -> str:
         body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="arrive", name=None)',
                  f'def HubGoTo{dest.chapter}():', *_flag_assignments(dest.chapter),
                  '    set("gf_complete")']
+        if dest.description.strip():
+            body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="visit", name=None)',
+                     f'def HubDescribe{dest.chapter}():',
+                     f'    TalkEvent("{description_key(dest.chapter)}")']
     body += [END_MARK]
     return _replace_generated(source, "\n".join(body))
+
+
+def description_lines(text: str) -> list[str]:
+    """``text`` wrapped for the dialog box; ValueError when it doesn't fit or can't be shown."""
+    text = " ".join(text.split())
+    if any(c in text for c in "<>#@$"):
+        raise ValueError("A description cannot hold < > # @ or $.")
+    try:
+        text.encode(fe10_message.ENCODING)
+    except UnicodeEncodeError as exc:
+        raise ValueError("The description has a character the game cannot show.") from exc
+    lines, line = [], ""
+    for word in text.split(" "):
+        candidate = f"{line} {word}".strip()
+        if len(candidate) <= LINE_WIDTH:
+            line = candidate
+            continue
+        if line:
+            lines.append(line)
+        line = word
+        if len(line) > LINE_WIDTH:
+            raise ValueError(f"A word of the description is longer than {LINE_WIDTH} characters.")
+    if line:
+        lines.append(line)
+    if len(lines) > MAX_LINES:
+        raise ValueError(f"A description is at most {MAX_LINES} lines of {LINE_WIDTH} characters.")
+    return lines
+
+
+def description_raw(text: str) -> str:
+    """The message text of a destination's description."""
+    return fe10_message.to_raw(f"<R:{DESCRIPTION_LAYOUT}><sd>" + "\n".join(description_lines(text)) + "<wait>")
+
+
+def _without_markers(files: dict[str, bytes]) -> bool:
+    """Remove every ``tttu01`` placement from ``files["map.bin"]``; whether there was one."""
+    data = map_file.read_map_bytes(files["map.bin"])
+    index = next((i for i, obj in enumerate(data.build_desc) if obj.filename == MARKER), None)
+    if index is None:
+        return False
+    records = map_file.instance_records(files["map.bin"])
+    kept = [r for r, inst in zip(records, data.build_inst) if inst.desc_index != index]
+    files["map.bin"] = map_file.set_build_instances(files["map.bin"], kept)
+    return len(kept) != len(records)
+
+
+def _pack_map(entries, files) -> bytes:
+    return lz10.compress(pak.pack_pak([(e.name, files[e.name]) for e in entries], [e.reserved for e in entries]))
+
+
+def entrance_markers(project, map_path: Path, setup: HubSetup) -> bytes:
+    """The hub's ``map.cmp`` with one Arrive marker per action tile (and none elsewhere)."""
+    from . import map_props
+    entries, files = map_props.read_map_container(map_path)
+    data = map_file.read_map_bytes(files["map.bin"])
+    if not any(obj.filename == MARKER for obj in data.build_desc):
+        donors = sorted((files_root_of(project) / "zmap").glob("*/map.cmp"))
+        preferred = files_root_of(project) / "zmap/bmap0103/map.cmp"
+        if preferred in donors:
+            donors.remove(preferred)
+            donors.insert(0, preferred)
+        for donor in donors:
+            if donor == map_path:
+                continue
+            _, source = map_props.read_map_container(donor)
+            if any(o.filename == MARKER for o in map_file.read_map_bytes(source["map.bin"]).build_desc) \
+                    and f"{MARKER}.gs" in source:
+                map_props.copy_prop(source, MARKER, entries, files)
+                break
+        else:
+            raise ValueError(f"Hub markers need the Arrive marker ({MARKER}) from an extracted chapter map.")
+    _without_markers(files)
+    for dest in setup.destinations:
+        map_props.place_prop(files, MARKER, dest.x, dest.y)
+    return _pack_map(entries, files)
+
+
+def _description_messages(path: Path, setup: HubSetup, buckets: int) -> bytes:
+    kept = [m for m in message.read_messages_path(path) if not re.fullmatch(r"MS_HUB_\d{2}_INFO", m.speaker)]
+    for dest in setup.destinations:
+        if not dest.description.strip():
+            continue
+        key = description_key(dest.chapter)
+        clash = next((m.speaker for m in kept
+                      if message.engine_name_hash(m.speaker, buckets) == message.engine_name_hash(key, buckets)), None)
+        if clash:
+            raise ValueError(f"The message ID for destination {dest.chapter} collides with {clash}.")
+        kept.append(message.Message(key, description_raw(dest.description)))
+    return message.write_messages(kept, message.read_text_order_path(path))
 
 
 def _fe10(project) -> bytes:
@@ -166,7 +268,10 @@ def _validate(project, setup: HubSetup, current: dict | None, fe10: bytes, story
         if any(not 0 <= c < 64 for c in (dest.x, dest.y, dest.return_x, dest.return_y)):
             raise ValueError("Hub tiles must be between 0 and 63.")
         if dest.description.strip():
-            raise ValueError("Destination descriptions are not available on Radiant Dawn yet.")
+            try:
+                description_lines(dest.description)
+            except ValueError as exc:
+                raise ValueError(f"Destination {numbers[dest.chapter]}: {exc}") from None
     if len(chapters.chapter_phases(project, hub_page)) != 1:
         raise ValueError("The hub needs one map.")
     deployments = _deployments(project, hub_page)
@@ -238,6 +343,11 @@ def prepare(project, setup: HubSetup) -> dict:
                                 known_script_functions={} if path == startup else helpers,
                                 global_flags=new_globals)
         compiled[path] = source, write_cmb(result.script)
+    hub_paths = chapters.chapter_paths(project, numbers[setup.chapter])
+    if hub_paths.map is None or hub_paths.dialogue is None:
+        raise ValueError("The hub has no map or no message file.")
+    marked_map = entrance_markers(project, hub_paths.map, setup)
+    messages = _description_messages(hub_paths.dialogue, setup, profile_of(project).name_hash_buckets)
     deployments = {}
     if setup.start_x is not None:
         for path in _deployments(project, numbers[setup.chapter]):
@@ -246,7 +356,8 @@ def prepare(project, setup: HubSetup) -> dict:
     session = editor.session
     rd_hub.RdHubFlow(editor).apply(session, config)
     return {"editor": editor, "story": story, "compiled": compiled, "slots": slots, "flags": names,
-            "deployments": deployments}
+            "deployments": deployments, "map": (hub_paths.map, marked_map),
+            "message": (hub_paths.dialogue, messages)}
 
 
 def install(project, setup: HubSetup) -> dict:
@@ -256,6 +367,8 @@ def install(project, setup: HubSetup) -> dict:
         _write_script(project, path, source, data)
     for path, data in prepared["deployments"].items():
         project.write_keeping_original(path, data)
+    project.write_keeping_original(*prepared["map"])
+    project.write_keeping_original(*prepared["message"])
     story = prepared["story"]
     if story.successors().get(setup.chapter):     # the router decides where the hub leads
         story._store(_without(story, setup.chapter), story._table(rd_story.ARMIES, rd_story._retail_armies()),
@@ -309,9 +422,21 @@ def uninstall(project) -> dict:
         result = compile_source(source, base=read_cmb(path.read_bytes()), known_script_functions=helpers,
                                 global_flags=globals_)
         compiled[path] = source, write_cmb(result.script)
+    hub_paths = chapters.chapter_paths(project, numbers.get(setup.chapter) or "")
+    updates = []
+    if hub_paths.map is not None:
+        from . import map_props
+        entries, files = map_props.read_map_container(hub_paths.map)
+        if _without_markers(files):
+            updates.append((hub_paths.map, _pack_map(entries, files)))
+    if hub_paths.dialogue is not None:
+        updates.append((hub_paths.dialogue, _description_messages(hub_paths.dialogue, HubSetup(
+            setup.chapter, setup.activation_chapter, setup.avatar_pid, ()), profile_of(project).name_hash_buckets)))
     rd_hub.RdHubFlow(editor).remove()
     for path, (source, data) in compiled.items():
         _write_script(project, path, source, data)
+    for path, data in updates:
+        project.write_keeping_original(path, data)
     config_path(project).unlink()
     if draft_path(project).is_file():
         draft_path(project).unlink()

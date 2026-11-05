@@ -93,9 +93,8 @@ class HubTool(ttk.Frame):
 
         self._links_label = tip(ttk.Label(self, text="Chapter links"), lambda: (
             "Green square: the action tile. Blue circle: where the avatar stands when it comes back from that "
-            "chapter. Drag either one to move it. "
-            + ("On Radiant Dawn the action tiles have no marker in game yet: decorate them with props."
-               if self._rd else "Applying hub setup places a visible Arrive marker on each action tile in game.")))
+            "chapter. Drag either one to move it. Installing the hub places a visible Arrive marker on each "
+            "action tile in game."))
         self._links_label.pack(anchor="w", pady=(10, 2))
         self._list = tk.Listbox(self, height=7, exportselection=False, activestyle="none")
         self._list.pack(fill="x")
@@ -121,9 +120,10 @@ class HubTool(ttk.Frame):
             self._place_labels[which] = value
             ttk.Button(grid, text="Place", command=lambda w=which: self._start_placing(w)).grid(
                 row=r, column=2, sticky="w", padx=(6, 0))
-        self._description_label = tip(ttk.Label(self._link, text="Description"),
-                                      "Shown by Visit (one line or two, 240 characters at most). Empty: no Visit "
-                                      "command.")
+        self._description_label = tip(ttk.Label(self._link, text="Description"), lambda: (
+            "Shown by Visit in the map's dialog box: at most four lines of 30 characters, wrapped at spaces. "
+            "Empty: no Visit command." if self._rd else
+            "Shown by Visit (one line or two, 240 characters at most). Empty: no Visit command."))
         self._description_label.pack(anchor="w", pady=(6, 0))
         self._description = tk.Text(self._link, height=3, width=36, wrap="word", undo=True)
         self._description.pack(fill="x")
@@ -156,9 +156,6 @@ class HubTool(ttk.Frame):
                                     (self._ground_row, (4, 0), self._links_label)):
             if not widget.winfo_manager():
                 widget.pack(fill="x", pady=pad, before=before)
-        if not self._description_label.winfo_manager():
-            self._description_label.pack(anchor="w", pady=(6, 0), before=self._description)
-            self._description.pack(fill="x", after=self._description_label)
         installed = hub.saved_setup(project)
         from ..game_code.extended_flags import EXTENDED_FLAGS_PATCH
         from ..game_code.versions import read_boot_code
@@ -221,12 +218,10 @@ class HubTool(ttk.Frame):
         return True
 
     def _load_rd(self, project, chapter_id: str, data: dict) -> bool:
-        """Radiant Dawn: vanilla flag storage only, the template's map, no Visit descriptions."""
+        """Radiant Dawn: vanilla flag storage only and the template's map (no ground editing)."""
         from .. import hub_fe10
         self._storage_row.pack_forget()
         self._ground_row.pack_forget()
-        self._description_label.pack_forget()
-        self._description.pack_forget()
         data["storage"] = "vanilla"
         data.setdefault("destinations", [])
         self.current = None
