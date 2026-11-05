@@ -43,7 +43,7 @@ from typing import Optional
 
 from .formats import dispo, lz10, pak
 from .game_files import FILES, files_of, game_path
-from .game_profile import GAME_DATA, logical_rel_of, profile_of, files_root_of
+from .game_profile import GAME_DATA, chapter_mess_relpath, logical_rel_of, profile_of, files_root_of
 from .project import ModProject
 
 def _chapter_file_re(project: ModProject):
@@ -92,7 +92,7 @@ def chapter_paths(project: ModProject, chapter_id: str) -> ChapterPaths:
     folder = profile.map_folder(chapter_id)
     return ChapterPaths(
         chapter_id=chapter_id,
-        dialogue=files.find(profile.mess_path(FILES, chapter_id)),
+        dialogue=files.find(chapter_mess_relpath(project, chapter_id)),
         script=files.find(profile.script_path(FILES, chapter_id)),
         deployment=files.find(profile.deployment_path(FILES, folder, _first_deployment_difficulty(project, folder))),
         map=files.find(game_path("zmap", folder, "map.cmp")),

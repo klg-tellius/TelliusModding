@@ -33,7 +33,7 @@ from .formats import (anim_registry, dispo, fe8data, fe10_anim, fe10_battle, fe1
                       fe10_message, game_text, lz10, message, pak, zdbx)
 from .formats.fe10_faces import read_face_data as read_fe10_face_data
 from .formats.fe9_portraits import read_face_table
-from .game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, profile_of, disc_root_of, files_root_of
+from .game_profile import CHAPTERS, DATA_TABLES, GAME_DATA, chapter_mess_path, profile_of, disc_root_of, files_root_of
 from .project import ModProject
 
 PLAYABLE, NAMED, GENERIC = "playable", "named", "generic"
@@ -285,7 +285,7 @@ class ProjectIndex:
     def _build_messages(self) -> None:
         self.messages_by_chapter = {}
         for chapter_id in chapters.list_chapter_ids(self.project):
-            path = self.profile.mess_path(self.files, chapter_id)
+            path = chapter_mess_path(self.project, chapter_id)  # the file the disc plays (e_ on US RD)
             try:
                 self.messages_by_chapter[chapter_id] = [(m.speaker, m.text) for m in message.read_messages_path(path)]
             except Exception:  # noqa: BLE001

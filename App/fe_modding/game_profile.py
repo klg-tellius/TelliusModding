@@ -345,6 +345,47 @@ def disc_root_of(project):
     return files_of(project).at("")
 
 
+def message_prefix(project) -> str:
+    """The language prefix of the message files the project's disc plays. Radiant Dawn loads
+    ``Mess/%s%s.m`` with a language prefix: none on the Japanese disc, ``e_`` for English on the US and
+    European discs (``d_ f_ s_ i_`` for Europe's other languages; RFEE01 loads ``e_c0101.m`` for 1-1,
+    Dolphin file log 2026-11-04). Path of Radiance's chapter files have no prefix."""
+    if profile_of(project).message_dialect != "fe10":
+        return ""
+    from .games import read_disc_id
+    try:
+        disc = read_disc_id(disc_root_of(project))
+    except Exception:  # noqa: BLE001 - a stand-in project without files
+        disc = ""
+    return "" if disc[3:4] == "J" else "e_"
+
+
+def chapter_mess_relpath(project, chapter_id: str):
+    """The disc-relative path of the chapter's dialogue file the game plays: the language file
+    (``Mess/e_c0101.m`` on a US Radiant Dawn disc) when the disc has it, else the plain one."""
+    from .game_files import FILES, files_of
+    profile = profile_of(project)
+    base = profile.mess_path(FILES, chapter_id)
+    prefix = message_prefix(project)
+    if prefix:
+        localised = base.with_name(prefix + base.name)
+        if files_of(project).find(localised) is not None:
+            return localised
+    return base
+
+
+def chapter_mess_path(project, chapter_id: str):
+    """:func:`chapter_mess_relpath` as a path under the project's ``files/`` (a ``GamePath``)."""
+    profile = profile_of(project)
+    base = profile.mess_path(files_root_of(project), chapter_id)
+    prefix = message_prefix(project)
+    if prefix:
+        localised = base.with_name(prefix + base.name)
+        if localised.exists():
+            return localised
+    return base
+
+
 def sys_root_of(project):
     """The disc's ``sys/`` folder of a project as a ``GamePath``."""
     from .game_files import files_of

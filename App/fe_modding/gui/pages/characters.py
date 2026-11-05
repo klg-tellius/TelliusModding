@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from ...formats import fe10_message
 from ...game_adapter import data_adapter
-from ...game_profile import CHAPTERS, CHARACTER_FORM, COLOUR_VARIANTS, GAME_DATA, files_root_of
+from ...game_profile import CHAPTERS, CHARACTER_FORM, COLOUR_VARIANTS, GAME_DATA, chapter_mess_path, files_root_of
 from ...project_index import CATEGORY_LABELS, GENERIC, NAMED, PLAYABLE, difficulty_name, supported
 from .. import record_actions
 from ..character_form import CharacterForm
@@ -676,7 +676,7 @@ class CharacterPage(Page):
             if self.project.profile.supports(CHAPTERS):
                 self.shell.navigate(("chapter", ref.chapter_id, "dialogue", ref.message_id))
                 return
-            path = self.project.profile.mess_path(files_root_of(self.project), ref.chapter_id)
+            path = chapter_mess_path(self.project, ref.chapter_id)
             if self.shell.navigate(("asset", "conversations", path.name)):
                 panel = self.shell.page("asset")._panels["conversations"]
                 if panel._editor is not None:
