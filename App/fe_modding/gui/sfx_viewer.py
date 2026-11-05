@@ -302,8 +302,9 @@ class SfxViewer(EditorPanel):
     def _open_import(self, cue: gcfesnd.SfxCue | None) -> None:
         if self._fe10:
             if cue is None:
-                messagebox.showinfo("Sound effects", "Adding a new Radiant Dawn archive registration is not "
-                                    "enabled yet. Existing embedded wave sounds can be replaced.", parent=self)
+                messagebox.showinfo("Sound effects", "A new Radiant Dawn sound effect needs a new embedded wave "
+                                    "sound in sound_us.brsar, which the app cannot add yet (new music tracks it "
+                                    "can). Existing embedded wave sounds can be replaced.", parent=self)
                 return
             sound = self._rd_sounds.get(cue.resource)
             if self._rd_archive is None or sound is None or sound.sound_type != 3:
@@ -376,8 +377,8 @@ class SfxViewer(EditorPanel):
         if cue is None:
             return
         if self._fe10:
-            messagebox.showinfo("Delete sound effect", "Retail Radiant Dawn cues cannot be removed until BRSAR "
-                                "rebuilding is enabled.", parent=self)
+            messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "
+                                "the game plays it, so it can't be deleted. Replace its audio instead.", parent=self)
             return
         if cue.name in self._original_cue_names():
             messagebox.showinfo("Delete sound effect", f"{cue.name} is one of the game's own sound effects: "

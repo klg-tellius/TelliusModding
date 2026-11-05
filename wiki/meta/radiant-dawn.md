@@ -81,6 +81,14 @@ source_path: "meta/radiant-dawn.md"
 
   The name is a record of `FE10Battle.cms`'s `FE10BMapData`, whose first `FE10BMapModel` names the scenery folder in `zbg/` (`bg0101街` is `zbg/bg0101twn`). Of its 119 backdrops, 13 are missing from the retail `BattleTerrName`, so no row can name them yet, among them the generic `bg汎用01草原1`-`3` (plains), `bg汎用02森林` (forest) and `bg魔法` itself. <span class="confidence confidence--confirmed">files</span>
 
+## Music and sound
+
+  `Sound/sound_data_en.cms` holds 36-byte cue records (name, BRSAR sound name, seven more words), each exported under its cue name. The game finds a cue through that export: `0x80076F54` looks the name up in the global name hash that every loaded container's symbols go into, so a new cue needs only its own record and symbol. The `SND_*` tables in the same file are separate: `SND_BGM_DATA` counts the retail music records, and `SND_MAP_BGM_DATA` gives each chapter 0x34 bytes of cue-name pointers (the chapter, map music, player phase, enemy phase, the other two armies, preparations, base, select). <span class="confidence confidence--confirmed">engine</span>
+
+  `Sound/sound_us.brsar` finds a sound by name with the name tree in its `SYMB` section. At an inner node, bit *b* of the name (most significant first; past the end of the name it is 0) goes right when set, else left, and a leaf holds the name's string and its id. A stream sound is a 0x2C INFO entry with a 12-byte stream info (start, channel count, track flags) and a 12-byte 3D block; its file entry names the external `strm/*.brstm`. Sound effects are embedded waves (RWSD) or sequences, never streams. <span class="confidence confidence--confirmed">engine</span>
+
+  A stream sound and a cue added this way played in Dolphin: 1-1's player and enemy phase entries named the new cue, and the dumped audio was the new 440 Hz stream, looping. <span class="confidence confidence--confirmed">in game</span>
+
 ## Battle sceneries
 
   Path of Radiance gives each backdrop a `zbg/<scenery>/param.dbx` (indoor flag, footstep effect and sound). Radiant Dawn has one 24-byte `FE10BMapModel` row per placed backdrop model in `FE10Battle.cms` (146 rows); an `FE10BMapData` background picks up to five rows, its variants. <span class="confidence confidence--confirmed">engine</span>

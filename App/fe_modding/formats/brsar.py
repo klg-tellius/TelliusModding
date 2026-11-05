@@ -349,3 +349,247 @@ def replace_embedded_file(archive: BrsarArchive, file_index: int, header: bytes,
         raise BrsarError("Rebuilt BRSAR replacement did not validate")
     return rebuilt
 
+
+# -- adding stream sounds --------------------------------------------------------------------
+#
+# SYMB (after its 8-byte header) starts with five offsets: the string table, then the sound,
+# player, group and bank name trees. A tree is ``u32 root, u32 count`` and ``count`` 0x14-byte
+# nodes ``u16 flags (1: leaf), u16 bit, u32 left, u32 right, u32 string, u32 id``. A name is
+# found from the root: at an inner node, bit ``b`` of the name (byte ``b >> 3``, most
+# significant bit first; past the end of the name it is 0) picks right when set, else left; the
+# leaf holds the string and id. Checked against every retail RFEE01 sound and bank.
+#
+# A STRM sound is a 0x2C INFO entry (string, file, player, a 3D-parameter reference, volume,
+# priority, type 2, a reference to its 12-byte stream info, user words), and its file a 0x1C
+# entry (file size, wave size 0, entry -1, a reference to the external path, an empty position
+# table). Adding one appends the new INFO records and moved copies of the sound and file
+# tables after INFO's old content, so every existing INFO offset stays valid.
+
+NODE = struct.Struct(">HHIIII")
+_REF = 0x01000000
+
+
+@dataclass(frozen=True)
+class StreamSoundSpec:
+    """One STRM sound to add: its name, its ``strm/...brstm`` path and the records copied
+    from a template sound (``stream_spec``)."""
+
+    name: str
+    external_path: str
+    file_size: int
+    entry: bytes        # the 0x2C sound entry (string and file fields are rewritten)
+    strm_info: bytes    # 12 bytes: start position, channel count, track flags, reserved
+    param3d: bytes      # 12 bytes
+    strm_info_ref: int  # the reference word of the stream info (type 0x0102...)
+
+
+def _tree_bit(name: bytes, bit: int) -> int:
+    index = bit >> 3
+    return (name[index] >> (7 - (bit & 7))) & 1 if index < len(name) else 0
+
+
+def _symb_layout(data: bytes, archive: BrsarArchive):
+    symb = archive.sections[0]
+    base = symb.offset + 8
+    offsets = struct.unpack_from(">5I", data, base)
+    table = base + offsets[0]
+    count = struct.unpack_from(">I", data, table)[0]
+    strings = []
+    for index in range(count):
+        at = base + struct.unpack_from(">I", data, table + 4 + 4 * index)[0]
+        strings.append(data[at:data.index(b"\0", at)])
+    trees = []
+    for which in range(1, 5):
+        at = base + offsets[which]
+        root, nodes = struct.unpack_from(">2I", data, at)
+        trees.append((root, [list(NODE.unpack_from(data, at + 8 + NODE.size * i)) for i in range(nodes)]))
+    return strings, trees
+
+
+def tree_lookup(root: int, nodes: list, strings: list[bytes], name: str) -> int | None:
+    """The id a name tree gives ``name`` (None when it has no such name)."""
+    if not nodes:
+        return None
+    key = name.encode("shift_jis")
+    node = nodes[root]
+    while not node[0] & 1:
+        node = nodes[node[3] if _tree_bit(key, node[1]) else node[2]]
+    return node[5] if strings[node[4]] == key else None
+
+
+def sound_id_of(data: bytes, name: str) -> int | None:
+    """The sound id the archive's sound name tree gives ``name``."""
+    strings, trees = _symb_layout(data, read_brsar(data))
+    return tree_lookup(*trees[0], strings, name)
+
+
+def _tree_insert(root: int, nodes: list, strings: list[bytes], key: bytes, string_index: int,
+                 item_id: int) -> int:
+    """Insert a leaf (crit-bit insertion, appending a leaf and an inner node); returns the root."""
+    leaf = [1, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, string_index, item_id]
+    if not nodes:
+        nodes.append(leaf)
+        return 0
+    node = nodes[root]
+    while not node[0] & 1:
+        node = nodes[node[3] if _tree_bit(key, node[1]) else node[2]]
+    other = strings[node[4]]
+    if other == key:
+        raise BrsarError(f"{key.decode('shift_jis', 'replace')} is already in the name tree")
+    crit = next(bit for bit in range(8 * (max(len(key), len(other)) + 1))
+                if _tree_bit(key, bit) != _tree_bit(other, bit))
+    parent, side, current = None, 0, root
+    while not nodes[current][0] & 1 and nodes[current][1] < crit:
+        parent, side = current, _tree_bit(key, nodes[current][1])
+        current = nodes[current][3] if side else nodes[current][2]
+    leaf_index, inner_index = len(nodes), len(nodes) + 1
+    nodes.append(leaf)
+    inner = [0, crit, current, leaf_index, 0xFFFFFFFF, 0xFFFFFFFF]
+    if not _tree_bit(key, crit):
+        inner[2], inner[3] = leaf_index, current
+    nodes.append(inner)
+    if parent is None:
+        return inner_index
+    nodes[parent][3 if side else 2] = inner_index
+    return root
+
+
+def stream_spec(archive: BrsarArchive, template: int, name: str, external_path: str, file_size: int,
+                channels: int | None = None) -> StreamSoundSpec:
+    """A new STRM sound copying sound ``template``'s player, volume and 3D settings."""
+    data = archive.source
+    if not 0 <= template < len(archive.sounds) or archive.sounds[template].sound_type != 2:
+        raise BrsarError("The template must be a stream (STRM) sound")
+    info_base = archive.sections[1].offset + 8
+    table = info_base + struct.unpack_from(">2I", data, info_base)[1]
+    entry_at = info_base + struct.unpack_from(">2I", data, table + 4 + 8 * template)[1]
+    entry = data[entry_at:entry_at + 0x2C]
+    ref3d = struct.unpack_from(">2I", data, entry_at + 0x0C)
+    ref_info = struct.unpack_from(">2I", data, entry_at + 0x18)
+    param3d = data[info_base + ref3d[1]:info_base + ref3d[1] + 12] if ref3d[0] else bytes(12)
+    strm = bytearray(data[info_base + ref_info[1]:info_base + ref_info[1] + 12])
+    if channels is not None:
+        if not 1 <= channels <= 16:
+            raise BrsarError("A stream has 1 to 16 channels")
+        struct.pack_into(">HH", strm, 4, channels, (1 << ((channels + 1) // 2)) - 1)
+    return StreamSoundSpec(name, external_path, file_size, entry, bytes(strm), param3d, ref_info[0])
+
+
+def add_stream_sound(data: bytes, spec: StreamSoundSpec) -> bytes:
+    """``data`` with a new STRM sound ``spec.name`` playing the external ``spec.external_path``."""
+    archive = read_brsar(data)
+    if spec.name in {sound.name for sound in archive.sounds} or spec.name in archive.symbols:
+        raise BrsarError(f"{spec.name} is already in the sound archive")
+    symb, info, file_section = archive.sections
+    strings, trees = _symb_layout(data, archive)
+    key = spec.name.encode("shift_jis")
+    string_index, sound_id, file_id = len(strings), len(archive.sounds), len(archive.files)
+    strings.append(key)
+    root, nodes = trees[0]
+    trees[0] = (_tree_insert(root, nodes, strings, key, string_index, sound_id), nodes)
+
+    # SYMB: offsets, string table, strings, then the trees
+    body = bytearray(20)
+    table_at = len(body)
+    body += struct.pack(">I", len(strings)) + bytes(4 * len(strings))
+    for index, raw in enumerate(strings):
+        struct.pack_into(">I", body, table_at + 4 + 4 * index, len(body))
+        body += raw + b"\0"
+    tree_offsets = []
+    for tree_root, tree_nodes in trees:
+        tree_offsets.append(len(body))
+        body += struct.pack(">2I", tree_root, len(tree_nodes))
+        for node in tree_nodes:
+            body += NODE.pack(*node)
+    struct.pack_into(">5I", body, 0, table_at, *tree_offsets)
+    new_symb = bytearray(b"SYMB" + bytes(4)) + body
+    new_symb += bytes(-len(new_symb) % 0x20)
+    struct.pack_into(">I", new_symb, 4, len(new_symb))
+
+    # INFO: its old content, then the new records and moved copies of the two tables
+    old_info = bytearray(data[info.offset:info.offset + info.size])
+    new_info = bytearray(old_info)  # kept whole (its padding too): every old offset stays valid
+
+    def rel() -> int:
+        return len(new_info) - 8
+
+    def old_vector(which: int) -> tuple[bytes, int]:
+        at = 8 + struct.unpack_from(">2I", old_info, 8 + 8 * which)[1]
+        count = struct.unpack_from(">I", old_info, at)[0]
+        return bytes(old_info[at + 4:at + 4 + 8 * count]), count
+
+    param_at = rel()
+    new_info += spec.param3d
+    strm_at = rel()
+    new_info += spec.strm_info
+    entry = bytearray(spec.entry)
+    struct.pack_into(">2I", entry, 0, string_index, file_id)
+    struct.pack_into(">2I", entry, 0x0C, _REF, param_at)
+    struct.pack_into(">2I", entry, 0x18, spec.strm_info_ref, strm_at)
+    entry_at = rel()
+    new_info += entry
+    path_at = rel()
+    new_info += spec.external_path.encode("shift_jis") + b"\0"
+    new_info += bytes(-len(new_info) % 4)
+    positions_at = rel()
+    new_info += bytes(4)  # an empty position table
+    file_at = rel()
+    new_info += struct.pack(">IIi", spec.file_size, 0, -1) + struct.pack(">2I", _REF, path_at) + \
+        struct.pack(">2I", _REF, positions_at)
+    for which, added in ((0, entry_at), (3, file_at)):
+        refs, count = old_vector(which)
+        moved = rel()
+        new_info += struct.pack(">I", count + 1) + refs + struct.pack(">2I", _REF, added)
+        struct.pack_into(">2I", new_info, 8 + 8 * which, _REF, moved)
+    new_info += bytes(-len(new_info) % 0x20)
+    struct.pack_into(">I", new_info, 4, len(new_info))
+
+    # FILE moves: shift every absolute group offset
+    shift = (symb.offset + len(new_symb) + len(new_info)) - file_section.offset
+    for group in archive.groups:
+        at = group.info_offset - info.offset
+        header_offset, header_size, wave_offset, wave_size = struct.unpack_from(">4I", new_info, at + 0x10)
+        struct.pack_into(">4I", new_info, at + 0x10, header_offset + shift, header_size, wave_offset + shift,
+                         wave_size)
+    result = bytearray(data[:symb.offset]) + new_symb + new_info + \
+        data[file_section.offset:file_section.offset + file_section.size]
+    struct.pack_into(">I", result, 8, len(result))
+    struct.pack_into(">6I", result, 0x10, symb.offset, len(new_symb), symb.offset + len(new_symb), len(new_info),
+                     symb.offset + len(new_symb) + len(new_info), file_section.size)
+    rebuilt = bytes(result)
+    checked = read_brsar(rebuilt)
+    sound = checked.sounds[sound_id]
+    if (sound.name, sound.external_path, sound_id_of(rebuilt, spec.name)) != (spec.name, spec.external_path,
+                                                                              sound_id):
+        raise BrsarError("The rebuilt sound archive did not validate")
+    return rebuilt
+
+
+def added_stream_specs(current: bytes, vanilla: bytes) -> list[StreamSoundSpec]:
+    """The STRM sounds of ``current`` that ``vanilla`` lacks, as specs to add again."""
+    archive, original = read_brsar(current), read_brsar(vanilla)
+    known = {sound.name for sound in original.sounds}
+    specs = []
+    for sound in archive.sounds:
+        if sound.name in known:
+            continue
+        if sound.sound_type != 2 or not sound.external_path:
+            raise BrsarError(f"{sound.name} is an added sound the app cannot rebuild")
+        size = struct.unpack_from(">I", current, archive.files[sound.file_index].info_offset)[0]
+        specs.append(stream_spec(archive, sound.index, sound.name, sound.external_path, size))
+    return specs
+
+
+def remove_added_sound(current: bytes, vanilla: bytes, name: str) -> bytes:
+    """``vanilla`` with every sound ``current`` added except ``name`` (retail sounds refuse)."""
+    if name in {sound.name for sound in read_brsar(vanilla).sounds}:
+        raise BrsarError(f"{name} is one of the game's own sounds")
+    specs = added_stream_specs(current, vanilla)
+    if name not in {spec.name for spec in specs}:
+        raise BrsarError(f"{name} is not a sound the mod added")
+    result = vanilla
+    for spec in specs:
+        if spec.name != name:
+            result = add_stream_sound(result, spec)
+    return result
+
