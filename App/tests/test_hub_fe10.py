@@ -100,6 +100,39 @@ class RdHubSetupTests(unittest.TestCase):
         dol = Dol.open(project.extracted_dir / "sys" / "main.dol")
         self.assertEqual(dol.read(rd_hub.DONE, 4), (0x80010024).to_bytes(4, "big"))   # lwz r0, 0x24(r1)
 
+    def test_create_chapter_leaves_the_avatar_alone_and_a_plain_opening(self):
+        from fe_modding import hub, hub_creation_fe10, hub_fe10, script_sources
+        from fe_modding.formats import dispo
+
+        project = self.project
+        plan = hub_creation_fe10.create_chapter(project, project.read_logical("game_data"), "0101", "0502", "Hub",
+                                                "PID_DJ_GREIL")
+        self.assertEqual(plan.number, 57)
+        project.write_logical("game_data", plan.fe10data)
+        armies = 0
+        for path in hub_fe10._deployments(project, "0502"):
+            for section in dispo.parse_dispo(path.read_bytes()).sections:
+                pids = [u[dispo.FIELD["pid"]] for u in section.units]
+                if "_mikata" in section.name:
+                    self.assertEqual(pids, ["PID_DJ_GREIL"])
+                    armies += 1
+                else:
+                    self.assertEqual(pids, [], section.name)
+        self.assertEqual(armies, 2)        # Normal and Hard; dispos_c.bin has none
+        source = script_sources.peek(project, script_sources.chapter_script(project, "0502"))
+        self.assertIn('MapLoad("bmap0502")', source)
+        self.assertIn('SallySetByGroupRank("bmap0502_mikata")', source)
+        self.assertNotIn("on_complete", source)
+        self.assertEqual(hub.chapter_page(project, 57), "0502")
+        self.assertEqual(hub.chapter_number(project, "0502"), 57)
+        self.assertNotIn(0, hub_fe10.link_candidates(project, 57))   # the test map
+        # the setUp hub 0501 deploys the same avatar: not offered, and refused on install
+        self.assertNotIn("PID_DJ_GREIL", dict(hub_fe10.avatar_candidates(project, plan.fe10data, "0502")))
+        self.assertIn("PID_DJ_GREIL", dict(hub_fe10.avatar_candidates(project, plan.fe10data, "0502",
+                                                                      keep="PID_DJ_GREIL")))
+        with self.assertRaisesRegex(ValueError, "also appears in chapter 0501"):
+            hub_fe10.prepare(project, self.setup(chapter=57))
+
     def test_bad_setups_are_refused(self):
         from fe_modding import hub, hub_fe10
         cases = [

@@ -257,12 +257,16 @@ class ChaptersHub(Page):
     def _hub_setup(self) -> None:
         """Edit hub: open the hub chapter's Build tab. Create hub: copy a template chapter
         as the hub (the avatar alone in it), then open it there."""
-        current = hub.hub_chapter(self.project)
-        if current is not None and f"{current:02d}" in chapters.list_chapter_ids(self.project):
-            self.shell.navigate(("chapter", f"{current:02d}", "build", "hub"))
+        current = hub.hub_page(self.project) if hub.hub_chapter(self.project) is not None else None
+        if current is not None and current in chapters.list_chapter_ids(self.project):
+            self.shell.navigate(("chapter", current, "build", "hub"))
             return
         if not profile_of(self.project).supports(HUB):
             messagebox.showinfo("Create hub", profile_of(self.project).unavailable(HUB), parent=self)
+            return
+        if profile_of(self.project).data_dialect == "fe10":
+            from ..hub_create_fe10 import create_hub
+            create_hub(self)
             return
         from ...formats import dispo, fe8data, lz10, map_file, pak
         from ..hub_dialog import CreateHubDialog
@@ -951,8 +955,8 @@ class ChapterPage(Page):
                                  adapter.delete_rule() if adapter is not None else "This project has no game data.",
                                  parent=self)
             return
-        deleting_hub = (profile_of(self.project).supports(HUB) and chapter_id.isdigit()
-                        and hub.hub_chapter(self.project) == int(chapter_id))
+        deleting_hub = (profile_of(self.project).supports(HUB) and hub.hub_chapter(self.project) is not None
+                        and hub.chapter_number(self.project, chapter_id) == hub.hub_chapter(self.project))
         dirty = [panel for panel in self.panels() if panel.dirty]
         if dirty:
             names = ", ".join(panel.display_name for panel in dirty)
@@ -1102,7 +1106,7 @@ class ChapterPage(Page):
         except Exception as exc:  # noqa: BLE001 - validation and codec failures alike
             messagebox.showerror("Could not install the hub", str(exc), parent=self)
             return False
-        self.shell.changelog.append(f"Chapter {setup.chapter:02d}",
+        self.shell.changelog.append(f"Chapter {hub.chapter_page(self.project, setup.chapter)}",
                                     f"Installed hub ({len(setup.destinations)} chapter links)")
         paths = chapters.chapter_paths(self.project, self._chapter)
         self._script.reload_if_open(paths.script)

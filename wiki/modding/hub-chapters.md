@@ -2,7 +2,7 @@
 id: "modding-hub-chapters"
 title: "Create a hub and plan chapter unlocks"
 description: "Create chapter entrance tiles and return points, register persistent unlock and completion flags, and understand the remaining menu and marker visibility work"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Chapters", "Flags", "Scripting"]
@@ -206,9 +206,21 @@ Use [the Flags guide](34-event-flags.md) to inspect names, storage, and values. 
 | Avatar visibly jumps at player phase | Check positioning after deployment and before focus/fade in the opening. |
 | Custom link checks vanish after editing links | Installation replaced the generated block. |
 
+## Radiant Dawn
+
+The same routes work on a Radiant Dawn project, with these differences:
+
+- **Create hub…** makes an added chapter, `0501` to `0524` (story numbers 56 to 79), outside the story order. It copies the template's map; there is no **Blank map**. In each difficulty's deployment the template's first player unit becomes the avatar, on its tile; every other unit, and the cutscene units of `dispos_c.bin`, are removed. The script becomes a plain opening: the chapter title, the map, the player army and the avatar in focus.
+- The Hub tool has no **Flag storage** choice, no **Edit ground…** and no **Description**: the flags are always the vanilla kind, and a link has no Visit text yet. Action tiles get no marker in game; mark them with props.
+- **Install hub** appends `HUB_ACTIVE`, `HUB_STARTED` and the two chapter bytes to `RegistGlobalFlags` (slots 27 to 47 on an unmodified `startup.cmb`). It also installs the router after the story advance. When the hub's map is won, the avatar leaves the player army, so it never joins the roster.
+- A hub has no enemies, and its copied **Rout enemy** goal never ends it: only an Arrive tile does.
+- The chapter status screen shows `??` for a title that is not in Radiant Dawn's `Part:Number-Name` form (`I:2-The Dispossessed`). The title card shows it as written.
+
 ## Limits and confidence
 
 The setup controls and generated events described here were checked against `hub_tool.py`, `hub_dialog.py`, `hub.py`, and `hub_creation.py`. Marker calls are documented in the repository's native-contract research. Conditional action-menu filtering is not provided by the current hub generator, and the marker example still needs verification against the installed prop in game. This page therefore documents a working basic hub and a progression integration design, not a completed conditional-link feature.
+
+On Radiant Dawn the hub was created and installed through the app. It was then played in Dolphin, with turn-1 test events standing in for the Arrive command. The game went from the Prologue to the hub, the avatar was alone on its map, and the hub's destination (Chapter 2) replaced the story's Chapter 1. The avatar was not in the next roster. Without a destination, the hub stayed open for 23 turns. Walking onto a real Arrive tile has not been played.
 
 ## Related tutorials and references
 

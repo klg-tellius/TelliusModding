@@ -17,7 +17,7 @@ from ..formats import fe8data
 from ..game_code.chapter_flow import GAME_CLEARED
 from ..hub_creation import MAX_SIZE, MIN_SIZE
 from .widgets import info, tip
-from ..game_profile import disc_root_of
+from ..game_profile import disc_root_of, profile_of
 
 LINK_COLOR = "#7bb85c"
 RETURN_COLOR = "#5fb3e6"
@@ -35,6 +35,8 @@ class HubTool(ttk.Frame):
         self._titles: dict[str, str] = {}
         self._choices: dict[str, int] = {}
         self._description_after = None
+        self._rd = False       # Radiant Dawn: story numbers are not page ids; no flag storage choice,
+        self._pages: dict[int, str] = {}   # ground editing or Visit descriptions yet
 
         head = ttk.Frame(self)
         head.pack(fill="x")
@@ -48,7 +50,7 @@ class HubTool(ttk.Frame):
         self._status = ttk.Label(head, text="", style="Muted.TLabel")
         self._status.pack(side="right")
 
-        storage_row = ttk.Frame(self)
+        storage_row = self._storage_row = ttk.Frame(self)
         storage_row.pack(fill="x", pady=(8, 0))
         ttk.Label(storage_row, text="Flag storage").pack(side="left")
         self._storage = tk.StringVar(value="Extended")
@@ -61,7 +63,7 @@ class HubTool(ttk.Frame):
                          "are not converted. Availability is checked for the project's game region.").pack(
             side="left", padx=(6, 0))
 
-        row = ttk.Frame(self)
+        row = self._activation_row = ttk.Frame(self)
         row.pack(fill="x", pady=(8, 0))
         tip(ttk.Label(row, text="Opens after"),
             "The hub opens once this chapter is won, the first time only. From then on every chapter "
@@ -82,17 +84,19 @@ class HubTool(ttk.Frame):
         self._avatar_box.pack(side="left", padx=(6, 0))
         self._avatar_box.bind("<<ComboboxSelected>>", lambda e: self._avatar_changed())
 
-        row = ttk.Frame(self)
+        row = self._ground_row = ttk.Frame(self)
         row.pack(fill="x", pady=(4, 0))
         tip(ttk.Label(row, text="Ground"),
             "Change the solid color or image of a hub created with Blank map. Other map edits are preserved.").pack(
             side="left")
         ttk.Button(row, text="Edit ground…", command=self._edit_ground).pack(side="left", padx=(6, 0))
 
-        tip(ttk.Label(self, text="Chapter links"),
+        self._links_label = tip(ttk.Label(self, text="Chapter links"), lambda: (
             "Green square: the action tile. Blue circle: where the avatar stands when it comes back from that "
-            "chapter. Drag either one to move it. Applying hub setup places a visible Arrive marker "
-            "on each action tile in game.").pack(anchor="w", pady=(10, 2))
+            "chapter. Drag either one to move it. "
+            + ("On Radiant Dawn the action tiles have no marker in game yet: decorate them with props."
+               if self._rd else "Applying hub setup places a visible Arrive marker on each action tile in game.")))
+        self._links_label.pack(anchor="w", pady=(10, 2))
         self._list = tk.Listbox(self, height=7, exportselection=False, activestyle="none")
         self._list.pack(fill="x")
         self._list.bind("<<ListboxSelect>>", lambda e: self._list_selected())
@@ -117,9 +121,10 @@ class HubTool(ttk.Frame):
             self._place_labels[which] = value
             ttk.Button(grid, text="Place", command=lambda w=which: self._start_placing(w)).grid(
                 row=r, column=2, sticky="w", padx=(6, 0))
-        tip(ttk.Label(self._link, text="Description"),
-            "Shown by Visit (one line or two, 240 characters at most). Empty: no Visit command.").pack(
-            anchor="w", pady=(6, 0))
+        self._description_label = tip(ttk.Label(self._link, text="Description"),
+                                      "Shown by Visit (one line or two, 240 characters at most). Empty: no Visit "
+                                      "command.")
+        self._description_label.pack(anchor="w", pady=(6, 0))
         self._description = tk.Text(self._link, height=3, width=36, wrap="word", undo=True)
         self._description.pack(fill="x")
         self._description.bind("<<Modified>>", lambda e: self._description_modified())
@@ -138,11 +143,22 @@ class HubTool(ttk.Frame):
     def load(self, chapter_id: str | None) -> bool:
         """Show ``chapter_id``'s hub setup; False when that chapter isn't the hub."""
         project = self._builder.project
-        data = hub.working_setup(project) if chapter_id and chapter_id.isdigit() else None
-        if data is None or data["chapter"] != int(chapter_id):
+        self._rd = profile_of(project).script_dialect == "fe10"
+        data = hub.working_setup(project)
+        number = hub.chapter_number(project, chapter_id)
+        if data is None or number is None or data["chapter"] != number:
             self.data = None
             return False
         self.data = data
+        if self._rd:
+            return self._load_rd(project, chapter_id, data)
+        for widget, pad, before in ((self._storage_row, (8, 0), self._activation_row),
+                                    (self._ground_row, (4, 0), self._links_label)):
+            if not widget.winfo_manager():
+                widget.pack(fill="x", pady=pad, before=before)
+        if not self._description_label.winfo_manager():
+            self._description_label.pack(anchor="w", pady=(6, 0), before=self._description)
+            self._description.pack(fill="x", after=self._description_label)
         installed = hub.saved_setup(project)
         from ..game_code.extended_flags import EXTENDED_FLAGS_PATCH
         from ..game_code.versions import read_boot_code
@@ -204,8 +220,44 @@ class HubTool(ttk.Frame):
         self._fill()
         return True
 
+    def _load_rd(self, project, chapter_id: str, data: dict) -> bool:
+        """Radiant Dawn: vanilla flag storage only, the template's map, no Visit descriptions."""
+        from .. import hub_fe10
+        self._storage_row.pack_forget()
+        self._ground_row.pack_forget()
+        self._description_label.pack_forget()
+        self._description.pack_forget()
+        data["storage"] = "vanilla"
+        data.setdefault("destinations", [])
+        self.current = None
+        self.placing = None
+        self._titles = chapters.chapter_titles(project)
+        session = self._builder.fe8_session
+        fe10 = (session.data if session is not None and getattr(session, "available", False)
+                else project.read_logical("game_data"))
+        self._pages = hub_fe10.page_numbers(project, fe10)
+        self._activation_choices = {self._label(n): n
+                                    for n in hub_fe10.activation_candidates(project, data["chapter"], fe10)}
+        self._activation_box.configure(values=list(self._activation_choices))
+        self._activation.set(next((label for label, n in self._activation_choices.items()
+                                   if n == data["activation_chapter"]), ""))
+        self._choices = {self._label(n): n for n in hub_fe10.link_candidates(project, data["chapter"], fe10)}
+        self._avatar_choices = {f"{self._builder.character_name(pid)} ({pid})": pid
+                                for pid, _jid in hub_fe10.avatar_candidates(project, fe10, chapter_id,
+                                                                            data["avatar_pid"])}
+        self._avatar_box.configure(values=list(self._avatar_choices))
+        self._avatar_choice.set(next((label for label, pid in self._avatar_choices.items()
+                                      if pid == data["avatar_pid"]), data["avatar_pid"]))
+        self._fill()
+        return True
+
+    def _page(self, cid) -> str:
+        if self._rd:
+            return self._pages.get(int(cid)) or f"#{cid}"
+        return f"{int(cid):02d}"
+
     def _label(self, cid) -> str:
-        cid = f"{int(cid):02d}"
+        cid = self._page(cid)
         return f"{cid} · {chapters.chapter_display_title(cid, self._titles)}"
 
     def _fill(self) -> None:
@@ -373,7 +425,7 @@ class HubTool(ttk.Frame):
             return []
         out = []
         for i, d in enumerate(self.data["destinations"]):
-            out.append({"chapter": d["chapter"], "selected": i == self.current,
+            out.append({"chapter": d["chapter"], "label": self._page(d["chapter"]), "selected": i == self.current,
                         "action": None if d.get("x") is None else (d["x"], d["y"]),
                         "return": None if d.get("return_x") is None else (d["return_x"], d["return_y"])})
         return out
@@ -409,7 +461,7 @@ class HubTool(ttk.Frame):
             other = next((o for j, o in enumerate(self.data["destinations"])
                           if j != index and (o.get("x"), o.get("y")) == tuple(tile)), None)
             if other is not None:
-                self._hint.configure(text=f"Chapter {other['chapter']:02d}'s link already uses that tile.")
+                self._hint.configure(text=f"Chapter {self._page(other['chapter'])}'s link already uses that tile.")
                 return False
         d[keys[0]], d[keys[1]] = tile
         self._save()
@@ -426,7 +478,7 @@ class HubTool(ttk.Frame):
         problems = []
         if not data["destinations"]:
             problems.append("Add at least one chapter link.")
-        missing = [f"{d['chapter']:02d}" for d in data["destinations"]
+        missing = [self._page(d["chapter"]) for d in data["destinations"]
                    if d.get("x") is None or d.get("return_x") is None]
         if missing:
             problems.append(f"Place the action tile and return point of chapter {', '.join(missing)}.")
@@ -441,6 +493,7 @@ class HubTool(ttk.Frame):
         except (KeyError, TypeError) as exc:
             messagebox.showerror("Install hub", f"The hub setup is incomplete: {exc}", parent=self)
             return
-        if self._builder.install_hub(setup, storage=self._storage.get().lower()):
-            self.load(f"{data['chapter']:02d}")
+        storage = "vanilla" if self._rd else self._storage.get().lower()
+        if self._builder.install_hub(setup, storage=storage):
+            self.load(self._page(data["chapter"]))
             self._builder.hub_changed()

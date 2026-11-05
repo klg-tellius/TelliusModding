@@ -18,8 +18,10 @@ from .widgets import info, tip
 class CreateHubDialog(tk.Toplevel):
     """Return the new chapter choices, including blank-map ground appearance."""
 
-    def __init__(self, parent, *, free: list[int], templates: dict[str, str], avatars: dict[str, str],
-                 activations: dict[str, int]):
+    def __init__(self, parent, *, free: list, templates: dict[str, str], avatars: dict[str, str],
+                 activations: dict[str, int], blank_map: bool = True, avatar_help: str | None = None):
+        """``free``: chapter numbers (Path of Radiance) or page ids (Radiant Dawn's ``0501``...);
+        ``blank_map`` False leaves only the template's map."""
         super().__init__(parent)
         self.title("Create hub")
         self.resizable(False, False)
@@ -27,7 +29,8 @@ class CreateHubDialog(tk.Toplevel):
         self._templates = templates
         self._avatars = avatars
         self._activations = activations
-        self._chapter = tk.StringVar(value=f"{free[0]:02d}" if free else "")
+        self._free = {(f"{n:02d}" if isinstance(n, int) else n): n for n in free}
+        self._chapter = tk.StringVar(value=next(iter(self._free), ""))
         self._title = tk.StringVar(value="Hub")
         self._template = tk.StringVar(value=next(iter(templates), ""))
         self._keep_map = tk.BooleanVar(value=True)
@@ -44,7 +47,7 @@ class CreateHubDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=16)
         body.pack(fill="both", expand=True)
         rows = (
-            ("Chapter number", ttk.Combobox(body, textvariable=self._chapter, values=[f"{n:02d}" for n in free],
+            ("Chapter number", ttk.Combobox(body, textvariable=self._chapter, values=list(self._free),
                                             state="readonly", width=8),
              "A free chapter number; the hub stays out of the story order."),
             ("Title", ttk.Entry(body, textvariable=self._title, width=30), ""),
@@ -54,10 +57,10 @@ class CreateHubDialog(tk.Toplevel):
              "units are replaced by the avatar, its events by an empty opening."),
             ("Avatar", ttk.Combobox(body, textvariable=self._avatar, values=list(avatars), state="readonly",
                                     width=40),
-             "The character the player walks around the hub with. It must not be deployed in any other "
-             "chapter: create one in Game Data › Characters first if none is listed. The hub refreshes it "
-             f"after every action for unlimited actions per player phase; effective Movement is capped at "
-             f"{MAX_MOVEMENT}, so no special skill is needed."),
+             avatar_help or ("The character the player walks around the hub with. It must not be deployed in any "
+                             "other chapter: create one in Game Data › Characters first if none is listed. The hub "
+                             "refreshes it after every action for unlimited actions per player phase; effective "
+                             f"Movement is capped at {MAX_MOVEMENT}, so no special skill is needed.")),
             ("Opens after", ttk.Combobox(body, textvariable=self._activation, values=list(activations),
                                          state="readonly", width=40),
              "The hub opens once this chapter is won."),
@@ -66,10 +69,12 @@ class CreateHubDialog(tk.Toplevel):
             tip(ttk.Label(body, text=label), help_text).grid(row=r, column=0, sticky="w", pady=3, padx=(0, 10))
             widget.grid(row=r, column=1, sticky="w", pady=3)
         r = len(rows)
-        tip(ttk.Label(body, text="Map"), "Keep the template's map to decorate it, or start from a flat grass "
-                                         "ground and paint it.").grid(row=r, column=0, sticky="nw", pady=3)
+        map_label = tip(ttk.Label(body, text="Map"), "Keep the template's map to decorate it, or start from a flat grass "
+                                         "ground and paint it.")
         maps = ttk.Frame(body)
-        maps.grid(row=r, column=1, sticky="w", pady=3)
+        if blank_map:
+            map_label.grid(row=r, column=0, sticky="nw", pady=3)
+            maps.grid(row=r, column=1, sticky="w", pady=3)
         ttk.Radiobutton(maps, text="Copy the template's map", variable=self._keep_map, value=True,
                         command=self._sync).pack(anchor="w")
         blank = ttk.Frame(maps)
@@ -186,7 +191,7 @@ class CreateHubDialog(tk.Toplevel):
             return
         color = tuple(int(self._ground_color[i:i + 2], 16) for i in (1, 3, 5))
         image = self._ground_image.get() if self._ground_mode.get() == "image" else None
-        self.result = (int(self._chapter.get()), title, self._templates[self._template.get()],
+        self.result = (self._free[self._chapter.get()], title, self._templates[self._template.get()],
                        bool(self._keep_map.get()), size, self._avatars[self._avatar.get()],
                        self._activations[self._activation.get()], color, image,
                        self._ground_fit.get() == "tile")
