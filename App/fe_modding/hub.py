@@ -386,6 +386,9 @@ def _retarget_avatar_bytes(compressed: bytes, old_pid: str, new_pid: str, new_ji
 
 def prepare(project, setup: HubSetup) -> dict:
     """Validate and compile all source changes without writing project files."""
+    if profile_of(project).script_dialect == "fe10":
+        from . import hub_fe10
+        return hub_fe10.prepare(project, setup)
     from .game_code.extended_flags import require_project_runtime
     require_project_runtime(project)
     return _prepare(project, setup)
@@ -555,6 +558,9 @@ def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) 
 
 def install(project, setup: HubSetup) -> dict:
     """Install a validated hub setup and return its saved configuration."""
+    if profile_of(project).script_dialect == "fe10":
+        from . import hub_fe10
+        return hub_fe10.install(project, setup)
     prepared = prepare(project, setup)
     for path, (source, data) in prepared["compiled"].items():
         project.write_keeping_original(path, data)
@@ -588,6 +594,9 @@ def uninstall(project) -> dict:
     to different save slots.  Extended-runtime hubs must be removed with that runtime's own
     lifecycle because restoring only its router would invalidate the signed receipt.
     """
+    if profile_of(project).script_dialect == "fe10":
+        from . import hub_fe10
+        return hub_fe10.uninstall(project)
     current = saved_setup(project)
     if current is None:
         draft = draft_path(project)

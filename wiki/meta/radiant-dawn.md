@@ -45,6 +45,10 @@ source_path: "meta/radiant-dawn.md"
 
   A chapter played on several maps is several records, one per map, in a row (`C0407a` to `C0407e`, and `C0401a`/`C0401b` on `lmap01`/`lmap02`). No chapter changes battle map mid-chapter the way Path of Radiance's numbered parts do. A script ends a branching chapter with `CompleteSubChapter(route)`. <span class="confidence confidence--confirmed">files</span>
 
+  Setting `gf_complete` wins the map at the end of the next unit action, not at once: a turn-start event that sets it ends the chapter when the first unit waits. Every `on_complete` event of the script then runs, in order, so a second win event can be added beside the chapter's own. <span class="confidence confidence--confirmed">in game</span>
+
+  A hub chapter is an added chapter (56-79) outside the story order. Its state is in four registered global flags (active, started) and two whole flag bytes (the destination and the pending story chapter), which a save keeps. The modding app's router runs as the last step of its chapter advance: from the hub it goes to the chosen destination or, with none, back to the story; when any other chapter ends with the hub active it goes back to the hub, keeping the next story chapter pending. <span class="confidence confidence--confirmed">in game</span>
+
 ## Part 4 armies
 
   Switching armies in Part 4 is done by the scripts, not the engine. Units belong to numbered forces: 0 is on the map, 5 is the army being played, and 8, 9 and 10 store Micaiah's, Ike's and Tibarn's armies. The deployment step only places characters that are in force 0 or 5, so a stored army stays off the map. <span class="confidence confidence--confirmed">engine</span>
