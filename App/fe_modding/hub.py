@@ -89,6 +89,30 @@ class HubSetup:
     start_y: int | None = None
 
 
+def chapter_page(project, number: int) -> str:
+    """The chapter page id of story number ``number`` (``06`` on Path of Radiance, ``0501`` on Radiant Dawn)."""
+    if profile_of(project).script_dialect == "fe10":
+        from . import hub_fe10
+        return hub_fe10.page_numbers(project).get(number) or f"#{number}"
+    return f"{number:02d}"
+
+
+def chapter_number(project, page: str | None) -> int | None:
+    """The story number of chapter page ``page``, or None."""
+    if not page:
+        return None
+    if profile_of(project).script_dialect == "fe10":
+        from . import hub_fe10
+        return next((n for n, p in hub_fe10.page_numbers(project).items() if p == page), None)
+    return int(page) if page.isdigit() else None
+
+
+def hub_page(project) -> str | None:
+    """The hub chapter's page id, or None when there is no hub."""
+    number = hub_chapter(project)
+    return None if number is None else chapter_page(project, number)
+
+
 def description_key(chapter: int) -> str:
     return f"MS_HUB_{chapter:02d}_INFO"
 

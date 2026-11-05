@@ -143,8 +143,8 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(RADIANT_DAWN_PROFILE.supports(NEW_CAMPAIGN))
         for feature in (NEW_CAMPAIGN, HUB, MAP_PHASES):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature))
-        for feature in (HUB, MAP_PHASES):
-            self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature))
+        self.assertTrue(RADIANT_DAWN_PROFILE.supports(HUB))
+        self.assertFalse(RADIANT_DAWN_PROFILE.supports(MAP_PHASES))
 
     def test_chapter_page_holds_no_game_checks(self):
         source = (Path(__file__).resolve().parents[1] / "fe_modding" / "gui" / "pages" / "chapters.py").read_text(

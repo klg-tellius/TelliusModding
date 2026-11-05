@@ -36,6 +36,7 @@ from .hub import (ACTIVE, DEST, END_MARK, PENDING, START_MARK, STARTED, Destinat
                   flag_names, saved_setup, setup_from)
 
 RELEASE_FORCE = 1
+TEST_MAP = 0      # C0000, the developers' test map: not a story chapter
 
 
 def _flag_assignments(chapter: int) -> list[str]:
@@ -315,6 +316,53 @@ def uninstall(project) -> dict:
     if draft_path(project).is_file():
         draft_path(project).unlink()
     return current
+
+
+def page_numbers(project, fe10: bytes | None = None) -> dict[int, str]:
+    """Story number -> chapter page id (``0101``, ``0501``, ``final``)."""
+    fe10 = fe10 if fe10 is not None else _fe10(project)
+    return {n: _page_id(n, rd_story.chapter_number_map(fe10)) for n in rd_story.chapter_number_map(fe10)}
+
+
+def is_hub_candidate(page_id: str) -> bool:
+    return chapters_fe10.number_for(page_id) is not None
+
+
+def activation_candidates(project, hub_number: int, fe10: bytes | None = None) -> dict[int, str]:
+    """Story chapters that can open the hub: the others with a script, before the ending."""
+    return {n: page for n, page in page_numbers(project, fe10).items()
+            if n not in (TEST_MAP, hub_number, rd_story.ENDING)
+            and script_sources.chapter_script(project, page) is not None}
+
+
+def link_candidates(project, hub_number: int, fe10: bytes | None = None) -> dict[int, str]:
+    """Story chapters a hub link can enter: script, map and deployment present."""
+    out = {}
+    for n, page in page_numbers(project, fe10).items():
+        if n in (TEST_MAP, hub_number, rd_story.ENDING) or not rd_story.is_story_number(n):
+            continue
+        paths = chapters.chapter_paths(project, page)
+        if paths.script is not None and paths.map is not None and paths.deployment is not None:
+            out[n] = page
+    return out
+
+
+def deployed_pids(project, except_page: str | None = None, fe10: bytes | None = None) -> set[str]:
+    """Every character in a chapter deployment, but ``except_page``'s."""
+    out = set()
+    for page in page_numbers(project, fe10).values():
+        if page and page != except_page:
+            for path in _deployments(project, page):
+                out |= _pids(path)[0]
+    return out
+
+
+def avatar_candidates(project, fe10: bytes, except_page: str | None = None, keep: str | None = None) -> list[tuple[str, str]]:
+    """``(pid, jid)`` of characters with a class that no other chapter deploys (``keep`` always listed)."""
+    used = deployed_pids(project, except_page, fe10)
+    return [(r.values["pid"], r.values["jid"]) for r in fe10data.read_table(fe10, "character")
+            if (r.values.get("pid") or "").startswith("PID_") and r.values.get("jid")
+            and (r.values["pid"] == keep or r.values["pid"] not in used)]
 
 
 __all__ = ["ACTIVE", "STARTED", "DEST", "PENDING", "Destination", "HubSetup", "hub_script", "prepare",

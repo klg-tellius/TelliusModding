@@ -420,7 +420,8 @@ class _BuildCanvas(tk.Canvas):
             self.create_rectangle(x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill=LINK_COLOR, stipple="gray50",
                                   outline="#ffe14d" if selected else LINK_COLOR, width=3 if selected else 2)
             if self.cell >= 16:
-                self.create_text(*centers["action"], text=f"{mark['chapter']:02d}", fill="#ffffff", font=font)
+                self.create_text(*centers["action"], text=mark.get("label") or f"{mark['chapter']:02d}", fill="#ffffff",
+                                 font=font)
         if "return" in centers:
             x0, y0, x1, y1 = self.box(*mark["return"])
             pad = max(3, self.cell * 0.2)
