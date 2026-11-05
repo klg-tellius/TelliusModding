@@ -2,7 +2,7 @@
 id: "modding-replace-rig"
 title: "Replace or fit a humanoid rig"
 description: "A deep guide to rig kits, compatible replacement, automatic fitting, bone and anchor contracts, mappings, weights, complete animation sets, import review, testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Models", "Rigging", "Blender"]
@@ -129,9 +129,21 @@ Write only after saving the mapping and fitted/source glTF. Run project checks, 
 
 Use **Restore original…** for the model folder or restore every proposed output as one transaction. Skeleton, body, animations, and texture variants must remain mutually compatible; partial rollback is unsafe.
 
+## Radiant Dawn
+
+Radiant Dawn's map units (`ymu/<set>/`) work the same way, with these differences:
+
+- **Bones.** Many of their bones are placed by a translation and a joint orient (bone flags `0x67`), not by a pivot. The rig kit is written with the rest pose as its bind pose, so in Blender the body, the joints and the anchors are where the game draws them.
+- **Same rig.** When the armature comes back with the class's own bones, the import keeps the game's skeleton unchanged, then rebuilds the body onto it.
+- **Animations.** In each animation, a bone that moves as in the game keeps the game's own keys, and only edited bones get new ones. A clip you did not touch is written back byte for byte.
+- **Paired models.** A model of two characters (`sothe1_mikaya2`, Sothe carrying Micaiah) repeats each bone name once per character. In the kit the second copy is named `hand_l~2`; the import gives the game's names back.
+- **Textures.** A unit's `.tpl` can hold several images: the archer's has the body and the bow. A body using two of them imports, and textures that match the class's keep its army-colour variants.
+
 ## Limits and confidence
 
 Rig checks, anchor preservation, animation completeness, name-based retargeting, automatic fitting, mapping persistence, texture behavior, event validation, and review/write boundaries are source-reviewed. Automatic humanoid mapping is heuristic, and neither fitted nor replaced rigs have curriculum-level Dolphin confirmation.
+
+On Radiant Dawn, Micaiah's map model was sent through the rig kit, Blender (5.2) and the import, then played in Dolphin: on the Prologue map she stands and moves as in the unmodified game. The archer and the paired Sothe and Micaiah model were checked through Blender on the files only. Their animated poses are within 0.03 units of the game's on average. Blender resamples a few frames, which can move a vertex by up to half a unit.
 
 ## Related tutorials and references
 

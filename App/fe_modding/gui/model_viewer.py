@@ -2057,6 +2057,10 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
 
     targets: dict[str, bytes] = {n: files[n] for n in files if Path(n).suffix.lower() == ".ga"}
     targets.update({p.name: p.read_bytes() for p in sorted(container_path.parent.glob("*.ga"))})
+    # The class's own armature back (an edited mesh or animations): keep the game's skeleton, so each
+    # bone keeps its own conventions (Radiant Dawn's joint-orient bones, flags 0x67); the body and the
+    # animations are rebuilt onto it. Only a different armature gets a new skeleton.
+    same_rig = gltf_import.same_armature(new_skeleton.bones, old_bones)
     available = {name.lower(): name for name in gltf_import.list_animations(gltf_data, gltf_path.parent)}
     missing = [t for t in targets if Path(t).stem.lower() not in available]
     if missing:
@@ -2070,7 +2074,7 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     if extra:
         warnings.append("glTF animations with no matching class animation (ignored): " + ", ".join(extra))
 
-    g_bytes = skeleton.write_skeleton_file(new_skeleton)
+    g_bytes = files[g_names[0]] if same_rig else skeleton.write_skeleton_file(new_skeleton)
     animations: dict[str, bytes] = {}
     event_problems: list[str] = []
     for target, template in targets.items():
@@ -2085,7 +2089,8 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     warnings += rig_contract.visibility_warnings(
         old_bones, targets, skeleton.read_skeleton_file(g_bytes).bones, animations
     )
-    result = _rebuild_character(container_path, gltf_path, skeleton_data=g_bytes, animations=animations)
+    result = _rebuild_character(container_path, gltf_path, skeleton_data=None if same_rig else g_bytes,
+                                animations=animations)
     result.warnings[:0] = warnings
     return result
 
@@ -2138,9 +2143,19 @@ def _rebuild_character(
 
     variants = _texture_variant_files(container_path, files)
     new_tpl: bytes | None = None
-    if len(images) > 1:
+    # Each variant's images, in tex_id order. A Path of Radiance class texture holds one image; a
+    # Radiant Dawn map unit's can hold more (archer1.tpl: the body and the bow, tex_id 0 and 1).
+    known: list[list[Image.Image]] = []
+    for data in variants.values():
+        try:
+            known.append(tpl.read_tpl_images(io.BytesIO(data)))
+        except Exception:  # noqa: BLE001 - an unreadable variant just can't match
+            continue
+    capacity = max([len(k) for k in known] + [1])
+    if len(images) > capacity:
         raise gltf_import.GltfImportError(
-            f"The model uses {len(images)} different textures; a map model uses a single texture image."
+            f"The model uses {len(images)} different textures; this class's texture holds "
+            f"{capacity} image{'s' if capacity != 1 else ''}."
         )
     if not images:
         for material in gs.materials:
@@ -2151,16 +2166,23 @@ def _rebuild_character(
         for material in gs.materials:
             if not material.textures:
                 material.textures = [gs_file.GsTexture((1, 0), 0, (257, 0, 0, 0, 0), 1.0, 1.0, 0)]
+        # Every image found in one variant: point the materials at that variant's images and keep
+        # the variants (Blender drops a texture no material uses, which renumbers the rest).
+        mapping = None
+        for variant in known:
+            found = [next((j for j, k in enumerate(variant) if _same_image(image, k)), None) for image in images]
+            if None not in found:
+                mapping = dict(enumerate(found))
+                break
+        if mapping is not None:
+            for material in gs.materials:
+                for texture in material.textures:
+                    texture.tex_id = mapping.get(texture.tex_id, texture.tex_id)
         gs_bytes = gs_file.write_gs(gs)
-        known = []
-        for data in variants.values():
-            try:
-                known += tpl.read_tpl_images(io.BytesIO(data))
-            except Exception:  # noqa: BLE001 - an unreadable variant just can't match
-                continue
-        if not any(_same_image(images[0], k) for k in known):
-            rgba, _fmt = gltf_import.texture_for_tpl(images[0], max_size=BODY_TEXTURE_SIZE)
-            new_tpl = tpl.build_tpl([(rgba, tpl.FORMAT_CMPR)])
+        if mapping is None:
+            new_tpl = tpl.build_tpl([
+                (gltf_import.texture_for_tpl(image, max_size=BODY_TEXTURE_SIZE)[0], tpl.FORMAT_CMPR)
+                for image in images])
             warnings.append(
                 f"New texture: all {len(variants)} texture variants (tex_N.tpl) are replaced with it, "
                 "so every unit of this class shows the same colours."
@@ -2169,7 +2191,7 @@ def _rebuild_character(
     files[gs_names[0]] = gs_bytes
     out: dict[Path, bytes] = {}
     if skeleton_data is not None:
-        files[g_names[0]] = skeleton_data
+        files[g_names[0]] = gltf_import.restore_duplicate_names(skeleton_data)
     for name, data in (animations or {}).items():
         if name in files:
             files[name] = data
@@ -2462,7 +2484,7 @@ def replace_battle_body_with_glb(
         entries, pack_files = _read_container(pack_path)
         pack_files[gs_names[0]] = gs_bytes
         if skeleton_data is not None:
-            pack_files[g_names[0]] = skeleton_data
+            pack_files[g_names[0]] = gltf_import.restore_duplicate_names(skeleton_data)
         pack_files.update((pack_animations or {}).get(pack_path, {}))
         out[pack_path] = _pack(pack_path, entries, pack_files)
     # FE10 keeps animations in sibling .pak archives rather than alongside
