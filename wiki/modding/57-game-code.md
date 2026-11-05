@@ -120,6 +120,8 @@ Press **Reset** beside the field. The value returns to 4 and the card to *Vanill
 | **Battle screen** | Numbers shown in fights | **Damage, hit and critical in battle scenes** with its position, nudges and size, **Battle info window** (a port of FE7Dragon's FE9 Battle Info Display patch) |
 | **Army phases** | Who plays each army | Player, Enemy, Other and Partner phase: played by you, by the computer, or skipped; takes effect at the next chapter |
 
+On Radiant Dawn, **Army phases** has the same four choices. The game writes the controllers at each chapter start from two places in its code, and both read the page's values. In the game, Enemy phase set to **No phase** made 1-1 go straight from the player's turn 1 to turn 2, without the bandits' phase. A chapter's script can still change the controllers during the chapter with `BMSetTanto`; no retail script does.
+
 ## Things to try next
 
 1. **A patch.** Tick **Bandits do not destroy villages**, build, and let a bandit reach a village in Ch.1.

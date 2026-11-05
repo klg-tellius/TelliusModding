@@ -671,3 +671,47 @@ _patch("rd.hard_mode.show_information", G_RD_RULES,
         (0x2662B, "024182", "034182"),
         (0xF5553, "024182", "034182")))
 
+
+# Army phases. bmap_phase_control_types (0x803CAB4C, state 0x803CAB38 + 0x14) is one byte per phase
+# (player, enemy, other, partner): 0 the phase is skipped, 1 the player gives the orders
+# (0x80043048 starts E_BMapPlph when the byte is 1), 2 the computer (0x80043078 dispatches the AI when
+# it is not 0). Two chapter-start routines write 1, 2, 2, 2 with four stb on r31 (0x80060DEC in
+# 0x80060D68, 0x80061140 in 0x800610F4, called from 0x800A25B4); no retail script calls the
+# BMSetTanto native (setter 0x80061A78), which is left alone so a mod's script can still change them.
+# As on Path of Radiance (phase_control.py), each site's first stb becomes a call to a cave routine
+# that stores the four bytes from its own li immediates, and the other three become nop.
+G_RD_PHASES = "Army phases"
+_RD_PHASE_ROUTINE = CAVE_ADDRESS + 0x1000
+_RD_PHASE_SITES = ((0x80060DEC, "9BBF0014"), (0x80061140, "9BDF0014"))  # stb r29 / stb r30, 0x14(r31)
+_RD_PHASE_REST = "981F0015981F0016981F0017"  # stb r0, 0x15..0x17(r31)
+_RD_PHASE_ARMIES = ("player", "enemy", "other", "partner")
+_RD_PHASE_DEFAULTS = (1, 2, 2, 2)
+_RD_PHASE_CHOICES = ("No phase", "Player", "Computer")
+
+
+def _rd_phase_routine() -> bytes:
+    words = []
+    for army, default in enumerate(_RD_PHASE_DEFAULTS):
+        words += [ppc.li(12, default), ppc.stb(12, 0x14 + army, 31)]
+    return b"".join(_word(w) for w in words + [ppc.BLR])
+
+
+_rd_phase_code = _rd_phase_routine()
+assert in_cave(_RD_PHASE_ROUTINE, len(_rd_phase_code))
+_RD_PHASE_HOOK = CATALOG.add(Patch(
+    "rd.phases.controller.hook", G_RD_PHASES, "Army phase controller hook",
+    "Chapter start reads each army's phase controller from the cave.",
+    {RFEE01: tuple(Edit(site, _raw(first + _RD_PHASE_REST),
+                        _word(ppc.bl(site, _RD_PHASE_ROUTINE)) + _word(ppc.NOP) * 3)
+                   for site, first in _RD_PHASE_SITES)
+     + (Edit(_RD_PHASE_ROUTINE, bytes(len(_rd_phase_code)), _rd_phase_code,
+             wild=tuple((8 * army + 3, 1) for army in range(len(_RD_PHASE_ARMIES)))),)},
+    internal=True))
+for _index, (_army, _default) in enumerate(zip(_RD_PHASE_ARMIES, _RD_PHASE_DEFAULTS)):
+    CATALOG.add(Tunable(
+        f"rd.phases.{_army}", G_RD_PHASES, f"{_army.capitalize()} phase",
+        f"Who plays the {_army} army's phase, from the next chapter start: the player, the computer, or "
+        "nobody (the phase is skipped). A save keeps the setting it was made with.",
+        default=_default, minimum=0, maximum=2,
+        versions={RFEE01: (Field(_RD_PHASE_ROUTINE + 8 * _index + 3, "u8"),)},
+        requires=(_RD_PHASE_HOOK,), choices=_RD_PHASE_CHOICES))

@@ -399,6 +399,24 @@ class RetailCatalogTests(unittest.TestCase):
         self.assertEqual([e.patched for e in off], [ppc.li(4, 0).to_bytes(4, "big"), ppc.li(3, 0).to_bytes(4, "big")])
         self.assertEqual([(e.address, e.patched) for e in on], [(0x8013A364, ppc.lis(4, 8).to_bytes(4, "big"))])
 
+    def test_rd_army_phases_replace_both_chapter_start_writers(self):
+        # 0x80060DEC (stb r29) and 0x80061140 (stb r30) start the 1/2/2/2 writes of 0x803CAB4C..4F
+        hook = CATALOG.entries["rd.phases.controller.hook"].versions["RFEE01"]
+        sites = [e for e in hook if not 0x80001800 <= e.address < 0x80003000]
+        self.assertEqual([(e.address, e.original.hex()) for e in sites],
+                         [(0x80060DEC, "9bbf0014981f0015981f0016981f0017"),
+                          (0x80061140, "9bdf0014981f0015981f0016981f0017")])
+        routine = next(e for e in hook if e.address not in (0x80060DEC, 0x80061140))
+        for site in sites:
+            self.assertEqual(site.patched[:4], ppc.bl(site.address, routine.address).to_bytes(4, "big"))
+            self.assertEqual(site.patched[4:], ppc.NOP.to_bytes(4, "big") * 3)
+        words = [int.from_bytes(routine.patched[i:i + 4], "big") for i in range(0, len(routine.patched), 4)]
+        self.assertEqual(words, [ppc.li(12, 1), ppc.stb(12, 0x14, 31), ppc.li(12, 2), ppc.stb(12, 0x15, 31),
+                                 ppc.li(12, 2), ppc.stb(12, 0x16, 31), ppc.li(12, 2), ppc.stb(12, 0x17, 31), ppc.BLR])
+        enemy = CATALOG.entries["rd.phases.enemy"]
+        self.assertEqual((enemy.versions["RFEE01"][0].address, enemy.default, enemy.choices),
+                         (routine.address + 8 + 3, 2, ("No phase", "Player", "Computer")))
+
     def test_rd_entries_verify_on_the_retail_dol(self):
         import os
         files = os.environ.get("FE10_EXTRACTED_FILES")
