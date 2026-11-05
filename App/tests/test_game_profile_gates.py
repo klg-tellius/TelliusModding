@@ -180,8 +180,12 @@ class UnavailableStateTests(unittest.TestCase):
         for name in ("C0407a", "C0101", "startup", "CFINAL"):
             (files / "Scripts" / f"{name}.cmb").write_bytes(b"")
         self.assertEqual([(p.name, c) for p, c in text_assets.message_files(self.project)],
-                         [("c0101.m", "0101"), ("c0102.m", "0102"), ("c0407a.m", "0407a"),
-                          ("common.m", None), ("e_c0101.m", None)])
+                         [("e_c0101.m", "0101"), ("c0102.m", "0102"), ("c0407a.m", "0407a"),
+                          ("c0101.m", None), ("common.m", None)])
+        from fe_modding.game_profile import chapter_mess_path, chapter_mess_relpath
+        self.assertEqual(chapter_mess_path(self.project, "0101").name, "e_c0101.m")
+        self.assertEqual(chapter_mess_path(self.project, "0102").name, "c0102.m")
+        self.assertEqual(Path(chapter_mess_relpath(self.project, "0101")).name, "e_c0101.m")
         self.assertEqual([(p.name, c) for p, c in text_assets.script_files(self.project)],
                          [("C0101.cmb", "0101"), ("C0407a.cmb", "0407a"), ("startup.cmb", None),
                           ("CFINAL.cmb", None)])

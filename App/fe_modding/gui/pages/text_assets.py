@@ -18,7 +18,7 @@ from tkinter import ttk
 
 from ... import chapters, script_sources
 from ...formats import fe10_message
-from ...game_profile import CHAPTERS, files_root_of, profile_of
+from ...game_profile import CHAPTERS, files_root_of, message_prefix, profile_of
 from ..dialogue_editor import DialogueEditor
 from ..editor_panel import EditorPanel
 from ..script_editor import ScriptEditor
@@ -41,7 +41,24 @@ def message_files(project) -> list[tuple[Path, str | None]]:
     chapter order, then the others by name."""
     folder = files_root_of(project) / "Mess"
     ids = set(chapters.list_chapter_ids(project))
-    return _ordered(project, folder.glob("*.m") if folder.is_dir() else (), _chapter_file_re(project, "m"), ids)
+    paths = list(folder.glob("*.m")) if folder.is_dir() else []
+    prefix = message_prefix(project)
+    if not prefix:
+        return _ordered(project, paths, _chapter_file_re(project, "m"), ids)
+    # Radiant Dawn on a US / European disc: a chapter's file is the language one the game plays
+    # (e_c0101.m); the other language's copy is listed with the other files. A chapter with no
+    # language file keeps its plain one.
+    id_pattern = profile_of(project).chapter_id_pattern
+    localised = re.compile(rf"^{re.escape(prefix)}c({id_pattern})\.m$", re.IGNORECASE)
+    plain = _chapter_file_re(project, "m")
+    has_localised = {_chapter_key(m.group(1)) for m in (localised.match(p.name) for p in paths) if m}
+    owned = [p for p in paths if localised.match(p.name)
+             or (plain.match(p.name) and _chapter_key(plain.match(p.name).group(1)) not in has_localised)]
+    either = re.compile(rf"^(?:{re.escape(prefix)})?c({id_pattern})\.m$", re.IGNORECASE)
+    chapter_files = _ordered(project, owned, either, ids)
+    rest = [p for p in paths if p not in owned] + [path for path, cid in chapter_files if cid is None]
+    rest.sort(key=lambda path: (path.stem.lower() != "startup", path.name.lower()))
+    return [entry for entry in chapter_files if entry[1] is not None] + [(path, None) for path in rest]
 
 
 def script_files(project) -> list[tuple[Path, str | None]]:

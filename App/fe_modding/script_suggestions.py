@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from . import chapters
-from .game_profile import files_root_of, profile_of
+from .game_profile import chapter_mess_path, files_root_of, profile_of
 from .project import ModProject
 
 
@@ -502,11 +502,9 @@ class ScriptSuggestions:
             return []
         from .formats import message
         profile = profile_of(self._project)
-        path = profile.mess_path(self.files, chapter_id)
+        path = chapter_mess_path(self._project, chapter_id)  # the file the disc plays (e_ on US RD)
         if profile.message_dialect == "fe10":
             from .formats import fe10_message, fe10data
-            english = path.with_name("e_" + path.name)  # same keys, English text
-            path = english if english.exists() else path
             key_of, text_of = fe10data.message_key, fe10_message.plain_text
         else:
             from .formats.fe9_message_scene import to_display
