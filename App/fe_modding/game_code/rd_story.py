@@ -179,9 +179,11 @@ def _retail_flags() -> bytes:
 
 def _edits() -> tuple[Edit, ...]:
     hook = _hook()
+    # The hub router (rd_hub) replaces the first instruction of ``done`` with a call to itself.
+    done = hook.index(_word(ppc.lwz(0, 0x24, 1)))
     return (
         *(Edit(site, _word(ppc.bl(site, _ADVANCE)), _word(ppc.bl(site, HOOK))) for site in _CALLS),
-        Edit(HOOK, bytes(len(hook)), hook),
+        Edit(HOOK, bytes(len(hook)), hook, wild=((done, 4),)),
         Edit(SUCCESSORS, bytes(0x100), bytes(0x100), wild=((0, 0x100),)),
         Edit(ARMIES, bytes(0x100), _retail_armies(), wild=((0, 0x100),)),
         Edit(FLAGS, bytes(0x100), _retail_flags(), wild=((0, 0x100),)),

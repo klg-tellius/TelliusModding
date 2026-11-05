@@ -279,7 +279,7 @@ def add_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id: 
         raise ValueError(f"main.dol cannot hold a story flow: {reason}")
     if after is not None and flow.outside_reason(after):
         raise ValueError(f"Chapter {after} cannot be followed by another chapter.")
-    if after == getattr(flow, "ending", None):
+    if after is not None and after == getattr(flow, "ending", None):
         raise ValueError("The final chapter ends the story: pick a chapter before it.")
     files = files_of(project)
     for rel, content in plan.files.items():
