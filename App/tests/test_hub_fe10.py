@@ -36,7 +36,7 @@ class RdHubSetupTests(unittest.TestCase):
             shutil.copy(files / "Scripts" / f"{name}.cmb", ex / "files" / "Scripts")
         for name in ("c0101.m", "e_c0101.m", "e_common.m", "common.m"):
             shutil.copy(files / "Mess" / name, ex / "files" / "Mess")
-        for folder in ("bmap0101", "bmap0103"):
+        for folder in ("bmap0101", "bmap0103"):      # bmap0103 also gives the Arrive marker (tttu01)
             shutil.copytree(files / "zmap" / folder, ex / "files" / "zmap" / folder)
         plan = chapters_fe10.add_story_chapter(project, project.read_logical("game_data"), "0101", "0501", "Hub")
         project.write_logical("game_data", plan.fe10data)
@@ -62,7 +62,8 @@ class RdHubSetupTests(unittest.TestCase):
     def setup(self, **changes):
         from fe_modding import hub
         values = dict(chapter=56, activation_chapter=1, avatar_pid=AVATAR,
-                      destinations=(hub.Destination(3, 7, 20, 6, 20),), start_x=6, start_y=20)
+                      destinations=(hub.Destination(3, 7, 20, 6, 20, "The old road, where Nolan waits."),),
+                      start_x=6, start_y=20)
         values.update(changes)
         return hub.HubSetup(**values)
 
@@ -72,6 +73,7 @@ class RdHubSetupTests(unittest.TestCase):
         from fe_modding.formats.cmb.parser import parse
         from fe_modding.game_code import rd_hub, rd_story
         from fe_modding.game_code.dol import Dol
+        from fe_modding.formats import fe10_message
 
         project = self.project
         before = {page: script_sources.peek(project, script_sources.chapter_script(project, page))
@@ -90,15 +92,37 @@ class RdHubSetupTests(unittest.TestCase):
         self.assertIn('@on_location(x=7, y=20, action="arrive", name=None)', hub_source)
         self.assertIn(f"UnitTransferToForce(unit, {hub_fe10.RELEASE_FORCE})", hub_source)
         self.assertIn('set("HUB_ACTIVE")', script_sources.peek(project, script_sources.chapter_script(project, "0101")))
+        self.assertIn('@on_location(x=7, y=20, action="visit", name=None)', hub_source)
+        self.assertIn('TalkEvent("MS_HUB_03_INFO")', hub_source)
         self.assertTrue(hub.config_path(project).is_file())
+        self.assertEqual(self.markers(), [(7, 20)])
+        info = self.messages().get("MS_HUB_03_INFO")
+        self.assertEqual(fe10_message.to_display(info),
+                         "<R:ダイアログ会話><sd>The old road, where Nolan\nwaits.<wait>")
 
         hub_fe10.uninstall(project)
+        self.assertEqual(self.markers(), [])
+        self.assertNotIn("MS_HUB_03_INFO", self.messages())
         self.assertFalse(hub.config_path(project).is_file())
         for page, source in before.items():
             after = script_sources.peek(project, script_sources.chapter_script(project, page))
             self.assertNotIn(hub.START_MARK, after)
         dol = Dol.open(project.extracted_dir / "sys" / "main.dol")
         self.assertEqual(dol.read(rd_hub.DONE, 4), (0x80010024).to_bytes(4, "big"))   # lwz r0, 0x24(r1)
+
+    def markers(self):
+        from fe_modding import chapters, map_props
+        from fe_modding.formats import map_file
+        _entries, files = map_props.read_map_container(chapters.chapter_paths(self.project, "0501").map)
+        data = map_file.read_map_bytes(files["map.bin"])
+        return [(i.x, i.y) for i in data.build_inst if data.build_desc[i.desc_index].filename == "tttu01"]
+
+    def messages(self):
+        from fe_modding import chapters
+        from fe_modding.formats import message
+        path = chapters.chapter_paths(self.project, "0501").dialogue
+        self.assertEqual(path.name, "e_c0501.m")
+        return {m.speaker: m.text for m in message.read_messages_path(path)}
 
     def test_create_chapter_leaves_the_avatar_alone_and_a_plain_opening(self):
         from fe_modding import hub, hub_creation_fe10, hub_fe10, script_sources
@@ -142,7 +166,8 @@ class RdHubSetupTests(unittest.TestCase):
             (dict(avatar_pid="PID_NOBODY"), "no character record"),
             (dict(destinations=()), "at least one destination"),
             (dict(destinations=(hub.Destination(2, 7, 20, 6, 20),)), "missing its script, map or deployment"),
-            (dict(destinations=(hub.Destination(3, 7, 20, 6, 20, "Go"),)), "descriptions"),
+            (dict(destinations=(hub.Destination(3, 7, 20, 6, 20, "word " * 30),)), "at most 4 lines"),
+            (dict(destinations=(hub.Destination(3, 7, 20, 6, 20, "a <tag>"),)), "cannot hold"),
         ]
         for changes, message in cases:
             with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
