@@ -425,6 +425,17 @@ class RetailCatalogTests(unittest.TestCase):
             self.skipTest("set FE10_EXTRACTED_FILES to an extracted RFEE01 files/ directory")
         self.assertEqual(verify.verify(Dol.open(path)), [])
 
+    def test_rd_village_and_tier_level_sites(self):
+        village, = CATALOG.entries["rd.map.no_village_destruction"].versions["RFEE01"]
+        self.assertEqual((village.address, village.original, village.patched),
+                         (0x8015B798, bytes.fromhex("418200C4"), bytes.fromhex("480000C4")))
+        for tunable_id, address, default in (("rd.exp.tier2_level_bonus", 0x80126C08, 20),
+                                             ("rd.exp.tier3_level_bonus", 0x80126BEC, 40)):
+            tunable = CATALOG.entries[tunable_id]
+            field, = tunable.versions["RFEE01"]
+            self.assertEqual((field.address, field.kind, field.expect, tunable.default),
+                             (address, "imm16s", bytes.fromhex("3bff"), default))
+
     def test_rd_no_terrain_bonus_uses_native_parity_clearer(self):
         patch = CATALOG.entries["rd.combat.no_terrain_bonus"]
         edit, = patch.versions["RFEE01"]

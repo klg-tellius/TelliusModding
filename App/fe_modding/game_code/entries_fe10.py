@@ -196,6 +196,22 @@ _tunable(
      Field(0x80120820, "imm16u", b"\x3b\xe0")), "EXP")
 
 
+# Effective level (0x80126BA4): the unit's level (+0xFE), plus 40 with SID_HIGHEST (third tier,
+# r13-0x7B5C), plus 20 with SID_HIGHER (second tier, r13-0x7B60), nothing with SID_ANIMALIZE (laguz).
+# Combat EXP compares it (0x8006CA04), and so do a skill check in battle setup (0x8002A0B8), level
+# comparisons (0x80121E3C) and the AI (0x8016B038, 0x8016B90C, 0x8016C21C).
+_tunable(
+    "rd.exp.tier2_level_bonus", G_RD_EXP, "Second-tier level bonus",
+    "Levels added to a second-tier unit's effective level (vanilla 20). Combat EXP uses it, and so do "
+    "some skill and AI level comparisons.",
+    20, 0, 100, (Field(0x80126C08, "imm16s", b"\x3b\xff"),), "levels")
+_tunable(
+    "rd.exp.tier3_level_bonus", G_RD_EXP, "Third-tier level bonus",
+    "Levels added to a third-tier unit's effective level (vanilla 40). Combat EXP uses it, and so do "
+    "some skill and AI level comparisons.",
+    40, 0, 100, (Field(0x80126BEC, "imm16s", b"\x3b\xff"),), "levels")
+
+
 # -- Level-up growth -----------------------------------------------------------------------------
 
 # Actual level-ups converge on 0x8006DCF0. Ordinary gains call 0x8006D380;
@@ -661,6 +677,14 @@ CATALOG.add(Patch(
     "Every map starts with the fog of war (the mode of 3-1 and 4-2's night maps). A chapter script can "
     "change it during the chapter.",
     {RFEE01: (Edit(_FOG_DECODE, _raw("5484031A"), _word(ppc.lis(4, 8))),)}))
+
+# Village destruction: the AI routine around 0x8015B788 asks the unit's skills for SID_VILLAGEDESTROY
+# (name pointer at r13-0x7B38, held by JID_BANDIT) and skips the village search when it is absent.
+# `beq` -> `b` skips it for every unit.
+CATALOG.add(Patch(
+    "rd.map.no_village_destruction", G_RD_RULES, "Bandits do not destroy villages",
+    "Units with the village-destroying skill (SID_VILLAGEDESTROY, the Bandit class) no longer go for villages.",
+    {RFEE01: (Edit(0x8015B798, _raw("418200C4"), _raw("480000C4")),)}))
 
 _patch("rd.hard_mode.show_information", G_RD_RULES,
        "Hard mode: show triangle, affinity and ranges",
