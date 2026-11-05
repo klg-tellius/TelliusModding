@@ -37,7 +37,10 @@ class LayoutTests(unittest.TestCase):
         shared = [key for key in rd if key in por]
         self.assertEqual(shared, [key for key in por if key in rd])  # the same order where both have a tile
         self.assertIn("battle_scenery", por)
-        self.assertEqual(data.FE10_GROUPS["supports"][0], "supports")
+        # RD's Supports group starts with Pairs, as Path of Radiance's Supports tab does; the tile's route
+        # ("supports") still opens the support table, the group's first table
+        self.assertEqual(data.FE10_GROUPS["supports"][:2], ("support_pairs", "supports"))
+        self.assertIn("support_pairs", data.FE10_PAGE_TITLES)
 
     def test_character_page_holds_no_supports_game_check(self):
         source = (Path(__file__).resolve().parents[1] / "fe_modding" / "gui" / "pages" / "characters.py").read_text(
@@ -53,6 +56,28 @@ class RdCorpusTests(unittest.TestCase):
         self.fe10data = fe10data
         self.data = lz10.decompress((Path(FE10) / "FE10Data.cms").read_bytes())
         self.adapter = RdDataAdapter(SimpleNamespace(data=self.data, fe10=fe10data.read_fe10data(self.data)))
+
+    def test_support_pairs_panel(self):
+        import tkinter as tk
+        from fe_modding.gui.support_editor import SupportPairsPanel
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            self.skipTest("no display")
+        self.addCleanup(root.destroy)
+        opened = []
+        panel = SupportPairsPanel(root, get_data=lambda: self.data, model=self.adapter.supports_model,
+                                  open_character=opened.append)
+        pairs = len(panel._rows)
+        self.assertGreater(pairs, 1000)  # RD lists every supporting character against the others
+        self.assertTrue(all(pid != partner for pid, partner, _cells in panel._rows))
+        panel._query.set("PID_MICAIAH")
+        shown = panel._tree.get_children()
+        self.assertTrue(shown and len(shown) < pairs)
+        self.assertTrue(all("PID_MICAIAH" in iid for iid in shown))
+        panel._tree.selection_set(shown[0])
+        panel._open()
+        self.assertEqual(opened, [shown[0].split("\t")[0]])
 
     def test_every_sheet_round_trips_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:

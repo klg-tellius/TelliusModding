@@ -85,11 +85,12 @@ class ScreenCapabilityTests(unittest.TestCase):
     """The purpose-built screens are capabilities: PoR has them, RD gets each as its phase lands."""
 
     def test_capabilities(self):
-        for feature in (CHARACTER_FORM, DATA_WORKSPACE, SAVE_UNITS):
-            self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), feature)
-            self.assertFalse(RADIANT_DAWN_PROFILE.supports(feature), feature)
-        # Phase 4: one Chapter data form; Phase 5: one Supports tab
-        for feature in (CHAPTER_RECORD_FORM, SUPPORT_LIST):
+        # RD's save editor has units but not the convoy, forge, map-object, flag and system tabs yet
+        self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(SAVE_UNITS))
+        self.assertFalse(RADIANT_DAWN_PROFILE.supports(SAVE_UNITS))
+        # Phase 4: one Chapter data form; Phase 5: one Supports tab; RD audit round 2 Phase 4: the
+        # character form and the Game Data workspace (same hub and sections, the shared Pairs list)
+        for feature in (CHAPTER_RECORD_FORM, SUPPORT_LIST, CHARACTER_FORM, DATA_WORKSPACE):
             self.assertTrue(PATH_OF_RADIANCE_PROFILE.supports(feature), feature)
             self.assertTrue(RADIANT_DAWN_PROFILE.supports(feature), feature)
 

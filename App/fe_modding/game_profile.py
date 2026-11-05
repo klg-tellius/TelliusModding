@@ -132,6 +132,9 @@ class GameProfile:
     script_dialect: str = "fe9"
     #: Battle tables: ``zdbx`` (Path of Radiance's ``zdbx.cmp`` dbx files) or ``fe10`` (``FE10Battle.cms`` rows).
     battle_dialect: str = "zdbx"
+    #: Game-data records: ``fe8`` (``FE8Data.bin``'s typed entries) or ``fe10`` (``FE10Data.cms``'s field
+    #: records); the character form and the Game Data tables use the matching editor.
+    data_dialect: str = "fe8"
     #: Buckets of the engine's name hash (``message.engine_name_hash``): message IDs and container
     #: symbols that share a bucket and check value shadow each other.
     name_hash_buckets: int = 509
@@ -281,10 +284,11 @@ RADIANT_DAWN_PROFILE = GameProfile(
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
                         MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS, BATTLE_SCENERIES, BATTLE_PARAMS,
-                        NEW_CAMPAIGN, COLOUR_VARIANTS}),
+                        NEW_CAMPAIGN, COLOUR_VARIANTS, CHARACTER_FORM, DATA_WORKSPACE}),
     message_dialect="fe10",
     script_dialect="fe10",
     battle_dialect="fe10",
+    data_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
     text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"),

@@ -652,3 +652,86 @@ class SupportEditorPanel(ttk.Frame):
                 return
         dialogue.select_message(msg_id)
         self._notebook.select(self._conversation_tab)
+
+
+class SupportPairsPanel(ttk.Frame):
+    """Every support pair of the game data on either game, through a :class:`SupportsModel`
+    (the list Path of Radiance's Game Data › Supports › Pairs shows). Pairs are edited on the
+    character page: double-click one to open it."""
+
+    def __init__(self, parent: tk.Misc, get_data: Callable[[], bytes], model: type,
+                 display_name: Optional[Callable[[str], str]] = None,
+                 open_character: Optional[Callable[[str], None]] = None):
+        super().__init__(parent, padding=12)
+        self._get_data = get_data
+        self._model_class = model
+        self._display_name = display_name or (lambda pid: pid)
+        self._open_character = open_character
+        ttk.Label(self, style="Muted.TLabel", wraplength=820, justify="left", text=(
+            "Every support pair. A character's partners and bonds are edited in the Supports tab of their "
+            "character page: double-click a pair to open it.")).pack(anchor="w", pady=(0, 8))
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Search").pack(side="left")
+        self._query = tk.StringVar()
+        ttk.Entry(bar, textvariable=self._query, width=30).pack(side="left", padx=(6, 0))
+        self._query.trace_add("write", lambda *_: self._refresh())
+        self._count = ttk.Label(bar, text="", style="Muted.TLabel")
+        self._count.pack(side="left", padx=(12, 0))
+        holder = ttk.Frame(self)
+        holder.pack(fill="both", expand=True)
+        columns = model.partner_columns
+        keys = ("a", "b") + tuple(f"c{i}" for i in range(len(columns)))
+        tree = ttk.Treeview(holder, columns=keys, show="headings", selectmode="browse")
+        tree.heading("a", text="Character")
+        tree.column("a", width=220, stretch=True)
+        tree.heading("b", text="Partner")
+        tree.column("b", width=220, stretch=True)
+        for i, (heading, width) in enumerate(columns):
+            tree.heading(f"c{i}", text=heading)
+            tree.column(f"c{i}", width=width, anchor="center", stretch=False)
+        scroll = ttk.Scrollbar(holder, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        tree.pack(side="left", fill="both", expand=True)
+        tree.bind("<Double-Button-1>", lambda e: self._open())
+        tree.bind("<Return>", lambda e: self._open())
+        self._tree = tree
+        self._problems = ttk.Label(self, text="", style="Warn.TLabel", wraplength=820, justify="left")
+        self._problems.pack(anchor="w", pady=(8, 0))
+        self._rows: list[tuple] = []
+        self.reload()
+
+    def _label(self, pid: str) -> str:
+        name = self._display_name(pid)
+        return pid if name == pid else f"{name} ({pid})"
+
+    def reload(self) -> None:
+        """Re-read every pair from the current bytes."""
+        model = self._model_class(self._get_data())
+        rows, problems = [], []
+        for pid in model.pids:
+            for row in model.partners(pid):
+                if row.partner and row.partner != pid:
+                    rows.append((pid, row.partner, row.cells))
+            problems.extend(model.problems(pid))
+        self._rows = rows
+        self._problems.config(text="\n".join(dict.fromkeys(problems)))
+        self._refresh()
+
+    def _refresh(self) -> None:
+        query = self._query.get().strip().lower()
+        self._tree.delete(*self._tree.get_children())
+        shown = 0
+        for pid, partner, cells in self._rows:
+            a, b = self._label(pid), self._label(partner)
+            if query and query not in (a + " " + b).lower():
+                continue
+            self._tree.insert("", "end", iid=f"{pid}\t{partner}", values=(a, b, *cells))
+            shown += 1
+        self._count.config(text=f"{shown} of {len(self._rows)} pairs")
+
+    def _open(self) -> None:
+        selection = self._tree.selection()
+        if selection and self._open_character is not None:
+            self._open_character(selection[0].split("\t")[0])
