@@ -89,7 +89,8 @@ class RdHubSetupTests(unittest.TestCase):
         self.assertEqual(dol.read(rd_story.MAGIC, 4), rd_story.MAGIC_BYTES)
         self.assertEqual(dol.read(rd_hub.DONE, 4), rd_hub.PATCH.versions["RFEE01"][0].patched)
         hub_source = script_sources.peek(project, script_sources.chapter_script(project, "0501"))
-        self.assertIn('@on_location(x=7, y=20, action="arrive", name=None)', hub_source)
+        self.assertIn('@on_location(x=7, y=20, action="arrive", name=None)\ndef HubGoTo3():\n'
+                      '    if Check():\n        return 1\n    else:\n', hub_source)
         self.assertIn(f"UnitTransferToForce(unit, {hub_fe10.RELEASE_FORCE})", hub_source)
         self.assertIn('set("HUB_ACTIVE")', script_sources.peek(project, script_sources.chapter_script(project, "0101")))
         self.assertIn('@on_location(x=7, y=20, action="visit", name=None)', hub_source)

@@ -72,9 +72,13 @@ def hub_script(source: str, setup: HubSetup) -> str:
              f'    unit = UnitGetByPID("{setup.avatar_pid}")',
              '    if unit:', f'        UnitTransferToForce(unit, {RELEASE_FORCE})']
     for dest in setup.destinations:
+        # Radiant Dawn calls a location event first to ask whether to offer the command (Check() is
+        # true; every retail arrive event answers there), then to run it: without the answer the
+        # unit's menu has no Arrive
         body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="arrive", name=None)',
-                 f'def HubGoTo{dest.chapter}():', *_flag_assignments(dest.chapter),
-                 '    set("gf_complete")']
+                 f'def HubGoTo{dest.chapter}():', '    if Check():', '        return 1', '    else:',
+                 *('    ' + line for line in _flag_assignments(dest.chapter)),
+                 '        set("gf_complete")']
         if dest.description.strip():
             body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="visit", name=None)',
                      f'def HubDescribe{dest.chapter}():',
