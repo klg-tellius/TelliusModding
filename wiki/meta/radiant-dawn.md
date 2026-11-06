@@ -37,7 +37,9 @@ source_path: "meta/radiant-dawn.md"
 
 ## Chapter titles and title cards
 
-  A chapter's title is the message named by its `ChapterData` record (`MCT0102`, "I:1-Maiden of Miracles": part, chapter, name). The card shown when a chapter starts is a picture, `window/title/e_ch0102.cms` (`ch0102.cms` for Japanese): one 480&times;160 RGB5A3 image with two centred lines, "Ch 1" (or "Prologue", "Endgame") and the chapter's name, in green-grey serif lettering with a dark drop shadow. The lettering is pre-drawn art; no font on the disc contains it. <span class="confidence confidence--confirmed">files</span>
+  A chapter's title is the message named by its `ChapterData` record (`MCT0102`, "I:1-Maiden of Miracles": part, chapter, name). Five more messages hold its parts: `MCT0102_0` "Part I", `_0_2` "I", `_1` "Ch.1", `_2` "Maiden of Miracles" and `_3` "Ch.1" again. The game reads each by name, and the Conditions screen draws `_0`, `_1` and `_2`; without them it draws garbage there. The modding app writes all five for an added chapter, from a title in the "I:1-Name" form or, for any other title, the template chapter's part and the title as the name. <span class="confidence confidence--confirmed">in game</span>
+
+  The card shown when a chapter starts is a picture, `window/title/e_ch0102.cms` (`ch0102.cms` for Japanese): one 480&times;160 RGB5A3 image with two centred lines, "Ch 1" (or "Prologue", "Endgame") and the chapter's name, in green-grey serif lettering with a dark drop shadow. The lettering is pre-drawn art; no font on the disc contains it. <span class="confidence confidence--confirmed">files</span>
 
 ## Chapter order
 
