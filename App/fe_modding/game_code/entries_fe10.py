@@ -686,6 +686,29 @@ CATALOG.add(Patch(
     "Units with the village-destroying skill (SID_VILLAGEDESTROY, the Bandit class) no longer go for villages.",
     {RFEE01: (Edit(0x8015B798, _raw("418200C4"), _raw("480000C4")),)}))
 
+# Map camera rotation: the GameCube-controller camera (method 0x80131828, vtable 0x80385EE0) turns the
+# angle at +4 by 45.0 on the C-stick bits 0x01000000 / 0x02000000 of the pad's pressed word (pad method
+# +0x48, `held & (held ^ previous)`), while it is under 45 / over -45, then clamps it to +-45 and snaps
+# |angle| < 22.5 to 0. The same code as Path of Radiance's camera.* patches, one for one.
+_RD_CAMERA_CLAMPS = (0x801318EC, 0x8013191C)     # `bge` / `ble` skipping the step at the limit
+_RD_CAMERA_WRAP = 0x80131948                     # `ble +8` into the final clamps and the snap
+_RD_CAMERA_STEPS = (0x801318E4, 0x80131920)      # `lfs f0,-0x6C90(r2)`, the 45.0 step (and limit)
+_RD_CAMERA_ONE = 0xC002800C                      # `lfs f0,-0x7FF4(r2)`, a 1.0 constant
+_RD_CAMERA_INPUT = 0x8013188C                    # `lwz r12,0x48(r12)`: the pad's pressed buttons
+CATALOG.add(Patch(
+    "rd.camera.free", G_RD_RULES, "Free camera rotation",
+    "The map camera turns with the C-stick left/right beyond its vanilla limits, 45 degrees per push "
+    "(GameCube controller).",
+    {RFEE01: (Edit(_RD_CAMERA_CLAMPS[0], _raw("4080001C"), _word(ppc.NOP)),
+              Edit(_RD_CAMERA_CLAMPS[1], _raw("40810020"), _word(ppc.NOP)),
+              Edit(_RD_CAMERA_WRAP, _raw("40810008"), _raw("48000040")))}))
+CATALOG.add(Patch(
+    "rd.camera.smooth", G_RD_RULES, "Smooth camera rotation",
+    "The C-stick turns the camera 1 degree per frame while held instead of 45 degrees per push "
+    "(GameCube controller). Combine with free rotation to turn all the way round.",
+    {RFEE01: tuple(Edit(a, _raw("C0029370"), _word(_RD_CAMERA_ONE)) for a in _RD_CAMERA_STEPS)
+     + (Edit(_RD_CAMERA_INPUT, _raw("818C0048"), _raw("818C0034")),)}))
+
 _patch("rd.hard_mode.show_information", G_RD_RULES,
        "Hard mode: show triangle, affinity and ranges",
        "Restores weapon-triangle indicators, map-affinity information and enemy range display in Hard mode.",
