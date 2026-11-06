@@ -5,11 +5,11 @@ on their instance height, not on the terrain mesh. On vanilla maps these
 agree with the mesh: the ground layer (``uniquepanelBase``) sits at mesh
 height ``-elevation / 400`` and props at their tile's surface. When a new
 terrain moves the ground, :func:`follow_terrain` shifts every affected
-corner of the combined and ground layers, and every prop, by the same
-height change, so objects keep their offsets above the ground (a bridge
-stays a bridge). Tiles share panel records; changed tiles get records of
-their own and the panel sections grow (``map_file.write_panel_layer``).
-The roof layer is left alone.
+corner of the combined, ground and roof layers that lay on the old ground,
+and every prop, by the same height change, so objects keep their offsets
+above the ground (a bridge stays a bridge, a roof stays where it was). Tiles
+share panel records; changed tiles get records of their own and the panel
+sections grow (``map_file.write_panel_layer``).
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ class HeightUpdate:
 
 
 def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangles, change=None) -> HeightUpdate:
-    """``map_bin`` with its ground/combined elevations and prop heights moved
+    """``map_bin`` with its ground/combined/roof elevations and prop heights moved
     by the change between the old and new terrain surfaces. A tile corner
     moves only when it lay on the old terrain surface: corners standing on
     a prop (a bridge, a castle floor; 14% of ``bmap07``'s and 23% of
@@ -113,6 +113,9 @@ def follow_terrain(map_bin: bytes, terrain_name: str, old_triangles, new_triangl
     for index_name, panel_name, grid_attr, panels_attr in (
         ("panelindex", "uniquepanel", "panel_index", "unique_panel"),
         ("panelindexBase", "uniquepanelBase", "panel_index_base", "unique_panel_base"),
+        # the roof layer copies the combined one away from roofs: left at the old heights, Radiant Dawn's
+        # 1-1 crashed in its opening (a call through a null pointer) once the ground was flattened
+        ("panelindexRoof", "uniquepanelRoof", "panel_index_roof", "unique_panel_roof"),
     ):
         if not delta:
             continue

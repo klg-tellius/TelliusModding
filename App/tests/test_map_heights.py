@@ -11,11 +11,13 @@ from fe_modding import map_heights
 from fe_modding.formats import map_file
 
 
-def _map_bin(width=2, height=2, panel_elevation=0, prop_height=-0.2) -> bytes:
+def _map_bin(width=2, height=2, panel_elevation=0, prop_height=-0.2, roof_elevations=None) -> bytes:
     """A small but complete map.bin: header, sections, string pool, pointer
     list, section table and names. One terrain object ``flat`` at placement
     (0, 0) and one prop ``tree`` on tile (0, 0); every tile shares panel
-    record 0 (all corners ``panel_elevation``, terrain type ``plain``)."""
+    record 0 (all corners ``panel_elevation``, terrain type ``plain``). With
+    ``roof_elevations`` (one per roof record) the map also has a roof layer:
+    tile (0, 0) uses roof record 1 (if given), every other tile record 0."""
     pool = [b"flat\x00", b"tree\x00", b"plain\x00"]
     sections = [
         ("mapcapacity", struct.pack(">HHHHf", width, height, 2, 2, 2000.0), []),
@@ -29,6 +31,16 @@ def _map_bin(width=2, height=2, panel_elevation=0, prop_height=-0.2) -> bytes:
         ("uniquepanelBase", struct.pack(">hhhhI", *([panel_elevation] * 4), 0), [(8, 2)]),
         ("mapextra", struct.pack(">BBBBBBBBI", 0, 0, 1, 1, 64, 0, 0, 0, 0), []),
     ]
+    if roof_elevations is not None:
+        grid = [0] * (width * height)
+        if len(roof_elevations) > 1:
+            grid[0] = 1                       # column-major: tile (0, 0) first
+        index = struct.pack(f">{len(grid)}H", *grid)
+        sections[6:6] = [
+            ("panelindexRoof", index + bytes(-len(index) % 4), []),
+            ("uniquepanelRoof", b"".join(struct.pack(">hhhhI", *([e] * 4), 0) for e in roof_elevations),
+             [(12 * k + 8, 2) for k in range(len(roof_elevations))]),
+        ]
     data = bytearray()
     addresses, fields = [], []
     for _name, payload, pointers in sections:
@@ -151,6 +163,18 @@ class FollowTerrainTests(unittest.TestCase):
         prop = data.build_inst[1]
         self.assertAlmostEqual(-5 * prop.height(), 1.0 + 1.0, places=4)
         self.assertEqual(update.props_moved, 1)
+
+    def test_the_roof_layer_follows_the_ground_but_not_a_roof(self):
+        # Radiant Dawn's 1-1 crashed once flattened while its roof layer kept the old ground heights
+        raw = _map_bin(roof_elevations=(0, -1200))     # tile (0, 0) has a roof 3 units up
+        flat = _surface([[0.0] * 3 for _ in range(3)])
+        raised = _surface([[0.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 0.0]])  # tile corner (1, 1)
+        data = map_file.read_map_bytes(map_heights.follow_terrain(raw, "flat", flat, raised).map_bin)
+        roof, grid = data.unique_panel_roof, data.panel_index_roof
+        self.assertEqual(roof[grid[0][0]].bottom_right_elevation, -1200)   # the roof keeps its height
+        self.assertEqual(roof[grid[1][1]].top_left_elevation, -800)        # the ground under the sky follows
+        self.assertEqual(roof[grid[1][0]].bottom_left_elevation, -800)
+        self.assertEqual(roof[grid[1][1]].bottom_right_elevation, 0)
 
     def test_corners_standing_on_a_prop_keep_their_height(self):
         raw = _map_bin(panel_elevation=-1200)  # every corner 3 units up: a floor above the ground
