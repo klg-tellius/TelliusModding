@@ -14,7 +14,7 @@ so its files are named like retail ones of the same length:
 - a ``ChapterData`` record copied from the template's with the new number, ID and names, and a
   ``BattleTerrIndex`` row copied from the template map's;
 - the template's ``SHOP_PERSON`` / armory / vendor / forge sections in each shop file;
-- the ``MCT05NN`` title in ``Mess/e_common.m`` and ``common.m``, and the title card
+- the ``MCT05NN`` title and its five parts (``_0``...``_3``, :data:`TITLE_PARTS`) in ``Mess/e_common.m`` and ``common.m``, and the title card
   ``window/title/e_ch05NN.cms`` drawn from it.
 
 :func:`remove_story_chapter` (Delete chapter) takes all of that back out. Only added chapters can be
@@ -23,6 +23,8 @@ chapters after it; a retail chapter is taken out of the story with the story flo
 """
 
 from __future__ import annotations
+
+import re
 
 from dataclasses import dataclass, field
 from typing import Optional
@@ -99,14 +101,41 @@ class RdChapterPlan:
     warnings: list = field(default_factory=list)
 
 
-def _with_title(path, key: str, title: str) -> bytes:
+#: The parts of a chapter title the game reads besides ``MCTnnnn`` (getters at 0x8009283C-0x80092A20):
+#: ``_0`` "Part I", ``_0_2`` "I", ``_1`` "Ch.2", ``_2`` the name, ``_3`` "Ch.2" again. The Conditions
+#: screen draws ``_0``, ``_1`` and ``_2``; a missing key draws garbage there.
+TITLE_PARTS = ("_0", "_0_2", "_1", "_2", "_3")
+_TITLE_FORM = re.compile(r"\s*([^:]+?)\s*:\s*([^-]+?)\s*-\s*(.+?)\s*")
+
+
+def title_parts(title: str, template: dict[str, str]) -> dict[str, str]:
+    """The ``TITLE_PARTS`` texts for ``title``. A title in Radiant Dawn's own form ("I:2-The
+    Dispossessed", "I: Prologue-Under Gray Skies") gives its part, chapter label and name; any other
+    title is the name alone, in the template chapter's part (``template``: its parts by suffix)."""
+    match = _TITLE_FORM.fullmatch(title)
+    if match:
+        part, label, name = match.groups()
+        label = f"Ch.{label}" if label.isdigit() else label
+        return {"_0": f"Part {part}", "_0_2": part, "_1": label, "_2": name, "_3": label}
+    part = template.get("_0_2", "")
+    return {"_0": template.get("_0", f"Part {part}" if part else ""), "_0_2": part, "_1": "", "_2": title, "_3": ""}
+
+
+def _template_parts(path, source_id: str) -> dict[str, str]:
+    key = f"MCT{source_id}"
+    return {m.speaker[len(key):]: m.text for m in message.read_messages_path(path)
+            if m.speaker.startswith(key) and m.speaker[len(key):] in TITLE_PARTS}
+
+
+def _with_title(path, key: str, title: str, parts: dict[str, str] | None = None) -> bytes:
     messages = message.read_messages_path(path)
     order = message.read_text_order_path(path)
-    existing = next((i for i, m in enumerate(messages) if m.speaker == key), None)
-    if existing is None:
-        messages.append(message.Message(key, title))
-    else:
-        messages[existing] = message.Message(key, title)
+    for k, text in ((key, title), *((key + suffix, t) for suffix, t in (parts or {}).items())):
+        existing = next((i for i, m in enumerate(messages) if m.speaker == k), None)
+        if existing is None:
+            messages.append(message.Message(k, text))
+        else:
+            messages[existing] = message.Message(k, text)
     return message.write_messages(messages, order)
 
 
@@ -173,17 +202,20 @@ def plan_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id:
         out[rel] = shop.build_shop(doc)
 
     key = f"MCT{new_id}"
-    bucket = message.engine_name_hash(key, profile.name_hash_buckets)
     for name in TITLE_FILES:
         path = files.find(game_path("Mess", name))
         if path is None or not path.is_file():
             continue
-        clash = next((m.speaker for m in message.read_messages_path(path)
-                      if m.speaker != key and message.engine_name_hash(m.speaker, profile.name_hash_buckets) == bucket),
-                     None)
-        if clash is not None:
-            warnings.append(f"{key} shares its lookup hash with {clash!r} in {name}: the game may show that text.")
-        out[game_path("Mess", name)] = _with_title(path, key, title)
+        parts = title_parts(title, _template_parts(path, source_id))
+        ours = {key, *(key + suffix for suffix in parts)}
+        for k in sorted(ours):
+            bucket = message.engine_name_hash(k, profile.name_hash_buckets)
+            clash = next((m.speaker for m in message.read_messages_path(path)
+                          if m.speaker not in ours and message.engine_name_hash(m.speaker, profile.name_hash_buckets) == bucket),
+                         None)
+            if clash is not None:
+                warnings.append(f"{k} shares its lookup hash with {clash!r} in {name}: the game may show that text.")
+        out[game_path("Mess", name)] = _with_title(path, key, title, parts)
     if not any(game_path("Mess", name) in out for name in TITLE_FILES):
         warnings.append("No Mess/e_common.m or common.m: the chapter has no title text.")
 
@@ -248,7 +280,7 @@ def remove_story_chapter(project: ModProject, fe10: bytes, chapter_id: str, flow
         if path is None or not path.is_file():
             continue
         messages = message.read_messages_path(path)
-        kept = [m for m in messages if m.speaker != key]
+        kept = [m for m in messages if m.speaker != key and m.speaker not in {key + suffix for suffix in TITLE_PARTS}]
         if len(kept) != len(messages):
             out[game_path("Mess", name)] = message.write_messages(kept, message.read_text_order_path(path))
 

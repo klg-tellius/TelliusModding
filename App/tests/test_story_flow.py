@@ -257,6 +257,9 @@ class RdAddChapterTests(unittest.TestCase):
         self.assertEqual(doc.shop("W", "0501").items, doc.shop("W", "0204").items)
         titles = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
         self.assertEqual(titles["MCT0501"], "II:9-A New Road")
+        # the parts the Conditions screen draws (a missing one drew garbage)
+        self.assertEqual([titles[f"MCT0501{s}"] for s in ("_0", "_0_2", "_1", "_2", "_3")],
+                         ["Part II", "II", "Ch.9", "A New Road", "Ch.9"])
         self.assertTrue((self.files / "window" / "title" / "e_ch0501.cms").is_file())
 
         reopened = RdStoryFlow(flow.editor.__class__(self.project.extracted_dir), rd_story.chapter_number_map(new))
@@ -334,6 +337,7 @@ class RdAddChapterTests(unittest.TestCase):
         self.assertEqual((self.files / "Shop" / "shopitem_n.bin").read_bytes(), shops_before)
         titles = {m.speaker for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
         self.assertNotIn("MCT0501", titles)
+        self.assertFalse({t for t in titles if t.startswith("MCT0501_")})
         (self.files / "FE10Data.cms").write_bytes(lz10.compress(data))
         flow, _why = open_story_flow(self.project)
         self.assertEqual(flow.next_of("0204"), retail_next)
