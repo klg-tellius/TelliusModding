@@ -502,6 +502,11 @@ bpy.ops.import_scene.gltf(filepath=glb_path)
 imported = [obj for obj in bpy.data.objects if obj not in before]
 if not imported:
     raise RuntimeError("The GLB did not create any Blender objects.")
+# Blender's glTF importer draws the joints with a custom shape (an "Icosphere" mesh object). It is
+# only a display shape: leave it out of the model so it is never exported as part of the body.
+bone_shapes = {pose_bone.custom_shape for obj in imported if obj.type == "ARMATURE" and obj.pose
+               for pose_bone in obj.pose.bones if pose_bone.custom_shape is not None}
+imported = [obj for obj in imported if obj not in bone_shapes]
 
 collection_name = "FE9 Model" + ((" - " + model_name) if model_name else "")
 collection = bpy.data.collections.new(collection_name)
@@ -533,6 +538,10 @@ for collection in tagged_collections:
     objects.update(collection.all_objects)
 objects.update(obj for obj in bpy.context.scene.objects if obj.get("fe9_model_object"))
 objects = [obj for obj in objects if obj.name in bpy.context.scene.objects]
+# a joint display shape (the glTF importer's "Icosphere") is never part of the model
+bone_shapes = {pose_bone.custom_shape for obj in bpy.data.objects if obj.type == "ARMATURE" and obj.pose
+               for pose_bone in obj.pose.bones if pose_bone.custom_shape is not None}
+objects = [obj for obj in objects if obj not in bone_shapes]
 if not objects:
     raise RuntimeError(
         "No tagged FE9 model collection was found. Keep the exported FE9 Model collection or its custom property."

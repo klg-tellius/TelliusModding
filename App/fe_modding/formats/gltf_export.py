@@ -11,6 +11,18 @@ tools (Blender imports ``.glb`` natively) and the round-trip partner of
   version of that (:func:`engine_pose.joint_local`), and its inverse bind
   matrix ``T(-pivot[b]) x skin_matrix[b]``. glTF skinning then reproduces
   the engine's ``world x skin_matrix`` palette for every frame.
+- **Rest bind.** When the rig's rest palette ``world x skin_matrix`` is the
+  identity for every bone (every Path of Radiance rig), the bind pose is
+  the rest pose as written above. Radiant Dawn's map rigs place bones by
+  their translate and joint-orient values (flags ``0x67``), so a bone's
+  rest palette is not the identity and that bind pose would put every
+  joint and vertex somewhere else than the game draws them at rest. Such a
+  rig (:func:`_rest_bind`) is written with the rest pose as its bind pose:
+  inverse bind ``(world_rest x T(pivot))^-1`` and each vertex at its
+  skinned rest position (``world_rest x skin x stored``, ``world_rest x
+  stored`` for a single-matrix shape). Skinning still gives the engine's
+  palette for every frame, and Blender and :mod:`gltf_import` see the body
+  where the game draws it.
 - Vertex positions are the stored ones for multi-matrix and composite
   shapes. A single-matrix shape is drawn with ``world[b]`` alone, so its
   vertices are exported as ``skin_matrix[b]^-1 x stored``; either way the
@@ -167,6 +179,72 @@ def _single_matrix_placement(chunk: model.TriChunk, bones: list[skeleton.Bone]):
     return place
 
 
+#: Separates a repeated bone name from its copy number in a joint name (``hand_l~2``).
+DUPLICATE_MARK = "~"
+
+
+def joint_names(bones: list[skeleton.Bone]) -> list[str]:
+    """Unique joint names for ``bones``: the first bone of a name keeps it, the next ones get
+    ``~2``, ``~3``..."""
+    seen: dict[str, int] = {}
+    out = []
+    for i, bone in enumerate(bones):
+        name = bone.name or f"bone_{i}"
+        seen[name] = seen.get(name, 0) + 1
+        out.append(name if seen[name] == 1 else f"{name}{DUPLICATE_MARK}{seen[name]}")
+    return out
+
+
+def _near_identity(m: skeleton.Mat3x4, tolerance: float = 1e-4) -> bool:
+    return all(abs(m[r][c] - (1.0 if r == c else 0.0)) <= tolerance for r in range(3) for c in range(4))
+
+
+@dataclass
+class _RestBind:
+    """A rig whose bind pose is written as its rest pose (see the module notes)."""
+
+    palette: list[skeleton.Mat3x4]      # world_rest x skin_matrix, per bone
+    world: list[skeleton.Mat3x4]        # world_rest, per bone (a single-matrix shape's palette)
+    inverse_bind: list[Optional[skeleton.Mat3x4]]   # (world_rest x T(pivot))^-1, None for a degenerate bone
+
+
+def _rest_bind(bones: list[skeleton.Bone]) -> Optional[_RestBind]:
+    if not bones:
+        return None
+    world = engine_pose.world_matrices(bones, engine_pose.local_matrices(bones))
+    palette = [skeleton.mul_3x4(world[i], engine_pose.skin_matrix(b)) for i, b in enumerate(bones)]
+    if all(_near_identity(m) for m in palette):
+        return None
+    inverse = []
+    for i, b in enumerate(bones):
+        joint = skeleton.mul_3x4(world[i], engine_pose.translation(*engine_pose.rest_pivot(b)))
+        det = float(np.linalg.det(np.array([row[:3] for row in joint])))
+        inverse.append(engine_pose.invert_3x4(joint) if abs(det) > 1e-9 else None)
+    return _RestBind(palette, world, inverse)
+
+
+def _rest_placement(chunk: model.TriChunk, bones: list[skeleton.Bone], rest: _RestBind):
+    """Vertex mapper for one chunk of a rest-bind rig: each vertex at its skinned rest position."""
+    single = not chunk.format & 3 and 0 <= chunk.bone < len(bones)
+
+    def moved(v, m: skeleton.Mat3x4):
+        n = v.normal
+        normal = tuple(m[r][0] * n[0] + m[r][1] * n[1] + m[r][2] * n[2] for r in range(3))
+        return replace(v, position=engine_pose.apply(m, v.position), normal=normal)
+
+    def place(v: model.StripVertex) -> model.StripVertex:
+        if single:
+            return v if rest.inverse_bind[chunk.bone] is None else moved(v, rest.world[chunk.bone])
+        joints, weights = _vertex_skin(v, len(bones))
+        pairs = [(j, w) for j, w in zip(joints, weights) if w > 0]
+        if not v.bone_indices or any(rest.inverse_bind[j] is None for j, _w in pairs):
+            return v
+        m = tuple(tuple(sum(w * rest.palette[j][r][c] for j, w in pairs) for c in range(4)) for r in range(3))
+        return moved(v, m)
+
+    return place
+
+
 def export_glb(
     gs_models: list[tuple[str, model.GsModel]],
     bones: Optional[list[skeleton.Bone]] = None,
@@ -199,11 +277,14 @@ def export_glb(
         "materials": [],
     }
     nodes, scene_nodes = gltf["nodes"], gltf["scenes"][0]["nodes"]
+    rest = _rest_bind(bones)
 
-    # Skeleton nodes (node index == bone index), in the rest (+0xBC seed) pose.
+    # Skeleton nodes (node index == bone index), in the rest (+0xBC seed) pose. A name the skeleton
+    # repeats (a paired model such as sothe1_mikaya2 holds both characters' bones) is written
+    # ``name~2``, ``name~3``... so joints stay unique; gltf_import.restore_duplicate_names undoes it.
     seed = engine_pose.local_matrices(bones)
-    for i, bone in enumerate(bones):
-        nodes.append({"name": bone.name or f"bone_{i}", **_node_trs(engine_pose.joint_local(bones, i, seed[i]))})
+    for i, name in enumerate(joint_names(bones)):
+        nodes.append({"name": name, **_node_trs(engine_pose.joint_local(bones, i, seed[i]))})
     for i, bone in enumerate(bones):
         if 0 <= bone.parent_index < len(bones):
             nodes[bone.parent_index].setdefault("children", []).append(i)
@@ -237,7 +318,7 @@ def export_glb(
         for chunk in gs.chunks:
             if chunk.hidden:  # never drawn by the game
                 continue
-            place = _single_matrix_placement(chunk, bones)
+            place = _rest_placement(chunk, bones, rest) if rest is not None else _single_matrix_placement(chunk, bones)
             for strip in chunk.strips:
                 by_material.setdefault(chunk.material_index, []).extend(
                     tuple(place(v) for v in tri) for tri in _strip_triangles(strip)
@@ -341,7 +422,9 @@ def export_glb(
             scene_nodes.append(len(nodes) - 1)
 
     if bones:  # written even without a skinned mesh: the inverse binds define the rig for animation import
-        ibm = b.accessor([_mat4(engine_pose.inverse_bind(bone)) for bone in bones], "MAT4", _FLOAT)
+        binds = [rest.inverse_bind[i] if rest is not None and rest.inverse_bind[i] is not None
+                 else engine_pose.inverse_bind(bone) for i, bone in enumerate(bones)]
+        ibm = b.accessor([_mat4(m) for m in binds], "MAT4", _FLOAT)
         roots = [i for i, bone in enumerate(bones) if not 0 <= bone.parent_index < len(bones)]
         gltf["skins"] = [{"joints": list(range(len(bones))), "inverseBindMatrices": ibm, "skeleton": roots[0]}]
 

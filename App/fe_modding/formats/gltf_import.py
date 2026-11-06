@@ -54,6 +54,7 @@ import math
 import re
 import struct
 import zlib
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -902,9 +903,11 @@ def match_joints(joint_names, bones: list[skeleton.Bone]) -> dict[str, int]:
     :func:`_name_key` match. Unmatched names are left out."""
     exact: dict[str, int] = {}
     loose: dict[str, int] = {}
-    for i, bone in enumerate(bones):
-        exact.setdefault(bone.name, i)
-        loose.setdefault(_name_key(bone.name), i)
+    # A name the skeleton repeats (a paired model) is matched as the kit writes it: name~2, name~3...
+    from .gltf_export import joint_names as unique_names
+    for i, name in enumerate(unique_names(bones)):
+        exact.setdefault(name, i)
+        loose.setdefault(_name_key(name), i)
     result = {}
     for name in joint_names:
         if name in exact:
@@ -1017,6 +1020,25 @@ def build_skinned_gs(
     warnings = list(scene.warnings)
     unmatched: set[str] = set()
     counts = {"blended": 0, "unbound": 0}
+    # A bone whose rest palette (world_rest x skin) is not the identity (Radiant Dawn's joint-orient map
+    # rigs) is exported with its rest pose as bind pose (gltf_export's rest bind), so a vertex comes in
+    # at its rest position and is stored back through that palette's inverse. Path of Radiance rigs and
+    # skeletons built from a glTF have identity rest palettes: nothing changes for them.
+    rest_world = engine_pose.world_matrices(bones, engine_pose.local_matrices(bones))
+    rest_inverse: dict[int, skeleton.Mat3x4] = {}
+    for i, b in enumerate(bones):
+        palette = skeleton.mul_3x4(rest_world[i], engine_pose.skin_matrix(b))
+        if any(abs(palette[r][c] - (1.0 if r == c else 0.0)) > 1e-4 for r in range(3) for c in range(4)):
+            rest_inverse[i] = engine_pose.invert_3x4(palette)
+
+    def to_stored(bone: int, position, normal):
+        m = rest_inverse.get(bone)
+        if m is None:
+            return position, normal
+        position = engine_pose.apply(m, position)
+        if normal is not None:
+            normal = tuple(m[r][0] * normal[0] + m[r][1] * normal[1] + m[r][2] * normal[2] for r in range(3))
+        return position, normal
 
     def corner(tri: ImportedTriangle, k: int):
         """(((bone, u8 weight), ...), stored position, stored normal) for one
@@ -1030,12 +1052,12 @@ def build_skinned_gs(
         weights = _bone_weights(tri.influences[k] if tri.influences else (), matched, scene.joint_parents, unmatched)
         if not weights:
             counts["unbound"] += 1
-            return ((fallback_bone, 256),), position, normal
+            return ((fallback_bone, 256),), *to_stored(fallback_bone, position, normal)
         if len(weights) > 1:
             counts["blended"] += 1
             if not smooth:
                 weights = ((weights[0][0], 256),)
-        return weights, position, normal
+        return weights, *to_stored(weights[0][0], position, normal)
 
     used_materials = [m for m in sorted(scene.triangles) if scene.triangles[m]]
     rigid: dict[int, list] = {}
@@ -1609,7 +1631,27 @@ def import_animation(
     seed = engine_pose.local_matrices(bones)
     skins_inv = {b: engine_pose.invert_3x4(engine_pose.skin_matrix(bones[b])) for b in matched_nodes.values()}
     node_of_bone = {b: j for j, b in matched_nodes.items()}
+    # A glTF exported from this very skeleton with its rest pose as bind pose (gltf_export's rest bind,
+    # Radiant Dawn map rigs) puts joint j at world[b] x T(pivot[b]); its inverse binds are not the
+    # T(-pivot) x skin the parent-relative formula below assumes, so that formula uses the bone's own.
+    rest_world_engine = engine_pose.world_matrices(bones, seed)
+
+    def _4x4(m):
+        return [m[0][0], m[1][0], m[2][0], 0.0, m[0][1], m[1][1], m[2][1], 0.0,
+                m[0][2], m[1][2], m[2][2], 0.0, m[0][3], m[1][3], m[2][3], 1.0]
+
+    def _rest_bind_ibm(b):
+        joint = skeleton.mul_3x4(rest_world_engine[b], engine_pose.translation(*engine_pose.rest_pivot(bones[b])))
+        return _4x4(engine_pose.invert_3x4(joint))
+
+    own_rest_bind = bool(node_of_bone) and all(
+        j in inverse_binds and max(abs(a - c) for a, c in zip(inverse_binds[j], _rest_bind_ibm(b))) < 1e-3
+        for b, j in node_of_bone.items())
+    if own_rest_bind:
+        bone_ibm = {node_of_bone[b]: _4x4(engine_pose.inverse_bind(bones[b])) for b in node_of_bone}
+        inverse_binds = {**inverse_binds, **bone_ibm}
     per_bone: dict[int, list[list[float]]] = {b: [] for b in node_of_bone}
+    locals_by_bone: dict[int, list[skeleton.Mat3x4]] = {}
     worst = 0.0
     for frame in range(last_frame + 1):
         t = frame / fps
@@ -1684,18 +1726,62 @@ def import_animation(
             values, error = _solve_values(bones[b], local, previous)
             worst = max(worst, error)
             per_bone[b].append(values)
+            locals_by_bone.setdefault(b, []).append(local)
     if worst > 1e-3:
         warnings.append(f"Some joint transforms have shear the game can't represent (error up to {worst:.3g}).")
+
+    def same(a, b, tol=1e-4):
+        return all(abs(a[r][c] - b[r][c]) <= tol for r in range(3) for c in range(4))
+
+    def seed(bone):
+        v = engine_pose.bone_values(bone)
+        return (tuple(v[31:35]), tuple(v[35:39]), tuple(v[39:43]))
 
     families = (("scale", engine_pose.SLOT_SCALE, engine_pose.FLAG_SCALE),
                 ("rotate", engine_pose.SLOT_ROTATE, engine_pose.FLAG_ROTATE),
                 ("translate", engine_pose.SLOT_TRANSLATE, engine_pose.FLAG_TRANSLATE))
     groups: list[animation.BoneGroup] = []
     curves: list[animation.AnimCurve] = []
+    # Bones the glTF moves exactly as the replaced animation does keep that animation's own group and
+    # curves. The engine composes a bone's channels in ways a re-solve does not always reproduce (a
+    # Radiant Dawn joint-orient chain re-solved through Blender lay the model on its side), so only the
+    # bones that were edited get new curves.
+    reuse: dict[int, tuple[animation.BoneGroup, list[animation.AnimCurve]]] = {}
+    if template:
+        original = animation.read_animation_bytes(template)
+        if original.header.end_frame == last_frame:
+            originals = [engine_pose.local_matrices(bones, original, float(f)) for f in range(last_frame + 1)]
+            by_bone = {g.bone_index: g for g in original.groups}
+            for b, frames in locals_by_bone.items():
+                if len(frames) == len(originals) and all(same(m, o[b], 1e-3) for m, o in zip(frames, originals)):
+                    g = by_bone.get(b)
+                    reuse[b] = (g, original.curves[g.first_curve:g.first_curve + g.curve_count]) if g else (None, [])
     for b in sorted(per_bone):
+        if b in reuse:
+            g, kept = reuse[b]
+            if g is not None:
+                groups.append(animation.BoneGroup(b, g.channel_mask, len(curves), len(kept)))
+                curves += kept
+            continue
         defaults = engine_pose.bone_values(bones[b])
+        frames = locals_by_bone.get(b, [])
+        # A bone the animation leaves at its seed matrix needs no group: the engine keeps the seed for a
+        # bone without one (Radiant Dawn's anchors and _root_ are never animated).
+        if frames and all(same(m, seed(bones[b])) for m in frames):
+            continue
+        # A bone whose own flags have no rotate bit and that never turns is written translate-only, as
+        # the game's own files are (Radiant Dawn's body, flags 0x67, mask 0x20): a rotate channel would
+        # turn on its joint orient and the rotation would have to cancel it.
+        translate_only = (not engine_pose.bone_flags(bones[b]) & engine_pose.FLAG_ROTATE and frames
+                          and all(same(m, ((1.0, 0.0, 0.0, m[0][3]), (0.0, 1.0, 0.0, m[1][3]), (0.0, 0.0, 1.0, m[2][3])))
+                                  for m in frames))
+        if translate_only:
+            per_bone[b] = [defaults[:engine_pose.SLOT_TRANSLATE] + [m[0][3], m[1][3], m[2][3]]
+                           + defaults[engine_pose.SLOT_TRANSLATE + 3:] for m in frames]
         bone_curves, mask = [], 0
         for family, slot, flag in families:
+            if translate_only and family != "translate":
+                continue
             tol = KEY_TOLERANCE[family]
             family_curves = []
             for axis in range(3):
@@ -1712,7 +1798,8 @@ def import_animation(
             bone_curves += family_curves
         if not bone_curves:
             continue
-        mask |= engine_pose.FLAG_ROTATE
+        if not translate_only:
+            mask |= engine_pose.FLAG_ROTATE
         groups.append(animation.BoneGroup(b, mask, len(curves), len(bone_curves)))
         curves += bone_curves
     unmatched = sorted(node_names[j] for j in joint_nodes if j not in matched_nodes and any(k[0] == j for k in tracks))
@@ -1740,8 +1827,10 @@ def import_animation(
         warnings.append("No events: the animation has none in its glTF extras and no animation is being replaced.")
     words[5] = min(words[5], last_frame)
     words[6] = last_frame
-    for slot in (1, 2, 10):
+    for slot in (1, 10):
         words[slot] = 0
+    # word 2 is the replaced animation's: Radiant Dawn's files carry 0x01000000 there, Path of Radiance's 0
+    words[2] = template_anim.header.words[2] if template_anim is not None else 0
 
     footer = None
     if template_anim is not None and template_anim.footer is not None:
@@ -1764,6 +1853,9 @@ def import_animation(
     ga = animation.GaAnimation(
         header=animation.GaHeader(tuple(words)), groups=groups, curves=curves, events=events, footer=footer
     )
+    if (template_anim is not None and groups == template_anim.groups and curves == template_anim.curves
+            and events == template_anim.events and words[4:7] == list(template_anim.header.words[4:7])):
+        return template, warnings     # an untouched clip: the game's own file, byte for byte
     return animation.write_animation(ga), warnings
 
 
@@ -1916,6 +2008,33 @@ def build_skeleton(
     return skeleton.SkeletonFile("[unknown]", bones), warnings
 
 
+def restore_duplicate_names(g_bytes: bytes) -> bytes:
+    """A ``.g`` with the ``name~N`` joint names of a paired model (see ``gltf_export.joint_names``)
+    back to the names the game's skeleton repeats. Animations address bones by index, so only the
+    engine's name lookups (anchors) see this, and they see the original names."""
+    skel = skeleton.read_skeleton_file(g_bytes)
+    changed = False
+    for i, bone in enumerate(skel.bones):
+        match = re.fullmatch(r"(.+)~(\d+)", bone.name)
+        if match and any(b.name == match.group(1) for b in skel.bones):
+            skel.bones[i] = dataclasses.replace(bone, name=match.group(1))
+            changed = True
+    return skeleton.write_skeleton_file(skel) if changed else g_bytes
+
+
+def same_armature(new_bones: list[skeleton.Bone], old_bones: list[skeleton.Bone]) -> bool:
+    """Whether a glTF armature is the class skeleton itself (every bone, by its kit name, under the same
+    parent), whatever order Blender wrote the joints in."""
+    from .gltf_export import joint_names as unique_names
+
+    def shape(bones):
+        names = unique_names(bones)
+        return sorted((names[i], names[b.parent_index] if 0 <= b.parent_index < len(bones) else "")
+                      for i, b in enumerate(bones))
+
+    return len(new_bones) == len(old_bones) and shape(new_bones) == shape(old_bones)
+
+
 def check_rig_against(new_bones: list[skeleton.Bone], old_bones: list[skeleton.Bone]) -> tuple[list[str], list[str]]:
     """``(errors, warnings)`` for replacing a class skeleton: every anchor
     bone of the old rig (see :func:`is_anchor_name`) must exist in the new
@@ -1928,7 +2047,10 @@ def check_rig_against(new_bones: list[skeleton.Bone], old_bones: list[skeleton.B
         errors.append("The new armature lacks the engine's anchor bones: " + ", ".join(missing))
     def joint_positions(bones: list[skeleton.Bone]) -> dict[str, tuple[float, float, float]]:
         world = engine_pose.world_matrices(bones, engine_pose.local_matrices(bones, None, 0))
-        return {b.name: engine_pose.apply(world[i], engine_pose.rest_pivot(b)) for i, b in enumerate(bones)}
+        out: dict[str, tuple[float, float, float]] = {}
+        for i, b in enumerate(bones):      # a repeated name (paired models) is the first bone of that name
+            out.setdefault(b.name, engine_pose.apply(world[i], engine_pose.rest_pivot(b)))
+        return out
 
     old_at, new_at = joint_positions(old_bones), joint_positions(new_bones)
     moved = []

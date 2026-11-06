@@ -212,6 +212,7 @@ def read_rig(data: bytes, base_dir: Optional[Path] = None, *, single_texture: bo
         ibm = np.array([np.linalg.inv(m) for m in rest])
     skin_m = np.array([rest[k] @ ibm[k] for k in range(len(joints))])
     Vs, Ns, UVs, Js, Ws, idxs, images = [], [], [], [], [], [], set()
+    prim_textures: list = []        # each primitive's texture index, for the atlas below
     image = None
     base = 0
     for i, node in enumerate(nodes):
@@ -241,6 +242,7 @@ def read_rig(data: bytes, base_dir: Optional[Path] = None, *, single_texture: bo
                 images.add(tex)
                 if image is None:
                     image = d.image(tex)
+            prim_textures.append(tex)
             Vs.append(V)
             Ns.append(Nn)
             UVs.append(UV)
@@ -251,9 +253,20 @@ def read_rig(data: bytes, base_dir: Optional[Path] = None, *, single_texture: bo
     if not Vs:
         raise RigFitError("The armature has no skinned mesh.")
     if single_texture and len(images) > 1:
-        raise RigFitError(
-            f"The model uses {len(images)} textures; bake them into one image (one material) first."
-        )
+        # A map body draws one texture: bake the model's textures side by side into one atlas and move
+        # each part's UVs into its texture's slot (a Radiant Dawn archer: body and bow).
+        order = sorted(images)
+        decoded = {t: d.image(t).convert("RGBA") for t in order}
+        size = max(max(im.size) for im in decoded.values())
+        atlas = Image.new("RGBA", (size * len(order), size))
+        for k, t in enumerate(order):
+            atlas.paste(decoded[t].resize((size, size), Image.LANCZOS), (k * size, 0))
+        for uv, t in zip(UVs, prim_textures):
+            if t is None:
+                continue
+            k = order.index(t)
+            uv[:, 0] = (k + np.clip(uv[:, 0] - np.floor(uv[:, 0].min()), 0.0, 1.0)) / len(order)
+        image = atlas
     rig = Rig(
         d, nodes, node_parent, joints, names, parent, rest,
         np.vstack(Vs), np.vstack(Ns), np.vstack(UVs), np.vstack(Js), np.vstack(Ws), np.concatenate(idxs), image,
