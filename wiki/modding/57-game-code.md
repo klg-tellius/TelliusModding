@@ -126,7 +126,8 @@ Also on Radiant Dawn:
 
 - **Bandits do not destroy villages** (Map and camera). Radiant Dawn's looter AI looks for a village only for units with `SID_VILLAGEDESTROY`, which the Bandit class has. With this on, it never does.
 - **Second-tier level bonus** and **Third-tier level bonus** (Experience and growth, vanilla 20 and 40). A unit's effective level is its level plus this bonus; laguz get none. Combat EXP compares effective levels. So do one skill check in battle and some AI decisions, so these settings change those as well.
-- Not on Radiant Dawn: the reinforcement limit (`SID_CALL` is a combat skill there, not a reinforcement call), the free camera and the Animation group (Radiant Dawn's battle and animation timing code is built differently and needs tracing in the running game).
+- **Free camera rotation** and **Smooth camera rotation** (Map and camera). Radiant Dawn's map camera, with a GameCube controller, uses the same code as Path of Radiance's: the C-stick turns it 45 degrees per push, at most one step each way. Free rotation removes the limit. Smooth rotation turns it 1 degree per frame while the C-stick is held. With both on, on the Prologue map, each push turned the camera 45 degrees further, and six seconds of holding made a full turn. These two patches change the GameCube-controller camera only, not the Wii Remote's.
+- Not on Radiant Dawn: the reinforcement limit (`SID_CALL` is a combat skill there, not a reinforcement call) and the Animation group (Radiant Dawn's battle and animation timing code is built differently and needs tracing in the running game).
 
 ## Things to try next
 

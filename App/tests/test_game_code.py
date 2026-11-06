@@ -436,6 +436,27 @@ class RetailCatalogTests(unittest.TestCase):
             self.assertEqual((field.address, field.kind, field.expect, tunable.default),
                              (address, "imm16s", bytes.fromhex("3bff"), default))
 
+    def test_rd_camera_rotation_mirrors_path_of_radiance(self):
+        free = CATALOG.entries["rd.camera.free"].versions["RFEE01"]
+        self.assertEqual([(e.address, e.original.hex(), e.patched.hex()) for e in free],
+                         [(0x801318EC, "4080001c", ppc.NOP.to_bytes(4, "big").hex()),
+                          (0x8013191C, "40810020", ppc.NOP.to_bytes(4, "big").hex()),
+                          (0x80131948, "40810008", "48000040")])
+        smooth = CATALOG.entries["rd.camera.smooth"].versions["RFEE01"]
+        self.assertEqual([(e.address, e.original.hex(), e.patched.hex()) for e in smooth],
+                         [(0x801318E4, "c0029370", "c002800c"), (0x80131920, "c0029370", "c002800c"),
+                          (0x8013188C, "818c0048", "818c0034")])
+        import os
+        import struct
+        files = os.environ.get("FE10_EXTRACTED_FILES")
+        path = Path(files).parent / "sys" / "main.dol" if files else None
+        if path is None or not path.is_file():
+            return
+        dol = Dol.open(path)
+        r2 = 0x804D4A60                              # _SDA2_BASE_ on RFEE01
+        self.assertEqual(struct.unpack(">f", dol.read(r2 - 0x6C90, 4))[0], 45.0)
+        self.assertEqual(struct.unpack(">f", dol.read(r2 - 0x7FF4, 4))[0], 1.0)
+
     def test_rd_no_terrain_bonus_uses_native_parity_clearer(self):
         patch = CATALOG.entries["rd.combat.no_terrain_bonus"]
         edit, = patch.versions["RFEE01"]
