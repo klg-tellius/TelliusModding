@@ -88,6 +88,23 @@ class RdRigRoundTripTests(unittest.TestCase):
         self.assertEqual(sorted({t.tex_id for m in after[1].materials for t in m.textures}), [0, 1])
         self.assertFalse([w for w in result.warnings if "New texture" in w], result.warnings)
 
+    def test_a_new_skeleton_is_refused_on_a_joint_orient_rig(self):
+        from fe_modding import rig_fit
+        from fe_modding.gui import model_viewer as mv
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        work = Path(tmp.name) / "ymu" / "mikaya1"
+        shutil.copytree(Path(FE10) / "ymu" / "mikaya1", work)
+        other = Path(tmp.name) / "ymu" / "greil"
+        shutil.copytree(Path(FE10) / "ymu" / "greil", other)
+        model = Path(tmp.name) / "greil.glb"
+        model.write_bytes(mv.rig_kit_glb(other / "pack.cmp")[0])
+        with self.assertRaisesRegex(rig_fit.RigFitError, "joint orient"):
+            mv.prepare_rig_fit(work / "pack.cmp", model)
+        from fe_modding.formats import gltf_import
+        with self.assertRaisesRegex(gltf_import.GltfImportError, "joint orient"):
+            mv.replace_rig_with_glb(work / "pack.cmp", model)
+
     def test_joint_names_are_unique_in_the_kit_and_restored(self):
         from fe_modding.formats import gltf_export, gltf_import, skeleton
         files = skeleton.read_skeleton_file  # noqa: F841 - imported for the restore below
