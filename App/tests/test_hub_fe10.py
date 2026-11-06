@@ -140,6 +140,11 @@ class RdHubSetupTests(unittest.TestCase):
                 pids = [u[dispo.FIELD["pid"]] for u in section.units]
                 if "_mikata" in section.name:
                     self.assertEqual(pids, ["PID_DJ_GREIL"])
+                    # on the tile Micaiah stands on in 1-1 (her spawn (6, 20) is where she walks in from;
+                    # links placed around it were out of reach in the game)
+                    avatar = section.units[0]
+                    self.assertEqual([avatar[dispo.FIELD[k]] for k in ("pos_x", "pos_y", "pos2_x", "pos2_y")],
+                                     [10, 11, 10, 11])
                     armies += 1
                 else:
                     self.assertEqual(pids, [], section.name)
