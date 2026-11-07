@@ -72,9 +72,13 @@ def hub_script(source: str, setup: HubSetup) -> str:
              f'    unit = UnitGetByPID("{setup.avatar_pid}")',
              '    if unit:', f'        UnitTransferToForce(unit, {RELEASE_FORCE})']
     for dest in setup.destinations:
+        # Radiant Dawn calls a location event first to ask whether to offer the command (Check() is
+        # true; every retail arrive event answers there), then to run it: without the answer the
+        # unit's menu has no Arrive
         body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="arrive", name=None)',
-                 f'def HubGoTo{dest.chapter}():', *_flag_assignments(dest.chapter),
-                 '    set("gf_complete")']
+                 f'def HubGoTo{dest.chapter}():', '    if Check():', '        return 1', '    else:',
+                 *('    ' + line for line in _flag_assignments(dest.chapter)),
+                 '        set("gf_complete")']
         if dest.description.strip():
             body += ['', f'@on_location(x={dest.x}, y={dest.y}, action="visit", name=None)',
                      f'def HubDescribe{dest.chapter}():',
@@ -208,11 +212,22 @@ def _positioned(path: Path, pid: str, x: int, y: int) -> bytes:
     for section in doc.sections:
         for unit in section.units:
             if unit[dispo.FIELD["pid"]] == pid:
-                dispo.move_unit(unit, x, y)
+                dispo.place_unit(unit, x, y)       # on (x, y) itself, not walking there from elsewhere
                 found = True
     if not found:
         raise ValueError(f"{path.name} has no {pid} unit to position.")
     return dispo.build_dispo(doc)
+
+
+def _walk_in_tile(path: Path, pid: str) -> tuple[int, int] | None:
+    """The tile ``pid`` stands on in ``path`` when its spawn is elsewhere (a walk-in), else None."""
+    for section in dispo.parse_dispo(path.read_bytes()).sections:
+        for unit in section.units:
+            if unit[dispo.FIELD["pid"]] == pid:
+                tile = dispo.standing_tile(unit)
+                spawn = (int(unit[dispo.FIELD["pos_x"]]), int(unit[dispo.FIELD["pos_y"]]))
+                return tile if tile != spawn else None
+    return None
 
 
 def _story(project, fe10: bytes):
@@ -349,10 +364,15 @@ def prepare(project, setup: HubSetup) -> dict:
     marked_map = entrance_markers(project, hub_paths.map, setup)
     messages = _description_messages(hub_paths.dialogue, setup, profile_of(project).name_hash_buckets)
     deployments = {}
-    if setup.start_x is not None:
-        for path in _deployments(project, numbers[setup.chapter]):
-            if _pids(path)[1]:
-                deployments[path] = _positioned(path, setup.avatar_pid, setup.start_x, setup.start_y)
+    for path in _deployments(project, numbers[setup.chapter]):
+        if not _pids(path)[1]:
+            continue
+        if setup.start_x is not None:
+            deployments[path] = _positioned(path, setup.avatar_pid, setup.start_x, setup.start_y)
+        elif (tile := _walk_in_tile(path, setup.avatar_pid)) is not None:
+            # hubs made before 2026-11-06 kept the template's walk-in: the avatar appears on its
+            # second tile, so put both there and the Hub tool shows it where the game does
+            deployments[path] = _positioned(path, setup.avatar_pid, *tile)
     session = editor.session
     rd_hub.RdHubFlow(editor).apply(session, config)
     return {"editor": editor, "story": story, "compiled": compiled, "slots": slots, "flags": names,

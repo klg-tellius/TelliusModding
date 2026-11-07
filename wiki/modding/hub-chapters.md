@@ -210,18 +210,18 @@ Use [the Flags guide](34-event-flags.md) to inspect names, storage, and values. 
 
 The same routes work on a Radiant Dawn project, with these differences:
 
-- **Create hub…** makes an added chapter, `0501` to `0524` (story numbers 56 to 79), outside the story order. It copies the template's map; there is no **Blank map**. In each difficulty's deployment the template's first player unit becomes the avatar, on its tile; every other unit, and the cutscene units of `dispos_c.bin`, are removed. The script becomes a plain opening: the chapter title, the map, the player army and the avatar in focus.
+- **Create hub…** makes an added chapter, `0501` to `0524` (story numbers 56 to 79), outside the story order. It copies the template's map; there is no **Blank map**. In each difficulty's deployment the template's first player unit becomes the avatar, on the tile it stands on; every other unit, and the cutscene units of `dispos_c.bin`, are removed. The script becomes a plain opening: the chapter title, the map, the player army and the avatar in focus.
 - The Hub tool has no **Flag storage** choice and no **Edit ground…**: the flags are always the vanilla kind.
 - **Install hub** puts Radiant Dawn's Arrive marker (`tttu01`, the one on Chapter 1's Arrive tile) on each action tile, copied from a chapter map that has it. A link's **Description** is shown by Visit in the map's dialog box: at most four lines of 30 characters, wrapped at spaces, without `<`, `>`, `#`, `@` or `$`. It is written as `MS_HUB_NN_INFO` in the hub's English message file (`e_c05NN.m`).
 - **Install hub** appends `HUB_ACTIVE`, `HUB_STARTED` and the two chapter bytes to `RegistGlobalFlags` (slots 27 to 47 on an unmodified `startup.cmb`). It also installs the router after the story advance. When the hub's map is won, the avatar leaves the player army, so it never joins the roster.
 - A hub has no enemies, and its copied **Rout enemy** goal never ends it: only an Arrive tile does.
-- The chapter status screen shows `??` for a title that is not in Radiant Dawn's `Part:Number-Name` form (`I:2-The Dispossessed`). The title card shows it as written.
+- A Radiant Dawn deployment gives each unit two tiles: where it appears and where it walks to. A chapter's opening places its units straight on the second one, so 1-1's Micaiah stands on (10, 11), not on (6, 20). The hub avatar takes the template unit's second tile, with no walk-in. Place action tiles around the tile the avatar stands on.
 
 ## Limits and confidence
 
 The setup controls and generated events described here were checked against `hub_tool.py`, `hub_dialog.py`, `hub.py`, and `hub_creation.py`. Marker calls are documented in the repository's native-contract research. Conditional action-menu filtering is not provided by the current hub generator, and the marker example still needs verification against the installed prop in game. This page therefore documents a working basic hub and a progression integration design, not a completed conditional-link feature.
 
-On Radiant Dawn the hub was created and installed through the app. It was then played in Dolphin, with turn-1 test events standing in for the Arrive command. The game went from the Prologue to the hub, the avatar was alone on its map, and the hub's destination (Chapter 2) replaced the story's Chapter 1. The avatar was not in the next roster. Without a destination, the hub stayed open for 23 turns. Walking onto a real Arrive tile has not been played. The Arrive markers and the Visit descriptions are checked on the files only (the marker placed on its tile, the message in the hub's message file). They have not been seen in game.
+On Radiant Dawn the hub was created and installed through the app. It was then played in Dolphin, with turn-1 test events standing in for the Arrive command. The game went from the Prologue to the hub, the avatar was alone on its map, and the hub's destination (Chapter 2) replaced the story's Chapter 1. The avatar was not in the next roster. Without a destination, the hub stayed open for 23 turns. With four links around the avatar, the game showed a marker on each link tile, and the unit's menu offered Arrive and Visit there. Visit showed that link's description. Arrive asked "Enter and clear map?", and Yes went to the linked chapter (Chapter 1) with the story army.
 
 ## Related tutorials and references
 

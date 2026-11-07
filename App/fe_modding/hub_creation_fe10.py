@@ -28,12 +28,12 @@ def avatar_class(fe10: bytes, avatar_pid: str) -> str:
 
 
 def player_start(project, chapter_id: str) -> tuple[int, int] | None:
-    """The first player unit's tile in the chapter's deployment."""
+    """The tile the chapter's first player unit stands on (its second tile: 1-1's Micaiah appears
+    at (6, 20) and walks to (10, 11), where ``InstantDisposRank`` puts her)."""
     for path in _deployments(project, chapter_id):
         for section in dispo.parse_dispo(path.read_bytes()).sections:
             if "_mikata" in section.name and section.units:
-                unit = section.units[0]
-                return unit[dispo.FIELD["pos_x"]], unit[dispo.FIELD["pos_y"]]
+                return dispo.standing_tile(section.units[0])
     return None
 
 
@@ -49,7 +49,7 @@ def avatar_deployment(data: bytes, avatar_pid: str, avatar_jid: str, start: tupl
             unit = section.units[0]
             unit[dispo.FIELD["pid"]] = avatar_pid
             unit[dispo.FIELD["jid"]] = avatar_jid
-            dispo.move_unit(unit, *start)
+            dispo.place_unit(unit, *start)        # the avatar stands there; it doesn't walk in
             del section.units[1:]
             found = True
         else:

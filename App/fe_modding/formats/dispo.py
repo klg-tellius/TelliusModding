@@ -796,6 +796,18 @@ def remove_unit(doc: DispoDocument, section_name: str, index: int) -> list[Value
     return section.units.pop(index)
 
 
+def standing_tile(unit: list[Value]) -> tuple[int, int]:
+    """The tile a unit stands on once placed: its second tile. ``InstantDisposRank`` puts it there
+    directly, and a unit that doesn't walk in has the same tile in both."""
+    return int(unit[FIELD["pos2_x"]]), int(unit[FIELD["pos2_y"]])
+
+
+def place_unit(unit: list[Value], x: int, y: int) -> None:
+    """Put a unit on (x, y) without a walk-in: both its spawn and its second tile."""
+    unit[FIELD["pos_x"]], unit[FIELD["pos_y"]] = x, y
+    unit[FIELD["pos2_x"]], unit[FIELD["pos2_y"]] = x, y
+
+
 def move_unit(unit: list[Value], x: int, y: int) -> None:
     """Put a unit's spawn on (x, y); its second tile moves by the same
     amount, so a stationary unit stays stationary."""

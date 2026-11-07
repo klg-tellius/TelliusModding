@@ -133,6 +133,15 @@ class DispoDocumentTests(unittest.TestCase):
         dispo.move_unit(unit, 10, 4)
         self.assertEqual(unit[F["pos_x"]:F["pos2_y"] + 1], [10, 4, 8, 4])
 
+    def test_place_unit_puts_both_tiles_on_one_and_standing_tile_reads_the_second(self):
+        # Radiant Dawn's 1-1 Micaiah: spawn (6, 20), stands on (10, 11) once InstantDisposRank placed her
+        unit = dispo.new_unit_values()
+        unit[F["pos_x"]], unit[F["pos_y"]], unit[F["pos2_x"]], unit[F["pos2_y"]] = 6, 20, 10, 11
+        self.assertEqual(dispo.standing_tile(unit), (10, 11))
+        dispo.place_unit(unit, 7, 9)
+        self.assertEqual(unit[F["pos_x"]:F["pos2_y"] + 1], [7, 9, 7, 9])
+        self.assertEqual(dispo.standing_tile(unit), (7, 9))
+
     def test_fe10_growth_table_creation_flag_round_trips(self):
         doc = dispo.parse_dispo(_build_minimal_dispo_bytes())
         doc.dialect = "fe10"
