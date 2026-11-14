@@ -594,6 +594,31 @@ class MapSceneGameplayGridTests(unittest.TestCase):
             map_scene.TOPDOWN_SCREEN_SIGNS,
         )
 
+    def test_build_backdrop_puts_tile_zero_zero_top_left(self):
+        # The Build/Play canvases draw tile (x, y) at pixel (x, y) * cell: the backdrop must
+        # too (it was turned 180 degrees, so bmap10's lake drew bottom-right under a top-left
+        # lake in the terrain overlay).
+        data = map_file.MapData(
+            capacity=map_file.MapCapacity(6, 4, 1, 1, 2000.0),
+            build_desc=[_build_map_object(flag_bits_a=0b11000000, filename="bmap_test")],
+            build_inst=[_build_map_build_instance(x=-3, y=-2, desc_index=0)],
+        )
+        camera = map_scene.topdown_camera(data, 8)
+        x0, z0 = 5.0 * 3, 5.0 * 2  # mesh corner of tile (0, 0)
+        quad = [
+            model_viewer._Triangle(a=(x0, 0.0, z0), b=(x0 + 5, 0.0, z0), c=(x0, 0.0, z0 + 5),
+                                   normal=(0.0, 1.0, 0.0), color=(255, 0, 0)),
+            model_viewer._Triangle(a=(x0, 0.0, z0), b=(x0, 0.0, z0 + 5), c=(x0 + 5, 0.0, z0),
+                                   normal=(0.0, 1.0, 0.0), color=(255, 0, 0)),
+        ]
+        scene = model_viewer._LoadedSet(label="t", bones=[], triangles=quad, bone_markers={}, animations=[])
+
+        image = map_scene.render_topdown(scene, camera).convert("RGB")
+
+        self.assertEqual(image.size, (48, 32))
+        self.assertEqual(image.getpixel((3, 3)), (255, 0, 0))
+        self.assertNotEqual(image.getpixel((44, 28)), (255, 0, 0))
+
     def test_texture_sampling_can_flip_v_for_terrain_detail(self):
         image = Image.new("RGB", (1, 2))
         image.putpixel((0, 0), (0, 0, 255))

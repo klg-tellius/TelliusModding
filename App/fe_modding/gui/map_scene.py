@@ -76,6 +76,14 @@ _NATIVE_TILE_SCALE = 5.0
 _MAP_BASE_SELECTOR_PROJECTION_EXTENT = 64.0
 
 
+#: Fallback only: the file-derived projection wins whenever `mapextra` and a
+#: base terrain instance exist, which is every vanilla chapter. These two
+#: uploads are not the terrain's own matrices: the engine's texture matrix is
+#: `ortho * basis * actor * bone`, the bmap02/bmap03 terrains have one identity
+#: bone and an angle-0 instance, yet these rows carry a 1/4 and a 0.368 scale
+#: and (bmap03) a 90-degree turn, so they were taken from another actor's
+#: `map_base`/`map_wall` material. The derived matrices put both maps' ground
+#: textures on their terrain grids (checked top-down against the tile types).
 _RAM_BACKED_MAP_TEXTURE_PROJECTIONS: dict[str, MapTextureProjection] = {
     "bmap02": MapTextureProjection(
         selector_matrix=(
@@ -538,13 +546,15 @@ def load_map_prop(pak_contents: dict[str, bytes], map_data: map_file.MapData, na
 
 # -- top-down image (the Build tab's backdrop) -------------------------------------------
 
-#: Camera rotation looking straight down. The screen signs below rotate the
-#: raw model-space X/Z image 180 degrees into the map orientation shown by the
-#: game; depth is -height, so higher geometry is nearer. A proper rotation
-#: (det +1); both renderers cull by the stored normal, which an upward face
-#: passes.
+#: Camera rotation looking straight down; depth is -height, so higher geometry
+#: is nearer. A proper rotation (det +1); both renderers cull by the stored
+#: normal, which an upward face passes. The screen signs keep the image in the
+#: tile grid's orientation: mesh +X to the right (tile x), mesh +Z downwards
+#: (tile y), so pixel ``(x, y) * px_per_tile`` is tile ``(x, y)`` as the Build
+#: and Play canvases draw it. ``(-1, 1)`` (the 3D viewer's game-facing view)
+#: turned the backdrop 180 degrees against the terrain, unit and prop grid.
 TOPDOWN_ROTATION = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, -1.0, 0.0))
-TOPDOWN_SCREEN_SIGNS = (-1.0, 1.0)
+TOPDOWN_SCREEN_SIGNS = (1.0, -1.0)
 
 
 @dataclass
@@ -590,9 +600,14 @@ class _TopdownRasterCamera:
         self._extent = camera.extent
         self._zoom = camera.scale * camera.extent / (min(camera.width, camera.height) * FIT_FRACTION)
         self._screen_x_sign, self._screen_y_sign = TOPDOWN_SCREEN_SIGNS
+        self._perspective = 0.0
+        self._pixels_per_unit = camera.scale
 
     def _rotation_matrix(self):
         return self._matrix
+
+    def _scale(self, width: int, height: int) -> float:
+        return self._pixels_per_unit
 
 
 def render_topdown(scene: _LoadedSet, camera: TopdownCamera, gpu=None):
