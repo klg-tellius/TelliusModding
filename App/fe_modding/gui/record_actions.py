@@ -3,7 +3,8 @@
 Both work on the shared session (``FE8Data.bin`` / ``FE10Data.cms``): the new or
 shortened table stays unsaved like any other edit. Adding goes through the
 session's :class:`~fe_modding.game_adapter.DataAdapter`, so both games share the
-New record dialog; removing is ``FE8Data.bin`` only for now. A new record starts
+New record dialog; :func:`remove_record` is ``FE8Data.bin``'s, and Radiant Dawn's editors check
+the other game files with :func:`refuse_if_named_in_files`. A new record starts
 empty or as a copy of an existing one; a record something still names (see
 :mod:`fe_modding.fe8_references`) cannot be removed, and removing a
 character, class or item warns that saves made before hold its old number.
@@ -125,6 +126,26 @@ def add_record(parent: tk.Misc, session, kind: str, templates: list[str],
     session.data = data
     session.changed(source)
     return index
+
+
+def refuse_if_named_in_files(parent: tk.Misc, project: Optional[ModProject], label: str) -> bool:
+    """Whether a game file outside the data tables (scripts, deployments, shops, battle tables,
+    ``main.dol``) still names ``label``: if so, say which and return True."""
+    if project is None or not label:
+        return False
+    try:
+        refs = fe8_references.file_references(project, label)
+    except (ValueError, OSError) as exc:
+        messagebox.showerror("Could not check the references", str(exc), parent=parent)
+        return True
+    if not refs:
+        return False
+    shown = "\n".join(f"• {r}" for r in refs[:14])
+    more = f"\n… and {len(refs) - 14} more" if len(refs) > 14 else ""
+    messagebox.showerror(f"{label} is still used",
+                         f"{label} cannot be removed while these name it:\n\n{shown}{more}\n\n"
+                         "Point them at another record first.", parent=parent)
+    return True
 
 
 def remove_record(parent: tk.Misc, session: Fe8DataSession, project: Optional[ModProject], kind: str,

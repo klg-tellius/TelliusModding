@@ -8,7 +8,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
 from ..formats import fe10data
-from . import message_reference
+from . import message_reference, record_actions
 from .character_form import ROW_HELP, weapon_rank_grid
 from .fe8_session import Fe10DataSession
 from .widgets import Link, tip
@@ -344,6 +344,8 @@ class Fe10CharacterForm(ttk.Frame):
         users = _references(self._session.fe10, pid, skip=("character", index))
         if users:
             messagebox.showerror("Remove", f"{pid} is still named by: {', '.join(users[:10])}.", parent=self)
+            return
+        if record_actions.refuse_if_named_in_files(self, self._session.project, pid):
             return
         if not messagebox.askyesno("Remove character", f"Remove {pid}?", parent=self):
             return

@@ -50,7 +50,8 @@ class RadiantDawnTextExportTests(unittest.TestCase):
 
     def test_radiant_dawn_has_its_implemented_export_parts(self):
         self.assertEqual([name for name, _label in text_export.parts_for(self.project)],
-                         ["FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"])
+                         ["FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound",
+                          "faces", "FE10Battle"])
 
     def test_fe10_records_export_semantic_values_without_binary_offsets(self):
         record = SimpleNamespace(values={"pid": "PID_IKE", "level": 11, "block": 0x1234},
@@ -76,6 +77,38 @@ class RadiantDawnTextExportTests(unittest.TestCase):
         exported = written[0].read_text(encoding="utf-8")
         self.assertIn("## MS_TEST", exported)
         self.assertIn("<speaker:04>Hello.<wait>", exported)
+
+
+@unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES to an extracted RD files/ directory")
+class RadiantDawnRetailExportTests(unittest.TestCase):
+    def test_faces_and_battle_tables(self):
+        from fe_modding.games import Game
+        from fe_modding.project import ModProject
+        source = Path(os.environ["FE10_EXTRACTED_FILES"])
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        project = ModProject.create(Path(tmp.name), "RD export", Game.RADIANT_DAWN)
+        files = project.extracted_dir / "files"
+        (files / "Face" / "wide").mkdir(parents=True)
+        shutil.copy(source / "Face" / "facedata.bin", files / "Face" / "facedata.bin")
+        shutil.copy(source / "Face" / "wide" / "facedata.bin", files / "Face" / "wide" / "facedata.bin")
+        shutil.copy(source / "FE10Battle.cms", files / "FE10Battle.cms")
+        out = Path(tmp.name) / "out"
+        written, problems = text_export.export_project(project, out, parts={"faces", "FE10Battle"})
+        self.assertFalse(problems)
+        faces = (out / "faces.tsv").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(faces), 1 + 316)
+        self.assertTrue(any(line.startswith("FID_MICAIAH\t") for line in faces))
+        self.assertTrue((out / "faces_wide.tsv").is_file())
+        tables = sorted(p.stem for p in (out / "FE10Battle" / "tables").glob("*.json"))
+        self.assertEqual(len(tables), 21)
+        units = json.loads((out / "FE10Battle" / "battle_units.json").read_text(encoding="utf-8"))
+        self.assertTrue(units)
+        self.assertNotIn("address", units[0])
+        weapons = json.loads((out / "FE10Battle" / "battle_weapons.json").read_text(encoding="utf-8"))
+        self.assertTrue(weapons)
+        again, _ = text_export.export_project(project, out, parts={"faces", "FE10Battle"})
+        self.assertEqual(sorted(again), sorted(written))
 
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")

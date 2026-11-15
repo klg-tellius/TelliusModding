@@ -6,9 +6,10 @@ their ID strings (``PID_``, ``JID_``, ``IID_``...), never by address:
 
 * inside ``FE8Data.bin``, every pointer field whose string is the label
   (other records, support lists, bonds, skill restriction lists...);
-* chapter scripts (``Scripts/*.cmb``), deployments (``zmap/*/dispos.cmp``),
-  shops (``shop/*.bin``), the battle-model lists (``zdbx.cmp``) and the map
-  model registry (``FE8Anim.bin``), searched as NUL-terminated strings;
+* chapter scripts (``Scripts/*.cmb``), deployments (``zmap/*/dispos.cmp``, or Radiant Dawn's
+  ``zmap/*/dispos_<difficulty>.bin``), shops, the battle tables (``zdbx.cmp`` / ``FE10Battle.cms``)
+  and the map model registry (``FE8Anim.bin`` / ``FE10Anim.cms``), searched as NUL-terminated
+  strings;
 * ``main.dol`` itself, whose string literals name a few records the engine
   looks up by ID (``PID_IKE``...).
 
@@ -160,7 +161,9 @@ def _game_files(project: ModProject) -> Iterable[tuple[str, Path, bool]]:
     profile = profile_of(project)
     shops = profile.shop_folder(files)
     yield from ((f"Scripts/{p.name}", p, False) for p in sorted((files / "Scripts").glob("*.cmb")))
-    yield from ((f"zmap/{p.parent.name}/dispos.cmp", p, True) for p in sorted((files / "zmap").glob("*/dispos.cmp")))
+    deployments = profile.deployment.format(diff="*")  # dispos.cmp, or one dispos_<d>.bin per difficulty
+    yield from ((f"zmap/{p.parent.name}/{p.name}", p, p.suffix.lower() in (".cmp", ".cms"))
+                for p in sorted((files / "zmap").glob(f"*/{deployments}")))
     yield from ((f"{shops.name}/{p.name}", p, False) for p in sorted(shops.glob("*.bin")))
     for logical in ("battle_data", "anim_data"):
         if profile.has_file(logical) and profile.path(files, logical).is_file():
