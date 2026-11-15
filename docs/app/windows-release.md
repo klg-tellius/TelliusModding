@@ -45,13 +45,36 @@ NumPy/Pillow, fontTools, and the wgpu native library. It does not require a game
 dump or a working GPU adapter; actual rendering still depends on the machine's
 graphics drivers.
 
-The **Windows portable release** GitHub Actions workflow runs on `v*` tags and
-manual dispatch. A tag build publishes the tested ZIP and checksum as GitHub
-Release assets. Manual dispatch produces downloadable workflow artifacts.
+### Publishing a release
 
-Before tagging, update the version in `App/fe_modding/__init__.py`, dependency
-pins if needed, and `release/RELEASE-NOTES.md`. Publish a new tag for a new release;
-the workflow does not replace existing releases automatically.
+The **Windows portable release** GitHub Actions workflow
+([windows-release.yml](../../.github/workflows/windows-release.yml)) runs the tests,
+builds the ZIP and `TelliusPatcher.exe`, smoke-tests both, and uploads them as
+workflow artifacts. It publishes a GitHub Release only when asked to.
+
+To publish a release from `main`:
+
+1. On a branch, set the new version in `App/fe_modding/__init__.py`
+   (`__version__ = "0.3.0"`) and rewrite `release/RELEASE-NOTES.md`. Its first
+   line must name the tag (`# Tellius Modding v0.3.0`). Update dependency pins
+   if needed. Merge the pull request into `main`.
+2. Open **Actions > Windows portable release > Run workflow**, keep the branch
+   on `main`, tick **Publish**, and run it. Tick **Pre-release** for a test build.
+3. When the run is green, the release `v0.3.0` exists with
+   `TelliusModding-Windows-x64.zip`, `TelliusPatcher.exe` and their `.sha256`
+   files, and the README's *latest release* link points to it.
+
+The same can be started from a terminal:
+
+```powershell
+gh workflow run windows-release.yml --ref main -f publish=true
+```
+
+Pushing a tag `v<version>` also publishes, with that tag. Either way the run stops
+before building when the tag does not match `__version__`, when the release
+already exists, or when the release notes name another version. Releases are
+never replaced: publish a new version instead. Without **Publish**, a run only
+produces downloadable workflow artifacts, which is how to try a build first.
 
 Tool URLs, versions, size bounds, and SHA-256 pins live in
 `App/fe_modding/runtime_tools.py`. Validate new upstream archives and licenses
