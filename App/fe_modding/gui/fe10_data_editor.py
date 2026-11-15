@@ -787,7 +787,7 @@ class Fe10DataEditor(EditorPanel):
             ttk.Button(row, text="Give this type its own stats", command=split).pack(side="left", padx=(8, 0))
 
     def _support_editor(self, body, r: fe10data.Record) -> None:
-        ttk.Label(body, text="Partners: reserved marker (0 or 255) and support speed", style="Strong.TLabel").pack(
+        ttk.Label(body, text="Partners: reserved marker (0 or 255, unused by the game) and support speed", style="Strong.TLabel").pack(
             anchor="w", pady=(4, 2))
         grid = ttk.Frame(body)
         grid.pack(anchor="w")
