@@ -65,7 +65,9 @@ Set-Location App
 ..\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Tests that require an external game corpus may skip when it is absent.
+Tests that require an external game corpus may skip when it is absent. With
+`requirements-dev.txt` installed, `python -m pytest -n auto` runs them in parallel;
+`app.md` (Tests) describes the quicker tiers and the full-disc mode.
 
 ## Attribution and licensing
 

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_playthrough as T  # noqa: E402
 from fe_modding.formats import dispo, lz10, map_file, pak  # noqa: E402
+from tests.corpus import FULL, sample
 from fe_modding.formats.cmb import compile_source  # noqa: E402
 from fe_modding.formats.cmb.binary import read_cmb_path  # noqa: E402
 from fe_modding.formats.cmb.model import FE10  # noqa: E402
@@ -156,7 +157,7 @@ class Fe10CorpusPlaythroughTests(unittest.TestCase):
         chapters = sorted((FILES / "Scripts").glob("C*.cmb"))
         self.assertEqual(len(chapters), 44)
         found = {}
-        for path in chapters:
+        for path in sample(chapters, keep=("C0101", "C0204", "C0407")):
             world = SimpleNamespace(scripts=[read_cmb_path(path), startup], dialect=dialect_for("fe10"))
             for name in natives.audit_scripts(world)["unclassified"]:
                 found.setdefault(name, []).append(path.stem)

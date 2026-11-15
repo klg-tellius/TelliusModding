@@ -1,0 +1,4 @@
+# Test tools only; the app itself needs requirements.txt.
+-r requirements.txt
+pytest>=8  # runs the unittest suite; needed for -n
+pytest-xdist>=3.8  # -n auto: spreads the tests over every core

@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from fe_modding import map_props, terrain_kit
+from tests.corpus import FULL, sample
 from fe_modding.formats import map_file
 
 FILES = os.environ.get("FE10_EXTRACTED_FILES")
@@ -138,7 +139,7 @@ class RdKitTests(unittest.TestCase):
 
     def test_story_maps_with_a_ground_model_all_read(self):
         read = failed = 0
-        for folder in sorted((Path(FILES) / "zmap").glob("bmap*")):
+        for folder in sample(sorted((Path(FILES) / "zmap").glob("bmap*")), keep=("bmap0101", "bmap0109")):
             container = folder / "map.cmp"
             if not container.exists():
                 continue
@@ -153,7 +154,10 @@ class RdKitTests(unittest.TestCase):
             except Exception:  # noqa: BLE001
                 failed += 1
         self.assertEqual(failed, 0)
-        self.assertEqual(read, 33)
+        if FULL:
+            self.assertEqual(read, 33)
+        else:
+            self.assertGreater(read, 0)
 
 
 

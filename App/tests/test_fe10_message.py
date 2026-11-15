@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import fe10_message as F
+from tests.corpus import FULL, sample
 from fe_modding.formats import message
 
 
@@ -162,7 +163,7 @@ class CorpusTest(unittest.TestCase):
                 self.assertEqual(rebuilt, raw)
 
     def test_every_message_round_trips_through_the_notation_and_the_steps(self):
-        for path in self.paths():
+        for path in sample(self.paths(), keep=("e_c0101", "e_ending", "c0101"), size=40):
             if path.name[:2].lower() in ("d_", "f_", "i_", "s_"):
                 continue  # German/French/Italian/Spanish files use their own single-byte tables (later phase)
             for msg in message.read_messages_path(path):

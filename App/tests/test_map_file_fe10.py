@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import map_file
+from tests.corpus import FULL, sample
 
 PREFIX = "bmap9901:"
 
@@ -215,7 +216,7 @@ class Fe10MapWriteTests(unittest.TestCase):
 def _rd_maps():
     from fe_modding.formats import lz10, pak
     root = Path(os.environ["FE10_EXTRACTED_FILES"]) / "zmap"
-    for path in sorted(root.glob("*/map.cmp")):
+    for path in sample(sorted(root.glob("*/map.cmp")), keep=("bmap0101", "bmap0109", "bmap0407")):
         raw = lz10.decompress(path.read_bytes())
         yield path.parent.name, {e.name: pak.read_pak_file_content(raw, e) for e in pak.read_pak_entries(raw)}
 
@@ -249,7 +250,7 @@ class DiscFe10MapTests(unittest.TestCase):
                     self.assertEqual(map_file.patch_rd_map_field(
                         raw, data.rd, "terrain_height_ceiling", data.rd.terrain_height_ceiling), raw)
                 count += 1
-        self.assertGreaterEqual(count, 120)
+        self.assertGreaterEqual(count, 120 if FULL else 10)
 
     def test_light_and_fog_on_every_map(self):
         enabled = 0
@@ -269,7 +270,8 @@ class DiscFe10MapTests(unittest.TestCase):
                     out = map_file.patch_fog_field(out, fog, name, getattr(fog, name))
                 self.assertEqual(out, raw)
                 enabled += fog.enabled
-        self.assertEqual(enabled, 100)  # 28 maps have no fog
+        if FULL:
+            self.assertEqual(enabled, 100)  # 28 maps have no fog
 
     def test_prologue_light_and_fog_values(self):
         files = dict(_rd_maps())["bmap0101"]

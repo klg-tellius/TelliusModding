@@ -19,6 +19,7 @@ from fe_modding.formats import (animation, dispo, fe8data, fe10_anim, fe10_battl
                                 message, pak, shop, skeleton, tpl)
 from fe_modding.formats.packed_texture import read_packed_tpl
 from fe_modding.game_profile import RADIANT_DAWN_PROFILE
+from tests.corpus import FULL, sample
 from fe_modding.games import Game
 
 
@@ -68,9 +69,10 @@ class Fe10FilesTest(unittest.TestCase):
         for folder, count in expected.items():
             paths = sorted(p for p in (FILES / folder).rglob("*")
                            if p.is_file() and p.suffix.lower() in (".tpl", ".cms"))
-            with self.subTest(folder=folder):
-                self.assertEqual(len(paths), count)
-            for path in paths:
+            if FULL:
+                with self.subTest(folder=folder):
+                    self.assertEqual(len(paths), count)
+            for path in sample(paths):
                 raw = path.read_bytes()
                 inner = lz10.decompress(raw) if path.suffix.lower() == ".cms" else raw
                 with self.subTest(path=path.relative_to(FILES)):
@@ -110,14 +112,19 @@ class Fe10FilesTest(unittest.TestCase):
         expected = {"sky": (22, 22, 69), "zbg": (129, 127, 1281)}
         for folder, (archive_count, texture_count, image_count) in expected.items():
             paths = sorted((FILES / folder).rglob("*.cmp"))
+            if FULL:
+                with self.subTest(folder=folder):
+                    self.assertEqual(len(paths), archive_count)
+            paths = sample(paths)
             textures = []
             for path in paths:
                 try:
                     textures.append(read_packed_tpl(path.read_bytes()))
                 except ValueError as exc:
                     self.assertIn("found 0", str(exc), path)
+            if not FULL:
+                continue
             with self.subTest(folder=folder):
-                self.assertEqual(len(paths), archive_count)
                 self.assertEqual(len(textures), texture_count)
                 self.assertEqual(sum(len(tpl.read_tpl_image_info(io.BytesIO(data))) for data in textures),
                                  image_count)
@@ -128,7 +135,9 @@ class Fe10FilesTest(unittest.TestCase):
             for p in (FILES / folder).rglob("*")
             if p.is_file() and p.suffix.lower() in (".cmp", ".pak")
         )
-        self.assertEqual(len(archives), 2291)
+        if FULL:
+            self.assertEqual(len(archives), 2291)
+        archives = sample(archives, keep=("mikaya1", "archer1"), size=60)
         components = {".gs": 0, ".g": 0, ".ga": 0}
 
         def check(name: str, data: bytes) -> None:
@@ -157,10 +166,13 @@ class Fe10FilesTest(unittest.TestCase):
                 check(str(path.relative_to(FILES) / entry.name), pak.read_pak_file_content(inner, entry))
 
         for folder in ("ymu", "xcam"):
-            for path in sorted((FILES / folder).rglob("*")):
+            for path in sample(sorted((FILES / folder).rglob("*")), size=60):
                 if path.is_file() and path.suffix.lower() in components:
                     check(str(path.relative_to(FILES)), path.read_bytes())
-        self.assertEqual(components, {".gs": 5342, ".g": 5342, ".ga": 16415})
+        if FULL:
+            self.assertEqual(components, {".gs": 5342, ".g": 5342, ".ga": 16415})
+        else:
+            self.assertTrue(all(components.values()), components)
 
     def test_phase6_animation_registry_is_structurally_accounted_for(self):
         raw = lz10.decompress((FILES / "FE10Anim.cms").read_bytes())
@@ -378,7 +390,7 @@ class Fe10FilesTest(unittest.TestCase):
     def test_every_map_uses_the_shared_codec(self):
         paths = sorted((FILES / "zmap").glob("*/map.cmp"))
         self.assertGreater(len(paths), 120)
-        for path in paths:
+        for path in sample(paths, keep=("bmap0101", "bmap0109")):
             with self.subTest(path=path.relative_to(FILES)):
                 packed = lz10.decompress(path.read_bytes())
                 entry = next(e for e in pak.read_pak_entries(packed) if e.name == "map.bin")
