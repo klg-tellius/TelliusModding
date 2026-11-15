@@ -1,20 +1,71 @@
 name: Windows portable release
 
+# Two ways to publish a release (see docs/app/windows-release.md):
+#   - Actions > Windows portable release > Run workflow, with "Publish" ticked.
+#     The release is tagged v<__version__> on the commit the workflow ran on.
+#   - Push a tag v<__version__>.
+# Running the workflow without "Publish" only builds and uploads workflow artifacts.
+
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub release tagged v<version from App/fe_modding/__init__.py>
+        type: boolean
+        default: false
+      prerelease:
+        description: Mark the release as a pre-release
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 
 permissions:
   contents: read
 
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 60
     permissions:
       contents: write
+    env:
+      PUBLISH: ${{ startsWith(github.ref, 'refs/tags/') || inputs.publish }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read and check the version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $line = Select-String -Path App/fe_modding/__init__.py -Pattern '^__version__\s*=\s*"([^"]+)"'
+          if (-not $line) { throw 'No __version__ in App/fe_modding/__init__.py' }
+          $version = $line.Matches[0].Groups[1].Value
+          $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match __version__ $version (expected $tag)."
+          }
+          if ($env:PUBLISH -eq 'true') {
+            gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+            if ($LASTEXITCODE -eq 0) {
+              throw "Release $tag already exists. Bump __version__ and release/RELEASE-NOTES.md first."
+            }
+            $global:LASTEXITCODE = 0
+            $heading = (Get-Content release/RELEASE-NOTES.md -TotalCount 1)
+            if ($heading -notmatch [regex]::Escape($tag)) {
+              throw "release/RELEASE-NOTES.md starts with '$heading'; it must name $tag."
+            }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $version, tag $tag, publish $env:PUBLISH"
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -26,7 +77,7 @@ jobs:
       - run: python release/build_windows.py
       - uses: actions/upload-artifact@v4
         with:
-          name: TelliusModding-Windows-x64
+          name: TelliusModding-Windows-x64-${{ steps.version.outputs.tag }}
           path: |
             dist/TelliusModding-Windows-x64.zip
             dist/TelliusModding-Windows-x64.zip.sha256
@@ -34,10 +85,24 @@ jobs:
             dist/TelliusPatcher.exe.sha256
             build/packaged-smoke-test.json
             build/patcher-smoke-test.json
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Publish GitHub release
+        if: env.PUBLISH == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          gh release create $env:GITHUB_REF_NAME --verify-tag --title "Tellius Modding $env:GITHUB_REF_NAME" --notes-file release/RELEASE-NOTES.md dist/TelliusModding-Windows-x64.zip dist/TelliusModding-Windows-x64.zip.sha256 dist/TelliusPatcher.exe dist/TelliusPatcher.exe.sha256
+          $releaseArgs = @($env:TAG, '--repo', $env:GITHUB_REPOSITORY,
+            '--title', "Tellius Modding $env:TAG",
+            '--notes-file', 'release/RELEASE-NOTES.md')
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $releaseArgs += '--verify-tag' }
+          else { $releaseArgs += @('--target', $env:GITHUB_SHA) }
+          if ($env:PRERELEASE -eq 'true') { $releaseArgs += '--prerelease' }
+          gh release create @releaseArgs `
+            dist/TelliusModding-Windows-x64.zip `
+            dist/TelliusModding-Windows-x64.zip.sha256 `
+            dist/TelliusPatcher.exe `
+            dist/TelliusPatcher.exe.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
