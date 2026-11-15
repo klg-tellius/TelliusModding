@@ -178,6 +178,13 @@ def fe10_card_name(chapter_id: str, prefix: str = "e_") -> str:
     return f"{prefix}ch{chapter_id}.cms"
 
 
+def fe10_card_prefix(files) -> str:
+    """The language prefix of the cards the disc's game shows: ``e_`` on the US and European discs,
+    none on the Japanese one (which has only ``ch0102.cms``...)."""
+    files = as_files(files)
+    return "e_" if files.glob(game_path(FE10_CARD_FOLDER), "e_ch*.cms") else ""
+
+
 def split_fe10_title(title: str) -> tuple[str, str]:
     """``"I:1-Maiden of Miracles"`` -> (``"Ch 1"``, ``"Maiden of Miracles"``); ``"II:Prologue-On
     Drifting Clouds"`` -> (``"Prologue"``, ...); a trailing ``(5)`` part number is dropped, like the
@@ -218,13 +225,15 @@ def render_fe10_card(font, title: str, size=(480, 160)) -> Image.Image:
     return image
 
 
-def fe10_title_card(files, chapter_id: str, title: str, prefix: str = "e_",
+def fe10_title_card(files, chapter_id: str, title: str, prefix: Optional[str] = None,
                     template_id: str = "0101", truetype=None) -> Optional[tuple]:
     """(path to write, file bytes) of chapter ``chapter_id``'s title card drawn from ``title`` on
     a copy of its own card (else ``template_id``'s), or None without a template or the font.
     ``files`` is a project's file layer (or a ``files/`` folder); ``truetype`` (a font file path)
-    replaces the game's dialogue font."""
+    replaces the game's dialogue font. ``prefix`` defaults to the disc's (:func:`fe10_card_prefix`)."""
     files = as_files(files)
+    if prefix is None:
+        prefix = fe10_card_prefix(files)
     font_data = files.read_or_none(game_path(FE10_FONT_FILE))
     template = _template(files, FE10_CARD_FOLDER, [fe10_card_name(chapter_id, prefix), fe10_card_name(template_id, prefix)])
     if template is None or (truetype is None and font_data is None):

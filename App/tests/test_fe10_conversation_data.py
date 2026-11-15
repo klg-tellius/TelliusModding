@@ -54,7 +54,9 @@ class CorpusTest(unittest.TestCase):
 
     def test_tables(self):
         lists = self.lists
-        self.assertEqual((len(lists.info), len(lists.fe8_yells), len(lists.mini_yells)), (101, 68, 71))
+        from tests.corpus import per_disc
+        self.assertEqual((len(lists.info), len(lists.fe8_yells), len(lists.mini_yells)),
+                         (per_disc(FILES, 101, jp=97), 68, 71))
         first = lists.info[0]
         self.assertEqual(first.symbol, "CONV_INFO_DATA_C0105_街の中で")
         self.assertEqual(first.name, "街の中で")
@@ -97,7 +99,7 @@ class CorpusTest(unittest.TestCase):
     def test_add_then_remove_restores_the_file(self):
         data, index = cd.add_info(self.data, 5, "テスト")
         lists = cd.read_conversation_data(data)
-        self.assertEqual(index, 101)
+        self.assertEqual(index, len(self.lists.info))
         self.assertEqual(lists.info[index].symbol, "CONV_INFO_DATA_C0106_テスト")
         self.assertEqual(lists.info[index].values, self.lists.info[5].values)
         self.assertEqual(lists.fe8_yells[0].values, self.lists.fe8_yells[0].values)
@@ -106,7 +108,7 @@ class CorpusTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cd.add_info(self.data, 0, "街の中で")
         removed = cd.read_conversation_data(cd.remove_info(self.data, 0))
-        self.assertEqual(len(removed.info), 100)
+        self.assertEqual(len(removed.info), len(self.lists.info) - 1)
         self.assertEqual(removed.info[0].symbol, self.lists.info[1].symbol)
 
 

@@ -29,7 +29,7 @@ PLAUSIBLE_FIELDS = {
     "class": {"weight_kind_1", "weight_kind_2"},  # the kind numbers are named from the retail classes only
 }
 #: Fields that only pad a record to a word (zero everywhere, a word field follows, the loader skips them).
-ALIGNMENT_FIELDS = {"character": {"padding_t27"}, "skill": {"padding_22", "padding_23"},
+ALIGNMENT_FIELDS = {"character": {"padding_t27"}, "skill": {"padding_21", "padding_22", "padding_23"},
                     "item": {"pad_13", "pad_14", "pad_15"}}
 #: Fields that are skipped, or copied but zero throughout retail with no reader found.
 RESERVED_FIELDS = {
@@ -100,7 +100,7 @@ def _mark_variable_tables(cov: CoverageMap, data: bytes) -> None:
 
 
 def _mark_skills(cov: CoverageMap, data: bytes) -> None:
-    defs = {d.key: d for d in fe10data.field_defs("skill")}
+    defs = {d.key: d for d in fe10data.field_defs("skill", data)}
     defs.update({k: fe10data.FieldDef(k, k, "u8") for k in fe10data.COUNT_FIELDS})
     _mark_count(cov, data, "skill")
     for r in fe10data.read_table(data, "skill"):

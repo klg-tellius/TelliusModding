@@ -452,6 +452,9 @@ class RetailCatalogTests(unittest.TestCase):
         path = Path(files).parent / "sys" / "main.dol" if files else None
         if path is None or not path.is_file():
             return
+        from tests.corpus import disc_id
+        if disc_id(files) != "RFEE01":               # the r2 constants below are RFEE01's
+            return
         dol = Dol.open(path)
         r2 = 0x804D4A60                              # _SDA2_BASE_ on RFEE01
         self.assertEqual(struct.unpack(">f", dol.read(r2 - 0x6C90, 4))[0], 45.0)

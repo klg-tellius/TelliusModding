@@ -84,7 +84,8 @@ class RetailFe10DataTests(unittest.TestCase):
             self.assertEqual(db.table(kind)[-1].end, fe10data.table_start(data, following), kind)
 
     def test_every_table_walks_to_the_next_symbol(self):
-        self.assertEqual([len(self.db.table(k)) for k in fe10data.KINDS], [461, 171, 296, 142])
+        from tests.corpus import per_disc
+        self.assertEqual([len(self.db.table(k)) for k in fe10data.KINDS], [461, 171, per_disc(FILES, 296, jp=293), 142])
         self._ends_match(self.data, self.db)
         self.assertTrue(fe10data.is_fe10data(self.data))
         for kind in fe10data.KINDS:
@@ -117,10 +118,13 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual({r.values["padding_22"] for r in self.db.skills}, {0})
         self.assertEqual({r.values["padding_23"] for r in self.db.skills}, {0})
         self.assertTrue(all(r.item_extra is None for r in self.db.items))
-        chapter_reserved = ({f"reserved_{o:02x}" for o in (0x14, 0x18, 0x1C, 0x80)}
+        chapter_reserved = ({f"reserved_{o:02x}" for o in (0x14, 0x1C, 0x80)}
                             | {f"reserved_objective_{part}_{d}"
                                for part in ("head", "gap") for d in range(3)})
         self.assertTrue(all(r.values[key] == 0 for r in self.db.table("chapter") for key in chapter_reserved))
+        chapters = {r.id: r.values for r in self.db.table("chapter")}
+        from tests.corpus import per_disc
+        self.assertEqual(chapters["C0101"]["n_messages"], per_disc(FILES, None, jp="N0101"))
 
     def test_field_edit(self):
         out = fe10data.patch_field(self.data, "character", 0, "level", 20)
@@ -282,11 +286,14 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertEqual(chapters["C0401a"]["skip_mask"], 0x80)
         self.assertEqual(chapters["C0101"]["preparations"], 0)
         items = {i.id: i.values for i in self.db.items}
-        self.assertEqual((items["IID_IRONSWORD"]["article"], items["IID_BOOTS"]["article"],
-                          items["IID_RAGNELL"]["article"]), (2, 0, 255))
+        japanese = "article" not in items["IID_IRONSWORD"]      # no English articles on the Japanese disc
+        if not japanese:
+            self.assertEqual((items["IID_IRONSWORD"]["article"], items["IID_BOOTS"]["article"],
+                              items["IID_RAGNELL"]["article"]), (2, 0, 255))
         self.assertTrue(all(i.values["colour"] == 4 for i in self.db.items))
         skills = {s.id: s.values for s in self.db.skills}
-        self.assertEqual((skills["SID_AETHER"]["article"], skills["SID_HERO"]["article"]), (2, 3))
+        if not japanese:
+            self.assertEqual((skills["SID_AETHER"]["article"], skills["SID_HERO"]["article"]), (2, 3))
         self.assertEqual(classes["JID_PEGASUSKNIGHT"]["vision"], 3)
         self.assertTrue(all(b.values["kind"] == 1 for b in self.db.table("bond")))
         blessing = self.db.table("blessing")

@@ -19,6 +19,11 @@ from fe_modding.game_profile import (CHAPTER_FLOW, HUB, MAP_PHASES, NEW_CAMPAIGN
                                      RADIANT_DAWN_PROFILE)
 
 FILES = os.environ.get("FE10_EXTRACTED_FILES")
+#: English files on the US and European discs, none on the Japanese one
+E = "e_"
+if FILES:
+    from tests.corpus import per_disc
+    E = per_disc(FILES, "e_", jp="")
 
 
 class FakeEditor:
@@ -195,7 +200,9 @@ class RdAddChapterTests(unittest.TestCase):
         files = self.files = self.project.files_dir
         for rel in ("FE10Data.cms", "Scripts/C0204.cmb", "Mess/c0204.m", "Mess/e_c0204.m", "Mess/n0204.m",
                     "Mess/e_n0204.m", "Mess/common.m", "Mess/e_common.m", "Shop/shopitem_n.bin",
-                    "Shop/shopitem_h.bin", "Shop/shopitem_m.bin", "window/title/e_ch0204.cms", "Fonts/talk.cms"):
+                    "Shop/shopitem_h.bin", "Shop/shopitem_m.bin", f"window/title/{E}ch0204.cms", "Fonts/talk.cms"):
+            if not (source / rel).is_file():            # the Japanese disc has no e_ files
+                continue
             (files / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(source / rel, files / rel)
         shutil.copytree(source / "zmap" / "bmap0204", files / "zmap" / "bmap0204")
@@ -250,17 +257,17 @@ class RdAddChapterTests(unittest.TestCase):
         self.assertIn(b"bmap0501_mikata", script[pool_start:table_start])
         self.assertNotIn(b"bmap0204\x00", script[pool_start:table_start])
         self.assertIn(b"\x00C0501\x00", script[pool_start:table_start])  # ChapterTitle("C0501")
-        for name in ("c0501.m", "e_c0501.m", "n0501.m", "e_n0501.m"):
+        for name in {"c0501.m", f"{E}c0501.m", "n0501.m", f"{E}n0501.m"}:
             self.assertTrue((self.files / "Mess" / name).is_file(), name)
         self.assertIn("0501", chapters.list_chapter_ids(self.project))
         doc = shop.parse_shop((self.files / "Shop" / "shopitem_n.bin").read_bytes())
         self.assertEqual(doc.shop("W", "0501").items, doc.shop("W", "0204").items)
-        titles = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
+        titles = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / f"{E}common.m")}
         self.assertEqual(titles["MCT0501"], "II:9-A New Road")
         # the parts the Conditions screen draws (a missing one drew garbage)
         self.assertEqual([titles[f"MCT0501{s}"] for s in ("_0", "_0_2", "_1", "_2", "_3")],
                          ["Part II", "II", "Ch.9", "A New Road", "Ch.9"])
-        self.assertTrue((self.files / "window" / "title" / "e_ch0501.cms").is_file())
+        self.assertTrue((self.files / "window" / "title" / f"{E}ch0501.cms").is_file())
 
         reopened = RdStoryFlow(flow.editor.__class__(self.project.extracted_dir), rd_story.chapter_number_map(new))
         self.assertEqual(reopened.next_of("0204"), "0501")
@@ -288,7 +295,7 @@ class RdAddChapterTests(unittest.TestCase):
         self.assertEqual([r.values["cid"] for r in fe10data.read_table(new, "chapter")][-2:], ["C0501", "C0502"])
         hero = next(r for r in fe10data.read_fe10data(new).characters if r.id == "PID_NEWHERO")
         self.assertEqual((hero.values["jid"], hero.values["mpid"]), ("JID_BLADE", "MPID_NEWHERO"))
-        names = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
+        names = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / f"{E}common.m")}
         self.assertEqual(names["MPID_NEWHERO"], "Nova")
         # the second chapter keeps only the player's army
         for diff in "nh":
@@ -331,11 +338,11 @@ class RdAddChapterTests(unittest.TestCase):
             self.assertEqual([(r.values, r.lists) for r in fe10data.read_table(data, kind)],
                              [(r.values, r.lists) for r in fe10data.read_table(retail, kind)], kind)
         self.assertFalse((self.files / "zmap" / "bmap0501").exists())
-        for rel in ("Scripts/C0501.cmb", "Mess/c0501.m", "Mess/e_c0501.m", "window/title/e_ch0501.cms"):
+        for rel in ("Scripts/C0501.cmb", "Mess/c0501.m", f"Mess/{E}c0501.m", f"window/title/{E}ch0501.cms"):
             self.assertFalse((self.files / rel).exists(), rel)
         self.assertNotIn("0501", chapters.list_chapter_ids(self.project))
         self.assertEqual((self.files / "Shop" / "shopitem_n.bin").read_bytes(), shops_before)
-        titles = {m.speaker for m in message.read_messages_path(self.files / "Mess" / "e_common.m")}
+        titles = {m.speaker for m in message.read_messages_path(self.files / "Mess" / f"{E}common.m")}
         self.assertNotIn("MCT0501", titles)
         self.assertFalse({t for t in titles if t.startswith("MCT0501_")})
         (self.files / "FE10Data.cms").write_bytes(lz10.compress(data))

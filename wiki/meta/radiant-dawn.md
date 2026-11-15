@@ -182,7 +182,7 @@ Tables that Path of Radiance does not have:
 
 The Game Data page of the app edits all three tables.
 
-On the Japanese disc an item record has no English article and no padding after it: its fixed part is 16 bytes, not 20. The Japanese database has 293 items, not 296. <span class="confidence confidence--confirmed">files</span>
+On the Japanese disc an item record has no English article and no padding after it: its fixed part is 16 bytes, not 20. A skill record keeps its 0x2C bytes but has no article either: number, capacity, icon and the two list counts each sit one byte earlier, and three padding bytes end it. The Japanese database has 293 items, not 296. Its chapter records name the chapter's `N` message key at +0x18 (`N0101`), which the US and European discs leave null. <span class="confidence confidence--confirmed">files</span>
 
 ## Regional builds
 
@@ -191,7 +191,8 @@ The European (`RFEP01`) and Japanese (`RFEJ01`) executables hold the same code a
 - The European build registers ten script functions the others lack: `VIEnableDimming`, `UnitDispLoad`, `UnitDispFree`, `UnitDispUpdate`, `TutFrameCreate`, `TutFrameDelete`, `GetMessageWidth`, `GetMessageHeight`, `FileSweepMRAM` and `FileSweepERAM`. The trial maps size their message frames with `GetMessageWidth`, because the text length depends on the language, and the Endgame turns the Wii's screen dimming off with `VIEnableDimming`.
 - The Japanese build lacks four US functions: `IsJPVersion`, `IsNOAVersion`, `IsNOEVersion` and `IsShowVersion`.
 - Wrath's HP check differs on the Japanese build: it needs HP under 20 % of maximum HP, where the US and European builds allow up to and including 30 %.
-- The Japanese disc has only the plain sound files (`Sound/sound.brsar`, `sound_data.cms`) and tutorial lists, and no widescreen fonts or portraits (no `_w` fonts, no `Face/wide`).
+- The Japanese disc has only the plain sound files (`Sound/sound.brsar`, `sound_data.cms`) and tutorial lists, and no widescreen fonts or portraits (no `_w` fonts, no `Face/wide`). Its title cards have no prefix (`window/title/ch0102.cms`), and its staff roll file has no title or copyright lines.
+- The European disc's scene movies (`s1.thp` and the like) carry five audio tracks per frame, one per language, one after another after the picture. Its staff roll lists 421 lines in each language, against 358 on the US disc.
 
 ## Articles
 

@@ -23,9 +23,14 @@ ENV = {"RFEE01": "FE10_EXTRACTED", "RFEP01": "FE10_EU_EXTRACTED", "RFEJ01": "FE1
 
 
 def _dol(code: str) -> Dol | None:
+    """``code``'s retail main.dol, from its variable; None when unset or when it points at another
+    region (a full run may point FE10_EXTRACTED at the European or Japanese disc)."""
+    from tests.corpus import disc_id
     root = os.environ.get(ENV[code])
     path = Path(root) / "sys" / "main.dol" if root else None
-    return Dol.open(path) if path is not None and path.is_file() else None
+    if path is None or not path.is_file() or disc_id(Path(root) / "files") != code:
+        return None
+    return Dol.open(path)
 
 
 def _rd_entries():

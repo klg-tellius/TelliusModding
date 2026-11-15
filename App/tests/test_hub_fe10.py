@@ -35,7 +35,8 @@ class RdHubSetupTests(unittest.TestCase):
         for name in ("startup", "C0101", "C0102", "C0103"):
             shutil.copy(files / "Scripts" / f"{name}.cmb", ex / "files" / "Scripts")
         for name in ("c0101.m", "e_c0101.m", "e_common.m", "common.m"):
-            shutil.copy(files / "Mess" / name, ex / "files" / "Mess")
+            if (files / "Mess" / name).is_file():       # no e_ files on the Japanese disc
+                shutil.copy(files / "Mess" / name, ex / "files" / "Mess")
         for folder in ("bmap0101", "bmap0103"):      # bmap0103 also gives the Arrive marker (tttu01)
             shutil.copytree(files / "zmap" / folder, ex / "files" / "zmap" / folder)
         plan = chapters_fe10.add_story_chapter(project, project.read_logical("game_data"), "0101", "0501", "Hub")
@@ -122,7 +123,8 @@ class RdHubSetupTests(unittest.TestCase):
         from fe_modding import chapters
         from fe_modding.formats import message
         path = chapters.chapter_paths(self.project, "0501").dialogue
-        self.assertEqual(path.name, "e_c0501.m")
+        from tests.corpus import per_disc
+        self.assertEqual(path.name, per_disc(FE10, "e_c0501.m", jp="c0501.m"))
         return {m.speaker: m.text for m in message.read_messages_path(path)}
 
     def test_create_chapter_leaves_the_avatar_alone_and_a_plain_opening(self):

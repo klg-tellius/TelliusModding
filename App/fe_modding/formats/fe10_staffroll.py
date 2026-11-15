@@ -2,7 +2,8 @@
 
 RFEE01's staff roll (``StaffRollProc``; setup ``0x80288A98``, lines drawn from ``0x80289214``) reads
 its text from the ending message file through the language prefix (``Mess/%s%s.m``: ``e_`` English,
-none Japanese, ``d_ f_ s_ i_`` on European discs). The file holds:
+none Japanese, ``d_ f_ s_ i_`` on European discs; the European files use their own text table). The file
+holds:
 
 - ``MED_STAFFROLL_TITLE``, the roll's title, and ``MED_STAFFROLL_COPY1``..``COPY5``, the copyright
   lines;
@@ -62,9 +63,29 @@ class Fe10StaffRoll:
     lines: list[tuple[str, str, str]] = field(default_factory=list)  # role, heading, name
     others: list[message.Message] = field(default_factory=list)       # any other message, kept
     text_order: list[str] = field(default_factory=list)
+    #: the line count as the file wrote it (`` 358 `` US, ``421`` European, `` 341`` Japanese), kept while
+    #: the count is unchanged
+    count_text: str = ""
+    #: whether the file has the copyright lines and the title (the Japanese one has neither)
+    has_copyright: bool = True
+    has_title: bool = True
 
 
-def read_rd_staffroll(data: bytes) -> Fe10StaffRoll:
+def _shown(text: str, encoding: str) -> str:
+    """A message's text (``message.py`` keeps bytes as cp437) as the characters the game draws."""
+    return text.encode("cp437").decode(encoding, errors="replace")
+
+
+def _stored(key: str, text: str, encoding: str) -> str:
+    try:
+        return text.encode(encoding).decode("cp437")
+    except UnicodeEncodeError as exc:
+        raise Fe10StaffRollError(f"{key}: {text!r} has a character the credits' text table lacks.") from exc
+
+
+def read_rd_staffroll(data: bytes, encoding: str = "cp932") -> Fe10StaffRoll:
+    """The roll of ``data``; ``encoding`` is the file's text encoding (Shift-JIS, or the European
+    table for a European language file, :func:`fe10_message.encoding_for`)."""
     messages = message.read_messages(io.BytesIO(data))
     texts = {m.speaker: m.text for m in messages}
     if LINES not in texts:
@@ -73,32 +94,37 @@ def read_rd_staffroll(data: bytes) -> Fe10StaffRoll:
         count = int(texts[LINES].strip())
     except ValueError as exc:
         raise Fe10StaffRollError(f"MED_STAFFROLL_LINES is {texts[LINES]!r}, not a number.") from exc
-    lines = [tuple(texts.get(LINE_KEY.format(n, column), "") for column in COLUMNS) for n in range(count)]
+    lines = [tuple(_shown(texts.get(LINE_KEY.format(n, column), ""), encoding) for column in COLUMNS)
+             for n in range(count)]
     known = {TITLE, LINES, *COPYRIGHT} | {LINE_KEY.format(n, c) for n in range(count) for c in COLUMNS}
-    return Fe10StaffRoll(texts.get(TITLE, ""), [texts.get(key, "") for key in COPYRIGHT], lines,
+    return Fe10StaffRoll(_shown(texts.get(TITLE, ""), encoding),
+                         [_shown(texts.get(key, ""), encoding) for key in COPYRIGHT], lines,
                          [m for m in messages if m.speaker not in known],
-                         message.read_text_order(io.BytesIO(data)))
+                         message.read_text_order(io.BytesIO(data)), texts[LINES],
+                         any(key in texts for key in COPYRIGHT), TITLE in texts)
 
 
-def build_rd_staffroll(roll: Fe10StaffRoll) -> bytes:
+def build_rd_staffroll(roll: Fe10StaffRoll, encoding: str = "cp932") -> bytes:
     """The message file of ``roll``: the copyright lines, every line's three columns, the count and
     the title, in retail order (other messages kept after them). Unchanged, it is the read file."""
     if len(roll.lines) > MAX_LINES:
         raise Fe10StaffRollError(f"At most {MAX_LINES} lines (the keys are numbered with three digits).")
     if len(roll.copyright) != len(COPYRIGHT):
         raise Fe10StaffRollError("The roll has five copyright lines.")
-    messages = [message.Message(key, text) for key, text in zip(COPYRIGHT, roll.copyright)]
+    def entry(key: str, text: str) -> message.Message:
+        return message.Message(key, _stored(key, text, encoding))
+
+    keep_copyright = roll.has_copyright or any(roll.copyright)
+    messages = [entry(key, text) for key, text in zip(COPYRIGHT, roll.copyright)] if keep_copyright else []
     for n, line in enumerate(roll.lines):
         role, heading, name = line
-        messages += [message.Message(LINE_KEY.format(n, "C"), heading), message.Message(LINE_KEY.format(n, "L"), role),
-                     message.Message(LINE_KEY.format(n, "R"), name)]
-    messages += [message.Message(LINES, f" {len(roll.lines)} "), message.Message(TITLE, roll.title)]
+        messages += [entry(LINE_KEY.format(n, "C"), heading), entry(LINE_KEY.format(n, "L"), role),
+                     entry(LINE_KEY.format(n, "R"), name)]
+    count = roll.count_text if roll.count_text.strip() == str(len(roll.lines)) else f" {len(roll.lines)} "
+    messages.append(message.Message(LINES, count))
+    if roll.has_title or roll.title:
+        messages.append(entry(TITLE, roll.title))
     messages += roll.others
-    for m in messages:
-        try:
-            m.text.encode(message.ENCODING)
-        except UnicodeEncodeError as exc:
-            raise Fe10StaffRollError(f"{m.speaker}: the credits are Shift-JIS text.") from exc
     return message.write_messages(messages, roll.text_order)
 
 

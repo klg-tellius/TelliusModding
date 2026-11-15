@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fe_modding.formats import fe10_staffroll as fs
 from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE, STAFF_CREDITS
 from fe_modding.games import Game
+from tests.corpus import per_disc, require_us
 
 FE10 = os.environ.get("FE10_EXTRACTED_FILES")
 
@@ -28,21 +29,37 @@ class RdTests(unittest.TestCase):
         return (Path(FE10) / "Mess" / name).read_bytes()
 
     def test_both_lists_read_and_rebuild_unchanged(self):
-        for name, count in (("e_ending.m", 358), ("ending.m", 341)):
-            roll = fs.read_rd_staffroll(self._raw(name))
-            self.assertEqual((len(roll.lines), roll.title, roll.others), (count, "Staff Credit", []))
+        from fe_modding.formats import fe10_message
+        from tests.corpus import disc_id
+        lists = per_disc(FE10, (("e_ending.m", 358), ("ending.m", 341)),
+                         eu=(("e_ending.m", 421), ("ending.m", 341), ("d_ending.m", 421), ("f_ending.m", 421),
+                             ("s_ending.m", 421), ("i_ending.m", 421)),
+                         jp=(("ending.m", 341),))
+        for name, count in lists:
+            encoding = fe10_message.encoding_for(name, disc_id(FE10))
+            roll = fs.read_rd_staffroll(self._raw(name), encoding)
+            self.assertEqual((len(roll.lines), roll.others), (count, []), name)
             self.assertEqual(roll.lines[0], ("Producer", "", "Thoru Narihiro"))
-            self.assertEqual(roll.copyright[2], "reserved by NINTENDO")
-            self.assertEqual(fs.build_rd_staffroll(roll), self._raw(name))
+            if roll.has_title:                  # the Japanese disc's file has no title or copyright lines
+                self.assertTrue(roll.title)
+                self.assertEqual(roll.copyright[2], "reserved by NINTENDO")
+                if not disc_id(FE10).startswith("RFEP"):      # each European file titles it its own way
+                    self.assertEqual(roll.title, "Staff Credit")
+            self.assertEqual(fs.build_rd_staffroll(roll, encoding), self._raw(name), name)
+        if disc_id(FE10).startswith("RFEP"):    # the European table: "Ingo Hülsmann"
+            names = {line[2] for line in fs.read_rd_staffroll(self._raw("d_ending.m"), fe10_message.EU_ENCODING).lines}
+            self.assertIn("Ingo Hülsmann", names)
 
     def test_edited_lines_rebuild_with_the_new_count(self):
-        roll = fs.read_rd_staffroll(self._raw("e_ending.m"))
+        name = per_disc(FE10, "e_ending.m", jp="ending.m")
+        count = per_disc(FE10, 358, eu=421, jp=341)
+        roll = fs.read_rd_staffroll(self._raw(name))
         roll.lines.insert(1, ("Modder", "", "Someone"))
         roll.lines.append(("", "Thanks", ""))
         roll.title = "Credits"
         again = fs.read_rd_staffroll(fs.build_rd_staffroll(roll))
         self.assertEqual((len(again.lines), again.lines[1], again.lines[-1], again.title),
-                         (360, ("Modder", "", "Someone"), ("", "Thanks", ""), "Credits"))
+                         (count + 2, ("Modder", "", "Someone"), ("", "Thanks", ""), "Credits"))
         roll.lines[0] = ("Producer", "", "名前" + "€")  # the euro sign has no Shift-JIS code
         with self.assertRaises(fs.Fe10StaffRollError):
             fs.build_rd_staffroll(roll)
@@ -61,6 +78,7 @@ class RdTests(unittest.TestCase):
             fs.set_timing(data, "LBL_STAFFROLL_SCROLLWAIT_END", -1)
 
     def test_the_page_saves_lines_and_timings(self):
+        require_us(self, FE10, "the US English and Japanese credit files")
         import tkinter as tk
         from fe_modding.gui.staffroll_editor import Fe10StaffRollEditor, staff_credits_panel
         from fe_modding.project import ModProject

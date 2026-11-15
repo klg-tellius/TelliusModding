@@ -78,6 +78,9 @@ class ThpInfo:
     audio_frequency: int
     first_frame_offset: int
     first_frame_size: int
+    #: audio tracks per frame: the European Radiant Dawn scene movies carry one per language (5), each
+    #: block the frame header's audio size, one after another after the picture
+    audio_tracks: int = 1
 
 
 def read_info(stream: BinaryIO) -> ThpInfo:
@@ -99,6 +102,7 @@ def read_info(stream: BinaryIO) -> ThpInfo:
     has_audio = False
     audio_channels = 0
     audio_frequency = 0
+    audio_tracks = 1
 
     for component_type in component_types:
         if component_type == COMPONENT_VIDEO:
@@ -109,13 +113,8 @@ def read_info(stream: BinaryIO) -> ThpInfo:
         elif component_type == COMPONENT_AUDIO:
             # THPAudioInfo: sndChannels, sndFrequency, sndNumSamples, sndNumTracks (all u32).
             channels, freq, _num_samples, num_tracks = struct.unpack(">IIII", stream.read(16))
-            if num_tracks > 1:
-                raise ThpError(
-                    f"This THP has {num_tracks} audio tracks (alternate-language dubs?) - "
-                    "only single-track audio is supported."
-                )
             has_audio = True
-            audio_channels, audio_frequency = channels, freq
+            audio_channels, audio_frequency, audio_tracks = channels, freq, max(1, num_tracks)
         elif component_type == COMPONENT_NONE:
             pass
         else:
@@ -132,6 +131,7 @@ def read_info(stream: BinaryIO) -> ThpInfo:
         audio_frequency=audio_frequency,
         first_frame_offset=first_frame_offset,
         first_frame_size=first_frame_size,
+        audio_tracks=audio_tracks,
     )
 
 
@@ -165,8 +165,12 @@ def iter_frame_offsets(stream: BinaryIO, info: ThpInfo) -> list[int]:
     return offsets
 
 
-def read_frame(stream: BinaryIO, offset: int, info: ThpInfo) -> tuple[Optional["Image.Image"], list[list[int]]]:
-    """Decode one frame: returns (video_image_or_None, audio_channel_pcm_lists)."""
+def read_frame(stream: BinaryIO, offset: int, info: ThpInfo,
+               track: int = 0) -> tuple[Optional["Image.Image"], list[list[int]]]:
+    """Decode one frame: returns (video_image_or_None, audio_channel_pcm_lists) for audio ``track``
+    (0 to ``info.audio_tracks - 1``)."""
+    if not 0 <= track < info.audio_tracks:
+        raise ThpError(f"This THP has {info.audio_tracks} audio track(s); there is no track {track}.")
     stream.seek(offset)
     header_size = 16 if info.has_audio else 12
     header = stream.read(header_size)
@@ -183,7 +187,8 @@ def read_frame(stream: BinaryIO, offset: int, info: ThpInfo) -> tuple[Optional["
 
     audio_channels: list[list[int]] = []
     if info.has_audio and audio_size:
-        audio_channels = _decode_audio_frame(stream.read(audio_size * info.audio_channels), info.audio_channels)
+        stream.seek(track * audio_size, io.SEEK_CUR)
+        audio_channels = _decode_audio_frame(stream.read(audio_size), info.audio_channels)
 
     return image, audio_channels
 
@@ -287,6 +292,7 @@ def encode_thp(
     audio_sample_rate: int,
     fps: float,
     jpeg_quality: int = 90,
+    audio_tracks: int = 1,
 ) -> bytes:
     """Build a THP file from decoded frame images and (optionally) PCM audio.
 
@@ -308,6 +314,10 @@ def encode_thp(
     video, trailing frames get silent (0-sample) audio chunks; if longer,
     the excess is dropped - same behavior THPConv's own WAV substitution
     documents.
+
+    audio_tracks: how many copies of the audio each frame carries. A European
+    Radiant Dawn scene movie has one track per language (5); a replacement
+    keeps that count, with the same audio in each.
     """
     if not frames:
         raise ThpError("Need at least one frame to encode a THP file.")
@@ -377,7 +387,7 @@ def encode_thp(
         body = jpeg_frames[i]
         if has_audio:
             sizes.append(len(audio_frame_bytes[i]))
-            body += audio_frame_bytes[i]
+            body += audio_frame_bytes[i] * max(1, audio_tracks)
         component_sizes.append(sizes)
         frame_bodies.append(body)
 
@@ -408,7 +418,8 @@ def encode_thp(
 
     audio_info = b""
     if has_audio:
-        audio_info = struct.pack(">IIII", num_audio_channels, audio_sample_rate, total_audio_samples, 1)
+        audio_info = struct.pack(">IIII", num_audio_channels, audio_sample_rate, total_audio_samples,
+                                 max(1, audio_tracks))
 
     comp_info_offset = HEADER_SIZE
     movie_data_offset = comp_info_offset + len(comp_info) + len(video_info) + len(audio_info)

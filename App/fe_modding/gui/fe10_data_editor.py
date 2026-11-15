@@ -1011,7 +1011,8 @@ class _TitleCardDialog(tk.Toplevel):
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Write", style="Accent.TButton", command=self._write).pack(side="right", padx=4)
         self._result = None
-        path = self._files / chapter_images.FE10_CARD_FOLDER / chapter_images.fe10_card_name(chapter_id)
+        path = (self._files / chapter_images.FE10_CARD_FOLDER
+                / chapter_images.fe10_card_name(chapter_id, chapter_images.fe10_card_prefix(self._files)))
         if path.is_file():
             self._photo_current = ImageTk.PhotoImage(chapter_images.preview(path.read_bytes()))
             self._current.configure(image=self._photo_current)

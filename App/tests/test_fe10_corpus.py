@@ -19,7 +19,7 @@ from fe_modding.formats import (animation, dispo, fe8data, fe10_anim, fe10_battl
                                 message, pak, shop, skeleton, tpl)
 from fe_modding.formats.packed_texture import read_packed_tpl
 from fe_modding.game_profile import RADIANT_DAWN_PROFILE
-from tests.corpus import FULL, sample
+from tests.corpus import FULL, per_disc, require_us, sample
 from fe_modding.games import Game
 
 
@@ -79,10 +79,12 @@ class Fe10FilesTest(unittest.TestCase):
                     self.assertTrue(tpl.read_tpl_image_info(io.BytesIO(inner)))
 
     def test_phase6_portraits_have_matching_normal_and_wide_slots(self):
+        if not (FILES / "Face" / "wide").is_dir():
+            self.skipTest("the Japanese disc has no widescreen portraits")
         normal = fe10_faces.FaceLibrary(FILES)
         wide = fe10_faces.FaceLibrary(FILES, wide=True)
-        self.assertEqual(len(normal.records), 316)
-        self.assertEqual(len(wide.records), 316)
+        self.assertEqual(len(normal.records), per_disc(FILES, 316, eu=320))
+        self.assertEqual(len(wide.records), per_disc(FILES, 316, eu=320))
         for record in normal.records:
             counterpart = FILES / "Face" / "wide" / record.filename
             self.assertTrue(counterpart.is_file(), counterpart)
@@ -93,20 +95,24 @@ class Fe10FilesTest(unittest.TestCase):
 
     def test_phase6_face_tables_support_safe_new_slots(self):
         rebuilt = []
+        count = per_disc(FILES, 316, eu=320)
         for relative in (Path("Face/facedata.bin"), Path("Face/wide/facedata.bin")):
+            if not (FILES / relative).is_file():       # no widescreen portraits on the Japanese disc
+                continue
             raw = (FILES / relative).read_bytes()
             before = fe10_faces.read_face_data(raw)
             grown, index = fe10_faces.add_face_record(raw, 1, "CODEX_TEST", before[1].name_id)
             after = fe10_faces.read_face_data(grown)
             with self.subTest(relative=relative):
-                self.assertEqual((len(before), len(after), index), (316, 317, 316))
+                self.assertEqual((len(before), len(after), index), (count, count + 1, count))
                 self.assertEqual((after[-1].fid, after[-1].large_fid, after[-1].filename),
                                  ("FID_CODEX_TEST", "FID_L_CODEX_TEST", "CODEX_TEST.cms"))
                 self.assertEqual(after[-1].extra, before[1].extra)
                 self.assertEqual(len(fe8data.pointer_list(grown)[1]), 1 + 4 * len(after))
                 self.assertEqual(fe10_faces.read_face_data(fe10_faces.remove_face_record(grown, index)), before)
             rebuilt.append(after[-1])
-        self.assertNotEqual(rebuilt[0].eye_a, rebuilt[1].eye_a)
+        if len(rebuilt) == 2:
+            self.assertNotEqual(rebuilt[0].eye_a, rebuilt[1].eye_a)
 
     def test_phase6_packed_sky_and_scenery_textures_use_the_shared_tpl_codec(self):
         expected = {"sky": (22, 22, 69), "zbg": (129, 127, 1281)}
@@ -192,7 +198,7 @@ class Fe10FilesTest(unittest.TestCase):
                          ["no", "sw", "sp", "ja", "ax", "ha", "bw", "rd", "bg"])
         self.assertEqual(len(document.motions), 48)
         self.assertEqual(sum(bool(value) for model in document.models
-                             for row in model.variants for value in row), 6461)
+                             for row in model.variants for value in row), per_disc(FILES, 6461, jp=6460))
         self.assertEqual(document.animation_filename(1, 0, 0), "wait_1.ga")
         model_pack = lz10.decompress(
             (FILES / "ymu" / document.models[1].folder / "pack.cmp").read_bytes())
@@ -204,27 +210,29 @@ class Fe10FilesTest(unittest.TestCase):
         raw = lz10.decompress((FILES / "FE10Effect.cms").read_bytes())
         registry = fe10_effect_registry.read_fe10_effect_registry(raw)
         self.assertEqual(fe10_effect_registry.build_fe10_effect_registry(registry), raw)
-        self.assertEqual(len(registry.records), 632)
-        self.assertEqual(len(registry.eid_table), 25)
+        records = per_disc(FILES, 632, eu=984, jp=559)
+        self.assertEqual(len(registry.records), records)
+        # the European registry adds 900-912 to the same table
+        ids = (500, 510, 520, 530, 531, 532, 540, 550, 551, 560, 570, 571,
+               580, 590, 600, 610, 620, 630, 640, 650, 710, 720, 721, 730, 740)
         self.assertEqual(tuple(effect_id for effect_id, _eid in registry.eid_table),
-                         (500, 510, 520, 530, 531, 532, 540, 550, 551, 560, 570, 571,
-                          580, 590, 600, 610, 620, 630, 640, 650, 710, 720, 721, 730, 740))
-        self.assertEqual(len({record.eid_name for record in registry.records}), 632)
+                         per_disc(FILES, ids, eu=ids + tuple(range(900, 913))))
+        self.assertEqual(len({record.eid_name for record in registry.records}), records)
         self.assertEqual(registry.records[15].child_effect_indices, (16, None))
         self.assertEqual(registry.records[20].child_effect_indices, (None, 21))
         self.assertTrue(all(child is None or child < len(registry.records)
                             for record in registry.records for child in record.child_effect_indices))
         packs = {path.stem for path in (FILES / "yme").glob("*.cmp")}
         registered = {record.eid_name for record in registry.records}
-        self.assertEqual(len(packs), 702)
-        self.assertEqual(len(registered & packs), 626)
+        self.assertEqual(len(packs), per_disc(FILES, 702, eu=1132, jp=630))
+        self.assertEqual(len(registered & packs), per_disc(FILES, 626, eu=978, jp=554))
 
     def test_phase6_battle_tables_are_structurally_accounted_for(self):
         raw = lz10.decompress((FILES / "FE10Battle.cms").read_bytes())
         battle = fe10_battle.read_fe10_battle(raw)
         self.assertEqual(fe10_battle.build_fe10_battle(battle), raw)
         counts = {table.name: (len(table.records), table.record_size) for table in battle.tables}
-        self.assertEqual(counts["FE10BWeapon"], (192, 36))
+        self.assertEqual(counts["FE10BWeapon"], (per_disc(FILES, 192, jp=189), 36))
         self.assertEqual(counts["FE10BMapModel"], (146, 24))
         self.assertEqual(counts["FE10BCamFile"], (113, 12))
         self.assertEqual(counts["FE10BUnit"], (240, 340))
@@ -258,7 +266,7 @@ class Fe10FilesTest(unittest.TestCase):
         self.assertEqual([(mapping.condition, mapping.texture_name)
                           for mapping in battle.unit_texture_sets[0].mappings[:2]],
                          [("自軍", "swoL"), ("敵軍", "swoL")])
-        self.assertEqual(len(battle.string_pool), 34092)
+        self.assertEqual(len(battle.string_pool), per_disc(FILES, 34092, jp=33996))
 
     def test_phase6_variable_registry_rebuilds_reparse(self):
         anim_raw = lz10.decompress((FILES / "FE10Anim.cms").read_bytes())
@@ -270,10 +278,11 @@ class Fe10FilesTest(unittest.TestCase):
         self.assertEqual(parsed_anim.models[model_index].folder, "phase6_test")
 
         effect_raw = lz10.decompress((FILES / "FE10Effect.cms").read_bytes())
+        new_index = len(fe10_effect_registry.read_fe10_effect_registry(effect_raw).records)
         effect = fe10_effect_registry.clone_effect_record(
             effect_raw, 0, "EID_PHASE6_TEST")
         effect = fe10_effect_registry.update_effect_record(
-            effect, 632, child_effect_indices=(0, None))
+            effect, new_index, child_effect_indices=(0, None))
         parsed_effect = fe10_effect_registry.read_fe10_effect_registry(effect)
         self.assertEqual(parsed_effect.child_eids(parsed_effect.records[-1]),
                          (parsed_effect.records[0].eid_name,))
@@ -351,7 +360,7 @@ class Fe10FilesTest(unittest.TestCase):
 
     def test_every_mess_file_parses(self):
         paths = sorted((FILES / "Mess").glob("*.m"))
-        self.assertGreater(len(paths), 200)
+        self.assertGreater(len(paths), per_disc(FILES, 200, jp=100))   # Japanese only: 108 files
         for path in paths:
             with self.subTest(path=path.name):
                 self.assertTrue(message.read_messages_path(path) is not None)

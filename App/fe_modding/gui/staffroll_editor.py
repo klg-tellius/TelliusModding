@@ -144,15 +144,19 @@ class StaffRollEditor(EditorPanel):
         finally:
             self._loading = False
 
+    def _text_encoding(self) -> str:
+        """The text table a typed line must fit (Shift-JIS on Path of Radiance)."""
+        return staffroll.ENCODING
+
     def _apply(self) -> None:
         if self._loading or self._index is None or self._roll is None:
             return
         line = tuple(var.get() for var in self._vars)
         try:
             for value in line:
-                value.encode(staffroll.ENCODING)
+                value.encode(self._text_encoding())
         except UnicodeEncodeError:
-            messagebox.showerror("Invalid text", "The credits are Shift-JIS text.", parent=self)
+            messagebox.showerror("Invalid text", "A character is not in the credits' text table.", parent=self)
             return
         if line != self._roll.lines[self._index]:
             self._roll.lines[self._index] = line
@@ -207,9 +211,10 @@ class StaffRollEditor(EditorPanel):
                                    parent=self)
 
 
-#: Radiant Dawn's ending message files the page edits, by language prefix (``Mess/%s%s.m``). The European
-#: languages use a single-byte text table that is not decoded yet, so they are left out.
-RD_LANGUAGES = (("e_", "English"), ("", "Japanese"))
+#: Radiant Dawn's ending message files the page edits, by language prefix (``Mess/%s%s.m``); the European
+#: ones only exist on the European disc.
+RD_LANGUAGES = (("e_", "English"), ("", "Japanese"), ("d_", "German"), ("f_", "French"), ("s_", "Spanish"),
+                ("i_", "Italian"))
 
 
 class Fe10StaffRollEditor(StaffRollEditor):
@@ -243,8 +248,18 @@ class Fe10StaffRollEditor(StaffRollEditor):
     def _data_path(self):
         return files_root_of(self._project) / "StaffRollData.bin"
 
+    def _text_encoding(self) -> str:
+        from ..formats import fe10_message
+        from ..game_profile import disc_root_of
+        from ..games import read_disc_id
+        try:
+            disc = read_disc_id(disc_root_of(self._project))
+        except Exception:  # noqa: BLE001 - no readable boot.bin
+            disc = ""
+        return fe10_message.encoding_for(self._path.name, disc)
+
     def _read(self):
-        roll = fs.read_rd_staffroll(self._path.read_bytes())
+        roll = fs.read_rd_staffroll(self._path.read_bytes(), self._text_encoding())
         self._title_var.set(roll.title)
         for var, text in zip(self._copy_vars, roll.copyright):
             var.set(text)
@@ -260,7 +275,7 @@ class Fe10StaffRollEditor(StaffRollEditor):
     def _write(self) -> None:
         self._roll.title = self._title_var.get()
         self._roll.copyright = [var.get() for var in self._copy_vars]
-        self._project.write_keeping_original(self._path, fs.build_rd_staffroll(self._roll))
+        self._project.write_keeping_original(self._path, fs.build_rd_staffroll(self._roll, self._text_encoding()))
         if self._timings:
             data = self._data_path().read_bytes()
             new = data

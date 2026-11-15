@@ -16,9 +16,9 @@ from pathlib import Path
 
 from .exceptions import ProjectError
 from .formats import brsar, fe10_sound, lz10
-from .game_profile import files_root_of
+from .game_profile import files_root_of, profile_of
 
-ARCHIVE = "Sound/sound_us.brsar"
+ARCHIVE = "Sound/sound_us.brsar"   # the US and European name; the Japanese disc has Sound/sound.brsar
 TRACK_RE = re.compile(r"[a-z0-9_]{1,40}")
 
 
@@ -27,7 +27,8 @@ def _sound_dir(project) -> Path:
 
 
 def _archive_path(project) -> Path:
-    return files_root_of(project) / ARCHIVE
+    """The disc's sound archive: ``sound_us.brsar``, or ``sound.brsar`` on the Japanese disc."""
+    return profile_of(project).path(files_root_of(project), "sound_archive")
 
 
 def _archive(project) -> bytes:
@@ -79,7 +80,7 @@ def add_cue(project, name: str, stream: Path) -> str:
     plays it, else of the first music cue)."""
     sounds = stream_sounds(project, stream)
     if not sounds:
-        raise ProjectError(f"No sound of {ARCHIVE} plays {Path(stream).name}.")
+        raise ProjectError(f"No sound of {_archive_path(project).name} plays {Path(stream).name}.")
     resource = sounds[0].name
     try:
         data = fe10_sound.add_cue(_cues(project), name, resource, _template_cue(project, resource))
@@ -108,7 +109,7 @@ def add_track(project, track: str, brstm_bytes: bytes, template_stream: Path, ch
         raise ProjectError(f"strm/{dest.name} already exists.")
     templates = stream_sounds(project, template_stream)
     if not templates:
-        raise ProjectError(f"No sound of {ARCHIVE} plays {Path(template_stream).name}.")
+        raise ProjectError(f"No sound of {_archive_path(project).name} plays {Path(template_stream).name}.")
     sound_name, cue = f"STRM_BGM_{track.upper()}", f"BGM_{track.upper()}"
     archive_bytes = _archive(project)
     archive = brsar.read_brsar(archive_bytes)

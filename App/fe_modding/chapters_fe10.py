@@ -224,7 +224,8 @@ def plan_story_chapter(project: ModProject, fe10: bytes, source_id: str, new_id:
     if card is None:
         warnings.append("The title card could not be drawn (no template card or no Fonts/talk.cms).")
     else:
-        out[game_path(chapter_images.FE10_CARD_FOLDER, chapter_images.fe10_card_name(new_id))] = card[1]
+        prefix = chapter_images.fe10_card_prefix(files)
+        out[game_path(chapter_images.FE10_CARD_FOLDER, chapter_images.fe10_card_name(new_id, prefix))] = card[1]
     return RdChapterPlan(data, number, new_id, out, warnings)
 
 
@@ -290,7 +291,8 @@ def remove_story_chapter(project: ModProject, fe10: bytes, chapter_id: str, flow
         files.write(rel, content)
     assets = [game_path("Mess", name.format(id=chapter_id)) for name in MESSAGE_FILES]
     assets += [game_path(profile.chapter_script.format(id=chapter_id)),
-               game_path(chapter_images.FE10_CARD_FOLDER, chapter_images.fe10_card_name(chapter_id))]
+               game_path(chapter_images.FE10_CARD_FOLDER,
+                         chapter_images.fe10_card_name(chapter_id, chapter_images.fe10_card_prefix(files)))]
     assets += [game_path("zmap", folder) for folder in chapters.chapter_phases(project, chapter_id)]
     removed = []
     for rel in assets:
