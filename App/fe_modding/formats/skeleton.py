@@ -183,9 +183,10 @@ def _encode_bone_name(name: str) -> bytes:
 
 
 #: Radiant Dawn stores each bone's index times 16 at record ``+0xEC`` (every ``.g`` on the disc: map
-#: units, battle rigs, map props). Its pose code reads the word there and takes ``>> 20`` as the bone's
-#: matrix slot and ``& 0xF`` as the rotation order (``0x8000C920`` and the builder ``0x8000D754``), so
-#: with Path of Radiance's plain index bones 0-15 would all share slot 0.
+#: units, battle rigs, map props); Path of Radiance stores the plain index. At run time the word's
+#: ``>> 20`` is the bone's matrix slot and ``& 0xF`` its rotation order (``0x8000C920``, builder
+#: ``0x8000D754``), but the loader (``0x8000E9DC``) writes the slot itself, so the stored numbering
+#: only has to keep the order nibble; new skeletons copy the template's to match the retail files.
 RD_INDEX_STEP = 16
 
 
