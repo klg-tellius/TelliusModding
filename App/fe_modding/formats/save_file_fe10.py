@@ -37,7 +37,10 @@ FILE_NAME = "FE10_US.dat"
 FILE_SIZE = 0x124000
 #: Each build's NAND file. The European build writes the same layout as the US one (same file size
 #: and writer code, region map of main.dol); the Japanese file is 0xAC000 bytes (main.dol
-#: 0x8023DE54 creates it with 0xB0000 - 0x4000) and its layout is not decoded.
+#: 0x8023DE54 creates it with 0xB0000 - 0x4000): the same 0x4000 system record, then seven 0x18000
+#: records at 0x4000 + n x 0x18000 (the file seek at 0x8023F4B4 is the US one at 0x80248800). The US
+#: checkpoint bank at 0x94000 + n x 0x18000 has no Japanese counterpart, so record 6 is probably its one
+#: checkpoint; which record holds what is not confirmed without a Japanese save.
 FILE_NAMES = {"RFEE01": "FE10_US.dat", "RFEP01": "FE10_EU.dat", "RFEJ01": "FE10_JP.dat"}
 #: The builds whose file this module reads.
 READABLE = ("RFEE01", "RFEP01")
@@ -1221,8 +1224,9 @@ class SaveFile:
     @classmethod
     def from_bytes(cls, data: bytes) -> "SaveFile":
         if len(data) == JP_FILE_SIZE:
-            raise ValueError("This is a Japanese save (FE10_JP.dat). Its layout differs from the US and "
-                             "European saves and can't be read yet.")
+            raise ValueError("This is a Japanese save (FE10_JP.dat). It holds seven records where the US "
+                             "and European saves hold twelve, and which record is which is not confirmed yet, "
+                             "so it can't be opened.")
         if len(data) != FILE_SIZE:
             raise ValueError(f"A Radiant Dawn save must be 0x{FILE_SIZE:X} bytes, found 0x{len(data):X}")
         system = SaveRecord(data[:SYSTEM_SIZE], 0)

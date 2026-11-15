@@ -49,9 +49,9 @@ The page lists the kind-of-strike scripts: `standby` (the opening zoom), `standb
 <!-- screenshot 70-a-setup.png -->
 <figure class="tutorial-figure" markdown="1">
 
-[![Battle Cameras page with the script list, the standby script's caption, rig and keyframe table.](../assets/images/tutorials/screenshots/70-a-setup.png)](../assets/images/tutorials/screenshots/70-a-setup.png)
+[![Battle Cameras page with the grouped list, the standby script's caption, rig and keyframe table.](../assets/images/tutorials/screenshots/70-a-setup.png)](../assets/images/tutorials/screenshots/70-a-setup.png)
 
-<figcaption markdown="span">**Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.</figcaption>
+<figcaption markdown="span">**Assets › Battle Cameras** with `standby` selected in the **Camera scripts (xcam)** group, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.</figcaption>
 </figure>
 
 Open **Assets → Battle Cameras** and select `standby` in the list's **Camera scripts (xcam)** group. It drives rig `cam1` with four keyframes, all at **Rotation** 8, 180, 0 (slightly above, side-on from the front): **Distance** 170 at time 0, then 100 over 20 ticks, 87 over 10, and 70 over 300. The fight opens wide and closes in.
@@ -81,9 +81,9 @@ Open **Assets → Battle Cameras** and select `standby` in the list's **Camera s
 <!-- screenshot 70-c-rigs.png -->
 <figure class="tutorial-figure" markdown="1">
 
-[![Battle Cameras rigs tab with the rig list and cam1's fields.](../assets/images/tutorials/screenshots/70-c-rigs.png)](../assets/images/tutorials/screenshots/70-c-rigs.png)
+[![Battle Cameras page with cam1 selected in the rigs group and its fields.](../assets/images/tutorials/screenshots/70-c-rigs.png)](../assets/images/tutorials/screenshots/70-c-rigs.png)
 
-<figcaption markdown="span">**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore original** with a rig selected restores them all.</figcaption>
+<figcaption markdown="span">`cam1` in the **Camera rigs (camera.dbx)** group, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore original** with a rig selected restores them all.</figcaption>
 </figure>
 
 In the list's **Camera rigs (camera.dbx)** group, select `cam1`: **Rotation** `-2,-2, 180.0, 0.0` (the retail file's own malformed value, kept as is), **Distance** 60, **Destination**, **Attract (0/1)** 1, **Eye center (0/1)** 0, no unit followed. Select `camCharaL0`: it follows the actor. A rig edit changes every script that uses it.

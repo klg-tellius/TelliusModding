@@ -175,13 +175,25 @@ class RdHubSetupTests(unittest.TestCase):
         project.write_logical("game_data", plan.fe10data)
         _entries, files = map_props.read_map_container(chapters.chapter_paths(project, "0502").map)
         data = map_file.read_map_bytes(files["map.bin"])
+        # named after the new map, or the game finds neither its sections nor its ground (Dolphin)
+        self.assertIn("bmap0502.gs", files)
+        self.assertNotIn("bmap0101.gs", files)
+        self.assertIn(b"bmap0502:mapdata", files["map.bin"])
+        self.assertNotIn(b"bmap0101:", files["map.bin"])
         self.assertEqual((data.capacity.x_size, data.capacity.y_size, len(data.build_inst)), (14, 9, 1))
         self.assertEqual(data.rd.version, map_file.read_map_bytes(
             map_props.read_map_container(chapters.chapter_paths(project, "0101").map)[1]["map.bin"]).rd.version)
         ground = [o for o in data.build_desc if map_file.is_base_terrain_object(o, files)
                   and "water" not in o.filename]
         self.assertEqual(len(ground), 1)       # found by its map_base material, as the game finds it
-        self.assertEqual(hub_creation.flat_ground_appearance(files).color, (90, 140, 70))
+        appearance = hub_creation.flat_ground_appearance(files)
+        self.assertEqual(appearance.color, (90, 140, 70))
+        self.assertIsNone(appearance.image)      # the colour texture reads back as the plain colour
+        from fe_modding.formats import gs_file, tpl
+        import io
+        material = gs_file.read_gs(files[f"{ground[0].filename}.gs"]).materials[0]
+        base = tpl.read_tpl_images(io.BytesIO(files["texpack.tpl"]))[material.textures[0].tex_id].convert("RGBA")
+        self.assertEqual(base.getpixel((0, 0)), (90, 140, 70, 255))    # map_base draws the texture's colour
         for path in hub_fe10._deployments(project, "0502"):
             for section in dispo.parse_dispo(path.read_bytes()).sections:
                 if "_mikata" in section.name and section.units:

@@ -113,6 +113,18 @@ def _flat_model(width: int, height: int, texture_id: int, white_id: int,
         bone=bone, bone_world=bone_world).gs)
 
 
+def _colour_texture(texpack: bytes, color: tuple[int, int, int]) -> tuple[bytes, int]:
+    """``texpack`` with an 8 x 8 texture of ``color`` (RGBA8, exact) added, and its index. Radiant Dawn's
+    ``map_base`` material draws the texture and ignores the material colour (Dolphin: a tinted white
+    texture shows white), so a plain-colour ground carries its colour in its texture there."""
+    source = tpl.build_tpl([(Image.new("RGBA", (8, 8), (*color, 255)), tpl.FORMAT_RGBA8)], wrap=tpl.WRAP_CLAMP)
+    return tpl.copy_images(texpack, source, [0])
+
+
+def _is_colour_texture(image: Image.Image, color: tuple[int, int, int]) -> bool:
+    return image.size == (8, 8) and image.getcolors(1) == [(64, (*color, 255))]
+
+
 def _ground(files: dict[str, bytes]) -> tuple[map_file.MapData, map_file.MapObject]:
     data = map_file.read_map_bytes(files["map.bin"])
     ground = next((obj for obj in data.build_desc if map_file.is_base_terrain_object(obj, files)
@@ -141,6 +153,8 @@ def flat_ground_appearance(files: dict[str, bytes]) -> GroundAppearance:
         if not 0 <= base_id < len(images):
             raise ValueError("The generated hub ground refers to a missing texture.")
         image = images[base_id].convert("RGBA")
+        if _is_colour_texture(image, color):
+            image = None      # Radiant Dawn's plain colour, carried by the texture (:func:`_colour_texture`)
     scale = float(1 << model.uv_frac)
     tiled = any(abs(u / scale) > 1.0001 or abs(v / scale) > 1.0001 for u, v in model.uvs)
     return GroundAppearance(color, image, tiled)
@@ -179,6 +193,8 @@ def replace_flat_ground(_entries: list[pak.PakEntry], files: dict[str, bytes], *
                                wrap=tpl.WRAP_REPEAT if tile_ground_image else tpl.WRAP_CLAMP)
         files[texpack], texture_id = tpl.copy_images(files[texpack], source, [0])
         material_color = (255, 255, 255)
+    elif ground_material(data.layout) == "map_base":
+        files[texpack], texture_id = _colour_texture(files[texpack], ground_color)
     files[f"{ground.filename}.gs"] = _flat_model(
         data.capacity.x_size, data.capacity.y_size, texture_id, white_id, material_color,
         ground_image is not None and tile_ground_image, origin, bone, bone_world, ground_material(data.layout))
@@ -277,6 +293,8 @@ def blank_map(compressed: bytes, width: int, height: int, *,
                                wrap=tpl.WRAP_REPEAT if tile_ground_image else tpl.WRAP_CLAMP)
         content["texpack.tpl"], texture_id = tpl.copy_images(content["texpack.tpl"], source, [0])
         material_color = (255, 255, 255)  # show the image without a color tint
+    elif ground_material(layout) == "map_base":
+        content["texpack.tpl"], texture_id = _colour_texture(content["texpack.tpl"], ground_color)
     content[f"{ground.filename}.gs"] = _flat_model(
         width, height, texture_id, white_id, material_color,
         ground_image is not None and tile_ground_image, material=ground_material(layout))
@@ -389,6 +407,8 @@ def create_chapter(project, fe8: bytes, source_id: str, chapter: int, title: str
         raise ValueError("The prepared deployment has no player section.")
     plan = chapters.add_story_chapter(project, fe8, source_id, chapter, title, after=None)
     paths = chapters.chapter_paths(project, f"{chapter:02d}")
+    # named after the new map, as Add chapter's copy is (the game finds a map's parts by its name)
+    map_bytes = chapters.rename_map_pack(map_bytes, source.map.parent.name, paths.map.parent.name)
     project.write_keeping_original(paths.map, map_bytes)
     project.write_keeping_original(paths.deployment, deployment_bytes)
     project.write_keeping_original(paths.dialogue, message.write_messages([]))

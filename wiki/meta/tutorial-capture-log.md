@@ -8,7 +8,7 @@ article_type: "reference"
 tags: ["Contributing", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-21"
+last_reviewed: "2026-11-15"
 sources: ["telliusmodding-source"]
 cms_collection: "meta"
 source_path: "meta/tutorial-capture-log.md"
@@ -176,10 +176,10 @@ Every frame was taken by the tool from the real app on a disposable *Tutorial Pr
 | [`69-a-setup.png`](../assets/images/tutorials/screenshots/69-a-setup.png) | 69 | captured | **Assets › Visual Effects** with `EID_K_FIRE`, the Fire tome's spell: its registry flags, the parts of its `yme/` pack, its particle emitters, its textures and the animated preview. |
 | [`69-b-result.png`](../assets/images/tutorials/screenshots/69-b-result.png) | 69 | captured | **Edit particles…** on `EID_K_FIRE`: the **Timing events**, the material tracks (alpha, colour, texture scroll) and each emitter with its stages, curves and keys. Select one to edit its fields, **Apply fields**, then **Save effect**; the preview is approximate. |
 | [`69-c-add.png`](../assets/images/tutorials/screenshots/69-c-add.png) | 69 | captured | **Add effect…**: a new `EID_` name, then **Clone effect** (copy an existing pack) or **Import pack** (a `.cmp` file), and **Copy flags from** an effect whose registry flags fit. |
-| [`70-a-setup.png`](../assets/images/tutorials/screenshots/70-a-setup.png) | 70 | captured | **Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks. |
+| [`70-a-setup.png`](../assets/images/tutorials/screenshots/70-a-setup.png) | 70 | captured | **Assets › Battle Cameras** with `standby` selected in the **Camera scripts (xcam)** group, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks. |
 | [`70-b-result.png`](../assets/images/tutorials/screenshots/70-b-result.png) | 70 | captured | The last keyframe's **Distance** changed from 70 to 110 with **Update keyframe**, then **Preview**: the built-in fight (Ike against a Fighter) plays with the edited script, ending wider. **Apply script** would write it; nothing is written yet. |
-| [`70-c-rigs.png`](../assets/images/tutorials/screenshots/70-c-rigs.png) | 70 | captured | **Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore camera.dbx** restores them all. |
-| [`71-a-setup.png`](../assets/images/tutorials/screenshots/71-a-setup.png) | 71 | captured | **Assets › DBX Files** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key. |
+| [`70-c-rigs.png`](../assets/images/tutorials/screenshots/70-c-rigs.png) | 70 | captured | `cam1` in the **Camera rigs (camera.dbx)** group, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore original** with a rig selected restores them all. |
+| [`71-a-setup.png`](../assets/images/tutorials/screenshots/71-a-setup.png) | 71 | captured | **Assets › Battle Data** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key. |
 | [`71-b-result.png`](../assets/images/tutorials/screenshots/71-b-result.png) | 71 | captured | The **Layout** tab draws every widget with a position on the 640 × 480 screen; `WpWinL`, the left weapon window, was dragged down. The text changed (**Save** is enabled), but nothing is written until **Save**. |
 | [`72-a-setup.png`](../assets/images/tutorials/screenshots/72-a-setup.png) | 72 | captured | **Game Data › Rect RIDs**: the RIDs of a rect file, the layers of the selected RID, its properties and preview, and where it is **Referenced in**. |
 | [`72-c-edit.png`](../assets/images/tutorials/screenshots/72-c-edit.png) | 72 | captured | **Edit RID…** on `RID_END_BOLE`, Boyd's epilogue picture: **RID settings** and its one layer on the left, *Layer 0: Rect* selected and its **Properties** in the middle, the **Illustrative preview (608 × 448)** on the right. **Apply** saves the rect file; **Revert** drops the edits. |

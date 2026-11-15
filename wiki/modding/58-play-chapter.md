@@ -238,7 +238,7 @@ Play state is never saved. Fix what you find in the owning editor (Build, Script
 - **What it skips.** The game starts in the chapter: past the opening movie, the title and the file menu, in about half a minute.
 - **The army.** As on Path of Radiance the army is fresh: only the units the chapter brings in. On Radiant Dawn only the Prologue (`0101`) fields an army this way; test later chapters from a save.
 - **Saves.** Radiant Dawn saves in the Wii's memory. A run uses a Dolphin user folder of its own, so your Dolphin saves are not touched.
-- The jump also exists for the European and Japanese discs; it has been played only on the US disc.
+- The jump also works on the European and Japanese discs (played in Dolphin on the Prologue).
 
 ## Related tutorials and references
 

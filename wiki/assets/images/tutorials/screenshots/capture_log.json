@@ -2230,8 +2230,8 @@
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "69-b-result.png": {
@@ -2245,8 +2245,8 @@
    1452,
    792
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "69-c-add.png": {
@@ -2260,23 +2260,23 @@
    462,
    266
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "70-a-setup.png": {
   "file": "70-a-setup.png",
   "lesson": 70,
-  "caption": "**Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.",
-  "alt": "Battle Cameras page with the script list, the standby script's caption, rig and keyframe table.",
+  "caption": "**Assets › Battle Cameras** with `standby` selected in the **Camera scripts (xcam)** group, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.",
+  "alt": "Battle Cameras page with the grouped list, the standby script's caption, rig and keyframe table.",
   "status": "captured",
   "notes": "",
   "size": [
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "70-b-result.png": {
@@ -2290,53 +2290,53 @@
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "70-c-rigs.png": {
   "file": "70-c-rigs.png",
   "lesson": 70,
-  "caption": "**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore camera.dbx** restores them all.",
-  "alt": "Battle Cameras rigs tab with the rig list and cam1's fields.",
+  "caption": "`cam1` in the **Camera rigs (camera.dbx)** group, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore original** with a rig selected restores them all.",
+  "alt": "Battle Cameras page with cam1 selected in the rigs group and its fields.",
   "status": "captured",
   "notes": "",
   "size": [
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "71-a-setup.png": {
   "file": "71-a-setup.png",
   "lesson": 71,
-  "caption": "**Assets › DBX Files** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key.",
-  "alt": "DBX Files page with zdbx/battle.dbx selected and its blocks in the Form tab.",
+  "caption": "**Assets › Battle Data** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key.",
+  "alt": "Battle Data page with zdbx/battle.dbx selected and its blocks in the Form tab.",
   "status": "captured",
   "notes": "",
   "size": [
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "71-b-result.png": {
   "file": "71-b-result.png",
   "lesson": 71,
   "caption": "The **Layout** tab draws every widget with a position on the 640 × 480 screen; `WpWinL`, the left weapon window, was dragged down. The text changed (**Save** is enabled), but nothing is written until **Save**.",
-  "alt": "DBX Files Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.",
+  "alt": "Battle Data Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.",
   "status": "captured",
   "notes": "",
   "size": [
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-15",
+  "app_commit": "e3b5ce0+dirty",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "72-a-setup.png": {
