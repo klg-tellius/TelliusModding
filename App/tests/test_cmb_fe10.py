@@ -130,7 +130,8 @@ class Fe10RoundTripTests(unittest.TestCase):
 class Fe10CatalogueTests(unittest.TestCase):
     def test_catalogue(self):
         externs = load_externs(FE10)
-        self.assertEqual(sum(1 for e in externs.values() if e.source == "native"), 656)
+        self.assertEqual(sum(1 for e in externs.values() if e.source == "native"), 656 + 10)  # 10 European-only
+        self.assertEqual(externs["GetMessageWidth"].group, "european_build")
         self.assertEqual(lookup_extern("StaffRoll", "fe10").argc, 0)
         self.assertEqual(lookup_extern("StaffRoll").argc, 1)
         self.assertEqual(lookup_extern("WaitM", "fe10").source, "script")  # a startup.cmb helper in RD

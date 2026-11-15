@@ -15,7 +15,7 @@ never touched.
 becomes a GCI folder (``build/dolphin_run/card_a``) holding one save, through command-line
 config overrides (:func:`save_card_config`) that are not written to Dolphin's own settings.
 
-:func:`prepare_wii_save_run` puts an RFEE01 ``FE10_US.dat`` under a private Dolphin user folder;
+:func:`prepare_wii_save_run` puts a Radiant Dawn NAND save under a private Dolphin user folder;
 the ``--user`` command-line option keeps a Radiant Dawn test run out of the user's normal NAND.
 """
 
@@ -116,7 +116,7 @@ def launch(image: Path | str, dolphin: Optional[Path | str] = None, *, batch: bo
 RUN_FOLDER = "dolphin_run"
 CARD_FOLDER = "card_a"
 WII_USER_FOLDER = "dolphin_user"
-RFEE01_DATA_PATH = Path("Wii/title/00010000/52464545/data")
+RFEE01_DATA_PATH = Path("Wii/title/00010000/52464545/data")   # other builds: save_file_fe10.data_path
 #: Dolphin's ``EXIDeviceType::MemoryCardFolder`` (``Core/HW/EXI/EXI_Device.h``).
 GCI_FOLDER_DEVICE = 8
 
@@ -279,30 +279,39 @@ def prepare_wii_save_run(disc_dir: Path | str, run_dir: Path | str, save_data: b
                          banner: Optional[bytes] = None) -> tuple[Path, Path]:
     """Prepare a Radiant Dawn run with an isolated Dolphin user folder.
 
-    ``save_data`` is written to RFEE01's normal NAND location as ``FE10_US.dat``.  Dolphin's
+    ``save_data`` is written to the disc's normal NAND location (``FE10_US.dat`` or ``FE10_EU.dat``).  Dolphin's
     ``--user`` option makes the game read and write only this copy; the user's real emulated
     NAND and the source save remain untouched.  ``banner.bin`` is copied when available.
     Returns the run-tree ``main.dol`` and the isolated user directory.
     """
-    from .formats.save_file_fe10 import FILE_NAME, FILE_SIZE
+    from .formats.save_file_fe10 import FILE_SIZE, READABLE, data_path, file_name
+    from .games import read_disc_id, retail_disc_id
 
     disc_dir, run_dir = Path(disc_dir), Path(run_dir)
     if len(save_data) != FILE_SIZE:
-        raise EmulatorError(f"RFEE01 save must be 0x{FILE_SIZE:X} bytes, found 0x{len(save_data):X}.")
+        raise EmulatorError(f"A Radiant Dawn save must be 0x{FILE_SIZE:X} bytes, found 0x{len(save_data):X}.")
     if not (disc_dir / "sys" / "main.dol").is_file() or not (disc_dir / "files").is_dir():
         raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
     detected = detect_from_extracted(disc_dir)
     if detected is not None and detected is not Game.RADIANT_DAWN:
-        raise EmulatorError("An RFEE01 NAND save can only be played with a Radiant Dawn project.")
+        raise EmulatorError("A Radiant Dawn NAND save can only be played with a Radiant Dawn project.")
+    try:
+        disc_id = retail_disc_id(read_disc_id(disc_dir))
+    except Exception:  # noqa: BLE001 - no readable boot.bin: the US layout
+        disc_id = "RFEE01"
+    if disc_id not in READABLE:
+        raise EmulatorError(f"Saves of {disc_id} can't be played from here: only the US and European "
+                            "save layouts are known.")
     dol = _copy_run_tree(disc_dir, run_dir, (disc_dir / "sys" / "main.dol").read_bytes())
     user_dir = run_dir / WII_USER_FOLDER
-    data_dir = user_dir / RFEE01_DATA_PATH
+    data_dir = user_dir / data_path(disc_id)
     data_dir.mkdir(parents=True, exist_ok=True)
-    for name in (FILE_NAME, "banner.bin"):
-        old = data_dir / name
+    name = file_name(disc_id)
+    for old_name in (name, "banner.bin"):
+        old = data_dir / old_name
         if old.is_file():
             old.unlink()
-    (data_dir / FILE_NAME).write_bytes(save_data)
+    (data_dir / name).write_bytes(save_data)
     if banner is not None:
         (data_dir / "banner.bin").write_bytes(banner)
     return dol, user_dir

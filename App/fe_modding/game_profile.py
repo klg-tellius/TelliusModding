@@ -27,15 +27,29 @@ from .game_files import as_path
 
 @dataclass(frozen=True)
 class LogicalFile:
-    """One kind of game file: its path under ``extracted/files`` and whether it is LZ10-wrapped on disc."""
+    """One kind of game file: its path under ``extracted/files`` and whether it is LZ10-wrapped on disc.
+
+    ``fallbacks`` are the same file's names on discs that lack ``path``: the Japanese Radiant Dawn
+    disc has ``Sound/sound.brsar`` where the US and European ones read ``Sound/sound_us.brsar``."""
     path: str
     compressed: bool = False
     label: str = ""
+    fallbacks: tuple[str, ...] = ()
 
     @property
     def name(self) -> str:
         """The file name alone (what the user sees in buttons and messages)."""
         return self.path.rsplit("/", 1)[-1]
+
+    def candidates(self) -> tuple[str, ...]:
+        return (self.path, *self.fallbacks)
+
+    def pick(self, exists) -> str:
+        """The first of :meth:`candidates` for which ``exists(path)`` holds, else :attr:`path`."""
+        for candidate in self.candidates():
+            if exists(candidate):
+                return candidate
+        return self.path
 
 
 # Features the app implements per game. A key missing from GameProfile.features is "not available yet".
@@ -165,11 +179,12 @@ class GameProfile:
 
     def path(self, files_root: Path | str, name: str) -> Path:
         """Where logical file ``name`` lives, given the ``extracted/files`` folder."""
-        return as_path(files_root) / self.logical(name).path
+        root = as_path(files_root)
+        return root / self.logical(name).pick(lambda rel: (root / rel).exists())
 
     def path_or_none(self, files_root: Path | str, name: str) -> Optional[Path]:
         """:meth:`path`, or None when this game has no such logical file."""
-        return as_path(files_root) / self.files[name].path if name in self.files else None
+        return self.path(files_root, name) if name in self.files else None
 
     def file_label(self, name: str) -> str:
         """Short file name for UI text (``FE8Data.bin`` / ``FE10Data.cms``); falls back to ``name``."""
@@ -237,8 +252,9 @@ _RADIANT_DAWN_FILES = {
     "ai_data": LogicalFile("Cp/cp_data.cms", compressed=True),
     "common_mess": LogicalFile("Mess/common.m"),
     "startup_script": LogicalFile("Scripts/startup.cmb"),
-    "sound_data": LogicalFile("Sound/sound_data_en.cms", compressed=True),
-    "sound_archive": LogicalFile("Sound/sound_us.brsar"),
+    # the English sound files; the Japanese disc has only the plain ones
+    "sound_data": LogicalFile("Sound/sound_data_en.cms", compressed=True, fallbacks=("Sound/sound_data.cms",)),
+    "sound_archive": LogicalFile("Sound/sound_us.brsar", fallbacks=("Sound/sound.brsar",)),
     "soundroom": LogicalFile("soundroom.bin"),
 }
 
@@ -406,5 +422,12 @@ def logical_game_path_of(project, name: str):
 
 def logical_rel_of(project, name: str) -> str:
     """Disc-relative path of logical file ``name`` (``files/FE8Data.bin``), for ``project.files``."""
-    return f"files/{profile_of(project).logical(name).path}"
+    from .game_files import files_of
+    files = files_of(project)
+    entry = profile_of(project).logical(name)
+    try:
+        path = entry.pick(lambda rel: files.exists(f"files/{rel}")) if entry.fallbacks else entry.path
+    except Exception:  # noqa: BLE001 - a stand-in project without files
+        path = entry.path
+    return f"files/{path}"
 

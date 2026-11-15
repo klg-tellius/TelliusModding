@@ -54,6 +54,7 @@ class DialogueEditor(EditorPanel):
         self._fe10 = profile.message_dialect == "fe10"   # Radiant Dawn byte-code, shown in <...> notation
         self._fe9 = not self._fe10 and profile.supports(DIALOGUE)
         self._current_path: Path | None = None
+        self._encoding = fe10_message.ENCODING     # the open file's text encoding (Radiant Dawn)
         self._messages: list[message.Message] = []
         self._text_order: list[str] | None = None  # the file's text-blob order, kept on save
         self._dirty = False
@@ -317,7 +318,7 @@ class DialogueEditor(EditorPanel):
             self._text_widget.tag_add('action', start, end)
         self._text_widget.tag_raise('sel')
         try:
-            self._document = notation.parse(text, self._fe10)
+            self._document = notation.parse(text, self._fe10, self._encoding)
         except notation.NotationError as error:
             self._document = None
             self._notation_error.config(text=str(error) + ' — preview uses the last valid text.')
@@ -353,7 +354,7 @@ class DialogueEditor(EditorPanel):
         self._cursor_changed()
 
     def _insert_raw(self, raw):
-        self._replace_selection(notation.display(raw, self._fe10).text)
+        self._replace_selection(notation.display(raw, self._fe10, self._encoding).text)
 
     def _add_action(self, name):
         if self._selected_index() is None:
@@ -398,7 +399,7 @@ class DialogueEditor(EditorPanel):
                 return
             tag = f'<{name}:{notation._escape(value)}>'
         try:
-            notation.parse(tag, self._fe10)
+            notation.parse(tag, self._fe10, self._encoding)
         except ValueError as error:
             messagebox.showerror('Invalid action', str(error), parent=self)
             return
@@ -531,7 +532,7 @@ class DialogueEditor(EditorPanel):
                 problems.append(f"{msg_id}: {problem}")
                 continue
             try:
-                parsed.append((raw_id, notation.parse(text, self._fe10).raw))
+                parsed.append((raw_id, notation.parse(text, self._fe10, self._encoding).raw))
             except notation.NotationError as error:
                 problems.append(f"{msg_id}: {error}")
         if problems:
@@ -660,6 +661,8 @@ class DialogueEditor(EditorPanel):
             return
 
         self._current_path = self._chapter_paths[selection[0]]
+        if self._fe10:
+            self._encoding = fe10_message.encoding_for(self._current_path.name, self._disc_id())
         try:
             self._messages = message.read_messages_path(self._current_path)
             self._text_order = message.read_text_order_path(self._current_path)
@@ -677,17 +680,24 @@ class DialogueEditor(EditorPanel):
         if self._fe10:
             name = self._current_path.name
             status += f" · {fe10_message.language_of(name)}"
-            if not fe10_message.decoded_language(name):
-                status += " (accented letters are not decoded yet and show as other characters)"
+            if self._encoding == fe10_message.EU_ENCODING:
+                status += " (European text table)"
         self._status_label.config(text=status)
+
+    def _disc_id(self) -> str:
+        from ..games import read_disc_id
+        try:
+            return read_disc_id(disc_root_of(self._project))
+        except Exception:  # noqa: BLE001 - no readable boot.bin
+            return ""
 
     def _shown(self, text: str) -> str:
         """What the text widget shows for a message's text."""
-        return notation.display(text, self._fe10).text
+        return notation.display(text, self._fe10, self._encoding).text
 
     def _list_preview(self, text: str) -> str:
         if self._fe10:
-            return fe10_message.plain_text(text)[:60]
+            return fe10_message.plain_text(text, self._encoding)[:60]
         if self._fe9:
             try:
                 text = "".join(line_plain_text(s.fields["text"]) + " "
@@ -930,7 +940,7 @@ class DialogueEditor(EditorPanel):
             initial = name
             text = templates.get(template, "")
             if self._fe10:
-                text = fe10_message.to_raw(text)
+                text = fe10_message.to_raw(text, self._encoding)
         else:
             initial = self._id_prefix() + "NEW"
         msg_id = self._validated(initial) if self._fe9 or self._fe10 else self._ask_id("New message", initial)

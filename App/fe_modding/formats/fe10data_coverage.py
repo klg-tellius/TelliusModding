@@ -77,7 +77,7 @@ def _pad(cov: CoverageMap, offset: int, size: int, name: str) -> None:
 
 def _mark_variable_tables(cov: CoverageMap, data: bytes) -> None:
     for kind in ("character", "class", "item"):
-        defs = {d.key: d for d in fe10data.field_defs(kind)}
+        defs = {d.key: d for d in fe10data.field_defs(kind, data)}
         defs.update({k: fe10data.FieldDef(k, k, "u8") for k in fe10data.COUNT_FIELDS})
         _mark_count(cov, data, kind)
         for r in fe10data.read_table(data, kind):

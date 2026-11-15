@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Iterable
 
-from . import ppc
+from . import ppc, rd_regions
 from .catalog import CAVE_ADDRESS, Edit, Patch, State, in_cave
 
 RFEE01 = "RFEE01"
@@ -193,8 +193,9 @@ def _edits() -> tuple[Edit, ...]:
 
 PATCH = Patch(
     "rd.story.runtime", "Chapters", "Radiant Dawn story order",
-    "Uses an explicit RFEE01 chapter sequence and stores part, division and logical-army metadata.",
+    "Uses an explicit chapter sequence and stores part, division and logical-army metadata.",
     {RFEE01: _edits()}, internal=True)
+rd_regions.install_entry(PATCH)
 
 
 class StorySequence:
@@ -214,7 +215,7 @@ class StorySequence:
 
     @property
     def unavailable_reason(self) -> str:
-        return "" if self.available else (self.status.detail or "RFEE01 story runtime is unavailable.")
+        return "" if self.available else (self.status.detail or "The story runtime is unavailable.")
 
     @property
     def installed(self) -> bool:

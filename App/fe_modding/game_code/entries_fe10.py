@@ -9,6 +9,7 @@ file offsets; RFEE01 text1 maps them to RAM with the constant delta below.
 from __future__ import annotations
 
 from . import ppc
+from . import rd_regions as _rd_regions
 from .catalog import CATALOG, CAVE_ADDRESS, Edit, Field, Patch, Tunable, in_cave
 
 RFEE01 = "RFEE01"
@@ -762,3 +763,7 @@ for _index, (_army, _default) in enumerate(zip(_RD_PHASE_ARMIES, _RD_PHASE_DEFAU
         default=_default, minimum=0, maximum=2,
         versions={RFEE01: (Field(_RD_PHASE_ROUTINE + 8 * _index + 3, "u8"),)},
         requires=(_RD_PHASE_HOOK,), choices=_RD_PHASE_CHOICES))
+
+
+# European and Japanese sites, moved from the ones above (rd_regions)
+_rd_regions.install(CATALOG)

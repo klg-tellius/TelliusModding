@@ -487,7 +487,10 @@ class RetailCatalogTests(unittest.TestCase):
 
     def test_catalog_entries_ids_are_unique_and_versioned(self):
         for entry in CATALOG.entries.values():
-            expected = {"RFEE01"} if next(iter(entry.versions)).startswith("R") else set(entries.ALL)
+            rd = next(iter(entry.versions)).startswith("R")
+            expected = {"RFEE01", "RFEP01", "RFEJ01"} if rd else set(entries.ALL)
+            if entry.id == "rd.skill.wrath_hp_ratio":      # a different rule on JP (rd_region_table)
+                expected = {"RFEE01", "RFEP01"}
             self.assertEqual(set(entry.versions), expected, entry.id)
 
     def test_every_version_verifies(self):

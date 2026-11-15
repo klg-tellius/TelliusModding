@@ -170,7 +170,7 @@ def _fe9_tag(inner):
     return raw
 
 
-def _tag_raw(inner, fe10):
+def _tag_raw(inner, fe10, encoding=rd.ENCODING):
     name, sep, value = inner.partition(':')
     if name.strip().casefold() == 'bytes':
         try:
@@ -201,9 +201,9 @@ def _tag_raw(inner, fe10):
             inner = code + value
         else:
             inner = code + (':' + value if sep else '')
-    raw = rd.to_raw('<' + inner + '>')
-    for step in rd.decompile(raw):
-        problem = rd.validate_step(step)
+    raw = rd.to_raw('<' + inner + '>', encoding)
+    for step in rd.decompile(raw, encoding):
+        problem = rd.validate_step(step, encoding)
         if problem:
             raise ValueError(problem)
     return raw
@@ -216,8 +216,9 @@ def _encodes_to(text: str) -> str | None:
         return None
 
 
-def parse(text: str, fe10: bool = False) -> Document:
-    """Parse a draft strictly; an error never discards or repairs user text."""
+def parse(text: str, fe10: bool = False, encoding: str = rd.ENCODING) -> Document:
+    """Parse a draft strictly; an error never discards or repairs user text. ``encoding`` is the
+    Radiant Dawn file's text encoding (:func:`fe10_message.encoding_for`)."""
     raw, spans = [], []
     pos = byte = 0
     while pos < len(text):
@@ -228,13 +229,13 @@ def parse(text: str, fe10: bool = False) -> Document:
                 if not match:
                     raise ValueError('Unclosed action; use <Bytes:3C> for a literal <')
                 pos = match.end()
-                chunk = _tag_raw(match.group(1), fe10)
+                chunk = _tag_raw(match.group(1), fe10, encoding)
                 action = True
             else:
                 if text[pos] == '>':
                     raise ValueError('Use <Bytes:3E> for a literal >')
                 pos += 1
-                chunk = (text[start:pos].encode(rd.ENCODING) if fe10 else game_text.encode(text[start:pos])).decode('cp437')
+                chunk = (text[start:pos].encode(encoding) if fe10 else game_text.encode(text[start:pos])).decode('cp437')
                 action = False
             if '\0' in chunk:
                 raise ValueError('A message cannot contain a zero byte')
@@ -248,12 +249,12 @@ def parse(text: str, fe10: bool = False) -> Document:
     return Document(text, ''.join(raw), tuple(spans))
 
 
-def display(raw: str, fe10: bool = False) -> Document:
+def display(raw: str, fe10: bool = False, encoding: str = rd.ENCODING) -> Document:
     """Decode for editing, retaining every byte including unknown commands."""
     parts = []
     if fe10:
-        for token in rd.tokenize(raw.encode('cp437')):
-            part = rd.token_display(token)
+        for token in rd.tokenize(raw.encode('cp437'), encoding):
+            part = rd.token_display(token, encoding)
             key = rd.command_key(token)
             if key in FE10_NAMES and part.startswith('<') and not part.startswith('<0x'):
                 name = FE10_NAMES[key]
@@ -267,7 +268,7 @@ def display(raw: str, fe10: bool = False) -> Document:
                     value = token.args[0] if token.args else None
                 part = '<' + name + (':' + _escape(value) if value is not None else '') + '>'
             try:
-                if parse(part, True).raw != token.raw.decode('cp437'):
+                if parse(part, True, encoding).raw != token.raw.decode('cp437'):
                     raise ValueError('Noncanonical bytes')
             except (ValueError, UnicodeError):
                 part = '<Bytes:' + token.raw.hex().upper() + '>'
@@ -295,8 +296,9 @@ def display(raw: str, fe10: bool = False) -> Document:
             except (ValueError, UnicodeError):
                 part = '<Bytes:' + source.encode('cp437').hex().upper() + '>'
             parts.append(part)
-    document = parse(''.join(parts), fe10)
+    document = parse(''.join(parts), fe10, encoding)
     if document.raw != raw:
         # Preserve malformed/unknown input rather than normalizing it away.
-        return parse(''.join('<Bytes:' + raw[i:i+1].encode('cp437').hex().upper() + '>' for i in range(len(raw))), fe10)
+        return parse(''.join('<Bytes:' + raw[i:i+1].encode('cp437').hex().upper() + '>' for i in range(len(raw))),
+                     fe10, encoding)
     return document

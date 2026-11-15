@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from . import entries, entries_fe10  # noqa: F401  (registers both catalogues)
+from . import chapter_jump_fe10, entries, entries_fe10  # noqa: F401  (registers both catalogues)
 from .catalog import CATALOG, Patch, Session, State, Tunable
 from .dol import Dol, DolError
 from .versions import identify

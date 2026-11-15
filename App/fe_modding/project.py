@@ -156,7 +156,10 @@ class ModProject:
 
     def logical_rel(self, name: str) -> str:
         """Disc-relative path of a logical game file (``files/FE8Data.bin``), for :attr:`files`."""
-        return f"files/{self.profile.logical(name).path}"
+        entry = self.profile.logical(name)
+        if not entry.fallbacks:
+            return f"files/{entry.path}"
+        return f"files/{entry.pick(lambda rel: self.files.exists(f'files/{rel}'))}"
 
     def logical_path(self, name: str) -> GamePath:
         """A logical game file (``game_data``, ``battle_data``...) of this project."""

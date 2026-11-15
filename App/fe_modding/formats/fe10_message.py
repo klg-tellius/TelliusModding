@@ -31,8 +31,10 @@ Byte    Command
 12      End the current text tick.
 ======  =========================================================================================
 
-Everything else is text: Shift-JIS on the US and JP discs (the European discs use their own
-single-byte tables, chosen with ``encoding``), plus the glyph-level markup PoR already had
+Everything else is text: Shift-JIS on the US and JP discs. The European disc's language files
+(``e_ d_ f_ s_ i_``) are Shift-JIS too, except that the single bytes 0xA1-0xDF (half-width
+katakana elsewhere) are Latin letters: :data:`EU_ENCODING`, the table drawn in the European fonts.
+Pick a file's encoding with :func:`encoding_for`. The glyph-level markup PoR already had
 (``#F01`` fonts, ``#C22`` colours, ``@{0}`` values, ``@[A]`` button icons).
 
 **Readable notation.** The editor shows a message as text with ``<...>`` tags. ``<`` and ``>``
@@ -52,6 +54,73 @@ import re
 from dataclasses import dataclass, field
 
 ENCODING = "cp932"  # Shift-JIS plus the NEC rows the fonts carry (US and JP discs)
+#: The European language files' encoding (registered below as a Python codec).
+EU_ENCODING = "fe10_eu"
+#: Single bytes 0xA1-0xDF of the European fonts (``Fonts/*.cms`` on RFEP01), read from the glyphs.
+EU_TABLE = dict(zip(range(0xA1, 0xE0),
+                    "ÁÂÀÄŒÆÇÈÉÊËÌÍÎÏ"      # A1-AF
+                    "‘ÑÒÓÔ’Ö“”ÙÚÛÜœþß"     # B0-BF
+                    "àáâ¡äª«çèéêëìíîï"     # C0-CF
+                    "ðñòóôõö÷øùúûü°»¿"))   # D0-DF
+_EU_REVERSE = {char: byte for byte, char in EU_TABLE.items()}
+
+
+def _eu_decode(data, errors="strict"):
+    data = bytes(data)
+    out, i = [], 0
+    while i < len(data):
+        b = data[i]
+        if (0x81 <= b <= 0x9F or 0xE0 <= b <= 0xFC) and i + 1 < len(data):
+            out.append(data[i:i + 2].decode("cp932", errors))
+            i += 2
+        elif b in EU_TABLE:
+            out.append(EU_TABLE[b])
+            i += 1
+        else:
+            out.append(data[i:i + 1].decode("cp932", errors))
+            i += 1
+    return "".join(out), len(data)
+
+
+def _eu_encode(text, errors="strict"):
+    out = bytearray()
+    for char in text:
+        byte = _EU_REVERSE.get(char)
+        if byte is not None:
+            out.append(byte)
+            continue
+        encoded = char.encode("cp932", errors)
+        if len(encoded) == 1 and 0xA1 <= encoded[0] <= 0xDF:   # half-width katakana: not on this table
+            encoded = "?".encode("ascii") if errors == "replace" else char.encode("ascii", errors)
+        out += encoded
+    return bytes(out), len(text)
+
+
+def _search_codec(name):
+    import codecs
+    if name.replace("-", "_") != EU_ENCODING:
+        return None
+    return codecs.CodecInfo(name=EU_ENCODING, encode=_eu_encode, decode=_eu_decode)
+
+
+def _register_codec():
+    import codecs
+    try:
+        codecs.lookup(EU_ENCODING)
+    except LookupError:
+        codecs.register(_search_codec)
+
+
+_register_codec()
+
+
+def encoding_for(file_name: str, disc_id: str = "") -> str:
+    """The text encoding of message file ``file_name``: :data:`EU_ENCODING` for a European
+    language file (``d_ f_ s_ i_``, and ``e_`` on the European disc ``RFEP01``), else Shift-JIS."""
+    prefix = file_name[:2].lower()
+    if prefix in ("d_", "f_", "s_", "i_") or (prefix == "e_" and disc_id[3:4].upper() == "P"):
+        return EU_ENCODING
+    return ENCODING
 #: Command arguments (layout, background, voice and portrait names) are Shift-JIS on every disc.
 ARG_ENCODING = "cp932"
 
@@ -711,6 +780,5 @@ def language_of(file_name: str) -> str:
 
 
 def decoded_language(file_name: str) -> bool:
-    """False for the European language files, whose single-byte text tables are not decoded yet:
-    their accented letters show as half-width katakana (the bytes are still kept exactly)."""
-    return language_of(file_name) in ("Japanese", "English")
+    """Whether the text of ``file_name`` decodes: every language does now (:func:`encoding_for`)."""
+    return language_of(file_name) in LANGUAGES.values()

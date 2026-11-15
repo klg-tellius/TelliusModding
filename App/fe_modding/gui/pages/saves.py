@@ -8,7 +8,7 @@ unit list changes size, so later chunks move) and recomputes its checksum.
 Names come from the project's FE8Data.bin and message texts; saves store table
 numbers, so a project that reordered those tables shows other names.
 
-Radiant Dawn: the Dolphin NAND file ``FE10_US.dat``, through the adapter in
+Radiant Dawn: the Dolphin NAND file ``FE10_US.dat`` (``FE10_EU.dat`` on the European disc), through the adapter in
 :mod:`.saves_fe10` (the profile's ``save_format`` picks it)."""
 
 from __future__ import annotations

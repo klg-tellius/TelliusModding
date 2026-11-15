@@ -238,13 +238,41 @@ def load_externs(dialect="fe9") -> dict[str, ExternSig]:
     return _load_externs(_dialect_name(dialect))
 
 
+#: Natives only the European Radiant Dawn build (RFEP01) registers, with their handlers there. They
+#: are registered through the same routine as the others (RFEP01 0x800A8D18); the US and Japanese
+#: builds have none of them. The notes say what the European scripts do with them; the handlers
+#: are not traced.
+FE10_EU_ONLY_EXTERNS = {
+    "VIEnableDimming": (1, [{"name": "on", "kind": "int"}], 0x8032EDB0,
+                        "(on): 0 turns the Wii's screen dimming off, 1 back on. Endgame turns it off around "
+                        "its long scenes."),
+    "UnitDispLoad": (0, [], 0x8007E398, "Unit display data: load."),
+    "UnitDispFree": (0, [], 0x8007E3BC, "Unit display data: free."),
+    "UnitDispUpdate": (0, [], 0x8007E3E0, "Unit display data: update."),
+    "TutFrameCreate": (0, [], 0x8007AFE0, "Opens the frame a tutorial message is drawn in (the trial maps T01-T04)."),
+    "TutFrameDelete": (0, [], 0x8007B014, "Closes the tutorial message frame."),
+    "GetMessageWidth": (1, [{"name": "message", "kind": "mess"}], 0x8007F7E4,
+                        "(message): the drawn width of a message, so a script can size a frame to the "
+                        "language's text."),
+    "GetMessageHeight": (1, [{"name": "message", "kind": "mess"}], 0x8007F810,
+                         "(message): the drawn height of a message."),
+    "FileSweepMRAM": (0, [], 0x802257F0, "Frees loaded files from main memory (used once in 3-15)."),
+    "FileSweepERAM": (0, [], 0x802257FC, "Frees loaded files from the second memory."),
+}
+
+
 @lru_cache(maxsize=None)
 def _load_externs(name: str) -> dict[str, ExternSig]:
     path = CATALOG_PATHS[name]
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {key: ExternSig(name=key, **entry) for key, entry in data["externs"].items()}
+    externs = {key: ExternSig(name=key, **entry) for key, entry in data["externs"].items()}
+    if name == "fe10":
+        for key, (argc, args, handler, note) in FE10_EU_ONLY_EXTERNS.items():
+            externs.setdefault(key, ExternSig(key, argc, "native", "european_build", args, 0,
+                                              f"{note} European disc only (handler RFEP01 0x{handler:08X})."))
+    return externs
 
 
 def lookup_extern(name: str, dialect="fe9") -> Optional[ExternSig]:

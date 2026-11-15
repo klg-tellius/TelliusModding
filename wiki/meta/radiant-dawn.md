@@ -29,7 +29,9 @@ source_path: "meta/radiant-dawn.md"
 
 ## Languages
 
-  Every disc carries the Japanese text in plain files (`Mess/c0101.m`). The game picks a variant by prefix at run time: `e_` English, `d_` German, `f_` French, `s_` Spanish, `i_` Italian. The US disc holds the Japanese and English files, the European disc all six. The US game loads `Mess/e_c0101.m` for chapter 1-1, so on a US or European disc the modding app opens a chapter's `e_` file as its dialogue and lists the Japanese one with the other files; on the Japanese disc it opens the plain one. English and Japanese text is Shift-JIS; the other European languages use their own single-byte tables (ß is `0xBF` in German text), not yet mapped. <span class="confidence confidence--confirmed">engine + files</span>
+  Every disc carries the Japanese text in plain files (`Mess/c0101.m`). The game picks a variant by prefix at run time: `e_` English, `d_` German, `f_` French, `s_` Spanish, `i_` Italian. The US disc holds the Japanese and English files, the European disc all six. The US game loads `Mess/e_c0101.m` for chapter 1-1, so on a US or European disc the modding app opens a chapter's `e_` file as its dialogue and lists the Japanese one with the other files; on the Japanese disc it opens the plain one. English and Japanese text is Shift-JIS. <span class="confidence confidence--confirmed">engine + files</span>
+
+  The European disc's language files (`e_`, `d_`, `f_`, `s_`, `i_`) are Shift-JIS too, with one change: the single bytes 0xA1&ndash;0xDF, half-width katakana in Shift-JIS, are Latin letters drawn in the European fonts. Lower-case accented letters sit 0x20 below their Latin-1 code (é is 0xC9, ü is 0xDC) and capitals 0x40 below (É is 0xA9, Ü is 0xBC). The others are ß 0xBF, œ 0xBD, Œ 0xA5, ¡ 0xC3, ¿ 0xDF, ª 0xC5, ° 0xDD, « 0xC6, » 0xDE, and the quotes ‘ ’ “ ” at 0xB0, 0xB5, 0xB7 and 0xB8. Two-byte Shift-JIS characters such as the ellipsis still appear. The US and Japanese discs use the half-width katakana in this range as such (the US credits' ｢ ｣, the Japanese ･ ellipsis). <span class="confidence confidence--confirmed">files</span>
 
 ## Fonts
 
@@ -138,6 +140,8 @@ source_path: "meta/radiant-dawn.md"
 
 ## Saves
 
+  The game saves `FE10_US.dat` on the US disc and `FE10_EU.dat` on the European one, the same layout written by the same code, in the title's data folder (`Wii/title/00010000/52464545/data` and `.../52464550/data`). The Japanese disc's `FE10_JP.dat` is 0xAC000 bytes, not 0x124000, and its layout is not decoded. <span class="confidence confidence--confirmed">engine</span>
+
   `FE10_US.dat` holds a system record, six files and six checkpoints. Each file is a record of its own: its header holds the file number, the difficulty and the chapter number the file menu shows, which `BMST` repeats. <span class="confidence confidence--confirmed">files</span>
 
   A save record is a stream of tagged sections: `ITBL`, `BMST`, `MDST`, `UNIP`, `SOKO`, `FGPT`, `T  T`, `RELD`, `KZND` and `DEBU`. `ITBL` holds eight name lists (characters, classes, items, skills, then the AI's attack, move and heal sequences and move types), each a count followed by the names without their `PID_`, `JID_`... prefix. The other sections name a record by its number in these lists, so the save carries its own copy of the names. Characters, classes and items count from 1, skills from 0. <span class="confidence confidence--confirmed">engine</span>
@@ -177,6 +181,17 @@ Tables that Path of Radiance does not have:
 - `NOBTL_TABLE`, 22 lists, each naming a character and the characters it cannot attack: for example the Goldoan dragons cannot attack the herons, Ena or Kurthnaga, and several Part 3 characters cannot attack friends fighting on the other side. Each pair has a flag (unused in the retail data) that still lets the two fight in combat. <span class="confidence confidence--confirmed">engine</span>
 
 The Game Data page of the app edits all three tables.
+
+On the Japanese disc an item record has no English article and no padding after it: its fixed part is 16 bytes, not 20. The Japanese database has 293 items, not 296. <span class="confidence confidence--confirmed">files</span>
+
+## Regional builds
+
+The European (`RFEP01`) and Japanese (`RFEJ01`) executables hold the same code as the US one (`RFEE01`), placed at other addresses: matching the three files instruction by instruction, with branch targets and data addresses masked, pairs about 80 % of the US code with the other build's. These differences matter to modding: <span class="confidence confidence--confirmed">engine</span>
+
+- The European build registers ten script functions the others lack: `VIEnableDimming`, `UnitDispLoad`, `UnitDispFree`, `UnitDispUpdate`, `TutFrameCreate`, `TutFrameDelete`, `GetMessageWidth`, `GetMessageHeight`, `FileSweepMRAM` and `FileSweepERAM`. The trial maps size their message frames with `GetMessageWidth`, because the text length depends on the language, and the Endgame turns the Wii's screen dimming off with `VIEnableDimming`.
+- The Japanese build lacks four US functions: `IsJPVersion`, `IsNOAVersion`, `IsNOEVersion` and `IsShowVersion`.
+- Wrath's HP check differs on the Japanese build: it needs HP under 20 % of maximum HP, where the US and European builds allow up to and including 30 %.
+- The Japanese disc has only the plain sound files (`Sound/sound.brsar`, `sound_data.cms`) and tutorial lists, and no widescreen fonts or portraits (no `_w` fonts, no `Face/wide`).
 
 ## Articles
 

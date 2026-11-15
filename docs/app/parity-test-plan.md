@@ -151,3 +151,9 @@ later chapter is an immediate Game Over).
 `workspace/parity-playtest` (built with `python -m tools.session_playtest.build --set parity ...`):
 G1 (a level-up gives 3 per growth success) and A1 (optional, Adept seen in battle). Double-click
 **Start-Session.cmd**; results go to its RESULTS.md.
+
+## European and Japanese discs (Phase 3)
+
+- On each region's extracted disc: apply one Game Code patch, a chapter jump and a story flow edit, boot, and check the change in game.
+- Open a European `FE10_EU.dat` on the Saves page, edit a unit, play it from the page.
+- Open a German chapter file in Dialogue: accented letters show as letters, saving changes nothing else.

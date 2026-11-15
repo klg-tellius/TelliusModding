@@ -41,6 +41,10 @@ VERSIONS: dict[str, GameVersion] = {v.code: v for v in (
 RADIANT_DAWN_VERSIONS: dict[str, GameVersion] = {v.code: v for v in (
     GameVersion("RFEE01", "US", "Radiant Dawn (USA)",
                 "d1b8deabfec5a96bf38945665ffe203867612c1c", 0x35A100),
+    GameVersion("RFEP01", "EU", "Radiant Dawn (Europe)",
+                "f3d4429dfc305c4653af88db04b96bd4a0c63981", 0x35B2C0),
+    GameVersion("RFEJ01", "JP", "Akatsuki no Megami (Japan)",
+                "c4a61e16bd05ffb24e55b33fbb06878aac5fedd4", 0x3450E0),
 )}
 
 ALL_VERSIONS: dict[str, GameVersion] = {**VERSIONS, **RADIANT_DAWN_VERSIONS}

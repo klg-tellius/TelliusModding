@@ -145,6 +145,9 @@ ITEM_FIXED = (
                     ("bonus_count", "Optional-block flags")), "Item")
 )
 ITEM_FIXED_SIZE = 20
+#: The Japanese disc's items have no English article and no padding after it: 16 fixed bytes.
+JP_ITEM_DROPPED = frozenset({"article", "pad_13", "pad_14", "pad_15"})
+ITEM_FIXED_JP = [d for d in ITEM_FIXED if d.key not in JP_ITEM_DROPPED]
 
 # -- skill (SkillData) -----------------------------------------------------------------------------
 SKILL_LABELS = _labels(("sid", "ID"), ("msid", "Name key"), ("help", "Help key"), ("help_2", "Help key 2"),
@@ -405,10 +408,43 @@ def _read_class(data: bytes, index: int, at: int) -> Record:
     return r
 
 
+def item_fixed(data) -> list:
+    """The item record's fixed fields in ``data``: the US and European layout, or the Japanese one
+    (:data:`ITEM_FIXED_JP`), whichever walks the item table exactly to SkillData's symbol."""
+    key = bytes(data[:0x40]) + len(data).to_bytes(4, "big")
+    layout = _ITEM_LAYOUT.get(key)
+    if layout is None:
+        layout = ITEM_FIXED
+        try:
+            start = table_start(data, "item")
+            end = fe8data.section_start(data, NEXT_SYMBOL["item"])
+            for candidate in (ITEM_FIXED, ITEM_FIXED_JP):
+                try:
+                    at = start + 4
+                    for i in range(_u32(data, start)):
+                        at = _read_item_with(data, i, at, candidate).end
+                except (struct.error, IndexError, KeyError, ValueError):
+                    continue
+                if end - 4 < at <= end:
+                    layout = candidate
+                    break
+        except (struct.error, IndexError, KeyError, ValueError):
+            pass
+        _ITEM_LAYOUT[key] = layout
+    return layout
+
+
+_ITEM_LAYOUT: dict[bytes, list] = {}
+
+
 def _read_item(data: bytes, index: int, at: int) -> Record:
+    return _read_item_with(data, index, at, item_fixed(data))
+
+
+def _read_item_with(data: bytes, index: int, at: int, fixed) -> Record:
     r = Record("item", index, at, at)
     pos = _read_fields(data, r, ITEM_LABELS, at)
-    pos = _read_fields(data, r, ITEM_FIXED, pos)
+    pos = _read_fields(data, r, fixed, pos)
     pos = _read_label_list(data, r, "attributes", pos, r.values["attribute_count"])
     pos = _read_label_list(data, r, "effective", pos, r.values["effective_count"])
     r.offsets["bonuses"] = pos
@@ -505,12 +541,13 @@ def record(data: bytes, kind: str, index: int) -> Record:
     return records[index]
 
 
-def field_defs(kind: str) -> list[FieldDef]:
-    """Every editable field of a kind, in record order (counts excluded)."""
+def field_defs(kind: str, data=None) -> list[FieldDef]:
+    """Every editable field of a kind, in record order (counts excluded). ``data`` picks the item
+    layout of its disc (:func:`item_fixed`); without it, the US one."""
     defs = {
         "character": CHARACTER_HEAD + CHARACTER_LABELS + CHARACTER_AFTER_SKILLS + CHARACTER_TAIL,
         "class": CLASS_LABELS + CLASS_FIXED + CLASS_AFTER_SKILLS + CLASS_TAIL,
-        "item": ITEM_LABELS + ITEM_FIXED,
+        "item": ITEM_LABELS + (item_fixed(data) if data is not None else ITEM_FIXED),
         "skill": SKILL_LABELS + SKILL_FIXED,
     }.get(kind)
     if defs is None:

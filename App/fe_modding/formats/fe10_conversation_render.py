@@ -26,7 +26,7 @@ WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
 PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
-_TEXT_PALETTE = {b"RFEE01": 0x80383158}
+_TEXT_PALETTE = {b"RFEE01": 0x80383158, b"RFEP01": 0x80384CD8, b"RFEJ01": 0x8036D0D0}
 _COLOR_CODE = re.compile(r"#C([0-9A-Fa-f]{2})|#c")
 
 
@@ -125,9 +125,10 @@ class Fe10ConversationAssets:
         return canvas
 
     def text_color(self, index: int) -> tuple[int, int, int, int]:
-        """RFEE01's 40-entry RGBA palette used by the glyph renderer's ``#Cxx`` markup."""
+        """The 40-entry RGBA palette the glyph renderer uses for ``#Cxx`` markup (main.dol data;
+        the three retail builds hold the same colours)."""
         if not 0 <= index < 40:
-            raise ValueError(f"Text color {index:02X} is outside RFEE01's palette")
+            raise ValueError(f"Text color {index:02X} is outside the palette")
         if index not in self._colors:
             from ..game_code.dol import Dol
 

@@ -270,8 +270,9 @@ class MusicEditor(EditorPanel):
 
     # -- music cues ------------------------------------------------------------
     def _catalog(self) -> Path:
-        name = "sound_data_en.cms" if self._fe10 else "gcfesnd.bin"
-        return files_root_of(self._project) / "Sound" / name
+        if self._fe10:
+            return self._project.profile.path(files_root_of(self._project), "sound_data")
+        return files_root_of(self._project) / "Sound" / "gcfesnd.bin"
 
     @staticmethod
     def _rd_key(value: str) -> str:
@@ -284,7 +285,7 @@ class MusicEditor(EditorPanel):
 
     def _rd_sound_map(self) -> dict[str, str]:
         if self._rd_streams is None:
-            path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
+            path = self._project.profile.path(files_root_of(self._project), "sound_archive")
             archive = brsar.read_brsar(path.read_bytes())
             self._rd_streams = {sound.name: sound.external_path for sound in archive.sounds
                                 if sound.external_path}

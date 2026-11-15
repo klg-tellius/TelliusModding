@@ -71,7 +71,7 @@ def load_messages(files: Path, chapter_stem: Optional[str], dialect: str = "fe9"
 
 def _logical_bytes(files: Path, profile, name: str) -> bytes:
     entry = profile.logical(name)
-    data = (files / entry.path).read_bytes()
+    data = (files / entry.pick(lambda rel: (files / rel).exists())).read_bytes()
     if entry.compressed:
         from ..formats import lz10
         data = lz10.decompress(data)

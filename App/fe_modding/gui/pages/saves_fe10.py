@@ -1,4 +1,4 @@
-"""The Saves page's Radiant Dawn adapter: the Dolphin NAND file ``FE10_US.dat``
+"""The Saves page's Radiant Dawn adapter: the Dolphin NAND file ``FE10_US.dat`` or ``FE10_EU.dat``
 (``formats/save_file_fe10.py``) shown in the page's own tabs with the page's controls.
 
 The file holds six files and six checkpoints (the page's File picker) and one system record (the
@@ -24,8 +24,9 @@ from ..widgets import ScrollFrame, section_header
 from .saves import OFF, ON, _CheckList, _Fields, _tree
 
 TABS = ("overview", "units", "convoy", "map", "flags", "system", "raw")
-INFO = ("Open the unencrypted FE10_US.dat from Dolphin's Radiant Dawn data folder "
-        "(Wii/title/00010000/52464545/data under Dolphin's user folder) to edit a file's chapter, units, "
+INFO = ("Open the unencrypted FE10_US.dat (FE10_EU.dat for the European disc) from Dolphin's Radiant "
+        "Dawn data folder (Wii/title/00010000/52464545/data, or .../52464550/data, under Dolphin's user "
+        "folder) to edit a file's chapter, units, "
         "convoy and flags, and the system data every file shares. Unknown bytes are kept and the game's "
         "checksums recomputed. Encrypted data.bin exports from a Wii can't be read. Keep the game closed "
         "while you overwrite a save it uses.")
@@ -609,8 +610,8 @@ class Fe10Saves:
         return bool(self.save and (self.save.system.dirty or any(r.dirty for r in self.save.records)))
 
     def open_dialog(self) -> None:
-        chosen = filedialog.askopenfilename(title="Open FE10_US.dat", parent=self.page,
-                                            filetypes=[("Radiant Dawn save", "FE10_US.dat"),
+        chosen = filedialog.askopenfilename(title="Open a Radiant Dawn save", parent=self.page,
+                                            filetypes=[("Radiant Dawn save", "FE10_*.dat"),
                                                        ("DAT files", "*.dat"), ("All files", "*.*")])
         if chosen:
             self.open_path(Path(chosen))
@@ -622,7 +623,7 @@ class Fe10Saves:
             messagebox.showerror("Could not open the save", str(exc), parent=self.page)
             return False
         if path.is_dir():
-            path = path / sf.FILE_NAME
+            path = sf.find_in(path)
         self.path, self.save = path, save
         self.records = list(save.records)
         active = save.active_records()
@@ -668,7 +669,8 @@ class Fe10Saves:
         if self.save is None:
             return
         chosen = filedialog.asksaveasfilename(title="Save the edited save as", parent=self.page,
-                                              initialfile=sf.FILE_NAME, defaultextension=".dat",
+                                              initialfile=self.path.name if self.path else sf.FILE_NAME,
+                                              defaultextension=".dat",
                                               filetypes=[("Radiant Dawn save", "*.dat")])
         if chosen:
             self.write(Path(chosen))

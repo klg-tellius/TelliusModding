@@ -156,8 +156,8 @@ class SfxViewer(EditorPanel):
 
     def _load(self) -> None:
         if self._fe10:
-            path = files_root_of(self._project) / "Sound" / "sound_data_en.cms"
-            archive_path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
+            path = self._project.profile.path(files_root_of(self._project), "sound_data")
+            archive_path = self._project.profile.path(files_root_of(self._project), "sound_archive")
             if not path.is_file() or not archive_path.is_file():
                 self._count.config(text="Radiant Dawn sound data not found. Extract the project first.")
                 return
@@ -335,7 +335,7 @@ class SfxViewer(EditorPanel):
                 new_header, new_wave = rwsd.replace_wave(document, wave_index, replacement)
                 archive_bytes = brsar.replace_embedded_file(self._rd_archive, sound.file_index,
                                                              new_header, new_wave)
-                archive_path = files_root_of(self._project) / "Sound" / "sound_us.brsar"
+                archive_path = self._project.profile.path(files_root_of(self._project), "sound_archive")
                 self._project.write_keeping_original(archive_path, archive_bytes)
             except (OSError, ValueError) as exc:
                 messagebox.showerror("Replace sound effect", str(exc), parent=self)
