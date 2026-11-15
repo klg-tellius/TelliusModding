@@ -305,7 +305,8 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
         rise = prop_rise(obj.filename, obj, top)
         world = None
         if rise is None and top <= FLOOR_HEIGHT and len(local):
-            matrix = np.array(inst.world_transform(1.0))
+            rd_footprint = map_file.rd_footprint_tiles(obj) if data.layout.game == "fe10" else None
+            matrix = np.array(inst.world_transform(1.0, rd_footprint=rd_footprint))
             points = np.concatenate([local.reshape(-1, 3), np.ones((len(local) * 3, 1))], axis=1) @ matrix.T
             world = points[:, :3].reshape(-1, 3, 3)
             world[:, :, 0] -= TILE_SIZE * ox  # into terrain mesh coordinates

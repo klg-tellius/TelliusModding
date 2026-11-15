@@ -133,7 +133,9 @@ class Fe10ConversationAssets:
 
             root = self.files.parent
             boot = root / "sys" / "boot.bin"
+            from ..games import retail_disc_id
             game_id = boot.read_bytes()[:6] if boot.is_file() else b"RFEE01"
+            game_id = retail_disc_id(game_id.decode("ascii", "replace")).encode("ascii", "replace")
             try:
                 address = _TEXT_PALETTE[game_id]
             except KeyError:

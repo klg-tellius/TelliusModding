@@ -85,6 +85,19 @@ class MapPropTests(unittest.TestCase):
         self.assertEqual((turned.x, turned.y, turned.angle & 0xFF), (3, 2, 128))
         self.assertEqual(map_file.read_map_bytes(files["map.bin"]).capacity.build_inst_count, 3)
 
+    def test_props_stand_on_the_ground_layer(self):
+        # a ship's deck: the ground panel layer is 5 units up while no terrain mesh is under it
+        # (bmap13: deck 16.1, sea floor below), so a chest put there must stand on the deck
+        entries, files = _files()
+        files["map.bin"] = _map_bin(width=4, height=4, panel_elevation=-2000)
+        map_props.import_prop(entries, files, _quad_glb(translation=(2.5, 0.0, 2.5)), "stone")
+        data = map_file.read_map_bytes(files["map.bin"])
+        self.assertEqual(map_props.standing_heights(files, data, [(1, 1)]), [-1.0])
+        index = map_props.place_prop(files, "stone", 1, 1)
+        self.assertEqual(map_file.read_map_bytes(files["map.bin"]).build_inst[index].height(), -1.0)
+        map_props.move_instance(files, index, 2, 3)
+        self.assertEqual(map_file.read_map_bytes(files["map.bin"]).build_inst[index].height(), -1.0)
+
     def test_compaction_drops_middle_images_and_renumbers(self):
         entries, files = _files()
         map_props.import_prop(entries, files, _quad_glb(translation=(2.5, 0.0, 2.5)), "stone")

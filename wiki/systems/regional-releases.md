@@ -19,6 +19,8 @@ source_path: "systems/regional-releases.md"
 
 Path of Radiance shipped on three discs: North America (`GFEE01`), Europe (`GFEP01`) and Japan (`GFEJ01`). They run the same engine on the same data formats. Most files are byte-identical or differ only in their text, and a modding tool built for one release reads the other two with a short list of exceptions, all described below. <span class="confidence confidence--confirmed">data + engine</span>
 
+The last two characters of the ID are the maker code (`01`, Nintendo). Mods sometimes change it (Four Riders ships as `GFEE02`); such a disc is still the release its first four characters name.
+
 ## Files that are identical
 
 Every map (`zmap/`), every deployment file, every 3D model, skeleton and animation, the battle effect tables and the sound banks match byte for byte, or differ only where they hold text. Every file format reads and rebuilds without loss on all three discs, and no file on the European or Japanese disc uses a format the North American one does not. <span class="confidence confidence--confirmed">data</span>

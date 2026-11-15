@@ -57,7 +57,7 @@ import zlib
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from PIL import Image
 
@@ -353,12 +353,14 @@ def _skinned_vertices(d: _Document, skin: dict, attrs: dict, positions, normals,
     return out_p, (out_n if normals else None), out_inf, out_local
 
 
-def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedScene:
+def read_gltf(data: bytes, base_dir: Optional[Path | str] = None,
+              skip_node: Optional[Callable[[str], bool]] = None) -> ImportedScene:
     """Flatten the default scene into model-space triangles per material.
     Node transforms are baked in. A skinned mesh is posed at its joints'
     rest transforms (its own node transform is ignored, as the glTF spec
     says) and keeps each vertex's joint weights; a plain mesh parented to
-    a joint node is attached rigidly to that joint."""
+    a joint node is attached rigidly to that joint. ``skip_node`` leaves out
+    the nodes whose name it is true for, with their children."""
     d = _Document(data, Path(base_dir) if base_dir is not None else None)
     doc = d.doc
     scene = ImportedScene()
@@ -441,6 +443,8 @@ def read_gltf(data: bytes, base_dir: Optional[Path | str] = None) -> ImportedSce
             continue
         seen.add(index)
         node = nodes[index]
+        if skip_node is not None and skip_node(node_name(index)):
+            continue
         stack.extend(node.get("children", []))
         if "mesh" not in node:
             continue

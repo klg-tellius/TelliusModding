@@ -1414,7 +1414,12 @@ def export_map_terrain_glb(container_path: Path, object_names: tuple[str, ...] |
         placements[candidate] = [
             (
                 f"{candidate}_{i + 1:03d}",
-                tuple(tuple(row[:4]) for row in inst.world_transform(map_scale=1.0, parent_matrix=anchor)[:3]),
+                tuple(tuple(row[:4]) for row in inst.world_transform(
+                    map_scale=1.0,
+                    parent_matrix=anchor,
+                    rd_footprint=(map_file.rd_footprint_tiles(map_data.build_desc[inst.desc_index])
+                                  if map_data.layout.game == "fe10" else None),
+                )[:3]),
             )
             for i, inst in enumerate(instances)
         ] or [(candidate, None)]
@@ -1710,6 +1715,21 @@ def _map_base_records(template, first, atlas: int, white, white_id: int) -> list
     return records
 
 
+def map_object_node_filter(map_data: map_file.MapData, terrain: str):
+    """A test for glTF node names that are the map's other objects, as
+    :func:`export_map_terrain_glb` names them when asked to add them: a
+    water layer or prop by its own name, each prop instance as
+    ``<name>_001``..., and either with a Blender duplicate suffix
+    (``.001``). The terrain itself is never matched."""
+    others = {o.filename.lower() for o in map_data.build_desc if o.filename and o.filename.lower() != terrain.lower()}
+    instance = re.compile(r"^(.*?)(_\d{3})?(\.\d{3})?$")
+
+    def matches(node: str) -> bool:
+        found = instance.match(node.lower())
+        return found is not None and found.group(1) in others and found.group(1) != terrain.lower()
+    return matches
+
+
 def replace_map_terrain_with_glb(
     container_path: Path,
     gltf_path: Path,
@@ -1765,8 +1785,24 @@ def replace_map_terrain_with_glb(
     bone = first.bone if first is not None else 0
     last_record = next((m.textures[-1] for m in original.materials if m.textures), None)
 
-    scene = gltf_import.read_gltf(gltf_path.read_bytes(), gltf_path.parent)
+    skipped: set[str] = set()
+    other_objects = map_object_node_filter(map_data, name)
+
+    def skip(node: str) -> bool:
+        if other_objects(node):
+            skipped.add(node)
+            return True
+        return False
+
+    scene = gltf_import.read_gltf(gltf_path.read_bytes(), gltf_path.parent, skip_node=skip)
     warnings = []
+    if skipped:
+        warnings.append(
+            f"Left out {len(skipped)} object(s) named after this map's props or water ("
+            + ", ".join(sorted(skipped)[:5]) + (", ..." if len(skipped) > 5 else "")
+            + "): this import replaces the land terrain only. Move, add or remove props in the chapter's "
+            "Build tab, and edit water with the terrain kit."
+        )
     old_mask = terrain_mask_image(files, name)
     old_base = next((m for m in original.materials if m.name in gltf_import.UV2_MATERIALS and len(m.textures) >= 2), None)
     if map_texturing and old_base is not None:
@@ -1781,10 +1817,10 @@ def replace_map_terrain_with_glb(
                 and atlas_id < len(current_images)
             ):
                 material.image = current_images[atlas_id]
-    for material in scene.materials:
+    for index, material in enumerate(scene.materials):
         if map_texturing and material.name in gltf_import.UV2_MATERIALS:
             continue
-        if material.name in MAP_CALLBACK_MATERIALS:
+        if material.name in MAP_CALLBACK_MATERIALS and scene.triangles.get(index):
             warnings.append(f"Material {material.name} renamed {material.name}_mesh: the map loader would give it projected textures.")
             material.name += "_mesh"
     # Generic map materials do not reliably apply color0 in game.  A glTF material with only

@@ -181,6 +181,21 @@ class MapCapacity:
 
 
 @dataclass(frozen=True)
+class RdMapParameters:
+    """Versioned RFEE01 fields appended to the shared ``mapdata`` records."""
+
+    version: int
+    reserved_01: int
+    wrap_enabled: Optional[int]
+    wrap_step_x: Optional[int]
+    wrap_step_y: Optional[int]
+    wrap_duration: Optional[int]
+    affinity_name: Optional[str]
+    terrain_height_ceiling: Optional[float]
+    address: int = 0
+
+
+@dataclass(frozen=True)
 class MapObject:
     """One entry of mapbuilddesc: a placed object (prop/building/decoration).
 
@@ -357,7 +372,26 @@ class MapBuildInstance:
         :meth:`world_transform` uses."""
         return struct.unpack(">f", struct.pack(">I", self.height_raw()))[0]
 
-    def world_transform(self, map_scale: float, parent_matrix=None):
+    @property
+    def mirror_x(self) -> bool:
+        """Whether RFEE01 mirrors this placement across its X footprint.
+
+        Only bit 0 is understood; callers patching it must preserve the other
+        bits in :attr:`lead`.
+        """
+        return bool(self.lead & 1)
+
+    @property
+    def sub_tile_x(self) -> float:
+        """RFEE01's signed X offset in tiles (the stored byte is in 1/64ths)."""
+        return self.offset_x / 64.0
+
+    @property
+    def sub_tile_y(self) -> float:
+        """RFEE01's signed Y/Z offset in tiles (the stored byte is in 1/64ths)."""
+        return self.offset_y / 64.0
+
+    def world_transform(self, map_scale: float, parent_matrix=None, rd_footprint: tuple[int, int] | None = None):
         """The confirmed placement transform (`GAME_NOTES.md` §12, Twentieth
         finding) as a 4x4 row-major matrix (list of 4 lists of 4 floats),
         composed the same way `main.dol`'s own `FUN_80045d50` builds it:
@@ -374,8 +408,11 @@ class MapBuildInstance:
         (identity for backdrops). The app draws chapter maps at scale 1.0 with no
         rotation, the same picture up to one global transform.
 
-        Confirmed constants: tile scale = 5.0 world units/tile, pivot = 2.5
-        (half the tile scale).
+        Confirmed constants: tile scale = 5.0 world units/tile. For PoR (or
+        when ``rd_footprint`` is omitted), the pivot is the centre of one
+        tile. RFEE01 passes its descriptor footprint: its two signed offset
+        bytes add 1/64-tile fractions to X/Z, the pivot is the centre of the
+        full descriptor footprint, and lead bit 0 reflects X around it.
         """
         import math
 
@@ -383,11 +420,13 @@ class MapBuildInstance:
         angle_rad = math.radians(angle_deg)
 
         tile_scale = 5.0
-        pivot = tile_scale / 2.0
+        footprint_x, footprint_z = rd_footprint or (1, 1)
+        pivot_x = tile_scale * footprint_x / 2.0
+        pivot_z = tile_scale * footprint_z / 2.0
 
-        pos_x = tile_scale * self.x
+        pos_x = tile_scale * (self.x + (self.sub_tile_x if rd_footprint is not None else 0.0))
         pos_y = -tile_scale * self.height()
-        pos_z = tile_scale * self.y
+        pos_z = tile_scale * (self.y + (self.sub_tile_y if rd_footprint is not None else 0.0))
 
         def _identity():
             return [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
@@ -417,9 +456,13 @@ class MapBuildInstance:
 
         local = _translate(pos_x, pos_y, pos_z)
         local = _matmul(local, _scale(map_scale))
-        local = _matmul(local, _translate(pivot, 0.0, pivot))
+        local = _matmul(local, _translate(pivot_x, 0.0, pivot_z))
         local = _matmul(local, _rotate_y(angle_rad))
-        local = _matmul(local, _translate(-pivot, 0.0, -pivot))
+        if rd_footprint is not None and self.mirror_x:
+            mirror = _identity()
+            mirror[0][0] = -1.0
+            local = _matmul(local, mirror)
+        local = _matmul(local, _translate(-pivot_x, 0.0, -pivot_z))
 
         if parent_matrix is None:
             return local
@@ -684,6 +727,7 @@ class MapData:
     light: Optional["MapLight | RdMapLight"] = None
     fog: Optional[MapFog] = None
     shader: Optional[RdMapShader] = None  # Radiant Dawn's mapshader
+    rd: Optional[RdMapParameters] = None  # Radiant Dawn's versioned mapdata fields
     grid: Optional[MapGrid] = None
     extra: Optional[MapExtra] = None
     # link/link_at/link_abs together build one per-tile "tile status" value,
@@ -931,6 +975,8 @@ def read_map(stream: BinaryIO) -> MapData:
         name = layout.canonical(file_name)
         if name == "mapcapacity":
             data.capacity = _read_capacity(stream, address, layout)
+            if layout.game == "fe10":
+                data.rd = _read_rd_map_parameters(stream, address)
             if layout.offset("mapextra"):  # Radiant Dawn's mapdata also holds mapextra and mapgrid
                 data.extra = _read_extra(stream, address + layout.offset("mapextra"))
                 data.grid = _read_grid_colors(stream, address + layout.offset("mapgrid"))
@@ -996,6 +1042,26 @@ def _read_capacity(stream: BinaryIO, address: int, layout: MapLayout = POR_LAYOU
     x, y = struct.unpack_from(layout.size_format, record, layout.size_at)
     desc_count, inst_count, scale_unit = struct.unpack_from(">HHf", record, 4)
     return MapCapacity(x, y, desc_count, inst_count, scale_unit, address=address)
+
+
+def _read_rd_map_parameters(stream: BinaryIO, address: int) -> RdMapParameters:
+    stream.seek(address)
+    head = stream.read(2)
+    if len(head) != 2 or head[0] not in (2, 3, 4):
+        raise MapFileError("Radiant Dawn mapdata has an unsupported version.")
+    version, reserved = head
+    wrap_enabled = wrap_x = wrap_y = wrap_duration = None
+    affinity = None
+    ceiling = None
+    if version >= 3:
+        stream.seek(address + 0x1C)
+        wrap_enabled, wrap_x, wrap_y, wrap_duration = struct.unpack(">BbbB", stream.read(4))
+    if version >= 4:
+        stream.seek(address + 0x20)
+        affinity_ptr, ceiling = struct.unpack(">If", stream.read(8))
+        affinity = _get_string(stream, affinity_ptr) if affinity_ptr else None
+    return RdMapParameters(version, reserved, wrap_enabled, wrap_x, wrap_y, wrap_duration,
+                           affinity, ceiling, address=address)
 
 
 def _get_string(stream: BinaryIO, pointer: int) -> str:
@@ -1165,6 +1231,12 @@ def _read_link_grid(stream: BinaryIO, address: int, capacity: Optional[MapCapaci
 # module docstring's "Write support" section for why.
 _CAPACITY_FIELDS = {"scale_unit": (8, ">f")}
 
+_RD_MAP_FIELDS = {
+    "wrap_enabled": (0x1C, ">B"), "wrap_step_x": (0x1D, ">b"),
+    "wrap_step_y": (0x1E, ">b"), "wrap_duration": (0x1F, ">B"),
+    "terrain_height_ceiling": (0x24, ">f"),
+}
+
 _OBJECT_FIELDS = {
     "offset_x": (0, ">f"),
     "offset_y": (4, ">f"),
@@ -1249,6 +1321,15 @@ def patch_capacity_field(data: bytes, record: MapCapacity, field_name: str, valu
     return _patch_field(data, record.address, field_name, value, _CAPACITY_FIELDS, "mapcapacity")
 
 
+def patch_rd_map_field(data: bytes, record: RdMapParameters, field_name: str, value) -> bytes:
+    """Patch a versioned scalar; the affinity pointer is deliberately not rewritten in place."""
+    if field_name.startswith("wrap_") and record.version < 3:
+        raise MapFileError("This mapdata version has no wrapping fields.")
+    if field_name == "terrain_height_ceiling" and record.version < 4:
+        raise MapFileError("This mapdata version has no terrain-height ceiling.")
+    return _patch_field(data, record.address, field_name, value, _RD_MAP_FIELDS, "Radiant Dawn mapdata")
+
+
 def patch_object_field(data: bytes, record: MapObject, field_name: str, value) -> bytes:
     """Every field except `filename` (backed by a pointer, not patchable in
     place) is editable."""
@@ -1272,6 +1353,14 @@ _FE10_BUILD_INST_FIELDS = {
 def patch_build_inst_field(data: bytes, record: MapBuildInstance, field_name: str, value) -> bytes:
     table = _FE10_BUILD_INST_FIELDS if map_layout(data).inst_size == 20 else _BUILD_INST_FIELDS
     return _patch_field(data, record.address, field_name, value, table, "mapbuildinst")
+
+
+def patch_build_inst_mirror_x(data: bytes, record: MapBuildInstance, enabled: bool) -> bytes:
+    """Patch RFEE01's mirror bit while preserving every unknown lead-byte bit."""
+    if map_layout(data).inst_size != 20:
+        raise MapFileError("Path of Radiance placements have no mirror flag.")
+    lead = record.lead | 1 if enabled else record.lead & ~1
+    return _patch_field(data, record.address, "lead", lead, {"lead": (0, ">B")}, "mapinst")
 
 
 def patch_unique_panel_field(data: bytes, record: UniquePanel, field_name: str, value) -> bytes:
@@ -1694,6 +1783,13 @@ def footprint_tiles(obj: MapObject) -> tuple[int, int]:
     """Tiles an object covers along x and z: ``round(max / 5)``, at least 1
     (vanilla ``mapbuildinst`` end coordinates follow this)."""
     return max(1, round(obj.size_x / TILE_UNITS)), max(1, round(obj.size_z / TILE_UNITS))
+
+
+def rd_footprint_tiles(obj: MapObject) -> tuple[int, int]:
+    """RFEE01's explicit descriptor footprint, including hand-authored exceptions."""
+    if len(obj.footprint) >= 2 and obj.footprint[0] and obj.footprint[1]:
+        return int(obj.footprint[0]), int(obj.footprint[1])
+    return footprint_tiles(obj)
 
 
 def instance_record(obj: MapObject, desc_index: int, x: int, y: int, angle: int, height: float) -> bytes:

@@ -311,9 +311,42 @@ class ModProject:
             from . import vanilla_store
             store = vanilla_store.ensure_store(self.source_path, wii=self.profile.wii)
             self._set_input(store)
+            self.adopt_system_archive()
             return store.root
         tools.extract_disc(self.source_path, self.extracted_dir, overwrite=overwrite, wii=self.profile.wii)
+        self.adopt_system_archive()
         return self.extracted_dir
+
+    def adopt_system_archive(self) -> list[str]:
+        """Make the loose files match the copies in ``system.cmp`` where the disc's own loose file
+        is stale, and return their names.
+
+        The game reads ``system.cmp``'s copies (see :meth:`sync_system_archive`). Other tools
+        (Paragon) edit those copies and leave the loose files as they were, so on such a disc the
+        loose ``FE8Data.bin``, ``mess/common.m``... are out of date: reading them would miss the
+        mod's characters and text, and building would copy them back over the mod's data. A loose
+        file still as extracted that differs from its archive copy is replaced with that copy; a
+        loose file the project changed is left alone (its edit is newer)."""
+        if not self.profile.has_file("system_archive"):
+            return []
+        data = self.files.read_or_none(self.logical_rel("system_archive"))
+        if data is None:
+            return []
+        try:
+            unpacked = lz10.decompress(data)
+            entries = pak.read_pak_entries(unpacked)
+        except Exception:  # noqa: BLE001 - an unreadable archive is reported where it is used
+            return []
+        adopted = []
+        for entry in entries:
+            rel = f"files/{entry.name}"
+            content = pak.read_pak_file_content(unpacked, entry)
+            loose = self.files.read_or_none(rel)
+            if loose is None or loose == content or loose != self.files.vanilla(rel):
+                continue
+            self.files.write(rel, content)
+            adopted.append(entry.name)
+        return adopted
 
     def _mismatch_message(self, disc_id: str) -> Optional[str]:
         detected = game_for_disc_id(disc_id)

@@ -183,7 +183,7 @@ def _find_code_end(data: bytes, start: int, end: int, dialect: Dialect) -> int:
     pos = start
     return_ends = set()
     epilogue_ends = set()
-    targets = []
+    targets = []  # (branch's own offset, its target)
     returns = RETURN_OPS if dialect.extended_ops else (RETURN,)
     while pos < end:
         op = data[pos]
@@ -195,17 +195,24 @@ def _find_code_end(data: bytes, start: int, end: int, dialect: Dialect) -> int:
             if op == RET0 or (op == RETURN and pos - start >= 2 and data[pos - 2] == 0x19 and data[pos - 1] == 0):
                 epilogue_ends.add(nxt)
         elif op in BRANCH_OPS and nxt <= end:
-            targets.append(pos + 1 + _read_operand(data, pos + 1, OPERAND_WIDTHS[op][0]))
+            targets.append((pos, pos + 1 + _read_operand(data, pos + 1, OPERAND_WIDTHS[op][0])))
         pos = nxt
     for pad in range(4, 0, -1):
         cut = end - pad
-        if cut in epilogue_ends and all(t < cut for t in targets):
+        if cut in epilogue_ends and all(t < cut for _, t in targets):
             return cut
     for pad in range(1, 5):
         if end - pad in return_ends:
             return end - pad
     if end in return_ends:
         return end
+    # Scripts edited in place by other tools (Paragon) keep a function's old room when its code
+    # gets shorter: the end is followed by zeros or by what is left of the old code, more than
+    # the compiler's 1-4 bytes. The code then ends at the first epilogue that no branch before it
+    # jumps past; the rest is kept as padding.
+    for cut in sorted(epilogue_ends):
+        if all(t < cut for at, t in targets if at < cut):
+            return cut
     raise CmbError(f"Function code at 0x{start:X} doesn't end with a return.")
 
 

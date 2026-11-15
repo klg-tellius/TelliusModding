@@ -6,11 +6,13 @@ root = Path(SPECPATH).parent
 sys.path.insert(0, str(root / 'App'))
 datas = [(str(root / 'App/fe_modding/formats/cmb/externs_fe9.json'), 'fe_modding/formats/cmb'),
          (str(root / 'App/fe_modding/formats/cmb/externs_fe10.json'), 'fe_modding/formats/cmb'),
-         (str(root / 'App/licenses'), 'licenses'),
-         # the Tellius Terrain Blender add-on is copied into Blender as source, with the shared compiler
-         (str(root / 'App/fe_modding/blender_addon/tellius_terrain/__init__.py'), 'fe_modding/blender_addon/tellius_terrain'),
-         (str(root / 'App/fe_modding/blender_addon/tellius_terrain/kit.py'), 'fe_modding/blender_addon/tellius_terrain'),
-         (str(root / 'App/fe_modding/terrain_paint.py'), 'fe_modding')]
+         (str(root / 'App/licenses'), 'licenses')]
+# The Tellius Terrain Blender add-on is copied into Blender as source, with the app modules it
+# shares (fe_modding.blender.ADDON_SHARED: terrain_paint.py, water_kit.py...): ship them as files,
+# taken from that list so a newly shared module can't be left out of the build.
+from fe_modding.blender import ADDON_SHARED, ADDON_SOURCE
+datas += [(str(p), 'fe_modding/blender_addon/tellius_terrain') for p in sorted(ADDON_SOURCE.glob('*.py'))]
+datas += [(str(p), 'fe_modding') for p in ADDON_SHARED]
 binaries = []
 hiddenimports = collect_submodules('fe_modding')
 for package in ('sv_ttk', 'wgpu', 'rendercanvas'):

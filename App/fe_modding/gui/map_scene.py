@@ -278,7 +278,9 @@ def _find_prop_anchor(map_data: map_file.MapData, map_scale: float, files: dict[
     terrain_indices = _base_terrain_desc_indices(map_data, files)
     for inst in map_data.build_inst:
         if inst.desc_index in terrain_indices:
-            m = inst.world_transform(map_scale=map_scale)
+            obj = map_data.build_desc[inst.desc_index]
+            rd_footprint = map_file.rd_footprint_tiles(obj) if map_data.layout.game == "fe10" else None
+            m = inst.world_transform(map_scale=map_scale, rd_footprint=rd_footprint)
             return _translation_matrix(-m[0][3], -m[1][3], -m[2][3])
     return None
 
@@ -493,7 +495,8 @@ def build_map_scene(
         if obj.filename not in stills:
             layer = _mesh_layer(obj.filename)
             stills[obj.filename] = [replace(tri, layer=layer) for tri in _still_triangles(loaded)]
-        matrix = inst.world_transform(map_scale=map_scale, parent_matrix=anchor)
+        rd_footprint = map_file.rd_footprint_tiles(obj) if map_data.layout.game == "fe10" else None
+        matrix = inst.world_transform(map_scale=map_scale, parent_matrix=anchor, rd_footprint=rd_footprint)
         triangles.extend(_transform_triangle(tri, matrix) for tri in stills[obj.filename])
 
     return _LoadedSet(label="map scene", bones=[], triangles=triangles, bone_markers={}, animations=[])

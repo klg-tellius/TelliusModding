@@ -152,6 +152,16 @@ If you want new objective logic, edit and test the chapter script in a later les
 
 The flag word is shown as check boxes. **Water surface** draws the animated water pass and is set on every map with water. **Ground texture overlay** draws the map's last texture over the terrain. **Object texture effect** adds a material pass on objects marked for it. **Roof and door hit tests** tests the footprint of roof, door, house and rock objects. **Objects already sorted** is set on all vanilla maps; when clear, the game sorts placed objects during load and sets it. **Flag 0x02** is set on every vanilla map and never read. Weather and fog of war use other bits of the same word and have their own controls.
 
+### Map wrapping and height (Radiant Dawn)
+
+Radiant Dawn maps whose `mapdata` record is version 3 or 4 show **Map wrapping and height**.
+
+- **Map wrapping** turns on the scrolling map: the game moves the terrain lookup and draws a moving pass. **Wrap X step** and **Wrap Y step** are the signed offset it slides to, and **Transition** is how many frames the slide takes.
+- **Height ceiling** (version 4 only): terrain heights above it are read as this value.
+- **Affinity** is shown but not editable. It is `invalid` on every retail map.
+
+These values were traced from the game's code. Changing them has not been checked in game yet.
+
 ### Map shading (Radiant Dawn)
 
 Radiant Dawn maps that have a `mapshader` record show **Map shading**, with the record's version in the title.

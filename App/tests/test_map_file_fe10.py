@@ -5,6 +5,7 @@ import os
 import struct
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -18,10 +19,10 @@ def _rd_map_bin(width=3, height=2, link=None) -> bytes:
     """A small Radiant Dawn map.bin: version-4 mapdata (capacity, mapextra, mapgrid, two more words),
     two 36-byte objects, two 20-byte placements, the panel layers, light/fog/shader kept raw and an
     optional maplink with a u32 record count."""
-    pool = [b"bmap9901\x00", b"tree\x00", "平地".encode("shift_jis") + b"\x00"]
+    pool = [b"bmap9901\x00", b"tree\x00", "平地".encode("shift_jis") + b"\x00", b"invalid\x00"]
     mapdata = (struct.pack(">BBBBHHf", 4, 0, width, height, 2, 2, 2000.0)
                + struct.pack(">BBBBBBBBI", 0x17, 0x13, width // 2, height // 2, 0x40, 1, 0, 0, 0x301400B6)
-               + bytes((0x1E, 0x32, 0x32, 0x32)) + struct.pack(">II", 0x40, 0x37AA) + struct.pack(">f", 1.0))
+               + bytes((0x1E, 0x32, 0x32, 0x32)) + struct.pack(">II", 0x40, 0) + struct.pack(">f", 1.0))
     desc = (struct.pack(">ffffffBBBBI", 0, -5, 0, 5 * width, 15, 5 * height, 0x08, 0, 1, 0x12, 0) + bytes((80, 72, 0, 0))
             + struct.pack(">ffffffBBBBI", 0, 0, 0, 5, 6, 5, 0, 0, 1, 0, 0) + bytes((1, 1, 0, 0)))
     inst = (struct.pack(">BbbBbbHbbbb", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) + struct.pack(">fI", 0.0, 0x40000000)
@@ -29,7 +30,7 @@ def _rd_map_bin(width=3, height=2, link=None) -> bytes:
     grid = bytes(2 * width * height) + bytes(-(2 * width * height) % 4)
     panel = struct.pack(">hhhhI", 0, 0, 0, 0, 0)
     sections = [
-        ("mapdata", mapdata, []),
+        ("mapdata", mapdata, [(0x20, 3)]),
         ("mapdesc", desc, [(28, 0), (64, 1)]),
         ("mapinst", inst, []),
         ("panelindex", grid, []),
@@ -85,10 +86,14 @@ class Fe10MapReadTests(unittest.TestCase):
         self.assertEqual((self.data.extra.panel_offset_x, self.data.extra.half_x_size, self.data.extra.grid_buffer),
                          (0x17, 1, 1))
         self.assertEqual((self.data.grid.red, self.data.grid.green), (0x32, 0x32))
+        self.assertEqual((self.data.rd.version, self.data.rd.wrap_enabled, self.data.rd.wrap_step_x,
+                          self.data.rd.wrap_step_y, self.data.rd.wrap_duration), (4, 0, 0, 0, 64))
+        self.assertEqual((self.data.rd.affinity_name, self.data.rd.terrain_height_ceiling), ("invalid", 1.0))
 
     def test_wide_records(self):
         self.assertEqual([o.filename for o in self.data.build_desc], ["bmap9901", "tree"])
         self.assertEqual(self.data.build_desc[0].footprint, (80, 72, 0, 0))
+        self.assertEqual(map_file.rd_footprint_tiles(self.data.build_desc[0]), (80, 72))
         prop = self.data.build_inst[1]
         self.assertEqual((prop.lead, prop.x, prop.y, prop.angle, prop.offset_x, prop.offset_y, prop.desc_index),
                          (1, 2, 1, 0x40, -8, 16, 1))
@@ -165,6 +170,35 @@ class Fe10MapWriteTests(unittest.TestCase):
         self.assertAlmostEqual(prop.height(), 1.5)
         self.assertEqual((prop.desc_index, prop.offset_x), (0, -8))
 
+    def test_mirror_and_sub_tile_transform_and_patches(self):
+        data = map_file.read_map_bytes(self.raw)
+        prop = data.build_inst[1]
+        self.assertTrue(prop.mirror_x)
+        self.assertEqual((prop.sub_tile_x, prop.sub_tile_y), (-0.125, 0.25))
+        matrix = replace(prop, angle=0).world_transform(1.0, rd_footprint=(2, 1))
+        self.assertEqual(matrix[0][0], -1.0)
+        self.assertAlmostEqual(matrix[0][3], 19.375)
+        self.assertAlmostEqual(matrix[2][3], 6.25)
+
+        # An unclassified lead-byte bit must survive toggling the known bit.
+        raw = bytearray(self.raw)
+        raw[prop.address] = 0x81
+        hidden = map_file.read_map_bytes(bytes(raw)).build_inst[1]
+        out = map_file.patch_build_inst_mirror_x(bytes(raw), hidden, False)
+        out = map_file.patch_build_inst_field(out, map_file.read_map_bytes(out).build_inst[1], "offset_x", 7)
+        changed = map_file.read_map_bytes(out).build_inst[1]
+        self.assertEqual((changed.lead, changed.mirror_x, changed.offset_x), (0x80, False, 7))
+
+    def test_versioned_mapdata_fields_patch_without_touching_the_affinity_pointer(self):
+        data = map_file.read_map_bytes(self.raw)
+        pointer_before = self.raw[data.rd.address + 0x20:data.rd.address + 0x24]
+        out = map_file.patch_rd_map_field(self.raw, data.rd, "wrap_step_x", -1)
+        out = map_file.patch_rd_map_field(out, map_file.read_map_bytes(out).rd, "terrain_height_ceiling", 3.5)
+        changed = map_file.read_map_bytes(out).rd
+        self.assertEqual((changed.wrap_step_x, changed.terrain_height_ceiling, changed.affinity_name),
+                         (-1, 3.5, "invalid"))
+        self.assertEqual(out[changed.address + 0x20:changed.address + 0x24], pointer_before)
+
     def test_link_openings_use_the_u32_count(self):
         out = map_file.set_link_openings(self.raw, 0, 1, 0x03)
         data = map_file.read_map_bytes(out)
@@ -205,6 +239,15 @@ class DiscFe10MapTests(unittest.TestCase):
                 self.assertEqual(map_file.set_build_instances(raw, map_file.instance_records(raw)), raw)
                 self.assertEqual(map_file.resize_grid(raw, cap.x_size, cap.y_size), raw)
                 self.assertEqual(len(map_file.terrain_grid(raw)), cap.x_size)
+                self.assertIsInstance(data.rd, map_file.RdMapParameters)
+                _mapdata_at, mapdata_size = map_file.section_bytes(raw, "mapcapacity")
+                self.assertEqual(mapdata_size, {2: 32, 3: 36, 4: 40}[data.rd.version])
+                if data.rd.version >= 3:
+                    self.assertEqual(map_file.patch_rd_map_field(raw, data.rd, "wrap_enabled", data.rd.wrap_enabled), raw)
+                if data.rd.version >= 4:
+                    self.assertEqual(data.rd.affinity_name, "invalid")
+                    self.assertEqual(map_file.patch_rd_map_field(
+                        raw, data.rd, "terrain_height_ceiling", data.rd.terrain_height_ceiling), raw)
                 count += 1
         self.assertGreaterEqual(count, 120)
 

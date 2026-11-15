@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding import map_props
+from fe_modding.formats.map_file import MapObject
 
 
 class PakNameTests(unittest.TestCase):
@@ -18,6 +19,29 @@ class PakNameTests(unittest.TestCase):
             self.assertEqual([mask for mask, _label in controls], [1 << bit for bit in range(8)])
             self.assertTrue(all(label and "bit " not in label.lower() for _mask, label in controls))
             self.assertTrue(all("unknown" not in label.lower() for _mask, label in controls))
+
+    def test_radiant_dawn_groups_by_game_name_or_enum(self):
+        from fe_modding.games import Game
+        self.assertIs(map_props.prop_flag_groups("fe10"), map_props.RD_PROP_FLAG_GROUPS)
+        self.assertIs(map_props.prop_flag_groups(Game.RADIANT_DAWN), map_props.RD_PROP_FLAG_GROUPS)
+        self.assertIs(map_props.prop_flag_groups(Game.PATH_OF_RADIANCE), map_props.PROP_FLAG_GROUPS)
+        self.assertIs(map_props.prop_flag_groups(), map_props.PROP_FLAG_GROUPS)
+
+    def test_radiant_dawn_toggle_merge_preserves_unexposed_bits(self):
+        obj = MapObject(0, 0, 0, 0, 0, 0, 0x82, 0x38, 0x81, 0x45, "test")
+        values = map_props.merge_prop_flag_toggles(obj, (
+            ("flag_bits_a", 0x01, True),
+            ("flag_bits_a", 0x40, False),
+            ("flag_bits_b", 0x04, True),
+            ("flag_bits_c", 0x02, False),
+            ("effect_type", 0x20, True),
+        ))
+        self.assertEqual(values, {
+            "flag_bits_a": 0x83,
+            "flag_bits_b": 0x3C,
+            "flag_bits_c": 0x81,
+            "effect_type": 0x65,
+        })
 
     def test_full_width_name_round_trips(self):
         from fe_modding.formats import pak

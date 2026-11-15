@@ -97,6 +97,25 @@ def _align(value: int, align: int) -> int:
     return (value + align - 1) // align * align
 
 
+def decode_fst_name(raw: bytes) -> str:
+    """One fst.bin name. Retail names are Shift-JIS (all ASCII in practice). Discs built by other
+    tools can hold bytes that are not: Four Riders has ``\\xef\\xbd\\x86lowerpot_01.gmap.cmp``, a
+    UTF-8 full-width "f". WIT extracts such a name byte for byte, as Latin-1 characters, so it is
+    read the same way here to match the extracted file; :func:`encode_fst_name` gives the bytes back."""
+    try:
+        return raw.decode("shift_jis")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+def encode_fst_name(name: str) -> bytes:
+    """The fst.bin bytes of a file name (:func:`decode_fst_name` in reverse)."""
+    try:
+        return name.encode("shift_jis")
+    except UnicodeEncodeError:
+        return name.encode("latin-1")
+
+
 def _read_fst_order(fst: bytes) -> list[str]:
     """Every path in a retail fst.bin, in entry order ('/'-joined, relative
     to files/). Directories included, so empty ones keep their place too."""
@@ -111,7 +130,7 @@ def _read_fst_order(fst: bytes) -> list[str]:
             ends.pop()
         word, _, nxt = struct.unpack_from(">III", fst, i * FST_ENTRY_SIZE)
         start = strings + (word & 0xFFFFFF)
-        name = fst[start:fst.index(b"\0", start)].decode("shift_jis")
+        name = decode_fst_name(fst[start:fst.index(b"\0", start)])
         path = f"{ends[-1][1]}/{name}" if ends else name
         paths.append(path)
         if word >> 24:
@@ -179,7 +198,7 @@ def _build_fst(entries: list[list], data_start: int) -> tuple[bytes, list[tuple[
     name_offsets = []
     for node, _, _ in entries[1:]:
         name_offsets.append(len(names))
-        names += node.name.encode("shift_jis") + b"\0"
+        names += encode_fst_name(node.name) + b"\0"
 
     table = bytearray()
     placements = []

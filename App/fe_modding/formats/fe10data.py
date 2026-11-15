@@ -10,8 +10,10 @@ symbol points at) followed by the records back to back; walking them with the la
 exactly at the next table's symbol for every table of the retail US file, which is the check the
 layouts are held to (``test_fe10data``).
 
-Field names follow what the retail data shows. Fields whose meaning is not established yet keep a
-neutral name (``unknown_*``) and are still editable as numbers; ``FIELD_NOTES`` says what is known.
+Field names follow what the retail data and executable readers establish. Reserved and padding
+bytes are named as such; the one optional payload whose semantics cannot be recovered from the
+retail file remains exposed as raw bytes. ``FIELD_NOTES`` records the evidence behind less obvious
+names.
 
 Editing:
 
@@ -22,7 +24,8 @@ Editing:
   field, every pointer target and every symbol behind the edit shift with it (:func:`insert_bytes` /
   :func:`delete_bytes`). A skill's two condition lists live outside the record; a new list is
   appended to the data section and the skill repointed.
-* :func:`set_item_bonuses` adds, changes or removes an item's stat-bonus block.
+* :func:`set_item_bonuses` and :func:`set_item_extra` add, change or remove an item's two optional
+  blocks. The second is preserved as an opaque eight-byte payload because no retail record uses it.
 
 All offsets in this module are absolute file offsets of the decompressed container; pointer values
 are data-relative (``HEADER_SIZE`` less), as everywhere in :mod:`fe8data`.
@@ -43,6 +46,7 @@ STAT_NAMES = ("HP", "Str", "Mag", "Skl", "Spd", "Lck", "Def", "Res")
 #: An item's stat-bonus block: the eight stats, then movement and weight; disk padding follows the
 #: complete optional tail rather than belonging to this block.
 BONUS_NAMES = STAT_NAMES + ("Mov", "Wt")
+BONUS_BLOCK_SIZE = 10
 ITEM_EXTRA_BLOCK_SIZE = 8
 
 KINDS = ("character", "class", "item", "skill")
@@ -93,7 +97,7 @@ CHARACTER_TAIL = (
                     ("gauge_battle_transformed", "Gauge per battle (transformed)")), "Laguz gauge")
     + _stats("bonus", "s8", "Stats over class bases")
     + _bytes("s8", (("bonus_weight", "Wt"),), "Stats over class bases")
-    + _bytes("u8", (("unknown_t18", "Unknown tail +18"),), "Unit")
+    + _bytes("u8", (("reserved_t18", "Reserved (copied, no reader found)"),), "Unit")
     + _stats("growth", "u8", "Growth rates (%)")
     + _bytes("u8", (("padding_t27", "Padding"),), "Unit")
 )
@@ -116,7 +120,7 @@ CLASS_FIXED = (
     + _bytes("u8", (("skill_count", "Skill count"), ("sound_count", "Sound class count"),
                     ("promotion_level", "Promotion level"), ("movement_type", "Movement type"),
                     ("movement", "Movement"), ("skill_capacity", "Skill capacity"), ("vision", "Vision"),
-                    ("unknown_0c", "Unknown +12")), "Class"))
+                    ("reserved_0c", "Reserved +12 (copied, no reader found)")), "Class"))
 CLASS_FIXED_PADDING = 3  # +13..+15: the loader skips them
 CLASS_AFTER_SKILLS = _labels(("extra_skill", "Extra skill"), group="Class")
 CLASS_TAIL = (_stats("cap", "u8", "Stat caps") + _stats("base", "u8", "Base stats")
@@ -137,7 +141,8 @@ ITEM_FIXED = (
                     ("range_max", "Maximum range"), ("article", "English article"),
                     ("pad_13", "Padding +13"), ("pad_14", "Padding +14"), ("pad_15", "Padding +15"),
                     ("colour", "Colour"), ("attribute_count", "Attribute count"),
-                    ("effective_count", "Effectiveness count"), ("bonus_count", "Bonus blocks")), "Item")
+                    ("effective_count", "Effectiveness count"),
+                    ("bonus_count", "Optional-block flags")), "Item")
 )
 ITEM_FIXED_SIZE = 20
 
@@ -146,8 +151,8 @@ SKILL_LABELS = _labels(("sid", "ID"), ("msid", "Name key"), ("help", "Help key")
                        ("effect", "Effect"), ("effect_2", "Effect 2"), ("item", "Scroll item"), group="Identity")
 SKILL_FIXED = _bytes("u8", (("number", "Number"), ("article", "English article"), ("capacity", "Capacity"),
                             ("icon", "Icon"), ("condition_count", "Condition count"),
-                            ("requirement_count", "Requirement count"), ("unknown_22", "Unknown +0x22"),
-                            ("unknown_23", "Unknown +0x23")), "Skill")
+                            ("requirement_count", "Requirement count"), ("padding_22", "Padding +0x22"),
+                            ("padding_23", "Padding +0x23")), "Skill")
 
 #: Lists per kind: key -> label shown in the editor.
 LISTS = {
@@ -157,7 +162,7 @@ LISTS = {
     "skill": {"conditions": "Conditions", "requirements": "Requirements"},
 }
 #: Fields a list or block owns (kept in step by set_list / set_item_bonuses, not edited directly).
-COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "optional_flags",
+COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_count", "bonus_count",
                 "condition_count", "requirement_count"}
 
 FIELD_NOTES = {
@@ -169,6 +174,8 @@ FIELD_NOTES = {
                       "(255) picks a random step.",
     "extra_skill": "One more skill given to the unit after the skill list (none in the retail data).",
     "unused_01": "Not copied by the loader.",
+    "reserved_t18": "Zero in all 461 retail records. The loader copies it to PersonDataRuntime +0x20, but no "
+                    "reader of that runtime field was found.",
     "weight": "Base weight of the class; a unit's weight is this plus its personal weight (0x8012401c).",
     "weight_kind_1": "Two (kind, weight) parts added to the unit's weight for its mounted total (0x80124144). "
                      "Retail kinds: 1 armour and gear, 2 horse, 3 pegasus, 4 wyvern, 6 beast, 7 dragon, 8 bird, "
@@ -188,6 +195,8 @@ FIELD_NOTES = {
     "gauge_turn": "Laguz gauge change per turn and per battle, untransformed and transformed.",
     "movement_type": "The TerrainData movement-cost column the class moves with (0-22; 10 on every flier).",
     "skill_capacity": "Retail values are 15 (first tier), 30 (second) and 60 (third), more for laguz.",
+    "reserved_0c": "Zero in all 171 retail records. The loader copies this byte to JobDataRuntime +0xF6; no "
+                   "reader was found. Source bytes +0x0D..+0x0F are skipped padding.",
     "base_lck": "Not used: the loader sets every class's base Luck to 0.",
     "article": "Article before the name in English text: 0 none, 1 'a', 2 'an', 3 (system skills, flagged "
                "items); 255 picks 'a' or 'an' from the first letter (0x801110c4, 0x8011a174).",
@@ -202,7 +211,11 @@ FIELD_NOTES = {
                      "for each grade; the final grade averages the three.",
     "blessing_hp": "Added to the stats of player and allied units while flag G_0407_ユンヌの加護 is set (the Endgame "
                  "blessing), by difficulty (0x801243f4 and the other stat accessors).",
-    "capacity": "Capacity cost of the skill (probable: occult skills read 30, most others 10-20).",
+    "capacity": "Skill-capacity cost. The add-skill handler at 0x8009167C reads it while removing removable "
+                "skills until the unit fits its class capacity.",
+    "icon": "Skill icon ID; the skill-list renderer at 0x801080CC reads it to draw the row's icon.",
+    "padding_22": "Zero in all 142 retail records; alignment before the two list pointers.",
+    "padding_23": "Zero in all 142 retail records; alignment before the two list pointers.",
     "conditions": "Mode 1 entries: who cannot have the skill (skills, classes, characters).",
     "requirements": "Mode 0 entries: which class types (SFXC_*) can have the skill.",
 }
@@ -402,7 +415,13 @@ def _read_item(data: bytes, index: int, at: int) -> Record:
     flags = r.values["bonus_count"]  # a bit mask (0x8010a958): bit 0 the stat block, bit 1 an 8-byte block
     if flags & 1:
         r.bonuses = [struct.unpack_from(">b", data, pos + i)[0] for i in range(len(BONUS_NAMES))]
-    pos += _bonus_blocks_size(flags)
+        pos += BONUS_BLOCK_SIZE
+    r.offsets["item_extra"] = pos
+    if flags & 2:
+        r.item_extra = bytes(data[pos:pos + ITEM_EXTRA_BLOCK_SIZE])
+        pos += ITEM_EXTRA_BLOCK_SIZE
+    payload_size = (BONUS_BLOCK_SIZE if flags & 1 else 0) + (ITEM_EXTRA_BLOCK_SIZE if flags & 2 else 0)
+    pos += -payload_size % 4
     r.end = pos
     return r
 
@@ -412,6 +431,39 @@ def _bonus_blocks_size(flags: int) -> int:
     no retail item has (bit 1), then padding to a word."""
     size = (len(BONUS_NAMES) if flags & 1 else 0) + (8 if flags & 2 else 0)
     return size + -size % 4
+
+
+def _item_optional_block(bonuses: Optional[Sequence[int]], extra: Optional[bytes]) -> bytes:
+    block = b""
+    if bonuses is not None:
+        values = [int(v) for v in bonuses]
+        if len(values) != len(BONUS_NAMES) or not all(-128 <= v <= 127 for v in values):
+            raise ValueError(f"A bonus block holds {len(BONUS_NAMES)} values between -128 and 127.")
+        block += struct.pack(f">{len(values)}b", *values)
+    if extra is not None:
+        extra = bytes(extra)
+        if len(extra) != ITEM_EXTRA_BLOCK_SIZE:
+            raise ValueError(f"The opaque item extension is exactly {ITEM_EXTRA_BLOCK_SIZE} bytes.")
+        block += extra
+    return block + bytes(-len(block) % 4)
+
+
+def _set_item_optional_blocks(data: bytes, index: int, bonuses: Optional[Sequence[int]],
+                              extra: Optional[bytes]) -> bytes:
+    rec = record(data, "item", index)
+    old_flags = rec.values["bonus_count"]
+    if old_flags & ~3:
+        raise ValueError(f"Unsupported item optional-block flags 0x{old_flags:02X}.")
+    at = rec.offsets["bonuses"]
+    old_size = _bonus_blocks_size(old_flags)
+    block = _item_optional_block(bonuses, extra)
+    if old_size:
+        data = delete_bytes(data, at, old_size)
+    if block:
+        data = insert_bytes(data, at, block)
+    out = bytearray(data)
+    out[rec.offsets["bonus_count"]] = (1 if bonuses is not None else 0) | (2 if extra is not None else 0)
+    return bytes(out)
 
 
 def _read_condition_list(data: bytes, ptr: int, count: int) -> list[tuple[int, Optional[str]]]:
@@ -645,32 +697,13 @@ def _set_condition_list(data: bytes, index: int, key: str, values: list) -> byte
 def set_item_bonuses(data: bytes, index: int, bonuses: Optional[Sequence[int]]) -> bytes:
     """Give an item a stat-bonus block (``BONUS_NAMES`` order), change it, or (None) remove it."""
     rec = record(data, "item", index)
-    at = rec.offsets["bonuses"]
-    flags_offset = rec.offsets["bonus_count"]
-    flags = rec.values["bonus_count"]
-    if flags & ~1:
-        raise ValueError("This item has a second bonus block (bit 1 of its block byte); edit it as raw bytes.")
-    if bonuses is not None:
-        bonuses = [int(v) for v in bonuses]
-        if len(bonuses) != len(BONUS_NAMES) or not all(-128 <= v <= 127 for v in bonuses):
-            raise ValueError(f"A bonus block holds {len(BONUS_NAMES)} values between -128 and 127.")
-        # the block is padded to a word, like every retail one (_bonus_blocks_size)
-        block = struct.pack(f">{len(bonuses)}b", *bonuses) + bytes(_bonus_blocks_size(1) - len(bonuses))
-    if rec.bonuses is not None and bonuses is not None:
-        out = bytearray(data)
-        out[at:at + len(bonuses)] = block[:len(bonuses)]
-        return bytes(out)
-    if rec.bonuses is not None:
-        data = delete_bytes(data, at, _bonus_blocks_size(flags))
-        flags &= ~1
-    elif bonuses is not None:
-        data = insert_bytes(data, at, block)
-        flags |= 1
-    else:
-        return data
-    out = bytearray(data)
-    out[flags_offset] = flags
-    return bytes(out)
+    return _set_item_optional_blocks(data, index, bonuses, rec.item_extra)
+
+
+def set_item_extra(data: bytes, index: int, extra: Optional[bytes]) -> bytes:
+    """Set or remove ItemData optional-block bit 1's opaque eight-byte payload."""
+    rec = record(data, "item", index)
+    return _set_item_optional_blocks(data, index, rec.bonuses, extra)
 
 
 def message_key(speaker: str) -> str:
@@ -731,11 +764,16 @@ def _chapter_fields() -> tuple:
     fields = [_f("cid", "ID", "label", 0x00, "Chapter"), _f("title", "Title key", "label", 0x04, "Chapter"),
               _f("map", "Map folder", "label", 0x08, "Chapter"), _f("script", "Script", "label", 0x0C, "Chapter"),
               _f("messages", "Message file", "label", 0x10, "Chapter")]
+    fields += [_f(f"reserved_{o:02x}", f"Reserved +0x{o:02X}", "u32", o, "Reserved (zero in retail)")
+               for o in (0x14, 0x18, 0x1C)]
     for d in range(3):
         base, group = 0x20 + 0x20 * d, f"Objectives, difficulty {d + 1}"
-        fields += [_f(f"win_{d}", "Victory", "label", base + 0x04, group),
+        fields += [_f(f"reserved_objective_head_{d}", "Reserved objective head", "u32", base, group),
+                   _f(f"win_{d}", "Victory", "label", base + 0x04, group),
                    _f(f"win2_{d}", "Victory 2", "label", base + 0x08, group)]
+        fields += [_f(f"reserved_objective_gap_{d}", "Reserved objective gap", "u32", base + 0x0C, group)]
         fields += [_f(f"lose{i}_{d}", f"Defeat {i + 1}", "label", base + 0x10 + 4 * i, group) for i in range(4)]
+    fields += [_f("reserved_80", "Reserved +0x80", "u32", 0x80, "Reserved (zero in retail)")]
     fields += [_f("number", "Number", "u8", 0x84, "Settings")]
     # +0x85..+0x88: enemy level bonus picked by the save's difficulty byte 3, 0, 1, 2 (0x80092c84, applied
     # to enemy units in 0x8011f70c). The byte is 0 Normal, 1 Hard, 2 Maniac (the US disc's Hard), 3 Easy. +0x89 selects the party-state gold account (FUN_800615dc/FUN_80061808/
@@ -792,8 +830,8 @@ DIFFICULTY_ROW_NAMES = (
     "Boss target kill EXP bonus",
     "Steal-skill target kill EXP bonus",
     "Weapon EXP multiplier (%)",
-    "Row 11 (no reader found)",
-    "Row 12 (no reader found)",
+    "Reserved row 11 (no accessor or reader found)",
+    "Reserved row 12 (no accessor or reader found)",
     "Critical bonus with SID_CRITRISE",
 )
 DIFFICULTY_NAMES = ("Easy", "Normal", "Hard", "Maniac")  # GameData columns: save difficulty 3, 0, 1, 2
@@ -933,8 +971,9 @@ SUPPORT_ENTRY_SIZE = 8
 
 def _read_supports(data: bytes) -> list[Record]:
     """RelianceData: a count, then per character its PID, a partner count and one 8-byte entry per
-    partner (``partner PID, u8 flag, s8 support-growth tier input, 2 zero bytes``; the reader keeps
-    the signed field's raw byte representation). The retail table lists all 71
+    partner (``partner PID, u8 reserved marker, s8 support-growth tier input, 2 zero bytes``; the
+    reader keeps the signed field's raw byte representation). The marker is symmetric and 0/255 in
+    retail, but no support-table consumer reads it. The retail table lists all 71
     supporting characters against all 71 (themselves included)."""
     start = fe8data.section_start(data, "RelianceData")
     count = _u32(data, start)
@@ -955,7 +994,10 @@ def _read_supports(data: bytes) -> list[Record]:
 
 
 def set_support(data: bytes, index: int, partner: int, flag: int, speed: int) -> bytes:
-    """Set the flag and speed of character ``index``'s ``partner``-th support entry."""
+    """Set the reserved marker and speed of character ``index``'s ``partner``-th support entry.
+
+    ``flag`` retains its historical API name for compatibility.
+    """
     rec = _read_supports(data)[index]
     if not 0 <= partner < len(rec.lists["partners"]):
         raise IndexError(f"{rec.values['pid']} has no support entry {partner}.")

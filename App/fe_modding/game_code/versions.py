@@ -54,12 +54,14 @@ class Identification:
 
 
 def read_boot_code(disc: Path | str) -> str | None:
-    """Game code (``GFEE01``...) from ``sys/boot.bin``, or None."""
+    """Game code (``GFEE01``...) from ``sys/boot.bin``, or None. A hack's own maker code
+    (``GFEE02``) reads as the retail build it was made from (:func:`~fe_modding.games.retail_disc_id`)."""
+    from ..games import retail_disc_id
     boot = as_path(disc) / "sys" / "boot.bin"
     if not boot.is_file():
         return None
     header = boot.read_bytes()[:6]
-    return header.decode("ascii", "replace") if len(header) == 6 else None
+    return retail_disc_id(header.decode("ascii", "replace")) if len(header) == 6 else None
 
 
 def identify(dol: Dol, boot_code: str | None = None) -> Identification:

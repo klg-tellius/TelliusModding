@@ -153,6 +153,8 @@ Test at least one infantry class and one flier. A prop model never makes its cel
 
 **Angle** and **Turn 90°** change the instance orientation and recompute its covered rectangle. **Delete** removes only this placement. **View model...** previews its model set; a logic-only marker may have no model.
 
+On Radiant Dawn maps the form also shows **Mirror model in X**, which flips the model across its footprint, and **Sub-tile x** and **Sub-tile y**: signed offsets from -128 to 127, in 1/64 of a tile. The Build canvas and the 3D view draw both. Neither has been checked in game yet.
+
 The displayed **height** is an instance offset expressed relative to the map convention. Placement normally samples terrain at the anchor cell center. A prop spanning uneven ground may still need visual and runtime inspection across its whole footprint.
 
 ### GLB animation choices

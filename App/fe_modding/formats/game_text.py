@@ -29,7 +29,8 @@ def mode() -> str:
 def use_game_id(game_id: Optional[str]) -> None:
     """Select the text rules of a release (unknown or None: CP932)."""
     global _mode
-    _mode = _BY_GAME_ID.get((game_id or "")[:6], CP932)
+    from ..games import retail_disc_id
+    _mode = _BY_GAME_ID.get(retail_disc_id((game_id or "")[:6]), CP932)
 
 
 def use_for_extraction(disc_dir: Path | str) -> None:
