@@ -66,6 +66,54 @@ UNIT_EXP = 0x0A
 UNIT_HP = 0x1B
 UNIT_STAT_GAINS = 0x1E
 UNIT_STATS = ("hp", "str", "mag", "skl", "spd", "lck", "def", "res")
+UNIT_CLASS = 0x02         # u16 class number (ITBL classes)
+UNIT_ARMY = 0x04          # u8 army
+UNIT_SKILLS = 0x2E        # u8 skill count, then four bytes per skill
+# An item's state word: uses in the high byte, flags in the low byte (2026-11-15, 83 units of an Endgame
+# file: every uses byte within the item's maximum). 0x80 is set on the equipped weapon only, 0x20 marks a
+# forged item (a name and the forge payload follow); 0x10 is set on some army-0 units' first item, meaning
+# not known.
+ITEM_EQUIPPED = 0x80
+ITEM_FORGED = 0x20
+# A skill's first byte: where the unit has it from (Endgame file: 0 the character's own skills, 1 the
+# class's, 2 skills taught with a scroll). The second byte is 3, 2, 1 or 0 alongside; meaning not known.
+SKILL_SOURCES = {0: "Character", 1: "Class", 2: "Learned"}
+# The support state, present only for characters with RelianceData slots: 12 bytes, the active partner
+# (u16 character number, 0 = none), the slot count, one points byte per slot, then the three
+# conversation-seen bit sets (A, B, C; 12 bytes each). get_unit_support_rank (0x8012E8BC) compares the
+# points with RelianceParam's three thresholds; a rank-up adds one past the threshold.
+SUPPORT_HEADER = 15
+SUPPORT_PARTNER = 12
+SUPPORT_SEEN_SIZE = 12
+
+# The system record (FE10ASYS), as 0x80245888 writes it: the header's first 0x1C bytes, then these
+# parts. Their sizes follow the RAM layout at 0x80427820 and add up to the 0x3B4 bytes every save holds.
+# What the bits and values mean is not traced yet.
+SYSTEM_PARTS = (
+    ("Bit set at +0x1C", 0x1C, 8, "bits"),
+    ("Bit set at +0x24", 0x24, 16, "bits"),
+    ("Bytes at +0x34", 0x34, 0x60, "bits"),
+    ("Bit set at +0x94", 0x94, 16, "bits"),
+    ("Bit set at +0xA4", 0xA4, 16, "bits"),
+    ("Bit set at +0xB4", 0xB4, 8, "bits"),
+    ("Bit set at +0xBC", 0xBC, 8, "bits"),
+    ("Bit set at +0xC4", 0xC4, 8, "bits"),
+    ("Values at +0xCC", 0xCC, 16, "u16"),
+    ("Records at +0xDC", 0xDC, 0x2D0, "records"),
+    ("Byte +0x3AC", 0x3AC, 1, "u8"),
+    ("Byte +0x3AD", 0x3AD, 1, "u8"),
+    ("Bytes +0x3AE", 0x3AE, 2, "u16"),
+    ("Word +0x3B0", 0x3B0, 4, "u32"),
+)
+SYSTEM_USED = 0x3B4
+# Tile record types: Path of Radiance's names (formats/save_file.TERRAIN_TYPES). Radiant Dawn files use the
+# same numbers for the ones seen (6 live on 4-7e, 0x23 in records left from earlier maps); the rest are not
+# checked on Radiant Dawn.
+TILE_TYPES = {4: "breakable", 6: "range overlay", 7: "ballista", 9: "pit", 10: "rolling rock",
+              0x21: "door opened", 0x22: "roof opened", 0x23: "chest opened", 0x24: "village visited",
+              0x25: "building destroyed"}
+SYSTEM_RECORD_COUNT = 30
+SYSTEM_RECORD_SIZE = 0x18
 SYSTEM_MAGIC = b"FE10ASYS"
 DATA_MAGIC = b"FE10ADAT"
 SYSTEM_VERSION = 0x20061002
@@ -255,6 +303,14 @@ class SavedItem:
     def forge_values(self) -> Optional[ForgePayload]:
         return ForgePayload.from_bytes(self.forge_payload) if self.forged else None
 
+    @property
+    def uses(self) -> int:
+        return self.state >> 8
+
+    @property
+    def flags(self) -> int:
+        return self.state & 0xFF
+
 
 @dataclass(frozen=True)
 class SavedSkill:
@@ -263,6 +319,11 @@ class SavedSkill:
     skill_number: int
     value_1: int
     value_2: int
+
+    @property
+    def source(self) -> int:
+        """0 the character's own, 1 the class's, 2 learned (:data:`SKILL_SOURCES`)."""
+        return self.value_1
 
 
 @dataclass(frozen=True)
@@ -284,10 +345,24 @@ class SavedUnit:
     skills: tuple[SavedSkill, ...] = ()
     items: tuple[SavedItem, ...] = ()
     support_slot_count: int = 0
+    support_offset: int = 0     # where the support state starts in ``raw`` (0 when the unit has none)
 
     @property
     def empty(self) -> bool:
         return self.person_number == 0
+
+    @property
+    def active_partner(self) -> int:
+        """The character number (save ITBL) of the unit's support partner, 0 for none."""
+        if not self.support_slot_count:
+            return 0
+        return struct.unpack_from(">H", self.raw, self.support_offset + SUPPORT_PARTNER)[0]
+
+    @property
+    def support_points(self) -> tuple[int, ...]:
+        """One points byte per RelianceData slot of the character, in RelianceData order."""
+        start = self.support_offset + SUPPORT_HEADER
+        return tuple(self.raw[start:start + self.support_slot_count])
 
     @property
     def size(self) -> int:
@@ -331,12 +406,24 @@ class RuntimeBond:
 
 @dataclass(frozen=True)
 class TacticalTableState:
-    """Structurally decoded ``T  T`` payload; field semantics remain unknown."""
+    """Structurally decoded ``T  T`` payload: the map's tile records (:meth:`SaveRecord.tile_records`),
+    the live-record count, then a 0x200-byte block and a word whose meaning is open."""
 
     records: tuple[bytes, ...]
     value_after_records: int
     blob: bytes
     final_value: int
+
+
+@dataclass(frozen=True)
+class TileRecord:
+    """One record of a map's tile table (``T  T``): x, y, type (:data:`TILE_TYPES`), subtype, four values."""
+
+    x: int
+    y: int
+    type: int
+    subtype: int
+    values: bytes
 
 
 @dataclass(frozen=True)
@@ -578,6 +665,7 @@ class SaveRecord:
             cursor += 38  # 24-byte unit block, then six u16 and two u8.
 
             support_count = support_slot_counts[person_number]
+            support_offset = cursor - start if support_count else 0
             if not 0 <= support_count <= 0xFF:
                 raise ValueError(f"PID number {person_number} support-slot count does not fit in u8")
             if support_count:
@@ -596,7 +684,7 @@ class SaveRecord:
             cursor += 37
             units.append(SavedUnit(
                 slot, start - section.data_offset, bytes(self.raw[start:cursor]), person_number,
-                class_number, army, linked_slots, skills, tuple(items), support_count))
+                class_number, army, linked_slots, skills, tuple(items), support_count, support_offset))
 
         if self.raw[cursor:cursor + 4] != b"SOKO":
             raise ValueError(f"UNIP structural end 0x{cursor:X} is not followed by SOKO")
@@ -792,6 +880,30 @@ class SaveRecord:
         return TacticalTableState(records, value_after_records, data[blob_start:blob_end],
                                   _u32(data, blob_end))
 
+    def tile_records(self) -> tuple[list[TileRecord], int]:
+        """``T  T``'s 128 tile records and the live count, laid out as Path of Radiance's 64 (AddTT):
+        x, y, type, subtype and four values. A file saved on 4-7e holds eight live range-overlay records
+        (type 6) inside the map's grid; records past the count keep stale bytes: records of earlier maps
+        (chest opened, 0x23) or RAM addresses on files saved between chapters."""
+        state = self.tactical_table_state()
+        return [TileRecord(*struct.unpack(">bbBB4s", raw)) for raw in state.records], state.value_after_records
+
+    def set_tile_record(self, index: int, record: "TileRecord") -> None:
+        if not 0 <= index < TACTICAL_RECORD_COUNT:
+            raise IndexError(f"tile record must be 0..{TACTICAL_RECORD_COUNT - 1}")
+        if not -0x80 <= record.x <= 0x7F or not -0x80 <= record.y <= 0x7F:
+            raise ValueError("x and y must be -128..127")
+        if not 0 <= record.type <= 0xFF or not 0 <= record.subtype <= 0xFF or len(record.values) != 4:
+            raise ValueError("type and subtype are bytes; values are four bytes")
+        self.replace_section_bytes("T  T", index * TACTICAL_RECORD_SIZE,
+                                   struct.pack(">bbBB4s", record.x, record.y, record.type, record.subtype,
+                                               bytes(record.values)))
+
+    def set_tile_count(self, count: int) -> None:
+        if not 0 <= count <= TACTICAL_RECORD_COUNT:
+            raise ValueError(f"the tile count must be 0..{TACTICAL_RECORD_COUNT}")
+        self.replace_section_bytes("T  T", TACTICAL_RECORD_COUNT * TACTICAL_RECORD_SIZE, struct.pack(">I", count))
+
     def runtime_relations(self) -> tuple[RuntimeRelation, ...]:
         """Decode RELD's counted five-byte relation records."""
         data = self.section_bytes("RELD")
@@ -834,6 +946,118 @@ class SaveRecord:
             edits.append((UNIT_STAT_GAINS, struct.pack(">8b", *gains)))
         for offset, data in edits:
             self.replace_section_bytes("UNIP", unit.offset + offset, data)
+
+    def _table_size(self, kind: str) -> int:
+        tables = self.id_tables()
+        return len({"character": tables.characters, "class": tables.classes, "item": tables.items,
+                    "skill": tables.skills}[kind])
+
+    def _require_unit(self, unit: SavedUnit) -> SaveSection:
+        if unit.empty:
+            raise ValueError("this UNIP slot holds no unit")
+        section = self.section("UNIP")
+        if section is None:
+            raise KeyError("save record has no UNIP section")
+        return section
+
+    def set_unit_class(self, unit: SavedUnit, class_number: int) -> None:
+        """Change a unit's class (a number in the save's class list). Stats are kept as gains over the
+        class base, so the shown stats move with the new class's bases; class skills stay as saved."""
+        self._require_unit(unit)
+        if not 1 <= class_number <= self._table_size("class"):
+            raise ValueError(f"class number must be 1..{self._table_size('class')}")
+        self.replace_section_bytes("UNIP", unit.offset + UNIT_CLASS, struct.pack(">H", class_number))
+
+    def set_unit_army(self, unit: SavedUnit, army: int) -> None:
+        self._require_unit(unit)
+        if not 0 <= army <= 0xFF:
+            raise ValueError("army must be 0..255")
+        self.replace_section_bytes("UNIP", unit.offset + UNIT_ARMY, bytes([army]))
+
+    def set_unit_item(self, unit: SavedUnit, slot: int, item_number: int, uses: int, flags: int) -> None:
+        """Replace one of a unit's seven items in place (an empty slot is ``item_number`` 0). Forged items
+        are kept: their record is longer, and its forge belongs to the convoy's forge editing."""
+        section = self._require_unit(unit)
+        if not 0 <= slot < len(unit.items):
+            raise IndexError(f"item slot must be 0..{len(unit.items) - 1}")
+        item = unit.items[slot]
+        if item.forged or (item_number and flags & ITEM_FORGED):
+            raise ValueError("forged items can't be changed here")
+        if not 0 <= item_number <= self._table_size("item"):
+            raise ValueError(f"item number must be 0..{self._table_size('item')}")
+        if not 0 <= uses <= 0xFF or not 0 <= flags <= 0xFF:
+            raise ValueError("uses and flags must be 0..255")
+        state = 0 if item_number == 0 else uses << 8 | flags
+        self.replace_section_bytes("UNIP", item.offset - section.data_offset,
+                                   struct.pack(">HH", item_number, state))
+
+    def set_unit_skills(self, unit: SavedUnit, skills: Sequence[SavedSkill]) -> None:
+        """Replace a unit's skill list (at most 18). The record changes size; read the units again."""
+        section = self._require_unit(unit)
+        skills = list(skills)
+        if len(skills) > UNIT_SKILL_SLOTS:
+            raise ValueError(f"a unit has at most {UNIT_SKILL_SLOTS} skills")
+        count = self._table_size("skill")
+        for skill in skills:
+            if not 0 <= skill.skill_number < count:
+                raise ValueError(f"skill number must be 0..{count - 1}")
+            if not 0 <= skill.value_1 <= 0xFF or not 0 <= skill.value_2 <= 0xFF:
+                raise ValueError("a skill's two bytes must be 0..255")
+        start = section.data_offset + unit.offset + UNIT_SKILLS
+        new = bytes([len(skills)]) + b"".join(struct.pack(">HBB", s.skill_number, s.value_1, s.value_2)
+                                              for s in skills)
+        self._replace_variable_bytes(start, start + 1 + 4 * len(unit.skills), new)
+
+    def set_unit_support_points(self, unit: SavedUnit, slot: int, points: int) -> None:
+        """Set the points of one RelianceData slot of a unit (see :func:`support_rank`)."""
+        self._require_unit(unit)
+        if not 0 <= slot < unit.support_slot_count:
+            raise IndexError("this character has no such support slot")
+        if not 0 <= points <= 0xFF:
+            raise ValueError("support points must be 0..255")
+        self.replace_section_bytes("UNIP", unit.offset + unit.support_offset + SUPPORT_HEADER + slot,
+                                   bytes([points]))
+
+    def set_unit_active_partner(self, unit: SavedUnit, person_number: int) -> None:
+        """Set a unit's support partner (a character number in the save's list, 0 for none)."""
+        self._require_unit(unit)
+        if not unit.support_slot_count:
+            raise ValueError("this character has no supports")
+        if not 0 <= person_number <= self._table_size("character"):
+            raise ValueError(f"character number must be 0..{self._table_size('character')}")
+        self.replace_section_bytes("UNIP", unit.offset + unit.support_offset + SUPPORT_PARTNER,
+                                   struct.pack(">H", person_number))
+
+    def system_part(self, name: str) -> bytes:
+        """One part of the system record (:data:`SYSTEM_PARTS`) by its name."""
+        _, offset, size, _ = _system_part(name)
+        return bytes(self.raw[offset:offset + size])
+
+    def set_system_part(self, name: str, data: bytes) -> None:
+        _, offset, size, _ = _system_part(name)
+        if len(data) != size:
+            raise ValueError(f"{name} is {size} bytes")
+        self.set_system_bytes(offset, data)
+
+    def system_value(self, offset: int, size: int) -> int:
+        """A big-endian value inside the system record's parts."""
+        if not SYSTEM_PARTS[0][1] <= offset <= offset + size <= SYSTEM_USED:
+            raise ValueError("outside the system record's parts")
+        return int.from_bytes(self.raw[offset:offset + size], "big")
+
+    def set_system_value(self, offset: int, size: int, value: int) -> None:
+        if not 0 <= value < 1 << (8 * size):
+            raise ValueError(f"value must fit in {8 * size} bits")
+        self.set_system_bytes(offset, value.to_bytes(size, "big"))
+
+    def set_system_bytes(self, offset: int, data: bytes) -> None:
+        if self.index is not None:
+            raise ValueError("only the system record has these parts")
+        if not SYSTEM_PARTS[0][1] <= offset <= offset + len(data) <= SYSTEM_USED:
+            raise ValueError("outside the system record's parts")
+        if self.raw[offset:offset + len(data)] != data:
+            self.raw[offset:offset + len(data)] = data
+            self.dirty = True
 
     def set_runtime_relation(self, index: int, relation: RuntimeRelation) -> None:
         """Replace one RELD record in place, preserving the section's shape."""
@@ -1000,6 +1224,39 @@ class SaveFile:
             if record.dirty or records is not None:
                 out[record.offset:record.offset + BLOCK_SIZE] = record.build()
         return bytes(out)
+
+
+def _system_part(name: str) -> tuple[str, int, int, str]:
+    part = next((p for p in SYSTEM_PARTS if p[0] == name), None)
+    if part is None:
+        raise KeyError(f"the system record has no part {name!r}")
+    return part
+
+
+def support_rank(points: int, thresholds: Sequence[int]) -> int:
+    """0 (none) to 3 (A): how many of RelianceParam's thresholds (C, B, A) the points are past. Points
+    exactly at a threshold wait for the rank-up (the support menu's), so they count as the rank below."""
+    return sum(points > threshold for threshold in thresholds)
+
+
+def rank_points(rank: int, thresholds: Sequence[int]) -> int:
+    """The points the game holds just after a rank-up to ``rank`` (0 for no support)."""
+    if not 0 <= rank <= len(thresholds):
+        raise ValueError(f"rank must be 0..{len(thresholds)}")
+    return thresholds[rank - 1] + 1 if rank else 0
+
+
+def chapter_ids_for_map(map_name: Optional[str]) -> list[str]:
+    """Chapter ids whose script may own a file's flags, best first: ``bmap0407a`` gives ``0407a`` then
+    ``0407``; ``emap0401a`` (4-P's opening event) gives ``0401a`` then ``0401``."""
+    if not map_name:
+        return []
+    key = re.sub(r"^[be]map", "", map_name).split("_")[0]
+    ids = [key]
+    while key and key[-1].isalpha() and len(key) > 4:
+        key = key[:-1]
+        ids.append(key)
+    return ids
 
 
 def record_label(record: SaveRecord, active: Iterable[SaveRecord] = ()) -> str:

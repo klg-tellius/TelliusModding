@@ -44,6 +44,38 @@ Priority is based on corruption/editing risk first, then user-visible coverage.
 - Synthetic tests and the available `G:\ROM` real-save corpus pass byte-identical round trips; a
   mutated-save Dolphin check is still required before SAVE-02/SAVE-05 close.
 
+### 2026-11-15 units, supports and system record
+
+- A unit's class (`UNIP +0x02`), army (`+0x04`), items, skills and supports are edited from the Saves
+  page's Units tab, the same tabs and controls as Path of Radiance (the separate RD save screen is gone).
+- Item state word: uses in the high byte, flags in the low byte (0x80 on the equipped weapon only, 0x20
+  forged). Checked on 83 units of an Endgame file: every uses byte within the item's maximum. The 0x10
+  flag (on some army-0 units' first item) is unnamed.
+- Skill entries: the first byte is the source (0 the character's skills, 1 the class's, 2 taught by a
+  scroll), from the same file. The second byte (3, 2, 1, 0) is unnamed.
+- Support state: active partner = the partner's number in the save's own character list; on every
+  saved pair both units point at each other and the partner's RelianceData slot is the one past a
+  threshold (Micaiah-Sothe 151, Ike-Soren 100 and 83). The rank follows `get_unit_support_rank`
+  (points past 50/100/150).
+- System record (`FE10ASYS`): `0x80245888` writes a 64-bit set (+0x1C), a 128-bit set (+0x24),
+  0x60 bytes (+0x34), two 128-bit and three 64-bit sets (+0x94..+0xCC), eight u16 values (+0xCC),
+  30 records of 24 bytes (+0xDC), two bytes, two bytes and a u32 (+0x3AC..+0x3B4). The sizes match
+  the RAM layout at `0x80427820` and end exactly where every save's data ends (0x3B4). The Saves page
+  edits them by position; their meanings are open (SAVE-06).
+- Flag slots are named from the scripts: campaign flags from `startup.cmb`, chapter flags from the
+  script of the file's map (`bmap0407a` → `C0407a.cmb`, else `C0407.cmb`).
+- `T  T` is the map's tile-record table, laid out as Path of Radiance's: 128 records of x, y, type,
+  subtype and four values, then the live count. A file saved on 4-7e holds eight live range-overlay
+  records (type 6, Path of Radiance's number) inside the map's grid; records past the count keep stale
+  bytes: earlier maps' records (chest opened, 0x23) or RAM addresses in files saved between chapters.
+  The Saves page's Map objects tab edits them on both games. The 0x200-byte block and the word after
+  the count stay unnamed.
+
+| ID | Status | Owner | Open evidence | Closure route | Exit test |
+|---|---|---|---|---|---|
+| SAVE-06 | semantic-unknown | `save_file_fe10.py` system parts | The system record's parts are framed by size, not named | Trace the readers of `0x80427820 +0x1C..+0x1BD0` (extras, clear records, options) | Each part named, or called unused, with a mutation test |
+| SAVE-07 | verification-gap | Saves › Units | Class, item, skill and support edits round-trip and validate; none has been loaded in the game | Phase 7 session: load a file with an edited class, item, skill and support | The unit shows each change and re-saves it |
+
 ## P1 — map edit safety
 
 | ID | Status | Owner | Open evidence | Closure route | Exit test |

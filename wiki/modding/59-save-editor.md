@@ -2,7 +2,7 @@
 id: "modding-save-editor"
 title: "Edit and test a save"
 description: "A deep save workflow covering GCI copies, block selection, sequence freshness, party and unit records, flags, inventories, checksums, Save as, temporary Dolphin cards, chapter jumps, testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Saves", "GCI", "Testing"]
@@ -190,6 +190,22 @@ Keep the untouched copy of every save you edit; to revert, use it again. **Save 
 - Every byte of the save is decoded (see [GameCube Save (.gci)](../formats/save-format.md)); the reading, rebuilding and checksums are source-reviewed and the edit shown here round-trips in the app (app-tested).
 - Loading an edited save in the game and the chapter jump are untested in Dolphin.
 - Some fields are labelled by position only (`Unused +0x230`, `AI +0x258`); changing them is research, not modding.
+
+## On Radiant Dawn
+
+The same page, tabs and controls edit Radiant Dawn's save, with these differences:
+
+- **The file.** Radiant Dawn saves in the Wii's memory, not on a memory card: open the unencrypted `FE10_US.dat` from Dolphin's user folder, `Wii/title/00010000/52464545/data`. Copy it, with the `banner.bin` beside it, and work on the copy. Encrypted `data.bin` exports from a Wii can't be read.
+- **File instead of Block.** The list holds the game's six files and six checkpoints. Each is a file of its own; *active* marks the valid ones, and the page selects the most recently saved.
+- **Overview** shows the file's map and where it resumes (a base or the preparations, the end of the chapter before, or a chapter's opening event), and edits the chapter number, phase and turn. **Start a chapter from its opening…** makes the file start any chapter as if the one before had just ended.
+- **Units** shows stats as the game does (the character's and class's bases plus what the unit gained), with the class caps under them; the game shows a stat above its cap at the cap. Items have uses and flags (0x80 equipped, 0x20 forged; a forged item can't change here). A skill given here is saved as learned, like a scroll's; a unit holds at most 18. **Supports** lists every partner from `RelianceData` with its points and rank. Setting a rank writes the points just past its threshold. **Support partner** sets the unit's one active partner and links the partner back, unlinking the pairs this replaces, as the game does.
+- **Convoy** edits an ordinary item's number, uses and flags; a forged item's name, Might/Hit/Crit/Weight steps and colour are edited in the row under the list. There is no Forges tab: the forge is part of the item.
+- **Map objects** and **Flags** work as on Path of Radiance. Flags names the 128 slots from `startup.cmb` and the script of the file's map.
+- **System data** edits the parts of the system record by their position in it; what they mean is not traced yet.
+- **Play in Dolphin…** starts the game with a copy of the save in a separate Wii memory for that run; your Dolphin's own saves are not touched.
+- The units need the workspace's FE10Data to be read: open the save from an extracted Radiant Dawn workspace.
+
+Loading an edited Radiant Dawn save in the game is untested, like on Path of Radiance.
 
 ## Related tutorials and references
 

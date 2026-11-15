@@ -319,6 +319,23 @@ class Fe10SaveTests(unittest.TestCase):
         save = sf.SaveFile.from_bytes(bytes(damaged))
         self.assertTrue(any("checksum" in problem for problem in sf.validate(save)))
 
+    def test_support_ranks_and_map_chapters(self):
+        thresholds = (50, 100, 150)
+        self.assertEqual([sf.support_rank(p, thresholds) for p in (0, 50, 51, 100, 101, 150, 151)],
+                         [0, 0, 1, 1, 2, 2, 3])
+        self.assertEqual([sf.rank_points(r, thresholds) for r in range(4)], [0, 51, 101, 151])
+        self.assertEqual(sf.chapter_ids_for_map("bmap0407a"), ["0407a", "0407"])
+        self.assertEqual(sf.chapter_ids_for_map("emap0401a"), ["0401a", "0401"])
+        self.assertEqual(sf.chapter_ids_for_map(None), [])
+
+    def test_system_parts_cover_the_written_record(self):
+        end = sf.SYSTEM_PARTS[0][1]
+        for _name, offset, size, _kind in sf.SYSTEM_PARTS:
+            self.assertEqual(offset, end)
+            end += size
+        self.assertEqual(end, sf.SYSTEM_USED)
+        self.assertEqual(sf.SYSTEM_RECORD_COUNT * sf.SYSTEM_RECORD_SIZE, 0x2D0)
+
     def test_folder_open(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / sf.FILE_NAME
@@ -326,11 +343,12 @@ class Fe10SaveTests(unittest.TestCase):
             self.assertEqual(sf.SaveFile.from_path(Path(temp)).data, self.data)
 
 
-@unittest.skipUnless(os.environ.get("FE10_SAVES"), "set FE10_SAVES to a folder containing FE10_US.dat files")
+@unittest.skipUnless(os.environ.get("FE10_SAVES"),
+                     "set FE10_SAVES to a folder of FE10_US.dat files (any name ending in FE10_US.dat)")
 class Fe10RealSaveTests(unittest.TestCase):
     def test_corpus_round_trips(self):
         root = Path(os.environ["FE10_SAVES"])
-        paths = [root] if root.is_file() else list(root.rglob(sf.FILE_NAME))
+        paths = [root] if root.is_file() else list(root.rglob("*" + sf.FILE_NAME))
         self.assertTrue(paths)
         for path in paths:
             save = sf.SaveFile.from_bytes(path.read_bytes())
@@ -361,7 +379,7 @@ class Fe10RealSaveTests(unittest.TestCase):
         self.assertTrue(database_paths)
         database = lz10.decompress(database_paths[0].read_bytes())
         save_root = Path(os.environ["FE10_SAVES"])
-        paths = [save_root] if save_root.is_file() else list(save_root.rglob(sf.FILE_NAME))
+        paths = [save_root] if save_root.is_file() else list(save_root.rglob("*" + sf.FILE_NAME))
         self.assertTrue(paths)
         for path in paths:
             save = sf.SaveFile.from_bytes(path.read_bytes())
@@ -427,6 +445,85 @@ class Fe10RealSaveTests(unittest.TestCase):
         self.assertEqual(sf.validate(sf.SaveFile.from_bytes(save.to_bytes([record]))), [])
         with self.assertRaises(ValueError):
             record.set_unit_state(after, level=0)
+
+
+    @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
+    def test_class_items_skills_and_supports(self):
+        from fe_modding.formats import lz10
+        root = Path(os.environ["FE10_SAVES"])
+        path = next(iter((root.parent if root.is_file() else root).rglob("gamefaqs_30509_FE10_US.dat")), None)
+        if path is None:
+            self.skipTest("the GameFAQs Endgame save is not in FE10_SAVES")
+        raw = lz10.decompress((Path(os.environ["FE10_EXTRACTED_FILES"]) / "FE10Data.cms").read_bytes())
+        save = sf.SaveFile.from_path(path)
+        record = next(r for r in save.active_records() if r.logical_slot == 3)
+        counts = record.support_slot_counts_from_fe10data(raw)
+
+        def unit(pid):
+            return next(u for u in record.unit_records(counts)
+                        if not u.empty and record.id_name("character", u.person_number) == pid)
+
+        micaiah, sothe = unit("PID_MICAIAH"), unit("PID_SOTHE")
+        # every saved pair points both ways, and the partner's slot is the one past a threshold
+        self.assertEqual(record.id_name("character", micaiah.active_partner), "PID_SOTHE")
+        self.assertEqual(record.id_name("character", sothe.active_partner), "PID_MICAIAH")
+        self.assertEqual(sf.support_rank(max(micaiah.support_points), (50, 100, 150)), 3)
+        self.assertEqual([(record.id_name("item", i.item_number), i.uses, i.flags) for i in micaiah.items[:2]],
+                         [("IID_REXAURA", 15, 0x90), ("IID_RESIRE", 14, 0)])
+        self.assertEqual({sf.SKILL_SOURCES[s.source] for s in micaiah.skills}, {"Character", "Class", "Learned"})
+
+        record.set_unit_class(micaiah, record.id_of("class", "JID_LIGHTMAGE"))
+        record.set_unit_item(unit("PID_MICAIAH"), 1, record.id_of("item", "IID_IRONSWORD"), 50, 0)
+        skills = list(micaiah.skills) + [sf.SavedSkill(record.id_of("skill", "SID_VANTAGE"), 2, 0)]
+        record.set_unit_skills(unit("PID_MICAIAH"), skills)
+        record.set_unit_support_points(unit("PID_MICAIAH"), 5, sf.rank_points(2, (50, 100, 150)))
+        record.set_unit_active_partner(unit("PID_MICAIAH"), record.id_of("character", "PID_EDDIE"))
+        after = unit("PID_MICAIAH")
+        self.assertEqual(record.id_name("class", after.class_number), "JID_LIGHTMAGE")
+        self.assertEqual((record.id_name("item", after.items[1].item_number), after.items[1].uses), ("IID_IRONSWORD", 50))
+        self.assertEqual(record.id_name("skill", after.skills[-1].skill_number), "SID_VANTAGE")
+        self.assertEqual(len(after.raw), len(micaiah.raw) + 4)
+        self.assertEqual((after.support_points[5], record.id_name("character", after.active_partner)), (101, "PID_EDDIE"))
+        again = sf.SaveFile.from_bytes(save.to_bytes([record]))
+        self.assertEqual(sf.validate(again), [])
+        self.assertEqual(sum(not u.empty for u in again.records[3].unit_records(counts)), 83)
+        with self.assertRaises(ValueError):
+            record.set_unit_skills(after, [after.skills[0]] * 19)
+        with self.assertRaises(ValueError):
+            record.set_unit_class(after, 0)
+
+    def test_tile_records(self):
+        root = Path(os.environ["FE10_SAVES"])
+        path = next(iter((root.parent if root.is_file() else root).rglob("gamefaqs_30509_FE10_US.dat")), None)
+        if path is None:
+            self.skipTest("the GameFAQs Endgame save is not in FE10_SAVES")
+        save = sf.SaveFile.from_path(path)
+        record = save.records[3]  # File 4, saved on 4-7e
+        records, count = record.tile_records()
+        self.assertEqual((record.map_name, count, len(records)), ("bmap0407e", 8, sf.TACTICAL_RECORD_COUNT))
+        self.assertEqual({(r.type, r.subtype) for r in records[:count]}, {(6, 0)})
+        self.assertEqual((records[0].x, records[0].y), (16, 16))
+        record.set_tile_record(count, sf.TileRecord(3, 4, 0x23, 0, bytes(4)))
+        record.set_tile_count(count + 1)
+        again = sf.SaveFile.from_bytes(save.to_bytes([record])).records[3]
+        self.assertEqual(again.tile_records()[1], 9)
+        self.assertEqual(again.tile_records()[0][8], sf.TileRecord(3, 4, 0x23, 0, bytes(4)))
+        with self.assertRaises(ValueError):
+            record.set_tile_count(sf.TACTICAL_RECORD_COUNT + 1)
+
+    def test_system_record_parts(self):
+        root = Path(os.environ["FE10_SAVES"])
+        for path in sorted((root.parent if root.is_file() else root).rglob("*" + sf.FILE_NAME)):
+            save = sf.SaveFile.from_path(path)
+            if not save.system.valid:
+                continue
+            used = len(save.system.raw.rstrip(bytes([0xFF])))
+            self.assertLessEqual(used, sf.SYSTEM_USED, path.name)
+            self.assertEqual(save.system.system_part("Byte +0x3AC"), b"", path.name)
+            save.system.set_system_value(0xCC, 2, 7)
+            again = sf.SaveFile.from_bytes(save.to_bytes())
+            self.assertTrue(again.system.valid)
+            self.assertEqual(again.system.system_value(0xCC, 2), 7)
 
 
 if __name__ == "__main__":
