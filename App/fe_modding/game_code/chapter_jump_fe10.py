@@ -17,7 +17,7 @@ from .catalog import CATALOG, CAVE_ADDRESS, Edit, Patch, Session, in_cave
 RFEE01 = "RFEE01"
 
 JUMP_STUB = CAVE_ADDRESS + 0x800
-JUMP_END = JUMP_STUB + 0xA0
+JUMP_END = JUMP_STUB + 0xC0          # RD Game Code uses the cave again from +0x900
 assert in_cave(JUMP_STUB, JUMP_END - JUMP_STUB)
 
 # RD's native IDs.  The North-American menu names these Easy, Normal and Hard; its scripts call
@@ -30,6 +30,13 @@ _SCRIPT_ORIGINAL = bytes.fromhex(
     "0000200f800cdcec"  # call init_database_files
     "0000200f800cdf00"  # call the second database initializer
 )
+#: Before label 2 the boot script asks FUN_800CD920 whether to skip the opening movie (it plays
+#: on a fresh NAND). The movie routine (FUN_8026C118) then sets the next label to 5, the title,
+#: so label 2 never runs: the databases stay unread and the title demo crashes in UnitGetByPID.
+#: The jump turns this test into a plain goto 2.
+_MOVIE_SITE = 0x80383374
+_MOVIE_ORIGINAL = bytes.fromhex("00022010800cd920")   # if_true_goto 2, FUN_800CD920
+_GOTO_2 = 0x0002100C
 _CALL = 0x0000200F
 _GOTO_11 = 0x000B100C
 _SLEEP = 0x0000100A
@@ -46,6 +53,10 @@ _REINIT_PARTY = 0x8006132C
 _REFRESH_PARTY_STATE = 0x801097FC
 _INIT_DATABASES = 0x800CDCEC
 _INIT_DATABASES_2 = 0x800CDF00
+#: Empties the 11 unit lists and puts the 254 unit slots on the free list; the file menu's New
+#: Game (FUN_800CD5F4 case 3) calls it. Without it the lists hold whatever RAM held: the
+#: chapter's group pass (apply_chapter_player_group) then follows a garbage link in UnitGetByPID.
+_RESET_UNITS = 0x8012CBF0
 
 
 def _word(value: int) -> bytes:
@@ -64,7 +75,7 @@ def _stub() -> bytes:
     words = ppc.assemble(JUMP_STUB, [
         ppc.stwu(1, -0x20, 1), ppc.MFLR_R0, ppc.stw(0, 0x24, 1), ppc.stw(31, 0x1C, 1),
         ppc.mr(31, 3),
-        ("bl", _INIT_DATABASES), ("bl", _INIT_DATABASES_2),
+        ("bl", _INIT_DATABASES), ("bl", _INIT_DATABASES_2), ("bl", _RESET_UNITS),
         *_address(3, _PARTY), ("bl", _GET_STATE),
         ppc.lwz(5, 0, 3), ppc.andi_(5, 5, 0xFFFC), ppc.li(6, _STORY_MODE), ppc.add(5, 5, 6),
         ppc.stw(5, 0, 3),
@@ -89,8 +100,9 @@ _CHAPTER_HALFWORD = _CODE.index(_word(ppc.li(4, 0))) + 2
 
 JUMP_PATCH = CATALOG.add(Patch(
     "rd.dev.jump_chapter", "Radiant Dawn developer tools", "Boot into a chapter",
-    "Skips the title and starts a chapter with a fresh party (test launches only).",
+    "Skips the opening movie and title and starts a chapter with a fresh party (test launches only).",
     versions={RFEE01: (
+        Edit(_MOVIE_SITE, _MOVIE_ORIGINAL, _words(_GOTO_2, _SLEEP)),
         Edit(_SCRIPT_SITE, _SCRIPT_ORIGINAL,
              _words(_CALL, JUMP_STUB, _GOTO_11, _SLEEP)),
         Edit(JUMP_STUB, bytes(len(_CODE)), _CODE,
