@@ -54,7 +54,7 @@ The page lists the kind-of-strike scripts: `standby` (the opening zoom), `standb
 <figcaption markdown="span">**Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.</figcaption>
 </figure>
 
-Open **Assets → Battle Cameras**, keep **Camera scripts (xcam)**, and select `standby`. It drives rig `cam1` with four keyframes, all at **Rotation** 8, 180, 0 (slightly above, side-on from the front): **Distance** 170 at time 0, then 100 over 20 ticks, 87 over 10, and 70 over 300. The fight opens wide and closes in.
+Open **Assets → Battle Cameras** and select `standby` in the list's **Camera scripts (xcam)** group. It drives rig `cam1` with four keyframes, all at **Rotation** 8, 180, 0 (slightly above, side-on from the front): **Distance** 170 at time 0, then 100 over 20 ticks, 87 over 10, and 70 over 300. The fight opens wide and closes in.
 
 ### 2. Edit a keyframe and preview it
 
@@ -83,10 +83,10 @@ Open **Assets → Battle Cameras**, keep **Camera scripts (xcam)**, and select `
 
 [![Battle Cameras rigs tab with the rig list and cam1's fields.](../assets/images/tutorials/screenshots/70-c-rigs.png)](../assets/images/tutorials/screenshots/70-c-rigs.png)
 
-<figcaption markdown="span">**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore camera.dbx** restores them all.</figcaption>
+<figcaption markdown="span">**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; **Restore original** with a rig selected restores them all.</figcaption>
 </figure>
 
-Open **Camera rigs (camera.dbx)** and select `cam1`: **Rotation** `-2,-2, 180.0, 0.0` (the retail file's own malformed value, kept as is), **Distance** 60, **Destination**, **Attract (0/1)** 1, **Eye center (0/1)** 0, no unit followed. Select `camCharaL0`: it follows the actor. A rig edit changes every script that uses it.
+In the list's **Camera rigs (camera.dbx)** group, select `cam1`: **Rotation** `-2,-2, 180.0, 0.0` (the retail file's own malformed value, kept as is), **Distance** 60, **Destination**, **Attract (0/1)** 1, **Eye center (0/1)** 0, no unit followed. Select `camCharaL0`: it follows the actor. A rig edit changes every script that uses it.
 
 ## Understand every control
 
@@ -94,14 +94,14 @@ Open **Camera rigs (camera.dbx)** and select `cam1`: **Rotation** `-2,-2, 180.0,
 
 | Control | What it does |
 | --- | --- |
-| Script list | **Script**, **Camera** (its rig), **Keys** (keyframe count), edited mark. |
+| List | Two groups, **Camera scripts (xcam)** and **Camera rigs (camera.dbx)**. A script's **Details** give its rig and keyframe count; **State** marks an edited one. **Search** filters both; **Refresh** rereads `zdbx.cmp`. |
 | **Caption** | The script's label (Japanese in the retail files). |
 | **Camera rig** | The rig the script drives. |
 | Keyframe table | **#**, **Position x, y, z**, **Rotation x, y, z**, **Distance**, **Time**. |
 | **Position**, **Rotation**, **Distance**, **Time** | The selected keyframe's values. Position and rotation need three numbers (`0, 7, 0`); distance a number; time a whole number of ticks. |
 | **Update keyframe** / **Add keyframe** / **Delete keyframe** / **Move up** / **Move down** | Edit the list in the page (a script needs at least one keyframe). |
 | **Apply script** | Writes the script as edited. *No change.* when nothing differs. |
-| **Restore original** | Puts back the retail script. |
+| **Restore original** | Puts back the retail script (with a rig selected: the whole `camera.dbx`). |
 | **Add script…** | A new script with one keyframe on the shown rig (name like `atk_custom_l`). It plays only where the game asks for that name. |
 | **Preview** / **Scenery** | Plays the built-in short fight with the script as edited, on the chosen scenery. |
 
@@ -113,9 +113,18 @@ Open **Camera rigs (camera.dbx)** and select `cam1`: **Rotation** `-2,-2, 180.0,
 | **Look-at offset** | Offset from the followed unit's camera bone (7 units up for the strike rigs). |
 | **Destination**, **Speed**, **Attract (0/1)**, **Eye center (0/1)**, **Enabled (0/1)** | Movement and behaviour switches of the rig. |
 | **Entity class**, **Follows 1st**, **Follows 2nd**, **Follows 3rd** | What the rig follows (the *Follows* column: Actor or Weapon). |
-| **Apply rig** / **Restore camera.dbx** | Write one rig; restore the whole file. |
+| **Apply rig** | Writes one rig. |
 
 An empty box means the rig has no such line; a line cannot be emptied from the page.
+
+## Radiant Dawn
+
+The page looks the same on Radiant Dawn, with its own data. Radiant Dawn films a fight with camera **clips**: animations (`xcam/<name>.ga`) played on one camera rig (`xcam/cam.g`), registered in `FE10Battle.cms`.
+
+- The list shows every clip with its **Frames**, **Curves** and **Registry** state: *registered* (a registry row and a file), *loose* (a file the registry never names) or *no file*.
+- Selecting a clip shows its description, registry row, the camera groups that pick it (with their weights and weapon types) and a preview of the clip on the rig.
+- **Replace clip…** imports a glTF animation over the selected clip; **New clip…** adds one, registered like the selected clip. Both write at once.
+- **Edit group weight…** changes how often a group picks one of its clips; **Edit dispatch…** chooses which group films a motion for a weapon type. These registry edits are kept until **Save** (or **Discard changes**).
 
 ## Things to try next
 
@@ -145,11 +154,11 @@ An empty box means the rig has no such line; a line cannot be emptied from the p
 | --- | --- | --- |
 | An `atk_l` edit never shows | The model has its own per-clip camera | Check the model's `xcam/<model>/cam.cmp` in [Battle Staging & Camera](../systems/battle-staging.md) |
 | **Render fight** shows the old camera | The render window read the archive before the edit | Close it and render again |
-| A rig field cannot be emptied | Lines are removed in the file only | Use **DBX Files** › **Text** on `zdbx/camera.dbx` |
+| A rig field cannot be emptied | Lines are removed in the file only | Use **Battle Data** › **Text** on `zdbx/camera.dbx` |
 
 ## Save, build, and revert
 
-**Apply script** and **Apply rig** write `zdbx.cmp` immediately; keyframe edits before that live in the page only. **Restore original** and **Restore camera.dbx** revert. Build the disc to test.
+**Apply script** and **Apply rig** write `zdbx.cmp` immediately; keyframe edits before that live in the page only. **Restore original** reverts a script, or `camera.dbx` with a rig selected. Build the disc to test.
 
 ## Limits and confidence
 

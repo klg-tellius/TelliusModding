@@ -14,11 +14,11 @@ from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, 
                              EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
 from ..animation_data_viewer import AnimationDataViewer
 from ..background_viewer import BackgroundViewer
-from ..fe10_camera_viewer import battle_camera_viewer
+from ..battle_camera_adapters import battle_camera_viewer
 from ..battle_simulator import BattleSimulator
 from ..battle_weapons_viewer import battle_weapons_panel
 from ..fe10_battle_rows import battle_params_panel, battle_sceneries_panel
-from ..fe10_battle_viewer import battle_data_viewer
+from ..battle_data_adapters import battle_data_viewer
 from ..editor_panel import EditorPanel
 from ..effects_viewer import EffectsViewer
 from ..graphics_viewers import (
@@ -81,7 +81,7 @@ ASSET_TOOLS = [
     ("battle_cameras", "Battle Cameras", "◉", "Battle camera rigs and per-action clips (camera data, xcam/)", battle_camera_viewer),
     ("battle_sim", "Battle Simulator", "⚔", "Two units, their weapons and skills: forecast and a random or fixed fight", BattleSimulator),
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", battle_params_panel),
-    ("dbx_files", "Battle Data", "▤", "Browse the game's native battle tables (DBX on Path of Radiance)", battle_data_viewer),
+    ("dbx_files", "Battle Data", "▤", "The battle engine's native tables (.dbx files, or FE10Battle.cms on Radiant Dawn)", battle_data_viewer),
     ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("tutorials", "Tutorials", "?", "The in-game tutorial lists (tut_data): groups, order, start flags", TutorialsEditor),

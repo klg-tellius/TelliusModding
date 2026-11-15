@@ -20,7 +20,7 @@ verification: ["source-reviewed", "app-tested", "unknown"]
 ---
 # Edit DBX files and the battle HUD
 
-**Route:** Assets → DBX Files
+**Route:** Assets → Battle Data
 
 ## What you will make
 
@@ -50,19 +50,19 @@ Edits in any view change the text; **Save** writes it into `zdbx.cmp`. The first
 <!-- screenshot 71-a-setup.png -->
 <figure class="tutorial-figure" markdown="1">
 
-[![DBX Files page with zdbx/battle.dbx selected and its blocks in the Form tab.](../assets/images/tutorials/screenshots/71-a-setup.png)](../assets/images/tutorials/screenshots/71-a-setup.png)
+[![Battle Data page with zdbx/battle.dbx selected and its blocks in the Form tab.](../assets/images/tutorials/screenshots/71-a-setup.png)](../assets/images/tutorials/screenshots/71-a-setup.png)
 
-<figcaption markdown="span">**Assets › DBX Files** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key.</figcaption>
+<figcaption markdown="span">**Assets › Battle Data** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block (layers, textures, pictures, numbers, gauges) with its fields and an English note per known key.</figcaption>
 </figure>
 
-Open **Assets → DBX Files**, type `battle.dbx` in **Search** and select `zdbx/battle.dbx`. **Form** lists its blocks: the layers (`Layer Window`, `Layer Caption`, `Layer NamePlateL`…), the textures cut from `ztex/btlwin` and `ztex/number`, then the pictures, numbers and gauges that use them. Open `Picture WpWinL`: `layer Window`, `show 1`, `pos 63,69`, `texName WpPlate`. **Note** explains each key.
+Open **Assets → Battle Data**, type `battle.dbx` in **Search** and select `zdbx/battle.dbx`. **Form** lists its blocks: the layers (`Layer Window`, `Layer Caption`, `Layer NamePlateL`…), the textures cut from `ztex/btlwin` and `ztex/number`, then the pictures, numbers and gauges that use them. Open `Picture WpWinL`: `layer Window`, `show 1`, `pos 63,69`, `texName WpPlate`. **Note** explains each key.
 
 ### 2. Move a window
 
 <!-- screenshot 71-b-result.png -->
 <figure class="tutorial-figure" markdown="1">
 
-[![DBX Files Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.](../assets/images/tutorials/screenshots/71-b-result.png)](../assets/images/tutorials/screenshots/71-b-result.png)
+[![Battle Data Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.](../assets/images/tutorials/screenshots/71-b-result.png)](../assets/images/tutorials/screenshots/71-b-result.png)
 
 <figcaption markdown="span">The **Layout** tab draws every widget with a position on the 640 × 480 screen; `WpWinL`, the left weapon window, was dragged down. The text changed (**Save** is enabled), but nothing is written until **Save**.</figcaption>
 </figure>
@@ -70,7 +70,7 @@ Open **Assets → DBX Files**, type `battle.dbx` in **Search** and select `zdbx/
 1. Open **Layout**. The 26 widgets with a position are drawn as rectangles at their size (taken from their texture's cell size); dashed grey ones are hidden (`show 0` or empty), shown while **Show hidden widgets (show 0)** is ticked.
 2. Drag `WpWinL`, the left weapon window, 60 pixels down.
 
-Its `pos` becomes `63,129`. **Save** is enabled and the status bar counts *1 unsaved: DBX Files*. Open **Text** to see the changed line; nothing else in the file moved.
+Its `pos` becomes `63,129`. **Save** is enabled and the status bar counts *1 unsaved: Battle Data*. Open **Text** to see the changed line; nothing else in the file moved.
 
 3. Press **Save**, render the fixture to see the weapon window lower on the battle screen, then press **Restore original** (or, before saving, select another file and answer **No** to discard).
 
@@ -79,14 +79,22 @@ Its `pos` becomes `63,129`. **Save** is enabled and the status bar counts *1 uns
 | Control | What it does |
 | --- | --- |
 | **Search** / **Refresh** | Filter the file list; reread `zdbx.cmp` (asks to save first when the text has unsaved changes). |
-| File list | **Archive path** and **State**: original, edited, added, or deleted (a retail file removed by the project, kept in the list to restore it). |
+| File list | One group per folder (`xcam/`, `xwp/`, `zbg/`, `zdbx/`, `zu/`…). **Archive path** and **State**: original, edited, added, or deleted (a retail file removed by the project, kept in the list to restore it). |
 | **Form** tab | **Block / key**, **Value**, **Note**. **Edit value…** changes the selected field, **Add field…** adds a key to the selected block, **Remove** removes a field or block, **Duplicate block…** copies a block under a new name. |
 | **Layout** tab | Drag a widget to move it; **Show hidden widgets (show 0)** draws hidden ones dashed. Selecting a widget selects its block in **Form**. Read-only for a deleted file. |
 | **Text** tab | The raw file, with undo. |
-| **Save** | Writes the text into `zdbx.cmp` as it is. It refuses only characters Shift-JIS cannot hold; it does not check the braces and keys, so look at **Form** before saving a hand edit. |
+| **Save** / **Discard changes** | **Save** writes the text into `zdbx.cmp` as it is. It refuses only characters Shift-JIS cannot hold; it does not check the braces and keys, so look at **Form** before saving a hand edit. |
 | **Add DBX…** | Asks for a new archive path (`xcam/new_script.dbx`), refuses one that exists, then lets you type its text; **Save** adds it. |
 | **Delete** | Removes the file from the archive after asking (a retail file stays listed as deleted and can be restored). |
 | **Restore original** | Puts back the retail text of an edited or deleted file, or removes an added one. |
+
+## Radiant Dawn
+
+On Radiant Dawn the page shows `FE10Battle.cms`, which holds the battle tables in one binary file. The list has one group per table (`FE10BUnit`, `FE10BMapData`, `FE10BCamFile`…) and one for the camera arrays; each row shows its names and its decoded values, and the right side every field of the selected row.
+
+- **Edit names…** changes the names of the selected row (texture, model and scenery names).
+- **Edit scenery choice…** sets which `FE10BMapModel` scenery a map key uses for each of its five variants.
+- The other fields are read-only. Edits are kept until **Save** (or **Discard changes**).
 
 ## Things to try next
 

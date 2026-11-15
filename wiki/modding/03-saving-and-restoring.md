@@ -116,7 +116,7 @@ Set **Str** back to 2, **Apply**, **Save FE8Data.bin**. For files that have a **
 | An icon, a font, a texture archive | the graphic file | **Save** (and **Discard changes**) |
 | A background | `s/` and `s/rect.bin` | **Save** / **Save Resource** |
 | Sound Room, credits, in-game tutorials | their files | **Save Sound Room**, **Save credits**, **Save tutorials**, **Save tracks** |
-| A DBX file | `zdbx.cmp` | **Save** on DBX Files |
+| A DBX file | `zdbx.cmp` | **Save** on Battle Data |
 | A battle weapon, scenery, unit parameter, camera | `zdbx.cmp` | written at once by **Apply** / **Apply script** / **Apply rig** |
 | A model, an animation | the model's files | written at once by **Write files** in the import review |
 | Music, sound effects, videos | their files | written at once by the import |

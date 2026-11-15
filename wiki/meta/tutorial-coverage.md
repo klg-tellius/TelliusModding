@@ -138,7 +138,7 @@ App surfaces and topics with no lesson yet, numbered after 64 so existing links 
 | **68** | Find where a record is used | **Appearances**, **Script references**, message references, Check owner links, Ctrl+K |
 | **69** | Visual effects and particles | Assets › Visual Effects, the effect-add dialog, the particle editor |
 | **70** | Battle cameras | camera rigs (`camera.dbx`) and per-action scripts (`xcam/`) |
-| **71** | DBX files and the battle HUD | DBX Files, Form and Layout tabs, Battle Unit Parameters |
+| **71** | DBX files and the battle HUD | Battle Data, Form and Layout tabs, Battle Unit Parameters |
 | **72** | UI layouts and Rect RIDs | Game Data › Rect RIDs: files, layers, properties, references |
 | **73** | Sound Room, credits and in-game tutorials | Soundroom Tracks and Images, Staff Credits, Assets › Tutorials |
 | **74** | Make a laguz unit | laguz class, transform gauge, laguz weapons and items, AI |
