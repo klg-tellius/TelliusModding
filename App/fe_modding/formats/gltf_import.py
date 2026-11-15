@@ -1887,6 +1887,7 @@ def build_skeleton(
     base_dir: Optional[Path | str] = None,
     *,
     template: Optional[list[skeleton.Bone]] = None,
+    index_step: Optional[int] = None,
 ) -> tuple[skeleton.SkeletonFile, list[str]]:
     """A new ``.g`` from the glTF's skin (Phase 4). Joint names become bone
     names; parents come first.
@@ -1906,7 +1907,12 @@ def build_skeleton(
     puts it; template pivot bones keep the pivot convention. The engine attaches weapons to battle socket
     bones (``_r_hand_``) by their world matrix, which the pivot convention
     would leave at the origin. :func:`import_skinned_model` and
-    :func:`import_animation` work on either."""
+    :func:`import_animation` work on either.
+
+    ``index_step`` is how the game numbers bones at ``+0xEC`` (:func:`skeleton.index_step`: 16 on
+    Radiant Dawn); by default the template's, else Path of Radiance's 1."""
+    if index_step is None:
+        index_step = skeleton.index_step(template) if template else 1
     d = _Document(gltf_data, Path(base_dir) if base_dir is not None else None)
     doc = d.doc
     skins = doc.get("skins", [])
@@ -2006,7 +2012,7 @@ def build_skeleton(
                 index[parent] if parent is not None else -1,
                 (next_sibling, first_child, flags),
                 floats,
-                (index[j], 1),
+                (index[j] * index_step, 1),
             )
         )
     return skeleton.SkeletonFile("[unknown]", bones), warnings

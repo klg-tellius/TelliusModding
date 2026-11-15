@@ -182,6 +182,20 @@ def _encode_bone_name(name: str) -> bytes:
         return name.encode("latin-1")
 
 
+#: Radiant Dawn stores each bone's index times 16 at record ``+0xEC`` (every ``.g`` on the disc: map
+#: units, battle rigs, map props). Its pose code reads the word there and takes ``>> 20`` as the bone's
+#: matrix slot and ``& 0xF`` as the rotation order (``0x8000C920`` and the builder ``0x8000D754``), so
+#: with Path of Radiance's plain index bones 0-15 would all share slot 0.
+RD_INDEX_STEP = 16
+
+
+def index_step(bones: list[Bone]) -> int:
+    """How a skeleton numbers its bones at ``+0xEC``: 16 on Radiant Dawn's, 1 on Path of Radiance's."""
+    if len(bones) > 1 and all(b.unknown_shorts[0] == RD_INDEX_STEP * i for i, b in enumerate(bones)):
+        return RD_INDEX_STEP
+    return 1
+
+
 def read_skeleton_file(data: bytes) -> SkeletonFile:
     _zero, pool_offset, _count, _bones_start = struct.unpack(">IIII", data[:16])
     root_name = data[pool_offset : data.index(b"\0", pool_offset)].decode("ascii", errors="replace")

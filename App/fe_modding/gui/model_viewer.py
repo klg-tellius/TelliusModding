@@ -2099,8 +2099,9 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     if not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} has no skeleton.")
     gltf_data = gltf_path.read_bytes()
-    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, gltf_path.parent)
     old_bones = skeleton.read_skeleton_file(files[g_names[0]]).bones
+    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, gltf_path.parent,
+                                                        index_step=skeleton.index_step(old_bones))
     errors, rig_warnings = gltf_import.check_rig_against(new_skeleton.bones, old_bones)
     warnings += rig_warnings
 

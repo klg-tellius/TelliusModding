@@ -133,12 +133,12 @@ def export_prop_glb(files: dict[str, bytes], name: str) -> bytes:
     return gltf_export.export_glb([(name, gs_model)], bones, textures, animations)
 
 
-def _animated_build(gltf_data: bytes, name: str, base_dir: Path | None, loop: bool):
+def _animated_build(gltf_data: bytes, name: str, base_dir: Path | None, loop: bool, index_step: int = 1):
     """``(build, .g bytes, .ga bytes, warnings)`` for a skinned, animated
     glTF: a new skeleton in the map-model convention vanilla animated props
     use (``none`` root, pivot bones, multi-matrix shapes), the mesh weighted
     to it and the glTF's first animation, looping when ``loop``."""
-    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, base_dir)
+    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, base_dir, index_step=index_step)
     g_bytes = skeleton.write_skeleton_file(new_skeleton)
     names = gltf_import.list_animations(gltf_data, base_dir)
     ga, anim_warnings = gltf_import.import_animation(gltf_data, g_bytes, animation_name=names[0], base_dir=base_dir)
@@ -210,7 +210,9 @@ def import_prop(
         raise gltf_import.GltfImportError("Tile-size scaling is currently available for static props only.")
     ga_bytes = None
     if animated:
-        build, skeleton_bytes, ga_bytes, more = _animated_build(gltf_data, name, base_dir, loop)
+        # the map's own skeletons say how this game numbers bones (16 per bone on Radiant Dawn)
+        step = (skeleton.RD_INDEX_STEP if data.layout.game == "fe10" else 1)
+        build, skeleton_bytes, ga_bytes, more = _animated_build(gltf_data, name, base_dir, loop, step)
         warnings += more
         for material in build.gs.materials:
             if material.name in CALLBACK_MATERIALS:
