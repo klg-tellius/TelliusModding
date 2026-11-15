@@ -71,10 +71,20 @@ def _pack_entries(packed: bytes, changes: dict[str, bytes]) -> bytes:
         [entry.reserved for entry in entries]))
 
 
+GROUND_MODEL_NAME = "tellius_hub_ground"
+
+
+def ground_material(layout) -> str:
+    """The generated ground's material: a neutral name on Path of Radiance (its ``map_base`` callback
+    expects the retail texture table), ``map_base`` on Radiant Dawn, whose game finds a map's ground by
+    that material name (``map_file.is_base_terrain_object``)."""
+    return "map_base" if layout.game == "fe10" else "hub_ground"
+
+
 def _flat_model(width: int, height: int, texture_id: int, white_id: int,
                 color: tuple[int, int, int] = DEFAULT_GROUND_COLOR, tiled: bool = False,
                 origin: tuple[float, float] = (0.0, 0.0), bone: int = 0,
-                bone_world: skeleton.Mat3x4 = skeleton.IDENTITY_3X4) -> bytes:
+                bone_world: skeleton.Mat3x4 = skeleton.IDENTITY_3X4, material: str = "hub_ground") -> bytes:
     """Make a ground plane with valid base and projected-overlay textures."""
     x0, z0 = origin
     x1, z1 = x0 + width * map_file.TILE_UNITS, z0 + height * map_file.TILE_UNITS
@@ -89,7 +99,7 @@ def _flat_model(width: int, height: int, texture_id: int, white_id: int,
     triangle = gltf_import.ImportedTriangle
     rgba = tuple(channel / 255.0 for channel in color) + (1.0,)
     scene = gltf_import.ImportedScene(
-        materials=[gltf_import.ImportedMaterial("hub_ground", rgba,
+        materials=[gltf_import.ImportedMaterial(material, rgba,
                    image=Image.new("RGBA", (8, 8), "white"), double_sided=True)],
         triangles={0: [triangle((points[0], points[1], points[2]), normal, (uv[0], uv[1], uv[2])),
                        triangle((points[0], points[2], points[3]), normal, (uv[0], uv[2], uv[3]))]})
@@ -99,7 +109,7 @@ def _flat_model(width: int, height: int, texture_id: int, white_id: int,
     # projected overlay. White preserves the ground's solid colour.
     overlay = gs_file.GsTexture((1, 0), white_id, (257, 0, 0, 0, 0), 1.0, 1.0, 0)
     return gs_file.write_gs(gltf_import.build_static_gs(
-        scene, name="tellius_hub_ground", tex_id_base=texture_id, extra_textures=(overlay,),
+        scene, name=GROUND_MODEL_NAME, tex_id_base=texture_id, extra_textures=(overlay,),
         bone=bone, bone_world=bone_world).gs)
 
 
@@ -116,7 +126,10 @@ def flat_ground_appearance(files: dict[str, bytes]) -> GroundAppearance:
     """Read the editable appearance of a generated blank-hub ground."""
     _data, ground = _ground(files)
     model = gs_file.read_gs(files[f"{ground.filename}.gs"])
-    material = next((item for item in model.materials if item.name == "hub_ground"), None)
+    # a generated plane: one material over four corners (the model name is not stored in the file)
+    generated = len(model.materials) == 1 and len(set(model.positions)) == 4
+    material = next((item for item in model.materials
+                     if item.name == "hub_ground" or (generated and item.name == "map_base")), None)
     if material is None or not material.textures:
         raise ValueError("Only a hub created with Blank map has an editable generated ground.")
     color = tuple(min(255, round(channel * gltf_import.COLOR_LOAD_SCALE)) for channel in material.color0[:3])
@@ -168,7 +181,7 @@ def replace_flat_ground(_entries: list[pak.PakEntry], files: dict[str, bytes], *
         material_color = (255, 255, 255)
     files[f"{ground.filename}.gs"] = _flat_model(
         data.capacity.x_size, data.capacity.y_size, texture_id, white_id, material_color,
-        ground_image is not None and tile_ground_image, origin, bone, bone_world)
+        ground_image is not None and tile_ground_image, origin, bone, bone_world, ground_material(data.layout))
     x0, z0 = origin
     x1 = x0 + data.capacity.x_size * map_file.TILE_UNITS
     z1 = z0 + data.capacity.y_size * map_file.TILE_UNITS
@@ -178,6 +191,11 @@ def replace_flat_ground(_entries: list[pak.PakEntry], files: dict[str, bytes], *
         map_bin = map_file.patch_object_field(map_bin, ground, field_name, value)
     files["map.bin"] = map_bin
     map_props.compact_texpack(files)
+
+
+def _half(size: int, layout) -> int:
+    """mapextra's half size: rounded up on Path of Radiance, down on Radiant Dawn (retail maps)."""
+    return math.ceil(size / 2) if layout.half_round_up else size // 2
 
 
 def blank_map(compressed: bytes, width: int, height: int, *,
@@ -222,9 +240,11 @@ def blank_map(compressed: bytes, width: int, height: int, *,
         except map_file.MapFileError:
             continue
         data = map_file.replace_section(data, section, b"\x00\x00\x00\x00")
+    layout = parsed.layout       # read before the grids changed size
     capacity_at, _ = map_file.section_bytes(data, "mapcapacity")
     out = bytearray(data)
-    struct.pack_into(">HH", out, capacity_at, width, height)
+    # Path of Radiance: two u16 at the record's start; Radiant Dawn: two u8 after mapdata's version byte
+    struct.pack_into(layout.size_format, out, capacity_at + layout.size_at, width, height)
     data = bytes(out)
     # Only the base terrain instance is kept; all decorative placements disappear.
     parsed = map_file.read_map_bytes(data)
@@ -238,7 +258,7 @@ def blank_map(compressed: bytes, width: int, height: int, *,
     parsed = map_file.read_map_bytes(data)
     if parsed.extra is not None:
         for field, value in (("panel_offset_x", 0), ("panel_offset_y", 0),
-                             ("half_x_size", math.ceil(width / 2)), ("half_y_size", math.ceil(height / 2)),
+                             ("half_x_size", _half(width, layout)), ("half_y_size", _half(height, layout)),
                              ("texture_projection_extent_x2", min(255, 2 * max(width, height))),
                              ("grid_buffer", 0),
                              ("unknown_tail", parsed.extra.unknown_tail & ~map_props.MAP_FLAG_WATER)):
@@ -259,7 +279,7 @@ def blank_map(compressed: bytes, width: int, height: int, *,
         material_color = (255, 255, 255)  # show the image without a color tint
     content[f"{ground.filename}.gs"] = _flat_model(
         width, height, texture_id, white_id, material_color,
-        ground_image is not None and tile_ground_image)
+        ground_image is not None and tile_ground_image, material=ground_material(layout))
     if not any(entry.name == "texpack.tpl" for entry in entries):
         return lz10.compress(pak.pack_pak(list(content.items())))
     return _pack_entries(packed, content)

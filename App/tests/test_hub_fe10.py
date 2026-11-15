@@ -165,6 +165,30 @@ class RdHubSetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "also appears in chapter 0501"):
             hub_fe10.prepare(project, self.setup(chapter=57))
 
+    def test_create_chapter_on_a_blank_map(self):
+        from fe_modding import chapters, hub_creation, hub_creation_fe10, hub_fe10, map_props
+        from fe_modding.formats import dispo, map_file
+
+        project = self.project
+        plan = hub_creation_fe10.create_chapter(project, project.read_logical("game_data"), "0101", "0502", "Hub",
+                                                "PID_DJ_GREIL", blank_size=(14, 9), ground_color=(90, 140, 70))
+        project.write_logical("game_data", plan.fe10data)
+        _entries, files = map_props.read_map_container(chapters.chapter_paths(project, "0502").map)
+        data = map_file.read_map_bytes(files["map.bin"])
+        self.assertEqual((data.capacity.x_size, data.capacity.y_size, len(data.build_inst)), (14, 9, 1))
+        self.assertEqual(data.rd.version, map_file.read_map_bytes(
+            map_props.read_map_container(chapters.chapter_paths(project, "0101").map)[1]["map.bin"]).rd.version)
+        ground = [o for o in data.build_desc if map_file.is_base_terrain_object(o, files)
+                  and "water" not in o.filename]
+        self.assertEqual(len(ground), 1)       # found by its map_base material, as the game finds it
+        self.assertEqual(hub_creation.flat_ground_appearance(files).color, (90, 140, 70))
+        for path in hub_fe10._deployments(project, "0502"):
+            for section in dispo.parse_dispo(path.read_bytes()).sections:
+                if "_mikata" in section.name and section.units:
+                    unit = section.units[0]
+                    # 1-1's tile (10, 11) is outside a 14 x 9 map: the avatar starts in the middle
+                    self.assertEqual((unit[dispo.FIELD["pos_x"]], unit[dispo.FIELD["pos_y"]]), (7, 4))
+
     def test_bad_setups_are_refused(self):
         from fe_modding import hub, hub_fe10
         cases = [

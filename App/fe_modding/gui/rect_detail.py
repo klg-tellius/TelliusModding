@@ -207,12 +207,10 @@ class RectDetail(tk.Toplevel):
     def _refresh_preview(self, *, collect=True):
         if collect and not self._collect():
             return
-        if isinstance(self._resource, fe10_rect.EditableResource):
-            self._preview.configure(image="", text="Preview unavailable for Radiant Dawn")
-            self._preview_note.configure(text="Properties are decoded from the selected rect resource. Unknown layer bytes are preserved.")
-            return
+        fe10 = isinstance(self._resource, fe10_rect.EditableResource)
         try:
-            image, notes = rect_editor.render(self._project, self._resource, self._resources())
+            render = rect_editor.render_fe10 if fe10 else rect_editor.render
+            image, notes = render(self._project, self._resource, self._resources())
             image.thumbnail((485, 450))
             self._photo = ImageTk.PhotoImage(image)
             self._preview.configure(image=self._photo, text="")

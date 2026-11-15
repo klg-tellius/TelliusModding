@@ -50,20 +50,25 @@ def create_hub(page) -> None:
     activations = {f"{chapters.chapter_display_title(page, titles)} ({page})": n
                    for n, page in hub_fe10.activation_candidates(page.project, -1, fe10).items()}
     dialog = CreateHubDialog(page, free=free, templates=templates, avatars=avatars, activations=activations,
-                             blank_map=False, avatar_help=(
+                             avatar_help=(
                                  "The character the player walks around the hub with. It must not be deployed "
                                  "in any other chapter: create one in Game Data › Characters first if none is "
-                                 "listed. It takes the template's first player unit's tile."))
+                                 "listed. It takes the template's first player unit's tile (the middle of a "
+                                 "blank map when that tile is outside it)."))
     page.wait_window(dialog)
     if dialog.result is None:
         return
-    chapter, title, source_id, _keep, _size, avatar_pid, activation = dialog.result[:7]
+    chapter, title, source_id, keep_map, size, avatar_pid, activation = dialog.result[:7]
+    ground_color, ground_image, tile_ground_image = dialog.result[7:10]
     if session.dirty and not messagebox.askyesno(
             "Save FE10Data.cms?", "Creating a hub saves FE10Data.cms, including its unsaved edits. Continue?",
             parent=page):
         return
     try:
-        plan = hub_creation_fe10.create_chapter(page.project, fe10, source_id, chapter, title, avatar_pid)
+        plan = hub_creation_fe10.create_chapter(
+            page.project, fe10, source_id, chapter, title, avatar_pid,
+            blank_size=None if keep_map else size, ground_color=ground_color, ground_image=ground_image,
+            tile_ground_image=tile_ground_image)
         session.data = plan.fe10data
         session.changed(page)
         session.save()

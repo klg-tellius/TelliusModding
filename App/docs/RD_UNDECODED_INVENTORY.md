@@ -230,3 +230,10 @@ Closing an item requires all applicable evidence:
 - **Chapter +0x18** is the `N` message key label on JP (`N0101`, relocated), null on US/EU: now the `n_messages` field. What reads it is not traced.
 - **European movies** with five audio tracks are read (`thp.ThpInfo.audio_tracks`, `read_frame(track=)`); a replacement keeps the count, with the same audio in each track. Not checked in game.
 - **Staff roll text** is shown in the file's own encoding (it was raw bytes before), and the European languages are listed; every ending file on the three discs rebuilds byte for byte.
+
+## 2026-11-15: models, hub map and rect preview (parity Phase 4)
+
+- **Rect preview on RD (done).** `rect_editor.render_fe10` reads RD layers as Path of Radiance's (same byte layouts except the 0x30-byte text box) and draws them; kind 7 is not drawn.
+- **HUB-RD-01: blank hub map in game.** `hub_creation.blank_map` works on RD maps (size written after mapdata's version byte, half sizes rounded down, ground material `map_base`). Not loaded in Dolphin: check the ground draws, the avatar stands and the links work.
+- **RIG-RD-01: new skeletons on RD map rigs (open).** RD map rigs keep each joint's rest orientation in its joint orient (flags 0x67; 2,137 joint-orient bones on 122 of 246 `ymu` rigs) and leave the rotation at zero; `rig_fit` builds identity-rest joints. Working hypothesis: the engine overwrites a bone's rotation channel on map units, which on a fitted skeleton discards its rest orientation (Greil lies on his side). Bit 0x01 of RD's 0x67 is not it: PoR's `build_bone_local_matrix` (0x80062920) tests 0x01/0x02 on the animation's format word, not on the bone. Next: find RD's bone-matrix builder and map-actor pose code (no RD Ghidra names yet), then build fitted skeletons with the rest orientation in the joint orient, and check in Dolphin.
+

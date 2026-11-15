@@ -419,3 +419,60 @@ def render(project, resource: rect.RectResource, resources: dict[str, rect.RectR
 
     draw_resource(resource)
     return image, notes
+
+
+# -- Radiant Dawn ------------------------------------------------------------------------------------
+
+def fe10_preview_resource(resource) -> rect.RectResource:
+    """A Radiant Dawn rect resource (``fe10_rect.EditableResource``) as Path of Radiance layers, for
+    :func:`render`. The kinds share Path of Radiance's byte layout except the 0x30-byte text box
+    (window +0x08, cursor +0x0C, text and cursor positions, width, line height, lines, speed and the
+    seat at +0x29); kind 7 has no preview."""
+    import struct
+
+    from .formats import fe10_rect
+
+    layers = []
+    for layer in resource.layers:
+        raw, strings, kind = layer.raw, layer.strings, layer.kind
+        if kind in (rect.KIND_QUAD, rect.KIND_COLOR_QUAD) and len(raw) >= rect.LAYER_SIZE:
+            (_k, _size, _z, _v, _p, _l, flags, state, texture, alpha, *rects) = rect._QUAD.unpack_from(raw)
+            common = dict(file=strings.get(8, ""), texture=texture, src=tuple(rects[4:8]), dst=tuple(rects[0:4]),
+                          flags=flags, state=state, alpha=alpha)
+            if kind == rect.KIND_COLOR_QUAD and len(raw) >= rect.COLOR_QUAD_SIZE:
+                layers.append(rect.ColorQuadLayer(colors=rect._rgba(rect._COLORS.unpack_from(raw, rect.LAYER_SIZE)),
+                                                  **common))
+            else:
+                layers.append(rect.RectLayer(**common))
+        elif kind == rect.KIND_TEXT and len(raw) >= rect.TEXT_SIZE:
+            (_k, _size, depth, _z, _v, _p, x, y, style_a, style_b, color, unknown, align, padding) =                 struct.unpack(">BBbBIIhhBBBBb3s", raw[:rect.TEXT_SIZE])
+            layers.append(rect.TextLayer(strings.get(8, ""), x, y, depth, style_a, style_b, color, unknown, align,
+                                         padding))
+        elif kind == rect.KIND_TEXTBOX:
+            box = fe10_rect.Layer(kind, raw, strings).textbox()
+            layers.append(rect.TextboxLayer(box.window, "", box.cursor, box.text_x, box.text_y, box.cursor_x,
+                                            box.cursor_y, box.width, 1, 1, box.line_height, box.lines, box.speed,
+                                            box.position))
+        elif kind == rect.KIND_GRADIENT and len(raw) >= 0x20:
+            area = struct.unpack_from(">4h", raw, 8)
+            layers.append(rect.GradientLayer(tuple(area), rect._rgba(rect._COLORS.unpack_from(raw, 16))))
+        elif kind == rect.KIND_SEATS:
+            seats = fe10_rect.Layer(kind, raw, strings).seats()
+            layers.append(rect.SeatsLayer([(t.x, t.y, t.skip, t.facing, t.index) for t in seats]))
+    mode = resource.descriptor[5] if len(resource.descriptor) > 5 else rect.MODE_STACK
+    return rect.RectResource(resource.name, layers, mode)
+
+
+def render_fe10(project, resource, resources: dict, *, size=(640, 480)) -> tuple[Image.Image, list[str]]:
+    """:func:`render` for a Radiant Dawn resource; ``resources`` (name -> resource, either game's)
+    supply the windows a text box links to."""
+    from .formats import fe10_rect
+
+    def convert(item):
+        return fe10_preview_resource(item) if isinstance(item, fe10_rect.EditableResource) else item
+
+    image, notes = render(project, convert(resource), {name: convert(item) for name, item in resources.items()},
+                          size=size)
+    if any(layer.kind == 7 for layer in resource.layers):
+        notes.append("Kind 7 layers are not drawn")
+    return image, notes
