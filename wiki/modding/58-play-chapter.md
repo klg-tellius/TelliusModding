@@ -2,7 +2,7 @@
 id: "modding-play-chapter"
 title: "Play and rewind a chapter in the app"
 description: "A deep Play workflow covering initialization, difficulty, commands, transport granularity, history snapshots, scripts, flags, AI, messages, unsupported systems, fresh-run reloads, and Dolphin handoff"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Play", "Testing", "Debugging"]
@@ -229,6 +229,16 @@ Play state is never saved. Fix what you find in the owning editor (Build, Script
 - Movement, combat (through the Battle Simulator's rules), the event and AI interpreters and the history are source-reviewed; the run shown here was played in the app on an unmodified disc (app-tested).
 - Not modelled or partly modelled: fog details (torches, roofs, line of sight), some staves (Warp, Rescue, Ward, Torch, Hammerne, Unlock), item effects other than stat boosters, native script calls and some AI actions (logged as *not simulated*), cameras, map scenes and `MapLoad` presentation, the preparations and base screens beyond the unit choice. Check those in Dolphin.
 - A passing run proves your authored logic in the simulator. It does not prove graphics, timing, saves or native code.
+
+## On Radiant Dawn
+
+**Play in Dolphin** works on Radiant Dawn with these differences:
+
+- **Difficulty names.** The list uses the names Radiant Dawn's scripts use: **Normal** is the US menu's Easy, **Hard** its Normal and **Maniac** its Hard.
+- **What it skips.** The game starts in the chapter: past the opening movie, the title and the file menu, in about half a minute.
+- **The army.** As on Path of Radiance the army is fresh: only the units the chapter brings in. On Radiant Dawn only the Prologue (`0101`) fields an army this way; test later chapters from a save.
+- **Saves.** Radiant Dawn saves in the Wii's memory. A run uses a Dolphin user folder of its own, so your Dolphin saves are not touched.
+- The jump also exists for the European and Japanese discs; it has been played only on the US disc.
 
 ## Related tutorials and references
 

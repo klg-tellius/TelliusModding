@@ -2,7 +2,7 @@
 id: "modding-script-editor"
 title: "Edit, compile, and test event scripts"
 description: "A complete guide to script files, functions, triggers, calls, diagnostics, bytecode, and safe saving"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Scripting"]
@@ -227,6 +227,14 @@ Use **Revert to file** to discard all unsaved source for the selected script. Af
 - Play is useful for reproducible triggers but does not implement every native, timing path, presentation detail, or skip behavior. Such claims require Dolphin.
 - Unknown/raw trigger parameters must remain labeled unknown until a controlled trace establishes them.
 - A clean Check and readable Bytecode prove compilation, not reachability or correct game state.
+
+## On Radiant Dawn
+
+The script editor opens Radiant Dawn's chapter scripts (`Scripts/C0101.cmb`) and `startup.cmb` in the same language. The container and virtual machine are Path of Radiance's with six more instructions, and the functions a script can call are Radiant Dawn's own: [Script Functions (Radiant Dawn)](../systems/rd-script-functions.md) lists them all, and [Event Scripts (Radiant Dawn)](../formats/rd-event-scripts.md) describes the triggers and the flag table.
+
+- A chapter's dialogue is read from its `e_` message file on the US and European discs; the script names messages by key, as on Path of Radiance.
+- `startup.cmb` holds helpers every chapter calls, among them the Part 4 army hand-overs (`TEAM_0402_ED` and the like) that the story flow rewrites.
+- The European build has ten more functions (`GetMessageWidth`, `VIEnableDimming`...) and the Japanese build lacks four (`IsNOAVersion`...); a script that calls one of them only runs on that build.
 
 ## Related tutorials and references
 

@@ -2,7 +2,7 @@
 id: "modding-visual-effects"
 title: "Edit visual effects and particles"
 description: "Spell and battle effects: the EID_ registry, yme effect packs, replacing packs, parts and textures, cloning a new effect, the particle editor, and the limits of the preview"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Battle", "Effects", "Particles"]
@@ -153,6 +153,10 @@ Every action is written to the extracted files at once (the particle editor only
 - The registry and pack formats, the page and the particle editor are source-reviewed; the inspection and the clone dialog in this lesson were done in the app (app-tested).
 - The registry flags are only partly decoded, and the meaning of the emitter control at +0C is not confirmed.
 - The preview approximates particles and does not play the game's effect sequencing. Every visual result needs Dolphin.
+
+## On Radiant Dawn
+
+The Visual effects page lists Radiant Dawn's effects from `FE10Effect.cms` and works the same way, with more to edit in the registry. **Edit registry…** on a registered effect sets its description, its raw flags, four parameter bytes, up to two child effects that play with it, its sound group and its numeric aliases.
 
 ## Related tutorials and references
 

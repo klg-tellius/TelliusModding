@@ -2,7 +2,7 @@
 id: "ai-engine-and-scoring"
 title: "AI Engine, Targeting & Scoring"
 description: "How AI phases interpret behavior programs, enumerate candidates, score attacks and movement, and resolve ties"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["AI", "Maps", "Combat"]
@@ -59,6 +59,15 @@ At phase start the scheduler selects the next eligible unit from the active non-
 Prediction and execution are deliberately separate. Attack scoring may estimate damage, hit, doubling, and counter risk, but the committed battle still consumes the shared RNG and authoritative combat rules. Movement scoring can use danger estimates without modifying the real threat or HP state. Saving midphase must retain the active unit's program position and already-acted units so reload cannot repeat or skip decisions.
 
 Failure behavior matters for modding. An unknown opcode, missing destination, empty candidate set, unreachable target, or malformed weight must not be treated as permission to attack anything. Candidate arrays and danger maps are transient and should be rebuilt from saved units/map state; interpreter choices and progress are persistent where the save format records them.
+
+## Radiant Dawn
+
+Radiant Dawn's computer player follows the same plan with its own data, `Cp/cp_data.cms`. <span class="confidence confidence--confirmed">engine</span>
+
+- **Instructions.** A table of 82 descriptors (against 52) maps each instruction to its handler: `CP_PERSONATK` (opcode 100) attacks with a character filter, `CP_ALLUNITATK` (101) any hostile unit, `CP_ALLJOBATK` (104) with a class filter, and `CP_ALLUNITATK_TEAMMOVE` and `CP_ALLUNITATK_FLYING` use their own tile rules.
+- **Chance.** An attack instruction runs only when a roll of 0-99 is below its first field: 100 always runs, 0 never does.
+- **Scores.** A unit's `MTYPE_*` record holds signed weights in 32nds for each term of an attack's score: damage dealt, the target's missing HP, nearby allies, class bonuses, skill modifiers, damage taken and the tile's threat. The turn-number weight is not read by the attack scorer.
+- **Villages.** Only `JID_BANDIT` has `SID_VILLAGEDESTROY`, the skill the looting move checks before it looks for a village.
 
 ## Interactions and limits
 

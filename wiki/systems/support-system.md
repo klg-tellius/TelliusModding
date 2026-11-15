@@ -2,7 +2,7 @@
 id: "support-system"
 title: "Support System"
 description: "Relationship progression, persistent ranks, affinity bonuses, and the boundaries of the current specification"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance","Combat"]
@@ -62,6 +62,18 @@ For example, Ike (Earth) and Titania (Light) at A yield Defence `floor(3×1/2)=1
 - Keep at most ten slots because only ten point bytes are serialized.
 - Edit affinities through the character affinity pointer and the fixed nine-row `DivineData` table; new affinity indices require executable changes.
 - Edit fixed bonds through `KiznaData`; they do not unlock conversations or consume support stars.
+
+## Radiant Dawn
+
+Radiant Dawn keeps the same idea, with its own tables. <span class="confidence confidence--confirmed">engine</span>
+
+- **Who supports whom.** `RelianceData` lists every supporting character against all of them, themselves included. Each 8-byte entry holds the partner, a marker byte (0 or 255) that no game code reads, and a support speed from 0 to 4.
+- **Points.** `RelianceParam` gives the gains: 15 at each map start (30 in Part IV), 3 per phase next to the partner, 5 while carrying it, 4 per staff, 1 per Shove and 2 per Smite. The pair's speed adds +2, +1, 0, -1 or -2 to every gain. Only units of the same force with entries for each other gain points.
+- **Ranks.** C, B and A open at 50, 100 and 150 points. Points stop at the next threshold until the support menu's conversation raises the rank, which adds one point; a unit at 51 or more is at C, 101 B, 151 A.
+- **Bonds.** `KiznaData` pairs two characters with a kind and a signed bonus. Kind 1 adds the bonus to Critical and to Critical avoid when the two stand next to each other on the same side. The `AddKizna` script function makes temporary bonds, which the save keeps.
+- **The save** holds, per unit, one points byte per `RelianceData` partner, the one active partner, and three bit sets recording which C, B and A conversations it has seen.
+
+See [Radiant Dawn](../meta/radiant-dawn.md#supports) for the retail values.
 
 ## Interactions and review boundary
 

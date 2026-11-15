@@ -2,7 +2,7 @@
 id: "modding-battle-simulator"
 title: "Simulate and render a fight"
 description: "A controlled Battle Simulator workflow for combatants, levels, promotion, equipment, range, terrain, deterministic rolls, forecasts, strike logs, rendering, comparisons, and engine parity"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Battle Simulator", "Testing", "Combat"]
@@ -211,6 +211,10 @@ Nothing on this page is saved: closing the app forgets the fixture. Write down t
 - The Hit, Avoid, Crit, attack speed and triangle formulas are the community's and unknown in the game code, as the page says. Astra's halved damage is confirmed; Deathblow and Aether's form are not.
 - Random growth, weapon uses, experience, support bonuses, biorhythm and map rules (Canto, rescue) are not simulated here. Use [Play](58-play-chapter.md) for those.
 - The render approximates particles, trails and some timing. Check the final look in Dolphin.
+
+## On Radiant Dawn
+
+The Battle Simulator uses Radiant Dawn's own combat rules, traced from its game code, not Path of Radiance's: its skill set (Adept, Luna, Sol, Aether, the laguz and Part 4 skills...), critical hits at three times the damage and its doubling rule. Each side has four more values, **Tier**, **Biorhythm**, **Authority** and **Gauge**, and a **Transformed** box for laguz. A promoted class is reached through the class's own promotion in FE10Data. The rendered fight uses Radiant Dawn's battle models and backdrops.
 
 ## Related tutorials and references
 

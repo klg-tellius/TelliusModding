@@ -2,7 +2,7 @@
 id: "modding-chapter-ids-and-story-flow"
 title: "Work with chapter IDs and story order"
 description: "Add a chapter, place it in the story, take it out, reorder added chapters and delete one safely"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -208,6 +208,17 @@ Shown on every chapter but the Prologue. Removes the record, the battle-scene ro
 
 - The numbers, the table, the dialogs and what they write are source-reviewed; adding, routing, taking out and deleting chapter 33 were done in the app on a US disc (app-tested).
 - Whether the game loads the added chapter after Ch.1's victory and saves it correctly is the Dolphin test of [Build a three-chapter mini-campaign](62-mini-campaign.md) (unknown here).
+
+## On Radiant Dawn
+
+The Chapters page and its story flow work on Radiant Dawn, with these differences:
+
+- **Chapter ids.** A chapter is a `ChapterData` record named by four digits and sometimes a letter: `0101` is Part 1's Prologue, `0407a` the first map of the Endgame. A chapter played on several maps is several records in a row, one per map. An added chapter gets a number from 56 to 79 and an id from `0501` on.
+- **Order.** The game moves to the next chapter by record position, not by a successor list. The story flow's order is written through a small main.dol hook, so added chapters and a changed order play in the order the flow shows. A record's byte +0x8D can also make the game skip it on some difficulties.
+- **Army.** Each Part 4 chapter has an **Army** box: whose army plays it (Micaiah's, Ike's or Tibarn's), with *plays with* showing the one that will. After a change the app rewrites the army hand-overs in `startup.cmb` and the chapter's army group and lord in FE10Data. A retail flow changes nothing.
+- **Take out of the story** takes a retail chapter out of the order; only an added chapter can be deleted, because removing a retail record would shift every record after it.
+
+An added chapter between 1-1 and 1-2 was played in Dolphin. See [Radiant Dawn](../meta/radiant-dawn.md#chapter-order) for how the game orders chapters and switches armies.
 
 ## Related tutorials and references
 

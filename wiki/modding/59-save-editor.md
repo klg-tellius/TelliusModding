@@ -204,6 +204,7 @@ The same page, tabs and controls edit Radiant Dawn's save, with these difference
 - **System data** edits the parts of the system record by their position in it; what they mean is not traced yet.
 - **Play in Dolphin…** starts the game with a copy of the save in a separate Wii memory for that run; your Dolphin's own saves are not touched.
 - The units need the workspace's FE10Data to be read: open the save from an extracted Radiant Dawn workspace.
+- **Other discs.** The European disc's `FE10_EU.dat` (in `.../52464550/data`) opens the same way. The Japanese `FE10_JP.dat` has another layout and is refused.
 
 Loading an edited Radiant Dawn save in the game is untested, like on Path of Radiance.
 

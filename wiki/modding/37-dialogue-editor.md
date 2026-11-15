@@ -2,7 +2,7 @@
 id: "modding-dialogue-editor"
 title: "Author and connect a dialogue scene"
 description: "A complete workflow for message IDs, scene layouts, backgrounds, portrait seats, speakers, actions, inherited context, preview playback, script calls, and testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Dialogue", "Cutscenes", "Messages"]
@@ -283,6 +283,15 @@ Asset availability, exact timing, input, voice/typing audio, and event skip must
 - Change layout after blocking, observe which seats/boxes become invalid, then restore it.
 - Export the chapter, make one readable text-only change, import, and verify unlisted messages remain.
 - Add a controlled portrait expression/blink change and inspect stage state before and after it.
+
+## On Radiant Dawn
+
+The Dialogue page opens Radiant Dawn's message files, with these differences:
+
+- **Which file.** On the US and European discs a chapter's dialogue is its `e_` file (`Mess/e_c0101.m`); the Japanese one is listed with the other files. On the Japanese disc the plain file is the dialogue.
+- **The text.** Radiant Dawn's messages are a byte code, not `$` commands. The editor shows it in a readable notation such as `<speaker:04>Hello.<wait>`, which round-trips byte for byte; [Message Format (Radiant Dawn)](../formats/rd-message-format.md) lists every command, layout and speech balloon.
+- **European languages.** German, French, Spanish and Italian files use their own single-byte letters; the editor reads and writes them as accented letters (see [Radiant Dawn](../meta/radiant-dawn.md#languages)).
+- **Preview.** The conversation preview draws Radiant Dawn's talk window and portraits, from the disc's language files (the widescreen ones when the disc has them).
 
 ## Related tutorials and references
 

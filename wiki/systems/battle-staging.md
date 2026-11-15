@@ -2,7 +2,7 @@
 id: "battle-staging"
 title: "Battle Staging & Camera"
 description: "Where the fighters and the backdrop stand, how each blow is timed, and how the battle camera films it"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Combat","Battle Graphics"]
@@ -98,6 +98,16 @@ Once [combat resolution](./combat-mechanics.md) has decided every strike, the ba
   <span class="confidence confidence--open">Open</span> How a model attaches its weapon and why some multi-part shapes and dragon rigs look wrong in the app's preview are not decoded yet.
 
   Opening-camera targets and damage/dodge pushback distances are parameters of the selected scene/script resource. They are cosmetic consumers of the precomputed result and do not alter combat state.
+
+## Radiant Dawn
+
+Radiant Dawn keeps the stage in one binary file, `FE10Battle.cms`, instead of Path of Radiance's `.dbx` tables. <span class="confidence confidence--confirmed">files</span>
+
+- **Backdrops.** A map's `BattleTerrIndex` row in FE10Data names a background per terrain type; the background is an `FE10BMapData` record that picks up to five `FE10BMapModel` rows, its variants (slot 3 falls back to slot 2, and any missing slot to slot 0). A model row gives the `zbg/` folder, the map's sound group, the indoor, mirror and run-in flags, the footstep effect and ground, and the placement. <span class="confidence confidence--confirmed">engine</span>
+- **Units.** `FE10BAnimData` picks a unit's battle model by animation, character or class; each `FE10BUnit` row holds twenty tuning values and the flags the battle code reads by name, and owns its `FE10BTex` texture rows. <span class="confidence confidence--confirmed">engine</span>
+- **Cameras.** A camera is an animation clip (`xcam/<name>.ga`) played on one camera rig (`xcam/cam.g`), registered in `FE10BCamFile`. `FE10BCamGroup` gathers clips with selection weights in percent, and `FE10BCamList` chooses, per weapon type and battle motion, the group that films it. <span class="confidence confidence--confirmed">files</span>
+
+See [Radiant Dawn](../meta/radiant-dawn.md#battle-sceneries) for the field tables.
 
 ## Interactions and review boundary
 
