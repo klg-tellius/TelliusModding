@@ -42,6 +42,8 @@ MANUAL: dict[str, dict[int, int]] = {
         0x80029414: 0x80028C24, 0x8002943B: 0x80028C4B,
         # promotion item level check: cmpwi r0,10 after the same unit/class loads
         0x8011FFA4: 0x801186B8,
+        # the same predicate's SID_EVENT_CC skill test (JP's string read at r13-0x7AE4)
+        0x8011FF68: 0x8011867C,
         # the boot script's two database initialisers (read from JP's script at 0x8036D30C)
         0x800CDCEC: 0x800C81B8, 0x800CDF00: 0x800C8390,
     },
