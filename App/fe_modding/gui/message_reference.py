@@ -47,6 +47,18 @@ def epilogue_texts(project) -> dict[str, str]:
     return {}
 
 
+def language_texts(project, stem: str) -> dict[str, str]:
+    """``Mess/<prefix><stem>.m`` for the disc's language (``e_dic.m`` on a US Radiant Dawn disc),
+    else ``Mess/<stem>.m``."""
+    from ..game_profile import message_prefix
+    folder = files_root_of(project) / "Mess"
+    for name in (f"{message_prefix(project)}{stem}.m", f"{stem}.m"):
+        path = folder / name
+        if path.is_file():
+            return file_texts(path)
+    return {}
+
+
 def file_texts(path) -> dict[str, str]:
     """One message file's texts by ID. Every game-data form asks for them; reading e_common.m takes a
     quarter of a second, so the parsed table is kept until the file changes (size or modification
