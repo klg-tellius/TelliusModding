@@ -35,16 +35,18 @@ from typing import Iterable, Mapping, Optional, Sequence
 
 FILE_NAME = "FE10_US.dat"
 FILE_SIZE = 0x124000
-#: Each build's NAND file. The European build writes the same layout as the US one (same file size
-#: and writer code, region map of main.dol); the Japanese file is 0xAC000 bytes (main.dol
-#: 0x8023DE54 creates it with 0xB0000 - 0x4000): the same 0x4000 system record, then seven 0x18000
-#: records at 0x4000 + n x 0x18000 (the file seek at 0x8023F4B4 is the US one at 0x80248800). The US
-#: checkpoint bank at 0x94000 + n x 0x18000 has no Japanese counterpart, so record 6 is probably its one
-#: checkpoint; which record holds what is not confirmed without a Japanese save.
+#: Each build's NAND file. The European build writes the US layout with the region letter E in its
+#: magics. The Japanese file (letter J) is 0xAC000 bytes (main.dol 0x8023DE54 creates it with
+#: 0xB0000 - 0x4000): the US layout cut after the first checkpoint record, so the 0x4000 system
+#: record, six file records and one checkpoint at 0x94000. Checked on files the European and
+#: Japanese games made in Dolphin (2026-11-16): file slot 1 is record 0 on both, and the Japanese
+#: menu lists six slots.
 FILE_NAMES = {"RFEE01": "FE10_US.dat", "RFEP01": "FE10_EU.dat", "RFEJ01": "FE10_JP.dat"}
 #: The builds whose file this module reads.
-READABLE = ("RFEE01", "RFEP01")
+READABLE = ("RFEE01", "RFEP01", "RFEJ01")
 JP_FILE_SIZE = 0xAC000
+#: Each build's file size.
+FILE_SIZES = {"RFEE01": 0x124000, "RFEP01": 0x124000, "RFEJ01": JP_FILE_SIZE}
 #: Each build's Wii title ID (the disc ID's first four letters in hex): the NAND data folder.
 TITLE_IDS = {"RFEE01": "52464545", "RFEP01": "52464550", "RFEJ01": "5246454a"}
 
@@ -191,6 +193,18 @@ SYSTEM_RECORD_COUNT = 30
 SYSTEM_RECORD_SIZE = 0x18
 SYSTEM_MAGIC = b"FE10ASYS"
 DATA_MAGIC = b"FE10ADAT"
+#: The magic's fifth byte names the region: A on the US file, E on the European one (FE10ESYS /
+#: FE10EDAT, seen on a file the European game made in Dolphin), J presumably on the Japanese one.
+#: Everything after it is the same layout.
+REGION_LETTERS = {b"A": "US", b"E": "Europe", b"J": "Japan"}
+
+
+def system_magic(region: bytes = b"A") -> bytes:
+    return b"FE10" + region + b"SYS"
+
+
+def data_magic(region: bytes = b"A") -> bytes:
+    return b"FE10" + region + b"DAT"
 SYSTEM_VERSION = 0x20061002
 DATA_VERSION = 0x20060920
 FORMAT_VERSION = 0x11
@@ -512,7 +526,7 @@ class RuntimeRelation:
 
 def _find_sections(raw: bytes | bytearray) -> list[SaveSection]:
     """Find the ordered RFEE01 tag stream without mistaking ITBL strings for tags."""
-    if not raw.startswith(DATA_MAGIC):
+    if not (raw[:4] == b"FE10" and bytes(raw[4:5]) in REGION_LETTERS and raw[5:8] == b"DAT"):
         return []
     found: list[tuple[bytes, int]] = []
     cursor = HEADER_SIZE
@@ -564,7 +578,8 @@ class SaveRecord:
     """A system record or one physical copy of an RFEE01 save slot."""
 
     def __init__(self, raw: bytes, offset: int, *, index: Optional[int] = None,
-                 checkpoint: bool = False):
+                 checkpoint: bool = False, region: bytes = b"A"):
+        self.region = region
         self.raw = bytearray(raw)
         self.offset = offset
         self.index = index
@@ -582,7 +597,7 @@ class SaveRecord:
 
     @property
     def expected_magic(self) -> bytes:
-        return SYSTEM_MAGIC if self.index is None else DATA_MAGIC
+        return system_magic(self.region) if self.index is None else data_magic(self.region)
 
     @property
     def version(self) -> int:
@@ -1334,18 +1349,17 @@ class SaveFile:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "SaveFile":
-        if len(data) == JP_FILE_SIZE:
-            raise ValueError("This is a Japanese save (FE10_JP.dat). It holds seven records where the US "
-                             "and European saves hold twelve, and which record is which is not confirmed yet, "
-                             "so it can't be opened.")
-        if len(data) != FILE_SIZE:
-            raise ValueError(f"A Radiant Dawn save must be 0x{FILE_SIZE:X} bytes, found 0x{len(data):X}")
-        system = SaveRecord(data[:SYSTEM_SIZE], 0)
+        if len(data) not in (FILE_SIZE, JP_FILE_SIZE):
+            raise ValueError(f"A Radiant Dawn save must be 0x{FILE_SIZE:X} bytes (0x{JP_FILE_SIZE:X} on the "
+                             f"Japanese disc), found 0x{len(data):X}")
+        blocks = TOTAL_BLOCKS if len(data) == FILE_SIZE else RECORDS_PER_BANK + 1
+        region = data[4:5] if data[4:5] in REGION_LETTERS else b"A"
+        system = SaveRecord(data[:SYSTEM_SIZE], 0, region=region)
         records = []
-        for index in range(TOTAL_BLOCKS):
+        for index in range(blocks):
             offset = SYSTEM_SIZE + index * BLOCK_SIZE
             records.append(SaveRecord(data[offset:offset + BLOCK_SIZE], offset, index=index,
-                                      checkpoint=index >= RECORDS_PER_BANK))
+                                      checkpoint=index >= RECORDS_PER_BANK, region=region))
         return cls(data, system, records)
 
     @classmethod
@@ -1411,15 +1425,16 @@ def record_label(record: SaveRecord, active: Iterable[SaveRecord] = ()) -> str:
     base = f"{kind} {record.logical_slot + 1}"
     if record.empty:
         return base + " - empty"
-    status = "valid" if record.valid else ("bad checksum" if record.magic == DATA_MAGIC else "invalid")
+    status = "valid" if record.valid else ("bad checksum" if record.magic == record.expected_magic else "invalid")
     loaded = " - active" if any(record is item for item in active) else ""
     return f"{base} - sequence {record.sequence} - {status}{loaded}"
 
 
 def validate(save: SaveFile) -> list[str]:
     problems = []
-    if save.system.magic != SYSTEM_MAGIC:
-        problems.append(f"system record magic is {save.system.magic!r}, expected {SYSTEM_MAGIC!r}")
+    if save.system.magic != save.system.expected_magic:
+        problems.append(f"system record magic is {save.system.magic!r}, expected "
+                        f"{save.system.expected_magic!r}")
     elif save.system.version != SYSTEM_VERSION:
         problems.append(f"system record version is 0x{save.system.version:08X}")
     elif not save.system.crc_ok:
@@ -1428,7 +1443,7 @@ def validate(save: SaveFile) -> list[str]:
         if record.empty:
             continue
         where = f"{'checkpoint' if record.checkpoint else 'file'} slot {record.logical_slot + 1}"
-        if record.magic != DATA_MAGIC:
+        if record.magic != record.expected_magic:
             problems.append(f"{where}: invalid magic {record.magic!r}")
         elif record.version != DATA_VERSION:
             problems.append(f"{where}: unsupported version 0x{record.version:08X}")

@@ -68,7 +68,7 @@ Radiant Dawn saves in the Wii's memory, not on a memory card: `FE10_US.dat` (`FE
 - **Sections.** A record is a stream of tagged sections, always in this order: `ITBL` (the record's own copy of the character, class, item, skill and AI name lists), `BMST` (chapter state and the 128 script flags), `MDST`, `UNIP` (254 unit slots), `SOKO` (the convoy), `FGPT`, `T  T` (the map's tile records), `RELD` and `KZND` (runtime relations and bonds) and `DEBU`.
 - **Reading.** The game reads the sections back in the same fixed order. It compares each tag but does not act on a mismatch, and no section carries its length, so a save cannot gain a new section: anything inserted shifts every later read, and bytes after the last section are dropped at the next save.
 - **Resume point.** `BMST` +0x9B (repeated in the record header) says where a file resumes: a base or the preparations, the end of a chapter, or after a chapter's opening. <span class="confidence confidence--confirmed">in game</span>
-- The Japanese disc's `FE10_JP.dat` is smaller (0xAC000 bytes) and its layout is not decoded.
+- The European and Japanese files use the same layout with their region letter in each magic (`FE10ESYS`, `FE10JDAT`). The Japanese `FE10_JP.dat` is smaller (0xAC000 bytes): six file records and one checkpoint.
 
 See [Radiant Dawn](../meta/radiant-dawn.md#saves) for the record layouts.
 

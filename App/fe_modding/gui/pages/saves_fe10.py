@@ -1,4 +1,4 @@
-"""The Saves page's Radiant Dawn adapter: the Dolphin NAND file ``FE10_US.dat`` or ``FE10_EU.dat``
+"""The Saves page's Radiant Dawn adapter: the Dolphin NAND file ``FE10_US.dat``, ``FE10_EU.dat`` or ``FE10_JP.dat``
 (``formats/save_file_fe10.py``) shown in the page's own tabs with the page's controls.
 
 The file holds six files and six checkpoints (the page's File picker) and one system record (the
@@ -24,8 +24,9 @@ from ..widgets import ScrollFrame, section_header
 from .saves import OFF, ON, _CheckList, _Fields, _tree
 
 TABS = ("overview", "units", "convoy", "map", "flags", "system", "raw")
-INFO = ("Open the unencrypted FE10_US.dat (FE10_EU.dat for the European disc) from Dolphin's Radiant "
-        "Dawn data folder (Wii/title/00010000/52464545/data, or .../52464550/data, under Dolphin's user "
+INFO = ("Open the unencrypted FE10_US.dat (FE10_EU.dat for the European disc, FE10_JP.dat for the Japanese "
+        "one) from Dolphin's Radiant Dawn data folder (Wii/title/00010000/52464545/data, .../52464550/data or "
+        ".../5246454a/data, under Dolphin's user "
         "folder) to edit a file's chapter, units, "
         "convoy and flags, and the system data every file shares. Unknown bytes are kept and the game's "
         "checksums recomputed. Encrypted data.bin exports from a Wii can't be read. Keep the game closed "
