@@ -36,6 +36,9 @@ RANK_NAMES = {0: "None", 1: "C", 2: "B", 3: "A"}
 # The system record's single values: grid attribute -> (offset, size).
 SYSTEM_FIELDS = {"byte_3ac": (0x3AC, 1), "byte_3ad": (0x3AD, 1), "bytes_3ae": (0x3AE, 2),
                  "word_3b0": (0x3B0, 4), **{f"value_{i}": (0xCC + 2 * i, 2) for i in range(8)}}
+SYSTEM_FIELD_LABELS = {"byte_3ac": "Language", "byte_3ad": "Checkpoint file", "bytes_3ae": "+0x3AE",
+                       "word_3b0": "+0x3B0",
+                       **{f"value_{i}": f"Glossary: {name}" for i, name in enumerate(sf.GLOSSARY_VIEW)}}
 
 
 class _StateView:
@@ -537,26 +540,32 @@ class Fe10Saves:
         scroll.pack(fill="both", expand=True)
         b = scroll.body
         ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "Shared by every file. These are the parts of the system record as the game writes it; what each "
-            "bit and value means is not traced yet, so they are named by where they sit in the record.")).pack(
-            anchor="w")
+            "Shared by every file: what has been cleared and unlocked, the characters, conversations and Sound "
+            "Room tracks seen, the glossary's unlocks and where it was left, and one record per finished "
+            "playthrough.")).pack(anchor="w")
         f = self._fields_in(b, 4)
         f.pack(anchor="w", pady=(6, 10))
         system = lambda: _SystemView(self.save.system) if self._system_ok() else None  # noqa: E731
         for name, (offset, size) in SYSTEM_FIELDS.items():
-            f.add(f"+0x{offset:X}", system, name, {1: "u8", 2: "u16", 4: "u32"}[size])
+            f.add(SYSTEM_FIELD_LABELS[name], system, name, {1: "u8", 2: "u16", 4: "u32"}[size])
         row = ttk.Frame(b)
         row.pack(anchor="w", pady=(4, 0))
         ttk.Label(row, text="Bit set").pack(side="left")
-        names = [p[0] for p in sf.SYSTEM_PARTS if p[3] == "bits"]
+        names = [p[0] for p in sf.SYSTEM_PARTS if p[3] in ("words", "bytes")]
         self._bits_var = tk.StringVar(value=names[0])
         box = ttk.Combobox(row, textvariable=self._bits_var, values=names, state="readonly", width=24)
         box.pack(side="left", padx=(6, 0))
         box.bind("<<ComboboxSelected>>", lambda e: self._fill_system_bits())
+        self._bits_note = ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left")
+        self._bits_note.pack(anchor="w", pady=(4, 0))
         self._bit_list = _CheckList(b, "Double-click a bit to switch it.", height=12)
         self._bit_list.pack(anchor="w", fill="x", pady=(4, 10))
-        section_header(b, "Records", "30 records of 24 bytes (read only)").pack(anchor="w")
-        self._system_records = _tree(b, {"n": ("#", 40, False), "bytes": ("Bytes", 600, True)}, height=10)
+        section_header(b, "Clear records", sf.SYSTEM_PART_NOTES["Clear records"] + " Read only.").pack(
+            anchor="w")
+        self._system_records = _tree(b, {"n": ("#", 40, False), "difficulty": ("Difficulty", 90, False),
+                                         "round": ("Playthrough", 90, False), "character": ("Character", 80, False),
+                                         "turns": ("Turns", 70, False), "time": ("Time", 90, False),
+                                         "id": ("Game id", 160, True)}, height=10)
 
     def _build_raw(self, tab) -> None:
         ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left",
@@ -1073,27 +1082,31 @@ class Fe10Saves:
         tree.delete(*tree.get_children())
         if not self._system_ok():
             return
-        data = self.save.system.system_part("Records at +0xDC")
-        for i in range(sf.SYSTEM_RECORD_COUNT):
-            row = data[i * sf.SYSTEM_RECORD_SIZE:(i + 1) * sf.SYSTEM_RECORD_SIZE]
-            tree.insert("", "end", iid=str(i), values=(i + 1, row.hex(" ")))
+        for i, record in enumerate(self.save.system.clear_records()):
+            if record.empty:
+                tree.insert("", "end", iid=str(i), values=(i + 1, "empty", "", "", "", "", ""))
+                continue
+            difficulty = sf.CLEAR_DIFFICULTIES.get(record.difficulty, str(record.difficulty))
+            tree.insert("", "end", iid=str(i), values=(
+                i + 1, difficulty, record.playthrough, record.character, record.turns, record.time,
+                f"{record.game_id:016X}"))
 
     def _fill_system_bits(self) -> None:
+        name = self._bits_var.get()
+        self._bits_note.config(text=sf.SYSTEM_PART_NOTES.get(name, ""))
         if not self._system_ok():
             self._bit_list.fill([], lambda i: False, lambda i, on: None)
             return
-        system, name = self.save.system, self._bits_var.get()
-        start = next(p[1] for p in sf.SYSTEM_PARTS if p[0] == name)
-        rows = [(i, f"+0x{start + (i >> 3):X} bit 0x{1 << (i & 7):02X}")
+        system = self.save.system
+        names = sf.SYSTEM_UNLOCK_BITS if name == "Clears and unlocks" else {}
+        rows = [(i, f"Bit {i}" + (f": {names[i]}" if i in names else ""))
                 for i in range(8 * len(system.system_part(name)))]
 
         def get(i: int) -> bool:
-            return bool(system.system_part(name)[i >> 3] & (1 << (i & 7)))
+            return system.system_bit(name, i)
 
         def set_(i: int, on: bool) -> None:
-            data = bytearray(system.system_part(name))
-            data[i >> 3] = data[i >> 3] | (1 << (i & 7)) if on else data[i >> 3] & ~(1 << (i & 7))
-            system.set_system_part(name, bytes(data))
+            system.set_system_bit(name, i, on)
             self.page.sync()
         self._bit_list.fill(rows, get, set_)
 

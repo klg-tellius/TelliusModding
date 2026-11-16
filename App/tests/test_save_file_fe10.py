@@ -335,6 +335,11 @@ class Fe10SaveTests(unittest.TestCase):
             end += size
         self.assertEqual(end, sf.SYSTEM_USED)
         self.assertEqual(sf.SYSTEM_RECORD_COUNT * sf.SYSTEM_RECORD_SIZE, 0x2D0)
+        # game bit n of a word set: bit n % 32 of the big-endian word n / 32
+        self.assertEqual(sf.system_word_bit(0x1C, 0), (0x1F, 0x01))
+        self.assertEqual(sf.system_word_bit(0x1C, 5), (0x1F, 0x20))
+        self.assertEqual(sf.system_word_bit(0x1C, 49), (0x21, 0x02))
+        self.assertTrue(set(sf.SYSTEM_PART_NOTES) <= {p[0] for p in sf.SYSTEM_PARTS})
 
     def test_folder_open(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -564,11 +569,24 @@ class Fe10RealSaveTests(unittest.TestCase):
                 continue
             used = len(save.system.raw.rstrip(bytes([0xFF])))
             self.assertLessEqual(used, sf.SYSTEM_USED, path.name)
-            self.assertEqual(save.system.system_part("Byte +0x3AC"), b"", path.name)
+            self.assertEqual(save.system.system_part("Language"), b"\x01", path.name)  # US files: English
+            records = save.system.clear_records()
+            self.assertEqual(len(records), sf.SYSTEM_RECORD_COUNT)
+            # every clear record sets its difficulty's "cleared" bit (0x80245614)
+            bit = {3: 0, 0: 1, 1: 2, 2: 3}
+            for record in records:
+                if not record.empty:
+                    self.assertTrue(save.system.system_bit("Clears and unlocks", bit[record.difficulty]),
+                                    path.name)
+            save.system.set_system_bit("Clears and unlocks", 5, True)
+            save.system.set_system_bit("Conversations seen", 9, True)
             save.system.set_system_value(0xCC, 2, 7)
             again = sf.SaveFile.from_bytes(save.to_bytes())
             self.assertTrue(again.system.valid)
             self.assertEqual(again.system.system_value(0xCC, 2), 7)
+            self.assertTrue(again.system.system_bit("Clears and unlocks", 5))
+            self.assertEqual(again.system.system_part("Clears and unlocks")[3] & 0x20, 0x20)
+            self.assertEqual(again.system.system_part("Conversations seen")[1] & 0x02, 0x02)
 
 
 if __name__ == "__main__":
