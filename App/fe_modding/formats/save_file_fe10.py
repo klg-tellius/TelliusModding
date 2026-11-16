@@ -132,7 +132,9 @@ SYSTEM_PARTS = (
 )
 SYSTEM_PART_NOTES = {
     "Clears and unlocks": "Bits 0-3: the game was cleared on Easy, Normal, Hard, Maniac (set with each clear "
-                          "record; any of them adds the Options menu's extra choices). Bit 5: the full opening "
+                          "record; any of them adds the Options menu's extra choices; with all four set, Extras "
+                          "shows Game Records, Sound Room, Theater and Replay Event, checked in game). Bit 5: "
+                          "the full opening "
                           "movie (SetAvailableGrandOpening). Bit 4 is set on cleared files; its reader was not "
                           "found. Bit 49 makes chapters load a debug deployment; no retail code sets it.",
     "Characters met": "One bit per character number (PersonData +0x1C), set whenever that character's unit "

@@ -165,7 +165,7 @@ Radiant Dawn's Extras menu has more screens, each with its own page on Assets ([
 - **Endings** ([The ending and war record](79-ending-and-war-record.md)) and **Movie Subtitles** ([Chapter opening movies](41-chapter-opening-movies.md)).
 - **Wii Banner**: the channel title, in each Wii language, and the pictures the Wii Menu shows for the disc (`opening.bnr`). The game itself never reads it ([Wii disc banner](../formats/wii-banner.md)).
 
-The Sound Room records the tracks heard in the system data too, one bit per track. None of these Radiant Dawn pages has been checked in the game yet.
+The Sound Room records the tracks heard in the system data too, one bit per track. Of these Radiant Dawn pages, the Conversation Room lists (European disc) and the movie subtitles (US disc) have been checked in the game; the others have not. Before any clear, Extras shows only Character Portraits; with the four "cleared" bits set in the save's system data it also shows Game Records, Sound Room, Theater and Replay Event (the Conversation Room).
 
 ## Things to try next
 

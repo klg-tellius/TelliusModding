@@ -56,7 +56,7 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
 ## conversationroom.bin: Conversation Room lists
 
-  Two lists of name pointers, each after a count: 35 chapter IDs (`C0105` to `C0407e`) and 69 PIDs closed by `OTHER`. The Conversation Room loads them next to the conversation list of [FE10Conversation.cms](./rd-conversation-data.md), whose records name each conversation's chapter and speakers. They match the room's two orders, by chapter and by character; the menu code that walks them was not traced. <span class="confidence confidence--strong">engine + files</span>
+  Two lists of name pointers, each after a count: 35 chapter IDs (`C0105` to `C0407e`) and 69 PIDs closed by `OTHER`. The Conversation Room loads them next to the conversation list of [FE10Conversation.cms](./rd-conversation-data.md), whose records name each conversation's chapter and speakers. They are the room's two orders, **By chapter** and **By character**: on the European disc, with `C0108` moved to the front of the chapter list, the room's chapter list started at Part I Ch.7. <span class="confidence confidence--confirmed">in game</span>
 
 ## FE10Epilogue.bin: endings
 
@@ -100,4 +100,4 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
   The US and European discs subtitle seven story movies with pictures instead of text. When a movie starts, the player looks its file name up in `CAPTION_DATA` (a count, then movie-name and caption-block pointer pairs), loads `/Movie/Caption/<language prefix><picture file>` (`e_s1.cms`, an LZ10 TPL with one image per caption) and steps through the captions. A caption block holds the folder, the picture file, then 20-byte captions ending in a `-1` word. <span class="confidence confidence--confirmed">engine</span>
 
-  A caption is five numbers: the picture's index in the TPL, then the wait before it, its fade-in, how long it stays and its fade-out, all in milliseconds counted from the end of the previous caption. Each picture is drawn centred at the bottom of the screen. The opening's first line appears 9.04 seconds in. The Japanese disc has no subtitles. <span class="confidence confidence--confirmed">engine + files</span>
+  A caption is five numbers: the picture's index in the TPL, then the wait before it, its fade-in, how long it stays and its fade-out, all in milliseconds counted from the end of the previous caption. Each picture is drawn centred at the bottom of the screen. The opening's first line appears 9.04 seconds in. The Japanese disc has no subtitles. <span class="confidence confidence--confirmed">engine + files</span> On the US disc, the opening's first caption set to picture 10 showed that line ("No. It was just a bird.") where the retail game shows its first one. <span class="confidence confidence--confirmed">in game</span>
