@@ -1,4 +1,4 @@
-"""Radiant Dawn's ``FE10Intro.bin``: the Extras class introductions.
+"""Radiant Dawn's ``FE10Intro.bin``: the title screen's Unit Profile demo (class introductions).
 
 A :mod:`pool_file` file with one symbol, ``FE10Intro`` (offset 0): a u16 count, two zero bytes,
 then 64-byte records. The intro scene (``0x8026A9D4``) loads ``FE10Intro.bin``, the picture

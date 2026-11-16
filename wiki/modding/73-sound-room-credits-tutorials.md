@@ -161,11 +161,11 @@ Radiant Dawn's Extras menu has more screens, each with its own page on Assets ([
 
 - **Glossary**: the Info glossary's people, relation chart, affiliations and terms (`dictionary.bin`), and the flags that unlock each entry (`dictionaryF.bin`). Entries with the same PID in a row are one entry that grows as the story moves on. An added entry gets its unlock flag in the same position of its table, and a script sets it by name. The save keeps the unlocks in the system data: 128 bits for people and 64 for each of the other tables.
 - **Conversation Room**: the chapter and character lists (`conversationroom.bin`). A conversation shows once its bit is set in the system data.
-- **Class Introductions**: each class's scene in battle (unit, backdrop, sky, camera, up to five motions) with its picture and description (`FE10Intro.bin`, pictures on **Class Intro Pictures**). The scene starts at the first record of the chosen group.
+- **Class Introductions**: the *Unit Profile* demo the title screen plays when left alone, not an Extras screen. Each class's scene in battle (unit, backdrop, sky, camera, up to five motions) with its name card and description (`FE10Intro.bin`, cards on **Class Intro Pictures**). Checked in Dolphin: a changed card and description show in the demo.
 - **Endings** ([The ending and war record](79-ending-and-war-record.md)) and **Movie Subtitles** ([Chapter opening movies](41-chapter-opening-movies.md)).
 - **Wii Banner**: the channel title, in each Wii language, and the pictures the Wii Menu shows for the disc (`opening.bnr`). The game itself never reads it ([Wii disc banner](../formats/wii-banner.md)).
 
-The Sound Room records the tracks heard in the system data too, one bit per track. Of these Radiant Dawn pages, the Conversation Room lists (European disc) and the movie subtitles (US disc) have been checked in the game; the others have not. Before any clear, Extras shows only Character Portraits; with the four "cleared" bits set in the save's system data it also shows Game Records, Sound Room, Theater and Replay Event (the Conversation Room).
+The Sound Room records the tracks heard in the system data too, one bit per track. Of these Radiant Dawn pages, the Conversation Room lists (European disc), the class introductions (European disc) and the movie subtitles (US disc) have been checked in the game; the others have not. Before any clear, Extras shows only Character Portraits; with the four "cleared" bits set in the save's system data it also shows Game Records, Sound Room, Theater and Replay Event (the Conversation Room).
 
 ## Things to try next
 

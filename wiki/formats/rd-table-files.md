@@ -79,7 +79,7 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
 ## FE10Intro.bin: class introductions
 
-  The symbol `FE10Intro` is a u16 count, two zero bytes and 64-byte records. Each record stages one class in battle beside its picture and description: <span class="confidence confidence--confirmed">engine + files</span>
+  These are the **Unit Profile** demo the title screen plays when left alone (GameController label 0x30, `E_IntroProc`), not an Extras screen. The symbol `FE10Intro` is a u16 count, two zero bytes and 64-byte records. Each record stages one class in battle beside its name card and description: <span class="confidence confidence--confirmed">engine + files</span>
 
 <div class="table-wrap">
 <table><thead><tr><th>Offset</th><th>Field</th></tr></thead><tbody>
@@ -88,10 +88,10 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
     <tr><td>+0x08</td><td>Class JID</td></tr>
     <tr><td>+0x0C, +0x10</td><td>Battle backdrop (<code>bg0104平地2</code>) and sky (<code>曇り</code>)</td></tr>
     <tr><td>+0x14</td><td>Camera distance: close, or close from above for fliers</td></tr>
-    <tr><td>+0x18</td><td>Picture: <code>intro/&lt;name&gt;.cms</code>, an LZ10-compressed TPL</td></tr>
+    <tr><td>+0x18</td><td>The class-name card shown before and above the scene ("Fighter"): <code>intro/&lt;name&gt;.cms</code>, an LZ10-compressed TPL</td></tr>
     <tr><td>+0x1C</td><td>Description (<code>MS_INTRO_...</code> in <code>intro.m</code>)</td></tr>
     <tr><td>+0x20, +0x24</td><td><code>兵種紹介</code> on every record; the weapon by its Japanese name (<code>なし</code> for none)</td></tr>
-    <tr><td>+0x28</td><td>300 on every record, not traced</td></tr>
+    <tr><td>+0x28</td><td>300 on every record, not traced; 600 on the first record did not visibly lengthen its scene</td></tr>
     <tr><td>+0x2C</td><td>Up to five motions played in turn (<code>攻撃１</code>, <code>構え</code>...), zero after the last</td></tr>
   </tbody></table>
 </div>
