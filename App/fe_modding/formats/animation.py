@@ -499,6 +499,26 @@ def read_particle_table_layout(data: bytes) -> ParticleTableLayout | None:
     return ParticleTableLayout(block, tuple(emitters))
 
 
+def fe10_footer_chain(data: bytes, footer_start: int) -> list[tuple[int, int, int]]:
+    """Walk Radiant Dawn's compact footer: a linked list of 12-byte
+    ``(slot, block offset, next descriptor offset)`` triples starting at header
+    word 0 and ending at a zero ``next``. Returns ``(descriptor, slot, block)``
+    in chain order. Every shipped RD ``.ga`` with a footer places its first
+    block right after the keyframe data and the descriptors after the blocks.
+    """
+    chain, seen, at = [], set(), footer_start
+    while at:
+        if at in seen or at + 12 > len(data):
+            raise AnimationError(f"Footer chain breaks at {at:#x}.")
+        seen.add(at)
+        slot, block, nxt = struct.unpack_from(">3I", data, at)
+        if block >= len(data):
+            raise AnimationError(f"Footer block {block:#x} is outside the file.")
+        chain.append((at, slot, block))
+        at = nxt
+    return chain
+
+
 def read_event_block(block: bytes) -> list[EventKey]:
     """Decode footer slot 0's event track (see the module docstring)."""
     (count,) = struct.unpack(">H", block[0:2])
