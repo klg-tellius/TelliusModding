@@ -291,5 +291,6 @@ For someone at the controller: `tools/session_playtest/rd_check_scenarios.py` (`
 - **Class introductions (checked, EU):** they are the title screen's idle *Unit Profile* demo (GameController label 0x30 starts `E_IntroProc` through 0x8026B958), not Extras. A record given another class's picture and description showed that name card ("Fighter") and text over its own unit; the picture field is the class-name card. +0x28 at 600 did not visibly lengthen the scene. Setting unlock bits 4 and 6-15 added *PoR Support Archive* to Extras (which bit was not isolated).
 - **Animation speed (checked, EU):** with `rd.anim.speed` at 0.25 the title demo ran far slower: over the same ~70 s of screenshots retail reached the 10th class and the slowed game the 4th. The name cards' fades slowed too, so the global speed value drives more than 3D actors.
 - **Ally/NPC battles (checked, US):** on the real Prologue with one bandit moved to army 2 and the player phase skipped, the patched game played the green bandit's fight with a red bandit as an animated Bandit-vs-Bandit scene; retail showed the same Other Phase on the map only.
+- The map menu's Guide is the tutorial browser; the glossary is a base screen (Info), so checking it needs a file that reaches a base.
 - **Still open in game:** glossary, endings, Wii banner, `mapshader` passes and the prop flag bits (MAP-04).
 

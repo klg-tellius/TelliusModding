@@ -16,6 +16,8 @@ Usage (python -m tools.dolphin_input ...):
 
 Buttons (Wii Remote held sideways, Radiant Dawn's default; the GameCube pad gets the same keys):
 A=2 (OK), B=1 (Cancel), Start=+, Minus=-, Home, Up/Down/Left/Right = D-pad, WA=Wii A.
+WA (NOCONVERT) does not reach the game: open the map menu with A on an empty tile. Only save-state
+slot 1 works (KANA is not a usable hotkey); the --save_state start argument did not load a state either.
 Keys are spare DirectInput keys no Windows application uses: the Japanese-keyboard keys sent as extended
 scan codes E0 11..E0 17, YEN, CONVERT and NOCONVERT; F13-F15 and KANA are Dolphin hotkeys. DirectInput
 has no codes for F16 and above, so Dolphin can't bind them.
