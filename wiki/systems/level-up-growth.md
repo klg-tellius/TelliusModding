@@ -2,7 +2,7 @@
 id: "level-up-growth"
 title: "Level-Up Growth"
 description: "How a level-up turns growth rates into stat gains: a random roll per stat, or fixed accumulation"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance","Characters"]
@@ -70,6 +70,16 @@ For modding, growth rates and caps must therefore be tested together. Raising a 
   The same helper that scales battle EXP scales growth rates for Elite (doubled) and Frac90 (70%), with an upper limit of 100 on the result.
 
   See [Combat Resolution](./combat-mechanics.md) for the EXP side of the same adjustment.
+
+## Radiant Dawn
+
+On Radiant Dawn, a growth rate is rolled in chunks: each full 100 points gives one guaranteed gain (up to two), then one roll with one random number decides the remainder. Blossom gives a failed remainder roll a second try. If all eight stats miss, one stat that missed and has room gets +1. Stats at their cap are skipped. <span class="confidence confidence--confirmed">engine</span>
+
+A bonus-experience level-up starts from that result, then removes or adds gains until three different stats have grown. <span class="confidence confidence--confirmed">engine</span>
+
+Combat EXP uses a unit's effective level: its level, plus 20 for second tier (`SID_HIGHER`) or 40 for third (`SID_HIGHEST`). The kill and action EXP bases and multipliers are rows of the Difficulty table. Paragon doubles an award and Blossom halves it, then the award is capped at 100. <span class="confidence confidence--confirmed">engine</span>
+
+Some deployed units take their stats from `FE10Growth.cms` instead: a table of stats by character and internal level, used when the unit's deployment flag says so. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Interactions and review boundary
 

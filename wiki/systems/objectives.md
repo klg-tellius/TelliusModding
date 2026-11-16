@@ -2,7 +2,7 @@
 id: "objectives"
 title: "Objectives"
 description: "How a chapter knows it's been won or lost"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Structure"]
@@ -113,6 +113,10 @@ Stages must be idempotent. Resume loads the saved flags, unit/map state, and cur
 This supports villages saved, units escaped, turns remaining, NPC survival, or chapter-specific counters without confusing them with victory. The flag/counter is updated when success or failure becomes irreversible and serialized if checkpoints are allowed. Each type-12 function owns its condition and raw amount; `AchieveSet` owns line collection, difficulty adjustment, display input, and the eventual BEXP award. Multi-part scripts decide whether their counters accumulate or reset.
 
 The trial-map grades described above are a separate scored result: turns, losses, and kills are compared with chapter-record thresholds and averaged. They do not use `AchieveSet` as the normal campaign BEXP list.
+
+## Radiant Dawn
+
+A Radiant Dawn chapter record holds three objective blocks, each naming a victory and up to four defeat conditions. Winning is the script's job: setting `gf_complete` wins at the end of the next unit action, and every `@on_complete` event then runs in order. A branching chapter ends with `CompleteSubChapter(route)`. Trial maps also grade the player by turns, units lost and score. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Interactions and review boundary
 

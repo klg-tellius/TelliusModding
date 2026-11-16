@@ -2,7 +2,7 @@
 id: "laguz-transformation"
 title: "Laguz Transformation"
 description: "A hidden 0–20 gauge that charges in human form and drains in beast form, not a simple timer"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance","Combat"]
@@ -76,6 +76,14 @@ Actor construction calls `equip_innate_laguz_weapon` once: it clears the ordinar
 After the class toggle, map presentation refreshes and resolves the active class/character animation ID through `FE8Anim.bin`; a missing record or pack falls back to `AID_DUMMY_N`. Full battle resolves the active animation ID, `(JID, PID)`, then JID through `jobList.dbx`; missing required full-battle assets reject that presenter and fall back to map combat. Normal, scripted, and skipped transforms all reach the same active class and refresh path.
 
 The difficulty-indexed `GameData` Laguz row has one executable caller: the auto-level/stat-growth application routine. For its restricted linked-class path it contributes to generated permanent stats before randomized rounding. It is not read by transformation, any live stat getter, or battle EXP; changing difficulty never scales the reversible transformation delta at runtime.
+
+## Radiant Dawn
+
+Radiant Dawn's laguz use a gauge from 0 to 30. A character sets the starting value and four changes: per turn and after a battle, in each form. A unit transforms when the gauge reaches 30 and reverts at 0. Royals, fixed beasts and fixed half-beasts count as full. Transforming swaps the class through its form link, rebuilds the skills and caps the current HP. <span class="confidence confidence--confirmed">engine</span>
+
+While transformed, Strength, Magic, Skill, Speed, Defense and Resistance are doubled (1.5 times for a half-shift) and capped by the transformed class. Luck and HP are not multiplied. <span class="confidence confidence--confirmed">engine</span>
+
+The AI has its own instructions for the gauge: test the form, check whether the unit is ready to transform, read the gauge, and transform or revert. <span class="confidence confidence--confirmed">engine</span>
 
 ## Interactions and review boundary
 

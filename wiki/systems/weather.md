@@ -2,7 +2,7 @@
 id: "weather"
 title: "Weather"
 description: "One controller process per map, dispatching to a different child effect by weather id"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Graphics","Structure"]
@@ -79,6 +79,12 @@ For a dusk transition, an event can set warmer ambient and diffuse colors, adjus
 Inputs come from `mapextra`, `maplight`, `mapfog`, weather resources, sky tables in `FE8Data.bin`, and event-script setters. Outputs are controller processes, renderer light/fog state, selected battle sky, and material callbacks. Tactical terrain, pathfinding, and visibility consume none of these values directly.
 
  FE9-SYS-079 has no blocking research gap: dispatch families, setter behavior, reload lifecycle, sky linkage, and effect ownership are established.
+
+## Radiant Dawn
+
+A Radiant Dawn chapter names its weather in `ChapterData` +0x9C: one of 22 names, among them clear, cloudy, snow, night, indoors and none. Only the battle scene setup reads it, together with the battle background. On 1-1, snow in place of cloudy drew no snow on the map or in battle, but the bandit's displayed hit rate on Micaiah went from 54 to 69. <span class="confidence confidence--confirmed">in game</span>
+
+The map's own weather number is in its `mapextra` bits (0–21), named in the app's Map settings by the story maps that use them. <span class="confidence confidence--confirmed">files</span>
 
 ## Review boundary
 

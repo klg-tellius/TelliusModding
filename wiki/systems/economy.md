@@ -2,7 +2,7 @@
 id: "economy"
 title: "Economy"
 description: "Gold, shops, and forging — how the game tracks and spends the party's money"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Economy"]
@@ -85,6 +85,10 @@ There is no full-pool guard. `allocate_free_forge_result_slot` returns index 0 a
   Convoy access itself is chapter-gated: it is unavailable during the game's early chapters, and becomes available again from partway through the game onward, plus during the base/preparation screens that sit outside normal chapter numbering.
 
   A forged weapon goes either to the unit or, when the convoy is available, into the convoy.
+
+## Radiant Dawn
+
+On Radiant Dawn each chapter record names the gold account and the convoy it uses. Shops are per difficulty (`Shop/shopitem_n/h/m.bin`). Forging is priced per step; the Game Code page sets the Hit and Critical gained per step (and the price with it) and the gold cap. A forged weapon is an ordinary convoy or inventory item with its forge data attached. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Interactions and review boundary
 

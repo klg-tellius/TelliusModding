@@ -2,7 +2,7 @@
 id: "events-scripting"
 title: "Events & Scripting"
 description: "How a chapter's logic is actually structured — functions the engine calls reactively, not a linear script"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Structure"]
@@ -149,6 +149,12 @@ The safe sequence is start → wait → consume the result or mutate dependent s
   Besides its own locals, a script can use **32 global words**, numbered 0&ndash;31 and shared by every loaded script: slot 3 is the same word whichever chapter reads it. A script's header declares how many slots it needs (the highest slot it uses plus one); the engine keeps a running total, and a script that would push it past 32 is loaded without any of its functions being registered. <span class="confidence confidence--confirmed">confirmed</span>
 
   The table is created once at power-on and never cleared: an unwritten slot holds leftover memory, not zero. It is not part of a save either, so a global is only dependable between a write and a later read in the same play session. The chapter scripts use globals exactly like that — a unit's death or selection stores tile coordinates that the following after-action event reads — and keep anything lasting in [event flags](./event-flags.md) instead. <span class="confidence confidence--confirmed">confirmed</span>
+
+## Radiant Dawn
+
+Radiant Dawn's scripts use the same container and virtual machine with six more instructions (increment, decrement, duplicate, two fixed returns and an assignment) and a two-byte form of local calls, needed by `startup.cmb`'s 589 functions ([Event Scripts (Radiant Dawn)](../formats/rd-event-scripts.md)). The retail scripts use these triggers most: before a phase, on a battle, on a death, on a location, on an area, base talks and talks. The native functions are listed in [Script Functions (Radiant Dawn)](rd-script-functions.md). <span class="confidence confidence--confirmed">engine + files</span>
+
+The engine's name table has 2,027 buckets instead of 509, and the last matching entry wins instead of the first, so a name registered later replaces an earlier one. <span class="confidence confidence--confirmed">engine</span>
 
 ## Interactions and review boundary
 

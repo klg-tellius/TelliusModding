@@ -2,7 +2,7 @@
 id: "items-weapons"
 title: "Items & Weapons"
 description: "How an item definition becomes inventory, equipment, combat statistics, and durability"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance","Economy"]
@@ -180,6 +180,14 @@ A new item with a stat booster's fields but a different ID has no use effect: th
     <tr><td><code>noneart</code></td><td>US/PAL Boots only</td><td>Unused regional flag. Japanese Boots omits it but has the same Mov +2 record and use handlers; the US executable loads the bit but never reads it</td></tr>
   </tbody></table>
 </div>
+
+## Radiant Dawn
+
+Radiant Dawn's items are records of `FE10Data.cms` with a weapon type, rank, up to three effects, might, hit, critical, weight, uses, weapon experience, range, a price, and lists of attributes and "effective against" labels of any length. Some carry a stat-bonus block. Twelve weapon types appear in a rank string: sword, lance, axe, bow, knife, strike, fire, thunder, wind, light, dark and staff. <span class="confidence confidence--confirmed">engine + files</span>
+
+An item's state word in a save holds its uses in the high byte and flags in the low byte: 0x80 marks the equipped weapon, 0x20 a forged one. A forged weapon stores its own name and eight more bytes. <span class="confidence confidence--confirmed">files</span>
+
+Effective weapons multiply the weapon's might by 3 on an effective target; the multiplier is a Game Code row. <span class="confidence confidence--confirmed">engine</span>
 
 ## Interactions and review boundary
 

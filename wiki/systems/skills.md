@@ -2,7 +2,7 @@
 id: "skills"
 title: "Skills"
 description: "How units acquire abilities and how map, combat, and movement code apply them"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Skills","Balance","Combat","Map Actions"]
@@ -185,6 +185,14 @@ Caller ownership is the priority rule: exchange-order skills run while the log i
 ## Why the skill table cannot grow
 
 The skill table holds exactly 98 records. Effects are tied to a skill's position: native code tests a raw table index in 466 places (37 of them compute the index, for example Chant's eight stat records after the base one), and the skill-capacity screens, learnable-skill lists and name lookups loop to a literal 98. An added record would be skipped by those loops and would have no effect anyway. Changing what a skill does, or adding a new effect, means changing the executable. <span class="confidence confidence--confirmed">engine</span>
+
+## Radiant Dawn
+
+Radiant Dawn's skills are records of `FE10Data.cms` with no fixed table size. Each has a capacity cost, an icon and two lists: **Requirements**, the class types (`SFXC_…`) that can have it, and **Conditions**, the skills, classes and characters that can't. A unit's skills are its character's list, its class's list and the skills it learned, up to its class's capacity (15, 30 and 60 by tier in retail). Learning a skill past the capacity removes removable skills until it fits. <span class="confidence confidence--confirmed">engine + files</span>
+
+A skill entry in a save carries its source: 0 the character's own skills, 1 the class's, 2 one taught by a scroll. <span class="confidence confidence--confirmed">files</span>
+
+The activation chances of Colossus, Luna, Bane/Lethality and Astra/Aether, Wrath's critical bonus and HP threshold, and Paragon's EXP multiplier are rows of the Game Code page. <span class="confidence confidence--confirmed">engine</span>
 
 ## Interactions and review boundary
 

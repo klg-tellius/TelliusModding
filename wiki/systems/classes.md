@@ -2,7 +2,7 @@
 id: "classes"
 title: "Classes"
 description: "The shared rules that give a unit movement, weapon access, caps, traits, and a battle model"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance"]
@@ -103,6 +103,12 @@ A class supplies the abilities shared by a kind of unit. Two characters in the s
 ## Stats and movement type
 
   After the movement byte, a class record holds its movement type — the column of terrain movement costs its units use (see [FE8Data.bin](../formats/fe8data.md)) — then eight base stats added to each unit's own, eight caps, and eight class growth rates (the Ranger's HP growth is 90). The game's loader skips the class Luck base and cap: Luck is capped at 40 for every class, in level-ups, stat boosters and the Luck shown in battle. <span class="confidence confidence--confirmed">engine</span>
+
+## Radiant Dawn
+
+Radiant Dawn has three tiers. A class links to the one below and the one above it (**Previous tier**, **Promotes to**), and a laguz class to its other form. **Promotion level** (21 on first- and second-tier classes) makes the level-up that would reach it promote the unit instead. A class's weight is a base weight plus two parts for mounts and gear, and its movement type picks one of 23 movement-cost columns of `TerrainData` (10 on every flier). The file's base Luck is ignored: the game sets it to 0. <span class="confidence confidence--confirmed">engine</span>
+
+Promotion items check the unit's level (10 or more), its tier and its class's promotion link. They refuse laguz and units with `SID_EVENT_CC`, who promote only through the story. Promoting adds the new class's promotion gains and base differences, and gives `SID_SMITE` unless the unit has `SID_TACKLE`. <span class="confidence confidence--confirmed">engine</span>
 
 ## Interactions, edge cases, and limits
 
