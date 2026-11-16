@@ -9,8 +9,9 @@
   padded with zeros to four bytes;
 * the relocation table (every pointer field, ascending), then the section table and its names.
 
-No pointer targets the tables themselves, so a file is the table bytes, a map of pointer fields to
-their strings, and its symbols. :func:`build_pool_file` lays the pool out again from the strings
+In all but ``Movie/caption_data.bin`` no pointer targets the tables themselves, so a file is the
+table bytes, a map of pointer fields to their strings, and its symbols; ``caption_data.bin`` also
+points at its own caption blocks (:attr:`PoolFile.inner`, read with an explicit ``pool_start``). :func:`build_pool_file` lays the pool out again from the strings
 the fields hold, which gives back the retail files byte for byte and lets an editor add, remove or
 change any string.
 """
@@ -38,12 +39,16 @@ class PoolFile:
     pointers: dict[int, str] = field(default_factory=dict)
     symbols: list[tuple[str, int]] = field(default_factory=list)
     header_tail: bytes = bytes(12)
+    #: body offset -> body offset, for pointers into the tables
+    inner: dict[int, int] = field(default_factory=dict)
 
     def string(self, offset: int) -> str | None:
         return self.pointers.get(offset)
 
 
-def read_pool_file(data: bytes, encoding: str = ENCODING) -> PoolFile:
+def read_pool_file(data: bytes, encoding: str = ENCODING, pool_start: int | None = None) -> PoolFile:
+    """``pool_start``: where the strings begin, for files whose pointers also target the tables
+    (by default the lowest pointer target)."""
     if len(data) < HEADER_SIZE:
         raise PoolFileError("The file is shorter than its header.")
     size, data_size, pointer_count, symbol_count, imports = struct.unpack_from(">5I", data)
@@ -53,12 +58,16 @@ def read_pool_file(data: bytes, encoding: str = ENCODING) -> PoolFile:
     reloc = HEADER_SIZE + data_size
     fields = [struct.unpack_from(">I", data, reloc + 4 * i)[0] for i in range(pointer_count)]
     targets = {f: struct.unpack_from(">I", payload, f)[0] for f in fields}
-    pool = min(targets.values(), default=len(payload))
+    pool = min(targets.values(), default=len(payload)) if pool_start is None else pool_start
     if any(f + 4 > pool for f in fields):
         raise PoolFileError("A pointer field lies inside the string pool.")
     body = bytearray(payload[:pool])
-    pointers = {}
+    pointers, inner = {}, {}
     for offset, target in targets.items():
+        if target < pool:
+            inner[offset] = target
+            body[offset:offset + 4] = bytes(4)
+            continue
         end = payload.find(b"\0", target)
         if end < 0:
             raise PoolFileError(f"The string at {target:#x} has no end.")
@@ -71,7 +80,7 @@ def read_pool_file(data: bytes, encoding: str = ENCODING) -> PoolFile:
         address, name_offset = struct.unpack_from(">II", data, table + 8 * i)
         start = names + name_offset
         symbols.append((data[start:data.index(b"\0", start)].decode(encoding), address))
-    document = PoolFile(bytes(body), pointers, symbols, data[0x14:HEADER_SIZE])
+    document = PoolFile(bytes(body), pointers, symbols, data[0x14:HEADER_SIZE], inner)
     return document
 
 
@@ -91,8 +100,12 @@ def build_pool_file(document: PoolFile, encoding: str = ENCODING) -> bytes:
         if offset % 4 or offset + 4 > len(body):
             raise PoolFileError(f"Pointer field {offset:#x} is outside the tables.")
         struct.pack_into(">I", body, offset, at[text])
+    for offset, target in document.inner.items():
+        if offset % 4 or offset + 4 > len(body) or not 0 <= target < len(body) or offset in document.pointers:
+            raise PoolFileError(f"Inner pointer {offset:#x} -> {target:#x} is outside the tables.")
+        struct.pack_into(">I", body, offset, target)
     payload = bytes(body + pool)
-    fields = sorted(document.pointers)
+    fields = sorted({*document.pointers, *document.inner})
     names = bytearray()
     table = bytearray()
     for name, address in document.symbols:
@@ -116,6 +129,7 @@ class TableWriter:
     def __init__(self) -> None:
         self.body = bytearray()
         self.pointers: dict[int, str] = {}
+        self.inner: dict[int, int] = {}
 
     @property
     def offset(self) -> int:
@@ -135,3 +149,11 @@ class TableWriter:
 
     def raw(self, data: bytes) -> None:
         self.body += data
+
+    def link(self, target: int) -> None:
+        """A pointer field to ``target``, an offset in the tables."""
+        self.inner[len(self.body)] = target
+        self.word(0)
+
+    def patch_link(self, offset: int, target: int) -> None:
+        self.inner[offset] = target

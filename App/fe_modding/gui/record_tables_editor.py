@@ -93,6 +93,12 @@ class RecordTablesEditor(EditorPanel):
     def problems(self) -> list[str]:
         return []
 
+    def build_extra(self, spec: TableSpec, parent) -> None:
+        """Add widgets under a table's form (a preview)."""
+
+    def row_selected(self, spec: TableSpec, index: Optional[int]) -> None:
+        """Called after a row is shown in the form (``None``: nothing selected)."""
+
     def describe(self) -> str:
         return ", ".join(f"{len(t.rows)} {t.label.lower()}" for t in self._tables)
 
@@ -162,6 +168,9 @@ class RecordTablesEditor(EditorPanel):
                     continue
                 ttk.Button(buttons, text=text, width=3 if len(text) == 1 else None, command=command).pack(
                     side="left", padx=(0, 4))
+        extra = ttk.Frame(right)
+        extra.grid(row=row + 1, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        self.build_extra(spec, extra)
         self._forms[spec.key] = form
         self._previews[spec.key] = previews
 
@@ -228,6 +237,7 @@ class RecordTablesEditor(EditorPanel):
                     shown = self._texts.get(value)
                     text = preview(shown, fe10=True) if shown else "(no text for this message key)"
                 label.config(text=text)
+        self.row_selected(spec, index)
 
     def _apply(self, spec: TableSpec) -> None:
         index = self._selected.get(spec.key)

@@ -313,6 +313,14 @@ class IntroGraphicsViewer(ImageArchiveViewer):
         return _sorted_files(files_root_of(self._project) / "intro", ".tpl", ".cms")
 
 
+class SubtitleGraphicsViewer(ImageArchiveViewer):
+    display_name = "Subtitle Pictures"
+    empty_message = "No subtitle pictures found.\nExtract the project first."
+
+    def _iter_files(self) -> list[Path]:
+        return _sorted_files(files_root_of(self._project) / "Movie" / "Caption", ".tpl", ".cms")
+
+
 class WorldMapViewer(ImageArchiveViewer):
     display_name = "World Map"
     empty_message = "No world map files found.\nExtract the project first."

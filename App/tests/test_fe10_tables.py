@@ -12,9 +12,11 @@ import os
 import unittest
 from pathlib import Path
 
+from fe_modding.formats import fe10_captions as fc
 from fe_modding.formats import fe10_conversation_room as cr
 from fe_modding.formats import fe10_dictionary as fd
 from fe_modding.formats import fe10_epilogue as ep
+from fe_modding.formats import fe10_gmap_curve as gc
 from fe_modding.formats import fe10_intro as fi
 from fe_modding.formats import pool_file as pf
 
@@ -175,6 +177,58 @@ class IntroTests(unittest.TestCase):
             intro.motion_list = "a,b,c,d,e,f"
         again = fi.read_intros(fi.build_intros(fi.IntroData([intro])))
         self.assertEqual(again.entries, [intro])
+
+
+class CaptionTests(unittest.TestCase):
+    def test_retail_subtitles(self):
+        paths = disc_files("Movie/caption_data.bin")
+        if not paths:
+            self.skipTest("set FE10_EXTRACTED to an extracted US or European Radiant Dawn disc")
+        for path in paths:
+            data = path.read_bytes()
+            captions = fc.read_captions(data)
+            self.assertEqual(fc.build_captions(captions), data, path)
+            self.assertEqual([m.movie for m in captions.movies],
+                             ["s1.thp", "s3.thp", "s4.thp", "s6.thp", "s6_2.thp", "s7.thp", "s8.thp"])
+            opening = captions.movies[0]
+            self.assertEqual((len(opening.captions), opening.picture_path("e_")), (29, "Movie/Caption/e_s1.cms"))
+            self.assertEqual(opening.timeline()[0][:2], (9040, 10008))
+
+    def test_new_captions_round_trip(self):
+        data = fc.CaptionData("now", "me", [fc.MovieCaptions("a.thp", "/Movie/Caption/", "a.cms",
+                                                              [fc.Caption(0, 500), fc.Caption(1)]),
+                                             fc.MovieCaptions("b.thp", "/Movie/Caption/", "b.cms", [])])
+        again = fc.read_captions(fc.build_captions(data))
+        self.assertEqual(again.movies, data.movies)
+        self.assertEqual((again.build_time, again.author), ("now", "me"))
+
+
+class RouteCurveTests(unittest.TestCase):
+    def test_retail_routes_and_line_styles(self):
+        folders = [f / "gmap" / "curve" for f in discs() if (f / "gmap" / "curve").is_dir()]
+        if not folders:
+            self.skipTest("set FE10_EXTRACTED to an extracted Radiant Dawn disc")
+        for folder in folders:
+            curves = sorted(folder.glob("curve*.bin"))
+            # the Japanese disc lacks curve0304_11 to _16
+            self.assertIn(len(curves), (47, 53), folder)
+            for path in curves:
+                data = path.read_bytes()
+                curve = gc.read_curve(data)
+                self.assertEqual(gc.build_curve(curve), data, path)
+                self.assertEqual(curve.name, path.stem)
+            for n in range(1, 9):
+                data = (folder / f"linedefine{n}.bin").read_bytes()
+                self.assertEqual(gc.build_line_define(gc.read_line_define(data)), data)
+            self.assertEqual(gc.read_line_define((folder / "linedefine1.bin").read_bytes()).width, 10.0)
+
+    def test_sample_passes_through_the_points(self):
+        curve = gc.Curve("t", points=[gc.CurvePoint(0, 0, 10, 0), gc.CurvePoint(100, 50, 10, 0)])
+        line = gc.sample(curve, steps=4)
+        self.assertEqual((line[0], line[-1]), ((0, 0), (100, 50)))
+        self.assertEqual(gc.read_curve(gc.build_curve(curve)), curve)
+        with self.assertRaises(gc.CurveError):
+            gc.build_curve(gc.Curve("x" * 30))
 
 
 if __name__ == "__main__":
