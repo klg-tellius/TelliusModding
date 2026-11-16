@@ -647,9 +647,9 @@ CATALOG.add(Patch(
 CATALOG.add(Patch(
     "rd.promotion.story_units_use_items", G_RD_PROMOTION,
     "Story-promoted units can use promotion items",
-    "Units with SID_EVENT_CC (who normally promote only through the story) can use a Master Seal or "
-    "Master Crown. A later scripted class change still promotes them again if their new class has a "
-    "promotion.",
+    "Units whose class has SID_EVENT_CC (Hero, Rogue, Light Mage and Light Sage: Ike, Sothe and Micaiah, "
+    "who normally promote only through the story) can use a Master Seal or Master Crown. A later "
+    "scripted class change still promotes them again if their new class has a promotion.",
     {RFEE01: (Edit(0x8011FF68, _word(ppc.bl(0x8011FF68, 0x8011B77C)), _word(ppc.li(3, 0))),)}))
 
 
