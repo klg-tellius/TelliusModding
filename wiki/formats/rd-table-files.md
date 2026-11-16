@@ -45,10 +45,10 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
 <div class="table-wrap">
 <table><thead><tr><th>Prefix</th><th>Table</th><th>Bits in the system record</th></tr></thead><tbody>
-    <tr><td><code>DF_人物</code></td><td>People</td><td>+0x18B4 (160 bits)</td></tr>
-    <tr><td><code>DF_関係</code></td><td>Relations</td><td>+0x18C8 (96 bits)</td></tr>
-    <tr><td><code>DF_国</code>, <code>DF_所属</code></td><td>Affiliations</td><td>+0x18D4 (96 bits)</td></tr>
-    <tr><td><code>DF_用語</code></td><td>Terms</td><td>+0x18E0 (80 bits)</td></tr>
+    <tr><td><code>DF_人物</code></td><td>People</td><td>+0x18B4 (128 bits; save +0xA4)</td></tr>
+    <tr><td><code>DF_関係</code></td><td>Relations</td><td>+0x18C8 (64 bits; save +0xB4)</td></tr>
+    <tr><td><code>DF_国</code>, <code>DF_所属</code></td><td>Affiliations</td><td>+0x18D4 (64 bits; save +0xBC)</td></tr>
+    <tr><td><code>DF_用語</code></td><td>Terms</td><td>+0x18E0 (64 bits; save +0xC4)</td></tr>
   </tbody></table>
 </div>
 
