@@ -31,11 +31,13 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 <table><thead><tr><th>Table</th><th>Record</th><th>Fields</th></tr></thead><tbody>
     <tr><td>Categories</td><td>8 bytes</td><td>The tab label (<code>MDIK_PERSON</code>, <code>MDIK_WORD</code>), a zero word. The menu draws exactly two tabs.</td></tr>
     <tr><td>People</td><td>20 bytes</td><td>PID; nation key (<code>MDICN_</code>) or none; description key (<code>MDIC_</code>); s16 x and y on the relation chart (<code>-1000</code> keeps the person off it); a word that draws the chart portrait faded when non-zero, set on the characters who are dead by Radiant Dawn (Ashnard, Elena, Greil and others)</td></tr>
-    <tr><td>Relations</td><td>24 bytes (20 in Japan)</td><td>The chart line image, drawn as <code>RID_&lt;name&gt;</code> from <code>window/RectRelationLine*</code>, and its s16 x, y; the label key (<code>MDIL_</code>); the label colour (1 and 2 pick two text colours, anything else a third); the point the label is centred on. The US and European records keep the Japanese label point before the translated one, and the game reads only the second.</td></tr>
+    <tr><td>Relations</td><td>24 bytes (20 in Japan)</td><td>The chart line image, drawn as <code>RID_&lt;name&gt;</code> from <code>window/RectRelationLine*</code>, and its s16 x, y; the label key (<code>MDIL_</code>); the label colour (1 and 2 pick two text colours, anything else a third: 2 is red, 0 green); the point the label is centred on. The US and European records keep the Japanese label point before the translated one, and the game reads only the second.</td></tr>
     <tr><td>Affiliations</td><td>16 bytes</td><td>The frame image (<code>RID_&lt;name&gt;</code>; Daein's and Goldoa's frames use a <code>2</code> variant until a story flag is set) and its s16 x, y; the banner image and label key (<code>旗国名&lt;nation&gt;</code> for nations, <code>MDIB_</code> for groups such as the Greil Mercenaries) and the point it is centred on</td></tr>
     <tr><td>Terms</td><td>16 bytes</td><td>Name (<code>MDIN_</code>), reading (<code>MDIR_</code>) and description (<code>MDIC_</code>) keys, and a picture name on the nine nation terms (no reader of it was found)</td></tr>
   </tbody></table>
 </div>
+
+  In the game the glossary is in the base menu, Library › Glossary (with Character Tree, the relation chart). Checked in Dolphin: a relation's label and colour and a person's chart position, changed here, show on the chart. <span class="confidence confidence--confirmed">in game</span>
 
   Records with the same PID in a row form one entry: the list keeps the last unlocked one, which is how an entry can grow as the story moves on. <span class="confidence confidence--confirmed">engine</span>
 
