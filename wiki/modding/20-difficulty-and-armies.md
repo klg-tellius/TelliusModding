@@ -201,7 +201,7 @@ Radiant Dawn's difficulty constants are the **Difficulty** tab of Game Data: 13 
 
 - the kill and action EXP bases and multipliers, the bonus for killing a boss or a thief, and the weapon EXP multiplier;
 - the effective-level adjustments for second tier, third tier and laguz, which the EXP formulas use;
-- **Critical bonus with SID_CRITRISE**, the class critical bonus (Game Code can multiply it).
+- **Critical bonus with SID_CRITRISE**, Path of Radiance's class critical bonus: 0 in retail, where no class has the skill (Game Code can multiply it).
 
 **Yune's blessing** is a separate tab: the stat bonus the Endgame gives the player's and allied units on each difficulty.
 
