@@ -19,6 +19,7 @@ from fe_modding.formats import fe10_epilogue as ep
 from fe_modding.formats import fe10_gmap_curve as gc
 from fe_modding.formats import fe10_intro as fi
 from fe_modding.formats import pool_file as pf
+from fe_modding.formats import wii_banner as wb
 
 
 def discs() -> list[Path]:
@@ -229,6 +230,50 @@ class RouteCurveTests(unittest.TestCase):
         self.assertEqual(gc.read_curve(gc.build_curve(curve)), curve)
         with self.assertRaises(gc.CurveError):
             gc.build_curve(gc.Curve("x" * 30))
+
+
+class WiiBannerTests(unittest.TestCase):
+    def test_u8_round_trip(self):
+        entries = [wb.U8Entry("meta", None), wb.U8Entry("meta/a.bin", b"abc"), wb.U8Entry("meta/sub", None),
+                   wb.U8Entry("meta/sub/b.bin", b"x" * 40), wb.U8Entry("c.bin", b"")]
+        again = wb.read_u8(wb.build_u8(entries))
+        self.assertEqual(again, entries)
+
+    def test_retail_banner(self):
+        paths = disc_files("opening.bnr")
+        if not paths:
+            self.skipTest("set FE10_EXTRACTED to an extracted Radiant Dawn disc")
+        for path in paths:
+            data = path.read_bytes()
+            banner = wb.read_banner(data)
+            self.assertEqual(wb.build_banner(banner), data, path)
+            self.assertEqual(wb.build_u8(banner.archive), data[wb.HEADER_END:])
+            self.assertTrue(banner.titles[0][0].startswith("ファイアーエムブレム"))
+            self.assertTrue(banner.pictures("banner.bin"))
+
+    def test_edits_keep_the_hashes_right(self):
+        import hashlib
+        import io
+        from fe_modding.formats import tpl
+        paths = disc_files("opening.bnr")
+        if not paths:
+            self.skipTest("set FE10_EXTRACTED to an extracted Radiant Dawn disc")
+        banner = wb.read_banner(paths[0].read_bytes())
+        banner.titles[1] = ("My Mod", "Radiant Dawn")
+        picture = banner.pictures("icon.bin")[0]
+        image = tpl.read_tpl_images(io.BytesIO(picture.data))[0]
+        new = tpl.replace_image(picture.data, 0, image.transpose(0))
+        banner.replace_file("icon.bin", picture.path, new)
+        out = wb.build_banner(banner)
+        self.assertEqual(hashlib.md5(out[:wb.HASH_OFFSET] + bytes(16)).digest(), out[wb.HASH_OFFSET:wb.HEADER_END])
+        again = wb.read_banner(out)
+        self.assertEqual(again.titles[1], ("My Mod", "Radiant Dawn"))
+        self.assertEqual(again.pictures("icon.bin")[0].data, new)
+        icon = next(e for e in again.archive if e.path == "meta/icon.bin").data
+        self.assertEqual(hashlib.md5(icon[0x20:]).digest(), icon[0x10:0x20])
+        with self.assertRaises(wb.BannerError):
+            banner.titles[1] = ("x" * 22, "")
+            wb.build_banner(banner)
 
 
 if __name__ == "__main__":

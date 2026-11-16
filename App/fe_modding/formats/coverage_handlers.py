@@ -1051,9 +1051,98 @@ def thp_file(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("bnr", lambda name, data: _ext(name) == "bnr")
 def banner(cov: FileCoverage, walker: Walker) -> None:
+    if cov.data[0x40:0x44] == b"IMET":
+        _wii_banner(cov, walker)
+        return
     if cov.data[:4] not in (b"BNR1", b"BNR2"):
         raise ValueError("not a BNR1/BNR2 banner")
     cov.fill(DECODED)  # public GameCube banner format
+
+
+def _wii_banner(cov: FileCoverage, walker: Walker) -> None:
+    """The Wii ``opening.bnr`` (``wii_banner``): IMET header, U8 archive, IMD5/LZ77 parts. The
+    pictures are walked as TPLs; the layout, animation and BNS sound are the public Wii formats."""
+    from . import wii_banner as wb
+
+    data = cov.data
+    _roundtrip(cov, wb.build_banner(wb.read_banner(data)))
+    cov.fill(DECODED)
+    banner = wb.read_banner(data)
+    for part in ("icon.bin", "banner.bin"):
+        for entry in banner.pictures(part):
+            walker.child(f"{cov.name}:{part}:{entry.path}", entry.data)
+
+
+_POOL_FILES = {"dictionary.bin", "dictionaryf.bin", "conversationroom.bin", "fe10epilogue.bin", "fe10intro.bin",
+               "caption_data.bin"}
+
+
+@handles("fe10 tables", lambda name, data: _base(name) in _POOL_FILES)
+def fe10_tables(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's sorted-pool table files (``pool_file``) and their codecs: the glossary,
+    Conversation Room lists, endings, class introductions and movie subtitles."""
+    from . import fe10_captions, fe10_conversation_room, fe10_dictionary, fe10_epilogue, fe10_intro
+
+    data, base = cov.data, _base(cov.name)
+    codecs = {
+        "dictionary.bin": (fe10_dictionary.read_dictionary, fe10_dictionary.build_dictionary),
+        "dictionaryf.bin": (fe10_dictionary.read_dictionary_flags, fe10_dictionary.build_dictionary_flags),
+        "conversationroom.bin": (fe10_conversation_room.read_conversation_room,
+                                 fe10_conversation_room.build_conversation_room),
+        "fe10epilogue.bin": (fe10_epilogue.read_epilogues, fe10_epilogue.build_epilogues),
+        "fe10intro.bin": (fe10_intro.read_intros, fe10_intro.build_intros),
+        "caption_data.bin": (fe10_captions.read_captions, fe10_captions.build_captions),
+    }
+    read, build = codecs[base]
+    document = read(data)
+    _roundtrip(cov, build(document))
+    cov.mark(0, 0x14, DECODED)
+    cov.mark(0x14, 4, UNREAD, "header +0x14")
+    cov.mark(0x18, 8, DECODED)
+    end = HEADER_SIZE + _u32(data, 4)
+    cov.mark(end, len(data) - end, DECODED)
+    if base == "dictionary.bin" and document.relation_size == 24:
+        at = HEADER_SIZE + 4 + 8 * len(document.categories) + 4 + 20 * len(document.people) + 4
+        for i in range(len(document.relations)):
+            cov.mark(at + 24 * i + 0x10, 4, UNREAD, "relation Japanese label point (RFEE01 reads +0x14)")
+    if base == "dictionary.bin":
+        at = (HEADER_SIZE + 4 + 8 * len(document.categories) + 4 + 20 * len(document.people) + 4
+              + document.relation_size * len(document.relations) + 4 + 16 * len(document.affiliations) + 4)
+        for i, term in enumerate(document.terms):
+            if term.picture:
+                cov.mark(at + 16 * i + 12, 4, UNDECODED, "term picture name (no reader traced)")
+    if base == "fe10intro.bin":
+        for i in range(len(document.entries)):
+            cov.mark(HEADER_SIZE + 4 + 64 * i + 0x28, 4, UNDECODED, "intro +0x28 (300 on every record)")
+    for i in range(HEADER_SIZE, end):
+        if cov.status[i] == UNCLASSIFIED:
+            cov.mark(i, 1, PADDING if data[i] == 0 else DECODED)
+
+
+@handles("gmap curve", lambda name, data: "gmap/curve/" in name.replace("\\", "/").lower() and _ext(name) == "bin")
+def gmap_curve(cov: FileCoverage, walker: Walker) -> None:
+    """World-map route curves and line styles (``fe10_gmap_curve``)."""
+    from . import fe10_gmap_curve as gc
+
+    data = cov.data
+    if _base(cov.name).startswith("linedefine"):
+        _roundtrip(cov, gc.build_line_define(gc.read_line_define(data)))
+        cov.mark(0, 16, DECODED)
+        cov.zero(16, len(data) - 16, "linedefine converted flag (set at load)")
+        return
+    curve = gc.read_curve(data)
+    _roundtrip(cov, gc.build_curve(curve))
+    cov.fill(DECODED)
+    cov.zero(0, 4, "curve +0")
+    name_end = 4 + len(curve.name)
+    cov.zero(name_end, 0x1C - name_end, "curve name padding")
+    cov.zero(0x2C, 4, "curve points address (set at load)")
+
+
+@handles("filler", lambda name, data: _base(name) == "zzzzzzzz.zzz")
+def disc_filler(cov: FileCoverage, walker: Walker) -> None:
+    """``zzzzzzzz.zzz``: 32 KiB of zeros that no code names, sorted last on the disc."""
+    cov.zero(0, len(cov.data), "disc filler", nonzero=UNDECODED)
 
 
 @handles("musyx samp", lambda name, data: _ext(name) == "samp")

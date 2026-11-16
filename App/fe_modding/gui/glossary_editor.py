@@ -42,7 +42,7 @@ class GlossaryEditor(RecordTablesEditor):
                 Column("text", "Description key", "key", width=150),
                 Column("x", "Chart x", "int", width=60),
                 Column("y", "Chart y", "int", width=60),
-                Column("faded", "Faded portrait", "int", width=60,
+                Column("faded", "Faded portrait", "int", width=95,
                        note="Non-zero draws the chart portrait faded (retail: the characters dead by now)."),
             ] + FLAG_COLUMNS, new_row=lambda: fd.Person("PID_", None, "MDIC_"), linked=f.tables[0],
                 new_linked=flag("DF_人物"),

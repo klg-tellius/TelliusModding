@@ -263,6 +263,7 @@ _RADIANT_DAWN_FILES = {
     "intro_data": LogicalFile("FE10Intro.bin"),
     "caption_data": LogicalFile("Movie/caption_data.bin"),
     "route_styles": LogicalFile("gmap/curve/linedefine1.bin"),
+    "wii_banner": LogicalFile("opening.bnr"),
 }
 
 PATH_OF_RADIANCE_PROFILE = GameProfile(

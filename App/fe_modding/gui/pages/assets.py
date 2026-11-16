@@ -56,6 +56,7 @@ from ..epilogue_editor import EpilogueEditor
 from ..class_intro_editor import ClassIntroEditor
 from ..subtitles_editor import SubtitlesEditor
 from ..gmap_routes_editor import GmapRoutesEditor
+from ..wii_banner_editor import WiiBannerEditor
 
 #: (key, label, icon, description, class), in hub order.
 ASSET_TOOLS = [
@@ -83,6 +84,7 @@ ASSET_TOOLS = [
     ("ending", "Ending Art", "✦", "Textures in ending/", EndingViewer),
     ("world_map", "World Map", "◎", "Textures in gmap/", WorldMapViewer),
     ("gmap_routes", "World Map Routes", "⤳", "The route lines world-map events draw (gmap/curve/)", GmapRoutesEditor),
+    ("wii_banner", "Wii Banner", "▬", "The Wii Menu channel title and banner pictures (opening.bnr)", WiiBannerEditor),
     ("intro_graphics", "Class Intro Pictures", "▣", "Class introduction pictures (intro/)", IntroGraphicsViewer),
     ("icons", "Icons", "◆", "Item, menu and skill icons: view and replace one by one", IconViewer),
     ("fonts", "Fonts", "A", "The five text fonts: view, import a TrueType/OpenType font", FontViewer),
@@ -131,7 +133,7 @@ ASSET_FILES = {"conversation_lists": "conversation_data", "glossary": "dictionar
                "conversation_room": "conversation_room", "endings": "epilogue_data",
                "class_intros": "intro_data", "intro_graphics": "intro_data",
                "subtitles": "caption_data", "subtitle_graphics": "caption_data",
-               "gmap_routes": "route_styles"}
+               "gmap_routes": "route_styles", "wii_banner": "wii_banner"}
 #: Tools for data only some games have (``GameProfile.features``): absent from the hub, search and
 #: routes on a game without it, rather than "not available".
 ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
@@ -163,7 +165,7 @@ class AssetsHub(Page):
                             ("Characters and models", ("portraits", "models", "animation_data", "map_models",
                                                        "tilesets", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
-                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "sound_room",
+                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "wii_banner", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
                                         "battle_scenery_graphics")),
                             ("Sound and video", ("music", "sfx", "videos", "subtitles", "subtitle_graphics"))):
