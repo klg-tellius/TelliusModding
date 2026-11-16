@@ -1006,11 +1006,18 @@ def dbx_file(cov: FileCoverage, walker: Walker) -> None:
 
 # ------------------------------------------------------------------ fonts, media, sound
 
-@handles("gcf font", lambda name, data: _ext(name) == "gcf" or (_base(name).rstrip("#") == "system.cms" and name.endswith("#")))
+def _is_font(name: str, data: bytes) -> bool:
+    if _ext(name) == "gcf":
+        return True
+    # Radiant Dawn: every Fonts/*.cms (system, talk, alpha, ruby, debug...) is the same font file
+    return name.endswith("#") and (_base(name) == "system.cms" or "fonts/" in name.replace("\\", "/").lower())
+
+
+@handles("gcf font", _is_font)
 def gcf_font(cov: FileCoverage, walker: Walker) -> None:
     from . import fe9_font
 
-    fe9_font.GameFont(cov.data) if hasattr(fe9_font, "GameFont") else None
+    fe9_font.GameFont(cov.data)
     cov.fill(DECODED)  # FONT_NOTES: every header and glyph byte labelled
 
 
