@@ -392,6 +392,10 @@ class Fe10Saves:
                                        "class": ("Class", 140, False), "army": ("Army", 44, False),
                                        "lv": ("Lv", 34, False)}, height=24)
         self._unit_tree.bind("<<TreeviewSelect>>", lambda e: self._pick_unit())
+        bar = ttk.Frame(left)
+        bar.pack(fill="x")
+        ttk.Button(bar, text="Copy to new slot", command=self._copy_unit).pack(side="left")
+        ttk.Button(bar, text="Remove", command=self._remove_unit).pack(side="left", padx=(6, 0))
         self._unit_status = ttk.Label(left, style="Muted.TLabel", wraplength=420, justify="left")
         self._unit_status.pack(anchor="w")
 
@@ -887,6 +891,34 @@ class Fe10Saves:
         except (ValueError, IndexError, KeyError) as exc:
             messagebox.showerror("Support partner", str(exc), parent=self.page)
             return
+        self.page.mark_dirty()
+
+    def _copy_unit(self) -> None:
+        unit, counts = self._unit(), self._support_counts()
+        if unit is None or counts is None:
+            return
+        try:
+            slot = self.record.copy_unit(unit, counts)
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("No room", str(exc), parent=self.page)
+            return
+        self._unit_slot = slot
+        self.refresh()
+        self.page.mark_dirty()
+
+    def _remove_unit(self) -> None:
+        unit, counts = self._unit(), self._support_counts()
+        if unit is None or counts is None:
+            return
+        if not messagebox.askyesno("Remove unit", f"Empty unit slot {unit.slot + 1}?", parent=self.page):
+            return
+        try:
+            self.record.remove_unit(unit, counts)
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Remove unit", str(exc), parent=self.page)
+            return
+        self._unit_slot = None
+        self.refresh()
         self.page.mark_dirty()
 
     def link(self, person: int, partner: int) -> None:

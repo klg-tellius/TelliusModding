@@ -696,13 +696,19 @@ _RD_CAMERA_WRAP = 0x80131948                     # `ble +8` into the final clamp
 _RD_CAMERA_STEPS = (0x801318E4, 0x80131920)      # `lfs f0,-0x6C90(r2)`, the 45.0 step (and limit)
 _RD_CAMERA_ONE = 0xC002800C                      # `lfs f0,-0x7FF4(r2)`, a 1.0 constant
 _RD_CAMERA_INPUT = 0x8013188C                    # `lwz r12,0x48(r12)`: the pad's pressed buttons
+# The analog camera (map_camera_stick_update 0x80131628, vtable 0x80385EC0) turns the same angle by
+# stick / 48 and pulls it back past -45 (bge 0x80131748) and +45 (ble 0x8013176C), then, with the stick
+# centred, eases it toward 0 inside +-5 (bne 0x80131798). Free rotation makes the three branches skip.
+_RD_STICK_LIMITS = ((0x80131748, "40800018", "48000018"), (0x8013176C, "40810014", "48000014"),
+                    (0x80131798, "40820034", "48000034"))
 CATALOG.add(Patch(
     "rd.camera.free", G_RD_RULES, "Free camera rotation",
-    "The map camera turns with the C-stick left/right beyond its vanilla limits, 45 degrees per push "
-    "(GameCube controller).",
+    "The map camera turns beyond its vanilla limits: with the C-stick 45 degrees per push (GameCube "
+    "controller), with the analog stick freely, without being pulled back to the front.",
     {RFEE01: (Edit(_RD_CAMERA_CLAMPS[0], _raw("4080001C"), _word(ppc.NOP)),
               Edit(_RD_CAMERA_CLAMPS[1], _raw("40810020"), _word(ppc.NOP)),
-              Edit(_RD_CAMERA_WRAP, _raw("40810008"), _raw("48000040")))}))
+              Edit(_RD_CAMERA_WRAP, _raw("40810008"), _raw("48000040")),
+              *(Edit(address, _raw(old), _raw(new)) for address, old, new in _RD_STICK_LIMITS))}))
 CATALOG.add(Patch(
     "rd.camera.smooth", G_RD_RULES, "Smooth camera rotation",
     "The C-stick turns the camera 1 degree per frame while held instead of 45 degrees per push "

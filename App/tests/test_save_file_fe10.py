@@ -452,6 +452,42 @@ class Fe10RealSaveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             record.set_unit_state(after, level=0)
 
+    @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
+    def test_copy_and_remove_a_unit(self):
+        from tests.corpus import disc_id
+        if disc_id(os.environ["FE10_EXTRACTED_FILES"]).startswith("RFEJ"):
+            self.skipTest("the US saves need the US or European FE10Data, not the Japanese one")
+        from fe_modding.formats import lz10
+        root = Path(os.environ["FE10_SAVES"])
+        path = next(iter((root.parent if root.is_file() else root).rglob("made_4P_start_FE10_US.dat")), None)
+        if path is None:
+            self.skipTest("the game-made 4-P save is not in FE10_SAVES")
+        raw = lz10.decompress((Path(os.environ["FE10_EXTRACTED_FILES"]) / "FE10Data.cms").read_bytes())
+        save = sf.SaveFile.from_path(path)
+        record = next(r for r in save.active_records() if r.logical_slot == 4)
+        counts = record.support_slot_counts_from_fe10data(raw)
+        units = record.unit_records(counts)
+        edward = next(u for u in units if record.id_name("character", u.person_number) == "PID_EDDIE")
+        free = next(u.slot for u in units if u.empty)
+        slot = record.copy_unit(edward, counts)
+        self.assertEqual(slot, free)
+        copy = next(u for u in record.unit_records(counts) if u.slot == slot)
+        self.assertEqual((copy.person_number, copy.class_number, copy.level, copy.stat_gains, copy.linked_slots),
+                         (edward.person_number, edward.class_number, edward.level, edward.stat_gains, (0, 0, 0)))
+        if copy.support_slot_count:
+            self.assertEqual(copy.active_partner, 0)
+            self.assertEqual(copy.support_points, edward.support_points)
+        self.assertEqual(sf.validate(sf.SaveFile.from_bytes(save.to_bytes([record]))), [])
+        record.remove_unit(copy, counts)
+        after = record.unit_records(counts)
+        self.assertTrue(next(u for u in after if u.slot == slot).empty)
+        self.assertEqual([u.raw for u in after], [u.raw for u in units])     # back to the game's bytes
+        linked = next((u for u in after if any(u.linked_slots)), None)
+        if linked is not None:   # a unit another unit links to is refused
+            other = next(u for u in after if u.slot + 1 in linked.linked_slots)
+            with self.assertRaises(ValueError):
+                record.remove_unit(other, counts)
+
 
     @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
     def test_class_items_skills_and_supports(self):
