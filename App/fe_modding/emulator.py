@@ -288,6 +288,9 @@ def prepare_wii_save_run(disc_dir: Path | str, run_dir: Path | str, save_data: b
     from .games import read_disc_id, retail_disc_id
 
     disc_dir, run_dir = Path(disc_dir), Path(run_dir)
+    if len(save_data) not in set(FILE_SIZES.values()):
+        raise EmulatorError(f"A Radiant Dawn save must be 0x{FILE_SIZES['RFEE01']:X} bytes "
+                            f"(0x{FILE_SIZES['RFEJ01']:X} on the Japanese disc), found 0x{len(save_data):X}.")
     if not (disc_dir / "sys" / "main.dol").is_file() or not (disc_dir / "files").is_dir():
         raise EmulatorError(f"{disc_dir} has no sys/main.dol or files folder; extract the disc first.")
     detected = detect_from_extracted(disc_dir)
