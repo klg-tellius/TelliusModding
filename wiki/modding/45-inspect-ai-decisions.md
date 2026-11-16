@@ -2,7 +2,7 @@
 id: "modding-inspect-ai-decisions"
 title: "Inspect why AI chose a target"
 description: "Use Play's AI trace and candidate ranking to separate eligibility, script flow, attack-score weights, threat, ties, and simulator limits when explaining an AI decision"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "AI", "Debugging", "Scoring"]
@@ -178,6 +178,10 @@ Keep a short diagnosis note containing the winning and runner-up rows plus the c
 ## Limits and confidence
 
 The displayed trace, common legality, documented score terms, weights, expected-damage exponents, kill/death bonuses, and per-unit threat construction are source-reviewed. Play deliberately does not fully simulate adjacent-foe and skill terms in every circumstance, and rare skills/actions remain incomplete. Exact equal-score ordering and simpler alternate engine scorers are not fully documented. Treat these as explicit Dolphin verification points, not reasons to disregard the rest of the trace.
+
+## On Radiant Dawn
+
+The in-app playthrough runs Radiant Dawn's AI scripts with Radiant Dawn's instruction table. In the game, the attack selector walks the unit's seven items in order, then the units in slot order, then the tiles row by row, and keeps the first of equal scores. So a tie goes to the earliest item, then the earliest unit slot, then the topmost and leftmost tile. Each attack instruction rolls its chance (0–99 against its first field) before it looks for a target, and that roll uses the random numbers.
 
 ## Related tutorials and references
 

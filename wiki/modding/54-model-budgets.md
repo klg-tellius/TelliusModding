@@ -2,7 +2,7 @@
 id: "modding-model-budgets"
 title: "Edit weapon and scenery models within budgets"
 description: "A measured workflow for static weapon and scenery geometry, texture and material constraints, import-review budgets, camera checks, reduction, game testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Models", "Weapons", "Scenery"]
@@ -77,6 +77,10 @@ Write the files, reopen the set, and rotate/zoom the preview. Render the fixed f
 - **Warnings:** unsupported or above-reference conditions requiring correction or game evidence.
 - **Reduce mesh:** trades geometric detail for budget; it does not repair UV/material design.
 - **Write files / Restore original…:** transaction commit and whole-resource recovery.
+
+## On Radiant Dawn
+
+On Radiant Dawn the weapon models are named by `FE10BWeapon` rows of `FE10Battle.cms`, and the battle sceneries by its `FE10BMapModel` rows. They are edited on the **Battle Weapons** and **Battle Sceneries** pages ([Radiant Dawn](../meta/radiant-dawn.md#battle-sceneries)). The retail size limits on this page were measured on Path of Radiance; Radiant Dawn's have not been measured.
 
 ## Things to try next
 

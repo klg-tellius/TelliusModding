@@ -2,7 +2,7 @@
 id: "modding-script-zones-and-rocks"
 title: "Place script zones and rolling rocks on the map"
 description: "Draw area and location zones on the Build tab, read what each runs, and edit rolling-rock routes, with the script code each one writes"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -149,6 +149,10 @@ For a new rock, place a `rock_01` prop ([Place, copy, import, and configure prop
 | *Several SetRock calls use this tile. Edit them in the Script tab.*, *This call needs editing in the Script tab.* | Calls the Build tab will not rewrite |
 
 A player unit that should move by itself (an escort, a unit to rescue) is set on its unit panel: **AI-controlled unit** under **AI** ([Create common AI orders](44-common-ai-orders.md)).
+
+## On Radiant Dawn
+
+The zone tool reads and writes Radiant Dawn's scripts the same way: the retail chapter scripts hold 361 zones (`@on_area` and `@on_location` functions). `SetRock` exists on Radiant Dawn too and appears seven times in its scripts. Zones and rocks made here have not been tested in the game yet.
 
 ## Things to try next
 

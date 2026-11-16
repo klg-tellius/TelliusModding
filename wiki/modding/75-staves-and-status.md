@@ -2,7 +2,7 @@
 id: "modding-staves-and-status"
 title: "Tune staves and status effects"
 description: "What a staff's record controls and what its ID controls, status durations and immunities, the Berserk staff's missing effect, and AI healing behaviour"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -105,6 +105,10 @@ The sleep still lasts 5 phases: that is the game's counter, not this record.
 | **Min range** / **Max range** | Fixed range, or 255 for Magic / 2 (5–15) |
 | Effect (`EID_…`) | The spell animation; changing it changes the look only |
 | Item ID | What the staff does |
+
+## On Radiant Dawn
+
+On Radiant Dawn, staves are items of `FE10Data.cms` (**Game Data › Items**), with up to three effect labels and the usual uses, range and weapon experience. Healers' choices come from the heal sequences of `Cp/cp_data.cms`. How Radiant Dawn's status durations and staff hit rates are computed has not been traced yet, so test a changed staff in the game.
 
 ## Things to try next
 

@@ -2,7 +2,7 @@
 id: "modding-deployment-by-difficulty"
 title: "Place and tune units by difficulty"
 description: "A controlled workflow for common and difficulty files, counterpart matching, shared fields, levels, stat bonuses, and testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Deployment", "Difficulty", "Units"]
@@ -189,6 +189,12 @@ To revert, restore each counterpart's presence and per-mode values plus all shar
 ## Limits and confidence
 
 The four deployment files, placement destinations, counterpart behavior, shared/per-variant split, record fields, ranges, and save semantics are source-reviewed. Final generated stats and regional difficulty selection combine additional runtime systems and remain **unknown** until tested from a fresh chapter start.
+
+## On Radiant Dawn
+
+On Radiant Dawn the difficulty files are `_n` and `_h`; `_c` holds the sections every difficulty uses. A section to place on every difficulty needs its `_n` and `_h` copies, as on Path of Radiance.
+
+Each chapter record also adds levels to its enemies per difficulty (**Enemy levels** in Game Data › Chapters), on top of the deployed level.
 
 ## Things to try next
 

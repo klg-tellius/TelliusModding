@@ -2,7 +2,7 @@
 id: "modding-find-references"
 title: "Find where a record is used"
 description: "Every place the app lists the users of a character, item, AI script, resource, icon, flag, message or model, and what each search covers"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -95,6 +95,10 @@ On **Game Data › Items**, select `IID_IRONAXE` and press **Remove**. The app r
 | **Remove** refusal | Any record's page | Up to 14 places, then *… and N more* |
 | **Referenced in (N)** | Game Data › Rect RIDs | The files that name the selected RID |
 | *used by* | Assets › Icons | The items and skills of the selected icon |
+
+## On Radiant Dawn
+
+The same tools answer the question on Radiant Dawn. **Remove** on a Radiant Dawn record searches `FE10Data.cms`, then the strings of every script, the three deployment files of every map (`dispos_c/n/h.bin`), the shops, `FE10Battle.cms`, `FE10Anim.cms` and `main.dol` ([Remove records without corrupting saves](15-remove-records.md)). A Radiant Dawn save carries its own copy of the record names (`ITBL`) and refers to records by their number in it.
 
 ## Things to try next
 

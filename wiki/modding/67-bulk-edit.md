@@ -2,7 +2,7 @@
 id: "modding-bulk-edit"
 title: "Edit data in bulk outside the app"
 description: "Excel round trips for characters, items, terrain, deployments and flags, text files for dialogue and scripts, and Export as text for version control"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -107,6 +107,10 @@ Set the Guard's `jid` to `JID_NOPE`, save the workbook and import again. The app
 | **Export chapter…** / **Import chapter…** | The chapter's messages as one text file; import changes the texts of the IDs it contains and adds the IDs that are new (*Imported: N changed, M added*, or *Import: no change*) |
 | **Export…** / **Import…** (Script) | The open script as a `.fe9s` source file; import compiles it before replacing |
 | **Export as text…** | The whole project as text, into the chosen folder, replacing the previous export |
+
+## On Radiant Dawn
+
+On Radiant Dawn the workbook has five sheets: Characters, Classes, Items, Skills and Terrain. Each holds the record's fields, then its lists as text separated by commas. A skill's condition lists hold pairs and stay out of the sheet. The internal-level stats of `FE10Growth.cms` export to their own **Growth** sheet. A deployment export adds a **use_fe10growth_stats** column for the flag that takes a unit's stats from that table.
 
 ## Things to try next
 

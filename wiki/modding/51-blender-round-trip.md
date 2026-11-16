@@ -2,7 +2,7 @@
 id: "modding-blender-round-trip"
 title: "Round-trip a model through Blender safely"
 description: "A complete export, Blender edit, import-review, restoration, and verification workflow for Tellius models"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Models"]
@@ -182,6 +182,15 @@ Do not combine these transitions into one first test.
 | Review **Warnings** | Combines budget analysis and importer warnings. | Treat warnings as test requirements; cancel when their consequence is unknown. |
 | **Write files** | Writes every reviewed output to the project; the disc's versions stay available. | Reopen the set and inspect the on-disk result. |
 | **Cancel** | Closes review without writing. | Use whenever the conversion differs from the planned change. |
+
+## On Radiant Dawn
+
+Radiant Dawn's models go through the same kit, with differences in where things are kept:
+
+- **Battle models**: the rig and body are in a shared `pack.cmp`, and the weapon and the animations in sibling `.pak` archives.
+- **Map units** (`ymu/<set>/`): most textures are loose `.tpl` files, and many bones are placed by a translation and a joint orient instead of a pivot.
+
+[Replace a rig](52-replace-rig.md#radiant-dawn) lists what the import does with each of these. A clip that was not edited is written back byte for byte. Micaiah's map model has been through Blender and back and played in Dolphin.
 
 ## Things to try next
 

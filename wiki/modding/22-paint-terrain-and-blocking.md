@@ -2,7 +2,7 @@
 id: "modding-paint-terrain-and-blocking"
 title: "Paint terrain and control movement"
 description: "A complete guide to terrain painting, layers, sampling, footprints, movement costs, and pathing tests"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Maps"]
@@ -146,6 +146,10 @@ Do not repaint terrain to compensate for an unintended height or exit rule. Corr
 | Hover status | Reports coordinates and visible terrain/objects/units/zones at a tile. | Record exact coordinates instead of describing “near the house.” |
 | Tile **Corner heights** | Per-layer corner elevation in steps. | A difference of at least one step between neighboring corners can close an edge. |
 | Tile **Exits** | North/west/east/south openings for a tile. | Inspect when passable terrain is unreachable; absolute overrides are not editable here. |
+
+## On Radiant Dawn
+
+Painting terrain works the same on Radiant Dawn maps. The terrain names and rules come from `TerrainData` in `FE10Data.cms` ([Edit terrain rules](19-terrain-types.md)): 23 movement-cost columns instead of Path of Radiance's, so a pathing test with two movement types should pick classes whose **Movement type** differs. Every flier uses column 10.
 
 ## Things to try next
 

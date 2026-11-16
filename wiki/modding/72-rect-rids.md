@@ -2,7 +2,7 @@
 id: "modding-rect-rids"
 title: "Lay out screens with Rect RIDs"
 description: "Rect files and their RID resources: layers, texture regions, composition and timing settings, the preview, adding and renaming RIDs, and where each is used"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -101,6 +101,10 @@ The page edits a rect file only when the app can rewrite it byte for byte; other
 | **Properties** | The decoded fields; *This layer has no decoded editable fields; its bytes are preserved.* otherwise |
 | **Illustrative preview (608 × 448)** | The layers drawn with sample text and portraits; *runtime effects may differ* |
 | **Refresh preview** / **Apply** / **Revert** | Redraw / save the rect file / drop the edits |
+
+## On Radiant Dawn
+
+Radiant Dawn keeps its screen layouts in `window/`: `RectBase.bin`, `RectDesc.bin` and `RectUnitList.bin`, with English copies (`RectBase_en.bin`, `RectDesc_en.bin`) and one widescreen copy (`RectDesc_en_w.bin`). The glossary's chart pieces are in `RectDictionary`, `RectRelationBelong` and the three `RectRelationLine*` files. They use the same container with a 48-byte text-box layer. The rect preview reads Radiant Dawn's layers and draws all of them except kind 7. A conversation's layout is a resource of `RectDesc_en.bin`, and the shop greeting's is in `RectBase_en.bin`.
 
 ## Things to try next
 

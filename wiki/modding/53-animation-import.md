@@ -2,7 +2,7 @@
 id: "modding-animation-import"
 title: "Import animations and edit events"
 description: "A deep animation workflow covering target identity, glTF clips, skeleton tracks, templates, frames, loops, event preservation and editing, required synchronization, import review, testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Animation", "Events", "Models"]
@@ -95,6 +95,10 @@ In Import Review, inspect proposed files and warnings, then **Write files**. Reo
 - Code legend: *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release: combat waits for these.* *50 footsteps, 0x14-0x1B trails (0x19 ends), 1000+ sounds.*
 - **Save…:** validates and opens Import Review; it is not yet the final write.
 - **Write files:** commits proposed packed/loose `.ga` output.
+
+## On Radiant Dawn
+
+On Radiant Dawn, a unit's animations are in `.pak` archives beside its model. Each animation file ends with a chain of extra blocks instead of Path of Radiance's fixed table ([Model formats](../formats/model-formats.md)). Some of those blocks are not decoded yet, so check an imported clip's events in the preview and in the game. In a round trip, a bone that moves as in the game keeps the game's own keys, and only edited bones get new ones.
 
 ## Things to try next
 

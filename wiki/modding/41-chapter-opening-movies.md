@@ -2,7 +2,7 @@
 id: "modding-chapter-opening-movies"
 title: "Set chapter title cards and full-screen movies"
 description: "A complete guide to ChapterMoviePlay, title-card identities, THP files, replacement versus new video, dimensions, frame rate, audio, script calls, skip, and continuation"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Movies", "THP", "Chapter openings"]
@@ -243,6 +243,12 @@ To revert a replacement, restore the original THP. To remove a new video, first 
 Movie-call selection, title-card path, THP controls, replacement/new encoding contracts, script waiting, and skip convergence are source-reviewed. Added-chapter title-card/file-menu behavior remains explicitly unverified until the required image/table work is exercised in Dolphin.
 
 The local preview is not a synchronized production player. Final audio/video synchronization, decoder performance, input/skip cleanup, file size, and end-frame behavior require Dolphin and target hardware testing where relevant.
+
+## On Radiant Dawn
+
+A Radiant Dawn title card is a picture, `window/title/e_ch0102.cms` on the US disc (`ch0102.cms` on the Japanese one): one 480 × 160 image with two centred lines in pre-drawn lettering, so a new chapter needs a new picture. Five messages per chapter hold the title's parts (`MCT0102`, `_0`, `_0_2`, `_1`, `_2`, `_3`); Add chapter writes them ([Radiant Dawn](../meta/radiant-dawn.md#chapter-titles-and-title-cards)).
+
+Radiant Dawn's story movies are THP files in `Movie/`. On the US and European discs seven of them have subtitles, which are pictures timed in milliseconds; the **Movie Subtitles** page on Assets edits the timing and the **Subtitle Pictures** page the images ([Glossary, endings and other table files](../formats/rd-table-files.md)). The European disc's scene movies carry five audio tracks per frame, one per language.
 
 ## Things to try
 

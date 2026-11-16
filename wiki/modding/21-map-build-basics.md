@@ -2,7 +2,7 @@
 id: "modding-map-build-basics"
 title: "Use the map Build tab"
 description: "A complete orientation to Build tools, layers, selection, undo, phase variants, saving, and testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Maps", "Build"]
@@ -220,6 +220,16 @@ Keep a change note containing chapter, phase, deployment variant, section, objec
 ## Limits and confidence
 
 The listed controls, default layers, shortcuts, 50-state undo cap, and Save Chapter ownership are source-reviewed against the Build implementation. Rendering is an editor approximation, and script activation, native pathfinding, phase transitions, and every regional map layout require runtime verification. A correct 2D or 3D preview is evidence about resources, not proof of full chapter behavior.
+
+## On Radiant Dawn
+
+The **Build** tab opens Radiant Dawn maps with the same tools. A Radiant Dawn chapter's map is `zmap/bmap<chapter>/map.cmp`, with its deployment files beside it, uncompressed: `dispos_c.bin`, `dispos_n.bin` and `dispos_h.bin`. All 128 maps of the US disc share one layout ([Map Format](../formats/map-format.md#radiant-dawn)):
+
+- The sections carry the map folder's name (`bmap0101:mapdata`), and one `mapdata` section holds what Path of Radiance spreads over `mapcapacity`, `mapextra` and `mapgrid`.
+- No flag marks the ground. The ground and the water are the objects whose model has a `map_base`, `map_wall` or `map_water` material, and the Build tab finds them that way. A map can draw another map's ground (3-8 draws `bmap0307`).
+- Half sizes are rounded down where Path of Radiance rounds up.
+
+Multi-map chapters, such as 4-7's five maps, are separate chapters with their own folders (`bmap0407a` to `bmap0407e`).
 
 ## Things to try next
 

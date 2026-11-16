@@ -2,7 +2,7 @@
 id: "modding-battle-presentation"
 title: "Edit battle presentation"
 description: "Battle weapon actors, battle sceneries and battle unit parameters: what each table of zdbx.cmp controls, a controlled edit, rendering, engine verification, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Battle", "DBX"]

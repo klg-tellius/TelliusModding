@@ -2,7 +2,7 @@
 id: "modding-classes"
 title: "Create, understand, and test a class"
 description: "A field-by-field guide to classes, promotion, weapons, skills, movement, stats, categories, and models"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Classes"]
@@ -193,6 +193,18 @@ The simulator models documented class mechanics but cannot prove every engine-on
 | **Categories 1–3** | Up to three recognized class-category tokens. | Add only categories with an intended consumer and verify with a matching effective weapon or rule. |
 | **Save FE8Data.bin** | Writes the shared Game Data session. | Save, reload the project, and re-open both the class and its referring character. |
 | **Discard unsaved edits** | Reverts all unsaved changes in the shared FE8Data session. | Use only after reviewing other Game Data/character changes that share the session. |
+
+## On Radiant Dawn
+
+Radiant Dawn's classes are in `FE10Data.cms` and open from **Game Data › Classes** or a character's class link. Differences from Path of Radiance:
+
+- **Three tiers.** **Previous tier** and **Promotes to** link a class to the classes below and above it, and **Promotion level** (21 on first- and second-tier classes) makes the level-up that would reach it promote the unit instead. Laguz classes link to their **Other form**.
+- **Weight** is a base weight plus two parts, each a kind (armour, horse, pegasus, wyvern, beast, dragon, bird) and a signed weight; a unit adds its personal weight to the base, and the parts count for its mounted total.
+- **Skill capacity**: 15, 30 and 60 for the three tiers in retail, more for laguz. **Vision** is the fog-of-war sight range.
+- **Movement type** picks a movement-cost column of the terrain table (0 to 22; 10 on every flier).
+- The class **Skills** and **Sound classes** lists can be any length.
+- Base Luck is shown but not used: the game sets every class's base Luck to 0.
+- Four rows of stats: caps, bases, growths and promotion gains.
 
 ## Things to try next
 

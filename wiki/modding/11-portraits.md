@@ -2,7 +2,7 @@
 id: "modding-portraits"
 title: "Create and assign a portrait"
 description: "Build a small/large portrait pair, align facial parts, manage palettes, and connect it to a character"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -135,6 +135,15 @@ Back in **Assets › Portraits**, select `TGUARD`. Change a value of the face re
 | **Left eye x, y**, **Right eye x, y**, **Mouth x, y** | Positions for each size; −1 when unused |
 | **Menu face (64 x 64)** | A picture of its own, or cut from the small body |
 | **Create** / **Cancel** | Write the pair and the records / close |
+
+## On Radiant Dawn
+
+The **Portraits** page edits Radiant Dawn's portraits too, with a different layout ([Portraits (Radiant Dawn)](../formats/rd-portraits.md)):
+
+- One face record serves both sizes. It names the small and the large portrait (`FID_IKE`, `FID_L_IKE`), the name key and the image file, and says where the eyes and mouth go on the large picture and where the small picture is cut from it.
+- One `.cms` file holds fifteen images: the small portrait (192 × 128), the large one (336 × 336), six mouth frames, three frames for each eye and a 64 × 64 menu face.
+- The disc keeps a second copy of every portrait for widescreen consoles in `Face/wide`. With **Also update Face/wide** on, a replaced picture and a new portrait go into both copies. Each copy keeps its own part positions. The Japanese disc has no `Face/wide`.
+- **New portrait…** copies the selected record and image file under the new name in both folders; replacing pictures then makes it your own.
 
 ## Things to try next
 

@@ -2,7 +2,7 @@
 id: "modding-reinforcements"
 title: "Add and verify a reinforcement wave"
 description: "A complete workflow for defining reinforcement units, scheduling them with an on-phase trigger, selecting a deployment call, preventing repeats, and testing edge cases"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Deployment", "Events", "Reinforcements"]
@@ -267,6 +267,10 @@ To revert cleanly, restore both sides of the change: remove/restore the reinforc
 The editor flow, `on_phase` fields, **Apply to code**, deployment-file structure, and catalog distinctions are source-reviewed. Exact native engine effects of every deployment call variant remain dependent on the selected function and chapter context. This lesson therefore requires a working in-chapter reference instead of claiming one universal `Dispos` recipe.
 
 Occupied-tile resolution, entrance animation timing, and save/load behavior are runtime concerns. Record the result for the exact call family you use and verify it in Dolphin before release.
+
+## On Radiant Dawn
+
+Radiant Dawn's scripts deploy a section with `_dispos(group, mode)` (animated) or `_idispos(group, mode)` (instant), naming a difficulty pair without its letter. `IsDispos`, `DisposGetCount` and `DisposGetUnit` read the last deployment. The rest of the recipe is the same: a dedicated section, a turn and phase window in the script, and a one-time guard.
 
 ## Things to try
 

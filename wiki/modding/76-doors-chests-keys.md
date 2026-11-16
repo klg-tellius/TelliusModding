@@ -2,7 +2,7 @@
 id: "modding-doors-chests-keys"
 title: "Add doors, chests and keys"
 description: "How a door or chest is a terrain type plus a location event, the open and give-item calls, keys, Lockpick, and AI thieves"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -133,6 +133,10 @@ With the select tool, click the chest's tile without its zone (or untick **Scrip
 | `MindGetItem("IID_…")` | Gives the item to the unit that opened the chest |
 | Deployment flags **AI uses Door Key** / **AI uses Chest Key** | Let an AI unit use the key it carries |
 | **Steal items** | What AI thieves may take, in order |
+
+## On Radiant Dawn
+
+Radiant Dawn uses the same three pieces: the map's tile, an `@on_location` event with its action (*door*, *chest*, *visit*), and the tile record the game keeps once it is opened. Its saves use Path of Radiance's tile-record numbers for the types seen so far (0x23 chest opened); the others are not checked on Radiant Dawn. The retail chapter scripts hold 208 `@on_location` events. Only the Bandit class has `SID_VILLAGEDESTROY`, the skill that sends a unit to loot villages.
 
 ## Things to try next
 
