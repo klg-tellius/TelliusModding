@@ -163,9 +163,8 @@ class CorpusTest(unittest.TestCase):
                 self.assertEqual(rebuilt, raw)
 
     def test_every_message_round_trips_through_the_notation_and_the_steps(self):
-        for path in sample(self.paths(), keep=("e_c0101", "e_ending", "c0101"), size=40):
-            if path.name[:2].lower() in ("d_", "f_", "i_", "s_"):
-                continue  # German/French/Italian/Spanish files use their own single-byte tables (later phase)
+        # the European languages (d_ f_ s_ i_, and e_ on RFEP01) use fe10_message.EU_TABLE
+        for path in sample(self.paths(), keep=("e_c0101", "e_ending", "c0101", "d_c0101", "f_c0101"), size=40):
             for msg in message.read_messages_path(path):
                 display = F.to_display(msg.text)
                 with self.subTest(path=path.name, id=msg.speaker):

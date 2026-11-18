@@ -5,6 +5,27 @@ affect editing or simulation; historical phase plans are not status documents. A
 file only after its meaning is documented, the implementation is updated, and the relevant tests
 pass. Last reconciled: 2026-10-31.
 
+## Status on 2026-11-18 (release 1.0)
+
+The priority tables below are the queue as it stood on 2026-10-31; the dated sections after them record
+what was done since. Where they disagree, the dated sections are right. Closed since the tables were
+written:
+
+| Item | Now |
+|---|---|
+| TEXT-01 | Closed: the European single-byte table is `fe10_message.EU_TABLE` (2026-11-15) |
+| SAVE-08, SAVE-09 | Closed: the European and Japanese saves are read and were loaded in game (2026-11-16) |
+| GFX-01 | Classified: particle emitter +0x0C has no reader in RFEE01 (no-reader) |
+| GFX-02 | Classified: `.gs` texture +2/+3 named, texture +6 and flag bits 0x2/0x4/0x8 have no reader |
+| GFX-03 | Classified: bone flag 0x2 selects the quaternion and the skin matrix; nothing tests 0x4 |
+
+Byte coverage of the three discs (HOME Menu and `client.bin` out of scope): RFEE01 12.4 KB, RFEP01
+15.2 KB, RFEJ01 11.8 KB left (0.0006 % each), listed at the end of this file. Path of Radiance, same
+measurement on 2026-11-18: GFEE01 2.3 KB (0.0004 %), GFEP01 2.4 KB once `MovieCaptionData.bin` is
+decoded (`por_captions`), GFEJ01 2.3 KB once the Japanese `tut_data.bin` (20-byte rows) is read.
+The items still open are the runtime-unknown and verification-gap rows (P0, P1, P3), which need
+Dolphin checks rather than decoding.
+
 ## Status vocabulary
 
 - **undecoded-bytes**: bytes are preserved, but their structure or boundaries are not fully known.
