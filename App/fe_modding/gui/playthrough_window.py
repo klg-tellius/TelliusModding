@@ -952,12 +952,12 @@ class PlaythroughWindow(_Window):
     def _draw_rd_message(self, raw: str, page: int) -> None:
         try:
             from ..formats.fe10_conversation import build_frames
-            from ..formats.fe10_conversation_render import Fe10ConversationAssets, WIDE_SIZE, render
+            from ..formats.fe10_conversation_render import Fe10ConversationAssets, present
             if self._rd_conversation is None:
                 self._rd_conversation = Fe10ConversationAssets(self._files, wide=True)
             frames = [frame for frame in build_frames(raw) if frame.kind in ("wait", "end")]
             frame = frames[min(max(1, page), len(frames)) - 1]
-            image = render(frame, self._rd_conversation).resize(WIDE_SIZE, Image.Resampling.BILINEAR)
+            image = present(frame, self._rd_conversation)
         except Exception:  # noqa: BLE001 - the plain message text remains usable
             self._rd_conversation = False
             self._message_canvas.delete("all")

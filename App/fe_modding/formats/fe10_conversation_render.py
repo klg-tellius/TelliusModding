@@ -25,9 +25,11 @@ from .fe10_faces import FaceLibrary
 from .fe9_font import GameFont
 from ..game_files import as_path
 
-#: The frame the game draws conversations in: 608 pixels wide (balloons run from x 16 to 592,
-#: ``FUN_8022a174``; the text window is centred on x 304), stretched by the console to the screen.
-FRAME_SIZE = (608, 480)
+#: The frame the game draws conversations in: 608x456 (balloons run from x 16 to 592,
+#: ``FUN_8022a174``; the text window, y 296-448, is centred on x 304), stretched by the console to the
+#: screen. Checked against an in-game capture of II:2 (2026-11-18): the window then ends 8 pixels above
+#: the bottom of a 480-line picture.
+FRAME_SIZE = (608, 456)
 SCENE_SIZE = (640, 480)   # how a 4:3 console shows the frame
 WIDE_SIZE = (854, 480)    # how a 16:9 console shows the frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
@@ -35,6 +37,13 @@ PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
 WINDOW_ART = "window/talk.tpl"
 NAMEPLATE_IMAGE = 1       # the parchment scroll behind the speaker's name
+CURSOR_IMAGE = 2          # the page cursor's 15 frames, 40x56 each (RID_PAGECUR)
+FENCE_ART = "window/fence.tpl"   # the carved panel beside a 4:3 conversation on a 16:9 screen
+#: The nameplate's place in the full-width window, from the text origin (in-game capture of II:2).
+NAMEPLATE_OFFSET = (30, -32)
+#: The nameplate's lettering: the alpha font in a grey brown (sampled from the same capture).
+NAME_FONT = "alpha"
+NAME_COLOR = (64, 58, 46, 255)
 _TEXT_PALETTE = {b"RFEE01": 0x80383158, b"RFEP01": 0x80384CD8, b"RFEJ01": 0x8036D0D0}
 _COLOR_CODE = re.compile(r"#C([0-9A-Fa-f]{2})|#c")
 
@@ -57,6 +66,24 @@ class Fe10ConversationAssets:
         self._faces = None
         self._colors: dict[int, tuple[int, int, int, int]] = {}
         self._textures: dict[tuple[str, int], Image.Image] = {}
+        self._narrow: Optional["Fe10ConversationAssets"] = None
+
+    @property
+    def name_font(self) -> GameFont | None:
+        """The nameplate's font (``Fonts/alpha.cms``), or None."""
+        if not hasattr(self, "_name_font"):
+            path = self.files / "Fonts" / (f"{NAME_FONT}_w.cms" if self.wide else f"{NAME_FONT}.cms")
+            self._name_font = GameFont(lz10.decompress(path.read_bytes())) if path.is_file() else None
+        return self._name_font
+
+    @property
+    def narrow(self) -> "Fe10ConversationAssets":
+        """The 4:3 assets of the same disc (a full-screen conversation is drawn 4:3 on a 16:9 screen)."""
+        if not self.wide:
+            return self
+        if self._narrow is None:
+            self._narrow = Fe10ConversationAssets(self.files, self.prefix, wide=False)
+        return self._narrow
 
     @property
     def faces(self) -> FaceLibrary:
@@ -283,11 +310,40 @@ def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
                                        fill=PANEL, outline=(200, 190, 160, 255), width=2)
             speaker_index = box.speaker if box.speaker >= 0 else frame.current
             if 0 <= speaker_index < len(frame.cast):
-                _name(draw, image, assets, font, assets.character_name(frame.cast[speaker_index]), tx, ty - 40,
-                      plate=assets.texture(WINDOW_ART, NAMEPLATE_IMAGE))
+                name = assets.character_name(frame.cast[speaker_index])
+                plate = assets.texture(WINDOW_ART, NAMEPLATE_IMAGE)
+                if plate is not None:
+                    _plate(image, assets.name_font or font, name, plate,
+                           tx + NAMEPLATE_OFFSET[0], ty + NAMEPLATE_OFFSET[1])
+                else:
+                    _name(draw, image, assets, font, name, tx, ty - 40)
             if font:
                 _draw_styled(font, image, box.text, (tx, ty), assets, lines, line_height)
+            if textbox and frame.kind == "wait":
+                cursor = assets.texture(WINDOW_ART, CURSOR_IMAGE)
+                if cursor is not None:
+                    image.alpha_composite(cursor.crop((0, 0, 40, 56)), (textbox.cursor_x, textbox.cursor_y))
     return image
+
+
+def present(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
+    """``frame`` as the console shows it: the 608x456 frame stretched to 640x480, or to 854x480 on a
+    16:9 screen. There a conversation with a background is the 4:3 picture between two carved panels
+    (``window/fence.tpl``, mirrored on the right), drawn with the 4:3 assets."""
+    if not assets.wide:
+        return render(frame, assets).resize(SCENE_SIZE, Image.LANCZOS)
+    if not frame.background:
+        return render(frame, assets).resize(WIDE_SIZE, Image.LANCZOS)
+    scene = render(frame, assets.narrow).resize(SCENE_SIZE, Image.LANCZOS)
+    out = Image.new("RGBA", WIDE_SIZE, (0, 0, 0, 255))
+    side = (WIDE_SIZE[0] - SCENE_SIZE[0]) // 2
+    out.alpha_composite(scene, (side, 0))
+    fence = assets.texture(FENCE_ART, 0)
+    if fence is not None:
+        fence = fence.resize((side, WIDE_SIZE[1]), Image.LANCZOS)
+        out.alpha_composite(fence, (0, 0))
+        out.alpha_composite(fence.transpose(Image.FLIP_LEFT_RIGHT), (WIDE_SIZE[0] - side, 0))
+    return out
 
 
 def _mirrored(facing: str, seats, position: int) -> bool:
@@ -329,12 +385,19 @@ def _draw_resource(image: Image.Image, assets: Fe10ConversationAssets, rid: str)
     return drawn
 
 
-def _name(draw, image, assets, font, name: str, x: int, y: int, plate: Optional[Image.Image] = None) -> None:
+def _name(draw, image, assets, font, name: str, x: int, y: int) -> None:
     width = (font.measure(name) if font else 8 * len(name)) + 24
-    if plate is not None:
-        # the scroll nameplate (talk.tpl image 1), stretched to the name
-        image.alpha_composite(plate.resize((max(width + 24, plate.width), 34)), (x - 24, y - 4))
-    else:
-        draw.rounded_rectangle((x - 12, y - 2, x - 12 + width, y + 28), 8, fill=NAME_PANEL)
+    draw.rounded_rectangle((x - 12, y - 2, x - 12 + width, y + 28), 8, fill=NAME_PANEL)
     if font:
         font.draw(image, name, (x, y), line_height=28)
+
+
+def _plate(image, font, name: str, plate: Image.Image, x: int, y: int) -> None:
+    """The scroll nameplate (talk.tpl image 1) at ``(x, y)``, widened for a long name, the name centred."""
+    width = (font.measure(name) if font else 8 * len(name)) + 32
+    if width > plate.width:
+        plate = plate.resize((width, plate.height))
+    image.alpha_composite(plate, (x, y))
+    if font:
+        font.draw(image, name, (x + (plate.width - font.measure(name)) // 2, y + (plate.height - 28) // 2 + 1),
+                  color=NAME_COLOR, line_height=28, shadow=False)

@@ -12,7 +12,7 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 
 from ..formats import fe10_conversation, fe10_message
-from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, render
+from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, present
 from ..game_profile import files_root_of, message_prefix
 
 #: The game's Message Speed option, in frames (1/60 s) per glyph; Max shows the whole page at once.
@@ -206,7 +206,7 @@ class Fe10ConversationPreview(ttk.Frame):
             return
         frame = self._frames[self._index]
         try:
-            image = render(typed(frame, self._reveal) if self._reveal is not None else frame, self.assets)
+            image = present(typed(frame, self._reveal) if self._reveal is not None else frame, self.assets)
             error = ""
         except (OSError, ValueError, KeyError, IndexError) as exc:
             image = Image.new("RGBA", SCENE_SIZE, (0, 0, 0, 255))
