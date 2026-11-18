@@ -20,7 +20,7 @@ First stable release.
   movie subtitles, world-map route lines, Wii banner.
 - Radiant Dawn maps and models: map wrapping, height ceiling, mirrored and offset
   props, blank hub maps, new skeletons on map units.
-- Decoding coverage on the US discs: 0.005 % of Path of Radiance and 0.0006 % of Radiant
+- Decoding coverage on the US discs: about 0.003 % of Path of Radiance and 0.0006 % of Radiant
   Dawn left undecoded or unclassified.
 - Tellius Archive: Radiant Dawn sections in the lessons and systems pages.
 - Faster test runs (affected tests, disc samples, parallel runs) and a Dolphin input
