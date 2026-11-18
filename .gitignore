@@ -79,6 +79,3 @@ docs/*
 # JVM crash logs (Ghidra)
 hs_err_pid*.log
 replay_pid*.log
-
-# tools/release_checks.py reports
-/release-checks/

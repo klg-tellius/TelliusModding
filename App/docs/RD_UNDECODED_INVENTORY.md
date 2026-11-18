@@ -19,7 +19,7 @@ written:
 | GFX-02 | Classified: `.gs` texture +2/+3 named, texture +6 and flag bits 0x2/0x4/0x8 have no reader |
 | GFX-03 | Classified: bone flag 0x2 selects the quaternion and the skin matrix; nothing tests 0x4 |
 
-Byte coverage of the three discs (HOME Menu and `client.bin` out of scope): RFEE01 12.4 KB, RFEP01
+Byte coverage of the three discs (HOME Menu and `client.bin` out of scope; the two `.brsar` sound archives are now measured too, with no open byte): RFEE01 12.4 KB, RFEP01
 15.2 KB, RFEJ01 11.8 KB left (0.0006 % each), listed at the end of this file. Path of Radiance, same
 measurement on 2026-11-18: GFEE01 2.3 KB (0.0004 %), GFEP01 2.4 KB once `MovieCaptionData.bin` is
 decoded (`por_captions`), GFEJ01 2.3 KB once the Japanese `tut_data.bin` (20-byte rows) is read.

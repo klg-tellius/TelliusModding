@@ -25,7 +25,6 @@ Three tiers, from quickest to slowest:
 
 - `python -m tools.affected_tests` without `--direct` follows imports all the way, and `--base main` covers a whole branch. `--pytest -n auto` runs the picked tests in parallel.
 - Disc tests that walk every file of a kind (models, maps, textures, messages) check a fixed sample (`tests/corpus.py`). Set `TELLIUS_CORPUS=full` to walk everything, and to check the counts that only hold for the whole disc. Do this before a pull request that changes a format.
-- Before a release, `python -m tools.release_checks <disc folders> --saves <saves folder> --full` (or `release\run_release_checks.bat` with the same arguments) runs the unit tests once, then the whole suite on every extracted disc it finds, with each game's variables set for that disc, and writes `release-checks/<date-time>/summary.md`. `--coverage` also measures each disc's byte coverage.
 - `-n auto` needs the dev requirements: `python -m pip install -r requirements-dev.txt` (pytest and pytest-xdist).
 
 ## Architecture
