@@ -105,7 +105,7 @@ Character and object models — `zbg/`'s 3D battle scenery, units' map models un
   </tbody></table>
 </div>
 
-  The header's scale also applies to the *animated* output, so every posed coordinate must still fit a 16-bit value at that scale; shipped files use 5 to 10 fraction bits. The header's last field equals the number of records that hold more than one vertex, and no engine reader for it has been found. <span class="confidence confidence--strong">value pattern</span>
+  The header's scale also applies to the *animated* output, so every posed coordinate must still fit a 16-bit value at that scale; shipped files use 5 to 10 fraction bits. The header's last field equals the number of records that hold more than one vertex, and no engine reader for it has been found. <span class="confidence confidence--strong">strong evidence</span>
 
   **Battle models are fully blended.** Every visible shape of a battle model goes through the blended path, including vertices that follow a single bone. A battle model rebuilt with multi-bone hardware shapes instead drew parts out of place in battle. <span class="confidence confidence--confirmed">confirmed in game</span> The reason is how the game reuses matrix slots: when it draws the first single-bone or blended shape of a list, it also loads the matrices of the next shapes of that list (up to ten), and those shapes reuse them later without reloading. A multi-bone shape always loads its own bones into the same slots, so every single-bone or blended shape drawn after it in the list picks up the wrong bone. Drawing a list's multi-bone shapes first avoids it, which is what the app's importer now does. <span class="confidence confidence--plausible">traced in code, not yet re-tested in game</span>
 
@@ -132,6 +132,8 @@ Character and object models — `zbg/`'s 3D battle scenery, units' map models un
     <tr><td>3rd &amp;mdash; blended</td><td>Blended by alpha; depth tested but not written</td><td>Translucent effects: 7,399 of the 7,515 spell-effect shapes, most of them also additive</td></tr>
   </tbody></table>
 </div>
+
+  **Radiant Dawn moves additive drawing into the material.** None of its map props sets the shape's additive bit (`0x40`), which Path of Radiance uses on 47 map-prop shapes. Instead, the material's byte `+4` (zero on every Path of Radiance map prop) is `0x30` on torch fire, luminous glows and sparkles (`t_grain`, `t_kirakira`), whose textures are opaque colour on black, and `0x10` on alpha-textured smoke, clouds and translucent panels. The app draws bit `0x20` additively. This comes from a census of the US disc's map props; the reading code in the game was not traced. <span class="confidence confidence--strong">strong evidence</span>
 
   Cut-out textures are stored as CMPR with 1-bit alpha, using the format's three-colour block mode, whose fourth colour is transparent. Scenery with its leaf shapes moved to the opaque list draws their transparent pixels as dark blocks. Some model states override the lists, drawing a whole model opaque, alpha-tested or blended.
 
