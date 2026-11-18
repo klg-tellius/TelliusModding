@@ -588,6 +588,26 @@ class Fe10RealSaveTests(unittest.TestCase):
             self.assertEqual(again.system.system_part("Clears and unlocks")[3] & 0x20, 0x20)
             self.assertEqual(again.system.system_part("Conversations seen")[1] & 0x02, 0x02)
 
+    def test_european_and_japanese_saves(self):
+        """Files the European and Japanese games made in Dolphin (a Prologue cleared and saved to file 1):
+        region letter E / J in every magic, the Japanese file six files and one checkpoint."""
+        root = Path(os.environ["FE10_SAVES"])
+        folder = root.parent if root.is_file() else root
+        seen = set()
+        for name, letter, records in (("FE10_EU.dat", b"E", 12), ("FE10_JP.dat", b"J", 7)):
+            for path in sorted(folder.rglob("*" + name)):
+                seen.add(name)
+                data = path.read_bytes()
+                save = sf.SaveFile.from_bytes(data)
+                self.assertEqual(save.system.magic, b"FE10" + letter + b"SYS", path.name)
+                self.assertEqual(sf.validate(save), [], path.name)
+                self.assertEqual(len(save.records), records, path.name)
+                self.assertTrue(save.active_records(), path.name)
+                self.assertTrue(all(r.magic == b"FE10" + letter + b"DAT" for r in save.active_records()))
+                self.assertEqual(save.to_bytes(), data, path.name)
+        if not seen:
+            self.skipTest("no FE10_EU.dat or FE10_JP.dat in FE10_SAVES")
+
 
 if __name__ == "__main__":
     unittest.main()

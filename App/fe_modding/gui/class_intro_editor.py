@@ -15,8 +15,9 @@ from .record_tables_editor import Column, RecordTablesEditor, TableSpec
 class ClassIntroEditor(RecordTablesEditor):
     display_name = "Class Introductions"
     subject = "Class introductions"
-    help_text = ("The Extras class introductions: each record stages one class in battle (unit, class, "
-                 "backdrop, sky, camera, weapon and the motions it plays) beside its picture "
+    help_text = ("The Unit Profile demo the title screen plays when left alone: each record stages one class "
+                 "in battle (unit, class, backdrop, sky, camera, weapon and the motions it plays) beside its "
+                 "name card "
                  "(intro/<picture>.cms) and description (MS_INTRO_ messages in intro.m). The group is "
                  "the list the record belongs to; the scene starts at the first record of a group.")
 

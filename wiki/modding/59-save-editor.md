@@ -204,9 +204,9 @@ The same page, tabs and controls edit Radiant Dawn's save, with these difference
 - **System data** edits the system record by name: clears and unlocks (one bit per difficulty cleared, the full opening movie), characters met, conversations seen, Sound Room tracks, the glossary's unlocks and where it was left, the language and the checkpoint's file. Bits are numbered as the game numbers them. The clear records, one per finished playthrough, are listed read only.
 - **Play in Dolphin…** starts the game with a copy of the save in a separate Wii memory for that run; your Dolphin's own saves are not touched.
 - The units need the workspace's FE10Data to be read: open the save from an extracted Radiant Dawn workspace.
-- **Other discs.** The European disc's `FE10_EU.dat` (in `.../52464550/data`) opens the same way. The Japanese `FE10_JP.dat` has another layout and is refused.
+- **Other discs.** The European disc's `FE10_EU.dat` (in `.../52464550/data`) and the Japanese `FE10_JP.dat` (in `.../5246454a/data`) open the same way. The Japanese file has six files and one checkpoint.
 
-Loading an edited Radiant Dawn save in the game is untested, like on Path of Radiance.
+An edited Radiant Dawn save has been loaded in the game on the European and Japanese discs: a unit's level changed here showed in the game's unit list. Other kinds of edits are still untested in the game.
 
 ## Related tutorials and references
 

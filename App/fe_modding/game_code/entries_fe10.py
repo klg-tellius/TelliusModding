@@ -114,7 +114,8 @@ CATALOG.add(Patch(
 
 # build_combat_unit_derived_stats (0x8002F220) adds FUN_8010EF98's result to the critical rate of a
 # unit with SID_CRITRISE (0x8002F838). That getter, called from nowhere else, reads GameData +0x60,
-# one s16 per difficulty (the Game Data "Critical bonus with SID_CRITRISE" row). The hook rewrites
+# one s16 per difficulty (the Game Data "Critical bonus with SID_CRITRISE" row, 0 on all three retail
+# discs, where no class or character has the skill either). The hook rewrites
 # its tail: the four difficulty indices are stored already doubled, which frees the shift, and the
 # freed word multiplies the loaded bonus.
 _CLASS_CRIT_TAIL = 0x8010EFF4
@@ -135,9 +136,10 @@ _class_crit_hook = CATALOG.add(Patch(
     internal=True))
 _tunable(
     "rd.combat.class_crit_multiplier", G_RD_COMBAT, "Class critical bonus multiplier",
-    "Units with SID_CRITRISE (Swordmasters, Snipers, Berserkers and their kin) add the difficulty's class "
-    "critical bonus times this (vanilla x1, 0 removes it, x2 doubles it). The bonus itself is the Game "
-    "Data row 'Critical bonus with SID_CRITRISE'.",
+    "Multiplies the critical bonus that units with SID_CRITRISE get (vanilla x1, 0 removes it). Path of "
+    "Radiance's class critical bonus; in retail Radiant Dawn no class or character has the skill and the "
+    "bonus (the Game Data Difficulty row 'Critical bonus with SID_CRITRISE') is 0, so this changes nothing "
+    "until a class gets the skill and the bonus is set.",
     1, 0, 9, (Field(_CLASS_CRIT_MULLI, "imm16s", b"\x1c\x63"),), "x",
     (_class_crit_hook,))
 
@@ -645,9 +647,9 @@ CATALOG.add(Patch(
 CATALOG.add(Patch(
     "rd.promotion.story_units_use_items", G_RD_PROMOTION,
     "Story-promoted units can use promotion items",
-    "Units with SID_EVENT_CC (who normally promote only through the story) can use a Master Seal or "
-    "Master Crown. A later scripted class change still promotes them again if their new class has a "
-    "promotion.",
+    "Units whose class has SID_EVENT_CC (Hero, Rogue, Light Mage and Light Sage: Ike, Sothe and Micaiah, "
+    "who normally promote only through the story) can use a Master Seal or Master Crown. A later "
+    "scripted class change still promotes them again if their new class has a promotion.",
     {RFEE01: (Edit(0x8011FF68, _word(ppc.bl(0x8011FF68, 0x8011B77C)), _word(ppc.li(3, 0))),)}))
 
 

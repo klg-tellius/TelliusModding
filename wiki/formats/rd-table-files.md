@@ -31,11 +31,13 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 <table><thead><tr><th>Table</th><th>Record</th><th>Fields</th></tr></thead><tbody>
     <tr><td>Categories</td><td>8 bytes</td><td>The tab label (<code>MDIK_PERSON</code>, <code>MDIK_WORD</code>), a zero word. The menu draws exactly two tabs.</td></tr>
     <tr><td>People</td><td>20 bytes</td><td>PID; nation key (<code>MDICN_</code>) or none; description key (<code>MDIC_</code>); s16 x and y on the relation chart (<code>-1000</code> keeps the person off it); a word that draws the chart portrait faded when non-zero, set on the characters who are dead by Radiant Dawn (Ashnard, Elena, Greil and others)</td></tr>
-    <tr><td>Relations</td><td>24 bytes (20 in Japan)</td><td>The chart line image, drawn as <code>RID_&lt;name&gt;</code> from <code>window/RectRelationLine*</code>, and its s16 x, y; the label key (<code>MDIL_</code>); the label colour (1 and 2 pick two text colours, anything else a third); the point the label is centred on. The US and European records keep the Japanese label point before the translated one, and the game reads only the second.</td></tr>
+    <tr><td>Relations</td><td>24 bytes (20 in Japan)</td><td>The chart line image, drawn as <code>RID_&lt;name&gt;</code> from <code>window/RectRelationLine*</code>, and its s16 x, y; the label key (<code>MDIL_</code>); the label colour (1 and 2 pick two text colours, anything else a third: 2 is red, 0 green); the point the label is centred on. The US and European records keep the Japanese label point before the translated one, and the game reads only the second.</td></tr>
     <tr><td>Affiliations</td><td>16 bytes</td><td>The frame image (<code>RID_&lt;name&gt;</code>; Daein's and Goldoa's frames use a <code>2</code> variant until a story flag is set) and its s16 x, y; the banner image and label key (<code>旗国名&lt;nation&gt;</code> for nations, <code>MDIB_</code> for groups such as the Greil Mercenaries) and the point it is centred on</td></tr>
     <tr><td>Terms</td><td>16 bytes</td><td>Name (<code>MDIN_</code>), reading (<code>MDIR_</code>) and description (<code>MDIC_</code>) keys, and a picture name on the nine nation terms (no reader of it was found)</td></tr>
   </tbody></table>
 </div>
+
+  In the game the glossary is in the base menu, Library › Glossary (with Character Tree, the relation chart). Checked in Dolphin: a relation's label and colour and a person's chart position, changed here, show on the chart. <span class="confidence confidence--confirmed">in game</span>
 
   Records with the same PID in a row form one entry: the list keeps the last unlocked one, which is how an entry can grow as the story moves on. <span class="confidence confidence--confirmed">engine</span>
 
@@ -56,7 +58,7 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
 ## conversationroom.bin: Conversation Room lists
 
-  Two lists of name pointers, each after a count: 35 chapter IDs (`C0105` to `C0407e`) and 69 PIDs closed by `OTHER`. The Conversation Room loads them next to the conversation list of [FE10Conversation.cms](./rd-conversation-data.md), whose records name each conversation's chapter and speakers. They match the room's two orders, by chapter and by character; the menu code that walks them was not traced. <span class="confidence confidence--strong">engine + files</span>
+  Two lists of name pointers, each after a count: 35 chapter IDs (`C0105` to `C0407e`) and 69 PIDs closed by `OTHER`. The Conversation Room loads them next to the conversation list of [FE10Conversation.cms](./rd-conversation-data.md), whose records name each conversation's chapter and speakers. They are the room's two orders, **By chapter** and **By character**: on the European disc, with `C0108` moved to the front of the chapter list, the room's chapter list started at Part I Ch.7. <span class="confidence confidence--confirmed">in game</span>
 
 ## FE10Epilogue.bin: endings
 
@@ -79,7 +81,7 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
 ## FE10Intro.bin: class introductions
 
-  The symbol `FE10Intro` is a u16 count, two zero bytes and 64-byte records. Each record stages one class in battle beside its picture and description: <span class="confidence confidence--confirmed">engine + files</span>
+  These are the **Unit Profile** demo the title screen plays when left alone (GameController label 0x30, `E_IntroProc`), not an Extras screen. The symbol `FE10Intro` is a u16 count, two zero bytes and 64-byte records. Each record stages one class in battle beside its name card and description: <span class="confidence confidence--confirmed">engine + files</span>
 
 <div class="table-wrap">
 <table><thead><tr><th>Offset</th><th>Field</th></tr></thead><tbody>
@@ -88,10 +90,10 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
     <tr><td>+0x08</td><td>Class JID</td></tr>
     <tr><td>+0x0C, +0x10</td><td>Battle backdrop (<code>bg0104平地2</code>) and sky (<code>曇り</code>)</td></tr>
     <tr><td>+0x14</td><td>Camera distance: close, or close from above for fliers</td></tr>
-    <tr><td>+0x18</td><td>Picture: <code>intro/&lt;name&gt;.cms</code>, an LZ10-compressed TPL</td></tr>
+    <tr><td>+0x18</td><td>The class-name card shown before and above the scene ("Fighter"): <code>intro/&lt;name&gt;.cms</code>, an LZ10-compressed TPL</td></tr>
     <tr><td>+0x1C</td><td>Description (<code>MS_INTRO_...</code> in <code>intro.m</code>)</td></tr>
     <tr><td>+0x20, +0x24</td><td><code>兵種紹介</code> on every record; the weapon by its Japanese name (<code>なし</code> for none)</td></tr>
-    <tr><td>+0x28</td><td>300 on every record, not traced</td></tr>
+    <tr><td>+0x28</td><td>300 on every record, not traced; 600 on the first record did not visibly lengthen its scene</td></tr>
     <tr><td>+0x2C</td><td>Up to five motions played in turn (<code>攻撃１</code>, <code>構え</code>...), zero after the last</td></tr>
   </tbody></table>
 </div>
@@ -100,4 +102,4 @@ Six small files in the root of Radiant Dawn's disc hold the Info glossary, the C
 
   The US and European discs subtitle seven story movies with pictures instead of text. When a movie starts, the player looks its file name up in `CAPTION_DATA` (a count, then movie-name and caption-block pointer pairs), loads `/Movie/Caption/<language prefix><picture file>` (`e_s1.cms`, an LZ10 TPL with one image per caption) and steps through the captions. A caption block holds the folder, the picture file, then 20-byte captions ending in a `-1` word. <span class="confidence confidence--confirmed">engine</span>
 
-  A caption is five numbers: the picture's index in the TPL, then the wait before it, its fade-in, how long it stays and its fade-out, all in milliseconds counted from the end of the previous caption. Each picture is drawn centred at the bottom of the screen. The opening's first line appears 9.04 seconds in. The Japanese disc has no subtitles. <span class="confidence confidence--confirmed">engine + files</span>
+  A caption is five numbers: the picture's index in the TPL, then the wait before it, its fade-in, how long it stays and its fade-out, all in milliseconds counted from the end of the previous caption. Each picture is drawn centred at the bottom of the screen. The opening's first line appears 9.04 seconds in. The Japanese disc has no subtitles. <span class="confidence confidence--confirmed">engine + files</span> On the US disc, the opening's first caption set to picture 10 showed that line ("No. It was just a bird.") where the retail game shows its first one. <span class="confidence confidence--confirmed">in game</span>

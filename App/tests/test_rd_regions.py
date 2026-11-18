@@ -147,8 +147,13 @@ class RegionCodecTests(unittest.TestCase):
         self.assertEqual(sf.file_name("RFEP01"), "FE10_EU.dat")
         self.assertEqual(sf.data_path("RFEP01").as_posix(), "Wii/title/00010000/52464550/data")
         self.assertEqual(sf.data_path("RFEJ01").as_posix(), "Wii/title/00010000/5246454a/data")
-        with self.assertRaisesRegex(ValueError, "Japanese save"):
-            sf.SaveFile.from_bytes(bytes(sf.JP_FILE_SIZE))
+        # a Japanese file: six file records and one checkpoint after the system record
+        save = sf.SaveFile.from_bytes(bytes([0xFF]) * sf.JP_FILE_SIZE)
+        self.assertEqual(len(save.records), 7)
+        self.assertEqual([r.checkpoint for r in save.records], [False] * 6 + [True])
+        self.assertEqual(save.records[-1].offset, 0x94000)
+        with self.assertRaises(ValueError):
+            sf.SaveFile.from_bytes(bytes(0x1000))
 
 
 def _files(code: str) -> Path | None:

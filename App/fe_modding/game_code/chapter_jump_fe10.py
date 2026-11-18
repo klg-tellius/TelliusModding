@@ -57,6 +57,11 @@ _INIT_DATABASES_2 = 0x800CDF00
 #: Game (FUN_800CD5F4 case 3) calls it. Without it the lists hold whatever RAM held: the
 #: chapter's group pass (apply_chapter_player_group) then follows a garbage link in UnitGetByPID.
 _RESET_UNITS = 0x8012CBF0
+#: The chapter-state init (FUN_80061098 -> FUN_80060D68 on 0x803CAB38): turn 1, difficulty 0, the four
+#: army phase controllers (player, then three computer armies), the chapter's objectives, and the
+#: gf_gameover / gf_complete flags. Every file-menu outcome that enters a game calls it (FUN_800CD5F4);
+#: without it the phase controllers keep whatever RAM held, and in Dolphin the player phase was skipped.
+_INIT_CHAPTER_STATE = 0x80061098
 
 
 def _word(value: int) -> bytes:
@@ -76,11 +81,13 @@ def _stub() -> bytes:
         ppc.stwu(1, -0x20, 1), ppc.MFLR_R0, ppc.stw(0, 0x24, 1), ppc.stw(31, 0x1C, 1),
         ppc.mr(31, 3),
         ("bl", _INIT_DATABASES), ("bl", _INIT_DATABASES_2), ("bl", _RESET_UNITS),
+        *_address(3, _PARTY), ppc.li(4, 0), ("bl", _SET_CHAPTER),
+        # The chapter-state init clears the difficulty byte, so it runs before the stores below.
+        ("bl", _INIT_CHAPTER_STATE),
         *_address(3, _PARTY), ("bl", _GET_STATE),
         ppc.lwz(5, 0, 3), ppc.andi_(5, 5, 0xFFFC), ppc.li(6, _STORY_MODE), ppc.add(5, 5, 6),
         ppc.stw(5, 0, 3),
         ppc.li(0, DIFFICULTIES["Normal"]), ppc.stb(0, 0x11, 3),
-        *_address(3, _PARTY), ppc.li(4, 0), ("bl", _SET_CHAPTER),
         *_address(3, _PARTY), ("bl", _REINIT_PARTY),
         # FUN_800cd5f4 ends every file-menu outcome this way: the getter leaves the current
         # state pointer in r3 for the final refresh routine.

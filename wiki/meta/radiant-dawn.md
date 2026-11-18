@@ -142,7 +142,9 @@ source_path: "meta/radiant-dawn.md"
 
 ## Saves
 
-  The game saves `FE10_US.dat` on the US disc and `FE10_EU.dat` on the European one, the same layout written by the same code, in the title's data folder (`Wii/title/00010000/52464545/data` and `.../52464550/data`). The Japanese disc's `FE10_JP.dat` is 0xAC000 bytes, not 0x124000: the same system record, then seven records of 0x18000 bytes where the US file has twelve (six files and six checkpoints). The Japanese build has no separate checkpoint bank, so its seventh record is probably its one checkpoint; the records themselves are not confirmed. <span class="confidence confidence--confirmed">engine</span>
+  The game saves `FE10_US.dat` on the US disc, `FE10_EU.dat` on the European one and `FE10_JP.dat` on the Japanese one, in the title's data folder (`Wii/title/00010000/52464545/data`, `.../52464550/data`, `.../5246454a/data`). The three use one layout, and the fifth byte of every record's magic names the region: `FE10ASYS` and `FE10ADAT` on the US file, `FE10E…` on the European one, `FE10J…` on the Japanese one. The Japanese file is 0xAC000 bytes, not 0x124000: the US layout cut after the first checkpoint record, so the system record, six file records and one checkpoint record at 0x94000. <span class="confidence confidence--confirmed">engine + files</span>
+
+  A European and a Japanese file made in Dolphin from a new game confirm this: each game writes file slot 1 into record 0, and the Japanese file menu lists six slots. Both files, with Micaiah's level changed by the app, loaded in their game and showed the new level in 1-1's unit list. The Japanese checkpoint record has not been seen written. <span class="confidence confidence--confirmed">in game</span>
 
   `FE10_US.dat` holds a system record, six files and six checkpoints. Each file is a record of its own: its header holds the file number, the difficulty and the chapter number the file menu shows, which `BMST` repeats. <span class="confidence confidence--confirmed">files</span>
 
@@ -160,7 +162,7 @@ source_path: "meta/radiant-dawn.md"
 
 <div class="table-wrap">
 <table><thead><tr><th>Offset</th><th>Content</th></tr></thead><tbody>
-    <tr><td>+0x1C</td><td>Clears and unlocks, 64 bits: bits 0–3 the game cleared on Easy, Normal, Hard and Maniac (set with each clear record; any of them adds choices to the Options menu), bit 5 the full opening movie (<code>SetAvailableGrandOpening</code>). Bit 4 is set on cleared files, but nothing found reads it. Bit 49 makes a chapter load a debug deployment, <code>zmap/debug/dispos_c.bin</code>; no retail code sets it.</td></tr>
+    <tr><td>+0x1C</td><td>Clears and unlocks, 64 bits: bits 0–3 the game cleared on Easy, Normal, Hard and Maniac (set with each clear record; any of them adds choices to the Options menu; with all four set, Extras also shows Game Records, Sound Room, Theater and Replay Event, checked in the European game), bit 5 the full opening movie (<code>SetAvailableGrandOpening</code>). Bit 4 is set on cleared files, but nothing found reads it. Bit 49 makes a chapter load a debug deployment, <code>zmap/debug/dispos_c.bin</code>; no retail code sets it.</td></tr>
     <tr><td>+0x24</td><td>Characters met, 128 bits, one per character number (PersonData +0x1C). A bit is set whenever that character's unit is created.</td></tr>
     <tr><td>+0x34</td><td>Conversations seen, 768 bits. At start-up the game registers flag names in order: those of <code>CONV_INFO_DATA</code> in <a href="../../formats/rd-conversation-data/">FE10Conversation.cms</a>, then three per FE8 yell record. <code>TstConversationFlag</code> reads a bit by name. The names themselves are not saved.</td></tr>
     <tr><td>+0x94</td><td>Sound Room tracks, 128 bits, set when a track first plays. One code path sets all 128 at once.</td></tr>
