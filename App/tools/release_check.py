@@ -26,7 +26,8 @@ Each folder can also be given on its own (``--por``, ``--rd``, ``--por-saves``, 
    European, then the Japanese discs.
 3. ``coverage <disc>``: the byte-coverage map of each disc (:mod:`fe_modding.formats.coverage`).
    It fails when a handler rejects a file, or when more than ``--max-open`` percent of the bytes
-   are still undecoded. US discs by default, all six with ``--all-regions``.
+   are still undecoded, leaving out the formats set aside for 1.0 (``SET_ASIDE_FORMATS``: the Wii
+   HOME Menu and client.bin). US discs by default, all six with ``--all-regions``.
 4. ``ga <disc>``: every ``.ga`` animation, loose or inside a ``pack`` archive, is read and written
    back byte for byte, and a Radiant Dawn footer moved by 64 bytes and back is unchanged.
 
@@ -57,6 +58,9 @@ REGIONS = {"E": "US", "P": "EU", "J": "JP"}
 #: of reading for no field to find) and anything over 30 MB.
 COVERAGE_SKIP_SUFFIXES = (".thp", ".stm")
 COVERAGE_MAX_BYTES = 30_000_000
+#: Coverage formats set aside for 1.0 (the Wii HOME Menu's sounds, Nintendo's shared system
+#: data, and client.bin, the GBA program): reported, but left out of the pass/fail threshold.
+SET_ASIDE_FORMATS = ("home menu sound", "home menu text", "client.bin")
 
 
 @dataclass
@@ -274,6 +278,8 @@ def coverage_job(game: str, code: str, root: str, saves: Optional[str], out: str
     leaf = report.totals(True)
     total = sum(leaf) or 1
     open_bytes = leaf[c.UNCLASSIFIED] + leaf[c.UNDECODED]
+    aside = sum(t.counts[c.UNCLASSIFIED] + t.counts[c.UNDECODED]
+                for fmt, t in report.formats.items() if fmt in SET_ASIDE_FORMATS)
     failures = [f"{fmt}: {line}" for fmt, t in sorted(report.formats.items()) for line in t.failures]
     # The biggest open fields, for the summary.
     fields = []
@@ -289,7 +295,7 @@ def coverage_job(game: str, code: str, root: str, saves: Optional[str], out: str
     return {
         "files": len(paths), "bytes": total, "open": open_bytes,
         "plausible": leaf[c.PLAUSIBLE], "unread": leaf[c.UNREAD],
-        "percent": 100 * open_bytes / total, "failures": failures,
+        "aside": aside, "percent": 100 * (open_bytes - aside) / total, "failures": failures,
         "top": [f"{n:,} B  {label}" for n, label in fields[:8]],
         "seconds": time.time() - start,
     }
@@ -437,8 +443,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 continue
             if kind == "coverage":
                 ok = not value["failures"] and value["percent"] <= args.max_open
-                summary = (f"{value['percent']:.4f} % undecoded ({value['open']:,} of {value['bytes']:,} B, "
-                           f"{value['files']:,} files), {len(value['failures'])} handler failures")
+                summary = (f"{value['percent']:.4f} % undecoded ({value['open'] - value['aside']:,} of "
+                           f"{value['bytes']:,} B, {value['files']:,} files; {value['aside']:,} B set aside: HOME "
+                           f"Menu, client.bin), {len(value['failures'])} handler failures")
                 details = [f"FAILED {line}" for line in value["failures"][:20]] + value["top"]
                 results.append(Result(name, ok, summary, value["seconds"], details))
             else:
