@@ -14,8 +14,8 @@ is a relocated label (null when absent):
 - +0x1C the magic class name (``光魔法``) on a few rows.
 
 +0x20 is an index into ``FE10BWeaponType`` (1 ``sw`` sword, 2 ``sp`` lance, 3 ``ax`` axe, 9 ``mg``
-magic...). +0x21 is a second ``FE10BWeaponType``-sized number on thrown weapons, arrows and breaths
-(meaning not decoded); +0x22..+0x23 are kept as they are.
+magic...). +0x21 holds actor flags 0x01/0x02/0x04/0x08 (set on thrown weapons, arrows and breaths) and
++0x22 a u16 scale; the Battle Data page edits both (:mod:`formats.fe10_battle_fields`).
 """
 
 from __future__ import annotations

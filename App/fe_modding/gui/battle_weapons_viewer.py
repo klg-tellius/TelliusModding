@@ -151,7 +151,7 @@ class Fe10BattleWeaponsViewer(BattleTableViewer):
         if w.labels.get("magic"):
             lines.append(f"Magic class: {w.labels['magic']}")
         if w.second:
-            lines.append(f"Second type byte (+0x21): {w.second}, not decoded")
+            lines.append(f"Actor flags (+0x21): {w.second:#04x} (Battle Data › Edit fields…)")
         return "\n".join(lines)
 
     def model_of(self, name):

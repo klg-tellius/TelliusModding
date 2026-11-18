@@ -249,6 +249,9 @@ class GaAnimation:
     # EOF). FE10 effect/weapon animations can keep kind-specific payloads
     # here even when their ordinary bone group count is zero.
     body_trailing: bytes = b""
+    # Radiant Dawn: where the footer region (body_trailing + compact_raw) started in the file read,
+    # so write_animation can move its file offsets when the keyframes change size.
+    fe10_region_start: Optional[int] = None
 
     def curves_for_bone(self, bone_index: int) -> list[AnimCurve]:
         return [c for c in self.curves if c.bone_index == bone_index]
@@ -425,7 +428,7 @@ def read_particle_table_layout(data: bytes, block: int | None = None) -> Particl
     """Read the confirmed portion of footer slot 8 from a whole ``.ga`` file.
 
     ``block`` is the table's file offset; when omitted it comes from PoR's
-    nine-word footer. Radiant Dawn stores the same table as compact-footer
+    nine-word footer, or Radiant Dawn's slot 13. Radiant Dawn stores the same table as compact-footer
     slot 13 (``fe10_footer_chain``): RFEE01 ``main.dol`` checks the same
     0x12345678 magic (``0x8001528c``), relocates the same five record
     pointers (``0x800151ec``) and reads stages, curve ranges, curves and keys
@@ -443,6 +446,11 @@ def read_particle_table_layout(data: bytes, block: int | None = None) -> Particl
         footer = struct.unpack_from(">I", data)[0]
         if not footer:
             return None
+        if is_fe10_animation(data):
+            found = fe10_footer_blocks(data).get(FE10_PARTICLE_SLOT)
+            if found is None:
+                return None
+            return read_particle_table_layout(data, found[0])
         if footer + FOOTER_LEAD_IN_SIZE > len(data):
             raise AnimationError("Animation footer is truncated.")
         block = struct.unpack_from(">I", data, footer + 8 * 4)[0]
@@ -594,6 +602,138 @@ def read_fe10_event_block(block: bytes) -> list[Fe10EventKey]:
     return keys
 
 
+def write_fe10_event_block(keys: list[Fe10EventKey]) -> bytes:
+    """Encode Radiant Dawn's slot-5 event track (the layout :func:`read_fe10_event_block` reads);
+    the runtime pointer word is written as zero, as on the disc."""
+    if any(b.frame < a.frame for a, b in zip(keys, keys[1:])):
+        raise AnimationError("Event frames must be in ascending order.")
+    offsets, body = [], bytearray()
+    head = 8 + 2 * len(keys)  # keys follow the offsets directly, as on the disc
+    for key in keys:
+        if not 0 <= key.frame <= 0xFFFF or len(key.codes) > 0xFF:
+            raise AnimationError("An event key has a frame past 65535 or more than 255 codes.")
+        offsets.append(head + len(body))
+        body += struct.pack(">HBB", key.frame, 0, len(key.codes))
+        for code, parameter in key.codes:
+            if not 0 <= code <= 0xFFFF or not -0x8000 <= parameter <= 0x7FFF:
+                raise AnimationError("An event code is 0-65535 and its parameter -32768 to 32767.")
+            body += struct.pack(">Hh", code, parameter)
+    if head + len(body) > 0xFFFF:
+        raise AnimationError("The event track is too large.")
+    block = struct.pack(">HHI", len(keys), 0, 0) + struct.pack(f">{len(keys)}H", *offsets) + body
+    return block + bytes(-len(block) % 4)
+
+
+# -- Radiant Dawn footer edits --------------------------------------------------------------------
+#
+# The compact footer's descriptors and the particle table hold file offsets, so a block is never
+# moved: a new block is appended at the end of the file and its descriptor repointed, the old block
+# staying behind unread (the particle editor already grows the slot-13 table this way). A slot the
+# file does not have gets a new descriptor at the end, linked in as the chain's head.
+
+def is_fe10_animation(data: bytes) -> bool:
+    """A Radiant Dawn ``.ga``: header byte 8 is the loader's footer switch (RFEE01 ``0x8000bc20``),
+    1 on every Radiant Dawn file and 0 on Path of Radiance's; a footer too short for Path of
+    Radiance's nine words is also Radiant Dawn's."""
+    if len(data) < HEADER_SIZE:
+        raise AnimationError("Animation header is truncated.")
+    footer = struct.unpack_from(">I", data)[0]
+    return data[8] == 1 or bool(footer) and len(data) - footer < FOOTER_LEAD_IN_SIZE
+
+
+def fe10_footer_blocks(data: bytes) -> dict[int, tuple[int, int]]:
+    """Slot -> (block offset, end) of a Radiant Dawn ``.ga``'s footer. A block ends where the next
+    block or descriptor starts (or at the end of the file)."""
+    footer = struct.unpack_from(">I", data)[0]
+    if not footer:
+        return {}
+    chain = fe10_footer_chain(data, footer)
+    starts = sorted({block for _d, _s, block in chain} | {d for d, _s, _b in chain} | {len(data)})
+    out = {}
+    for _descriptor, slot, block in chain:
+        out.setdefault(slot, (block, next(s for s in starts if s > block)))
+    return out
+
+
+def footer_block(data: bytes, slot: int) -> Optional[bytes]:
+    """Footer slot ``slot``'s block, or None (either game)."""
+    if is_fe10_animation(data):
+        found = fe10_footer_blocks(data).get(slot)
+        return data[found[0]:found[1]] if found else None
+    anim = read_animation_bytes(data)
+    return anim.footer.blocks[slot] if anim.footer and 0 <= slot < FOOTER_SLOTS else None
+
+
+def fe10_events(data: bytes) -> list[Fe10EventKey]:
+    """A Radiant Dawn ``.ga``'s event track (slot 5), or [] when it has none."""
+    found = fe10_footer_blocks(data).get(FE10_EVENT_SLOT) if is_fe10_animation(data) else None
+    return read_fe10_event_block(data[found[0]:found[1]]) if found else []
+
+
+def fe10_set_footer_block(data: bytes, slot: int, block: Optional[bytes]) -> bytes:
+    """``data`` (a Radiant Dawn ``.ga``) with footer slot ``slot`` holding ``block``; None removes
+    the slot from the chain. Nothing already in the file moves (see above)."""
+    if not 0 <= slot <= 15:
+        raise AnimationError("Radiant Dawn footer slots run from 0 to 15.")
+    out = bytearray(data)
+    footer = struct.unpack_from(">I", out)[0]
+    chain = fe10_footer_chain(bytes(out), footer) if footer else []
+    found = next((item for item in chain if item[1] == slot), None)
+    if block is None:
+        if found is None:
+            return data
+        descriptor = found[0]
+        following = struct.unpack_from(">I", out, descriptor + 8)[0]
+        previous = next((d for d, _s, _b in chain
+                         if struct.unpack_from(">I", out, d + 8)[0] == descriptor), None)
+        if previous is None:
+            struct.pack_into(">I", out, 0, following)
+        else:
+            struct.pack_into(">I", out, previous + 8, following)
+        return bytes(out)
+    out += bytes(-len(out) % 4)
+    at = len(out)
+    out += block + bytes(-len(block) % 4)
+    if found is not None:
+        struct.pack_into(">I", out, found[0] + 4, at)
+    else:
+        descriptor = len(out)
+        out += struct.pack(">3I", slot, at, footer)
+        struct.pack_into(">I", out, 0, descriptor)
+    out[8] = max(out[8], 1)  # the loader drops a footer while header byte 8 is 0
+    return bytes(out)
+
+
+def _fe10_pointer_fields(data: bytes) -> list[int]:
+    """Every word of a Radiant Dawn ``.ga`` that holds a file offset into the footer region: header
+    word 0, each descriptor's block and next words, and the particle table's record pointers."""
+    footer = struct.unpack_from(">I", data)[0]
+    if not footer:
+        return []
+    fields = [0]
+    for descriptor, slot, block in fe10_footer_chain(data, footer):
+        fields += [descriptor + 4, descriptor + 8]
+        if slot == FE10_PARTICLE_SLOT:
+            layout = read_particle_table_layout(data, block)
+            for emitter in layout.emitters if layout else ():
+                fields += [emitter.record_offset + offset for offset in (0, 0x20, 0x24, 0x28, 0x2C)]
+    return fields
+
+
+def fe10_rebase_footer(data: bytes, old_start: int, body: bytes) -> bytes:
+    """``body`` (a new file up to the end of its keyframes) followed by ``data``'s footer region,
+    everything from ``old_start`` (the end of ``data``'s keyframes): every footer pointer
+    (:func:`_fe10_pointer_fields`) at or past ``old_start`` moves by the difference, header word 0
+    included."""
+    delta = len(body) - old_start
+    out = bytearray(body) + data[old_start:]
+    for field_at in _fe10_pointer_fields(data):
+        value = struct.unpack_from(">I", data, field_at)[0]
+        if value >= old_start and (field_at == 0 or field_at >= old_start):
+            struct.pack_into(">I", out, field_at + (delta if field_at else 0), value + delta)
+    return bytes(out)
+
+
 def read_event_block(block: bytes) -> list[EventKey]:
     """Decode footer slot 0's event track (see the module docstring)."""
     (count,) = struct.unpack(">H", block[0:2])
@@ -622,10 +762,10 @@ def write_event_block(events: list[EventKey]) -> bytes:
 
 
 def _read_footer(data: bytes, footer_start: int) -> GaFooter:
-    if len(data) - footer_start < FOOTER_LEAD_IN_SIZE:
+    if is_fe10_animation(data):
         raw = data[footer_start:]
-        if len(raw) != 12:
-            raise AnimationError(f"Unknown compact footer size {len(raw)} (expected 12).")
+        if len(raw) < 12:
+            raise AnimationError(f"Compact footer of {len(raw)} bytes (expected at least 12).")
         return GaFooter(compact_raw=raw)
     slots = struct.unpack(f">{FOOTER_SLOTS}I", data[footer_start : footer_start + 36])
     (pad_word,) = struct.unpack(">I", data[footer_start + 36 : footer_start + 40])
@@ -688,7 +828,8 @@ def read_animation(stream: BinaryIO, size: int) -> GaAnimation:
     events = read_event_block(footer.blocks[0]) if footer and footer.blocks[0] else []
     body_end = header.footer_addr or len(data)
     return GaAnimation(header=header, groups=groups, curves=curves, events=events, footer=footer,
-                       body_trailing=data[keyframes_end:body_end])
+                       body_trailing=data[keyframes_end:body_end],
+                       fe10_region_start=keyframes_end if footer and footer.compact_raw is not None else None)
 
 
 def read_animation_bytes(data: bytes) -> GaAnimation:
@@ -727,7 +868,17 @@ def write_animation(anim: GaAnimation) -> bytes:
     out += anim.body_trailing
 
     footer_at = 0
-    if anim.footer is not None:
+    if anim.footer is not None and anim.footer.compact_raw is not None and anim.fe10_region_start is not None \
+            and anim.fe10_region_start != len(out) - len(anim.body_trailing):
+        # Radiant Dawn footer whose keyframes changed size: move its file offsets with it
+        start = anim.fe10_region_start
+        old = bytearray(start) + anim.body_trailing + anim.footer.compact_raw
+        struct.pack_into(">I", old, 0, start + len(anim.body_trailing))
+        old[8] = 1
+        new_start = len(out) - len(anim.body_trailing)
+        out = bytearray(fe10_rebase_footer(bytes(old), start, bytes(out[:new_start])))
+        footer_at = struct.unpack_from(">I", out)[0]
+    elif anim.footer is not None:
         footer_at = len(out)
         if anim.footer.compact_raw is not None:
             out += anim.footer.compact_raw
@@ -806,4 +957,5 @@ def retarget_animation(
     for target, group, adjusted in moved:
         groups.append(BoneGroup(target, group.channel_mask, len(curves), len(adjusted)))
         curves += adjusted
-    return GaAnimation(anim.header, groups, curves, list(anim.events), anim.footer), dropped
+    return GaAnimation(anim.header, groups, curves, list(anim.events), anim.footer,
+                       body_trailing=anim.body_trailing, fe10_region_start=anim.fe10_region_start), dropped

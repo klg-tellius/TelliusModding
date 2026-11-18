@@ -158,6 +158,10 @@ Every action is written to the extracted files at once (the particle editor only
 
 The Visual effects page lists Radiant Dawn's effects from `FE10Effect.cms` and works the same way, with more to edit in the registry. **Edit registry…** on a registered effect sets its description, its raw flags, four parameter bytes, up to two child effects that play with it, its sound group and its numeric aliases.
 
+**Edit particles, tracks and events...** opens the same particle editor on a Radiant Dawn `.ga`. Radiant Dawn keeps the particle table in footer slot 13 (the same table as Path of Radiance's slot 8), so emitters, stages, curves and keys edit the same way. Its tree also lists the material tracks: alpha (slot 6), colour (7, 14, 15), texture translation (8, 9), rotation (10) and scale (11, 12). **Timing events** takes one key per frame with `code:parameter` pairs (`1000:0, 31:-1`); codes from 1000 up play the sound **Sound Tables › Animation sounds** names. A changed block is written at the end of the file and its footer entry repointed, so the rest of the file keeps its offsets. The button is enabled for every pack with a `.ga`, with or without particles.
+
+The model viewer's event dialog and the Blender round trip carry the same events: the glTF export writes them to the animation's `fe10_events` extra, and the import writes them back and keeps the rest of the footer (tracks, particles) of the animation it replaces.
+
 ## Related tutorials and references
 
 - Before: [Edit battle presentation](55-battle-presentation.md)
