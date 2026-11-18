@@ -112,7 +112,11 @@ def create_chapter(project, fe10: bytes, source_id: str, new_id: str, title: str
             start = width // 2, height // 2
     plan = chapters_fe10.add_story_chapter(project, fe10, source_id, new_id, title)
     if blank is not None:
-        project.write_keeping_original(chapters.chapter_paths(project, new_id).map, blank)
+        # named after the new map, as Add chapter's copy is: the game finds a map's sections and models
+        # (bmap0501:mapdata, bmap0501.gs) by the map folder's name (checked in Dolphin)
+        target = chapters.chapter_paths(project, new_id).map
+        blank = chapters.rename_map_pack(blank, template.parent.name, target.parent.name)
+        project.write_keeping_original(target, blank)
     armies = 0
     for path in _deployments(project, new_id):
         data, found = avatar_deployment(path.read_bytes(), avatar_pid, jid, start)

@@ -2132,15 +2132,15 @@ def lessons_69_71(ctx: Ctx):
     # -- 70 battle cameras --
     ctx.go("asset", "battle_cameras")
     yield 2500
-    cams = _table(ctx, "battle_cameras")
-    cams._script_tree.selection_set("standby")
-    cams._script_tree.see("standby")
-    cams._show_script()
+    cams_page = _table(ctx, "battle_cameras")
+    cams = cams_page.adapter
+    cams_page.select("script:standby")
     yield 1000
     ctx.grab("70-a-setup.png", lesson=70,
-             caption="**Assets › Battle Cameras**, **Camera scripts (xcam)** with `standby`, the zoom that opens a "
-                     "melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 ticks.",
-             alt="Battle Cameras page with the script list, the standby script's caption, rig and keyframe table.")
+             caption="**Assets › Battle Cameras** with `standby` selected in the **Camera scripts (xcam)** group, "
+                     "the zoom that opens a melee fight: rig `cam1`, four keyframes from distance 170 to 70 over 330 "
+                     "ticks.",
+             alt="Battle Cameras page with the grouped list, the standby script's caption, rig and keyframe table.")
     cams._frame_tree.selection_set("3")
     cams._load_frame_fields()
     cams._frame_vars["dist"].set("110")
@@ -2152,37 +2152,31 @@ def lessons_69_71(ctx: Ctx):
                      "**Preview**: the built-in fight (Ike against a Fighter) plays with the edited script, ending "
                      "wider. **Apply script** would write it; nothing is written yet.",
              alt="Battle Cameras page with the edited keyframe and the preview fight playing below.")
-    cams._show_script()  # drop the unapplied edit
-    notebook = next(w for w in ctx.find(cams, ttk.Notebook))
-    _tab_named(notebook, "Camera rigs (camera.dbx)")
-    yield 600
-    cams._rig_tree.selection_set("cam1")
-    cams._show_rig()
+    cams_page.select("rig:cam1")
     yield 800
     ctx.grab("70-c-rigs.png", lesson=70,
-             caption="**Camera rigs (camera.dbx)** with `cam1`, the free camera of the opening: position, rotation, "
-                     "distance, look-at offset, speed and the units it follows. **Apply rig** writes one rig; "
-                     "**Restore camera.dbx** restores them all.",
-             alt="Battle Cameras rigs tab with the rig list and cam1's fields.")
+             caption="`cam1` in the **Camera rigs (camera.dbx)** group, the free camera of the opening: position, "
+                     "rotation, distance, look-at offset, speed and the units it follows. **Apply rig** writes one "
+                     "rig; **Restore original** with a rig selected restores them all.",
+             alt="Battle Cameras page with cam1 selected in the rigs group and its fields.")
     # -- 71 DBX files and the HUD --
     ctx.go("asset", "dbx_files")
     yield 2500
-    dbxp = _table(ctx, "dbx_files")
-    dbxp._tree.selection_set("zdbx/battle.dbx")
-    dbxp._tree.see("zdbx/battle.dbx")
-    dbxp._select()
+    dbx_page = _table(ctx, "dbx_files")
+    dbxp = dbx_page.adapter
+    dbx_page._query.set("battle.dbx")
+    dbx_page.select("zdbx/battle.dbx")
     yield 1200
     ctx.grab("71-a-setup.png", lesson=71,
-             caption="**Assets › DBX Files** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block "
+             caption="**Assets › Battle Data** with `zdbx/battle.dbx`, the battle screen: **Form** lists each block "
                      "(layers, textures, pictures, numbers, gauges) with its fields and an English note per known "
                      "key.",
-             alt="DBX Files page with zdbx/battle.dbx selected and its blocks in the Form tab.")
+             alt="Battle Data page with zdbx/battle.dbx selected and its blocks in the Form tab.")
     _tab_named(dbxp._tabs, "Layout")
     yield 300
     dbxp._refresh_views()
     yield 1500
     layout = dbxp._layout
-    canvas = layout._canvas
     from fe_modding.formats import dbx as _dbx
     start = next(b.start for b in _dbx.parse(dbxp._current_text()).blocks() if b.name == "WpWinL")
     doc = _dbx.parse(dbxp._current_text())
@@ -2196,9 +2190,9 @@ def lessons_69_71(ctx: Ctx):
              caption="The **Layout** tab draws every widget with a position on the 640 × 480 screen; `WpWinL`, the "
                      "left weapon window, was dragged down. The text changed (**Save** is enabled), but nothing is "
                      "written until **Save**.",
-             alt="DBX Files Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.")
-    dbxp._dirty = False
-    dbxp._open("zdbx/battle.dbx")
+             alt="Battle Data Layout tab with the battle screen widgets drawn as rectangles and WpWinL moved down.")
+    dbxp.discard()
+    dbx_page._query.set("")
     yield 500
 
 

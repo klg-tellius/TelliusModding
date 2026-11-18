@@ -51,6 +51,8 @@ source_path: "meta/radiant-dawn.md"
 
   Setting `gf_complete` wins the map at the end of the next unit action, not at once: a turn-start event that sets it ends the chapter when the first unit waits. Every `on_complete` event of the script then runs, in order, so a second win event can be added beside the chapter's own. <span class="confidence confidence--confirmed">in game</span>
 
+  A map that wraps (`bmap0201`, Part 2's map over moving clouds) moves one step at each phase change: its mapdata names the step and the duration, and the terrain under a unit moves with it (a tile reads Cloud, then Sky). <span class="confidence confidence--confirmed">in game</span>
+
   A hub chapter is an added chapter (56-79) outside the story order. Its state is in four registered global flags (active, started) and two whole flag bytes (the destination and the pending story chapter), which a save keeps. The modding app's router runs as the last step of its chapter advance: from the hub it goes to the chosen destination or, with none, back to the story; when any other chapter ends with the hub active it goes back to the hub, keeping the next story chapter pending. <span class="confidence confidence--confirmed">in game</span>
 
 ## Part 4 armies
@@ -140,7 +142,7 @@ source_path: "meta/radiant-dawn.md"
 
 ## Saves
 
-  The game saves `FE10_US.dat` on the US disc and `FE10_EU.dat` on the European one, the same layout written by the same code, in the title's data folder (`Wii/title/00010000/52464545/data` and `.../52464550/data`). The Japanese disc's `FE10_JP.dat` is 0xAC000 bytes, not 0x124000, and its layout is not decoded. <span class="confidence confidence--confirmed">engine</span>
+  The game saves `FE10_US.dat` on the US disc and `FE10_EU.dat` on the European one, the same layout written by the same code, in the title's data folder (`Wii/title/00010000/52464545/data` and `.../52464550/data`). The Japanese disc's `FE10_JP.dat` is 0xAC000 bytes, not 0x124000: the same system record, then seven records of 0x18000 bytes where the US file has twelve (six files and six checkpoints). The Japanese build has no separate checkpoint bank, so its seventh record is probably its one checkpoint; the records themselves are not confirmed. <span class="confidence confidence--confirmed">engine</span>
 
   `FE10_US.dat` holds a system record, six files and six checkpoints. Each file is a record of its own: its header holds the file number, the difficulty and the chapter number the file menu shows, which `BMST` repeats. <span class="confidence confidence--confirmed">files</span>
 
