@@ -161,7 +161,8 @@ class AnimationCoverageTest(unittest.TestCase):
         self.assertEqual(totals.failures, [])
         self.assertEqual(totals.counts[UNCLASSIFIED], 0)
         # Only the emitter's +0x0C word has no identified reader.
-        self.assertEqual(totals.counts[UNDECODED], 2, totals.fields)
+        self.assertEqual(totals.counts[UNDECODED], 0, totals.fields)
+        self.assertEqual(totals.counts[UNREAD], 2, totals.fields)
         self.assertEqual({name for (status, name) in totals.fields if status == PLAUSIBLE},
                          {"particle curve last key frame", "particle stage local index",
                           "particle emitter local index", "particle emitter first global stage"})

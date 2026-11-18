@@ -267,12 +267,28 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
 
 def _gs_material_texture(cov: FileCoverage, rec: int, i: int) -> None:
     """28-byte material texture record (GRAPHICS_NOTES, materials): +0 bit 0
-    identity texture matrix, bit 5 sampler override; +4 tex_id; +8..+0x1B the
-    translation/scale/rotation floats of the non-identity branch."""
-    cov.bits(rec, 2, known=0x0021, name="texture.flags0")
-    cov.zero(rec + 2, 2, "texture.flags1 (zero on all 7,848 disc textures)")
+    identity texture matrix, bit 5 sampler override, bit 7 keeps the stage's
+    texcoord slot; +3 the stage kind (0-7, the switch at RFEE01 0x8001338C; 5
+    and 6 also flag the material at 0x80012508); +4 tex_id; +8..+0x1B the
+    translation/scale/rotation floats of the non-identity branch. +2 is the
+    texcoord slot the loader writes (0x80012560). Flag bits 0x2/0x4/0x8 and
+    +6 (two bytes 0-3 on Radiant Dawn) are read by no texture setup found in
+    RFEE01 (0x80012F00, 0x800124D0) and are classified as such."""
+    data = cov.data
+    flags0 = struct.unpack_from(">H", data, rec)[0]
+    cov.bits(rec, 2, known=0x00A1, plausible=0, name="texture.flags0")
+    if not flags0 & ~0x00AF & 0xFFFF and flags0 & 0x000E:
+        cov.mark(rec + 1, 1, UNREAD, "texture.flags0 0x2/0x4/0x8 (no reader)")
+    cov.zero(rec + 2, 1, "texture +2 (texcoord slot, set in RAM)")
+    if data[rec + 3] <= 7:
+        cov.mark(rec + 3, 1, DECODED)
+    else:
+        cov.mark(rec + 3, 1, UNDECODED, "texture stage kind > 7")
     cov.mark(rec + 4, 2, DECODED)
-    cov.mark(rec + 6, 2, UNDECODED, "texture +6")
+    if data[rec + 6] | data[rec + 7]:
+        cov.mark(rec + 6, 2, UNREAD, "texture +6 (no reader)")
+    else:
+        cov.mark(rec + 6, 2, PADDING, "texture +6")
     cov.mark(rec + 8, 0x14, DECODED)
 
 
@@ -301,11 +317,18 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
     for i in range(nums[4] if addrs[4] else 0):
         m = B + addrs[4] + 0x20 * i
         cov.mark(m, 0x20, DECODED)  # name, texture count and pointer, color0 (x1.25 at load)
-        cov.zero(m + 4, 1, "material +4 (zero on all 7,200 disc materials)")
-        # setup_gs_texcoord_and_material_color tests bit 0 of the +4 halfword
-        # (big-endian byte +5); the other bits still have no meaning.
-        cov.bits(m + 5, 1, known=0x01, name="material +5 flags")
-        cov.zero(m + 7, 1, "material +7 (zero on all 7,200 disc materials)")
+        # +4 halfword flags (zero on Path of Radiance but bit 0, which
+        # setup_gs_texcoord_and_material_color tests). RFEE01 tests 0xE000
+        # blend mode and 0x0030 z mode (0x800186C8), 0x0008 (0x80018814),
+        # 0x0001/0x0400 (0x80013EA0), 0x0040 (0x800145E0), 0x0080 (0x80013A84),
+        # 0x0200 (0x800094CC), 0x0800 (0x80016944), 0x1000 (0x80013D1C),
+        # 0x4000 (0x80012650), 0x8000 (0x800151EC). 0x0004 is only reachable
+        # through the caller-masked search at 0x80014D68.
+        flags = _u16(data, m + 4)
+        cov.bits(m + 4, 2, known=0xFFFB, name="material flags")
+        if flags & 0x0004 and cov.status[m + 5] == UNDECODED:
+            cov.mark(m + 5, 1, UNREAD, "material flags 0x4 (no direct reader)")
+        cov.zero(m + 7, 1, "material +7 (runtime flags, zero on disc)")
         cov.mark(m + 0x0C, 8, PLAUSIBLE, "material color1/color2")
         cov.zero(m + 0x18, 8, "material +0x18 trailer")
         tex_ptr, tex_count = _u32(body, addrs[4] + 0x20 * i + 0x14), body[addrs[4] + 0x20 * i + 6]
@@ -590,7 +613,10 @@ def _ga_particle_table(cov: FileCoverage, start: int, end: int, fe10: bool = Fal
         # selects the alternate TEV order.
         cov.bits(rec + 6, 2, known=0xFE17 if fe10 else 0xFE07, name="particle draw flags")
         cov.mark(rec + 0x0A, 2, DECODED)  # .gs material index
-        cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
+        if fe10:  # no load of +0x0C in RFEE01's particle code (0x80015000-0x80017400)
+            cov.mark(rec + 0x0C, 2, UNREAD, "particle emitter +0x0C (no reader)")
+        else:
+            cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
         # Six signed /64 control slots. Modes 1, 2 and 4 read different
         # subsets; inactive slots contain defaults on the shipped disc.
         # +0E: mode-1 common S/T scale; +10: mode-2 GX point/line width;
