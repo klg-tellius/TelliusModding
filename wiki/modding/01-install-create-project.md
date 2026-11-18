@@ -2,7 +2,7 @@
 id: "modding-install-create-project"
 title: "Install the app and create a project"
 description: "Install the complete app, separate source and workspace, and verify a clean extraction"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -13,7 +13,7 @@ verification: ["source-reviewed", "app-tested"]
 tags: ["Guide", "Modding app"]
 aliases: []
 status: "draft"
-last_reviewed: "2026-10-21"
+last_reviewed: "2026-11-18"
 sources: ["telliusmodding-source", "tellius-archive-research"]
 cms_collection: "modding"
 source_path: "modding/01-install-create-project.md"
@@ -28,8 +28,9 @@ You will install the app, create a practice project called *Tutorial Practice*, 
 
 ## Before you begin
 
-- A disc image of *Path of Radiance* you own, as `.iso`, `.gcm`, `.ciso`, `.wdf`, `.wia` or `.rvz` (an `.rvz` is converted with DolphinTool first). Any region works: US, PAL or Japanese.
-- About 3 GB free per project: a copy of the disc (about 1.5 GB) plus the extracted files (about 1.5 GB), and room for builds later.
+- A disc image of *Path of Radiance* you own, as `.iso`, `.gcm`, `.ciso`, `.wdf`, `.wia` or `.rvz`. Any region works: US, PAL or Japanese. (For *Radiant Dawn*, see [On Radiant Dawn](#on-radiant-dawn) below.)
+- An `.rvz` image is converted with DolphinTool, which comes with Dolphin: set Dolphin's path in **Settings** before choosing the image.
+- About 3 GB free on the drive of your projects: the extracted files (about 1.5 GB, once per disc, shared by every project of that disc) and room for builds (about 1.5 GB each). The disc image itself stays where it is.
 - A parent folder for your projects, outside the app's folder and outside the folder of your disc images, for example `G:\FE9Mod`.
 
 Download the Windows archive from the [release page](https://github.com/klg-tellius/TelliusModding/releases/latest) and extract the whole ZIP. `TelliusModding.exe` needs the `_internal` folder next to it; moving only the `.exe` breaks the installation.
@@ -106,11 +107,11 @@ The launcher shows **New project…**, **Open project folder…** and **Recent p
 
 [![Disc and Patch page of an unextracted project with the source disc card, Choose disc image and Extract, and the disabled build and patch buttons.](../assets/images/tutorials/screenshots/01-c-extract.png)](../assets/images/tutorials/screenshots/01-c-extract.png)
 
-<figcaption markdown="span">**Disc & Patch** after **Choose disc image…**: the image is copied into the project's `source` folder and named on the **Source disc** card, *Not extracted yet*. **Extract** unpacks it; until then only Home and Disc & Patch open.</figcaption>
+<figcaption markdown="span">**Disc & Patch** after **Choose disc image…**: the project records where the image is, and the **Source disc** card names it, *Not extracted yet*. **Extract** unpacks it; until then only Home and Disc & Patch open.</figcaption>
 </figure>
 
 1. Open **Disc & Patch** (the Home card, or the disc button at the top right).
-2. Press **Choose disc image…** and pick your image. The app copies it into the project's `source` folder; the **Source disc** card names it and says *Not extracted yet*. If the image's disc ID is not *Path of Radiance*, a *Wrong game?* warning says so.
+2. Press **Choose disc image…** and pick your image. The project records where it is (the image is not copied, so leave it in place); the **Source disc** card names it and says *Not extracted yet*. If the image's disc ID is not *Path of Radiance*, a *Wrong game?* warning says so.
 3. Press **Extract**. The status bar shows *Extracting …* for a minute or two; do not close the app.
 
 ### 4. Check the result
@@ -126,6 +127,17 @@ The launcher shows **New project…**, **Open project folder…** and **Recent p
 Home now shows the project's name, game, platform and folder, and the six section cards: **Chapters** (31 chapters on a US disc), **Characters** (47 playable, 127 in all), **Game Data**, **Assets**, **Tools** and **Disc & Patch**. Every section is also in the top bar.
 
 Before editing anything, run **Tools → Check → Run check** and note the result: an unmodified disc gives *0 errors, 4 warnings* ([Check a project and fix problems](05-check-project.md)). Then copy the whole project folder somewhere safe: it is your clean baseline.
+
+## On Radiant Dawn
+
+The same steps make a *Radiant Dawn* project, with these differences:
+
+- In **New Project**, choose **Fire Emblem: Radiant Dawn (Nintendo Wii)**. The game cannot be changed after the project is created.
+- The disc image can be `.iso`, `.wbfs`, `.ciso`, `.wdf`, `.wia` or `.rvz`. US (`RFEE01`), European (`RFEP01`) and Japanese (`RFEJ01`) discs all work.
+- A Wii disc is larger: keep about 10 GB free for the extracted files and the builds.
+- **Build disc** writes `build/<project name>.wbfs`, which Dolphin and Wii loaders play.
+
+[What You Can Edit](../meta/what-you-can-edit.md) lists what each game lets you change.
 
 ## Understand every choice
 
@@ -186,7 +198,7 @@ Nothing here needs saving: **Create Project** writes `project.json` and the fold
 
 ## Limits and confidence
 
-- Project creation, folder naming, extraction and the wrong-game check are source-reviewed, and this walkthrough was run in the app on a US disc (app-tested). The shared vanilla files and `output/` were checked on a US disc (extract, build, patch); the screenshots still show the older Disc & Patch page.
+- Project creation, folder naming, extraction and the wrong-game check are source-reviewed, and this walkthrough was run in the app on a US disc (app-tested). The Radiant Dawn differences are source-reviewed. The shared vanilla files and `output/` were checked on a US disc (extract, build, patch); the screenshots still show the older Disc & Patch page.
 - The app reads and builds the disc's files; it does not give you the right to share them. Share patches, not disc images ([Package and share a mod](61-share-a-patch.md)).
 
 ## Related tutorials and references
