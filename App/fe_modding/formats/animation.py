@@ -546,6 +546,10 @@ FE10_FOOTER_SLOT_NAMES = {
     14: "material colour (slot 14)",  # 0x8000a838 with slot 14
     15: "material colour (slot 15)",  # 0x8000a838 with slot 15
 }
+# Slots 1-3 have the same table shape; 0x8000bf68 (slot 1) and 0x8000c3c4
+# (slot 2) read them with extra fields (block +2, key +2/+3) whose meaning
+# is not traced yet.
+FE10_OPEN_TRACK_SLOTS = frozenset((1, 2, 3))
 FE10_MATERIAL_TRACK_SLOTS = frozenset((0, 6, 7, 8, 9, 10, 11, 12, 14, 15))
 FE10_EVENT_SLOT = 5
 FE10_PARTICLE_SLOT = 13

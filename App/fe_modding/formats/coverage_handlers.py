@@ -385,8 +385,15 @@ def ga_file(cov: FileCoverage, walker: Walker) -> None:
     _roundtrip(cov, animation.write_animation(anim))
     words = anim.header.words
     cov.mark(0, 0x30, DECODED)
-    for w in (1, 2, 10):
+    for w in (1, 10):
         cov.zero(4 * w, 4, f"header word {w}")
+    # Radiant Dawn's loader (0x8000bc20) drops the footer unless header byte 8
+    # is at least 1; files with and without a footer set it.
+    if data[8] == 1:
+        cov.mark(8, 1, DECODED)
+        cov.zero(9, 3, "header word 2")
+    else:
+        cov.zero(8, 4, "header word 2")
     cov.mark(words[8], words[9] - words[8], DECODED)
     for i in range((words[11] - words[9]) // 12):
         rec = words[9] + 12 * i
@@ -436,10 +443,6 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
     keys_end = footer - len(anim.body_trailing)
     words = anim.header.words
     cov.mark(words[11], keys_end - words[11], DECODED)
-    # 0x8000bc20 drops the footer unless header byte 8 is at least 1.
-    if data[8] == 1:
-        cov.mark(8, 1, DECODED)
-        cov.zero(9, 3, "header word 2")
     chain = animation.fe10_footer_chain(data, footer)
     points = sorted([(block, slot, False) for _, slot, block in chain] +
                     [(at, slot, True) for at, slot, _ in chain])
@@ -456,7 +459,7 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
         try:
             if slot == animation.FE10_EVENT_SLOT:
                 animation.read_fe10_event_block(block)
-            elif slot in animation.FE10_MATERIAL_TRACK_SLOTS:
+            elif slot in animation.FE10_MATERIAL_TRACK_SLOTS | animation.FE10_OPEN_TRACK_SLOTS:
                 if len(block) < 8:
                     raise ValueError
                 animation.read_material_tracks(block)
@@ -467,6 +470,8 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
             continue
         if slot == animation.FE10_EVENT_SLOT:
             _ga_fe10_events(cov, at, end)
+        elif slot in animation.FE10_OPEN_TRACK_SLOTS:
+            cov.mark(at, end - at, PLAUSIBLE, f"RD footer slot {slot} key table")
         else:
             _ga_material_tracks(cov, at, end)
     cov.fill(PADDING, only_zero=True)

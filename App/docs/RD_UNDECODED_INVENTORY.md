@@ -316,3 +316,33 @@ from 31.17 MB (1.51 %) before this change. GFEE01 for comparison: 74,572 bytes (
 - **What is left, by size:** `.ga` footer slot blocks (26.8 MB, GA-RD-01); `.gs` model fields without a reader or
   with an unproven meaning (1.7 MB); the HOME Menu sound banks (424 KB); `sound_data` cue parameters and `SND_*`
   tables (501 KB); `map.bin` fields without a reader (106 KB); FE10BUnit +0x40 (64 KB); `client.bin` (18 KB).
+
+## 2026-11-18: `.ga` footer slots (GA-RD-01 closed)
+
+Every Radiant Dawn compact-footer slot now has a reader, found in RFEE01 `main.dol` by the slot number each
+lookup compares (`animation.FE10_FOOTER_SLOT_NAMES`):
+
+| Slot | Content | Reader in `main.dol` | Codec |
+|---|---|---|---|
+| 0 | bone visibility: track "mode" is the bone index, value 0 scales the bone to zero | `0x8000db10` | `read_material_tracks` |
+| 1, 2, 3 | same table shape, extra fields read (block +2, key +2/+3), meaning not traced | `0x8000bf68`, `0x8000c3c4` | `read_material_tracks` (plausible) |
+| 5 | event track: key = u16 frame, u8 pad, u8 count, then `(u16 code, s16 parameter)` pairs | `0x80009bc8`..`0x8000a22c`, playback `0x800081d4` | `read_fe10_event_block` |
+| 6 | material alpha (8-bit) | `0x8000ab6c` | `read_material_tracks` |
+| 7, 14, 15 | material colour, RGB565, multiplied into the material colour | `0x8000a838` | `read_material_tracks` |
+| 8, 9 | texture translation U, V (V negated) | `0x8000ae38`, `0x8000b100` → `PSMTXTrans` in `0x80012f00` | `read_material_tracks` |
+| 10 | texture rotation about Z | `0x8000b3c8` | `read_material_tracks` |
+| 11, 12 | texture scale U, V | `0x8000b690`, `0x8000b958` → `PSMTXScale` | `read_material_tracks` |
+| 13 | particle emitter table, the same as PoR's slot 8, plus +0x1C bone index and draw-flag bit 0x10 (min/max of stage start frames) | setup `0x8001528c`, relocation `0x800151ec`, update `0x800159xx` | `read_particle_table_layout(data, block)` |
+
+Header byte 8 is the loader's footer switch: `0x8000bc20` clears the footer word when it is 0.
+
+Full US run with these rules (movies and the two `.brsar` left out as before): leaf bytes undecoded or
+unclassified **1.21 MB of 2.07 GB (0.059 %)**, down from 27.99 MB (1.35 %); no handler failures. Animations went
+from 26.8 MB open to 55 KB undecoded and 2.26 MB plausible: the particle curves' last-key-frame and stage
+local-index words (1.9 MB, no runtime reader, value always matches), event codes other than 3, 4 and 0x1F
+(their PoR numbering is assumed, not traced in RD), slots 1-3, and the emitter word +0x0C (2 KB). The run used a
+build where header word 2's three low bytes were still counted open (50 KB); the committed rule places them.
+
+What is left on RFEE01, by size: the HOME Menu sound banks (424 KB), `sound_data` cue parameters and unplaced
+`SND_*` bytes (501 KB), FE10BUnit +0x40..+0x14B (64 KB), `.gs` bone flag bits 0x4/0x6 (60 KB), `.gs` texture +6
+(34 KB), `client.bin` GBA program (18 KB), one `.tpl` (17 KB) and smaller fields.
