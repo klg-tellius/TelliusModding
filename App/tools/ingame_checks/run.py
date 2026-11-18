@@ -27,7 +27,7 @@ from .core import ROOT, VARIANTS, build_variant  # noqa: E402
 from .driver import Driver  # noqa: E402
 from tools.session_playtest.harness import write_lf  # noqa: E402
 
-SETS = ("gamedata", "saves", "por_saves", "chapters", "assets", "maps", "code", "regions", "sharing", "audio", "models", "menus", "more")
+SETS = ("gamedata", "saves", "por_saves", "chapters", "assets", "maps", "code", "regions", "sharing", "audio", "models", "menus", "more", "lessons")
 
 
 def dolphin_running() -> bool:
