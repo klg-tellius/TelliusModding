@@ -347,3 +347,36 @@ build where header word 2's three low bytes were still counted open (50 KB); the
 What is left on RFEE01, by size: the HOME Menu sound banks (424 KB), `sound_data` cue parameters and unplaced
 `SND_*` bytes (501 KB), FE10BUnit +0x40..+0x14B (64 KB), `.gs` bone flag bits 0x4/0x6 (60 KB), `.gs` texture +6
 (34 KB), `client.bin` GBA program (18 KB), one `.tpl` (17 KB) and smaller fields.
+
+## 2026-11-18 (2): everything else but the HOME Menu and `client.bin`
+
+Julien's scope for 1.0 leaves out the Wii HOME Menu (`system/HomeButton`) and the GBA `client.bin`. The rest was
+traced in RFEE01's `main.dol`:
+
+- **`sound_data*.cms`**: every cue field (`fe10_sound.CUE_FIELDS`: kind, volume, pitch and divisor, pans, filters,
+  sends, priority, voice limit, random pitch/volume, start delay, distance settings, Sound Room index; sound object
+  update `0x80258c70`) and every `SND_*` table (`SND_TABLES`: environment emitters `0x8013a8d8`, map mixer
+  `0x8013ac48`, `.ga` SFX events `0x800f14b4`, map/battle music `0x80068398`/`0x800689d4`, chapter groups
+  `0x800680d0`). Two cue records per file repeat an exported cue's name and no export reaches them (no-reader).
+- **`.ga` events**: codes from 1000 up are SFX cues looked up in `SND_SFX_MAYA_DATA` by the event handler
+  `0x800e4b20`.
+- **FE10Battle.cms**: FE10BUnit +0x40 is a 128-bit FE10BMotion set per weapon type (`0x800a7324`), +0x140 six
+  FE10BCamList rows (`0x800a6f34`), +0x14 the weapon types that pick a random attack variant (`0x800beed8`),
+  +0x08/+0x0C trail and aura effect IDs. FE10BWeapon +0x21/+0x22, FE10BCamFile +0x08 (`0x800a4420`),
+  FE10BCamEffect +0x04 (`0x800a6d08`), FE10BSetup +0x04 (`0x800a84a4`), FE10BSFXList +0x04 are named; the
+  pointers the loader writes in RAM (FE10BCamList +0x08, FE10BCamGroup +0x0C/+0x10, FE10BUnit +0x150) are zero on
+  disc; FE10BCamType is loaded and never read. FE10BMotion +0x08 bits other than 0x01/0x08 stay plausible.
+- **Skeletons**: bone flag 0x2 selects the curve quaternion and the skin matrix (`0x8000d1ec`, `0x8000ed5c`);
+  nothing tests 0x4.
+- **`.gs`**: material +4 flags (blend and z modes `0x800186c8`, the other bits cited in the rule; 0x4 only through a
+  caller mask), texture +3 stage kind (`0x8001338c`), +2 texcoord slot written in RAM; texture +6 and flag bits
+  0x2/0x4/0x8 have no reader in the texture setup.
+- **Particles**: emitter +0x0C has no load in the particle code.
+- **`window/unitranking.cms`**: table entries 13-15 repeat entry 12's header; the three images meant for them
+  (headers and texels) are unreachable.
+
+Full US run (movies and the two `.brsar` left out as before; HOME Menu and `client.bin` out of scope): leaf bytes
+undecoded or unclassified **12.4 KB of 2.07 GB (0.0006 %)**, down from 1.21 MB; no handler failures (the run counted
+the 60 KB of bone flag 0x4 as undecoded; the committed rule classifies it). What is left: FE10Effect flags and
+parameters (5 KB), FE10Anim data/header/motion flags (2.9 KB), `.ga` curve +8 (2.4 KB, 14 files), FE10PersonGrowth
+(1 KB), CONV_INFO_DATA +0x2C (404 B), `map.bin` flag bits (300 B), two `fe10 tables` fields (308 B).

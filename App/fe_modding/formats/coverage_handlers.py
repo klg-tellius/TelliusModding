@@ -406,7 +406,7 @@ def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
         rec = 0x10 + 0xF4 * i
         cov.mark(rec, 0xF4, DECODED)
         cov.bits(rec + 0x0C, 4, known=0xFFFFFFFF & ~0x4, name="bone.flags")
-        if data[rec + 0x0F] & 0x04 and cov.status[rec + 0x0F] == DECODED:
+        if data[rec + 0x0F] & 0x04 and cov.status[rec + 0x0F] == UNDECODED:
             cov.mark(rec + 0x0F, 1, UNREAD, "bone.flags 0x4 (no reader)")
     cov.mark(pool, len(data) - pool, DECODED)
 
