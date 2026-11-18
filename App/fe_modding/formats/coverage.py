@@ -234,6 +234,7 @@ def walk_tree(root: Path, report: Report, progress: bool = False) -> None:
 
 # The handlers live in coverage_handlers so this module stays the framework.
 from . import coverage_handlers  # noqa: E402,F401  (registers the handlers)
+from . import coverage_nw4r  # noqa: E402,F401  (the NW4R sound archives)
 
 
 # ------------------------------------------------------------------ output
