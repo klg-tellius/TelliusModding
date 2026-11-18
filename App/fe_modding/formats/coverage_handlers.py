@@ -10,6 +10,7 @@ reported as a failure instead of being counted as decoded.
 from __future__ import annotations
 
 import io
+import re
 import struct
 
 from . import lz10, pak
@@ -206,6 +207,15 @@ def midi_file(cov: FileCoverage, walker: Walker) -> None:
         raise ValueError("MIDI chunk runs past the file")
     cov.mark(0, at, DECODED)
     cov.zero(at, len(data) - at, "MIDI trailing bytes")
+
+
+@handles("build script", lambda name, data: _ext(name) == "bat")
+def build_script(cov: FileCoverage, walker: Walker) -> None:
+    """``Fonts/fontPack.bat`` and ``system/HomeButton/hbmPack.bat`` on the PAL
+    disc: the developers' Windows packing scripts, left on the disc. Plain
+    text; the game never opens them."""
+    cov.data.decode("ascii")
+    cov.mark(0, len(cov.data), DECODED)
 
 
 @handles("home menu text", lambda name, data: _base(name) in ("home.csv", "config.txt")
@@ -892,7 +902,7 @@ def fe10data_file(cov: FileCoverage, walker: Walker) -> None:
         cov.mark(span.start, span.end - span.start, status[span.status], f"{span.section}.{span.name}")
 
 
-@handles("fe10 sound data",lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
+@handles("fe10 sound data",lambda name, data: re.fullmatch(r"sound_data(_[a-z]{2})?\.cms", _base(name)) is not None
          and name.endswith("#"))
 def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's cue registry and ``SND_*`` tables (``fe10_sound``):
@@ -1525,13 +1535,19 @@ _POOL_FILES = {"dictionary.bin", "dictionaryf.bin", "conversationroom.bin", "fe1
                "caption_data.bin"}
 
 
-@handles("fe10 tables", lambda name, data: _base(name) in _POOL_FILES)
+def _pool_base(name: str) -> str:
+    """The pool file's name without the PAL language prefix (``d_caption_data.bin``)."""
+    base = _base(name)
+    return base[2:] if re.fullmatch(r"[defis]_caption_data\.bin", base) else base
+
+
+@handles("fe10 tables", lambda name, data: _pool_base(name) in _POOL_FILES)
 def fe10_tables(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's sorted-pool table files (``pool_file``) and their codecs: the glossary,
     Conversation Room lists, endings, class introductions and movie subtitles."""
     from . import fe10_captions, fe10_conversation_room, fe10_dictionary, fe10_epilogue, fe10_intro
 
-    data, base = cov.data, _base(cov.name)
+    data, base = cov.data, _pool_base(cov.name)
     codecs = {
         "dictionary.bin": (fe10_dictionary.read_dictionary, fe10_dictionary.build_dictionary),
         "dictionaryf.bin": (fe10_dictionary.read_dictionary_flags, fe10_dictionary.build_dictionary_flags),
