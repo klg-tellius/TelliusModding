@@ -138,7 +138,7 @@ Radiant Dawn's map units (`ymu/<set>/`) work the same way, with these difference
 - **Animations.** In each animation, a bone that moves as in the game keeps the game's own keys, and only edited bones get new ones. A clip you did not touch is written back byte for byte.
 - **Paired models.** A model of two characters (`sothe1_mikaya2`, Sothe carrying Micaiah) repeats each bone name once per character. In the kit the second copy is named `hand_l~2`; the import gives the game's names back.
 - **Textures.** A unit's `.tpl` can hold several images: the archer's has the body and the bow. A body using two of them imports, and textures that match the class's keep its army-colour variants.
-- **A different armature is refused.** On Radiant Dawn's map units, a different armature is refused, and so is fitting another humanoid with **Fit a rig**. Either would need a new skeleton, and the game draws a new skeleton lying on its side (checked in Dolphin with Greil fitted onto Micaiah's set). Keep the rig kit's armature: edit the mesh, the weights and the animations on it.
+- **A different armature.** A different armature, or another humanoid fitted with **Fit a rig**, gets a new skeleton, and every animation of the set is retargeted onto it. Checked in Dolphin with Greil's map model fitted onto Micaiah's set: on the Prologue map he stands and plays her idle. Poses a clip doesn't cover well (Micaiah's kneeling event clips) follow only roughly; check them in the preview.
 - **Several textures.** Outside Radiant Dawn's map units, **Fit a rig** bakes a model with several textures into one atlas instead of refusing it.
 
 ## Limits and confidence

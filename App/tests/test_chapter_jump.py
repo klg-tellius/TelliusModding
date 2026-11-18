@@ -129,6 +129,21 @@ class RdJumpTests(unittest.TestCase):
         self.assertIn(ppc.li(6, 0).to_bytes(4, "big"), code)
         self.assertNotIn(ppc.li(6, 1).to_bytes(4, "big"), code)
 
+    def test_the_jump_empties_the_unit_lists_first(self):
+        # without the reset the lists hold stale RAM and UnitGetByPID follows a garbage link
+        from fe_modding.game_code import ppc
+        j = chapter_jump_fe10
+        calls = [ppc.bl(j.JUMP_STUB + i, target).to_bytes(4, "big") == j._CODE[i:i + 4]
+                 for i, target in ((0x14, j._INIT_DATABASES), (0x18, j._INIT_DATABASES_2),
+                                   (0x1C, j._RESET_UNITS))]
+        self.assertEqual(calls, [True, True, True])
+
+    def test_the_jump_skips_the_opening_movie(self):
+        # the movie routine sends the boot script to the title (label 5), past the jump at label 2
+        edits = {e.address: e for e in chapter_jump_fe10.JUMP_PATCH.versions["RFEE01"]}
+        movie = edits[chapter_jump_fe10._MOVIE_SITE]
+        self.assertEqual(movie.patched[:4], (0x0002100C).to_bytes(4, "big"))   # goto 2
+
 
 class RunFolderTests(unittest.TestCase):
     def setUp(self):

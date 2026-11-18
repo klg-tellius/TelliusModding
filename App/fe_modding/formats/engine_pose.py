@@ -20,7 +20,10 @@ Python implementation of pose behavior documented through engine analysis:
   Which terms apply is decided by ``flags`` = the animation group's channel
   mask ORed with the bone record's flags (``+0x0C``), bit by bit (see the
   ``FLAG_*`` constants). Without :data:`FLAG_ROTATE` the whole rotation and
-  pivot part is skipped. Euler angles are degrees, composed in the bone's
+  pivot part is skipped. The skeleton loader (PoR ``relocate_g_skeleton_bones``
+  0x80065F48, RD 0x8000E9DC) sets :data:`FLAG_ROTATE` on every bone with
+  :data:`FLAG_JOINT_ORIENT`, so a joint-orient bone keeps its joint orient
+  even under a translate-only group (RD's ``body``, flags 0x67, mask 0x20). Euler angles are degrees, composed in the bone's
   rotation order (``+0xEE``; every file on the disc uses order 1,
   ``Rz . Ry . Rx``).
 - ``gactor_blend_skeleton_pose_from_animations`` (``0x80061A08``) rebuilds
@@ -128,6 +131,8 @@ def local_matrix(values: list[float], flags: int, order: int = 1) -> Mat3x4:
     """The engine's parent-relative bone matrix for a value block."""
     v = values
     m = IDENTITY_3X4
+    if flags & FLAG_JOINT_ORIENT:  # the skeleton loader's rule: joint orient implies rotate
+        flags |= FLAG_ROTATE
     if flags & FLAG_ROTATE:
         m = euler_matrix(order, *v[SLOT_ROTATE : SLOT_ROTATE + 3])
         if flags & FLAG_JOINT_ORIENT:

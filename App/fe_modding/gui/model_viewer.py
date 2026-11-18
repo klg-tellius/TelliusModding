@@ -2072,19 +2072,6 @@ def replace_body_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     return _rebuild_character(container_path, gltf_path)
 
 
-#: Why a new skeleton is refused on a joint-orient map rig (see :func:`_joint_orient_rig`).
-JOINT_ORIENT_NEW_RIG = (
-    "This class's skeleton places its bones by joint orient (Radiant Dawn's map units). A different armature "
-    "would need a new skeleton, which the game draws lying on its side (checked in Dolphin). Keep the class's "
-    "own bones: edit the mesh, the weights and the animations on the rig kit's armature."
-)
-
-
-def _joint_orient_rig(bones: list[skeleton.Bone]) -> bool:
-    """A skeleton with joint-orient bones (flags ``0x40``, Radiant Dawn's map units)."""
-    return any(engine_pose.bone_flags(b) & engine_pose.FLAG_JOINT_ORIENT for b in bones)
-
-
 def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     """Replace a character class's whole rig from a glTF (Phase 4): a new
     ``skeleton.g`` built from the armature (``gltf_import.build_skeleton``),
@@ -2099,8 +2086,9 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     if not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} has no skeleton.")
     gltf_data = gltf_path.read_bytes()
-    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, gltf_path.parent)
     old_bones = skeleton.read_skeleton_file(files[g_names[0]]).bones
+    new_skeleton, warnings = gltf_import.build_skeleton(gltf_data, gltf_path.parent,
+                                                        index_step=skeleton.index_step(old_bones))
     errors, rig_warnings = gltf_import.check_rig_against(new_skeleton.bones, old_bones)
     warnings += rig_warnings
 
@@ -2110,8 +2098,6 @@ def replace_rig_with_glb(container_path: Path, gltf_path: Path) -> ModelImport:
     # bone keeps its own conventions (Radiant Dawn's joint-orient bones, flags 0x67); the body and the
     # animations are rebuilt onto it. Only a different armature gets a new skeleton.
     same_rig = gltf_import.same_armature(new_skeleton.bones, old_bones)
-    if not same_rig and _joint_orient_rig(old_bones):
-        raise gltf_import.GltfImportError(JOINT_ORIENT_NEW_RIG)
     available = {name.lower(): name for name in gltf_import.list_animations(gltf_data, gltf_path.parent)}
     missing = [t for t in targets if Path(t).stem.lower() not in available]
     if missing:
@@ -2694,8 +2680,6 @@ def prepare_rig_fit(container_path: Path, model_path: Path) -> RigFitSetup:
     each model joint follows (``rig_fit.auto_mapping``)."""
     glb, bones, named = rig_kit_glb(container_path)
     battle = _is_battle_container(container_path)
-    if not battle and _joint_orient_rig(bones):
-        raise rig_fit.RigFitError(JOINT_ORIENT_NEW_RIG)
     weapon = set() if battle else _map_weapon_bones(bones, named)
     game = rig_fit.read_rig(glb, single_texture=False)
     model = rig_fit.read_rig(model_path.read_bytes(), model_path.parent)

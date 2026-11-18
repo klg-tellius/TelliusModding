@@ -1,6 +1,7 @@
 """Non-image RID editing and preview contracts."""
 from __future__ import annotations
 
+import os
 import tempfile
 import struct
 import unittest
@@ -133,3 +134,34 @@ class RadiantDawnRectEditorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES to an extracted Radiant Dawn files/ directory")
+class Fe10PreviewTests(unittest.TestCase):
+    def test_layouts_and_backgrounds_render(self):
+        from types import SimpleNamespace
+
+        from fe_modding import rect_editor
+        from fe_modding.formats import fe10_rect, rect as por_rect
+        from fe_modding.game_profile import RADIANT_DAWN_PROFILE
+        from fe_modding.games import Game
+
+        files = Path(os.environ["FE10_EXTRACTED_FILES"])
+        project = SimpleNamespace(extracted_dir=files.parent, game=Game.RADIANT_DAWN, profile=RADIANT_DAWN_PROFILE)
+        suffix = "_en" if (files / "window" / "RectDesc_en.bin").is_file() else ""
+        resources = {}
+        for rel in (f"window/RectDesc{suffix}.bin", "s/rect.bin"):
+            doc = fe10_rect.read_editable_rect((files / rel).read_bytes())
+            resources.update({r.name: r for r in doc.resources})
+        layout = rect_editor.fe10_preview_resource(resources["RID_上下会話"])
+        kinds = [type(layer).__name__ for layer in layout.layers]
+        self.assertIn("TextboxLayer", kinds)
+        self.assertIn("SeatsLayer", kinds)
+        box = next(layer for layer in layout.layers if isinstance(layer, por_rect.TextboxLayer))
+        self.assertEqual((box.line_height, box.lines, box.marker), (28, 3, "RID_PAGECUR"))
+        image, notes = rect_editor.render_fe10(project, resources["RID_上下会話"], resources)
+        self.assertEqual(image.size, (640, 480))
+        self.assertEqual(notes, [])
+        background, notes = rect_editor.render_fe10(project, resources["RID_デイン-路地-昼"], resources)
+        self.assertEqual(notes, [])
+        self.assertGreater(len(set(background.convert("RGB").getdata())), 1000)   # a picture, not a blank

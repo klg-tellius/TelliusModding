@@ -1747,9 +1747,8 @@ def import_animation(
     groups: list[animation.BoneGroup] = []
     curves: list[animation.AnimCurve] = []
     # Bones the glTF moves exactly as the replaced animation does keep that animation's own group and
-    # curves. The engine composes a bone's channels in ways a re-solve does not always reproduce (a
-    # Radiant Dawn joint-orient chain re-solved through Blender lay the model on its side), so only the
-    # bones that were edited get new curves.
+    # curves, so only the bones that were edited get new curves (a re-solve can pick other Euler angles
+    # for the same rotation).
     reuse: dict[int, tuple[animation.BoneGroup, list[animation.AnimCurve]]] = {}
     if template:
         original = animation.read_animation_bytes(template)
@@ -1773,12 +1772,13 @@ def import_animation(
         # bone without one (Radiant Dawn's anchors and _root_ are never animated).
         if frames and all(same(m, seed(bones[b])) for m in frames):
             continue
-        # A bone whose own flags have no rotate bit and that never turns is written translate-only, as
-        # the game's own files are (Radiant Dawn's body, flags 0x67, mask 0x20): a rotate channel would
-        # turn on its joint orient and the rotation would have to cancel it.
+        # A bone whose own flags have no rotate bit and that never turns away from its rest rotation (its
+        # joint orient, which the engine always applies) is written translate-only, as the game's own files
+        # are (Radiant Dawn's body, flags 0x67, mask 0x20).
+        rest = engine_pose.local_matrix(defaults, engine_pose.bone_flags(bones[b]) & engine_pose.FLAG_JOINT_ORIENT,
+                                        engine_pose.rotation_order(bones[b]))
         translate_only = (not engine_pose.bone_flags(bones[b]) & engine_pose.FLAG_ROTATE and frames
-                          and all(same(m, ((1.0, 0.0, 0.0, m[0][3]), (0.0, 1.0, 0.0, m[1][3]), (0.0, 0.0, 1.0, m[2][3])))
-                                  for m in frames))
+                          and all(same(m, tuple(rest[r][:3] + (m[r][3],) for r in range(3))) for m in frames))
         if translate_only:
             per_bone[b] = [defaults[:engine_pose.SLOT_TRANSLATE] + [m[0][3], m[1][3], m[2][3]]
                            + defaults[engine_pose.SLOT_TRANSLATE + 3:] for m in frames]
@@ -1887,6 +1887,7 @@ def build_skeleton(
     base_dir: Optional[Path | str] = None,
     *,
     template: Optional[list[skeleton.Bone]] = None,
+    index_step: Optional[int] = None,
 ) -> tuple[skeleton.SkeletonFile, list[str]]:
     """A new ``.g`` from the glTF's skin (Phase 4). Joint names become bone
     names; parents come first.
@@ -1906,7 +1907,12 @@ def build_skeleton(
     puts it; template pivot bones keep the pivot convention. The engine attaches weapons to battle socket
     bones (``_r_hand_``) by their world matrix, which the pivot convention
     would leave at the origin. :func:`import_skinned_model` and
-    :func:`import_animation` work on either."""
+    :func:`import_animation` work on either.
+
+    ``index_step`` is how the game numbers bones at ``+0xEC`` (:func:`skeleton.index_step`: 16 on
+    Radiant Dawn); by default the template's, else Path of Radiance's 1."""
+    if index_step is None:
+        index_step = skeleton.index_step(template) if template else 1
     d = _Document(gltf_data, Path(base_dir) if base_dir is not None else None)
     doc = d.doc
     skins = doc.get("skins", [])
@@ -2006,7 +2012,7 @@ def build_skeleton(
                 index[parent] if parent is not None else -1,
                 (next_sibling, first_child, flags),
                 floats,
-                (index[j], 1),
+                (index[j] * index_step, 1),
             )
         )
     return skeleton.SkeletonFile("[unknown]", bones), warnings

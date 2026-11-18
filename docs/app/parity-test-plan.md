@@ -157,3 +157,9 @@ G1 (a level-up gives 3 per growth success) and A1 (optional, Adept seen in battl
 - On each region's extracted disc: apply one Game Code patch, a chapter jump and a story flow edit, boot, and check the change in game.
 - Open a European `FE10_EU.dat` on the Saves page, edit a unit, play it from the page.
 - Open a German chapter file in Dialogue: accented letters show as letters, saving changes nothing else.
+
+## Hub and models (Phase 4)
+
+- RD: Create hub with **Blank map** (for example 20 x 16, a colour, then an image through Edit ground); install the hub; play into it: the ground draws, the avatar stands on its tile, Arrive and Visit work on the links.
+- RD: open a layout in Window images (for example `RID_上下会話`): the preview shows the window, the text box and the portrait seats.
+

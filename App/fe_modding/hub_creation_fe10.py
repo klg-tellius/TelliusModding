@@ -9,12 +9,17 @@ The counterpart of :mod:`hub_creation`. The chapter is made by Add chapter
 - the script is replaced by a plain opening: the chapter title, the map, the player army, the
   avatar in focus. :mod:`hub_fe10` adds the hub's own events when the hub is installed.
 
-The template's map is kept (Radiant Dawn has no blank-map maker yet).
+The map is the template's, or a blank one (:func:`hub_creation.blank_map`: a flat ``map_base`` ground
+of the chosen size, the template's light, fog and shader kept, no props).
 """
 
 from __future__ import annotations
 
-from . import chapters, chapters_fe10, script_sources
+from pathlib import Path
+
+from PIL import Image
+
+from . import chapters, chapters_fe10, hub_creation, script_sources
 from .formats import dispo, fe10data
 from .formats.cmb import compile_source, read_cmb, write_cmb
 from .hub_fe10 import _deployments
@@ -76,16 +81,38 @@ def opening_source(chapter_id: str, avatar_pid: str) -> str:
 
 
 def create_chapter(project, fe10: bytes, source_id: str, new_id: str, title: str, avatar_pid: str,
-                   start: tuple[int, int] | None = None):
+                   start: tuple[int, int] | None = None, *, blank_size: tuple[int, int] | None = None,
+                   ground_color: tuple[int, int, int] = hub_creation.DEFAULT_GROUND_COLOR,
+                   ground_image: str | Path | None = None, tile_ground_image: bool = False):
     """Add hub chapter ``new_id`` from ``source_id`` and return Add chapter's plan (its ``fe10data``
-    is for the caller's session to save)."""
+    is for the caller's session to save). ``blank_size`` (width, height) replaces the copied map with
+    a blank one; the avatar then starts at ``start`` if it is inside, else in the middle."""
     if len(chapters.chapter_phases(project, source_id)) != 1:
         raise ValueError("Choose a chapter with one map as the template.")
     jid = avatar_class(fe10, avatar_pid)
     start = start or player_start(project, source_id)
     if start is None:
         raise ValueError(f"Chapter {source_id} has no player unit to put the avatar in place of.")
+    blank = None
+    if blank_size is not None:
+        width, height = blank_size
+        template = chapters.chapter_paths(project, source_id).map
+        if template is None:
+            raise ValueError(f"Chapter {source_id} has no map to build the blank map from.")
+        image = None
+        if ground_image:
+            try:
+                with Image.open(ground_image) as opened:
+                    image = opened.convert("RGBA").copy()
+            except Exception as exc:  # noqa: BLE001 - Pillow reports format and file errors through several types
+                raise ValueError(f"Could not read the hub ground image: {exc}") from exc
+        blank = hub_creation.blank_map(template.read_bytes(), width, height, ground_color=ground_color,
+                                       ground_image=image, tile_ground_image=tile_ground_image)
+        if not (0 <= start[0] < width and 0 <= start[1] < height):
+            start = width // 2, height // 2
     plan = chapters_fe10.add_story_chapter(project, fe10, source_id, new_id, title)
+    if blank is not None:
+        project.write_keeping_original(chapters.chapter_paths(project, new_id).map, blank)
     armies = 0
     for path in _deployments(project, new_id):
         data, found = avatar_deployment(path.read_bytes(), avatar_pid, jid, start)

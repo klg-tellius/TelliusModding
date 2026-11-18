@@ -230,3 +230,11 @@ Closing an item requires all applicable evidence:
 - **Chapter +0x18** is the `N` message key label on JP (`N0101`, relocated), null on US/EU: now the `n_messages` field. What reads it is not traced.
 - **European movies** with five audio tracks are read (`thp.ThpInfo.audio_tracks`, `read_frame(track=)`); a replacement keeps the count, with the same audio in each track. Not checked in game.
 - **Staff roll text** is shown in the file's own encoding (it was raw bytes before), and the European languages are listed; every ending file on the three discs rebuilds byte for byte.
+
+## 2026-11-15: models, hub map and rect preview (parity Phase 4)
+
+- **Rect preview on RD (done).** `rect_editor.render_fe10` reads RD layers as Path of Radiance's (same byte layouts except the 0x30-byte text box) and draws them; kind 7 is not drawn.
+- **HUB-RD-01: blank hub map in game.** `hub_creation.blank_map` works on RD maps (size written after mapdata's version byte, half sizes rounded down, ground material `map_base`). Not loaded in Dolphin: check the ground draws, the avatar stands and the links work.
+- **RIG-RD-01: new skeletons on RD map rigs (closed 2026-11-15).** Cause: the skeleton loader (RD `FUN_8000E9DC`, PoR `relocate_g_skeleton_bones` 0x80065F48) sets the rotate bit 0x10 on every bone with joint orient 0x40, so a joint-orient bone keeps its joint orient under a translate-only group (Micaiah's `body`, flags 0x67, mask 0x20 in `wait_1`). `engine_pose` lacked the rule, so it posed Micaiah lying down; `rig_fit` retargeted that pose and the game drew it faithfully. With the rule in `engine_pose.local_matrix`, Greil fitted onto `mikaya1` stands in Dolphin (Prologue) and the refusal is lifted. The same loader also writes each bone's own index into `+0xEC >> 20`, so the file's numbering there is cosmetic; new skeletons still copy RD's x16 to match the retail files.
+- **The RD chapter jump on a fresh boot.** The jump skipped the file menu's New Game, which empties the unit lists (`FUN_8012CBF0`); the lists then held stale RAM and the chapter's group pass (`apply_chapter_player_group`, through `UnitGetByPID`) followed a garbage link. The jump now calls it, and also skips the opening movie, whose routine (`FUN_8026C118`) sends the boot script to the title. Checked in Dolphin on RFEE01 (Prologue boots in about 30 s).
+
