@@ -40,10 +40,10 @@ Priority is based on corruption/editing risk first, then user-visible coverage.
 
 | ID | Status | Owner | Open evidence | Closure route | Exit test |
 |---|---|---|---|---|---|
-| SAVE-02 | verification-gap | `save_file_fe10.py`, Saves UI | The virtual payloads are confirmed as 16, 16, and 48 bytes; BMST flags are now structurally located at `+0x102` and editable by slot | Parse the complete tail and exercise edited flags in Dolphin | Located following state plus a recorded flag-on/flag-off load and re-save check |
+| SAVE-02 | verification-gap | `save_file_fe10.py`, Saves UI | The virtual payloads are confirmed as 16, 16, and 48 bytes; BMST flags are now structurally located at `+0x102` and editable by slot. Flag on: checked in game 2026-11-18 (in-game check S8, flag 127 set in a file, still set in the save the game writes after 1-1) | Parse the complete tail; a flag-off check | Located following state plus a flag-off load and re-save check |
 | SAVE-03 | verification-gap | `save_file_fe10.py`, Saves UI | The eight saved bytes are now typed as signed Might/Hit/Critical/Weight-reduction steps plus RGBA; existing forged convoy entries are editable, including variable-length names | Load an edited copy in Dolphin and re-save it | Edited forged item retains name, stats and colour after load/re-save |
 | SAVE-04 | semantic-unknown | `SAVE_NOTES.md` | `KZND` and `RELD` counted records plus the fixed `T  T`/`DEBU` framing now have tested codecs; FGPT's three words, the `T  T` fields, and RELD's value byte remain unnamed | Trace direct consumers of the structurally isolated fields | Semantic names or explicit reserved/unused findings plus mutation tests |
-| SAVE-05 | verification-gap | `save_file_fe10.py`, Saves UI | chapter/phase/turn, convoy edits, and `move_to_chapter` write successfully but have incomplete recorded game checks | Exercise copied saves in Dolphin across early, split-army, and Endgame records | Recorded load, inventory, resume, and re-save checks with valid CRCs |
+| SAVE-05 | verification-gap | `save_file_fe10.py`, Saves UI | chapter/phase/turn, convoy edits, and `move_to_chapter` write successfully. Convoy: checked in game 2026-11-18 (in-game check S2, an Iron Sword added to a free slot is in the convoy the game re-saves). chapter/phase/turn and `move_to_chapter` still have no recorded game check | Exercise copied saves in Dolphin across early, split-army, and Endgame records | Recorded load, inventory, resume, and re-save checks with valid CRCs |
 
 ### 2026-10-30 save milestone
 
@@ -95,7 +95,7 @@ Priority is based on corruption/editing risk first, then user-visible coverage.
 | ID | Status | Owner | Open evidence | Closure route | Exit test |
 |---|---|---|---|---|---|
 | SAVE-06 | mostly closed 2026-11-16 | `save_file_fe10.py` system parts | Named from their readers; left: unlock bit 4, +0x3AE and +0x3B0 (no reader found), the clear record's character (from 0x80287358) and the unit of its time total | In-game: clear a file and compare | Real-save test: each clear record's difficulty bit is set; bit edits round-trip |
-| SAVE-07 | verification-gap | Saves › Units | Class, item, skill and support edits round-trip and validate; none has been loaded in the game | Phase 7 session: load a file with an edited class, item, skill and support | The unit shows each change and re-saves it |
+| SAVE-07 | closed | Saves › Units | Checked in game 2026-11-18 (in-game check S1): Micaiah edited to Light Sage with an Elixir, Paragon and Edward support at the C threshold. Her runtime unit has each change on 1-1, and the save the game writes at the chapter end keeps all four | — | Done |
 
 ## P1 — map edit safety
 

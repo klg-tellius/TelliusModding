@@ -36,6 +36,15 @@ def dolphin_running() -> bool:
 
 
 def run_variant(check, variant: str, facts: dict) -> dict:
+    """One run; a timeout (a stalled boot, a slow PC) is retried once from scratch."""
+    obs = _run_once(check, variant, facts)
+    if obs.get("error", "").startswith("Timeout"):
+        print(f"   {variant}: {obs['error']}; retrying once", flush=True)
+        obs = _run_once(check, variant, facts)
+    return obs
+
+
+def _run_once(check, variant: str, facts: dict) -> dict:
     run = ROOT / "run" / f"{check.id}_{variant}"
     out = ROOT / "out" / f"{check.id}_{variant}"
     driver = Driver(run, out, check.region)

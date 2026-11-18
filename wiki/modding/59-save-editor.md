@@ -199,6 +199,7 @@ The same page, tabs and controls edit Radiant Dawn's save, with these difference
 - **File instead of Block.** The list holds the game's six files and six checkpoints. Each is a file of its own; *active* marks the valid ones, and the page selects the most recently saved.
 - **Overview** shows the file's map and where it resumes (a base or the preparations, the end of the chapter before, or a chapter's opening event), and edits the chapter number, phase and turn. **Start a chapter from its opening…** makes the file start any chapter as if the one before had just ended.
 - **Units** shows stats as the game does (the character's and class's bases plus what the unit gained), with the class caps under them; the game shows a stat above its cap at the cap. Items have uses and flags (0x80 equipped, 0x20 forged; a forged item can't change here). A skill given here is saved as learned, like a scroll's; a unit holds at most 18. **Supports** lists every partner from `RelianceData` with its points and rank. Setting a rank writes the points just past its threshold. **Support partner** sets the unit's one active partner and links the partner back, unlinking the pairs this replaces, as the game does.
+- **Copy to new slot** and **Remove.** Each army's units form a list in the save: a unit records the slot before it and the slot after it, plus the unit it carries. **Copy to new slot** adds the copy at the end of the original's army. **Remove** empties the slot and joins the units before and after it. It refuses a unit that carries another or is carried (separate them in the game first) and the first unit of an army, whose place the game keeps elsewhere.
 - **Convoy** edits an ordinary item's number, uses and flags; a forged item's name, Might/Hit/Crit/Weight steps and colour are edited in the row under the list. There is no Forges tab: the forge is part of the item.
 - **Map objects** and **Flags** work as on Path of Radiance. Flags names the 128 slots from `startup.cmb` and the script of the file's map.
 - **System data** edits the system record by name: clears and unlocks (one bit per difficulty cleared, the full opening movie), characters met, conversations seen, Sound Room tracks, the glossary's unlocks and where it was left, the language and the checkpoint's file. Bits are numbered as the game numbers them. The clear records, one per finished playthrough, are listed read only.
@@ -206,7 +207,15 @@ The same page, tabs and controls edit Radiant Dawn's save, with these difference
 - The units need the workspace's FE10Data to be read: open the save from an extracted Radiant Dawn workspace.
 - **Other discs.** The European disc's `FE10_EU.dat` (in `.../52464550/data`) and the Japanese `FE10_JP.dat` (in `.../5246454a/data`) open the same way. The Japanese file has six files and one checkpoint.
 
-An edited Radiant Dawn save has been loaded in the game on the European and Japanese discs: a unit's level changed here showed in the game's unit list. Other kinds of edits are still untested in the game.
+Checked in the game:
+- **European and Japanese discs:** a unit's level changed here showed in the game's unit list.
+- **US disc**, each edit loaded and then kept in the save the game writes at the end of the chapter:
+  - a unit's class, a new item, a new skill and support points;
+  - an Iron Sword added to the convoy;
+  - an event flag;
+  - a unit copied (both copies fight on the map) and another removed.
+
+Chapter, phase and turn edits and **Start a chapter from its opening…** are still untested in the game.
 
 ## Related tutorials and references
 

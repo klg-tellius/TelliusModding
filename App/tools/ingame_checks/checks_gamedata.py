@@ -10,7 +10,7 @@ import re
 from .core import Check, Jump
 from .oracles import map_start, record_edit
 
-POR_START, RD_START = Jump(1), Jump("0101", "Normal")
+POR_START, RD_START = Jump(1), Jump("0101")
 
 
 def _por_value(entry, field: str):

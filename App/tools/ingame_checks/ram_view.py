@@ -105,6 +105,18 @@ class GameRam:
                 return u
         raise KeyError(f"{pid} is not on the map")
 
+    def skills(self, unit: Unit) -> list[str]:
+        """Radiant Dawn: the skill IDs in the unit's skill block (+0x12C, record pointers among other
+        words). Empty on Path of Radiance (skills are a bit mask there)."""
+        if not self.layout.indirect:
+            return []
+        out = []
+        for word in struct.unpack(">36I", self.ram.read(unit.address + 0x12C, 36 * 4)):
+            name = self.id_of(word) if 0x80000000 <= word < 0x81800000 else ""
+            if name.startswith("SID_"):
+                out.append(name)
+        return out
+
     def record(self, address: int, length: int) -> bytes:
         return self.ram.read(address, length)
 

@@ -1110,37 +1110,60 @@ class SaveRecord:
         self.replace_section_bytes("UNIP", unit.offset + unit.support_offset + SUPPORT_HEADER + slot,
                                    bytes([points]))
 
+    # The three link bytes (+5..+7) are slot numbers counted from 1 (0 = none), written from the
+    # runtime unit's +0xE4, +0xE8 and +0xF8: the previous and next unit of its army's unit list and
+    # the rescue partner. Every army is one doubly linked chain (seen on the chapter-sweep saves).
+    LINK_PREVIOUS, LINK_NEXT, LINK_RESCUE = 0, 1, 2
+
+    def _set_link(self, units: Sequence[SavedUnit], number: int, which: int, value: int) -> None:
+        if number:
+            target = units[number - 1]
+            self.replace_section_bytes("UNIP", target.offset + 5 + which, bytes([value]))
+
     def copy_unit(self, unit: SavedUnit, support_slot_counts: Mapping[int, int]) -> int:
-        """Copy ``unit`` into the first empty UNIP slot and return that slot. The copy is linked to
-        no unit (its three link bytes cleared) and has no active support partner; everything else,
-        items and forge records included, is the original's bytes."""
+        """Copy ``unit`` into the first empty UNIP slot and return that slot. The copy goes at the end
+        of the original's army list (the last unit's next link points to it), carries no one and has
+        no active support partner; everything else, items and forge records included, is the
+        original's bytes."""
         self._require_unit(unit)
         units = self.unit_records(support_slot_counts)
         target = next((u for u in units if u.empty), None)
         if target is None:
             raise ValueError("Every unit slot is in use.")
+        last, seen = unit, set()
+        while last.linked_slots[self.LINK_NEXT] and last.slot not in seen:
+            seen.add(last.slot)
+            last = units[last.linked_slots[self.LINK_NEXT] - 1]
         clone = bytearray(unit.raw)
-        clone[5:8] = b"\x00\x00\x00"
+        clone[5:8] = bytes([last.slot + 1, 0, 0])
         if unit.support_slot_count:
             struct.pack_into(">H", clone, unit.support_offset + SUPPORT_PARTNER, 0)
         section = self.section("UNIP")
         start = section.data_offset + target.offset
         self._replace_variable_bytes(start, start + len(target.raw), bytes(clone))
+        self._set_link(self.unit_records(support_slot_counts), last.slot + 1, self.LINK_NEXT, target.slot + 1)
         return target.slot
 
     def remove_unit(self, unit: SavedUnit, support_slot_counts: Mapping[int, int]) -> None:
-        """Empty ``unit``'s UNIP slot. Refused while another unit links to it (the link bytes hold
-        slot numbers counted from 1), so no unit is left pointing at an empty slot."""
+        """Empty ``unit``'s UNIP slot and close the gap in its army list (its neighbours are linked to
+        each other). Refused for a unit another one carries or that carries one (separate them in the
+        game first) and for the first unit of an army list, which the party data points to."""
         self._require_unit(unit)
         number = unit.slot + 1
-        linked = [u.slot for u in self.unit_records(support_slot_counts)
-                  if not u.empty and u.slot != unit.slot and number in u.linked_slots]
-        if linked:
-            raise ValueError(f"Unit slot {number} is linked with slot {', '.join(str(s + 1) for s in linked)}; "
-                             "separate them in the game first.")
+        units = self.unit_records(support_slot_counts)
+        previous, following, rescue = unit.linked_slots
+        carriers = [u.slot for u in units if not u.empty and u.linked_slots[self.LINK_RESCUE] == number]
+        if rescue or carriers:
+            raise ValueError(f"Unit slot {number} is in a rescue pair; separate the units in the game first.")
+        if not previous:
+            raise ValueError(f"Unit slot {number} is the first unit of its army; the game keeps the start of "
+                             "the list elsewhere, so it can't be removed here.")
+        self._set_link(units, previous, self.LINK_NEXT, following)
+        self._set_link(units, following, self.LINK_PREVIOUS, previous)
+        units = self.unit_records(support_slot_counts)
         section = self.section("UNIP")
-        start = section.data_offset + unit.offset
-        self._replace_variable_bytes(start, start + len(unit.raw), b"\x00\x00")
+        start = section.data_offset + units[unit.slot].offset
+        self._replace_variable_bytes(start, start + len(units[unit.slot].raw), b"\x00\x00")
 
     def set_unit_active_partner(self, unit: SavedUnit, person_number: int) -> None:
         """Set a unit's support partner (a character number in the save's list, 0 for none)."""
