@@ -82,6 +82,70 @@ class AnimationCoverageTest(unittest.TestCase):
         self.assertEqual(totals.counts[UNCLASSIFIED], 0)
         self.assertEqual(totals.fields[(UNDECODED, "RD footer slot 9 block")][0], 4)
 
+    def test_radiant_dawn_event_track_reader(self):
+        import struct
+        from fe_modding.formats import animation
+
+        block = (struct.pack(">HHI3H", 3, 0, 0, 16, 0xFFFF, 24) + b"\0\0"
+                 + struct.pack(">HBB2H", 2, 0, 1, 0x1F, 0xFFFF)
+                 + struct.pack(">HBB4H", 9, 0, 2, 3, 0, 1000, 5))
+        self.assertEqual(animation.read_fe10_event_block(block), [
+            animation.Fe10EventKey(2, ((0x1F, -1),)),
+            animation.Fe10EventKey(9, ((3, 0), (1000, 5))),
+        ])
+        with self.assertRaises(animation.AnimationError):
+            animation.read_fe10_event_block(block[:32])
+
+    def test_radiant_dawn_slots_are_decoded(self):
+        """Slot 5 events, slot 0/6-12 key tables and slot 13 particles."""
+        import struct
+
+        events = struct.pack(">HHIH", 1, 0, 0, 10) + struct.pack(">HBB2H", 4, 0, 1, 3, 0)
+        tracks = struct.pack(">HHI2H", 2, 0, 0, 0xFFFF, 12) + struct.pack(">HH2h", 1, 0, 0, 255)
+        name = b"|root|\0\0"
+        body = 0x30
+        blocks = [(5, events), (0, tracks), (6, tracks), (9, tracks)]
+        layout, at = [], body
+        for slot, data in blocks:
+            layout.append((slot, at, data))
+            at += len(data)
+        particles_at = at
+        rec = particles_at + 8
+        name_at = rec + 0x34
+        stages_at = name_at + len(name)
+        ranges_at = stages_at + 12
+        curves_at = ranges_at + 8
+        keys_at = curves_at + 12
+        particles = bytearray(keys_at + 4 - particles_at)
+        struct.pack_into(">IHH", particles, 0, 0x12345678, 0, 1)
+        struct.pack_into(">IHHHh", particles, 8, name_at, 0, 0x0014, 0, 2)
+        struct.pack_into(">HH", particles, 8 + 0x1C, 7, 1)  # bone index, one stage
+        struct.pack_into(">4I", particles, 8 + 0x20, stages_at, ranges_at, curves_at, keys_at)
+        particles[name_at - particles_at:stages_at - particles_at] = name
+        struct.pack_into(">Hhh3h", particles, stages_at - particles_at, 0, 0, 10, 64, 0, 0)
+        struct.pack_into(">4H", particles, ranges_at - particles_at, 0, 0, 0, 1)
+        struct.pack_into(">HBBHHI", particles, curves_at - particles_at, 4, 0, 0, 0, 1, 0)
+        struct.pack_into(">Hh", particles, keys_at - particles_at, 0, 255)
+        layout.append((13, particles_at, bytes(particles)))
+        payload = b"".join(data for _, _, data in layout)
+        desc_at = body + len(payload)
+        # As on the disc, header word 0 names the last descriptor in the file
+        # and each ``next`` points back to the one before it.
+        descriptors = b""
+        for i, (slot, block_at, _) in enumerate(layout):
+            descriptors += struct.pack(">3I", slot, block_at, desc_at + 12 * (i - 1) if i else 0)
+        header = struct.pack(">12I", desc_at + 12 * (len(layout) - 1), 0, 0x1000000, 0x11, 0, 0, 0x40, 0, 0x30, 0x30, 0, 0x30)
+        report = Report()
+        Walker(report).child("rd.ga", header + payload + descriptors)
+        totals = report.formats["animation"]
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+        # Only the emitter's +0x0C word has no identified reader.
+        self.assertEqual(totals.counts[UNDECODED], 2, totals.fields)
+        self.assertEqual({name for (status, name) in totals.fields if status == PLAUSIBLE},
+                         {"particle curve last key frame", "particle stage local index",
+                          "particle emitter local index", "particle emitter first global stage"})
+
 
 class ParticleLayoutTest(unittest.TestCase):
     def test_particle_header_stages_and_keys_are_classified_without_guessing_controls(self):

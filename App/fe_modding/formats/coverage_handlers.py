@@ -427,14 +427,19 @@ def ga_file(cov: FileCoverage, walker: Walker) -> None:
 
 def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
     """Radiant Dawn's footer chain: keyframes, then the slot blocks, then the
-    12-byte descriptors. The slot numbers go past PoR's nine (5, 6, 9 and 13
-    are the common ones), so only blocks PoR's readers accept are decoded."""
+    12-byte descriptors. Slot numbers follow ``animation.FE10_FOOTER_SLOT_NAMES``:
+    0 bone visibility, 5 events, 6-12/14/15 material key tables, 13 particle
+    emitters."""
     from . import animation
 
     data = cov.data
     keys_end = footer - len(anim.body_trailing)
     words = anim.header.words
     cov.mark(words[11], keys_end - words[11], DECODED)
+    # 0x8000bc20 drops the footer unless header byte 8 is at least 1.
+    if data[8] == 1:
+        cov.mark(8, 1, DECODED)
+        cov.zero(9, 3, "header word 2")
     chain = animation.fe10_footer_chain(data, footer)
     points = sorted([(block, slot, False) for _, slot, block in chain] +
                     [(at, slot, True) for at, slot, _ in chain])
@@ -443,19 +448,77 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
         if is_descriptor:
             cov.mark(at, 12, DECODED)
             continue
+        if slot == animation.FE10_PARTICLE_SLOT:
+            # Same emitter table as PoR's slot 8 (read_particle_table_layout).
+            _ga_particle_table(cov, at, end, fe10=True)
+            continue
         block = data[at:end]
         try:
-            if slot == 0:
-                animation.read_event_block(block)
-            elif slot in (1, 2, 3, 4):
+            if slot == animation.FE10_EVENT_SLOT:
+                animation.read_fe10_event_block(block)
+            elif slot in animation.FE10_MATERIAL_TRACK_SLOTS:
+                if len(block) < 8:
+                    raise ValueError
                 animation.read_material_tracks(block)
             else:
                 raise ValueError
         except (ValueError, struct.error, animation.AnimationError):
             cov.mark(at, end - at, UNDECODED, f"RD footer slot {slot} block")
+            continue
+        if slot == animation.FE10_EVENT_SLOT:
+            _ga_fe10_events(cov, at, end)
         else:
-            cov.mark(at, end - at, DECODED)
+            _ga_material_tracks(cov, at, end)
     cov.fill(PADDING, only_zero=True)
+
+
+# Event codes whose Radiant Dawn reader is identified: 3 and 4 are looked up
+# by the playback loop (0x800081d4, 0x80009ef8 with code 3); 0x1F's parameter
+# is compared with a battle index (0x800e2c38). Other codes keep PoR's
+# numbering by assumption, so they stay plausible.
+GA_FE10_EVENT_KNOWN = frozenset((3, 4, 0x1F))
+
+
+def _ga_fe10_events(cov: FileCoverage, start: int, end: int) -> None:
+    data = cov.data
+    count = _u16(data, start)
+    cov.mark(start, 8 + 2 * count, DECODED)
+    last = start + 8 + 2 * count
+    for k in range(count):
+        offset = _u16(data, start + 8 + 2 * k)
+        if offset == 0xFFFF:
+            continue
+        key = start + offset
+        n = data[key + 3]
+        cov.mark(key, 4, DECODED)
+        for c in range(n):
+            at = key + 4 + 4 * c
+            code = _u16(data, at)
+            if code in GA_FE10_EVENT_KNOWN:
+                cov.mark(at, 4, DECODED)
+            else:
+                cov.mark(at, 4, PLAUSIBLE, f"RD event code {code:#x}")
+        last = max(last, key + 4 + 4 * n)
+    if last < end:
+        cov.zero(last, end - last, "event track tail")
+
+
+def _ga_material_tracks(cov: FileCoverage, start: int, end: int) -> None:
+    """A per-material key table: count, pad, runtime pointer, u16 offsets,
+    then per track u16 key count, u16 mode and ``(u16 frame, s16 value)`` keys."""
+    data = cov.data
+    count = _u16(data, start)
+    cov.mark(start, 8 + 2 * count, DECODED)
+    last = start + 8 + 2 * count
+    for k in range(count):
+        offset = _u16(data, start + 8 + 2 * k)
+        if offset == 0xFFFF:
+            continue
+        n = _u16(data, start + offset)
+        cov.mark(start + offset, 4 + 4 * n, DECODED)
+        last = max(last, start + offset + 4 + 4 * n)
+    if last < end:
+        cov.zero(last, end - last, "material track tail")
 
 
 def _ga_events(cov: FileCoverage, start: int, end: int) -> None:
@@ -482,15 +545,19 @@ def _ga_events(cov: FileCoverage, start: int, end: int) -> None:
         cov.zero(pos, end - pos, "event track tail")
 
 
-def _ga_particle_table(cov: FileCoverage, start: int, end: int) -> None:
-    """Place only slot-8 fields confirmed by GParticle.cpp's init/update readers."""
+def _ga_particle_table(cov: FileCoverage, start: int, end: int, fe10: bool = False) -> None:
+    """Place only slot-8 fields confirmed by GParticle.cpp's init/update readers.
+    ``fe10`` is Radiant Dawn's slot 13: the same table, where RFEE01 also reads
+    +0x1C as the emitter's bone index (0x80015368 -> 0x8000f3d4) and draw-flag
+    bit 0x10 makes setup take the min/max of the stage start frames
+    (0x8001558c)."""
     from . import animation
 
     data = cov.data
     cov.mark(start, end - start, UNDECODED, "particle table details")
     try:
-        layout = animation.read_particle_table_layout(data)
-    except animation.AnimationError:
+        layout = animation.read_particle_table_layout(data, start)
+    except (animation.AnimationError, struct.error):
         return
     if layout is None or layout.block_offset != start:
         return
@@ -509,7 +576,7 @@ def _ga_particle_table(cov: FileCoverage, start: int, end: int) -> None:
         # 0x0600 applies an extra transform); 0x0800 gates actor visibility;
         # 0x1000/0x2000 choose blending, 0x4000 disables depth, and 0x8000
         # selects the alternate TEV order.
-        cov.bits(rec + 6, 2, known=0xFE07, name="particle draw flags")
+        cov.bits(rec + 6, 2, known=0xFE17 if fe10 else 0xFE07, name="particle draw flags")
         cov.mark(rec + 0x0A, 2, DECODED)  # .gs material index
         cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
         # Six signed /64 control slots. Modes 1, 2 and 4 read different
@@ -519,7 +586,10 @@ def _ga_particle_table(cov: FileCoverage, start: int, end: int) -> None:
         # +16/+18: mode-4 initial S and T scale.
         cov.mark(rec + 0x0E, 12, DECODED)
         cov.mark(rec + 0x1A, 2, DECODED)  # initial stage Z rotation, degrees / 64
-        cov.zero(rec + 0x1C, 2, "particle emitter +0x1C pad")
+        if fe10:
+            cov.mark(rec + 0x1C, 2, DECODED)  # bone index
+        else:
+            cov.zero(rec + 0x1C, 2, "particle emitter +0x1C pad")
         cov.mark(rec + 0x1E, 2, DECODED)  # stage count
         cov.mark(rec + 0x20, 16, DECODED)  # four file-relative table pointers
         cov.zero(rec + 0x30, 4, "particle emitter tail pad")

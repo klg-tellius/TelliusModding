@@ -421,8 +421,15 @@ def read_particle_stage(data: bytes, emitter: ParticleEmitterLayout, index: int)
                                first_curve, curve_count)
 
 
-def read_particle_table_layout(data: bytes) -> ParticleTableLayout | None:
+def read_particle_table_layout(data: bytes, block: int | None = None) -> ParticleTableLayout | None:
     """Read the confirmed portion of footer slot 8 from a whole ``.ga`` file.
+
+    ``block`` is the table's file offset; when omitted it comes from PoR's
+    nine-word footer. Radiant Dawn stores the same table as compact-footer
+    slot 13 (``fe10_footer_chain``): RFEE01 ``main.dol`` checks the same
+    0x12345678 magic (``0x8001528c``), relocates the same five record
+    pointers (``0x800151ec``) and reads stages, curve ranges, curves and keys
+    with the same strides and channel switch (``0x800159xx``).
 
     Offsets in this table refer to the start of the ``.ga``, rather than the
     slot-8 block. Each emitter has 0x34 bytes, one 0x0C-byte stage per count,
@@ -432,14 +439,15 @@ def read_particle_table_layout(data: bytes) -> ParticleTableLayout | None:
     """
     if len(data) < HEADER_SIZE:
         raise AnimationError("Animation header is truncated.")
-    footer = struct.unpack_from(">I", data)[0]
-    if not footer:
-        return None
-    if footer + FOOTER_LEAD_IN_SIZE > len(data):
-        raise AnimationError("Animation footer is truncated.")
-    block = struct.unpack_from(">I", data, footer + 8 * 4)[0]
-    if not block:
-        return None
+    if block is None:
+        footer = struct.unpack_from(">I", data)[0]
+        if not footer:
+            return None
+        if footer + FOOTER_LEAD_IN_SIZE > len(data):
+            raise AnimationError("Animation footer is truncated.")
+        block = struct.unpack_from(">I", data, footer + 8 * 4)[0]
+        if not block:
+            return None
     if block + 8 > len(data) or data[block:block + 4] != b"\x12\x34\x56\x78":
         raise AnimationError("Particle table has no 0x12345678 header.")
     count = struct.unpack_from(">H", data, block + 6)[0]
@@ -517,6 +525,69 @@ def fe10_footer_chain(data: bytes, footer_start: int) -> list[tuple[int, int, in
         chain.append((at, slot, block))
         at = nxt
     return chain
+
+
+# Radiant Dawn's compact-footer slot numbers (RFEE01 ``main.dol``). Slots 0,
+# 6-12, 14 and 15 hold the same key tables as PoR's slots 1-4
+# (``read_material_tracks``: indexed by material, or by bone for slot 0);
+# slot 5 is the event track, slot 13 the particle emitter table
+# (``read_particle_table_layout``).
+FE10_FOOTER_SLOT_NAMES = {
+    0: "bone visibility",  # 0x8000db10: track mode word = bone index; value 0 scales the bone to zero
+    5: "events",  # 0x80009bc8-0x8000a22c, find/collect keys by frame and code
+    6: "material alpha",  # 0x8000ab6c: 8-bit value per material
+    7: "material colour",  # 0x8000a838 with slot 7: RGB565 value, multiplies the material colour
+    8: "texture translate U",  # 0x8000ae38 -> PSMTXTrans in 0x80012f00
+    9: "texture translate V",  # 0x8000b100, negated before PSMTXTrans
+    10: "texture rotation",  # 0x8000b3c8 -> rotation about Z
+    11: "texture scale U",  # 0x8000b690 -> PSMTXScale
+    12: "texture scale V",  # 0x8000b958 -> PSMTXScale
+    13: "particle emitters",  # 0x8001528c setup, 0x800159xx update
+    14: "material colour (slot 14)",  # 0x8000a838 with slot 14
+    15: "material colour (slot 15)",  # 0x8000a838 with slot 15
+}
+FE10_MATERIAL_TRACK_SLOTS = frozenset((0, 6, 7, 8, 9, 10, 11, 12, 14, 15))
+FE10_EVENT_SLOT = 5
+FE10_PARTICLE_SLOT = 13
+
+
+@dataclass(frozen=True)
+class Fe10EventKey:
+    """One key of Radiant Dawn's event track (compact-footer slot 5)."""
+
+    frame: int
+    codes: tuple[tuple[int, int], ...]  # (code, signed parameter)
+
+
+def read_fe10_event_block(block: bytes) -> list[Fe10EventKey]:
+    """Decode Radiant Dawn's slot-5 event track.
+
+    Layout: u16 key count, u16 pad, a runtime pointer word (the loader sets it
+    to block+8), then one u16 key offset per key (from the block start,
+    0xFFFF for none). Each key is u16 frame, u8 pad, u8 code count, then
+    ``count`` 4-byte ``(u16 code, s16 parameter)`` pairs. ``0x80009d60``
+    matches codes at key +4 with stride 4 and count at key +3; ``0x800e2a78``
+    compares code 0x1F's parameter with a battle index.
+    """
+    if len(block) < 8:
+        raise AnimationError("Event track header is truncated.")
+    (count,) = struct.unpack_from(">H", block)
+    if 8 + 2 * count > len(block):
+        raise AnimationError("Event track offsets are truncated.")
+    keys = []
+    for offset in struct.unpack_from(f">{count}H", block, 8):
+        if offset == 0xFFFF:
+            continue
+        if offset + 4 > len(block):
+            raise AnimationError(f"Event key at {offset:#x} is outside the block.")
+        frame, pad, n = struct.unpack_from(">HBB", block, offset)
+        if pad or offset + 4 + 4 * n > len(block):
+            raise AnimationError(f"Event key at {offset:#x} is malformed.")
+        pairs = struct.unpack_from(f">{2 * n}H", block, offset + 4)
+        codes = tuple((pairs[i], pairs[i + 1] - 0x10000 if pairs[i + 1] & 0x8000 else pairs[i + 1])
+                      for i in range(0, 2 * n, 2))
+        keys.append(Fe10EventKey(frame, codes))
+    return keys
 
 
 def read_event_block(block: bytes) -> list[EventKey]:
