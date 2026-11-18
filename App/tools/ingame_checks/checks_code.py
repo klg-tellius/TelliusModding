@@ -313,21 +313,20 @@ def fixture_gain_three_rd(ctx):
         ctx.set_code(f"rd.growth.random.{stat}", GAIN)
 
 
-#: bytes of a Radiant Dawn unit that change on a level-up but are not stats: the level and the EXP
-RD_NOT_STATS = {0xFE, 0xFF}
+#: Radiant Dawn's eight stat gains (HP .. Res) in the runtime unit, after current HP (+0x114). Seen in Dolphin
+#: (K3r, 2026-11-18): a level-up raises bytes of +0x119..+0x120 only; +0x10F also rises by 1 (not a stat).
+RD_STATS = range(0x119, 0x121)
 
 
 def judge_growth_rd(mod, retail, facts):
-    """The RD stat bytes aren't named: every byte of the unit that went up (other than the level) must
-    have gone up by 1 in retail and by 3 in the edited run."""
+    """Every stat gain that went up must have gone up by 1 in retail and by 3 in the edited run."""
     def rises(obs):
         a, b = bytes.fromhex(obs["before"]["raw"]), bytes.fromhex(obs["after"]["raw"])
-        return {i: y - x for i, (x, y) in enumerate(zip(a, b)) if 0x100 <= i < 0x1BC and y > x and i not in RD_NOT_STATS}
+        return {i: b[i] - a[i] for i in RD_STATS if b[i] > a[i]}
     r, m = rises(retail), rises(mod)
     levelled = all(o["after"]["level"] == o["before"]["level"] + 1 for o in (retail, mod))
     ok = levelled and r and m and set(r.values()) == {1} and set(m.values()) == {GAIN}
-    return ok, f"Micaiah levelled up in both: {levelled}; bytes that rose, retail {[(hex(i), v) for i, v in r.items()]}, " \
-               f"edited {[(hex(i), v) for i, v in m.items()]}"
+    return ok, f"Micaiah levelled up in both: {levelled}; stat gains that rose, retail {[(hex(i), v) for i, v in r.items()]}, "                f"edited {[(hex(i), v) for i, v in m.items()]}"
 
 
 CHECKS.append(Check("K3r", "rd", "Growth gain per success in a real level-up", ["Level-up growth rows (RD)"],
