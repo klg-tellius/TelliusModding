@@ -285,3 +285,74 @@ CHECKS += [
     Check("W1r", "rd", "Chapter weather: Prologue in snow", ["1.0 §3 RD weather (open since 2026-10-28)"],
           play=map_shot(), judge=judge_weather, fixture=weather_fixture("C0101", "雪"), start=Jump("0101")),
 ]
+
+
+# -- tutorials (PoR): every tutorial text in capitals (Mess/tut.m); the Prologue on Normal plays the movement
+# tutorial, whose first text window must differ from retail.
+
+def play_first_tutorial(driver, facts):
+    import time
+    driver.until(lambda s: "E_TutEvent" in s.names, 8, label="tutorial")
+    driver.until(lambda s: any(n.startswith("E_TalkKeyWait") for n in s.names)
+                 or ("E_TalkWindow" in s.names and time.time() - driver.since > 3), 4, policy=False, label="tutorial text")
+    time.sleep(1.0)
+    return {"shot": str(driver.snap("tutorial"))}
+
+
+def judge_tutorial(mod, retail, facts):
+    from .oracles import region_diff
+    share = region_diff(retail["shot"], mod["shot"])
+    return share > 0.005, (f"{facts['changed']} tutorial messages in capitals; the first tutorial text window differs "
+                           f"from retail on {share:.1%} of the screen (see shots)")
+
+
+CHECKS.append(Check("TU1", "por", "Tutorials: edited tutorial text is what the tutorial shows", ["1.0 §4 Tutorials (POR)"],
+                    play=play_first_tutorial, judge=judge_tutorial, fixture=dialogue_upper("tut.m"),
+                    start=Jump(1, "Normal"), minutes=10))
+
+
+# -- staff credits (PoR): a heading line added at the top of ending/staffroll_noa.bin (the US list); an event at
+# the Prologue's first player phase calls StaffRoll, and the first seconds of the roll are compared with retail.
+
+STAFF_EVENT = """
+# In-game check: show the staff credits
+@on_phase(turn_from=1, turn_to=1, phase="player")
+def CheckStaffRoll():
+    StaffRoll(20000)
+"""
+
+
+def staff_setup(ctx):
+    ctx.append_chapter_script(1, STAFF_EVENT)
+
+
+def staff_fixture(ctx):
+    from fe_modding.formats import staffroll
+    from fe_modding.game_profile import files_root_of
+    path = files_root_of(ctx.project) / "ending" / "staffroll_noa.bin"
+    roll = staffroll.read_staffroll(path.read_bytes())
+    roll.lines[:0] = [("", "#F02TELLIUS MODDING CHECK", ""), ("CHECK", "", "IN-GAME CHECK"), ("", "", "")] * 3
+    ctx.project.write_keeping_original(path, staffroll.build_staffroll(roll))
+    ctx.facts.update(changed=9)
+
+
+def play_staff_roll(driver, facts):
+    import time
+    driver.until(lambda s: any("Staff" in n for n in s.names), 8, label="staff roll")
+    shots = []
+    for k in range(4):
+        time.sleep(2.5)
+        shots.append(str(driver.snap(f"staff_{k}")))
+    return {"shot": shots[1], "shots": shots, "names": sorted(driver.state().names)}
+
+
+def judge_staff(mod, retail, facts):
+    from .oracles import region_diff
+    shares = [region_diff(a, b) for a, b in zip(retail["shots"], mod["shots"])]
+    return max(shares) > 0.01, (f"9 lines added at the top of the credits: the first seconds of the roll differ from "
+                                f"retail on up to {max(shares):.1%} of the screen (staff_*.png)")
+
+
+CHECKS.append(Check("SC1", "por", "Staff Credits: added lines scroll in the credits", ["1.0 §4 Staff Credits (POR)"],
+                    play=play_staff_roll, judge=judge_staff, setup=staff_setup, fixture=staff_fixture,
+                    start=Jump(1), minutes=10))

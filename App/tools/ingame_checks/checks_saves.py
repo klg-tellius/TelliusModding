@@ -13,6 +13,8 @@ from .ram_view import GameRam
 START_SAVE = SWEEP_SAVES["rd"] / "003_chapter02_FE10_US.dat"
 CHAPTER = "0102"
 TEST_FLAG = 127
+#: set in the 1-1 start save (from the Prologue) and still set after 1-1 in retail
+OFF_FLAG = 120
 
 
 def _setup_for(chapter):
@@ -125,9 +127,10 @@ def play_and_resave(driver, facts):
                       "items": [names["item"][i.item_number - 1] for i in u.items if i.item_number],
                       "skills": [names["skill"][s.skill_number] for s in u.skills],
                       "supports": list(u.support_points)})
+    flags = record.script_flags()
     obs["saved"] = {"file": saved.name, "units": units,
                     "convoy": [names["item"][c.item_number - 1] for c in record.convoy_items() if c.item_number],
-                    "flag": record.script_flags()[TEST_FLAG]}
+                    "flag": flags[TEST_FLAG], "flag_off": flags[OFF_FLAG]}
     return obs
 
 
@@ -227,3 +230,19 @@ def judge_start(mod, retail, facts):
 CHECKS.append(Check("S3", "rd", "Start a chapter from its opening: the 1-1 file starts 1-4",
                     ["SAVE-05 move_to_chapter / start_at_chapter"], play=play_start, judge=judge_start,
                     setup=_setup_for("0105"), card=_edited_card(edit_start_chapter), minutes=12))
+
+
+# -- SAVE-02, the other direction: a flag the file has set, cleared ---------------------------------------------
+
+def edit_flag_off(ctx, record):
+    record.set_script_flag(OFF_FLAG, False)
+
+
+def judge_flag_off(mod, retail, facts):
+    ok = not mod["saved"]["flag_off"] and retail["saved"]["flag_off"]
+    return ok, (f"flag {OFF_FLAG} after the game's save: edited {mod['saved']['flag_off']}, "
+                f"retail {retail['saved']['flag_off']}")
+
+
+CHECKS.append(_check("S9", "A cleared event flag stays clear through the game's own save", ["SAVE-02 flag off"],
+                     edit_flag_off, judge_flag_off))

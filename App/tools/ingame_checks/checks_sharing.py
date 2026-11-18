@@ -42,3 +42,108 @@ CHECKS = [Check("X1", "por", "Create patch + Tellius Patcher: the patched image 
                 ["1.0 §6 Create patch ⭐", "1.0 §6 TelliusPatcher ⭐"], play=map_start(["PID_IKE"], minutes=12), judge=judge,
                 fixture=por_edit("character", "PID_IKE", "stat_bonus1", 2), start=Title(), package=package,
                 retail=False, minutes=12)]
+
+
+# -- NP1 / NP1r: New project from the retail image, Check, Build disc, play the built image -----------------------
+#
+# As the app does it: ModProject.create (overlay layout, the New project dialog), set_source + extract, the
+# Check report (validator.validate_project), then Build disc (ModProject.build). Dolphin boots the image the
+# build wrote; the driver starts a New Game and plays to the first player phase.
+
+IMAGES = {"GFEE01": RETAIL_IMAGE, "RFEE01": Path("G:/ROM/Fire Emblem - Radiant Dawn (USA) (Rev 1).wbfs")}
+
+
+def new_project_package(region: str):
+    def package(run: Path, variant: str) -> None:
+        import shutil
+        from fe_modding.games import Game
+        from fe_modding.project import LAYOUT_OVERLAY, ModProject
+        from fe_modding.validator import validate_project
+        folder = run / "new_project"
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(parents=True)
+        game = Game.RADIANT_DAWN if region.startswith("R") else Game.PATH_OF_RADIANCE
+        project = ModProject.create(folder, "Check project", game, layout=LAYOUT_OVERLAY)
+        project.set_source(IMAGES[region])
+        project.extract()
+        report = validate_project(project)
+        built = project.build()
+        shutil.move(str(built), str(run / "image.iso"))
+        (run / "check_report.json").write_text(json.dumps({
+            "errors": [str(i) for i in report.errors], "warnings": [str(i) for i in report.warnings]},
+            indent=2) + "\n", encoding="utf-8")
+        shutil.rmtree(folder, ignore_errors=True)
+    return package
+
+
+def judge_new_project(mod, retail, facts, run_id: str):
+    report = json.loads((ROOT / "run" / f"{run_id}_mod" / "check_report.json").read_text(encoding="utf-8"))
+    on_map = bool(mod.get("units"))
+    ok = not report["errors"] and on_map
+    return ok, (f"new project from the retail image: Check {len(report['errors'])} error(s), "
+                f"{len(report['warnings'])} warning(s); the built image boots, New Game reaches the first map "
+                f"({len(mod.get('units', []))} units)")
+
+
+CHECKS += [
+    Check("NP1", "por", "New project, Check, Build disc: the built image plays", ["1.0 §1 New project / Check / Build ⭐ (POR)"],
+          play=map_start(minutes=12), judge=lambda m, r, f: judge_new_project(m, r, f, "NP1"), start=Title(),
+          package=new_project_package("GFEE01"), retail=False, minutes=15),
+    Check("NP1r", "rd", "New project, Check, Build disc: the built image plays", ["1.0 §1 New project / Check / Build ⭐ (RD)"],
+          play=map_start(minutes=15), judge=lambda m, r, f: judge_new_project(m, r, f, "NP1r"), start=Title(),
+          package=new_project_package("RFEE01"), retail=False, minutes=18),
+]
+
+
+# -- RV1r: Export for Riivolution, booted by Dolphin through a game-modification descriptor ------------------------
+#
+# The export needs a project in the shared-vanilla layout, so a fresh one is made from the retail image (as NP1r
+# does) and given G1r's edit (Micaiah's Str bonus +2) through FE10Data. ``riivolution.export_project`` writes
+# the SD-card folder and XML; ``boot.json`` (Dolphin's "dolphin-game-mod-descriptor") names the retail image and
+# the XML with its option enabled, which is what "Start with Riivolution Patches" does from the game list.
+
+def riivolution_package(run: Path, variant: str) -> None:
+    import shutil
+    from fe_modding import riivolution
+    from fe_modding.formats import fe10data
+    from fe_modding.games import Game
+    from fe_modding.project import LAYOUT_OVERLAY, ModProject
+    folder = run / "riivolution_project"
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    project = ModProject.create(folder, "Riivolution check", Game.RADIANT_DAWN, layout=LAYOUT_OVERLAY)
+    project.set_source(IMAGES["RFEE01"])
+    project.extract()
+    data = project.read_logical("game_data")
+    micaiah = next(r for r in fe10data.read_table(data, "character") if r.id == "PID_MICAIAH")
+    old = micaiah.values["bonus_str"]
+    project.write_logical("game_data", fe10data.patch_field(data, "character", micaiah.index, "bonus_str", old + 2))
+    result = riivolution.export_project(project, run / "riivolution_export")
+    descriptor = {
+        "type": "dolphin-game-mod-descriptor", "version": 1, "base-file": str(IMAGES["RFEE01"]),
+        "display-name": "Tellius Modding check",
+        # root: the SD card's top folder (the XML's patch root, /<mod id>, is under it)
+        "riivolution": {"patches": [{"xml": str(result.xml), "root": str(result.folder),
+                                     "options": [{"section-name": "Tellius Modding", "option-name": project.name,
+                                                  "choice": 1}]}]},
+    }
+    (run / "boot.json").write_text(json.dumps(descriptor, indent=2) + "\n", encoding="utf-8")
+    (run / "riivolution_facts.json").write_text(json.dumps({"old": old, "new": old + 2, "files": result.files,
+                                                            "warnings": result.warnings}) + "\n", encoding="utf-8")
+
+
+def judge_riivolution(mod, retail, facts):
+    path = ROOT / "out" / "G1r_retail" / "observations.json"
+    if not path.is_file():
+        return False, "run G1r first (its retail run is the reference)"
+    edit = json.loads((ROOT / "run" / "RV1r_mod" / "riivolution_facts.json").read_text(encoding="utf-8"))
+    passed, text = record_edit("PID_MICAIAH", "person")(mod, json.loads(path.read_text(encoding="utf-8")),
+                                                        {"old": edit["old"], "new": edit["new"]})
+    return passed, f"booted with the Riivolution export (retail disc + patch): {text}"
+
+
+CHECKS.append(Check("RV1r", "rd", "Export for Riivolution: the patched game carries the edit",
+                    ["1.0 §6 Export for Riivolution (RD)"], play=map_start(["PID_MICAIAH"], minutes=15),
+                    judge=judge_riivolution, start=Title(), package=riivolution_package, retail=False, minutes=18))

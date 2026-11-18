@@ -138,3 +138,73 @@ CHECKS = [
     Check("M2", "por", "A script's BGMPlay plays the named cue", ["1.0 §3 Script ⭐ BGMPlay (POR)"],
           play=listen_in_opening, judge=judge_tone, fixture=fixture_por_bgmplay, start=Jump(2), audio=True),
 ]
+
+
+# -- Sound Effects › Replace audio (RD): every SFX_SYS_* menu sound's wave replaced with a 1 s 440 Hz tone, the
+# same rwsd/brsar calls as the page. On the map the driver opens and closes the unit menus (A, A, A, B, B, B); the
+# 440 Hz share of what plays must jump against retail.
+
+def fixture_rd_menu_sfx(ctx):
+    from fe_modding.formats import brsar, fe10_sound, lz10, rwsd
+    profile = ctx.project.profile
+    files = ctx.project.extracted_dir / "files"
+    data_path, archive_path = profile.path(files, "sound_data"), profile.path(files, "sound_archive")
+    raw = data_path.read_bytes()
+    cues = fe10_sound.read_sound_data(lz10.decompress(raw) if raw[:1] == b"\x10" else raw)
+    wanted = [c for c in cues if c.name.startswith("SFX_SYS_")]
+    samples = tuple(int(12000 * math.sin(2 * math.pi * TONE_HZ * i / 32000)) for i in range(32000))
+    done, seen = 0, set()
+    archive_bytes = archive_path.read_bytes()
+    for cue in wanted:
+        archive = brsar.read_brsar(archive_bytes)
+        sound = next((s for s in archive.sounds if s.name == cue.resource), None)
+        if sound is None or sound.sound_type != 3:
+            continue
+        source = archive.files[sound.file_index]
+        document = rwsd.read_rwsd(source.header, source.wave_data)
+        wave_index = document.entries[sound.info_index].wave_index
+        if (sound.file_index, wave_index) in seen:
+            continue
+        seen.add((sound.file_index, wave_index))
+        header, wave = rwsd.replace_wave(document, wave_index, rwsd.RwsdAudio(32000, (samples,), None))
+        archive_bytes = brsar.replace_embedded_file(archive, sound.file_index, header, wave)
+        done += 1
+    ctx.project.write_keeping_original(archive_path, archive_bytes)
+    ctx.facts.update(cue="SFX_SYS_* menu sounds", waves=done)
+
+
+def tone_share(rate: int, samples: list[int]) -> float:
+    """Share of the 80 Hz - 4 kHz energy within 4 Hz of the tone."""
+    import numpy as np
+    if rate <= 0 or len(samples) < rate // 2:
+        return 0.0
+    x = np.asarray(samples, dtype=float)
+    spectrum = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    freqs = np.fft.rfftfreq(len(x), 1 / rate)
+    band = (freqs > 80) & (freqs < 4000)
+    near = (freqs > TONE_HZ - 4) & (freqs < TONE_HZ + 4)
+    total = spectrum[band].sum()
+    return float(spectrum[near].sum() / total) if total else 0.0
+
+
+def listen_to_menus(driver, facts):
+    driver.to_player_phase(8)
+    mark = driver.audio_mark()
+    for button in ("A", "A", "A", "B", "B", "B"):
+        driver.press(button, gap=1.0)
+    rate, samples = driver.audio_since(mark)
+    return {"share": tone_share(rate, samples), "seconds": len(samples) / rate if rate else 0,
+            "shot": str(driver.snap("menus"))}
+
+
+def judge_sfx(mod, retail, facts):
+    if not mod.get("seconds"):
+        return False, "no audio in the dump"
+    ok = mod["share"] > 0.05 and mod["share"] > 5 * retail["share"]
+    return ok, (f"{facts['waves']} menu sound waves replaced: 440 Hz is {mod['share']:.1%} of what played while "
+                f"opening and closing the menus, retail {retail['share']:.1%}")
+
+
+CHECKS.append(Check("SX1r", "rd", "Sound Effects › Replace audio: the menu sounds play the new wave",
+                    ["1.0 §4 Sound Effects (RD)"], play=listen_to_menus, judge=judge_sfx,
+                    fixture=fixture_rd_menu_sfx, start=Jump("0101"), audio=True))

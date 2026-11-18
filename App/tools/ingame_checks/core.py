@@ -153,9 +153,9 @@ def build_variant(check: Check, variant: str, works: dict) -> dict:
         (card_dir / name).write_bytes(data)
     work.revert()
     assemble_run_tree(BASES[check.region], patch, run)
-    image = run / "image.iso"
-    if image.exists():
-        image.unlink()
+    for name in ("image.iso", "boot.json"):
+        if (run / name).exists():
+            (run / name).unlink()
     if check.package is not None:
         check.package(run, variant)
     manifest = {"id": check.id, "variant": variant, "region": check.region,

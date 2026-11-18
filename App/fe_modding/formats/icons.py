@@ -48,6 +48,8 @@ from . import tpl
 from ..game_files import as_path
 
 ICON_TPL = Path("window") / "icon.tpl"
+#: Radiant Dawn's item and skill sheet (LZ10-compressed TPL; ``icon_wide.cms`` is the 16:9 copy)
+RD_ICON_CMS = Path("window") / "icon.cms"
 
 ITEM_IMAGE, ITEM_CELL, ITEM_FIRST_CELL = 0, 24, 96
 #: Radiant Dawn's first item cell (one more row of controller glyphs than Path of Radiance).
@@ -56,8 +58,9 @@ SKILL_IMAGE, SKILL_CELL = 1, 32
 COLUMNS = 32
 
 
-def icon_path(files_root: Path) -> Path:
-    return as_path(files_root) / ICON_TPL
+def icon_path(files_root: Path, game=None) -> Path:
+    from ..games import Game
+    return as_path(files_root) / (RD_ICON_CMS if game is Game.RADIANT_DAWN else ICON_TPL)
 
 
 def item_first_cell(game=None) -> int:
@@ -85,6 +88,10 @@ def _box(cell: int, size: int) -> tuple[int, int, int, int]:
 
 
 def read_icon_images(tpl_bytes: bytes) -> list:
+    """The sheet's images; Radiant Dawn's ``icon.cms`` is LZ10-compressed first."""
+    if tpl_bytes[:1] == b"":
+        from . import lz10
+        tpl_bytes = lz10.decompress(tpl_bytes)
     return tpl.read_tpl_images(io.BytesIO(tpl_bytes))
 
 
@@ -97,8 +104,8 @@ def cell_image(images: list, image_index: int, cell: Optional[int], size: int) -
     return images[image_index].crop(_box(cell, size)).convert("RGBA")
 
 
-def item_icon(images: list, icon: int) -> Optional[Image.Image]:
-    return cell_image(images, ITEM_IMAGE, item_cell(icon), ITEM_CELL)
+def item_icon(images: list, icon: int, game=None) -> Optional[Image.Image]:
+    return cell_image(images, ITEM_IMAGE, item_cell(icon, game), ITEM_CELL)
 
 
 def skill_icon(images: list, icon_id: int) -> Optional[Image.Image]:

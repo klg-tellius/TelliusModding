@@ -46,6 +46,7 @@ KEYCODES = {
     "STOP": (0x15, True), "AX": (0x16, True), "UNLABELED": (0x17, True),
     "F13": (0x64, False), "F14": (0x65, False), "F15": (0x66, False),
     "KANA": (0x70, False), "CONVERT": (0x79, False), "NOCONVERT": (0x7B, False), "YEN": (0x7D, False),
+    "ABNT_C2": (0x7E, False),
 }
 BUTTONS = {  # button -> (key, Wii Remote control, GameCube control)
     "A": ("AT", "Buttons/2", "Buttons/A"),
@@ -58,6 +59,8 @@ BUTTONS = {  # button -> (key, Wii Remote control, GameCube control)
     "Minus": ("YEN", "Buttons/-", "Buttons/Z"),
     "WA": ("KANA", "Buttons/A", "Buttons/X"),
     "Home": ("CONVERT", "Buttons/Home", "Buttons/Y"),
+    # the Wii Remote's B trigger (RD: held with 1 for Status, with 2 for Next Unit); the GC pad's R
+    "WB": ("ABNT_C2", "Buttons/B", "Triggers/R"),
 }
 HOTKEYS = {  # key -> Dolphin hotkey
     "F13": "General/Take Screenshot",

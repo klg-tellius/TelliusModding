@@ -58,8 +58,8 @@ class Driver(Sweep):
         for path in (self.run / "card").glob("*"):
             shutil.copy2(path, self.card / path.name)
             self.saves[path.name] = (self.card / path.name).stat().st_size, (self.card / path.name).stat().st_mtime_ns
-        image = self.run / "image.iso"
-        boot = image if image.is_file() else self.run / "sys" / "main.dol"
+        image, descriptor = self.run / "image.iso", self.run / "boot.json"
+        boot = image if image.is_file() else descriptor if descriptor.is_file() else self.run / "sys" / "main.dol"
         args = [str(DOLPHIN), "--user", str(self.user), "--batch", "--exec", str(boot),
                 "--config=Dolphin.DSP.Volume=0", "--config=Dolphin.Interface.ConfirmStop=False",
                 "--config=Dolphin.Interface.UsePanicHandlers=False",
@@ -129,6 +129,16 @@ class Driver(Sweep):
         chunk = raw[start:len(raw) - (len(raw) - start) % 4]
         pcm = _struct.unpack(f"<{len(chunk) // 2}h", chunk)
         return rate, [(pcm[i] + pcm[i + 1]) // 2 for i in range(0, len(pcm) - 1, 2)]
+
+    def chord(self, held: str, tapped: str) -> None:
+        """Hold ``held`` while pressing ``tapped`` (RD: B trigger + 1 opens the status screen)."""
+        key = di.BUTTONS[held][0]
+        di.send(key, False)
+        time.sleep(0.2)
+        di.tap(di.BUTTONS[tapped][0], 0.15)
+        time.sleep(0.2)
+        di.send(key, True)
+        self.last_press = time.time()
 
     def wait(self, seconds: float) -> None:
         time.sleep(seconds)

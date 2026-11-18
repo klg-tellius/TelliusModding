@@ -11,6 +11,8 @@ retail run's, and the attacker's level-up must have raised its stats only by 0 o
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .core import Check, Jump
 from .ram_view import GameRam
 
@@ -372,10 +374,95 @@ def fixture_param_dbx(ctx):
 def judge_fight_runs(mod, retail, facts):
     lost = mod["before"]["target_hp"] - mod["target_hp_after"]
     fought = any(n.startswith(BATTLE) for n in mod.get("battle_processes", []))
-    return fought and lost > 0, f"{facts['line']}: the fight ran to its end (bandit lost {lost} HP), no new invalid " \
+    return fought and lost > 0, f"{facts.get('line') or facts.get('change')}: the fight ran to its end (bandit lost {lost} HP), no new invalid " \
                                 f"access (frames in shots/battle_*.png)"
 
 
 CHECKS.append(Check("BD1", "por", "Battle Data: an edited param.dbx and a fight with animations",
                     ["1.0 §4 Battle Data ⭐ (POR param.dbx Form)"], play=play_attack, judge=judge_fight_runs,
                     setup=setup_attack, fixture=fixture_param_dbx, start=Jump(2)))
+
+
+# -- more battle visuals, all with the same menu-driven attack (the frames are kept for a look) -----------------
+
+def frames_differ(mod, retail, first: int = 2, last: int = 7) -> float:
+    """Mean share of the screen that differs between the two runs' battle frames ``first``..``last``."""
+    from .oracles import region_diff
+    shares = []
+    for k in range(first, last + 1):
+        a = Path(retail["shot"]).parent / f"battle_{k:02d}.png"
+        b = Path(mod["shot"]).parent / f"battle_{k:02d}.png"
+        if a.is_file() and b.is_file():
+            shares.append(region_diff(str(a), str(b)))
+    return sum(shares) / len(shares) if shares else 0.0
+
+
+def judge_fight_looks_different(mod, retail, facts):
+    lost = mod["before"]["target_hp"] - mod["target_hp_after"]
+    share = frames_differ(mod, retail)
+    return lost > 0 and share > 0.25, (f"{facts['change']}: the fight ran to its end (target lost {lost} HP); "
+                                       f"battle frames differ from retail on {share:.0%} of the screen on average")
+
+
+def fixture_scenery(ctx):
+    """Battle scenes: chapter 1's row (bmap02) fights its plains on the night backdrop."""
+    from fe_modding.formats import fe8data
+    rows = fe8data.read_battle_terrain(ctx.fe8)
+    row = next(r for r in rows if r.map_name == "bmap02")
+    old = row.scenes[0]
+    row.scenes[0] = "crimea_night"
+    ctx.fe8 = fe8data.write_battle_terrain(ctx.fe8, rows)
+    ctx.facts.update(change=f"bmap02 battle scene {old} -> crimea_night")
+
+
+def fixture_light_fire(ctx):
+    """RD Battle Weapons: the Light tome's spell effect (its second effect, EID_LIGHT) is Fire's (EID_FIRE)."""
+    from fe_modding.formats import fe10data
+    data = ctx.project.read_logical("game_data")
+    light = next(r for r in fe10data.read_table(data, "item") if r.id == "IID_LIGHT")
+    ctx.facts.update(change=f"IID_LIGHT spell effect {light.values.get('effect_2')} -> EID_FIRE")
+    ctx.project.write_logical("game_data", fe10data.patch_field(data, "item", light.index, "effect_2", "EID_FIRE"))
+
+
+def fixture_light_particles(ctx):
+    """Visual Effects: every particle emitter of the Light spell drawn four times bigger (particle editor)."""
+    from fe_modding.formats import effects, particle_editor
+    from fe_modding.formats import animation
+    from fe_modding.game_profile import files_root_of
+    path = effects.pack_path(files_root_of(ctx.project), "EID_LIGHT")
+    parts = effects.read_effect_pack(path.read_bytes())
+    ga = next(blob for name, blob in parts.items() if name.endswith(".ga"))
+    layout = animation.read_particle_table_layout(ga)
+    for index, _emitter in enumerate(layout.emitters):
+        values = {}
+        for key in ("scale_s", "scale_t", "mode1_scale"):
+            value = particle_editor.field_value(ga, layout.emitters[index].record_offset, particle_editor.EMITTER_FIELDS[key])
+            values[key] = max(-32768, min(32767, value * 4))
+        ga = particle_editor.edit_emitter(ga, index, **values)
+    ctx.project.write_keeping_original(path, effects.build_effect_pack(effects.replace_part(parts, "ga", ga)))
+    ctx.facts.update(change=f"EID_LIGHT: {len(layout.emitters)} emitters drawn four times bigger")
+
+
+def fixture_camera_weight(ctx):
+    """RD Battle Data (FE10Battle Edit fields): the first camera choice of the first group made the only one."""
+    from fe_modding.formats import fe10_battle
+    data = ctx.project.read_logical("battle_data")
+    ctx.project.write_logical("battle_data", fe10_battle.set_camera_choice_weight(data, 0, 0, 100))
+    ctx.facts.update(change="FE10Battle camera group 0 choice 0 weight 100")
+
+
+CHECKS += [
+    Check("BS1", "por", "Battle scenes: chapter 1 fights its plains on another backdrop", ["1.0 §3 Battle scenes (POR)"],
+          play=play_attack, judge=judge_fight_looks_different, setup=setup_attack, fixture=fixture_scenery,
+          start=Jump(2)),
+    Check("E1r", "rd", "Battle Weapons: Light fights with Fire's spell effect",
+          ["1.0 §4 Battle Weapons effect (RD)"], play=attack_play("PID_MICAIAH", RD_TILE),
+          judge=judge_fight_looks_different, setup=setup_attack_rd, fixture=fixture_light_fire, start=Jump("0101")),
+    Check("VX1r", "rd", "Visual Effects: the Light spell's particles four times bigger",
+          ["1.0 §4 Visual Effects / particle editor (RD)"], play=attack_play("PID_MICAIAH", RD_TILE),
+          judge=judge_fight_looks_different, setup=setup_attack_rd, fixture=fixture_light_particles,
+          start=Jump("0101")),
+    Check("BD1r", "rd", "Battle Data: an edited FE10Battle field and a fight", ["1.0 §4 Battle Data ⭐ (RD)"],
+          play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_fight_runs, setup=setup_attack_rd,
+          fixture=fixture_camera_weight, start=Jump("0101")),
+]

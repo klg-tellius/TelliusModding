@@ -24,7 +24,7 @@ if __package__ in (None, ""):
     __package__ = "tools.ingame_checks"
 
 from .core import BASES, ROOT, work_for  # noqa: E402
-from .run import write_table  # noqa: E402
+from .run import RunLock, write_table  # noqa: E402
 
 EXTRA = '\n@on_phase(turn_from=1, turn_to=1, phase="enemy")\ndef ZZStaticCheck():\n    set("gf_complete")\n'
 
@@ -71,6 +71,11 @@ def text_export_twice(region: str) -> tuple[bool, str]:
 
 
 def main() -> None:
+    with RunLock():          # the shared work projects: never next to a running check's build
+        _main()
+
+
+def _main() -> None:
     results_path = ROOT / "results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else {}
     rows = [("SC1e", "RFEP01", "Scripts round-trip on the European disc", ["SCRIPT-01"], script_round_trips),
