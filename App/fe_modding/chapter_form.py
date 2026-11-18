@@ -187,7 +187,9 @@ def rd_sections(data: bytes, index: int) -> list[ChapterSection]:
                   for d, name in ((3, "Easy"), (0, "Normal"), (1, "Hard"), (2, "Maniac (US Hard)"))))
     return [ChapterSection("Identity and files", identity), ChapterSection("Objectives (text keys)", tuple(objectives)),
             ChapterSection("Scenes", scenes),
-            ChapterSection("Parties and rules", settings, "Bytes whose meaning is not known yet edit as numbers.")]
+            ChapterSection("Parties and rules", settings,
+                           "Which party plays the chapter (gold, convoy, army), which story part it belongs to, and "
+                           "the chapter-wide rules: preparations, movement, difficulty entry and enemy levels.")]
 
 
 def rd_value(data: bytes, index: int, key: str) -> str:

@@ -213,10 +213,11 @@ The **Stats** tab follows Path of Radiance's layout, with Radiant Dawn's fields:
 
 - **Identity**: PID, name key (MPID), help key (MNPID), portrait (FID), class (JID) and affinity.
 - **Map models**: four animation IDs, one per tier. An empty first one uses the class's.
-- **Skills**: the personal skills as a list of SIDs separated by commas, with no fixed number of slots, and the class's innate skills as links. The weapon ranks cover twelve types, from sword to staff, including knife and strike: `-` keeps the class's rank, `*` makes the type usable without a rank.
-- **Level, unit details and stats**: level, sex, authority stars and biorhythm, then the personal bonuses and growths beside the class's bases and growths, and the personal weight. A starting stat is the class base plus the bonus, capped at the class's cap.
+- **Skills**: the personal skills as a list of SIDs separated by commas, with no fixed number of slots, the **Extra skill** given after them (none in the retail data), and the class's innate skills as links. The weapon ranks cover twelve types, from sword to staff, including knife and strike: `-` keeps the class's rank, `*` makes the type usable without a rank.
+- **Level, unit details and stats**: level, gender (male or female), authority stars, the biorhythm (its type, starting phase and step per phase), and **Withdraws instead of dying in**: one box per Part and the Endgame, where a defeat makes the character withdraw instead of dying. Then the personal bonuses and growths beside the class's bases and growths, and the personal weight. A starting stat is the class base plus the bonus, capped at the class's cap.
 - **Laguz gauge**: the gauge change per turn and per battle, in each form.
-- **Other decoded fields**, among them **Withdraws instead of dying in Parts**: one bit per Part (bit 4 is the Endgame) in which a defeat makes the character withdraw instead of dying.
+
+The record's unused and padding bytes are not shown; saving keeps them as they are.
 
 Deployments are per difficulty on Radiant Dawn: see [Deployment sections](29-deployment-sections.md).
 
