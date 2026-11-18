@@ -316,8 +316,8 @@ class Sweep:
         if "E_Jyokyo" in n or "E_Xinfo" in n:
             self.press("B")
             return
-        if "E_Menu" in n:
-            self.press("B")              # some menu we did not open on purpose
+        if "E_Menu" in n or n & {"E_CmdPlate", "E_MoveLimitView"}:
+            self.press("B")              # a menu we did not open, or a unit picked up by a stray A
             return
         if idle < 1.0 or time.time() - self.last_press < 1.5:
             return
