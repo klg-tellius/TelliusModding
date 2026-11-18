@@ -132,7 +132,7 @@ To add one: **Duplicate** a similar entry, give it a free **Id**, its own title 
 | **▲** **▼** **Insert line** **Remove** | Edit the list |
 | **Save credits** / **Revert** | Write / reload the file |
 
-On Radiant Dawn the same page edits the credits in the ending message file: `Mess/e_ending.m` (English, 358 lines, the one the US game plays) or `Mess/ending.m` (Japanese, 341 lines). Each line is three messages, `MED_STAFFROLL_L000_L` (role), `_C` (heading) and `_R` (name). The page writes them back, and the line count in `MED_STAFFROLL_LINES`, which the game reads as text. Below the line form:
+On Radiant Dawn the same page edits the credits in the ending message file: `Mess/e_ending.m` (English, 358 lines, the one the US game plays) or `Mess/ending.m` (Japanese, 341 lines). Each line is three messages, `MED_STAFFROLL_L000_L` (role), `_C` (heading) and `_R` (name). The page writes them back, and the line count in `MED_STAFFROLL_LINES`, which the game reads as text. The game draws all three columns of a line on the same row, so give a line either a heading or a role and name: a heading on a line that also has a role or name is drawn over them (checked in Dolphin). Below the line form:
 
 | Control | What it does |
 | --- | --- |

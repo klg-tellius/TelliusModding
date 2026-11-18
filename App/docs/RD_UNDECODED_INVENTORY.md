@@ -243,3 +243,15 @@ Closing an item requires all applicable evidence:
 - **SUP-RD-255: the RelianceData marker byte (closed, inert).** A read watchpoint over the whole loaded RelianceData table (Dolphin GDB stub, about 10 minutes of the Prologue with the Micaiah/Edward 255 pair on the map, two support-gain passes, 59 partner-slot lookups) caught nine reading instructions, in `load_reliance_data` (0x801198C8), `calculate_support_growth_tier` (0x801197F4, the speed byte at entry +5) and `find_support_slot_by_unit` (0x8012E9B4). None reads entry +4. With the earlier static search (no reader), the marker is inert: the app keeps it, labelled unused.
 - **EXT-RD-01: extended flags in the save (closed, not portable as data).** `save_read_data_stream` (0x8024BED8) reads the sections in a fixed order; the tag check `FUN_8008A518` returns a result nobody uses, and no section has a length, so an inserted section shifts every later read. Bytes after `DEBUG` are never read and the writer does not write them back. Extended flags would need a main.dol patch to the save writer and reader.
 - **Hub `0x803CA870 +0x16`** was not traced: the Arrive problems it was for have not come back since PR #25.
+
+## 2026-11-15: in-game checks (parity Phase 7)
+
+Run unattended in Dolphin: the Prologue booted with the chapter jump and no input, screenshots compared with a retail run taken the same way.
+
+- **Placement mirror and sub-tile offsets: work.** Every small prop of `bmap0101` with the mirror bit set and `offset_x` +32: the market stall's cloth panels swap ends, the pack animals face the other way, and the stall, animals, crates and well each move about half a tile. Not compared pixel for pixel with the app's map preview.
+- **Water flag 0x20: is the water pass.** Cleared on `bmap0101`, the canal loses its textured, animated water and shows flat grey.
+- **Rig round trip on the archer: same in game.** `ymu/archer1` through the rig kit and Replace rig (same armature), shown in Micaiah's place: the same pose and look as the retail archer there.
+- **Staff roll: edits show.** An edited title and first line, shown with `StaffRoll()` from the opening. A heading on a line that also has a role and name is drawn over them on the same row (lesson 73 says so).
+- **Fitted skeletons (RIG-RD-01)** were checked earlier the same day.
+
+For someone at the controller: `tools/session_playtest/rd_check_scenarios.py` (`build --set rdcheck`): Play from the Saves page, an event flag through the game's own save, a support edit at the C threshold, the Silver Army name on 4-1, a blank hub map, the paired model after a rig round trip.
