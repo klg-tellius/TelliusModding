@@ -51,7 +51,10 @@ Three tiers, from quickest to slowest:
 
   ```bash
   python -m tools.ingame_checks.run --set gamedata [--only G1 G2] [--no-build] [--reuse-retail]
+  python -m tools.ingame_checks.run --set assets --rejudge     # judge stored observations again, no Dolphin
   ```
+
+  The sets are `gamedata`, `saves`, `chapters` (dialogue, deployments, Add chapter, Story order), `assets` (portraits) and `code` (a critical hit in a real attack, driven through the map menus).
 
 ## Architecture
 

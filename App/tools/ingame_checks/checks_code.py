@@ -116,3 +116,85 @@ PARKED = [
 ]
 
 CHECKS: list = []
+
+
+# -- a real attack driven through the menus ---------------------------------------------------------------
+#
+# PoR chapter 1: a bandit is moved next to Ike's start tile; Ike's Iron Sword gets 255 hit and 255 critical
+# in both runs, so every strike of his is a critical; the edited run sets the critical multiplier to 1
+# (retail 3). On the first player phase the driver selects Ike (the cursor starts on him), stays on his
+# tile and presses A through Attack, the weapon and the target until a battle starts.
+
+ATTACK_TILE = (12, 16)     # north of Ike's start (12, 17) in bmap02
+
+
+def setup_attack(ctx):
+    from fe_modding.formats import dispo
+    ctx.set_character  # noqa: B018  (PoR context)
+    data = ctx.fe8
+    from fe_modding.formats import fe8data
+    sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
+    data = fe8data.patch_item_field(data, sword.index, "hit", 255)
+    data = fe8data.patch_item_field(data, sword.index, "crit", 255)
+    ctx.fe8 = data
+    docs = {n: d for n, d in ctx.dispos("bmap02").items() if n == "dispos_h.bin"}
+    field = dispo.FIELD
+    for doc in docs.values():
+        unit = next(u for s in doc.sections if s.name.endswith("_first_h") for u in s.units
+                    if u[field["pid"]] == "PID_BANDIT_MOU" and (u[field["pos_x"]], u[field["pos_y"]]) == (7, 16))
+        for key in ("pos", "pos2"):
+            unit[field[f"{key}_x"]], unit[field[f"{key}_y"]] = ATTACK_TILE
+    ctx.write_dispos("bmap02", docs)
+
+
+def fixture_crit_one(ctx):
+    ctx.set_code("combat.crit_multiplier", 1)
+
+
+BATTLE = ("E_Battle", "E_Kiri", "E_BattleSubProc", "E_Netuzo", "BattleProc", "E_BtlMain")
+
+
+def play_attack(driver, facts):
+    import time
+    game = GameRam(driver.ram, driver.build.game_id)
+    driver.to_player_phase(8)
+    target = next(u for u in game.units() if (u.x, u.y) == ATTACK_TILE)
+    ike = game.unit("PID_IKE")
+    before = {"target_hp": target.hp, "ike": (ike.x, ike.y)}
+    driver.snap("before")
+    started = False
+    for _ in range(8):
+        driver.press("A", gap=1.5)
+        names = driver.state().names
+        if any(n.startswith(BATTLE) for n in names):
+            started = True
+            break
+    if not started:
+        driver.snap("no_battle")
+        raise RuntimeError(f"no battle started after 8 A presses ({sorted(driver.state().names)})")
+    deadline = time.time() + 120
+    while time.time() < deadline and any(n.startswith(BATTLE) for n in driver.state().names):
+        time.sleep(0.5)
+    time.sleep(2)
+    after = next((u for u in game.units() if u.handle == target.handle), None)
+    return {"before": before, "target_hp_after": after.hp if after else 0, "shot": str(driver.snap("after"))}
+
+
+def judge_attack(mod, retail, facts):
+    full = retail["before"]["target_hp"]
+    lost_r = full - retail["target_hp_after"]
+    lost_m = mod["before"]["target_hp"] - mod["target_hp_after"]
+    if lost_m <= 0:
+        return False, f"edited run: the bandit lost {lost_m} HP"
+    if retail["target_hp_after"] > 0:
+        ok = lost_r == 3 * lost_m
+        how = "exactly"
+    else:                       # retail's critical killed: the edited one must be a third of enough to kill
+        ok = 3 * lost_m >= full and mod["target_hp_after"] > 0
+        how = "at least (retail killed it)"
+    return ok, f"bandit {full} HP: lost {lost_r} with ×3 criticals, {lost_m} with ×1 ({how} a third)"
+
+
+CHECKS.append(Check("K2", "por", "Critical multiplier in a real attack", ["1.0 §5 Game Code ⭐ (combat row)"],
+                    play=play_attack, judge=judge_attack, setup=setup_attack, fixture=fixture_crit_one,
+                    start=Jump(2)))

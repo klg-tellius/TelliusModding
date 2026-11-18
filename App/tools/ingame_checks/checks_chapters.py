@@ -180,7 +180,32 @@ def judge_next(mod, retail, facts):
                 f"(the added chapter {facts.get('new_id', '')}), whose map reaches its player phase")
 
 
+def story_skip(chapter: str, nxt: str):
+    """Chapters › Story order: ``chapter`` leads to ``nxt`` (skipping the one in between)."""
+    def fixture(ctx):
+        from fe_modding.game_code.story_flow import open_story_flow
+        flow, why = open_story_flow(ctx.project)
+        if flow is None:
+            raise RuntimeError(f"no story flow: {why}")
+        ctx.facts.update(retail_next=flow.next_of(chapter), new_next=nxt)
+        flow.set_next(chapter, nxt)
+        ctx.drop_editor()
+    return fixture
+
+
+def judge_skip(mod, retail, facts):
+    ok = mod["first"] == retail["first"] and mod["next"] == retail["next"] + 1 and mod["played"] == mod["next"]
+    return ok, (f"after chapter {mod['first']} retail goes to {retail['next']}, the edited disc to {mod['next']} "
+                f"(story order {facts['retail_next']} -> {facts['new_next']}), whose map reaches its player phase")
+
+
 CHECKS = [
+    Check("O1", "por", "Story order: chapter 1 leads to chapter 3", ["1.0 §3 Story order (POR)"],
+          play=play_chapter_after, judge=judge_skip, setup=win_turn_one("02"),
+          fixture=story_skip("02", "04"), start=Jump(2), minutes=15),
+    Check("O1r", "rd", "Story order: 1-1 leads to 1-3", ["1.0 §3 Story order (RD)"],
+          play=play_chapter_after, judge=judge_skip, setup=win_turn_one("0102"),
+          fixture=story_skip("0102", "0104"), start=Jump("0102"), minutes=15),
     Check("A1", "por", "Add chapter after chapter 1: the game plays it next", ["1.0 §3 Add chapter ⭐ (POR)"],
           play=play_chapter_after, judge=judge_next, setup=win_turn_one("02"),
           fixture=add_chapter("02", "02"), start=Jump(2), minutes=15),

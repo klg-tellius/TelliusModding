@@ -12,6 +12,11 @@
 | G2r | RFEE01 | Class movement +2 on Micaiah's class | **PASS** | PID_MICAIAH job: RAM +0xf5 5 -> 7 as edited | 1.0 §2 Game Data ▸ Classes (RD) | 2026-11-18T13:59 |
 | G3 | GFEE01 | Item Might +5 (Ike's Practice Sword) | **PASS** | PID_IKE item IID_PRACTICESWORD: RAM +0x19 6 -> 11 as edited | 1.0 §2 Game Data ▸ Items (POR) | 2026-11-18T13:27 |
 | G3r | RFEE01 | Iron Sword Might +5 (Edward's) | **PASS** | PID_EDDIE item IID_IRONSWORD: RAM +0x1c 6 -> 11 as edited | 1.0 §2 Game Data ▸ Items (RD) | 2026-11-18T14:00 |
+| K2 | GFEE01 | Critical multiplier in a real attack | **PASS** | bandit 24 HP: lost 24 with ×3 criticals, 16 with ×1 (at least (retail killed it) a third) | 1.0 §5 Game Code ⭐ (combat row) | 2026-11-18T15:49 |
+| O1 | GFEE01 | Story order: chapter 1 leads to chapter 3 | **PASS** | after chapter 2 retail goes to 3, the edited disc to 4 (story order 03 -> 04), whose map reaches its player phase | 1.0 §3 Story order (POR) | 2026-11-18T15:43 |
+| O1r | RFEE01 | Story order: 1-1 leads to 1-3 | **PASS** | after chapter 2 retail goes to 3, the edited disc to 4 (story order 0103 -> 0104), whose map reaches its player phase | 1.0 §3 Story order (RD) | 2026-11-18T15:45 |
+| P1 | GFEE01 | Portraits: a replaced picture is the face the talk window shows | **PASS** | magenta on 14.6% of the first talk window (retail 0.00%); files ['TIAMAT.cms', 'L_TIAMAT.cms'] | 1.0 §4 Portraits ⭐ (POR) | 2026-11-18T15:49 |
+| P1r | RFEE01 | Portraits: a replaced picture is the face the talk window shows (4:3 and 16:9 files) | **PASS** | magenta on 23.6% of the first talk window (retail 0.00%); files ['EDDIE.cms', 'EDDIE.cms'] | 1.0 §4 Portraits ⭐ (RD) | 2026-11-18T15:49 |
 | S1 | RFEE01 | Class, item, skill and support edits load and survive the game's save | **PASS** | in game: Light Sage, Elixir, SID_PARAGON; re-saved by the game with them and Edward support 50 (set 50) | SAVE-07; rdcheck R3 (points); 1.0 §5 Saves RD (unit item) | 2026-11-18T14:03 |
 | S2 | RFEE01 | An Iron Sword added to the convoy is kept | **PASS** | Iron Swords in the re-saved convoy: retail 0, edited 1 | SAVE-05 convoy; 1.0 §5 Saves RD ⭐ convoy | 2026-11-18T14:05 |
 | S6 | RFEE01 | Copy to new slot and Remove on the RD Units tab | **PASS** | re-saved: 2 Edward records (retail 1), 0 PID_NOYCE (removed); map: 2 Edward on the map | RD Units tab Copy/Remove | 2026-11-18T14:12 |

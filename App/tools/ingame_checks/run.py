@@ -91,15 +91,41 @@ def write_table(results: dict) -> None:
     write_lf(ROOT / "RESULTS.md", "\n".join(lines) + "\n")
 
 
+def rejudge(checks) -> None:
+    results_path = ROOT / "results.json"
+    results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else {}
+    for check in checks:
+        def load(variant):
+            path = ROOT / "out" / f"{check.id}_{variant}" / "observations.json"
+            return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+        mod, retail = load("mod"), load("retail") if check.retail else None
+        manifest = ROOT / "run" / f"{check.id}_mod" / "check.json"
+        if mod is None or not manifest.is_file():
+            print(f"{check.id}: no stored observations")
+            continue
+        facts = json.loads(manifest.read_text(encoding="utf-8"))["facts"]
+        result, details = judge(check, mod, retail, facts)
+        print(f"{check.id}: {result}: {details}", flush=True)
+        results[check.id] = {"region": check.region, "title": check.title, "covers": check.covers,
+                             "result": result, "details": details,
+                             "when": datetime.now().isoformat(timespec="minutes")}
+    write_table(results)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--set", choices=SETS, required=True)
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--no-build", action="store_true", help="reuse the run trees already built")
     parser.add_argument("--reuse-retail", action="store_true", help="reuse the retail observations if present")
+    parser.add_argument("--rejudge", action="store_true",
+                        help="judge the stored observations again (after a judge fix); no build, no Dolphin")
     args = parser.parse_args()
     module = importlib.import_module(f".checks_{args.set}", __package__)
     checks = [c for c in module.CHECKS if not args.only or c.id in args.only]
+    if args.rejudge:
+        rejudge(checks)
+        return
     if dolphin_running():
         sys.exit("Another Dolphin is running; close it first (the keys are global).")
     results_path = ROOT / "results.json"
