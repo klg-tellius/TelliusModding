@@ -787,11 +787,11 @@ class Fe10DataEditor(EditorPanel):
             ttk.Button(row, text="Give this type its own stats", command=split).pack(side="left", padx=(8, 0))
 
     def _support_editor(self, body, r: fe10data.Record) -> None:
-        ttk.Label(body, text="Partners: flag (0 or 255) and support speed", style="Strong.TLabel").pack(
+        ttk.Label(body, text="Partners: reserved marker (0 or 255) and support speed", style="Strong.TLabel").pack(
             anchor="w", pady=(4, 2))
         grid = ttk.Frame(body)
         grid.pack(anchor="w")
-        for column, title in enumerate(("Partner", "", "Flag", "Speed")):
+        for column, title in enumerate(("Partner", "", "Marker", "Speed")):
             ttk.Label(grid, text=title, style="Muted.TLabel").grid(row=0, column=column, sticky="w", padx=(0, 8))
         for k, (pid, flag, speed) in enumerate(r.lists["partners"]):
             ttk.Label(grid, text=pid or "-").grid(row=k + 1, column=0, sticky="w", padx=(0, 8))
@@ -819,7 +819,7 @@ class Fe10DataEditor(EditorPanel):
             flag_var.set(str(current[1]))
             speed_var.set(str(current[2]))
             return
-        self._replace(data, f"{r.id} / {current[0]}: support flag {flag}, speed {speed}")
+        self._replace(data, f"{r.id} / {current[0]}: support marker {flag}, speed {speed}")
 
     # -- stats per level (FE10Growth.cms) and battle scenery ----------------------------------
     def _growth_editor(self, body, r: fe10data.Record) -> None:

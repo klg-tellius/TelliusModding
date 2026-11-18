@@ -54,6 +54,17 @@ class MainWindow(tk.Tk):
         self.bind("<Control-F5>", lambda e: self._shell and self._shell.play())
         self.bind("<Alt-Left>", lambda e: self._shell and self._shell.back())
         self.bind("<Alt-Right>", lambda e: self._shell and self._shell.forward())
+        # The mouse's side buttons: Tk 8.6 on Windows reports them as buttons 4 and 5 (the
+        # scroll wheel on X11, so not bound there), Tk 8.7 and later as 8 and 9 everywhere.
+        side_buttons = (("<Button-8>", "<Button-9>"),)
+        if sys.platform == "win32":
+            side_buttons += (("<Button-4>", "<Button-5>"),)
+        for back, forward in side_buttons:
+            try:
+                self.bind_all(back, lambda e: self._mouse_history(e, "back"), add="+")
+                self.bind_all(forward, lambda e: self._mouse_history(e, "forward"), add="+")
+            except tk.TclError:  # Tk 8.6 has no button 8 or 9
+                pass
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)
         self._show_launcher()
         from ..tools import WIT_EXE
@@ -194,6 +205,18 @@ class MainWindow(tk.Tk):
         if self._shell is not None and route is not None and route != ("home",):
             self._shell.navigate(route)
 
+    def _mouse_history(self, event, direction: str) -> None:
+        """Back/forward from the mouse's side buttons, for clicks in the main window only
+        (an editor window or dialog has no page history)."""
+        if self._shell is None or getattr(event.widget, "winfo_toplevel", None) is None:
+            return
+        try:
+            if event.widget.winfo_toplevel() is not self:
+                return
+        except (tk.TclError, KeyError):
+            return
+        getattr(self._shell, direction)()
+
     def _load_project(self, directory: Path) -> None:
         if not self._confirm_leave_project():
             return
@@ -212,7 +235,14 @@ class MainWindow(tk.Tk):
         self._project = project
         config.add_recent_project(project.directory)
         self._clear_container()
-        self._shell = Shell(self._container, project, ChangeLog(), PAGE_FACTORIES,
+        changelog = ChangeLog()
+        try:  # projects made before discs edited by other tools (Paragon) were read right
+            adopted = project.adopt_system_archive() if project.has_extracted_files else []
+        except (OSError, ProjectError):
+            adopted = []
+        for name in adopted:
+            changelog.append(name, "Taken from system.cmp, the copy the game reads (the disc's loose file was older)")
+        self._shell = Shell(self._container, project, changelog, PAGE_FACTORIES,
                             on_close_project=self._close_project,
                             asset_tools=tuple((key, label) for key, label, *_rest in ASSET_TOOLS
                                               if tool_applies(project, key)))

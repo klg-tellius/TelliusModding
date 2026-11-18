@@ -2,8 +2,8 @@
 
 The statuses and the map are :mod:`fe8data_coverage`'s (``decoded``, ``plausible``, ``undecoded``,
 ``reserved``, ``padding``). The records come from :mod:`fe10data` itself, so the map follows the
-parser: a field the parser names is decoded, a field it calls ``unknown_*`` is undecoded, and the
-fields listed in ``PLAUSIBLE_FIELDS`` are named but not confirmed. Bytes no record reaches stay
+parser: explicitly reserved and padding fields receive those statuses, while fields listed in
+``PLAUSIBLE_FIELDS`` are named but not fully confirmed. Bytes no record reaches stay
 undecoded, so a gap the layouts miss shows up here. ``research/rd/FE10DATA_NOTES.md`` holds the
 field facts; ``research/rd/FE10DATA_DECODE_PLAN.md`` the work still open.
 
@@ -26,16 +26,18 @@ _SIZES = {"label": 4, "u32": 4, "f32": 4, "u16": 2, "s8": 1, "u8": 1}
 
 #: Named fields whose meaning is still a guess.
 PLAUSIBLE_FIELDS = {
-    "skill": {"capacity", "icon"},
-    "support_param": {"gain_0", "gain_0_flag", "gain_1", "gain_2", "gain_3", "gain_4", "gain_5"},
     "class": {"weight_kind_1", "weight_kind_2"},  # the kind numbers are named from the retail classes only
-    "chapter": {"move_change", "preparations"},  # class types / modes not resolved
 }
 #: Fields that only pad a record to a word (zero everywhere, a word field follows, the loader skips them).
-ALIGNMENT_FIELDS = {"character": {"unknown_t27"}, "skill": {"unknown_22", "unknown_23"},
+ALIGNMENT_FIELDS = {"character": {"padding_t27"}, "skill": {"padding_22", "padding_23"},
                     "item": {"pad_13", "pad_14", "pad_15"}}
-#: Fields the loader does not copy.
-UNREAD_FIELDS = {"character": {"unused_01"}}
+#: Fields that are skipped, or copied but zero throughout retail with no reader found.
+RESERVED_FIELDS = {
+    "character": {"unused_01", "reserved_t18"},
+    "class": {"reserved_0c"},
+    "chapter": ({f"reserved_{o:02x}" for o in (0x14, 0x18, 0x1C, 0x80)}
+                | {f"reserved_objective_{part}_{d}" for part in ("head", "gap") for d in range(3)}),
+}
 
 
 def _u32(data: bytes, offset: int) -> int:
@@ -45,7 +47,7 @@ def _u32(data: bytes, offset: int) -> int:
 def _status(kind: str, key: str) -> str:
     if key in ALIGNMENT_FIELDS.get(kind, ()):
         return PADDING
-    if key in UNREAD_FIELDS.get(kind, ()):
+    if key in RESERVED_FIELDS.get(kind, ()):
         return RESERVED
     if key.startswith("unknown"):
         return UNDECODED
@@ -83,12 +85,18 @@ def _mark_variable_tables(cov: CoverageMap, data: bytes) -> None:
             for key, labels in r.lists.items():
                 cov.mark(r.offsets[key], 4 * len(labels), DECODED, f"{kind}.{key}")
             if kind == "class":  # +13..+15 of the fixed block, skipped by the loader
-                _pad(cov, r.offsets["unknown_0c"] + 1, fe10data.CLASS_FIXED_PADDING, "class.pad")
-            if kind == "item" and r.bonuses is not None:
+                _pad(cov, r.offsets["reserved_0c"] + 1, fe10data.CLASS_FIXED_PADDING, "class.pad")
+            if kind == "item":
                 at = r.offsets["bonuses"]
-                cov.mark(at, len(fe10data.BONUS_NAMES), DECODED, "item.bonuses")
-                _pad(cov, at + len(fe10data.BONUS_NAMES),
-                     fe10data._bonus_blocks_size(1) - len(fe10data.BONUS_NAMES), "item.bonuses_pad")
+                if r.bonuses is not None:
+                    cov.mark(at, fe10data.BONUS_BLOCK_SIZE, DECODED, "item.bonuses")
+                    at += fe10data.BONUS_BLOCK_SIZE
+                if r.item_extra is not None:
+                    cov.mark(at, fe10data.ITEM_EXTRA_BLOCK_SIZE, UNDECODED, "item.opaque_extension")
+                    at += fe10data.ITEM_EXTRA_BLOCK_SIZE
+                payload = ((fe10data.BONUS_BLOCK_SIZE if r.bonuses is not None else 0)
+                           + (fe10data.ITEM_EXTRA_BLOCK_SIZE if r.item_extra is not None else 0))
+                _pad(cov, at, -payload % 4, "item.optional_pad")
 
 
 def _mark_skills(cov: CoverageMap, data: bytes) -> None:
@@ -114,8 +122,8 @@ def _mark_fixed_tables(cov: CoverageMap, data: bytes) -> None:
             _mark_count(cov, data, kind)
         for r in fe10data.read_table(data, kind):
             _mark_record(cov, r, defs)
-            if kind == "difficulty" and r.index in (10, 11):  # no getter found for these two rows
-                cov.mark(r.start, table.size, UNDECODED, "difficulty.row_without_reader")
+            if kind == "difficulty" and r.index in (10, 11):  # no accessor or reader exists
+                cov.mark(r.start, table.size, RESERVED, "difficulty.reserved_row")
             if kind == "terrain":
                 cov.mark(r.start + 0x0C, 4, DECODED, "terrain.block")
             own = [d for d in table.fields if kind != "terrain" or d.key not in fe10data.TERRAIN_FIELDS]
@@ -172,7 +180,9 @@ def _mark_supports(cov: CoverageMap, data: bytes) -> None:
         cov.mark(r.start, 8, DECODED, "support.header")
         for i in range(len(r.lists["partners"])):
             at = r.start + 8 + fe10data.SUPPORT_ENTRY_SIZE * i
-            cov.mark(at, 6, DECODED, "support.entry")
+            cov.mark(at, 4, DECODED, "support.partner")
+            cov.mark(at + 4, 1, RESERVED, "support.reserved_marker")
+            cov.mark(at + 5, 1, DECODED, "support.growth_speed")
             _pad(cov, at + 6, 2, "support.entry_pad")
 
 

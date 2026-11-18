@@ -57,7 +57,7 @@ The compiled bytecode driving a chapter — setup, cutscene triggers, win/lose c
   </tbody></table>
 </div>
 
-  The name, when present, follows the parameters (NUL-terminated, padded to 4); the code follows, padded with 1 to 4 bytes to the next 4-byte boundary. Padding and the unused byte are never read, and a few chapters hold leftover non-zero values there. A named function is registered globally when its script loads, so any loaded script can call it by that name.
+  The name, when present, follows the parameters (NUL-terminated, padded to 4); the code follows, padded with 1 to 4 bytes to the next 4-byte boundary. Padding and the unused byte are never read, and a few chapters hold leftover non-zero values there. Scripts edited in place by other tools can carry more: a function whose code got shorter keeps its old room, as zeros or as the tail of its old code, so the code ends at the first `push8 0; return` that no earlier branch jumps past. A named function is registered globally when its script loads, so any loaded script can call it by that name.
 
 ## Trigger types
 

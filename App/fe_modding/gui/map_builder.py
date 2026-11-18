@@ -1486,10 +1486,12 @@ class MapBuilder(EditorPanel):
         return out.get("index")
 
     def edit_instance(self, index: int, desc: int | None = None, tile=None, angle: int | None = None,
-                      height: float | None = None, rect=None) -> bool:
+                      height: float | None = None, rect=None, mirror_x: bool | None = None,
+                      sub_offset=None) -> bool:
         """Change placed object ``index`` (from the Objects window): its object,
         tile (moving keeps its height above the ground), angle (recomputing
-        the covered tiles), height, covered-tiles rectangle - in that order."""
+        the covered tiles), height, covered-tiles rectangle, and RFEE01
+        mirror/sub-tile controls - in that order."""
         from .. import map_props
 
         def op(files):
@@ -1507,10 +1509,16 @@ class MapBuilder(EditorPanel):
             if rect is not None:
                 for field, value in zip(("x2", "y2", "end_x2", "end_y2"), rect):
                     files["map.bin"] = map_file.patch_build_inst_field(files["map.bin"], current(), field, value)
+            if mirror_x is not None:
+                files["map.bin"] = map_file.patch_build_inst_mirror_x(files["map.bin"], current(), mirror_x)
+            if sub_offset is not None:
+                for field, value in zip(("offset_x", "offset_y"), sub_offset):
+                    files["map.bin"] = map_file.patch_build_inst_field(files["map.bin"], current(), field, value)
             return index
 
         what = ", ".join(k for k, v in (("object", desc), ("tile", tile), ("angle", angle), ("height", height),
-                                         ("covered tiles", rect)) if v is not None)
+                                         ("covered tiles", rect), ("X mirror", mirror_x),
+                                         ("sub-tile offset", sub_offset)) if v is not None)
         return self._prop_edit(op, f"Edited instance {index} ({what})", index) is not False
 
     def add_instance(self, name: str, x: int, y: int, angle: int) -> None:

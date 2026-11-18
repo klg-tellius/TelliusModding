@@ -75,9 +75,24 @@ def profile(game: Game):
     return get_profile(game)
 
 
-def read_disc_id(disc_dir: Path | str) -> str:
+#: The retail disc IDs: game (G = Path of Radiance, R = Radiant Dawn), ``FE``, region, maker code.
+RETAIL_DISC_IDS = ("GFEE01", "GFEP01", "GFEJ01", "RFEE01", "RFEP01", "RFEJ01")
+
+
+def retail_disc_id(disc_id: str) -> str:
+    """The retail build a disc ID stands for. Hacks sometimes change the two-character maker code
+    at the end (Four Riders ships as ``GFEE02``); the executable is still the US one. Such an ID
+    maps to the retail ID with the same first four characters; any other ID comes back unchanged."""
+    for retail in RETAIL_DISC_IDS:
+        if disc_id[:4].upper() == retail[:4]:
+            return retail
+    return disc_id
+
+
+def read_disc_id(disc_dir: Path | str, *, raw: bool = False) -> str:
     """The six-character disc ID (``GFEE01``, ``RFEE01``...) from ``sys/boot.bin`` of an extracted
-    disc, or ``""`` when it is missing or too short."""
+    disc, or ``""`` when it is missing or too short. Read as its retail build
+    (:func:`retail_disc_id`) unless ``raw``."""
     from .game_files import as_path
     boot = as_path(disc_dir) / "sys" / "boot.bin"
     try:
@@ -85,7 +100,10 @@ def read_disc_id(disc_dir: Path | str) -> str:
             header = f.read(6)
     except OSError:
         return ""
-    return header.decode("ascii", "replace") if len(header) == 6 else ""
+    if len(header) != 6:
+        return ""
+    disc_id = header.decode("ascii", "replace")
+    return disc_id if raw else retail_disc_id(disc_id)
 
 
 def detect_from_extracted(disc_dir: Path | str) -> Optional[Game]:

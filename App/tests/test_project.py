@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.exceptions import ProjectError
-from fe_modding.formats import lz10
+from fe_modding.formats import gcdisc, lz10, pak
 from fe_modding.games import Game
 from fe_modding.project import PROJECT_SUBDIRS, ModProject, sanitize_folder_name
 
@@ -133,6 +133,49 @@ class LogicalFileTests(unittest.TestCase):
         self.assertIn("Radiant Dawn", warning)
         boot.write_bytes(b"SOUE01\x00\x01" + bytes(0x438))
         self.assertIn("SOUE01", rd.disc_mismatch_warning())
+
+    def test_hack_maker_code_reads_as_its_retail_build(self):
+        # Four Riders ships as GFEE02: a US disc whose maker code was changed
+        from fe_modding.games import read_disc_id, retail_disc_id
+        from fe_modding.game_code.versions import read_boot_code
+        self.assertEqual(retail_disc_id("GFEE02"), "GFEE01")
+        self.assertEqual(retail_disc_id("RFEP99"), "RFEP01")
+        self.assertEqual(retail_disc_id("SOUE01"), "SOUE01")
+        project = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
+        boot = project.extracted_dir / "sys" / "boot.bin"
+        boot.parent.mkdir(parents=True)
+        boot.write_bytes(b"GFEE02\x00\x00" + bytes(0x438))
+        self.assertEqual(read_disc_id(project.extracted_dir), "GFEE01")
+        self.assertEqual(read_disc_id(project.extracted_dir, raw=True), "GFEE02")
+        self.assertEqual(read_boot_code(project.extracted_dir), "GFEE01")
+        self.assertIsNone(project.disc_mismatch_warning())
+
+    def test_fst_names_that_are_not_shift_jis(self):
+        # Four Riders' fst.bin has "\xef\xbd\x86lowerpot_01.gmap.cmp" (UTF-8 full-width f);
+        # WIT extracts it byte for byte as Latin-1, and building must give the same bytes back
+        raw = b"\xef\xbd\x86lowerpot_01.gmap.cmp"
+        name = gcdisc.decode_fst_name(raw)
+        self.assertEqual(name, raw.decode("latin-1"))
+        self.assertEqual(gcdisc.encode_fst_name(name), raw)
+        self.assertEqual(gcdisc.decode_fst_name(b"bmap01.cmp"), "bmap01.cmp")
+
+    def test_system_archive_copies_win_over_stale_loose_files(self):
+        # Paragon edits system.cmp's FE8Data.bin and leaves the loose one as it was
+        project = ModProject.create(self.parent, "PoR", Game.PATH_OF_RADIANCE)
+        files = project.extracted_dir / "files"
+        (files / "mess").mkdir(parents=True)
+        (files / "FE8Data.bin").write_bytes(b"vanilla data")
+        (files / "mess" / "common.m").write_bytes(b"same text")
+        archive = pak.pack_pak([("FE8Data.bin", b"modded data"), ("mess/common.m", b"same text")], [0, 0])
+        (files / "system.cmp").write_bytes(lz10.compress(archive))
+        self.assertEqual(project.adopt_system_archive(), ["FE8Data.bin"])
+        self.assertEqual(project.read_logical("game_data"), b"modded data")
+        self.assertEqual(project.adopt_system_archive(), [])
+        self.assertEqual(project.sync_system_archive(), [], "building leaves the mod's data as it is")
+        # a loose file the project edited is newer than the archive's copy and stays
+        project.write_logical("game_data", b"my edit")
+        self.assertEqual(project.adopt_system_archive(), [])
+        self.assertEqual(project.read_logical("game_data"), b"my edit")
 
     def test_source_mismatch_warning_reads_the_image_header(self):
         project = ModProject.create(self.parent, "RD", Game.RADIANT_DAWN)

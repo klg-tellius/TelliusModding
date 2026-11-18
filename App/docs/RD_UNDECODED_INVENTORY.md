@@ -48,8 +48,8 @@ Priority is based on corruption/editing risk first, then user-visible coverage.
 
 | ID | Status | Owner | Open evidence | Closure route | Exit test |
 |---|---|---|---|---|---|
-| MAP-01 | semantic-unknown | `map_file.py`, `MAP_NOTES.md` | All three sections now have lossless typed readers/writers: fixed 32-byte light, fixed 12-byte fog, and shader's 16-byte header plus counted four-byte entries; several field roles remain neutral | Trace the RFEE01 map loader and renderer consumers | Semantic names plus controlled Dolphin scenes for lighting, fog and shader entries |
-| MAP-02 | verification-gap | `map_file.py`, `MAP_NOTES.md` | Runtime tracing resolved +0x1C..1F as map-wrap enable/X/Y step/duration, +0x20 as an affinity-name pointer (`invalid` on every v4 retail map), and +0x24 as a terrain-height ceiling; typed parser fields and corpus validation are complete | Run controlled wrap, ceiling and affinity mutations in Dolphin | Controlled scenes confirm the traced semantics; semantic/runtime tracing is complete |
+| MAP-01 | verification-gap | `map_file.py`, `MAP_NOTES.md` | `maplight`, `mapfog` and versioned `mapshader` now have typed readers, patch-in-place writers and Map Settings controls. Loader tracing establishes every boundary and runtime destination; a few shader controls retain offset-based names where their exact visual role is narrower than the evidence | Run controlled lighting, fog, base-pass and water-pass mutations in Dolphin | Recorded scenes match the typed controls; remaining offset-based shader names are either refined or explicitly retained as low-level controls |
+| MAP-02 | verification-gap | `map_file.py`, `MAP_NOTES.md` | Runtime tracing resolved +0x1C..1F as map-wrap enable/X/Y step/duration, +0x20 as an affinity-name pointer (`invalid` on every v4 retail map), and +0x24 as a terrain-height ceiling. Versions 2/3/4 now parse as exact 32/36/40-byte records; scalar controls are editable and the pointer is read-only | Run controlled wrap and ceiling mutations in Dolphin | Controlled scenes confirm the traced semantics; semantic/runtime tracing is complete |
 | MAP-03 | verification-gap | `map_file.py`, `MAP_NOTES.md` | The typed runtime reader proves +0x00 bit 0 is X mirroring, +0x04/+0x05 are signed 1/64-tile offsets, and +0x10 is loader-skipped reserved data; parser accessors, patch fields and transform math are implemented | Exercise mirror/sub-offset edits in Dolphin | Controlled mutation scenes match the app transform; semantic/runtime tracing is complete |
 | MAP-04 | verification-gap | `map_file.py`, `map_props.py`, `MAP_NOTES.md` | Every flag is classified: 20 retail-active bits have exact constructor/update consumers, three non-retail bits have dormant executable paths, and nine bits are ignored/legacy; hidden bits remain preserved | Run targeted mutation scenes for animation, render-priority, bounds, house, marker, roof and door controls | Recorded Dolphin scenes match the 20 traced controls |
 
@@ -84,6 +84,25 @@ Priority is based on corruption/editing risk first, then user-visible coverage.
 - Completed the full constructor/update matrix. A0/A3-A6, B0-B2, C5/C6 and effect E5/E7 now have
   exact runtime roles. A1/A2/E6 have dormant executable consumers but no retail carriers; A7,
   B3-B5, C0, C7, E0, E2 and E3 have no effective RFEE01 reader and remain preserved.
+
+### 2026-11-04 map-environment milestone
+
+- Implemented RFEE01's fixed 32-byte `maplight`: its signed direction vector and all four selectable
+  model/light RGB pairs are editable, while the skipped prefix remains untouched.
+- Implemented the 12-byte `mapfog` with unsigned start/end distances at the RFEE01 offsets; its
+  skipped prefix and four-byte tail remain preserved.
+- Implemented `mapshader` versions 0/1/2 as 16/20/24-byte records, including the scaled controls,
+  primary/secondary colours and dormant version-2 object override. Map Settings exposes the traced
+  material controls without pretending offset-only renderer roles are more specific than proven.
+- All 128 extracted RFEE01 maps satisfy exact section-size/version checks and same-value identity
+  writes for light, fog and shader. Targeted edits change only their intended bytes.
+- Added `RdMapParameters` for mapdata versions 2-4. Map Settings now exposes wrap enable/steps/
+  duration and the v4 terrain-height ceiling, displays the resolved affinity name without rewriting
+  its pointer, and preserves all version-specific bytes. The 128-map corpus validates exact
+  32/36/40-byte sizes and identity patches.
+- Completed the RFEE01 placement path: Map Objects exposes X mirroring and signed 1/64-tile X/Y
+  offsets, known-bit writes preserve the rest of the lead byte, and previews, terrain-height work
+  and GLB export use the descriptor-footprint mirror/fractional transform.
 
 ## P2 — FE10Data semantics
 

@@ -228,6 +228,19 @@ class BinaryRoundTripTests(unittest.TestCase):
         self.assertEqual(again.functions[0].raw_code_pad, b"\x00\x39\x07")
         self.assertEqual(write_cmb(again), bytes(data))
 
+    def test_room_left_by_another_tool(self):
+        # Four Riders (edited with Paragon): a shortened function keeps its old room, as zeros
+        # (C09) or as what is left of the old code (C19), well past the compiler's 1-4 bytes
+        data = write_cmb(compile_source("def f():\n    Foo()\n").script)
+        code_end = data.rindex(bytes([0x19, 0x00, 0x39])) + 3  # the only function's code ends the file
+        for leftover in (bytes(40), b"\x00\x03\x9c\x00\x00\x00"):
+            stretched = data[:code_end] + leftover
+            again = read_cmb(stretched)
+            self.assertEqual(listing(again.functions[0])[-2:], EPILOGUE)
+            self.assertEqual(again.functions[0].raw_code_pad, leftover)
+            self.assertEqual(decompile(again)[0], decompile(read_cmb(data))[0])
+            self.assertEqual(write_cmb(again), data, "written back with the compiler's padding")
+
     def test_adding_code_relayouts_file(self):
         data = write_cmb(compile_source(self.SOURCE).script)
         script = read_cmb(data)

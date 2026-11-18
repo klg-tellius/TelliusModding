@@ -11,7 +11,8 @@ one ``mapbuilddesc`` record and placed by ``mapbuildinst`` records.
 - ``mapbuildinst`` holds the tile, an angle byte (``degrees = 360 - angle *
   360 / 256``), the tiles the object covers after rotation, and a height
   float (``pos_y = -5 * height``); :func:`place_prop` sets the height to the
-  terrain surface at the tile centre, as vanilla props sit.
+  surface units stand on at the tile (its ground panel layer: the terrain,
+  or a ship's or bridge's deck), as vanilla props sit.
 
 A prop does not change what its tiles are for movement: the tiles' terrain
 types (``map_file.set_tile_terrains``) do.
@@ -319,15 +320,35 @@ def tile_heights(files: dict[str, bytes], data: map_file.MapData, tiles) -> list
     return [0.0 if np.isnan(s) else -s / map_heights.TILE_SIZE for s in surfaces]
 
 
+def standing_heights(files: dict[str, bytes], data: map_file.MapData, tiles) -> list[float]:
+    """The instance height value of the surface units stand on at each tile ``(x, y)``: the
+    middle of the tile's ground panel layer (``uniquepanelBase``), which is the terrain or the
+    deck of a ship or bridge over it and is what tile height edits change; the terrain mesh
+    (:func:`tile_heights`) where the map has no ground layer for the tile. On a ship the mesh
+    under the tile is the sea floor, so a prop put there by mesh height ends up under the deck
+    (bmap13's ship: ground layer and deck both at 16.1, mesh -6 to -14)."""
+    tiles = list(tiles)
+    mesh = tile_heights(files, data, tiles)
+    out = []
+    for tile, fallback in zip(tiles, mesh):
+        corners = map_heights.tile_corners(data, tile).get("ground")
+        if corners is None:
+            out.append(fallback)
+        else:
+            surface = sum(corners) / 4 / map_heights.ELEVATION_PER_UNIT
+            out.append(-surface / map_heights.TILE_SIZE)
+    return out
+
+
 def place_prop(files: dict[str, bytes], name: str, x: int, y: int, angle: int = 0) -> int:
     """Add an instance of prop ``name`` on tile ``(x, y)`` (placement
-    coordinates, the same as the map's tile grid) at the terrain height of
-    the tile centre. Returns the new instance's index."""
+    coordinates, the same as the map's tile grid) on the surface units stand
+    on there (:func:`standing_heights`). Returns the new instance's index."""
     data = map_file.read_map_bytes(files["map.bin"])
     index = next((i for i, o in enumerate(data.build_desc) if o.filename == name), None)
     if index is None:
         raise map_file.MapFileError(f"No object {name!r} on this map.")
-    (height,) = tile_heights(files, data, [(x, y)])
+    (height,) = standing_heights(files, data, [(x, y)])
     records = map_file.instance_records(files["map.bin"])
     records.append(map_file.instance_record(data.build_desc[index], index, x, y, angle, height))
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
@@ -341,7 +362,7 @@ def move_instance(files: dict[str, bytes], index: int, x: int, y: int) -> None:
     data = map_file.read_map_bytes(files["map.bin"])
     inst = data.build_inst[index]
     dx, dy = x - inst.x, y - inst.y
-    old_ground, new_ground = tile_heights(files, data, [(inst.x, inst.y), (x, y)])
+    old_ground, new_ground = standing_heights(files, data, [(inst.x, inst.y), (x, y)])
     height = inst.height() + new_ground - old_ground
     records = map_file.instance_records(files["map.bin"])
     records[index] = struct.pack(
@@ -839,11 +860,25 @@ _RD_MAP_ROLE = ("flag_bits_a", "Map role", (
 RD_PROP_FLAG_GROUPS = (_RD_MAP_ROLE, *PROP_FLAG_GROUPS[1:])
 
 
-def prop_flag_groups(data=None) -> tuple:
-    """The object-flag groups for a map: Radiant Dawn's when its records carry footprints."""
-    if data is not None and getattr(getattr(data, "layout", None), "game", "fe9") == "fe10":
-        return RD_PROP_FLAG_GROUPS
-    return PROP_FLAG_GROUPS
+def prop_flag_groups(game=None, *, data=None) -> tuple:
+    """The object-flag groups for a map: Radiant Dawn's for an RD map (``data``, a parsed map) or game
+    (``game``: a layout name ``"fe9"``/``"fe10"``, a :class:`MapLayout` or the project's ``Game``)."""
+    if data is None and hasattr(game, "layout"):  # a parsed map passed by position
+        data = game
+    if data is not None:
+        game = getattr(data, "layout", None)
+    value = getattr(game, "game", game)
+    value = getattr(value, "value", value)
+    return RD_PROP_FLAG_GROUPS if value in ("fe10", "radiant_dawn") else PROP_FLAG_GROUPS
+
+
+def merge_prop_flag_toggles(obj: map_file.MapObject, toggles) -> dict[str, int]:
+    """Apply ``(field, mask, enabled)`` controls without clearing the bits no control shows."""
+    values: dict[str, int] = {}
+    for field, mask, enabled in toggles:
+        value = values.setdefault(field, getattr(obj, field))
+        values[field] = value | mask if enabled else value & ~mask
+    return values
 
 
 #: Flat compatibility view used by editors and third-party callers.

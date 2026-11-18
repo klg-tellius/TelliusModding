@@ -188,7 +188,9 @@ class ConversationAssets:
         if index in self._colors:
             return self._colors[index]
         boot = self.files.parent / 'sys/boot.bin'
+        from ..games import retail_disc_id
         game_id = boot.read_bytes()[:6] if boot.is_file() else b'GFEE01'
+        game_id = retail_disc_id(game_id.decode('ascii', 'replace')).encode('ascii', 'replace')
         if game_id not in _TEXT_PALETTE:
             raise ValueError(f"No text color palette address for {game_id.decode('ascii', 'replace')}")
         path = self.files.parent / 'sys/main.dol'

@@ -111,6 +111,17 @@ class RetailFe10DataTests(unittest.TestCase):
         self.assertIn((1, "JID_PRIEST"), skills["SID_PARITY"].lists["conditions"])
         self.assertIn((0, "SFXC_HUMAN"), skills["SID_PARITY"].lists["requirements"])
 
+    def test_reserved_and_padding_fields_match_the_retail_corpus(self):
+        self.assertEqual({r.values["reserved_t18"] for r in self.db.characters}, {0})
+        self.assertEqual({r.values["reserved_0c"] for r in self.db.classes}, {0})
+        self.assertEqual({r.values["padding_22"] for r in self.db.skills}, {0})
+        self.assertEqual({r.values["padding_23"] for r in self.db.skills}, {0})
+        self.assertTrue(all(r.item_extra is None for r in self.db.items))
+        chapter_reserved = ({f"reserved_{o:02x}" for o in (0x14, 0x18, 0x1C, 0x80)}
+                            | {f"reserved_objective_{part}_{d}"
+                               for part in ("head", "gap") for d in range(3)})
+        self.assertTrue(all(r.values[key] == 0 for r in self.db.table("chapter") for key in chapter_reserved))
+
     def test_field_edit(self):
         out = fe10data.patch_field(self.data, "character", 0, "level", 20)
         out = fe10data.patch_field(out, "character", 0, "bonus_str", -3)
@@ -151,6 +162,20 @@ class RetailFe10DataTests(unittest.TestCase):
         self._ends_match(out, fe10data.read_fe10data(out))
         self.assertEqual(fe10data.set_item_bonuses(out, iron, None), self.data)
 
+    def test_opaque_item_extension_round_trips_with_and_without_bonuses(self):
+        iron = next(r.index for r in self.db.items if r.id == "IID_IRONSWORD")
+        payload = bytes.fromhex("0123456789abcdef")
+        extended = fe10data.set_item_extra(self.data, iron, payload)
+        record = fe10data.record(extended, "item", iron)
+        self.assertEqual(record.item_extra, payload)
+        self.assertEqual(record.values["bonus_count"], 2)
+        with_bonus = fe10data.set_item_bonuses(extended, iron, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        record = fe10data.record(with_bonus, "item", iron)
+        self.assertEqual((record.bonuses, record.item_extra), ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], payload))
+        self.assertEqual(record.values["bonus_count"], 3)
+        self.assertEqual(fe10data.set_item_extra(fe10data.set_item_bonuses(with_bonus, iron, None), iron, None),
+                         self.data)
+
     def test_skill_condition_list_is_rewritten_and_relisted(self):
         parity = next(r for r in self.db.skills if r.id == "SID_PARITY")
         wanted = parity.lists["conditions"] + [(1, "PID_IKE")]
@@ -188,7 +213,8 @@ class RetailFe10DataTests(unittest.TestCase):
             "Action EXP multiplier (%)", "Second-tier effective-level adjustment",
             "Third-tier effective-level adjustment", "Animalize effective-level adjustment",
             "Boss target kill EXP bonus", "Steal-skill target kill EXP bonus",
-            "Weapon EXP multiplier (%)", "Row 11 (no reader found)", "Row 12 (no reader found)",
+            "Weapon EXP multiplier (%)", "Reserved row 11 (no accessor or reader found)",
+            "Reserved row 12 (no accessor or reader found)",
             "Critical bonus with SID_CRITRISE",
         ))
         self.assertEqual(len(self.db.table("difficulty")), len(fe10data.DIFFICULTY_ROW_NAMES))
@@ -296,10 +322,9 @@ class RetailFe10DataTests(unittest.TestCase):
                 counts[status] += n
         self.assertEqual(sum(counts.values()), len(self.data))
         self.assertNotIn("", cov.section)
-        # the open bytes are the unknown_* fields and the few ranges FE10DATA_DECODE_PLAN.md lists
-        loose = {(s.section, s.name) for s in cov.undecoded_ranges()
-                 if "unknown_" not in s.name and not s.name.startswith("chapter.+")}
-        self.assertEqual(loose, {("GameData", "difficulty.row_without_reader")})
+        # Every range reached by the retail schemas is now classified.
+        loose = {(s.section, s.name) for s in cov.undecoded_ranges() if "unknown_" not in s.name}
+        self.assertEqual(loose, set())
         self.assertEqual(fe10data_coverage.unreferenced_strings(cov), [])
 
     def test_retail_database_has_no_errors(self):

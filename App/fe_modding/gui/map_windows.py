@@ -132,6 +132,7 @@ class MapObjectsWindow(_Window):
         self._syncing = False
         self._rows: dict[str, int] = {}
         self._vars: dict[str, tk.StringVar] = {}
+        self._mirror_var: tk.BooleanVar | None = None
         self._shown: int | None = None
 
         bar = ttk.Frame(self, padding=(8, 8, 8, 4))
@@ -241,6 +242,7 @@ class MapObjectsWindow(_Window):
         for child in self._form.winfo_children():
             child.destroy()
         self._vars = {}
+        self._mirror_var = None
         self._shown = index
         data = self.map.map_data
         if data is None or index is None or index >= len(data.build_inst):
@@ -274,16 +276,27 @@ class MapObjectsWindow(_Window):
         field(7, "From y", "y2", str(inst.y2))
         field(8, "To x", "end_x2", str(inst.end_x2))
         field(9, "To y", "end_y2", str(inst.end_y2))
+        is_rd = data.layout.inst_size == 20
+        if is_rd:
+            ttk.Label(grid, text="Radiant Dawn placement", style="Muted.TLabel").grid(
+                row=10, column=0, columnspan=2, sticky="w", pady=(10, 0))
+            self._mirror_var = tk.BooleanVar(value=inst.mirror_x)
+            ttk.Checkbutton(grid, text="Mirror model in X", variable=self._mirror_var).grid(
+                row=11, column=0, columnspan=2, sticky="w", pady=3)
+            field(12, "Sub-tile x (1/64)", "offset_x", str(inst.offset_x), width=8)
+            field(13, "Sub-tile y (1/64)", "offset_y", str(inst.offset_y), width=8)
 
         ground = None
         cap = data.capacity
         if cap is not None and 0 <= inst.x < cap.x_size and 0 <= inst.y < cap.y_size:
             try:
-                (ground,) = map_props.tile_heights(self.map.pak_contents, data, [(inst.x, inst.y)])
+                (ground,) = map_props.standing_heights(self.map.pak_contents, data, [(inst.x, inst.y)])
             except Exception:  # noqa: BLE001 - no terrain model: no ground hint
                 ground = None
         hint = ("Height is the game's value (the model sits at -5 × height). "
                 "Moving keeps the object's height above the ground; turning recomputes the covered tiles.")
+        if is_rd:
+            hint += " Sub-tile offsets are whole numbers from -128 to 127, in 1/64 of a tile."
         if ground is not None:
             hint += f" The ground at this tile is {round(ground, 4) + 0.0:g}."
         ttk.Label(self._form, text=hint, style="Muted.TLabel", wraplength=320, justify="left").grid(
@@ -332,7 +345,7 @@ class MapObjectsWindow(_Window):
             ttk.Label(frame, text="Object flags are not editable for this unverified map layout.",
                       style="Muted.TLabel").grid(row=1, column=0, sticky="w")
         info(frame, "These flags belong to the object definition and affect every placement. "
-                    "Every bit has its own control; reserved and ignored bits should normally be preserved. "
+                    "Bits without a control are kept as they are. "
                     "The footprint test also depends on map flags and runtime state.").grid(
             row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
@@ -340,10 +353,8 @@ class MapObjectsWindow(_Window):
             if not self.map.object_flags_editable:
                 return
             try:
-                values = {field: 0 for field, _title, _controls in groups}
-                for field, mask, var in checks:
-                    if var.get():
-                        values[field] |= mask
+                values = map_props.merge_prop_flag_toggles(
+                    obj, ((field, mask, var.get()) for field, mask, var in checks))
                 changed = {field: value for field, value in values.items() if value != getattr(obj, field)}
                 if changed:
                     def edit(files):
@@ -378,10 +389,15 @@ class MapObjectsWindow(_Window):
             angle = parse_angle(self._vars["angle"].get())
             height = float(self._vars["height"].get())
             rect = tuple(int(self._vars[k].get()) for k in ("x2", "y2", "end_x2", "end_y2"))
+            is_rd = data.layout.inst_size == 20
+            sub_offset = ((int(self._vars["offset_x"].get()), int(self._vars["offset_y"].get()))
+                          if is_rd else None)
             if not 0 <= desc < len(data.build_desc):
                 raise ValueError(f"There is no object {desc}.")
             if any(not -128 <= v <= 127 for v in (x, y, *rect)):
                 raise ValueError("Tile coordinates are whole numbers from -128 to 127.")
+            if sub_offset is not None and any(not -128 <= v <= 127 for v in sub_offset):
+                raise ValueError("Sub-tile offsets are whole numbers from -128 to 127.")
         except (ValueError, IndexError) as exc:
             messagebox.showerror("Objects", str(exc), parent=self)
             return
@@ -396,6 +412,10 @@ class MapObjectsWindow(_Window):
             changes["height"] = height
         if rect != (inst.x2, inst.y2, inst.end_x2, inst.end_y2):
             changes["rect"] = rect
+        if is_rd and self._mirror_var is not None and self._mirror_var.get() != inst.mirror_x:
+            changes["mirror_x"] = self._mirror_var.get()
+        if sub_offset is not None and sub_offset != (inst.offset_x, inst.offset_y):
+            changes["sub_offset"] = sub_offset
         if changes:
             self.builder.edit_instance(index, **changes)
 
@@ -511,6 +531,7 @@ MAP_FLAG_BITS = (
 )
 SECTION_HELP = {
     "grid": "The tactical grid: the playable area and how its lines are drawn.",
+    "rd": "Radiant Dawn's own map values: map wrapping and the highest terrain height the game uses.",
     "light": "The directional light on the map's models.",
     "fog": "Distance fog: the map fades into this colour away from the camera. Scripts can change it "
            "during the chapter (SetFog).",
@@ -633,6 +654,25 @@ class MapSettingsForm(ttk.Frame):
         if data.grid is not None:
             row = self._colour_row(row, "grid", data.grid, "Line colour", ("red", "green", "blue"),
                                    "Colour of the grid lines (their strength is set by scripts with SetGrid).")
+        if data.rd is not None and data.rd.version >= 3:
+            rd = data.rd
+            row = self._section(row, "rd", "Map wrapping and height")
+            self._check(row, 0, "rd:wrap_enabled", "Map wrapping", bool(rd.wrap_enabled),
+                        "Turns on the scrolling (wrapped) map: its terrain lookup and its moving drawing pass.")
+            self._number(row, 2, "rd:wrap_duration", "Transition", rd.wrap_duration,
+                         "Frames the map takes to slide to a new wrap offset.", "frames")
+            row += 1
+            self._number(row, 0, "rd:wrap_step_x", "Wrap X step", rd.wrap_step_x,
+                         "Signed X offset the wrapping slides to.")
+            self._number(row, 2, "rd:wrap_step_y", "Wrap Y step", rd.wrap_step_y,
+                         "Signed Y offset the wrapping slides to.")
+            row += 1
+            if rd.version >= 4:
+                self._number(row, 0, "rd:terrain_height_ceiling", "Height ceiling", f"{rd.terrain_height_ceiling:g}",
+                             "Terrain heights above this value are read as this value.")
+                ttk.Label(self, text=f"Affinity: {rd.affinity_name or 'none'} (kept as it is)",
+                          style="Muted.TLabel").grid(row=row, column=2, columnspan=4, sticky="w", padx=(14, 0))
+                row += 1
         if isinstance(data.light, map_file.RdMapLight):
             row = self._section(row, "light", "Lighting")
             light = data.light
@@ -863,11 +903,13 @@ class MapSettingsForm(ttk.Frame):
     def _undoable(self, action) -> None:
         self.builder.run_undoable(action)
 
-    def _value(self, key: str) -> int:
+    def _value(self, key: str) -> int | float:
         var = self._vars[key]
         if isinstance(var, tk.BooleanVar):
             return int(var.get())
         text = var.get().strip()
+        if key == "rd:terrain_height_ceiling":
+            return float(text)
         return int(text.split(" ·", 1)[0], 0)
 
     def _radiant_dawn(self) -> bool:
@@ -887,7 +929,7 @@ class MapSettingsForm(ttk.Frame):
         data = self.map.map_data
         if data is None:
             return
-        patches = {"light": map_file.patch_light_field, "fog": map_file.patch_fog_field,
+        patches = {"rd": map_file.patch_rd_map_field, "light": map_file.patch_light_field, "fog": map_file.patch_fog_field,
                    "grid": map_file.patch_grid_field, "extra": map_file.patch_extra_field,
                    "shader": map_file.patch_shader_field}
         pending = []

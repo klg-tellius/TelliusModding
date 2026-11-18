@@ -288,6 +288,7 @@ class MapObjectsPanel(EditorPanel):
                   "choose Place prop and Add from another map...").pack(side="left", padx=(10, 0))
         self._form = ttk.LabelFrame(self, text="Object definition (affects every placement of it on the map)", padding=8)
         self._form.pack(side="bottom", fill="x", pady=(8, 0))
+        self._flag_groups = map_props.prop_flag_groups(project.game)
         self._build_form(self._form)
         self.browser = PropBrowser(self, project, on_select=self._selected)
         self.browser.pack(fill="both", expand=True)
@@ -303,7 +304,7 @@ class MapObjectsPanel(EditorPanel):
         self._toggles = []
         flags = ttk.Frame(frame)
         flags.grid(row=0, column=5, rowspan=5, sticky="nw", padx=(18, 0))
-        for column, (field, title, controls) in enumerate(map_props.PROP_FLAG_GROUPS):
+        for column, (field, title, controls) in enumerate(self._flag_groups):
             group = ttk.LabelFrame(flags, text=title, padding=5)
             group.grid(row=0, column=column, sticky="nw", padx=(0, 6))
             for row, (mask, label) in enumerate(controls):
@@ -351,11 +352,8 @@ class MapObjectsPanel(EditorPanel):
         for key in map_props.PROP_FIELDS[:6]:
             text = self._vars[key].get().strip()
             values[key] = float(text)
-        for field, _title, _controls in map_props.PROP_FLAG_GROUPS:
-            values[field] = 0
-        for field, mask, var in self._toggles:
-            if var.get():
-                values[field] |= mask
+        values.update(map_props.merge_prop_flag_toggles(
+            obj, ((field, mask, var.get()) for field, mask, var in self._toggles)))
         return {k: v for k, v in values.items() if v != getattr(obj, k)}
 
     def _apply(self) -> None:

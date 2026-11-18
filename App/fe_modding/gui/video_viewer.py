@@ -43,6 +43,7 @@ import shutil
 import struct
 import tempfile
 import threading
+import time
 import tkinter as tk
 import wave
 from pathlib import Path
@@ -250,26 +251,27 @@ class VideoViewer(EditorPanel):
             return  # paused while audio was being prepared
         if wav_path is not None and winsound is not None:
             winsound.PlaySound(str(wav_path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-        self._playback_frame = start_frame
+        self._playback_start = (time.perf_counter(), start_frame)
         self._advance_playback()
 
     def _advance_playback(self) -> None:
-        # Simple fixed-interval stepping, no drift correction against a clock -
-        # over a long cutscene, accumulated per-frame overhead (decode + Tk
-        # redraw) can let video drift a little behind the audio. Good enough
-        # for a preview; a real player would resync against elapsed wall time.
+        """Show the frame the clock is at, as the audio (playing on its own) is: the frame is
+        ``start + elapsed * fps``, so frames that took too long to decode and draw are skipped
+        rather than pushing every later frame back behind the sound."""
         if not self._playing or self._info is None:
             return
-        if self._playback_frame >= len(self._offsets):
+        started, start_frame = self._playback_start
+        fps = self._info.fps or 30.0
+        frame = start_frame + int((time.perf_counter() - started) * fps)
+        if frame >= len(self._offsets):
             self._pause()
             return
 
-        self._frame_slider.set(self._playback_frame)
-        self._show_frame(self._playback_frame)
-        self._playback_frame += 1
+        self._frame_slider.set(frame)
+        self._show_frame(frame)
 
-        interval_ms = max(1, round(1000 / self._info.fps))
-        self.after(interval_ms, self._advance_playback)
+        next_at = started + (frame + 1 - start_frame) / fps
+        self.after(max(1, round((next_at - time.perf_counter()) * 1000)), self._advance_playback)
 
     def _pause(self) -> None:
         self._playing = False
