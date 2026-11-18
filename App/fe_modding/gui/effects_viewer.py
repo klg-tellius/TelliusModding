@@ -116,7 +116,7 @@ class EffectsViewer(EditorPanel):
             actions.columnconfigure(column, weight=1)
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=520, justify="left")
         self._status.pack(anchor="w", pady=(0, 4))
-        self._particle_btn = ttk.Button(right, text="Edit particles...",
+        self._particle_btn = ttk.Button(right, text="Edit particles, tracks and events...",
                                         command=self._show_particle_details, state="disabled")
         self._particle_btn.pack(anchor="w", pady=(0, 6))
         self._textures = ttk.Label(right)
@@ -218,6 +218,9 @@ class EffectsViewer(EditorPanel):
         lines.append("Pack: " + ", ".join(f"{n.rsplit('.', 1)[-1]} {len(b):,} B" for n, b in parts.items()))
         ga_data = next((blob for name, blob in parts.items() if name.endswith(".ga")), None)
         if ga_data is not None:
+            # events and material tracks are editable even without a particle table
+            self._particle_data = ga_data
+            self._particle_btn.config(state="normal" if writable else "disabled")
             try:
                 particles = animation.read_particle_table_layout(ga_data)
             except animation.AnimationError as exc:
@@ -247,9 +250,8 @@ class EffectsViewer(EditorPanel):
             self._status.config(text=f"Preview failed: {exc}")
 
     def _show_particle_details(self) -> None:
-        layout = self._particle_layout
         data = self._particle_data
-        if layout is None or data is None:
+        if data is None:
             return
         entry = self._selected()
         if entry is None:

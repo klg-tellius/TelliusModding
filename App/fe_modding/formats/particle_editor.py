@@ -3,6 +3,12 @@
 The table contains file-absolute pointers and several controls whose meanings
 are still being investigated.  Editing existing records in place keeps those
 values, all other footer slots, and the original archive layout intact.
+
+Both games: Path of Radiance keeps the table in footer slot 8, Radiant Dawn in
+compact-footer slot 13 (``animation.FE10_PARTICLE_SLOT``). The event track and
+the material key tables are edited the same way on both (:func:`read_events`,
+:func:`replace_events`, :func:`track_slots`, :func:`replace_material_tracks`);
+on Radiant Dawn an event is a list of ``(code, parameter)`` pairs.
 """
 
 from __future__ import annotations
@@ -261,20 +267,42 @@ def _rewrite_structure(data: bytes, emitter_index: int, stages: list[_Stage],
 
 
 def _shift_tail_pointers(out: bytearray, table_start: int, count: int,
-                         boundary: int, delta: int) -> None:
-    """Move file-absolute references after an emitter-record insertion/removal."""
-    footer = struct.unpack_from(">I", out)[0]
-    for slot in range(animation.FOOTER_SLOTS):
-        address = footer + slot * 4
-        pointer = struct.unpack_from(">I", out, address)[0]
-        if pointer >= boundary:
-            struct.pack_into(">I", out, address, pointer + delta)
+                         boundary: int, delta: int, fe10_descriptors: list[int] | None = None) -> None:
+    """Move file-absolute references after an emitter-record insertion/removal.
+
+    ``fe10_descriptors`` are a Radiant Dawn file's footer descriptors, at their
+    addresses before the change (:func:`_fe10_descriptors`)."""
+    if fe10_descriptors is not None:
+        head = struct.unpack_from(">I", out)[0]
+        if head >= boundary:
+            struct.pack_into(">I", out, 0, head + delta)
+        for old_at in fe10_descriptors:
+            at = old_at + delta if old_at >= boundary else old_at
+            for word in (4, 8):
+                pointer = struct.unpack_from(">I", out, at + word)[0]
+                if pointer >= boundary:
+                    struct.pack_into(">I", out, at + word, pointer + delta)
+    else:
+        footer = struct.unpack_from(">I", out)[0]
+        for slot in range(animation.FOOTER_SLOTS):
+            address = footer + slot * 4
+            pointer = struct.unpack_from(">I", out, address)[0]
+            if pointer >= boundary:
+                struct.pack_into(">I", out, address, pointer + delta)
     for index in range(count):
         record = table_start + 8 + index * 0x34
         for offset in (0, 0x20, 0x24, 0x28, 0x2C):
             pointer = struct.unpack_from(">I", out, record + offset)[0]
             if pointer >= boundary:
                 struct.pack_into(">I", out, record + offset, pointer + delta)
+
+
+def _fe10_descriptors(data: bytes) -> list[int] | None:
+    """A Radiant Dawn file's footer descriptor addresses; None on Path of Radiance."""
+    if not animation.is_fe10_animation(data):
+        return None
+    footer = struct.unpack_from(">I", data)[0]
+    return [at for at, _slot, _block in animation.fe10_footer_chain(data, footer)] if footer else []
 
 
 def _renumber_emitters(out: bytearray) -> None:
@@ -304,7 +332,7 @@ def duplicate_emitter(data: bytes, emitter_index: int) -> bytes:
     out = bytearray(data[:insertion] + clone_record + data[insertion:])
     struct.pack_into(">H", out, layout.block_offset + 6, len(layout.emitters) + 1)
     _shift_tail_pointers(out, layout.block_offset, len(layout.emitters) + 1,
-                         insertion, 0x34)
+                         insertion, 0x34, _fe10_descriptors(data))
     clone = _layout(out).emitters[-1]
     stages, unattached = _read_structure(out, clone)
     return _rewrite_structure(bytes(out), len(layout.emitters), stages, unattached)
@@ -325,7 +353,7 @@ def add_emitter(data: bytes, name_path: str = "|root|") -> bytes:
     out = bytearray(data[:insertion] + bytes(0x34) + data[insertion:])
     new_count = len(layout.emitters) + 1
     struct.pack_into(">H", out, layout.block_offset + 6, new_count)
-    _shift_tail_pointers(out, layout.block_offset, new_count, insertion, 0x34)
+    _shift_tail_pointers(out, layout.block_offset, new_count, insertion, 0x34, _fe10_descriptors(data))
     record = insertion
     struct.pack_into(">H", out, record + 6, 4)  # textured draw path
     struct.pack_into(">h", out, record + 0x0A, -1)  # material is chosen in the UI
@@ -349,7 +377,7 @@ def remove_emitter(data: bytes, emitter_index: int) -> bytes:
     out = bytearray(data[:removal] + data[end:])
     new_count = len(layout.emitters) - 1
     struct.pack_into(">H", out, layout.block_offset + 6, new_count)
-    _shift_tail_pointers(out, layout.block_offset, new_count, end, -0x34)
+    _shift_tail_pointers(out, layout.block_offset, new_count, end, -0x34, _fe10_descriptors(data))
     _renumber_emitters(out)
     _layout(out)
     return bytes(out)
@@ -481,11 +509,51 @@ def _set_footer_block(anim: animation.GaAnimation, slot: int, block: bytes) -> N
         anim.footer.order.insert(position, slot)
 
 
-def replace_events(data: bytes, events: list[animation.EventKey]) -> bytes:
-    """Rewrite event slot 0 and rebase slot-8 file pointers if it moves."""
+#: Material key-table slots, by game: (title, holds alpha 0-255)
+POR_TRACK_SLOTS = {1: ("Material alpha", True), 2: ("Material colour (RGB565)", False),
+                   3: ("Texture U scroll", False), 4: ("Texture V scroll", False)}
+FE10_TRACK_SLOTS = {6: ("Material alpha", True), 7: ("Material colour (RGB565)", False),
+                    8: ("Texture translate U", False), 9: ("Texture translate V", False),
+                    10: ("Texture rotation", False), 11: ("Texture scale U", False),
+                    12: ("Texture scale V", False), 14: ("Material colour, slot 14 (RGB565)", False),
+                    15: ("Material colour, slot 15 (RGB565)", False)}
+
+
+def track_slots(data: bytes) -> dict[int, tuple[str, bool]]:
+    """The footer slots that hold per-material key tables in this file's game."""
+    return FE10_TRACK_SLOTS if animation.is_fe10_animation(data) else POR_TRACK_SLOTS
+
+
+def read_tracks(data: bytes, slot: int) -> dict[int, animation.MaterialTrack]:
+    block = animation.footer_block(data, slot)
+    return animation.read_material_tracks(block) if block else {}
+
+
+def read_events(data: bytes) -> list:
+    """The event track: ``EventKey`` (codes) on Path of Radiance, ``Fe10EventKey`` ((code, parameter)
+    pairs, slot 5) on Radiant Dawn."""
+    if animation.is_fe10_animation(data):
+        block = animation.footer_block(data, animation.FE10_EVENT_SLOT)
+        return animation.read_fe10_event_block(block) if block else []
+    return animation.read_animation_bytes(data).events
+
+
+def replace_events(data: bytes, events: list) -> bytes:
+    """Rewrite the event track (PoR slot 0, rebasing slot-8 pointers if it moves; RD slot 5)."""
     frames = [event.frame for event in events]
     if frames != sorted(frames):
         raise ParticleEditError("Event frames must be in ascending order.")
+    if animation.is_fe10_animation(data):
+        events = [animation.Fe10EventKey(e.frame, tuple(tuple(c) if isinstance(c, (tuple, list)) else (c, 0)
+                                                         for c in e.codes)) for e in events]
+        if read_events(data) == events:
+            return data
+        try:
+            block = animation.write_fe10_event_block(events) if events else None
+        except animation.AnimationError as exc:
+            raise ParticleEditError(str(exc)) from exc
+        out = animation.fe10_set_footer_block(data, animation.FE10_EVENT_SLOT, block)
+        return _extend_end_frame(out, frames)
     for event in events:
         if not 0 <= event.frame <= 65535 or any(not 0 <= code <= 65535 for code in event.codes):
             raise ParticleEditError("Event frames and codes must fit in 16 bits.")
@@ -501,18 +569,16 @@ def replace_events(data: bytes, events: list[animation.EventKey]) -> bytes:
     return _write_rebased(data, anim)
 
 
-def replace_material_tracks(data: bytes, slot: int, tracks: dict[int, animation.MaterialTrack],
-                            material_count: int) -> bytes:
-    """Set alpha, colour, U, or V tracks (footer slots 1 through 4)."""
-    if slot not in (1, 2, 3, 4):
-        raise ParticleEditError("Material tracks belong to footer slots 1 through 4.")
-    if not 0 <= material_count <= 65535 or any(not 0 <= index < material_count for index in tracks):
-        raise ParticleEditError("Material index is out of range.")
-    anim = animation.read_animation_bytes(data)
-    old_block = anim.footer.blocks[slot] if anim.footer else None
-    old_tracks = animation.read_material_tracks(old_block) if old_block else {}
-    if old_tracks == tracks and old_block is not None and struct.unpack_from(">H", old_block)[0] == material_count:
+def _extend_end_frame(data: bytes, frames: list[int]) -> bytes:
+    if not frames or struct.unpack_from(">I", data, 6 * 4)[0] >= frames[-1]:
         return data
+    out = bytearray(data)
+    struct.pack_into(">I", out, 6 * 4, frames[-1])
+    return bytes(out)
+
+
+def _track_block(old_block: bytes | None, slot_is_alpha: bool, tracks: dict[int, animation.MaterialTrack],
+                 material_count: int) -> bytes:
     body = bytearray()
     offsets = []
     head_size = 8 + material_count * 2
@@ -533,11 +599,29 @@ def replace_material_tracks(data: bytes, slot: int, tracks: dict[int, animation.
         for frame, value in track.keys:
             if not 0 <= frame <= 65535 or not -32768 <= value <= 32767:
                 raise ParticleEditError("Material key is out of range.")
-            if slot == 1 and not 0 <= value <= 255:
+            if slot_is_alpha and not 0 <= value <= 255:
                 raise ParticleEditError("Alpha values must be from 0 to 255.")
             body += struct.pack(">Hh", frame, value)
     pad_and_runtime = old_block[2:8] if old_block else bytes(6)
     block = struct.pack(">H", material_count) + pad_and_runtime + struct.pack(f">{material_count}H", *offsets) + body
-    block += bytes(-len(block) % 4)
+    return block + bytes(-len(block) % 4)
+
+
+def replace_material_tracks(data: bytes, slot: int, tracks: dict[int, animation.MaterialTrack],
+                            material_count: int) -> bytes:
+    """Set one per-material key table (:func:`track_slots`: PoR slots 1-4, RD 6-12, 14, 15)."""
+    slots = track_slots(data)
+    if slot not in slots:
+        raise ParticleEditError("Material tracks belong to slots " + ", ".join(map(str, slots)) + ".")
+    if not 0 <= material_count <= 65535 or any(not 0 <= index < material_count for index in tracks):
+        raise ParticleEditError("Material index is out of range.")
+    old_block = animation.footer_block(data, slot)
+    old_tracks = animation.read_material_tracks(old_block) if old_block else {}
+    if old_tracks == tracks and old_block is not None and struct.unpack_from(">H", old_block)[0] == material_count:
+        return data
+    block = _track_block(old_block, slots[slot][1], tracks, material_count)
+    if animation.is_fe10_animation(data):
+        return animation.fe10_set_footer_block(data, slot, block)
+    anim = animation.read_animation_bytes(data)
     _set_footer_block(anim, slot, block)
     return _write_rebased(data, anim)
