@@ -22,9 +22,11 @@ Three tiers, from quickest to slowest:
 | Changed code | `python -m tools.affected_tests --direct` | While editing: the test modules that import a changed module |
 | Unit | `python -m pytest -n auto` (or `python -m unittest discover -s tests`) | Before a commit; disc tests skip |
 | Disc | the same, with `FE9_EXTRACTED`, `FE9_EXTRACTED_FILES`, `FE10_EXTRACTED`, `FE10_EXTRACTED_FILES` set | Before a pull request |
+| Release | `python -m tools.release_check --rom <folder>` | Before a release: the disc suite for both games with every variable set, the coverage map of each disc and every `.ga` round trip, in one pass/fail table |
 
 - `python -m tools.affected_tests` without `--direct` follows imports all the way, and `--base main` covers a whole branch. `--pytest -n auto` runs the picked tests in parallel.
 - Disc tests that walk every file of a kind (models, maps, textures, messages) check a fixed sample (`tests/corpus.py`). Set `TELLIUS_CORPUS=full` to walk everything, and to check the counts that only hold for the whole disc. Do this before a pull request that changes a format.
+- `tools/release_check.py` finds the discs and saves under one folder (`por_work/GFEE01`, `rd_work/RFEE01`, `SaveFile/`, `SaveFile/rd/`; each can also be given on its own). `--all-regions` adds the European and Japanese discs, `--full` sets `TELLIUS_CORPUS=full`. Reports go to `App/release_check_reports/`.
 - `-n auto` needs the dev requirements: `python -m pip install -r requirements-dev.txt` (pytest and pytest-xdist).
 
 ## Architecture
