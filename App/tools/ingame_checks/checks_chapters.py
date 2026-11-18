@@ -223,3 +223,65 @@ CHECKS = [
           play=play_units, judge=judge_dispo, fixture=dispo_edit("bmap0101", "_teki_h", "PID_GOON", 1),
           start=Jump("0101")),
 ]
+
+
+# -- terrain paint: the lord's start tile painted to Thicket (茂み, Avo 10 Def 1 on both games), as the Build
+# tab's paint does; the terrain window (top left, the cursor starts on the lord) must change.
+
+THICKET = "茂み"
+TERRAIN_WINDOW = (0.05, 0.05, 0.37, 0.20)
+
+
+def terrain_fixture(folder: str, tile):
+    def fixture(ctx):
+        from fe_modding.formats import lz10, map_file, pak
+        from fe_modding.game_profile import files_root_of
+        path = files_root_of(ctx.project) / "zmap" / folder / "map.cmp"
+        raw = path.read_bytes()
+        compressed = raw[:1] == b"\x10"
+        packed = lz10.decompress(raw) if compressed else raw
+        entries = pak.read_pak_entries(packed)
+        files = [(e.name, pak.read_pak_file_content(packed, e)) for e in entries]
+        files = [(n, map_file.set_tile_terrains(c, {tuple(tile): THICKET}) if n == "map.bin" else c) for n, c in files]
+        out = pak.pack_pak(files, [e.reserved for e in entries])
+        ctx.project.write_keeping_original(path, lz10.compress(out) if compressed else out)
+        ctx.facts.update(tile=list(tile))
+    return fixture
+
+
+def judge_terrain(mod, retail, facts):
+    from .oracles import region_diff
+    window = region_diff(retail["shot"], mod["shot"], TERRAIN_WINDOW)
+    return window > 0.03, f"tile {tuple(facts['tile'])} painted to Thicket: the terrain window differs from retail on " \
+                          f"{window:.1%} of its area (see shots)"
+
+
+# -- weather (RD): Prologue's ChapterData weather from cloudy (曇り) to snow (雪), as Chapter data does.
+
+def weather_fixture(chapter_id: str, weather: str):
+    def fixture(ctx):
+        from fe_modding.formats import fe10data
+        data = ctx.project.read_logical("game_data")
+        rec = next(r for r in fe10data.read_table(data, "chapter") if r.id == chapter_id)
+        ctx.facts.update(old=rec.values["weather"], new=weather)
+        ctx.project.write_logical("game_data", fe10data.patch_field(data, "chapter", rec.index, "weather", weather))
+    return fixture
+
+
+def judge_weather(mod, retail, facts):
+    from .oracles import region_diff
+    share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
+    return share > 0.05, f"weather {facts['old']} -> {facts['new']}: the map differs from retail on {share:.1%} " \
+                         f"of the screen below the windows (see shots)"
+
+
+from .oracles import map_shot  # noqa: E402
+
+CHECKS += [
+    Check("T2", "por", "Terrain paint: the lord's tile is Thicket", ["1.0 §3 Build ⭐ terrain paint (POR)"],
+          play=map_shot(), judge=judge_terrain, fixture=terrain_fixture("bmap02", (12, 17)), start=Jump(2)),
+    Check("T2r", "rd", "Terrain paint: the lord's tile is Thicket", ["1.0 §3 Build ⭐ terrain paint (RD)"],
+          play=map_shot(), judge=judge_terrain, fixture=terrain_fixture("bmap0101", (10, 11)), start=Jump("0101")),
+    Check("W1r", "rd", "Chapter weather: Prologue in snow", ["1.0 §3 RD weather (open since 2026-10-28)"],
+          play=map_shot(), judge=judge_weather, fixture=weather_fixture("C0101", "雪"), start=Jump("0101")),
+]

@@ -46,6 +46,22 @@ LAYOUTS = {
                      0x803CAB38),
 }
 
+#: Radiant Dawn's European and Japanese builds: the party data comes from the region table
+#: (``rd_region_table``); the process pool and the unit-array pointer are assumed to keep their US
+#: distance from it (same .bss block). :func:`check_region` confirms the pool on a running game.
+RD_PARTY = {"RFEP01": 0x803C34D8, "RFEJ01": 0x803AE338}
+_US = LAYOUTS["RFEE01"]
+_POOL_FROM_PARTY = 0x803D9A58 - _US.party
+_UNITS_FROM_PARTY = _US.units - _US.party
+for _code, _party in RD_PARTY.items():
+    LAYOUTS[_code] = Layout(_party + _UNITS_FROM_PARTY, True, _US.stride, _US.count, _US.person, _US.job,
+                            _US.handle, _US.x, _US.hp, _US.items, _US.item_stride, _US.item_count, _US.level, _party)
+
+
+def region_pools() -> dict:
+    """``{game id: (process pool, slot size)}`` for the European and Japanese Radiant Dawn builds."""
+    return {code: (party + _POOL_FROM_PARTY, 0xB0) for code, party in RD_PARTY.items()}
+
 
 @dataclass
 class Unit:

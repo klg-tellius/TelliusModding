@@ -27,7 +27,7 @@ from .core import ROOT, VARIANTS, build_variant  # noqa: E402
 from .driver import Driver  # noqa: E402
 from tools.session_playtest.harness import write_lf  # noqa: E402
 
-SETS = ("gamedata", "saves", "chapters", "assets", "maps", "code")
+SETS = ("gamedata", "saves", "por_saves", "chapters", "assets", "maps", "code", "regions", "sharing", "audio", "models")
 
 
 def dolphin_running() -> bool:
@@ -47,7 +47,7 @@ def run_variant(check, variant: str, facts: dict) -> dict:
 def _run_once(check, variant: str, facts: dict) -> dict:
     run = ROOT / "run" / f"{check.id}_{variant}"
     out = ROOT / "out" / f"{check.id}_{variant}"
-    driver = Driver(run, out, check.region)
+    driver = Driver(run, out, check.region, audio=check.audio)
     started = time.time()
     obs: dict = {}
     try:

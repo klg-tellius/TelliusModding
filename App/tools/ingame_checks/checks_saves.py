@@ -193,3 +193,37 @@ CHECKS = [
            edit_copy_remove, judge_copy_remove, SWEEP_SAVES["rd"] / "005_chapter04_FE10_US.dat", "0104"),
     _check("S8", "An event flag survives the game's own save", ["rdcheck R2", "SAVE-02"], edit_flag, judge_flag),
 ]
+
+
+# -- Start a chapter from its opening (SAVE-05): the 1-1 file made to start 1-4 ---------------------------------
+
+TARGET = "C0105"      # I:4-A Distant Voice
+
+
+def edit_start_chapter(ctx, record):
+    """What Saves › Start a chapter from its opening… does for ``TARGET``."""
+    from fe_modding.formats import fe10data
+    database = fe10data.read_fe10data(ctx.project.read_logical("game_data"))
+    chapters = sorted((r for r in database.table("chapter") if r.values.get("number")), key=lambda r: r.values["number"])
+    chosen = next(i for i, r in enumerate(chapters) if r.values["cid"] == TARGET)
+    target, before = chapters[chosen], chapters[chosen - 1]
+    affinity = next((r.index for r in database.table("affinity")
+                     if r.values.get("affinity") == target.values.get("affinity")), 0)
+    record.start_at_chapter(target.values["number"], before.values.get("map") or target.values["map"], affinity)
+    ctx.facts.update(target=TARGET, number=target.values["number"])
+
+
+def play_start(driver, facts):
+    st = driver.to_player_phase(10)
+    return {"chapter": st.chapter, "shot": str(driver.snap("map"))}
+
+
+def judge_start(mod, retail, facts):
+    ok = mod["chapter"] == facts["number"] and retail["chapter"] != facts["number"]
+    return ok, f"the file starts chapter {mod['chapter']} (asked {facts['target']} = {facts['number']}); " \
+               f"the unedited file starts {retail['chapter']}"
+
+
+CHECKS.append(Check("S3", "rd", "Start a chapter from its opening: the 1-1 file starts 1-4",
+                    ["SAVE-05 move_to_chapter / start_at_chapter"], play=play_start, judge=judge_start,
+                    setup=_setup_for("0105"), card=_edited_card(edit_start_chapter), minutes=12))

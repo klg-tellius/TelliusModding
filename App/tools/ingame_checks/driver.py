@@ -17,7 +17,11 @@ from typing import Callable, Optional
 
 from tools import dolphin_input as di
 from tools.chapter_sweep.drive import BUILDS, DOLPHIN, State, Sweep
-from tools.dolphin_ram import DolphinRam
+from tools.dolphin_ram import PROCESS_POOLS, DolphinRam
+
+from .ram_view import RD_PARTY, region_pools
+
+PROCESS_POOLS.update(region_pools())
 
 INVALID = re.compile(r"Invalid (read|write)[^\n]*", re.I)
 
@@ -27,11 +31,14 @@ class Timeout(RuntimeError):
 
 
 class Driver(Sweep):
-    def __init__(self, run: Path, out: Path, region: str):
+    def __init__(self, run: Path, out: Path, region: str, audio: bool = False):
+        self.audio = audio
         build = BUILDS["GFEE01" if region.startswith("G") else "RFEE01"]
         if region not in ("GFEE01", "RFEE01"):
             from dataclasses import replace
-            build = replace(build, game_id=region)
+            if region not in RD_PARTY:
+                raise ValueError(f"no RAM addresses for {region} yet")
+            build = replace(build, game_id=region, party=RD_PARTY[region])
         super().__init__(run, out, out / "user", build)
 
     @property
@@ -51,9 +58,12 @@ class Driver(Sweep):
         for path in (self.run / "card").glob("*"):
             shutil.copy2(path, self.card / path.name)
             self.saves[path.name] = (self.card / path.name).stat().st_size, (self.card / path.name).stat().st_mtime_ns
-        args = [str(DOLPHIN), "--user", str(self.user), "--batch", "--exec", str(self.run / "sys" / "main.dol"),
+        image = self.run / "image.iso"
+        boot = image if image.is_file() else self.run / "sys" / "main.dol"
+        args = [str(DOLPHIN), "--user", str(self.user), "--batch", "--exec", str(boot),
                 "--config=Dolphin.DSP.Volume=0", "--config=Dolphin.Interface.ConfirmStop=False",
                 "--config=Dolphin.Interface.UsePanicHandlers=False",
+                *(["--config=Dolphin.DSP.DumpAudio=True"] if self.audio else []),
                 "--config=Dolphin.Core.EnableCheats=False",
                 "--config=Dolphin.Analytics.Enabled=False", "--config=Dolphin.Analytics.PermissionAsked=True"]
         if not self.build.wii:
@@ -70,6 +80,12 @@ class Driver(Sweep):
         else:
             raise RuntimeError("Dolphin did not start the game")
         self.log(f"booted {self.build.game_id} pid {self.pid}")
+        if self.build.game_id in RD_PARTY:      # derived addresses: the pool must hold the game's processes
+            deadline = time.time() + 60
+            while time.time() < deadline and "GameController" not in self.ram.processes(self.build.process_pool):
+                time.sleep(1)
+            if "GameController" not in self.ram.processes(self.build.process_pool):
+                raise RuntimeError(f"{self.build.game_id}: no process pool at {self.build.process_pool[0]:#x}")
 
     # -- observation -----------------------------------------------------------------------------
     def log_text(self) -> str:
@@ -88,6 +104,31 @@ class Driver(Sweep):
         except (OSError, ValueError):
             return None
         return path if path.is_file() else None
+
+    # -- audio (Dolphin's DSP dump: <user>/Dump/Audio/*dspdump.wav, header never finalised) ----------------
+    def audio_dump(self) -> Optional[Path]:
+        files = sorted((self.user / "Dump" / "Audio").glob("*dsp*.wav"), key=lambda p: p.stat().st_mtime)
+        return files[-1] if files else None
+
+    def audio_mark(self) -> int:
+        """Bytes in the dump now: :meth:`audio_since` reads what the game plays after this point."""
+        path = self.audio_dump()
+        return path.stat().st_size if path else 0
+
+    def audio_since(self, mark: int) -> tuple[int, list[int]]:
+        """(sample rate, mono samples) the game played since ``mark``."""
+        import struct as _struct
+        path = self.audio_dump()
+        if path is None:
+            return 0, []
+        raw = path.read_bytes()
+        rate = _struct.unpack_from("<I", raw, 24)[0] if raw[:4] == b"RIFF" else 32000
+        data_at = raw.find(b"data") + 8
+        start = max(mark, data_at)
+        start += (start - data_at) % 4 and 4 - (start - data_at) % 4
+        chunk = raw[start:len(raw) - (len(raw) - start) % 4]
+        pcm = _struct.unpack(f"<{len(chunk) // 2}h", chunk)
+        return rate, [(pcm[i] + pcm[i + 1]) // 2 for i in range(0, len(pcm) - 1, 2)]
 
     def wait(self, seconds: float) -> None:
         time.sleep(seconds)

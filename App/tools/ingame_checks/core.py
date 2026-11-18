@@ -56,6 +56,8 @@ class Check:
     region: str = ""
     minutes: float = 6.0
     retail: bool = True                         # False: judge(mod, None, ctx) only
+    audio: bool = False                         # dump the game's audio (Driver.audio_mark / audio_since)
+    package: Optional[Callable] = None          # package(run_dir, variant) -> disc image Dolphin boots instead
 
     def __post_init__(self):
         if not self.region:
@@ -151,6 +153,11 @@ def build_variant(check: Check, variant: str, works: dict) -> dict:
         (card_dir / name).write_bytes(data)
     work.revert()
     assemble_run_tree(BASES[check.region], patch, run)
+    image = run / "image.iso"
+    if image.exists():
+        image.unlink()
+    if check.package is not None:
+        check.package(run, variant)
     manifest = {"id": check.id, "variant": variant, "region": check.region,
                 "files": {rel: sha256(patch / rel) for rel in changed}, "cards": sorted(cards),
                 "facts": {k: v for k, v in ctx.facts.items() if isinstance(v, (int, str, float, list, dict, bool))}}
