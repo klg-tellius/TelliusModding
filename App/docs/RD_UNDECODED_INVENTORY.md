@@ -297,3 +297,90 @@ For someone at the controller: `tools/session_playtest/rd_check_scenarios.py` (`
   With that call replaced by `li r3,0` in a test build (the caller then uses character 0), the ending reaches `EpilogueProc` and stops on a read from 0 in the message reader (RFEP01 0x80256040 = RFEE01 0x8026FF20, `FUN_8026FE48`), with the retail `FE10Epilogue.bin` as well as the edited one. Jumping into 4-E-4 instead, or deploying `bmap0407e_mikata_c` before the auto-win, did not give the game an army. The endings stay unchecked until a save with the Endgame's army is available.
 - **Still open in game:** endings, Wii banner, `mapshader` passes and the prop flag bits (MAP-04).
 
+
+## 2026-11-18: byte coverage of the whole US disc
+
+Measured with `python -m fe_modding.formats.coverage` on RFEE01 (movies `.thp`, music `.stm` and the two `.brsar`
+left out; every other file walked). Leaf bytes undecoded or unclassified: **27.99 MB of 2.07 GB (1.35 %)**, down
+from 31.17 MB (1.51 %) before this change. GFEE01 for comparison: 74,572 bytes (0.005 %).
+
+- **Field rules for FE10Battle, FE10Anim and FE10Conversation.** Their records were counted as opaque blobs
+  although the app reads them. Labels, counts, the camera arrays, the variant matrix and every field named in
+  `fe10_battle*`/`fe10_anim`/`fe10_conversation_data` are now decoded; each byte left is named by its table and
+  row offset. Left open: **FE10BUnit +0x40..+0x14B** (268 bytes per row, 64,320 bytes), FE10BCamList +0x08,
+  FE10AnimData +0x10..+0x17, FE10AnimHeader +0x0A flags, FE10AnimMotion +0x08 flags, FE10BWeapon +0x21..+0x23,
+  CONV_INFO_DATA +0x2C, and smaller runs in the camera, SFX, setup and skill tables.
+- **The Wii HOME Menu (`system/HomeButton/`).** Nintendo's HOME button library, not game data: U8 archives of NW4R
+  layouts (`RLYT`), animations (`RLAN`) and a font (`RFNT`), TPL textures, MIDI songs, `home.csv` (UTF-16 messages)
+  and `config.txt`. The U8, NW4R and MIDI containers are now walked. Left open: the menu's sound banks
+  (`.pcm`, `.wt`, `.bwav`, 423,719 bytes).
+- **What is left, by size:** `.ga` footer slot blocks (26.8 MB, GA-RD-01); `.gs` model fields without a reader or
+  with an unproven meaning (1.7 MB); the HOME Menu sound banks (424 KB); `sound_data` cue parameters and `SND_*`
+  tables (501 KB); `map.bin` fields without a reader (106 KB); FE10BUnit +0x40 (64 KB); `client.bin` (18 KB).
+
+## 2026-11-18: `.ga` footer slots (GA-RD-01 closed)
+
+Every Radiant Dawn compact-footer slot now has a reader, found in RFEE01 `main.dol` by the slot number each
+lookup compares (`animation.FE10_FOOTER_SLOT_NAMES`):
+
+| Slot | Content | Reader in `main.dol` | Codec |
+|---|---|---|---|
+| 0 | bone visibility: track "mode" is the bone index, value 0 scales the bone to zero | `0x8000db10` | `read_material_tracks` |
+| 1, 2, 3 | same table shape, extra fields read (block +2, key +2/+3), meaning not traced | `0x8000bf68`, `0x8000c3c4` | `read_material_tracks` (plausible) |
+| 5 | event track: key = u16 frame, u8 pad, u8 count, then `(u16 code, s16 parameter)` pairs | `0x80009bc8`..`0x8000a22c`, playback `0x800081d4` | `read_fe10_event_block` |
+| 6 | material alpha (8-bit) | `0x8000ab6c` | `read_material_tracks` |
+| 7, 14, 15 | material colour, RGB565, multiplied into the material colour | `0x8000a838` | `read_material_tracks` |
+| 8, 9 | texture translation U, V (V negated) | `0x8000ae38`, `0x8000b100` → `PSMTXTrans` in `0x80012f00` | `read_material_tracks` |
+| 10 | texture rotation about Z | `0x8000b3c8` | `read_material_tracks` |
+| 11, 12 | texture scale U, V | `0x8000b690`, `0x8000b958` → `PSMTXScale` | `read_material_tracks` |
+| 13 | particle emitter table, the same as PoR's slot 8, plus +0x1C bone index and draw-flag bit 0x10 (min/max of stage start frames) | setup `0x8001528c`, relocation `0x800151ec`, update `0x800159xx` | `read_particle_table_layout(data, block)` |
+
+Header byte 8 is the loader's footer switch: `0x8000bc20` clears the footer word when it is 0.
+
+Full US run with these rules (movies and the two `.brsar` left out as before): leaf bytes undecoded or
+unclassified **1.21 MB of 2.07 GB (0.059 %)**, down from 27.99 MB (1.35 %); no handler failures. Animations went
+from 26.8 MB open to 55 KB undecoded and 2.26 MB plausible: the particle curves' last-key-frame and stage
+local-index words (1.9 MB, no runtime reader, value always matches), event codes other than 3, 4 and 0x1F
+(their PoR numbering is assumed, not traced in RD), slots 1-3, and the emitter word +0x0C (2 KB). The run used a
+build where header word 2's three low bytes were still counted open (50 KB); the committed rule places them.
+
+What is left on RFEE01, by size: the HOME Menu sound banks (424 KB), `sound_data` cue parameters and unplaced
+`SND_*` bytes (501 KB), FE10BUnit +0x40..+0x14B (64 KB), `.gs` bone flag bits 0x4/0x6 (60 KB), `.gs` texture +6
+(34 KB), `client.bin` GBA program (18 KB), one `.tpl` (17 KB) and smaller fields.
+
+## 2026-11-18 (2): everything else but the HOME Menu and `client.bin`
+
+Julien's scope for 1.0 leaves out the Wii HOME Menu (`system/HomeButton`) and the GBA `client.bin`. The rest was
+traced in RFEE01's `main.dol`:
+
+- **`sound_data*.cms`**: every cue field (`fe10_sound.CUE_FIELDS`: kind, volume, pitch and divisor, pans, filters,
+  sends, priority, voice limit, random pitch/volume, start delay, distance settings, Sound Room index; sound object
+  update `0x80258c70`) and every `SND_*` table (`SND_TABLES`: environment emitters `0x8013a8d8`, map mixer
+  `0x8013ac48`, `.ga` SFX events `0x800f14b4`, map/battle music `0x80068398`/`0x800689d4`, chapter groups
+  `0x800680d0`). Two cue records per file repeat an exported cue's name and no export reaches them (no-reader).
+- **`.ga` events**: codes from 1000 up are SFX cues looked up in `SND_SFX_MAYA_DATA` by the event handler
+  `0x800e4b20`.
+- **FE10Battle.cms**: FE10BUnit +0x40 is a 128-bit FE10BMotion set per weapon type (`0x800a7324`), +0x140 six
+  FE10BCamList rows (`0x800a6f34`), +0x14 the weapon types that pick a random attack variant (`0x800beed8`),
+  +0x08/+0x0C trail and aura effect IDs. FE10BWeapon +0x21/+0x22, FE10BCamFile +0x08 (`0x800a4420`),
+  FE10BCamEffect +0x04 (`0x800a6d08`), FE10BSetup +0x04 (`0x800a84a4`), FE10BSFXList +0x04 are named; the
+  pointers the loader writes in RAM (FE10BCamList +0x08, FE10BCamGroup +0x0C/+0x10, FE10BUnit +0x150) are zero on
+  disc; FE10BCamType is loaded and never read. FE10BMotion +0x08 bits other than 0x01/0x08 stay plausible.
+- **Skeletons**: bone flag 0x2 selects the curve quaternion and the skin matrix (`0x8000d1ec`, `0x8000ed5c`);
+  nothing tests 0x4.
+- **`.gs`**: material +4 flags (blend and z modes `0x800186c8`, the other bits cited in the rule; 0x4 only through a
+  caller mask), texture +3 stage kind (`0x8001338c`), +2 texcoord slot written in RAM; texture +6 and flag bits
+  0x2/0x4/0x8 have no reader in the texture setup.
+- **Particles**: emitter +0x0C has no load in the particle code.
+- **`window/unitranking.cms`**: table entries 13-15 repeat entry 12's header; the three images meant for them
+  (headers and texels) are unreachable.
+
+Full US run (movies and the two `.brsar` left out as before; HOME Menu and `client.bin` out of scope): leaf bytes
+undecoded or unclassified **12.4 KB of 2.07 GB (0.0006 %)**, down from 1.21 MB; no handler failures (the run counted
+the 60 KB of bone flag 0x4 as undecoded; the committed rule classifies it). What is left: FE10Effect flags and
+parameters (5 KB), FE10Anim data/header/motion flags (2.9 KB), `.ga` curve +8 (2.4 KB, 14 files), FE10PersonGrowth
+(1 KB), CONV_INFO_DATA +0x2C (404 B), `map.bin` flag bits (300 B), two `fe10 tables` fields (308 B).
+
+European and Japanese discs, same rules (the PAL disc needed `sound_data_<lang>.cms`, `<lang>_caption_data.bin` and
+its two leftover `.bat` packing scripts recognized): RFEP01 **15.2 KB of 2.54 GB (0.0006 %)**, RFEJ01 **11.8 KB of
+1.85 GB (0.0006 %)**, no handler failures. The open fields are the same as on RFEE01.
