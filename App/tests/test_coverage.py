@@ -211,6 +211,66 @@ class Fe10ContainerTest(unittest.TestCase):
         self.assertNotIn("fe10 container", report.formats)
 
 
+def _u8(files: dict) -> bytes:
+    """A U8 archive with one directory holding ``files`` (name -> bytes)."""
+    import struct
+
+    names = b"\0" + b"dir\0"
+    offsets = []
+    for name in files:
+        offsets.append(len(names))
+        names += name.encode() + b"\0"
+    count = 2 + len(files)
+    header_size = 12 * count + len(names)
+    data_start = (0x20 + header_size + 0x1F) & ~0x1F
+    nodes = struct.pack(">III", 0x01000000, 0, count) + struct.pack(">III", 0x01000001, 0, count)
+    body, at = b"", data_start
+    for (name, blob), name_at in zip(files.items(), offsets):
+        nodes += struct.pack(">III", name_at, at, len(blob))
+        body += blob + bytes(-len(blob) % 0x20)
+        at += len(blob) + (-len(blob) % 0x20)
+    head = b"\x55\xaa\x38\x2d" + struct.pack(">III", 0x20, header_size, data_start) + bytes(16)
+    table = nodes + names
+    return head + table + bytes(data_start - 0x20 - len(table)) + body
+
+
+class HomeMenuTest(unittest.TestCase):
+    def test_u8_members_are_walked(self):
+        import struct
+
+        layout = b"RLYT\xfe\xff\x00\x0a" + struct.pack(">IHH", 0x20, 0x10, 1) + b"lyt1" + struct.pack(">I", 0x10) + bytes(8)
+        midi = b"MThd" + struct.pack(">I", 6) + bytes(6) + b"MTrk" + struct.pack(">I", 2) + b"\xff\x2f"
+        report = Report()
+        Walker(report).child("system/HomeButton/test.arc", _u8({"a.brlyt": layout, "b.mid": midi}))
+        for fmt in ("u8", "nw4r layout", "midi"):
+            self.assertEqual(report.formats[fmt].failures, [], fmt)
+            self.assertEqual(report.formats[fmt].counts[UNDECODED] + report.formats[fmt].counts[UNCLASSIFIED], 0, fmt)
+        self.assertEqual(report.formats["nw4r layout"].files, 1)
+        self.assertEqual(report.formats["midi"].counts[DECODED], len(midi))
+
+    def test_nw4r_section_chain_must_end_at_the_file_size(self):
+        import struct
+
+        broken = b"RLAN\xfe\xff\x00\x0a" + struct.pack(">IHH", 0x20, 0x10, 1) + b"pat1" + struct.pack(">I", 0x08) + bytes(8)
+        report = Report()
+        Walker(report).child("system/HomeButton/x.brlan", broken)
+        self.assertEqual(len(report.formats["nw4r layout"].failures), 1)
+
+
+class Fe10RowsTest(unittest.TestCase):
+    def test_unplaced_row_bytes_are_named_by_offset(self):
+        from fe_modding.formats.coverage_handlers import _fe10_rows
+
+        cov = FileCoverage(bytes(24), "t", "t")
+        layout = {0: (4, "label", ""), 8: (2, UNDECODED, "flags")}
+        _fe10_rows(cov, 0, 2, 12, "T", layout)
+        fields = cov.open_fields()
+        self.assertEqual(fields[(UNDECODED, "T +0x4")], 8)    # bytes 4-7 of both rows
+        self.assertEqual(fields[(UNDECODED, "T flags")], 4)   # bytes 8-9 of both rows
+        self.assertEqual(fields[(UNDECODED, "T +0xa")], 4)    # bytes 10-11 of both rows
+        self.assertEqual(cov.status.count(DECODED), 8)
+
+
 FILES = os.environ.get("FE9_EXTRACTED_FILES")
 #: Small real files, one per handler family that has no other test here.
 SAMPLES = ("FE8Data.bin", "FE8Anim.bin", "FE8Effect.bin", "cp_data.bin", "s/rect.bin", "window/RectDesc.bin",

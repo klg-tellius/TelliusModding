@@ -45,7 +45,7 @@ STATUS_NAMES = ("unclassified", "decoded", "plausible", "undecoded", "reserved",
 OPEN = (UNCLASSIFIED, PLAUSIBLE, UNDECODED, UNREAD)
 
 #: Formats that only hold other files; left out of the leaf totals.
-CONTAINERS = {"lz10", "pak"}
+CONTAINERS = {"lz10", "pak", "u8"}
 
 #: Files of an extracted tree that are tool output, not disc content.
 SKIPPED_SUFFIXES = (".decomp", ".bak", ".decompressed")

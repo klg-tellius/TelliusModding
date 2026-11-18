@@ -296,3 +296,23 @@ For someone at the controller: `tools/session_playtest/rd_check_scenarios.py` (`
 - **Endings: not reached by a jump.** Jumping into `C0407e` with an instant win plays the ending movie and slideshow, then Dolphin stops on an invalid read of 0xEC (RFEP01 PC 0x8026D384 = RFEE01 0x80287804). That is `FUN_80287358`, which `register_game_clear` (0x800434A0) calls for the clear record's character: it sorts the units of the player forces by the u16 at unit +0x384 (ties to the higher character number) and returns the last one's PersonData, with no check for an empty list. A jump starts with no army, so the list is empty. A real playthrough always has units; checking the epilogue needs a file that reaches the Endgame with its army.
 - **Still open in game:** endings, Wii banner, `mapshader` passes and the prop flag bits (MAP-04).
 
+
+## 2026-11-18: byte coverage of the whole US disc
+
+Measured with `python -m fe_modding.formats.coverage` on RFEE01 (movies `.thp`, music `.stm` and the two `.brsar`
+left out; every other file walked). Leaf bytes undecoded or unclassified: **27.99 MB of 2.07 GB (1.35 %)**, down
+from 31.17 MB (1.51 %) before this change. GFEE01 for comparison: 74,572 bytes (0.005 %).
+
+- **Field rules for FE10Battle, FE10Anim and FE10Conversation.** Their records were counted as opaque blobs
+  although the app reads them. Labels, counts, the camera arrays, the variant matrix and every field named in
+  `fe10_battle*`/`fe10_anim`/`fe10_conversation_data` are now decoded; each byte left is named by its table and
+  row offset. Left open: **FE10BUnit +0x40..+0x14B** (268 bytes per row, 64,320 bytes), FE10BCamList +0x08,
+  FE10AnimData +0x10..+0x17, FE10AnimHeader +0x0A flags, FE10AnimMotion +0x08 flags, FE10BWeapon +0x21..+0x23,
+  CONV_INFO_DATA +0x2C, and smaller runs in the camera, SFX, setup and skill tables.
+- **The Wii HOME Menu (`system/HomeButton/`).** Nintendo's HOME button library, not game data: U8 archives of NW4R
+  layouts (`RLYT`), animations (`RLAN`) and a font (`RFNT`), TPL textures, MIDI songs, `home.csv` (UTF-16 messages)
+  and `config.txt`. The U8, NW4R and MIDI containers are now walked. Left open: the menu's sound banks
+  (`.pcm`, `.wt`, `.bwav`, 423,719 bytes).
+- **What is left, by size:** `.ga` footer slot blocks (26.8 MB, GA-RD-01); `.gs` model fields without a reader or
+  with an unproven meaning (1.7 MB); the HOME Menu sound banks (424 KB); `sound_data` cue parameters and `SND_*`
+  tables (501 KB); `map.bin` fields without a reader (106 KB); FE10BUnit +0x40 (64 KB); `client.bin` (18 KB).

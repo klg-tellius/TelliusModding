@@ -127,6 +127,104 @@ def pak_archive(cov: FileCoverage, walker: Walker) -> None:
     cov.fill(PADDING, only_zero=True)
 
 
+# ------------------------------------------------------------------ Wii HOME Menu (system/HomeButton)
+#
+# Radiant Dawn ships Nintendo's HOME Menu library resources (the menu every Wii
+# game opens with the HOME button). They are SDK files in public formats, not
+# game data: U8 archives of NW4R layouts, animations and a font, TPL textures,
+# MIDI songs and the menu's sound banks.
+
+U8_MAGIC = b"\x55\xaa\x38\x2d"
+
+
+@handles("u8", lambda name, data: data[:4] == U8_MAGIC)
+def u8_archive(cov: FileCoverage, walker: Walker) -> None:
+    """A U8 archive: 0x20-byte header, 12-byte nodes (type, name offset, data
+    offset or parent, size or next index), the name table, then the members."""
+    data = cov.data
+    root, header_size, data_offset = struct.unpack_from(">III", data, 4)
+    cov.mark(0, 0x10, DECODED)
+    cov.zero(0x10, 0x10, "U8 header reserved")
+    count = _u32(data, root + 8)
+    names = root + 12 * count
+    if root + header_size > len(data) or names > root + header_size:
+        raise ValueError("U8 node table runs past the header")
+    cov.mark(root, 12 * count, DECODED)
+    path: list[tuple[int, str]] = []  # (end index, directory name)
+    for i in range(1, count):
+        while path and i >= path[-1][0]:
+            path.pop()
+        kind_name, offset, size = struct.unpack_from(">III", data, root + 12 * i)
+        start = names + (kind_name & 0xFFFFFF)
+        name = data[start:data.index(b"\0", start)].decode("ascii", "replace")
+        if kind_name >> 24:
+            path.append((size, name))
+            continue
+        if offset + size > len(data):
+            raise ValueError(f"U8 member {name} runs past the archive")
+        cov.mark(offset, size, DECODED)
+        member = "/".join([p for _e, p in path] + [name])
+        walker.child(f"{cov.name.rstrip('#')}:{member}", data[offset:offset + size])
+    strings_and_padding(cov, names, root + header_size)
+    cov.fill(PADDING, only_zero=True)
+
+
+_NW4R_MAGICS = (b"RLYT", b"RLAN", b"RFNT", b"RLPA", b"RLVC")
+
+
+@handles("nw4r layout", lambda name, data: data[:4] in _NW4R_MAGICS and data[4:6] == b"\xfe\xff")
+def nw4r_file(cov: FileCoverage, walker: Walker) -> None:
+    """NW4R layout, animation and font files (``RLYT``, ``RLAN``, ``RFNT``): a
+    header (magic, byte order, version, size, header size, section count), then
+    sections that each start with a magic and their size. The section bodies are
+    the SDK's public formats; the file counts as decoded when the chain of
+    sections ends exactly at the file size the header gives."""
+    data = cov.data
+    size, header_size, sections = struct.unpack_from(">IHH", data, 8)
+    if size != len(data):
+        raise ValueError("NW4R file size does not match its header")
+    at = header_size
+    for _ in range(sections):
+        length = _u32(data, at + 4)
+        if length < 8 or at + length > size:
+            raise ValueError(f"NW4R section at {at:#x} is malformed")
+        at += length
+    if at != size:
+        raise ValueError("NW4R sections do not end at the file size")
+    cov.mark(0, size, DECODED)
+
+
+@handles("midi", lambda name, data: data[:4] == b"MThd")
+def midi_file(cov: FileCoverage, walker: Walker) -> None:
+    """A Standard MIDI File (the HOME Menu's songs): ``MThd`` then chunks, each a
+    tag and a size. Decoded when the chunks end at the file's end (zero fill after)."""
+    data = cov.data
+    at = 0
+    while at + 8 <= len(data) and data[at:at + 4] in (b"MThd", b"MTrk"):
+        at += 8 + _u32(data, at + 4)
+    if at > len(data):
+        raise ValueError("MIDI chunk runs past the file")
+    cov.mark(0, at, DECODED)
+    cov.zero(at, len(data) - at, "MIDI trailing bytes")
+
+
+@handles("home menu text", lambda name, data: _base(name) in ("home.csv", "config.txt")
+         and "homebutton" in name.lower())
+def home_menu_text(cov: FileCoverage, walker: Walker) -> None:
+    """``home.csv`` (the menu's messages, UTF-16 with a byte-order mark) and
+    ``config.txt`` (layout name and two numbers): text the SDK reads as text."""
+    data = cov.data
+    data.decode("utf-16") if data[:2] == b"\xfe\xff" else data.decode("ascii")
+    cov.mark(0, len(data), DECODED)
+
+
+@handles("home menu sound", lambda name, data: _ext(name) in ("wt", "pcm", "bwav") and "homebutton" in name.lower())
+def home_menu_sound(cov: FileCoverage, walker: Walker) -> None:
+    """The HOME Menu's synthesizer wave table, its PCM samples and the remote
+    speaker sounds: SDK sound data whose layout is not described here."""
+    cov.mark(0, len(cov.data), UNDECODED, f"HOME Menu sound data (.{_ext(cov.name)})")
+
+
 # ------------------------------------------------------------------ textures
 
 TPL_MAGIC = b"\x00\x20\xaf\x30"
@@ -714,16 +812,146 @@ def _fe10_effects(cov: FileCoverage) -> None:
     cov.mark(eid, 4 + reg.EID_RECORD_SIZE * len(registry.eid_table), DECODED)
 
 
-def _fe10_battle_heads(cov: FileCoverage, sections) -> None:
-    """``FE10Battle.cms`` (``fe10_battle``): each table's ``u16 count, u16 0``
-    head is known; the row fields stay open (the reader keeps them raw)."""
+def _fe10_rows(cov: FileCoverage, start: int, count: int, size: int, table: str, layout: dict) -> None:
+    """Fixed rows of a Radiant Dawn table. ``layout`` maps a row offset to
+    ``(size, kind, name)``: kind ``label`` (a string pointer, null or not),
+    ``bits`` (``name`` is ``(known, unread)`` for :func:`_rd_bits`), or a
+    coverage status. Relocated words are already marked by the container. Each
+    byte left unplaced in a row stays undecoded, named by its row offset."""
+    for i in range(count):
+        row = start + i * size
+        for off, (length, kind, name) in layout.items():
+            if kind == "label":
+                cov.mark(row + off, length, DECODED)
+            elif kind == "bits":
+                _rd_bits(cov, row + off, known=name[0], unread=name[1], name=f"{table} +{off:#x}")
+            elif kind == DECODED:
+                cov.mark(row + off, length, DECODED)
+            else:
+                cov.mark(row + off, length, kind, f"{table} {name}")
+        off = 0
+        while off < size:
+            if cov.status[row + off] != UNCLASSIFIED:
+                off += 1
+                continue
+            end = off
+            while end < size and cov.status[row + end] == UNCLASSIFIED:
+                end += 1
+            cov.mark(row + off, end - off, UNDECODED, f"{table} +{off:#x}")
+            off = end
+
+
+def _table_head(cov: FileCoverage, start: int, name: str) -> int:
+    """A ``u16 count, u16 0`` table head; returns the row count."""
+    cov.mark(start, 2, DECODED)
+    cov.zero(start + 2, 2, f"{name} count pad")
+    return _u16(cov.data, start)
+
+
+L = "label"
+
+#: FE10Battle.cms rows (``fe10_battle``, ``fe10_battle_units``, ``fe10_battle_weapons``,
+#: ``fe10_battle_scenery``; wiki ``meta/radiant-dawn``). Offsets not listed stay open.
+FE10_BATTLE_LAYOUTS = {
+    "FE10BAnimData": {0: (4, L, ""), 4: (4, L, ""), 8: (4, L, ""), 12: (4, L, ""), 16: (4, L, "")},
+    "FE10BFlags": {0: (4, L, "")},
+    "FE10BParam": {0: (4, L, "")},
+    "FE10BTex": {0: (4, L, ""), 4: (4, L, "")},
+    "FE10BWeapon": {**{o: (4, L, "") for o in range(0, 0x20, 4)}, 0x20: (1, DECODED, "")},
+    # +0x08: 0x02 indoors, 0x08 mirrored, 0x10/0x20/0x40 the run-in; 0x01 and 0x04 have no reader.
+    "FE10BMapModel": {0: (4, L, ""), 4: (4, L, ""), 8: (1, "bits", (0x7A, 0x05)),
+                      9: (5, DECODED, ""), 0x0E: (10, DECODED, "")},
+    "FE10BMapData": {0: (4, L, ""), 4: (10, DECODED, "")},
+    "FE10BCamFile": {0: (4, L, ""), 4: (4, L, "")},
+    "FE10BCamGroup": {11: (1, DECODED, "")},
+    "FE10BWeaponType": {4: (4, L, "")},
+    # +0x10: bit i tests FE10BFlags row i (18 rows, 0x800A7460); +0x18: the 20 FE10BParam values.
+    "FE10BUnit": {0: (4, L, ""), 4: (4, L, ""), 0x10: (1, "bits", (0x00, 0x00)), 0x11: (1, "bits", (0x03, 0x00)),
+                  0x12: (1, "bits", (0xFF, 0x00)), 0x13: (1, "bits", (0xFF, 0x00)),
+                  0x18: (40, DECODED, ""), 0x14C: (2, DECODED, "")},
+}
+
+#: FE10Anim.cms rows (``fe10_anim``): labels, the header's ordinal and model
+#: link, and the model's weapon-by-motion variant matrix.
+FE10_ANIM_LAYOUTS = {
+    "FE10AnimHeader": {0: (4, L, ""), 4: (4, L, ""), 8: (2, DECODED, ""), 10: (2, UNDECODED, "flags"),
+                       12: (4, L, ""), 16: (4, L, "")},
+    "FE10AnimData": {0: (4, L, ""), 4: (4, L, ""), 8: (4, L, ""), 12: (4, L, ""),
+                     16: (8, UNDECODED, "parameters"), 0x18: (432, DECODED, "")},
+    "FE10AnimMotion": {0: (4, L, ""), 4: (4, L, ""), 8: (4, UNDECODED, "flags")},
+    "FE10AnimWeapon": {0: (4, L, ""), 4: (4, L, "")},
+}
+
+
+def _fe10_battle(cov: FileCoverage, sections) -> None:
+    """``FE10Battle.cms``: table heads, the rows' named fields, the three camera
+    arrays (each byte a file index, a weight or a group index, checked against
+    the tables by the reader) and the string pool."""
     from . import fe10_battle
 
     data = cov.data
-    for name, start, _end in sections:
-        if name in fe10_battle.TABLE_SIZES:
-            cov.mark(start, 2, DECODED)
-            cov.zero(start + 2, 2, f"{name} count pad")
+    fe10_battle.read_fe10_battle(data)  # raises on a file the reader does not accept
+    symbols = fe8data_symbols(data)
+    pool = 0
+    for name, size in fe10_battle.TABLE_SIZES.items():
+        start = HEADER_SIZE + symbols[name]
+        count = _table_head(cov, start, name)
+        _fe10_rows(cov, start + 4, count, size, name, FE10_BATTLE_LAYOUTS.get(name, {}))
+        pool = max(pool, start + 4 + count * size)
+    for name, start, end in sections:
+        if name in fe10_battle.RAW_ARRAYS:
+            cov.mark(start, end - start, DECODED)
+    strings_and_padding(cov, pool, HEADER_SIZE + _u32(data, 4))
+
+
+def _fe10_anim(cov: FileCoverage, sections) -> None:
+    """``FE10Anim.cms``: four tables (the model table has no head) and the string pool."""
+    from . import fe10_anim
+
+    data = cov.data
+    pool = 0
+    for table in fe10_anim.read_fe10_anim(data).tables:
+        if not table.records:
+            continue
+        first = table.records[0].address
+        if table.name != "FE10AnimData":
+            _table_head(cov, first - 4, table.name)
+        _fe10_rows(cov, first, len(table.records), table.record_size, table.name, FE10_ANIM_LAYOUTS[table.name])
+        pool = max(pool, first + len(table.records) * table.record_size)
+    strings_and_padding(cov, pool, HEADER_SIZE + _u32(data, 4))
+
+
+def _fe10_conversation(cov: FileCoverage, sections) -> None:
+    """``FE10Conversation.cms`` (``fe10_conversation_data``, which reads every
+    table and string back byte for byte): all fields are named but the info
+    records' +0x2C number (1-3)."""
+    from . import fe10_conversation_data as conv
+
+    data = cov.data
+    tables = conv.read_conversation_data(data)
+    symbols = fe8data_symbols(data)
+    data_end = HEADER_SIZE + _u32(data, 4)
+    for record in tables.info:
+        cov.mark(record.offset, conv.INFO_SIZE, DECODED)
+        cov.mark(record.offset + 0x2C, 4, UNDECODED, "CONV_INFO_DATA +0x2C number (1-3)")
+    for name in (conv.INFO_SYMBOL, conv.FE8_YELL_SYMBOL):
+        cov.mark(HEADER_SIZE + symbols[name], 4, DECODED)
+    start = HEADER_SIZE + symbols[conv.FE8_YELL_SYMBOL] + 4
+    for i in range(len(tables.fe8_yells)):
+        at = start + i * conv.FE8_YELL_SIZE
+        cov.mark(at, conv.FE8_YELL_SIZE, DECODED)
+        for gap in (0x0C, 0x14, 0x1C):
+            cov.zero(at + gap, 4, "CONVERSATION_FE8_YELL_DATA null word")
+    mini = HEADER_SIZE + symbols[conv.MINI_YELL_SYMBOL]
+    cov.mark(mini, 4, DECODED)
+    for character in tables.mini_yells:  # PID, partner count, file, then (partner, said, answered)
+        cov.mark(character.offset, 12 + 12 * len(character.partners), DECODED)
+    strings_and_padding(cov, HEADER_SIZE, data_end)
+
+
+#: Radiant Dawn containers with a field-level rule, by a symbol they export.
+_FE10_FIELD_RULES = {"FE10BUnit": _fe10_battle, "FE10AnimHeader": _fe10_anim,
+                     "CONV_INFO_DATA": _fe10_conversation}
 
 
 def fe8data_symbols(data: bytes) -> dict:
@@ -736,20 +964,12 @@ def fe8data_symbols(data: bytes) -> dict:
 def fe10_container(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's decompressed ``.cms`` data files (``FE10Data``, ``FE10Anim``, ``cp_data``...):
     the same relocatable container as ``FE8Data.bin``. The container structure, every listed pointer
-    and the text it points at are decoded; each exported section's records are not (their layouts
-    belong to the format phases of the Radiant Dawn plan)."""
+    and the text it points at are decoded. Files with a rule in :data:`_FE10_FIELD_RULES` (and
+    ``FE10Growth``, ``FE10Effect``) get their records placed field by field; any byte of an export
+    left unplaced is counted as undecoded under ``<export> records``."""
     data = cov.data
     sections = hsdarc(cov)
     data_end = HEADER_SIZE + _u32(data, 4)
-    for name, start, end in sections:
-        cov.mark(start, end - start, UNDECODED, f"{name} records")
-    names = {name for name, _s, _e in sections}
-    if "FE10PersonGrowth" in names:
-        _fe10_growth(cov)
-    if "EffectData" in names:
-        _fe10_effects(cov)
-    if names & {"FE10BUnit", "FE10BWeapon"}:
-        _fe10_battle_heads(cov, sections)
     count = _u32(data, 8)
     for i in range(count):
         field = HEADER_SIZE + _u32(data, data_end + 4 * i)
@@ -763,6 +983,25 @@ def fe10_container(cov: FileCoverage, walker: Walker) -> None:
             text = data[target:end] if end > target else b""
             if text and len(text) <= 256 and all(b >= 0x20 and b != 0x7F for b in text):
                 cov.mark(target, end + 1 - target, DECODED)
+    names = {name for name, _s, _e in sections}
+    for symbol, rule in _FE10_FIELD_RULES.items():
+        if symbol in names:
+            rule(cov, sections)
+    if "FE10PersonGrowth" in names:
+        _fe10_growth(cov)
+    if "EffectData" in names:
+        _fe10_effects(cov)
+    for name, start, end in sections:
+        at = start
+        while at < end:
+            if cov.status[at] != UNCLASSIFIED:
+                at += 1
+                continue
+            run = at
+            while run < end and cov.status[run] == UNCLASSIFIED:
+                run += 1
+            cov.mark(at, run - at, UNDECODED, f"{name} records")
+            at = run
 
 
 @handles("FE8Anim.bin", lambda name, data: _base(name) == "fe8anim.bin")
