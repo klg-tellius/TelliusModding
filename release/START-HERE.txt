@@ -32,4 +32,6 @@ This initial build is not digitally signed. Windows may show a publisher warning
 Download only from the project's GitHub Releases page and compare the supplied
 SHA-256 checksum if needed. Follow your organization's security policy.
 
-No game data is included. Third-party notices are in licenses/ and CREDITS.md.
+Tellius Modding is released under the MIT License (licenses/TelliusModding-LICENSE.txt).
+It does not cover Nintendo game data, which is never included: use your own disc.
+Third-party notices are in licenses/ and CREDITS.md.
