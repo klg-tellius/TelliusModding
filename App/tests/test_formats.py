@@ -13,6 +13,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import animation, dispo, engine_pose, face_data, gcdisc, dsp_adpcm, event_script, fe8data, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, message, model, pak, portrait_anim, shop, skeleton, stm, thp, tpl
+from tests.corpus import FULL, sample
 from fe_modding.gui import map_scene, model_viewer
 
 
@@ -2804,9 +2805,8 @@ class DiscModelRoundTripTests(unittest.TestCase):
                 failures.append(name)
 
         root = Path(os.environ["FE9_EXTRACTED_FILES"])
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
+        paths = sorted(p for p in root.rglob("*") if p.is_file() and (FULL or p.suffix.lower() in (".cmp", ".pak", ".gs", ".g", ".ga")))
+        for path in sample(paths, keep=("ymu/ike", "bmap01/"), size=80):
             data = path.read_bytes()
             if path.suffix.lower() == ".cmp":
                 try:

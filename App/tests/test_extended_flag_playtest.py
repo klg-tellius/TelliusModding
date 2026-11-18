@@ -1,4 +1,6 @@
+from contextlib import redirect_stderr
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -158,8 +160,8 @@ class PlaytestTests(unittest.TestCase):
             sentinel.write_bytes(b"do not overwrite")
             args = ["prepare", "--output", tmp, "--source-root", tmp, "--dolphin", tmp,
                     "--controller-config", tmp]
-            with patch("sys.argv", args), self.assertRaises(SystemExit):
-                build.main()
+            with patch("sys.argv", args), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                build.main()  # argparse prints the refusal; keep it out of the test output
             self.assertEqual(sentinel.read_bytes(), b"do not overwrite")
 
 

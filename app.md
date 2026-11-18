@@ -13,6 +13,20 @@ python main.py
 python -m unittest discover -s tests -v
 ```
 
+### Tests
+
+Three tiers, from quickest to slowest:
+
+| Tier | Command (from `App/`) | When |
+| --- | --- | --- |
+| Changed code | `python -m tools.affected_tests --direct` | While editing: the test modules that import a changed module |
+| Unit | `python -m pytest -n auto` (or `python -m unittest discover -s tests`) | Before a commit; disc tests skip |
+| Disc | the same, with `FE9_EXTRACTED`, `FE9_EXTRACTED_FILES`, `FE10_EXTRACTED`, `FE10_EXTRACTED_FILES` set | Before a pull request |
+
+- `python -m tools.affected_tests` without `--direct` follows imports all the way, and `--base main` covers a whole branch. `--pytest -n auto` runs the picked tests in parallel.
+- Disc tests that walk every file of a kind (models, maps, textures, messages) check a fixed sample (`tests/corpus.py`). Set `TELLIUS_CORPUS=full` to walk everything, and to check the counts that only hold for the whole disc. Do this before a pull request that changes a format.
+- `-n auto` needs the dev requirements: `python -m pip install -r requirements-dev.txt` (pytest and pytest-xdist).
+
 ## Architecture
 
 The app has four main layers:

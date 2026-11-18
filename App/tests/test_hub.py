@@ -414,7 +414,12 @@ class RealAssetIntegrationTests(unittest.TestCase):
                 shutil.copy(source / folder / "chap5.cms", files / folder / "chap5.cms")
             shutil.copytree(source / "shop", files / "shop")
             (project.extracted_dir / "sys").mkdir(exist_ok=True)
-            shutil.copy(RETAIL_DIR / "GFEE01.dol", project.extracted_dir / "sys" / "main.dol")
+            dol = RETAIL_DIR / "GFEE01.dol"
+            if not dol.is_file() and os.environ.get("FE9_EXTRACTED"):  # the extracted disc's own copy
+                dol = Path(os.environ["FE9_EXTRACTED"]) / "sys" / "main.dol"
+            if not dol.is_file():
+                self.skipTest("no retail GFEE01 DOL (research/main_dol/dols or FE9_EXTRACTED)")
+            shutil.copy(dol, project.extracted_dir / "sys" / "main.dol")
             (project.extracted_dir / "sys" / "boot.bin").write_bytes(b"GFEE01\0\0" + bytes(0x438))
 
             plan = chapters.add_story_chapter(project, (files / "FE8Data.bin").read_bytes(), "05", 33, "Hub")
