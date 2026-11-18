@@ -59,7 +59,8 @@ Offsets and examples in the archive are given for the US release unless a page s
 
 | Area | Path of Radiance | Radiant Dawn | Where |
 | --- | --- | --- | --- |
-| Chapter data: objectives, music, backgrounds, weather | Yes | Yes | Chapter › Chapter data |
+| Chapter data: objectives, backgrounds, weather | Yes | Yes | Chapter › Chapter data |
+| A chapter's map music | Yes (Chapter data) | Yes (Assets › Sound Tables › Chapter music) | [Music](../modding/47-music.md) |
 | Story order and **Add chapter** | Yes | Yes | [Chapter IDs and story flow](../modding/07-chapter-ids-and-story-flow.md) |
 | New campaign (several chapters at once) | Yes | Yes | [New campaign wizard](../modding/08-new-campaign-wizard.md) |
 | Hub chapters | Yes | Yes | [Hub chapters](../modding/hub-chapters.md) |
@@ -78,12 +79,15 @@ Offsets and examples in the archive are given for the US release unless a page s
 | Portraits | Yes | Yes (4:3 and 16:9 sets) | [Portraits](../modding/11-portraits.md) |
 | 3D models: import, export, new slots | Yes | Yes | [Blender round trip](../modding/51-blender-round-trip.md) |
 | Map model registry | Yes | View, plus a model's variant | Assets › Animation Data |
-| Battle data, battle cameras | Yes | Yes | [Battle cameras](../modding/70-battle-cameras.md) |
+| Battle data | Yes | Yes: typed fields for all 21 `FE10Battle` tables (**Edit fields…**), and which motions each unit plays with each weapon type (**Motions by weapon…**) | Assets › Battle Data |
+| Battle cameras | Yes | Yes | [Battle cameras](../modding/70-battle-cameras.md) |
 | Battle weapons, sceneries, unit parameters | Yes | Yes | [Battle presentation](../modding/55-battle-presentation.md) |
 | Battle backgrounds | Yes | Yes (with the sky backdrops) | [Battle backgrounds](../modding/28-battle-backgrounds.md) |
 | Visual effects and particles | Yes | Yes | [Visual effects](../modding/69-visual-effects.md) |
+| Animation tracks of models (`.ga`): particle emitters, material tracks (alpha, colour, texture translate, rotate, scale), timing events | Yes | Yes, kept by the Blender round trip | Particle editor, model viewer |
 | Icons and textures | Yes | Yes | [Graphics](../modding/50-graphics.md) |
 | Music and sound effects | Yes | Yes | [Music](../modding/47-music.md), [Sound effects](../modding/48-sound-effects.md) |
+| Sound tables (`sound_data`): each cue's volume, pitch, pans, sends, priority, voice limit, random variation, distance and Sound Room index; chapter music, battle themes (boss and pairing), environment sounds, map mixer, animation-event sounds, chapter sound groups; rows can be added and removed | — | Yes | Assets › Sound Tables |
 | Videos | Yes | Yes | [Videos](../modding/49-videos.md) |
 | Tutorials, staff credits, Sound Room | Yes | Yes | [Sound Room, credits and tutorials](../modding/73-sound-room-credits-tutorials.md) |
 | Ending illustrations | Yes | — | Assets |
@@ -128,7 +132,7 @@ Read [Know the current limits](../modding/63-known-limits.md) for the engine's f
 
 - The conversation preview has not been compared with the game the way Path of Radiance's was: check the timing and the portraits' places in Dolphin.
 - Some save fields are still unnamed (a few words of the `FGPT`, `T  T` and `RELD` sections): the editor keeps them as they are.
-- Some bytes of the battle tables and of the animation files have a known size but no known meaning; the app keeps them unchanged. The open items are listed in the [Radiant Dawn undecoded inventory](https://github.com/klg-tellius/TelliusModding/blob/main/App/docs/RD_UNDECODED_INVENTORY.md).
+- A few fields still have a known size but no known meaning; the app keeps them unchanged. The open items are listed in the [Radiant Dawn undecoded inventory](https://github.com/klg-tellius/TelliusModding/blob/main/App/docs/RD_UNDECODED_INVENTORY.md).
 - The Riivolution export is checked on generated files; play it in Dolphin before sharing it.
 
 ## Related pages
