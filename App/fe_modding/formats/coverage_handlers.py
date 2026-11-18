@@ -1488,17 +1488,6 @@ def brstm_file(cov: FileCoverage, walker: Walker) -> None:
     cov.fill(DECODED)
 
 
-@handles("brsar", lambda name, data: data[:4] == b"RSAR")
-def brsar_file(cov: FileCoverage, walker: Walker) -> None:
-    from . import brsar
-
-    archive = brsar.read_brsar(cov.data)
-    cov.mark(0, 0x40, DECODED)
-    for section in archive.sections:
-        status = DECODED if section.magic == "SYMB" else UNDECODED
-        cov.mark(section.offset, section.size, status, f"BRSAR {section.magic}")
-
-
 @handles("thp", lambda name, data: data[:4] == b"THP\0")
 def thp_file(cov: FileCoverage, walker: Walker) -> None:
     from . import thp

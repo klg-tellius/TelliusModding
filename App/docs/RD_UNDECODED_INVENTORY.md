@@ -405,3 +405,19 @@ parameters (5 KB), FE10Anim data/header/motion flags (2.9 KB), `.ga` curve +8 (2
 European and Japanese discs, same rules (the PAL disc needed `sound_data_<lang>.cms`, `<lang>_caption_data.bin` and
 its two leftover `.bat` packing scripts recognized): RFEP01 **15.2 KB of 2.54 GB (0.0006 %)**, RFEJ01 **11.8 KB of
 1.85 GB (0.0006 %)**, no handler failures. The open fields are the same as on RFEE01.
+
+
+## 2026-11-18: the sound archives (`.brsar`)
+
+The two `.brsar` the earlier runs left out (`Sound/sound.brsar` and `sound_us.brsar`, 48.7 MB each; the Japanese disc
+has only `sound.brsar`, and its HOME Menu sounds are `system/HomeButton/HomeButtonSe.brsar`) were counted 99.7 %
+undecoded: the old handler marked only SYMB as decoded. `formats/coverage_nw4r.py` now places them with the NW4R
+layouts the app's readers follow: the INFO tables (sounds with their 3D and seq/strm/wave details, banks, players,
+files and their group positions, groups and their items, the player counts), and in FILE every embedded `RSEQ`
+(header, MML byte-code, labels), `RBNK` (instrument tree of InstParam, range and index tables; wave infos, channels and
+DSP-ADPCM states) and `RWSD` (wave sounds, tracks and note events, note infos; wave infos), then the DSP-ADPCM samples
+their waves point at, in whole 8-byte frames. Reserved words and alignment are checked to be zero.
+
+Result on all six archives (RFEE01, RFEP01: both; RFEJ01: `sound.brsar` and `HomeButtonSe.brsar`): **0 bytes undecoded
+or unclassified, no handler failure**. The LFO, envelope-graph and randomizer tables are null on every vanilla note;
+a file that has one gets it counted open. `tests/test_fe10_audio.py` checks the archives of the disc it runs on.

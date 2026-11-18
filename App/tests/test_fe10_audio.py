@@ -170,6 +170,17 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
             self.assertIn("STRM_BGM_BTL_BOSS4", archive.symbols)
             self.assertGreater(len(archive.files), 1000)
             self.assertGreater(len(archive.sounds), 2000)
+
+    def test_sound_archives_have_no_undecoded_bytes(self):
+        from fe_modding.formats import coverage
+
+        for name in per_disc(self.root, ("sound.brsar", "sound_us.brsar"), jp=("sound.brsar",)):
+            report = coverage.Report()
+            coverage.Walker(report).child(f"Sound/{name}", (self.root / "Sound" / name).read_bytes())
+            totals = report.formats["brsar"]
+            self.assertEqual(totals.failures, [], name)
+            open_bytes = totals.counts[coverage.UNCLASSIFIED] + totals.counts[coverage.UNDECODED]
+            self.assertEqual(open_bytes, 0, f"{name}: {totals.fields}")
         active = brsar.read_brsar((self.root / "Sound" / per_disc(self.root, "sound_us.brsar", jp="sound.brsar")).read_bytes())
         title = next(sound for sound in active.sounds if sound.name == "STRM_BGM_FE_THEME1")
         self.assertEqual(title.external_path, "strm/fe10_bgm_sys_title1_32k.brstm")

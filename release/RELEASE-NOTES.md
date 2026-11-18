@@ -111,8 +111,9 @@ Extras unlocks, Conversation Room order and subtitle edits.
 ## Decoding coverage
 
 The coverage tool walks every file on the disc and reports each byte as decoded,
-plausible or open. Movies, `.stm` music and `.brsar` are left out, and on Radiant
-Dawn the Wii HOME Menu's sound banks and `client.bin`:
+plausible or open. Movies and `.stm` music are left out, and on Radiant Dawn the Wii
+HOME Menu's sound banks and `client.bin`. Radiant Dawn's sound archives (`.brsar`,
+48 MB each) are placed byte by byte, with nothing left open on any disc:
 
 | Disc | Undecoded or unclassified |
 |---|---|
@@ -146,6 +147,9 @@ was measured on the US disc.
 ## For contributors
 
 - `tools/affected_tests.py` runs only the tests that import changed code.
+- `tools/release_check.py` runs every check that needs the game data in one command
+  (both games' disc tests, every region, the coverage of each disc and every `.ga`
+  round trip) and ends with one pass/fail table.
 - Disc tests check a fixed sample by default (`TELLIUS_CORPUS=full` walks everything)
   and run in parallel with pytest-xdist; every Radiant Dawn disc test runs on the US,
   European or Japanese disc.
