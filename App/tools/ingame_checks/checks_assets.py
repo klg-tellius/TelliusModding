@@ -96,8 +96,9 @@ def icon_fixture(iid: str):
 def judge_icon(mod, retail, facts):
     from .oracles import magenta_pixels
     a, b = magenta_pixels(retail["shot"]), magenta_pixels(mod["shot"])
-    return b >= 40 and a < 5, f"icon {facts['icon']} (sheet cell {facts['cell']}): {b} magenta pixels on the map " \
-                              f"screen with the unit window open (retail {a})"
+    # the PoR map cursor's corners are magenta too: count what the edit adds
+    return b - a >= 300, (f"icon {facts['icon']} (sheet cell {facts['cell']}): {b} magenta pixels on the map screen "
+                          f"with the unit window open, retail {a} (the cursor)")
 
 
 from .oracles import map_shot  # noqa: E402

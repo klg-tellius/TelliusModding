@@ -82,3 +82,29 @@ def map_shot(name: str = "map"):
         time.sleep(1.5)
         return {"shot": str(driver.snap(name))}
     return play
+
+
+def tone_profile(dump, hz: int = 440) -> dict:
+    """The strongest share of ``hz`` in any one-second window of Dolphin's audio dump (read once Dolphin has
+    closed it; the header is never finalised, so the samples are everything after ``data``)."""
+    import struct
+
+    import numpy as np
+    if dump is None or not dump.is_file():
+        return {"tone_max": 0.0, "seconds": 0.0}
+    raw = dump.read_bytes()
+    rate = struct.unpack_from("<I", raw, 24)[0] if raw[:4] == b"RIFF" else 32000
+    at = raw.find(b"data") + 8
+    pcm = np.frombuffer(raw[at:at + (len(raw) - at) // 4 * 4], dtype="<i2").astype(float)
+    mono = (pcm[0::2] + pcm[1::2]) / 2
+    best, window = 0.0, rate
+    freqs = np.fft.rfftfreq(window, 1 / rate)
+    band = (freqs > 80) & (freqs < 4000)
+    near = (freqs > hz - 4) & (freqs < hz + 4)
+    hann = np.hanning(window)
+    for start in range(0, max(0, len(mono) - window), window // 2):
+        spectrum = np.abs(np.fft.rfft(mono[start:start + window] * hann)) ** 2
+        total = spectrum[band].sum()
+        if total > 1e6:          # skip silence
+            best = max(best, float(spectrum[near].sum() / total))
+    return {"tone_max": best, "seconds": len(mono) / rate}

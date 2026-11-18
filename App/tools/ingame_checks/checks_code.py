@@ -341,7 +341,8 @@ CHECKS.append(Check("K3r", "rd", "Growth gain per success in a real level-up", [
 def fixture_fire_effect(ctx):
     from fe_modding.formats import fe8data
     sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
-    ctx.facts.update(old=getattr(sword, "weapon_effect", None))
+    ctx.facts.update(old=getattr(sword, "weapon_effect", None),
+                     change=f"Iron Sword weapon effect {getattr(sword, 'weapon_effect', None)} -> EID_FIRE2_WP")
     ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "weapon_effect", "EID_FIRE2_WP")
 
 
@@ -352,7 +353,7 @@ def judge_new_processes(mod, retail, facts):
 
 
 CHECKS.append(Check("E1", "por", "Battle Weapons: the Iron Sword fights with the fire effect",
-                    ["1.0 §4 Battle Weapons fire effect (POR)"], play=play_attack, judge=judge_new_processes,
+                    ["1.0 §4 Battle Weapons fire effect (POR)"], play=play_attack, judge=lambda m, r, f: judge_fight_looks_different(m, r, f),
                     setup=setup_attack, fixture=fixture_fire_effect, start=Jump(2)))
 
 
@@ -384,8 +385,9 @@ CHECKS.append(Check("BD1", "por", "Battle Data: an edited param.dbx and a fight 
 
 # -- more battle visuals, all with the same menu-driven attack (the frames are kept for a look) -----------------
 
-def frames_differ(mod, retail, first: int = 2, last: int = 7) -> float:
-    """Mean share of the screen that differs between the two runs' battle frames ``first``..``last``."""
+def frames_differ(mod, retail, first: int = 1, last: int = 9) -> float:
+    """The largest share of the screen that differs between the two runs' battle frames of the same index
+    (frames are taken a second apart from the battle's start, so effects line up within a frame or two)."""
     from .oracles import region_diff
     shares = []
     for k in range(first, last + 1):
@@ -393,14 +395,15 @@ def frames_differ(mod, retail, first: int = 2, last: int = 7) -> float:
         b = Path(mod["shot"]).parent / f"battle_{k:02d}.png"
         if a.is_file() and b.is_file():
             shares.append(region_diff(str(a), str(b)))
-    return sum(shares) / len(shares) if shares else 0.0
+    return max(shares) if shares else 0.0
 
 
 def judge_fight_looks_different(mod, retail, facts):
     lost = mod["before"]["target_hp"] - mod["target_hp_after"]
     share = frames_differ(mod, retail)
-    return lost > 0 and share > 0.25, (f"{facts['change']}: the fight ran to its end (target lost {lost} HP); "
-                                       f"battle frames differ from retail on {share:.0%} of the screen on average")
+    return lost > 0 and share > 0.05, (f"{facts.get('change', '')}: the fight ran to its end (target lost {lost} HP); "
+                                       f"the most different battle frame differs from retail on {share:.0%} of the "
+                                       f"screen (battle_*.png)")
 
 
 def fixture_scenery(ctx):

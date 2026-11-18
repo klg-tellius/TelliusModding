@@ -27,7 +27,7 @@ from .core import ROOT, VARIANTS, build_variant  # noqa: E402
 from .driver import Driver  # noqa: E402
 from tools.session_playtest.harness import write_lf  # noqa: E402
 
-SETS = ("gamedata", "saves", "por_saves", "chapters", "assets", "maps", "code", "regions", "sharing", "audio", "models", "menus")
+SETS = ("gamedata", "saves", "por_saves", "chapters", "assets", "maps", "code", "regions", "sharing", "audio", "models", "menus", "more")
 
 
 def dolphin_running() -> bool:
@@ -60,6 +60,9 @@ def _run_once(check, variant: str, facts: dict) -> dict:
                "invalid_accesses": driver.invalid_accesses() if driver.user.exists() else []}
     finally:
         driver.close()
+    if check.audio:              # Dolphin keeps the dump open while it runs: read it now
+        from .oracles import tone_profile
+        obs.update(tone_profile(driver.audio_dump()))
     obs["seconds"] = round(time.time() - started, 1)
     write_lf(out / "observations.json", json.dumps(obs, indent=2, default=str) + "\n")
     return obs

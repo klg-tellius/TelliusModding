@@ -41,7 +41,8 @@ def add_rd_track(ctx) -> str:
     from fe_modding.game_profile import files_root_of
     strm = files_root_of(ctx.project) / "Sound" / "strm"
     template = sorted(strm.glob("*.brstm"))[0]
-    audio = tone()
+    info = brstm.read_info(template.read_bytes())
+    audio = tone(info.sample_rate, channels=info.channel_count)
     cue, _sound = rd_music.add_track(ctx.project, TRACK, brstm.write_brstm(audio, template.read_bytes()), template,
                                      len(audio.channels))
     return cue
@@ -73,11 +74,12 @@ def fixture_por_bgmplay(ctx):
     import re
     cue = add_por_track(ctx)
     source = ctx.script_source(2)
-    match = re.search(r'BGMPlay\("([^"]+)"', source)
+    match = re.search(r'BGMPlay\((\d+), "([^"]+)"\)', source)
     if match is None:
-        raise RuntimeError("chapter 1's script has no BGMPlay with a cue name")
-    ctx.replace_script(2, match.group(0), f'BGMPlay("{cue}"')
-    ctx.facts.update(cue=cue, replaced=match.group(1))
+        raise RuntimeError("chapter 1's script has no BGMPlay(channel, cue)")
+    count = source.count(match.group(0))
+    ctx.replace_script(2, match.group(0), f'BGMPlay({match.group(1)}, "{cue}")', count)
+    ctx.facts.update(cue=cue, replaced=match.group(2))
 
 
 def strongest(rate: int, samples: list[int]) -> tuple[float, float]:
@@ -97,35 +99,27 @@ def strongest(rate: int, samples: list[int]) -> tuple[float, float]:
 
 
 def listen_on_map(driver, facts):
+    """Play to the map and listen there for a while (the runner reads the dump once Dolphin closes)."""
     import time
     driver.to_player_phase(8)
-    mark = driver.audio_mark()
-    time.sleep(6)
-    rate, samples = driver.audio_since(mark)
-    hz, share = strongest(rate, samples)
-    return {"hz": hz, "share": share, "rate": rate, "seconds": len(samples) / rate if rate else 0,
-            "shot": str(driver.snap("map"))}
+    time.sleep(8)
+    return {"shot": str(driver.snap("map"))}
 
 
 def listen_in_opening(driver, facts):
-    obs = play_first_talk(driver, facts)
-    mark = driver.audio_mark()
     import time
-    time.sleep(6)
-    rate, samples = driver.audio_since(mark)
-    hz, share = strongest(rate, samples)
-    obs.update(hz=hz, share=share, rate=rate, seconds=len(samples) / rate if rate else 0)
+    obs = play_first_talk(driver, facts)
+    time.sleep(8)
     return obs
 
 
 def judge_tone(mod, retail, facts):
+    """The tone's strongest one-second share in the whole dump: high in the edited run, low in retail."""
     if not mod.get("seconds"):
-        return False, "no audio in the dump (is DSP dumping silent at volume 0?)"
-    heard = abs(mod["hz"] - TONE_HZ) < 6 and mod["share"] > 0.3
-    retail_tone = abs(retail["hz"] - TONE_HZ) < 6 and retail["share"] > 0.3
-    return heard and not retail_tone, f"{facts['cue']}: edited run's strongest frequency {mod['hz']:.0f} Hz " \
-                                      f"({mod['share']:.0%} of the energy), retail {retail['hz']:.0f} Hz " \
-                                      f"({retail['share']:.0%}), {mod['seconds']:.1f} s heard"
+        return False, "no audio in the dump"
+    ok = mod["tone_max"] > 0.3 and retail["tone_max"] < 0.1
+    return ok, (f"{facts['cue']}: 440 Hz reaches {mod['tone_max']:.0%} of a one-second window's energy in the "
+                f"edited run, {retail['tone_max']:.0%} in retail ({mod['seconds']:.0f} s of audio)")
 
 
 CHECKS = [
@@ -152,7 +146,6 @@ def fixture_rd_menu_sfx(ctx):
     raw = data_path.read_bytes()
     cues = fe10_sound.read_sound_data(lz10.decompress(raw) if raw[:1] == b"\x10" else raw)
     wanted = [c for c in cues if c.name.startswith("SFX_SYS_")]
-    samples = tuple(int(12000 * math.sin(2 * math.pi * TONE_HZ * i / 32000)) for i in range(32000))
     done, seen = 0, set()
     archive_bytes = archive_path.read_bytes()
     for cue in wanted:
@@ -166,7 +159,11 @@ def fixture_rd_menu_sfx(ctx):
         if (sound.file_index, wave_index) in seen:
             continue
         seen.add((sound.file_index, wave_index))
-        header, wave = rwsd.replace_wave(document, wave_index, rwsd.RwsdAudio(32000, (samples,), None))
+        target = document.waves[wave_index]
+        rate = target.sample_rate
+        mono = tuple(int(12000 * math.sin(2 * math.pi * TONE_HZ * i / rate)) for i in range(rate))
+        header, wave = rwsd.replace_wave(document, wave_index,
+                                         rwsd.RwsdAudio(rate, (mono,) * len(target.channels), None))
         archive_bytes = brsar.replace_embedded_file(archive, sound.file_index, header, wave)
         done += 1
     ctx.project.write_keeping_original(archive_path, archive_bytes)
@@ -189,20 +186,17 @@ def tone_share(rate: int, samples: list[int]) -> float:
 
 def listen_to_menus(driver, facts):
     driver.to_player_phase(8)
-    mark = driver.audio_mark()
     for button in ("A", "A", "A", "B", "B", "B"):
         driver.press(button, gap=1.0)
-    rate, samples = driver.audio_since(mark)
-    return {"share": tone_share(rate, samples), "seconds": len(samples) / rate if rate else 0,
-            "shot": str(driver.snap("menus"))}
+    return {"shot": str(driver.snap("menus"))}
 
 
 def judge_sfx(mod, retail, facts):
     if not mod.get("seconds"):
         return False, "no audio in the dump"
-    ok = mod["share"] > 0.05 and mod["share"] > 5 * retail["share"]
-    return ok, (f"{facts['waves']} menu sound waves replaced: 440 Hz is {mod['share']:.1%} of what played while "
-                f"opening and closing the menus, retail {retail['share']:.1%}")
+    ok = mod["tone_max"] > 0.15 and mod["tone_max"] > 3 * retail["tone_max"]
+    return ok, (f"{facts['waves']} menu sound waves replaced: 440 Hz reaches {mod['tone_max']:.0%} of a one-second "
+                f"window while the menus open and close, retail {retail['tone_max']:.0%}")
 
 
 CHECKS.append(Check("SX1r", "rd", "Sound Effects › Replace audio: the menu sounds play the new wave",

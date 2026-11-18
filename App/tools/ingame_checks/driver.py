@@ -47,8 +47,13 @@ class Driver(Sweep):
 
     def boot(self) -> None:
         for folder in (self.user, self.out / "card"):
-            if folder.exists():
-                shutil.rmtree(folder)
+            for attempt in range(10):           # a closing Dolphin can hold its shader cache for a moment
+                try:
+                    if folder.exists():
+                        shutil.rmtree(folder)
+                    break
+                except PermissionError:
+                    time.sleep(3)
         di.configure(self.user)
         config = self.user / "Config"
         logger = ("[Logs]\nMI = True\nMEMMAP = True\nOSREPORT = True\nPOWERPC = True\n"

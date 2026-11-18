@@ -70,6 +70,77 @@ def text_export_twice(region: str) -> tuple[bool, str]:
                 f"{', a stale file in a part folder was kept' if stray in second else ''}")
 
 
+def excel_round_trip(region: str) -> tuple[bool, str]:
+    """Game Data › Export Excel… then Import Excel… of the unchanged workbook gives back the same file."""
+    from fe_modding import excel_io
+    project = work_for(region, {}).project
+    data = project.read_logical("game_data")
+    with tempfile.TemporaryDirectory() as temp:
+        book = Path(temp) / "game_data.xlsx"
+        excel_io.export_fe8(book, data)
+        out, _docs, errors = excel_io.import_fe8(book, data)
+    return out == data and not errors, (f"{len(data):,} bytes: the import of the exported workbook is "
+                                        f"{'identical' if out == data else 'DIFFERENT'}; {len(errors)} import errors {errors[:2]}")
+
+
+def reset_everything(region: str) -> tuple[bool, str]:
+    """Tools › Game Code: two rows changed, then Reset everything: main.dol is the retail file again."""
+    from fe_modding.game_code import entries  # noqa: F401
+    from fe_modding.game_code.catalog import CATALOG
+    from fe_modding.game_code.editor import CodeEditor
+    from fe_modding.game_profile import disc_root_of
+    work = work_for(region, {})
+    project = work.project
+    dol = disc_root_of(project) / "sys" / "main.dol"
+    retail = (BASES[region] / "sys" / "main.dol").read_bytes()
+    try:
+        editor = CodeEditor(disc_root_of(project), project.write_keeping_original, project.extracted_bytes)
+        editor.set_value(CATALOG.entries["combat.crit_multiplier"], 5)
+        editor.set_patch(CATALOG.entries["growth.force_random"], True)
+        changed = dol.read_bytes() != retail
+        reset = editor.reset_all()
+        same = dol.read_bytes() == retail
+    finally:
+        work.revert()
+    return changed and same, (f"two rows set (main.dol {'changed' if changed else 'UNCHANGED'}); Reset everything "
+                              f"reset {reset} row(s); main.dol {'equals retail' if same else 'DIFFERS from retail'}")
+
+
+def apply_patch_matches(region: str) -> tuple[bool, str]:
+    """Disc & Patch › Apply patch… with X1's .tpatch on a copy of the files it touches: each written file is
+    the edited one."""
+    import shutil
+    from fe_modding import patch
+    run = ROOT / "run" / "X1_mod"
+    tpatch, edited = run / "mod.tpatch", run / "disc_tree"
+    if not tpatch.is_file():
+        return False, "no X1 patch yet (run the sharing set first)"
+    info = patch.read_patch(tpatch)
+    with tempfile.TemporaryDirectory() as temp:
+        target = Path(temp) / "disc"
+        for rel in ("sys/boot.bin", *info.replace, *info.remove):
+            (target / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(BASES[region] / rel, target / rel)
+        patch.apply_patch(tpatch, target)
+        wrong = [rel for rel in (*info.replace, *info.add)
+                 if (target / rel).read_bytes() != (edited / rel).read_bytes()]
+    return not wrong, (f"{len(info.replace)} replaced, {len(info.add)} added, {len(info.remove)} removed; "
+                       f"{'every file equals the edited tree' if not wrong else f'differs: {wrong[:4]}'}")
+
+
+def record_add_remove(region: str) -> tuple[bool, str]:
+    """Game Data › New… (a copy of Ike) then Remove of the copy: FE8Data is the file it was."""
+    from fe_modding.formats import fe8data
+    project = work_for(region, {}).project
+    data = project.read_logical("game_data")
+    added, index = fe8data.add_record(data, "character", "PID_INGAME_CHECK", copy_from=0)
+    copy = next(c for c in fe8data.read_fe8data(added).characters if c.index == index)
+    back = fe8data.remove_record(added, "character", index)
+    ok = copy.pid == "PID_INGAME_CHECK" and back == data
+    return ok, (f"copy {copy.pid} added as record {index}; after Remove the file is "
+                f"{'identical' if back == data else 'DIFFERENT'} ({len(back):,} / {len(data):,} bytes)")
+
+
 def main() -> None:
     with RunLock():          # the shared work projects: never next to a running check's build
         _main()
@@ -81,7 +152,14 @@ def _main() -> None:
     rows = [("SC1e", "RFEP01", "Scripts round-trip on the European disc", ["SCRIPT-01"], script_round_trips),
             ("SC1j", "RFEJ01", "Scripts round-trip on the Japanese disc", ["SCRIPT-01"], script_round_trips),
             ("TX1", "GFEE01", "Export as text twice into one folder", ["1.0 §6 Export as text (POR)"], text_export_twice),
-            ("TX1r", "RFEE01", "Export as text twice into one folder", ["1.0 §6 Export as text (RD)"], text_export_twice)]
+            ("TX1r", "RFEE01", "Export as text twice into one folder", ["1.0 §6 Export as text (RD)"], text_export_twice),
+            ("XL1", "GFEE01", "Excel export then import gives the same game data", ["1.0 §2 Excel (POR)"], excel_round_trip),
+            ("GC1", "GFEE01", "Game Code: Reset everything restores main.dol", ["1.0 §5 Game Code Reset everything"],
+             reset_everything),
+            ("AP1", "GFEE01", "Apply patch writes the edited files", ["1.0 §6 Apply patch"], apply_patch_matches),
+            ("RC1", "GFEE01", "Game Data New then Remove gives the same file", ["1.0 §2 New/Remove"], record_add_remove)]
+    only = set(sys.argv[1:])
+    rows = [r for r in rows if not only or r[0] in only]
     for cid, region, title, covers, fn in rows:
         print(f"== {cid}: {title}", flush=True)
         try:
