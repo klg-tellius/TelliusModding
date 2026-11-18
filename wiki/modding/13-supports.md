@@ -114,7 +114,7 @@ Bond effects: an adjacent same-army pair each gains the configured Critical, or 
 | **Affinity bonuses** | **Bonus per support rank**: per **Affinity**, Attack, Defence, Hit, Avoid, Critical, Critical avoid |
 | **Conversations** | Every `MYELL_` support conversation |
 
-On Radiant Dawn, **Game Data › Supports** starts with **Pairs** too: every character against each partner in their list, with the partner's affinity, the support speed and a reserved marker (0 or 255; no game code that reads it has been found). Use **Search** to narrow it by name, and double-click a pair to open the character's Supports tab. The other buttons open the tables: Supports, Support points, Bonds, Affinities, Affinity pairs and No-battle lists. Radiant Dawn lists each supporting character against all the others, so its Pairs list is much longer than Path of Radiance's.
+On Radiant Dawn, **Game Data › Supports** starts with **Pairs** too: every character against each partner in their list, with the partner's affinity, the support speed and a reserved marker (0 or 255; the game never reads it, so changing it does nothing). Use **Search** to narrow it by name, and double-click a pair to open the character's Supports tab. The other buttons open the tables: Supports, Support points, Bonds, Affinities, Affinity pairs and No-battle lists. Radiant Dawn lists each supporting character against all the others, so its Pairs list is much longer than Path of Radiance's.
 
 ## Things to try next
 

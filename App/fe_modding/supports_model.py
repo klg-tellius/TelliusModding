@@ -276,19 +276,20 @@ def _rd_speed_note(data: bytes) -> str:
         param = b""
     if len(param) < 16:
         return ("Speed picks one of five extra gains (0 fastest ... 4 slowest) added to every support-point "
-                "gain. No game-code reader was found for the reserved marker.")
+                "gain. The game never reads the reserved marker.")
     extra = ", ".join(f"{tier}: {value - 256 if value > 127 else value:+d}" for tier, value in enumerate(param[11:16]))
     return (f"Speed (0 to 4) adds an extra amount to every support-point gain of the pair: {extra}. Gains: "
             f"{param[4]} at each map start ({param[5]} in part IV), {param[6]} per phase next to the partner, "
             f"{param[7]} carrying it, {param[8]} per staff, {param[9]} per Shove, {param[10]} per Smite; ranks "
             f"C/B/A open at {param[0]}/{param[1]}/{param[2]} points. The reserved marker (255 on 151 pairs in "
-            "the retail data, always the same in both lists, 0 elsewhere) has no known game-code reader.")
+            "the retail data, always the same in both lists, 0 elsewhere) is never read by the game: changing it "
+            "does nothing.")
 
 
 class RdSupports(SupportsModel):
     partner_columns = (("Partner affinity", 110), ("Speed", 60), ("Marker", 60))
     pair_fields = (PairField("Speed (0 fastest, 4 slowest)", 0, 255),
-                   PairField("Reserved marker (no reader found)", 0, 255))
+                   PairField("Reserved marker (unused by the game)", 0, 255))
     pair_note = ("Radiant Dawn lists every supporting character against all of them (themselves included), so "
                  "the partners are edited, not added. Each character's own list is edited; the partner's list "
                  "keeps its own entry. Double-click a partner to open their page.")
