@@ -1040,6 +1040,38 @@ class SaveRecord:
         self.replace_section_bytes("UNIP", unit.offset + unit.support_offset + SUPPORT_HEADER + slot,
                                    bytes([points]))
 
+    def copy_unit(self, unit: SavedUnit, support_slot_counts: Mapping[int, int]) -> int:
+        """Copy ``unit`` into the first empty UNIP slot and return that slot. The copy is linked to
+        no unit (its three link bytes cleared) and has no active support partner; everything else,
+        items and forge records included, is the original's bytes."""
+        self._require_unit(unit)
+        units = self.unit_records(support_slot_counts)
+        target = next((u for u in units if u.empty), None)
+        if target is None:
+            raise ValueError("Every unit slot is in use.")
+        clone = bytearray(unit.raw)
+        clone[5:8] = b"\x00\x00\x00"
+        if unit.support_slot_count:
+            struct.pack_into(">H", clone, unit.support_offset + SUPPORT_PARTNER, 0)
+        section = self.section("UNIP")
+        start = section.data_offset + target.offset
+        self._replace_variable_bytes(start, start + len(target.raw), bytes(clone))
+        return target.slot
+
+    def remove_unit(self, unit: SavedUnit, support_slot_counts: Mapping[int, int]) -> None:
+        """Empty ``unit``'s UNIP slot. Refused while another unit links to it (the link bytes hold
+        slot numbers counted from 1), so no unit is left pointing at an empty slot."""
+        self._require_unit(unit)
+        number = unit.slot + 1
+        linked = [u.slot for u in self.unit_records(support_slot_counts)
+                  if not u.empty and u.slot != unit.slot and number in u.linked_slots]
+        if linked:
+            raise ValueError(f"Unit slot {number} is linked with slot {', '.join(str(s + 1) for s in linked)}; "
+                             "separate them in the game first.")
+        section = self.section("UNIP")
+        start = section.data_offset + unit.offset
+        self._replace_variable_bytes(start, start + len(unit.raw), b"\x00\x00")
+
     def set_unit_active_partner(self, unit: SavedUnit, person_number: int) -> None:
         """Set a unit's support partner (a character number in the save's list, 0 for none)."""
         self._require_unit(unit)

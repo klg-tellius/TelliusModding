@@ -27,6 +27,8 @@ from ..graphics_viewers import (
     EquipmentViewer,
     EtcGraphicsViewer,
     IllustrationViewer,
+    IntroGraphicsViewer,
+    SubtitleGraphicsViewer,
     SkyGraphicsViewer,
     WindowGraphicsViewer,
     WorldMapViewer,
@@ -48,6 +50,13 @@ from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 from .text_assets import ConversationsPanel, ScriptsPanel
 from ..fe10_conversation_lists import Fe10ConversationLists
+from ..glossary_editor import GlossaryEditor
+from ..conversation_room_editor import ConversationRoomEditor
+from ..epilogue_editor import EpilogueEditor
+from ..class_intro_editor import ClassIntroEditor
+from ..subtitles_editor import SubtitlesEditor
+from ..gmap_routes_editor import GmapRoutesEditor
+from ..wii_banner_editor import WiiBannerEditor
 
 #: (key, label, icon, description, class), in hub order.
 ASSET_TOOLS = [
@@ -55,6 +64,14 @@ ASSET_TOOLS = [
     ("scripts", "Scripts", "⌘", "Every event script (Scripts/), chapters' and startup.cmb", ScriptsPanel),
     ("conversation_lists", "Conversation Lists", "☰",
      "Base conversations, Conversation Room supports, support chat lines (FE10Conversation.cms)", Fe10ConversationLists),
+    ("conversation_room", "Conversation Room", "☷", "The Conversation Room's chapter and character orders",
+     ConversationRoomEditor),
+    ("endings", "Endings", "✧", "Each character's ending after the final chapter, with its alternatives",
+     EpilogueEditor),
+    ("class_intros", "Class Introductions", "⚑", "The Extras class introductions: unit, stage, motions, text",
+     ClassIntroEditor),
+    ("glossary", "Glossary", "❖", "The Info glossary: people, relation chart, terms and their unlock flags",
+     GlossaryEditor),
     ("portraits", "Portraits", "☺", "Character faces (Face/): view and replace", PortraitViewer),
     ("models", "3D Models", "◈", "Map and battle models, weapons, rigs, animations, map terrain", ModelViewer),
     ("animation_data", "Animation Data", "↝", "Animation IDs, model mappings, motions and weapon mappings",
@@ -66,6 +83,9 @@ ASSET_TOOLS = [
     ("illustrations", "Illustrations", "✎", "Textures in illust/", IllustrationViewer),
     ("ending", "Ending Art", "✦", "Textures in ending/", EndingViewer),
     ("world_map", "World Map", "◎", "Textures in gmap/", WorldMapViewer),
+    ("gmap_routes", "World Map Routes", "⤳", "The route lines world-map events draw (gmap/curve/)", GmapRoutesEditor),
+    ("wii_banner", "Wii Banner", "▬", "The Wii Menu channel title and banner pictures (opening.bnr)", WiiBannerEditor),
+    ("intro_graphics", "Class Intro Pictures", "▣", "Class introduction pictures (intro/)", IntroGraphicsViewer),
     ("icons", "Icons", "◆", "Item, menu and skill icons: view and replace one by one", IconViewer),
     ("fonts", "Fonts", "A", "The five text fonts: view, import a TrueType/OpenType font", FontViewer),
     ("ui_windows", "UI Windows", "▤", "Window textures (window/)", WindowGraphicsViewer),
@@ -89,6 +109,9 @@ ASSET_TOOLS = [
     ("sound_room_tracks", "Soundroom Tracks", "♬", "The Sound Room's music cues: pick and reorder",
      SoundRoomTracksEditor),
     ("videos", "Videos", "▶", "THP videos (Movie/): preview, replace, add", VideoViewer),
+    ("subtitles", "Movie Subtitles", "⧉", "When each subtitle picture of the story movies shows", SubtitlesEditor),
+    ("subtitle_graphics", "Subtitle Pictures", "▤", "The subtitle pictures (Movie/Caption/): view and replace",
+     SubtitleGraphicsViewer),
 ]
 TOOLS_BY_KEY = {t[0]: t for t in ASSET_TOOLS}
 #: Tools that need a decoder the game's profile must list (``GameProfile.features``); the rest open
@@ -106,7 +129,11 @@ ASSET_FEATURES = {
 }
 #: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
 #: and "not available" for a game without it.
-ASSET_FILES = {"conversation_lists": "conversation_data"}
+ASSET_FILES = {"conversation_lists": "conversation_data", "glossary": "dictionary",
+               "conversation_room": "conversation_room", "endings": "epilogue_data",
+               "class_intros": "intro_data", "intro_graphics": "intro_data",
+               "subtitles": "caption_data", "subtitle_graphics": "caption_data",
+               "gmap_routes": "route_styles", "wii_banner": "wii_banner"}
 #: Tools for data only some games have (``GameProfile.features``): absent from the hub, search and
 #: routes on a game without it, rather than "not available".
 ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
@@ -133,14 +160,15 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Assets", style="Title.TLabel").pack(anchor="w")
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
-        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "fonts")),
+        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "conversation_room", "glossary",
+                                                     "endings", "class_intros", "fonts")),
                             ("Characters and models", ("portraits", "models", "animation_data", "map_models",
                                                        "tilesets", "map_objects")),
                             ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
-                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "sound_room",
+                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "wii_banner", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
                                         "battle_scenery_graphics")),
-                            ("Sound and video", ("music", "sfx", "videos"))):
+                            ("Sound and video", ("music", "sfx", "videos", "subtitles", "subtitle_graphics"))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")

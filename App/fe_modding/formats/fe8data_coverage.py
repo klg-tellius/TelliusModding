@@ -175,15 +175,26 @@ def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from(">I", data, offset)[0]
 
 
+def _canonical(name: str) -> str:
+    """Path of Radiance's section name. Radiant Dawn keeps a copy of the file for importing a
+    Path of Radiance clear save (the file menu's inherit option) with every symbol renamed:
+    ``PersonData8``, ``DB8Head`` for ``DatabaseHead``, ``SI8_`` for ``SID_``."""
+    if name == "DB8Head":
+        return "DatabaseHead"
+    if name.startswith("SI8_"):
+        return "SID_" + name[4:]
+    return name[:-1] if name.endswith("8") and name[:-1].endswith(("Data", "Head")) else name
+
+
 def _sections(data: bytes) -> list[tuple[str, int, int]]:
     """(name, start, end) of each data-area section, absolute offsets. The
     per-skill ``SID_`` symbols name records inside ``SkillData``, not
     sections."""
     data_end = fe8data.HEADER_SIZE + _u32(data, 4)
     symbols = sorted(
-        (offset + fe8data.HEADER_SIZE, name)
+        (offset + fe8data.HEADER_SIZE, _canonical(name))
         for name, offset in fe8data.symbol_offsets(data).items()
-        if not name.startswith("SID_")
+        if not _canonical(name).startswith("SID_")
     )
     return [(name, start, symbols[i + 1][0] if i + 1 < len(symbols) else data_end)
             for i, (start, name) in enumerate(symbols)]

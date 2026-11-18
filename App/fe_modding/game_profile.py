@@ -256,6 +256,14 @@ _RADIANT_DAWN_FILES = {
     "sound_data": LogicalFile("Sound/sound_data_en.cms", compressed=True, fallbacks=("Sound/sound_data.cms",)),
     "sound_archive": LogicalFile("Sound/sound_us.brsar", fallbacks=("Sound/sound.brsar",)),
     "soundroom": LogicalFile("soundroom.bin"),
+    "dictionary": LogicalFile("dictionary.bin"),
+    "dictionary_flags": LogicalFile("dictionaryF.bin"),
+    "conversation_room": LogicalFile("conversationroom.bin"),
+    "epilogue_data": LogicalFile("FE10Epilogue.bin"),
+    "intro_data": LogicalFile("FE10Intro.bin"),
+    "caption_data": LogicalFile("Movie/caption_data.bin"),
+    "route_styles": LogicalFile("gmap/curve/linedefine1.bin"),
+    "wii_banner": LogicalFile("opening.bnr"),
 }
 
 PATH_OF_RADIANCE_PROFILE = GameProfile(

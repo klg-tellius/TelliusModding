@@ -296,6 +296,9 @@ def ga_file(cov: FileCoverage, walker: Walker) -> None:
         cov.zero(rec + 3, 1, "curve.scale low byte")
         cov.zero(rec + 8, 2, "curve +8")
     footer = words[0]
+    if footer and anim.footer is not None and anim.footer.compact_raw is not None:
+        _ga_fe10_footer(cov, anim, footer)
+        return
     cov.mark(words[11], (footer or len(data)) - words[11], DECODED)
     if not footer:
         return
@@ -321,6 +324,39 @@ def ga_file(cov: FileCoverage, walker: Walker) -> None:
                 cov.mark(addr, end - addr, DECODED)
         else:
             cov.mark(addr, end - addr, UNDECODED, f"footer slot {slot}")
+    cov.fill(PADDING, only_zero=True)
+
+
+def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
+    """Radiant Dawn's footer chain: keyframes, then the slot blocks, then the
+    12-byte descriptors. The slot numbers go past PoR's nine (5, 6, 9 and 13
+    are the common ones), so only blocks PoR's readers accept are decoded."""
+    from . import animation
+
+    data = cov.data
+    keys_end = footer - len(anim.body_trailing)
+    words = anim.header.words
+    cov.mark(words[11], keys_end - words[11], DECODED)
+    chain = animation.fe10_footer_chain(data, footer)
+    points = sorted([(block, slot, False) for _, slot, block in chain] +
+                    [(at, slot, True) for at, slot, _ in chain])
+    for i, (at, slot, is_descriptor) in enumerate(points):
+        end = points[i + 1][0] if i + 1 < len(points) else len(data)
+        if is_descriptor:
+            cov.mark(at, 12, DECODED)
+            continue
+        block = data[at:end]
+        try:
+            if slot == 0:
+                animation.read_event_block(block)
+            elif slot in (1, 2, 3, 4):
+                animation.read_material_tracks(block)
+            else:
+                raise ValueError
+        except (ValueError, struct.error, animation.AnimationError):
+            cov.mark(at, end - at, UNDECODED, f"RD footer slot {slot} block")
+        else:
+            cov.mark(at, end - at, DECODED)
     cov.fill(PADDING, only_zero=True)
 
 
@@ -445,6 +481,9 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
     same record code, so the same field rules apply."""
     data = cov.data
     found = labeled_sections(cov)
+    if any(n.endswith(":mapdata") for n, _s, _e in found):
+        _rd_map_bin(cov, found)
+        return
     suffix = "B" if any(n == "mapcapacityB" for n, _s, _e in found) else ""
     sections = dict((n[: len(n) - len(suffix)] if suffix and n.endswith(suffix) else n, (s, e)) for n, s, e in found)
     cap = sections["mapcapacity"][0]
@@ -500,6 +539,77 @@ def map_bin(cov: FileCoverage, walker: Walker) -> None:
                 # maplinkAt threat-range cost reduction, maplinkAbs ground
                 # openings with complementary flying blocks. Every US source
                 # value is <= 15; upper source bits remain unassigned.
+                cov.bits(e + 2, 1, known=0x0F, name=f"{name} value")
+        else:
+            cov.mark(start, end - start, UNDECODED, f"section {name}")
+    strings_and_padding(cov, HEADER_SIZE, HEADER_SIZE + _u32(data, 4))
+
+
+def _rd_bits(cov: FileCoverage, offset: int, known: int, unread: int, name: str) -> None:
+    """One flag byte: ``known`` bits have a traced reader, ``unread`` bits are
+    classified but nothing in RFEE01 reads them; any other set bit stays open."""
+    byte = cov.data[offset]
+    if byte & ~(known | unread):
+        cov.mark(offset, 1, UNDECODED, f"{name} bits {byte & ~(known | unread):#x}")
+    elif byte & unread:
+        cov.mark(offset, 1, UNREAD, f"{name} bits without a reader")
+    else:
+        cov.mark(offset, 1, DECODED)
+
+
+def _rd_map_bin(cov: FileCoverage, found) -> None:
+    """Radiant Dawn's map.bin (research/rd/MAP_NOTES.md): every section is
+    prefixed with the map folder; ``zbg`` battle scenery keeps only mapdata,
+    mapdesc, mapinst, maplight, mapfog and mapshader."""
+    data = cov.data
+    sections = {n.rpartition(":")[2]: (s, e) for n, s, e in found}
+    head = sections["mapdata"][0]
+    version, _zero, x_size, y_size, n_desc, n_inst = struct.unpack_from(">BBBBHH", data, head)
+    for name, (start, end) in sections.items():
+        if name == "mapdata":
+            size = {2: 0x20, 3: 0x24, 4: 0x28}.get(version, 0x20)
+            cov.mark(start, size, DECODED)
+            cov.zero(start + 1, 1, "mapdata +1")
+            cov.zero(start + 0x12, 2, "mapdata extra +6")
+            cov.bits(start + 0x14, 4, known=0x31FC0034, name="mapdata extra flags")
+            cov.mark(start + 0x18, 1, UNREAD, "stored grid alpha; draw replaces it with SetGrid intensity")
+        elif name == "mapdesc":
+            for i in range(n_desc):
+                r = start + 36 * i
+                cov.mark(r, 36, DECODED)
+                # construct_rd_map_object packs A, B, C, effect into runtime +0xB8.
+                # A1, A2 and effect 6 have readers but no retail carrier.
+                _rd_bits(cov, r + 0x18, known=0x7F, unread=0x80, name="flag_bits_a")
+                _rd_bits(cov, r + 0x19, known=0xC7, unread=0x38, name="flag_bits_b")
+                _rd_bits(cov, r + 0x1A, known=0x7E, unread=0x81, name="flag_bits_c")
+                _rd_bits(cov, r + 0x1B, known=0xF2, unread=0x0D, name="effect flags")
+                cov.zero(r + 0x22, 2, "mapdesc footprint pad")
+        elif name == "mapinst":
+            for i in range(n_inst):
+                r = start + 20 * i
+                cov.mark(r, 16, DECODED)
+                cov.mark(r + 16, 4, UNREAD, "mapinst +0x10 (read and discarded)")
+        elif name.endswith("index"):
+            cov.mark(start, 2 * x_size * y_size, DECODED)
+        elif name in ("uniquepanel", "roofpanel", "basepanel"):
+            cov.mark(start, end - start, DECODED)
+        elif name == "maplight":
+            cov.mark(start, 32, DECODED)
+            cov.zero(start, 2, "maplight skipped prefix")
+        elif name == "mapfog":
+            cov.mark(start, 8, DECODED)
+            cov.zero(start, 1, "mapfog skipped prefix")
+            cov.mark(start + 8, 4, UNREAD, "mapfog +8 (not read)")
+        elif name == "mapshader":
+            shader = data[start]
+            size = {0: 14, 1: 18}.get(shader, 24)
+            cov.mark(start, size, DECODED)
+        elif name in ("maplink", "maplinkAt"):
+            count = _u32(data, start)
+            cov.mark(start, 4, DECODED)
+            for i in range(count):
+                e = start + 4 + 3 * i
+                cov.mark(e, 2, DECODED)
                 cov.bits(e + 2, 1, known=0x0F, name=f"{name} value")
         else:
             cov.mark(start, end - start, UNDECODED, f"section {name}")
@@ -572,6 +682,56 @@ def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
         cov.mark(start + 8, fe10_sound.RECORD_SIZE - 8, UNDECODED, f"{cue.name} parameters")
 
 
+def _fe10_growth(cov: FileCoverage) -> None:
+    """``FE10Growth.cms`` (``fe10growth``): count, 12-byte records, per-level stat lines."""
+    from . import fe10growth
+
+    data = cov.data
+    start = HEADER_SIZE + fe8data_symbols(data)["FE10PersonGrowth"]
+    cov.mark(start, 2, DECODED)
+    cov.zero(start + 2, 2, "growth count pad")
+    for record in fe10growth.read_growth(data):
+        at = start + 4 + fe10growth.RECORD_SIZE * record.index
+        cov.mark(at, 12, DECODED)
+        cov.zero(at + 6, 2, "growth record pad")
+        cov.mark(record.lines_at, fe10growth.LINE_SIZE * len(record.lines), DECODED)
+
+
+def _fe10_effects(cov: FileCoverage) -> None:
+    """``FE10Effect.cms`` (``fe10_effect_registry``): the flag word and the four
+    parameter bytes have readers but no traced meaning; the rest is named."""
+    from . import fe10_effect_registry as reg
+
+    data = cov.data
+    registry = reg.read_fe10_effect_registry(data)
+    symbols = fe8data_symbols(data)
+    cov.mark(HEADER_SIZE + symbols["EffectData"], 4, DECODED)
+    for record in registry.records:
+        cov.mark(record.address, reg.RECORD_SIZE, DECODED)
+        cov.mark(record.address + 8, 4, UNDECODED, "EffectData flags")
+        cov.mark(record.address + 0x0C, 4, UNDECODED, "EffectData parameters")
+    eid = HEADER_SIZE + symbols["EIDTable"]
+    cov.mark(eid, 4 + reg.EID_RECORD_SIZE * len(registry.eid_table), DECODED)
+
+
+def _fe10_battle_heads(cov: FileCoverage, sections) -> None:
+    """``FE10Battle.cms`` (``fe10_battle``): each table's ``u16 count, u16 0``
+    head is known; the row fields stay open (the reader keeps them raw)."""
+    from . import fe10_battle
+
+    data = cov.data
+    for name, start, _end in sections:
+        if name in fe10_battle.TABLE_SIZES:
+            cov.mark(start, 2, DECODED)
+            cov.zero(start + 2, 2, f"{name} count pad")
+
+
+def fe8data_symbols(data: bytes) -> dict:
+    from .fe8data import symbol_offsets
+
+    return symbol_offsets(data)
+
+
 @handles("fe10 container", _is_fe10_container)
 def fe10_container(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's decompressed ``.cms`` data files (``FE10Data``, ``FE10Anim``, ``cp_data``...):
@@ -583,6 +743,13 @@ def fe10_container(cov: FileCoverage, walker: Walker) -> None:
     data_end = HEADER_SIZE + _u32(data, 4)
     for name, start, end in sections:
         cov.mark(start, end - start, UNDECODED, f"{name} records")
+    names = {name for name, _s, _e in sections}
+    if "FE10PersonGrowth" in names:
+        _fe10_growth(cov)
+    if "EffectData" in names:
+        _fe10_effects(cov)
+    if names & {"FE10BUnit", "FE10BWeapon"}:
+        _fe10_battle_heads(cov, sections)
     count = _u32(data, 8)
     for i in range(count):
         field = HEADER_SIZE + _u32(data, data_end + 4 * i)
@@ -655,7 +822,7 @@ def facedata(cov: FileCoverage, walker: Walker) -> None:
 
 def _is_rect(name: str, data: bytes) -> bool:
     base = _base(name)
-    return base == "rect.bin" or base.startswith(("rectdesc", "rectbases", "rectunitlist", "rectfinale"))
+    return base == "rect.bin" or (base.startswith("rect") and _ext(name) == "bin")
 
 
 @handles("rect", _is_rect)
@@ -664,7 +831,13 @@ def rect_file(cov: FileCoverage, walker: Walker) -> None:
     from . import rect
 
     data = cov.data
-    _roundtrip(cov, rect.build_rect(rect.parse_rect(data)))
+    try:
+        rebuilt = rect.build_rect(rect.parse_rect(data))
+    except rect.RectError:
+        rebuilt = None
+    if rebuilt != data:
+        _rd_rect(cov)
+        return
     for _name, start, _end in hsdarc(cov):
         cov.mark(start, 20, DECODED)
         cov.mark(start + 0x0D, 1, UNREAD, "descriptor +0x0D")
@@ -684,6 +857,32 @@ def rect_file(cov: FileCoverage, walker: Walker) -> None:
                     cov.mark(layer + rect.SEATS_HEADER_SIZE + rect.SEAT_SIZE * s + 7, 1, UNREAD,
                              "seat number")
     strings_and_padding(cov, HEADER_SIZE, HEADER_SIZE + _u32(data, 4))
+
+
+def _rd_rect(cov: FileCoverage) -> None:
+    """Radiant Dawn's rect layouts (``fe10_rect``): the PoR container with a
+    0x30-byte text box and a new kind 7. Blocks no export names (three forest
+    copies in ``s/rect.bin``) are kept but never reached by a lookup."""
+    from . import fe10_rect
+
+    data = cov.data
+    _roundtrip(cov, fe10_rect.build_editable_rect(fe10_rect.read_editable_rect(data)))
+    for _name, start, _end in hsdarc(cov):
+        cov.mark(start, 20, DECODED)
+        cov.mark(start + 0x0D, 1, UNREAD, "descriptor +0x0D")
+        count = data[start + 4]
+        cov.mark(start + 20, 4 * count, DECODED)
+        for i in range(count):
+            layer = HEADER_SIZE + _u32(data, start + 20 + 4 * i)
+            kind = data[layer]
+            length = 10 + 8 * _u16(data, layer + 8) if kind == 4 else fe10_rect._SIZES[kind]
+            cov.mark(layer, length, DECODED)
+    end = HEADER_SIZE + _u32(data, 4)
+    pool = max((i for i in range(HEADER_SIZE, end) if cov.status[i] != UNCLASSIFIED), default=HEADER_SIZE)
+    for i in range(HEADER_SIZE, pool):
+        if cov.status[i] == UNCLASSIFIED and data[i]:
+            cov.mark(i, 1, UNREAD, "rect block no export names")
+    strings_and_padding(cov, HEADER_SIZE, end)
 
 
 @handles("tut_data", lambda name, data: _base(name).startswith("tut_data"))
@@ -707,6 +906,17 @@ def client_bin(cov: FileCoverage, walker: Walker) -> None:
     disassembled."""
     cov.mark(0, 0xC0, DECODED)
     cov.mark(0xC0, len(cov.data) - 0xC0, UNDECODED, "GBA program body (not disassembled)")
+
+
+@handles("staffroll", lambda name, data: _base(name) == "staffrolldata.bin")
+def rd_staffroll_timings(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's ``StaffRollData.bin``: 16 named words (``fe10_staffroll.TIMINGS``)."""
+    from . import fe10_staffroll as sr
+
+    data = cov.data
+    for name, start, _end in hsdarc(cov):
+        cov.mark(start, 4, DECODED if name in sr.TIMINGS else UNDECODED, name)
+    strings_and_padding(cov, HEADER_SIZE, HEADER_SIZE + _u32(data, 4))
 
 
 @handles("staffroll", lambda name, data: _base(name).startswith("staffroll"))
@@ -796,11 +1006,18 @@ def dbx_file(cov: FileCoverage, walker: Walker) -> None:
 
 # ------------------------------------------------------------------ fonts, media, sound
 
-@handles("gcf font", lambda name, data: _ext(name) == "gcf" or (_base(name).rstrip("#") == "system.cms" and name.endswith("#")))
+def _is_font(name: str, data: bytes) -> bool:
+    if _ext(name) == "gcf":
+        return True
+    # Radiant Dawn: every Fonts/*.cms (system, talk, alpha, ruby, debug...) is the same font file
+    return name.endswith("#") and (_base(name) == "system.cms" or "fonts/" in name.replace("\\", "/").lower())
+
+
+@handles("gcf font", _is_font)
 def gcf_font(cov: FileCoverage, walker: Walker) -> None:
     from . import fe9_font
 
-    fe9_font.GameFont(cov.data) if hasattr(fe9_font, "GameFont") else None
+    fe9_font.GameFont(cov.data)
     cov.fill(DECODED)  # FONT_NOTES: every header and glyph byte labelled
 
 
@@ -841,9 +1058,98 @@ def thp_file(cov: FileCoverage, walker: Walker) -> None:
 
 @handles("bnr", lambda name, data: _ext(name) == "bnr")
 def banner(cov: FileCoverage, walker: Walker) -> None:
+    if cov.data[0x40:0x44] == b"IMET":
+        _wii_banner(cov, walker)
+        return
     if cov.data[:4] not in (b"BNR1", b"BNR2"):
         raise ValueError("not a BNR1/BNR2 banner")
     cov.fill(DECODED)  # public GameCube banner format
+
+
+def _wii_banner(cov: FileCoverage, walker: Walker) -> None:
+    """The Wii ``opening.bnr`` (``wii_banner``): IMET header, U8 archive, IMD5/LZ77 parts. The
+    pictures are walked as TPLs; the layout, animation and BNS sound are the public Wii formats."""
+    from . import wii_banner as wb
+
+    data = cov.data
+    _roundtrip(cov, wb.build_banner(wb.read_banner(data)))
+    cov.fill(DECODED)
+    banner = wb.read_banner(data)
+    for part in ("icon.bin", "banner.bin"):
+        for entry in banner.pictures(part):
+            walker.child(f"{cov.name}:{part}:{entry.path}", entry.data)
+
+
+_POOL_FILES = {"dictionary.bin", "dictionaryf.bin", "conversationroom.bin", "fe10epilogue.bin", "fe10intro.bin",
+               "caption_data.bin"}
+
+
+@handles("fe10 tables", lambda name, data: _base(name) in _POOL_FILES)
+def fe10_tables(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's sorted-pool table files (``pool_file``) and their codecs: the glossary,
+    Conversation Room lists, endings, class introductions and movie subtitles."""
+    from . import fe10_captions, fe10_conversation_room, fe10_dictionary, fe10_epilogue, fe10_intro
+
+    data, base = cov.data, _base(cov.name)
+    codecs = {
+        "dictionary.bin": (fe10_dictionary.read_dictionary, fe10_dictionary.build_dictionary),
+        "dictionaryf.bin": (fe10_dictionary.read_dictionary_flags, fe10_dictionary.build_dictionary_flags),
+        "conversationroom.bin": (fe10_conversation_room.read_conversation_room,
+                                 fe10_conversation_room.build_conversation_room),
+        "fe10epilogue.bin": (fe10_epilogue.read_epilogues, fe10_epilogue.build_epilogues),
+        "fe10intro.bin": (fe10_intro.read_intros, fe10_intro.build_intros),
+        "caption_data.bin": (fe10_captions.read_captions, fe10_captions.build_captions),
+    }
+    read, build = codecs[base]
+    document = read(data)
+    _roundtrip(cov, build(document))
+    cov.mark(0, 0x14, DECODED)
+    cov.mark(0x14, 4, UNREAD, "header +0x14")
+    cov.mark(0x18, 8, DECODED)
+    end = HEADER_SIZE + _u32(data, 4)
+    cov.mark(end, len(data) - end, DECODED)
+    if base == "dictionary.bin" and document.relation_size == 24:
+        at = HEADER_SIZE + 4 + 8 * len(document.categories) + 4 + 20 * len(document.people) + 4
+        for i in range(len(document.relations)):
+            cov.mark(at + 24 * i + 0x10, 4, UNREAD, "relation Japanese label point (RFEE01 reads +0x14)")
+    if base == "dictionary.bin":
+        at = (HEADER_SIZE + 4 + 8 * len(document.categories) + 4 + 20 * len(document.people) + 4
+              + document.relation_size * len(document.relations) + 4 + 16 * len(document.affiliations) + 4)
+        for i, term in enumerate(document.terms):
+            if term.picture:
+                cov.mark(at + 16 * i + 12, 4, UNDECODED, "term picture name (no reader traced)")
+    if base == "fe10intro.bin":
+        for i in range(len(document.entries)):
+            cov.mark(HEADER_SIZE + 4 + 64 * i + 0x28, 4, UNDECODED, "intro +0x28 (300 on every record)")
+    for i in range(HEADER_SIZE, end):
+        if cov.status[i] == UNCLASSIFIED:
+            cov.mark(i, 1, PADDING if data[i] == 0 else DECODED)
+
+
+@handles("gmap curve", lambda name, data: "gmap/curve/" in name.replace("\\", "/").lower() and _ext(name) == "bin")
+def gmap_curve(cov: FileCoverage, walker: Walker) -> None:
+    """World-map route curves and line styles (``fe10_gmap_curve``)."""
+    from . import fe10_gmap_curve as gc
+
+    data = cov.data
+    if _base(cov.name).startswith("linedefine"):
+        _roundtrip(cov, gc.build_line_define(gc.read_line_define(data)))
+        cov.mark(0, 16, DECODED)
+        cov.zero(16, len(data) - 16, "linedefine converted flag (set at load)")
+        return
+    curve = gc.read_curve(data)
+    _roundtrip(cov, gc.build_curve(curve))
+    cov.fill(DECODED)
+    cov.zero(0, 4, "curve +0")
+    name_end = 4 + len(curve.name)
+    cov.zero(name_end, 0x1C - name_end, "curve name padding")
+    cov.zero(0x2C, 4, "curve points address (set at load)")
+
+
+@handles("filler", lambda name, data: _base(name) == "zzzzzzzz.zzz")
+def disc_filler(cov: FileCoverage, walker: Walker) -> None:
+    """``zzzzzzzz.zzz``: 32 KiB of zeros that no code names, sorted last on the disc."""
+    cov.zero(0, len(cov.data), "disc filler", nonzero=UNDECODED)
 
 
 @handles("musyx samp", lambda name, data: _ext(name) == "samp")

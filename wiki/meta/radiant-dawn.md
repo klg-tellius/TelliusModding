@@ -195,11 +195,15 @@ The European (`RFEP01`) and Japanese (`RFEJ01`) executables hold the same code a
 - Wrath's HP check differs on the Japanese build: it needs HP under 20 % of maximum HP, where the US and European builds allow up to and including 30 %.
 - The Japanese disc has only the plain sound files (`Sound/sound.brsar`, `sound_data.cms`) and tutorial lists, and no widescreen fonts or portraits (no `_w` fonts, no `Face/wide`). Its title cards have no prefix (`window/title/ch0102.cms`), and its staff roll file has no title or copyright lines.
 - The European disc's scene movies (`s1.thp` and the like) carry five audio tracks per frame, one per language, one after another after the picture. Its staff roll lists 421 lines in each language, against 358 on the US disc.
+- Three files have no use of their own. `FE8Data.bin` is a copy of Path of Radiance's data tables with every symbol renamed (`PersonData8`, `SI8_` skills): the file menu's inherit option reads it to carry a Path of Radiance clear save over. `client.bin` is a Game Boy Advance program, like the one Path of Radiance sends to a linked GBA, but nothing in Radiant Dawn names it. `zzzzzzzz.zzz` is 32 KB of zeros that nothing names.
 
 ## Articles
 
 - [Message Format (Radiant Dawn)](../formats/rd-message-format.md): the byte-code that replaced the `$` commands, layouts and speech balloons.
 - [Portraits (Radiant Dawn)](../formats/rd-portraits.md): the face table and how a portrait is assembled.
 - [FE10Conversation.cms](../formats/rd-conversation-data.md): base Info conversations, the Conversation Room and support chat lines.
+- [Glossary, endings and other table files](../formats/rd-table-files.md): the Info glossary and its unlock flags, the Conversation Room lists, the endings, the class introductions and the movie subtitles.
+- [World-map route lines](../formats/rd-world-map-routes.md): the curves an army's route is drawn along, and the line styles.
+- [Wii disc banner](../formats/wii-banner.md): the channel title and animated banner the Wii Menu shows.
 - [Event Scripts (Radiant Dawn)](../formats/rd-event-scripts.md): the chapter scripts, their new instructions and triggers, and the flag table.
 - [Script Functions (Radiant Dawn)](../systems/rd-script-functions.md): every native function a script can call.

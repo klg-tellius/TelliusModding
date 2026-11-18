@@ -62,6 +62,27 @@ class AnimationCoverageTest(unittest.TestCase):
         self.assertEqual(totals.fields[(UNDECODED, "particle table details")][0], 4)
 
 
+    def test_radiant_dawn_footer_chain(self):
+        import struct
+        from fe_modding.formats import animation
+
+        events = animation.write_event_block([animation.EventKey(1, (1000,))])
+        odd = b"4Vx"
+        first, second = 0x30, 0x30 + len(odd)
+        tail = second + len(events)
+        footer = tail + 12
+        header = struct.pack(">12I", footer, 0, 0x1000000, 0x11, 0, 0, 0x40, 0, 0x30, 0x30, 0, 0x30)
+        data = (header + odd + events + struct.pack(">3I", 0, second, 0)
+                + struct.pack(">3I", 9, first, tail))
+        self.assertEqual(animation.fe10_footer_chain(data, footer), [(footer, 9, first), (tail, 0, second)])
+        report = Report()
+        Walker(report).child("rd.ga", data)
+        totals = report.formats["animation"]
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+        self.assertEqual(totals.fields[(UNDECODED, "RD footer slot 9 block")][0], 4)
+
+
 class ParticleLayoutTest(unittest.TestCase):
     def test_particle_header_stages_and_keys_are_classified_without_guessing_controls(self):
         import struct

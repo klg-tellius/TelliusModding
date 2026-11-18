@@ -441,7 +441,10 @@ class RetailCatalogTests(unittest.TestCase):
         self.assertEqual([(e.address, e.original.hex(), e.patched.hex()) for e in free],
                          [(0x801318EC, "4080001c", ppc.NOP.to_bytes(4, "big").hex()),
                           (0x8013191C, "40810020", ppc.NOP.to_bytes(4, "big").hex()),
-                          (0x80131948, "40810008", "48000040")])
+                          (0x80131948, "40810008", "48000040"),
+                          # the analog-stick camera's soft limits and ease-back to the front
+                          (0x80131748, "40800018", "48000018"), (0x8013176C, "40810014", "48000014"),
+                          (0x80131798, "40820034", "48000034")])
         smooth = CATALOG.entries["rd.camera.smooth"].versions["RFEE01"]
         self.assertEqual([(e.address, e.original.hex(), e.patched.hex()) for e in smooth],
                          [(0x801318E4, "c0029370", "c002800c"), (0x80131920, "c0029370", "c002800c"),
