@@ -1,7 +1,21 @@
 # Tellius Modding
 
-A Windows Python desktop editor for **Fire Emblem: Path of Radiance** and
-**Fire Emblem: Radiant Dawn**, with documentation of their file formats and systems.
+A Windows Python desktop editor for **Fire Emblem: Path of Radiance** (GameCube) and
+**Fire Emblem: Radiant Dawn** (Wii), with documentation of their file formats and systems.
+
+## What it does
+
+- Reads the US, European and Japanese discs of both games, and builds a playable image
+  (`.ciso` for Path of Radiance, `.wbfs` for Radiant Dawn).
+- Edits characters, classes, items, skills, supports, chapters and story order, maps,
+  deployments, event scripts, dialogue, shops, AI, models, battle presentation, music,
+  sound, video, saves and engine settings (Game Code), on both games.
+- Plays a chapter in the app or in Dolphin, and shares a mod as a patch that contains only
+  your changes (plus a Riivolution export for Radiant Dawn).
+
+[What You Can Edit](https://klg-tellius.github.io/TelliusModding/meta/what-you-can-edit/)
+lists every area game by game, with the known limits. You need your own copy of the game;
+no game data is included or downloaded.
 
 ## Download for Windows
 
@@ -29,10 +43,15 @@ The source build also recognizes tools installed manually under `App/tools/`.
 
 Supply your own game disc and keep extracted data and mod projects outside this
 repository. Project setup, workspace features and known limitations are covered in the
-[Tellius Archive](https://klg-tellius.github.io/TelliusModding/).
+[Tellius Archive](https://klg-tellius.github.io/TelliusModding/): start with
+[Install the app and create a project](https://klg-tellius.github.io/TelliusModding/modding/01-install-create-project/).
 
 ## Documentation
 
+- [Tellius Archive](https://klg-tellius.github.io/TelliusModding/): tutorials, file formats and game systems
+- [What You Can Edit](https://klg-tellius.github.io/TelliusModding/meta/what-you-can-edit/) and
+  [Know the current limits](https://klg-tellius.github.io/TelliusModding/modding/63-known-limits/)
+- [Known bugs](docs/app/known-bugs.md)
 - [Application architecture](app.md)
 - Feature notes (hub chapters, promotions, extended flags, item restrictions, particle and
   dialogue editors, 3D pipeline status) are in [App/docs](App/docs/)
