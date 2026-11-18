@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feature ideas and questions
+    url: https://github.com/klg-tellius/TelliusModding/discussions
+    about: Suggest a feature, share a mod, or ask how to do something.
+  - name: Tellius Archive (wiki)
+    url: https://klg-tellius.github.io/TelliusModding/
+    about: Tutorials, game systems and file formats.
