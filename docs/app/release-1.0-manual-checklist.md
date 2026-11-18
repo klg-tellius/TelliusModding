@@ -87,7 +87,7 @@ M/S/R sur chaque éditeur, **Jeu** quand indiqué :
 - [ ] ⭐ RD **Sound Tables** (nouveau en 1.0) : changer la musique d'un chapitre (Chapter music) et le volume d'un cue, M/S/R, **Jeu** : la nouvelle musique ; ajouter puis supprimer une ligne.
 - [ ] **Music** : **New track…** depuis un WAV, l'assigner à un chapitre, **Jeu** : la piste joue (un nouveau cue BGM n'a jamais été vérifié dans Dolphin).
 - [ ] **Sound Effects** : **Replace audio…** sur un cue de menu, **Jeu**.
-- [ ] **Videos** : **Replace** d'une courte vidéo, **Jeu** : elle joue avec le son (voir le bug connu de l'encodeur THP).
+- [ ] **Videos** : **Replace** d'une courte vidéo, **Jeu** : elle joue avec le son (l'audio est maintenant ajusté à la durée de la vidéo).
 - [ ] **Tutorials**, **Staff Credits**, **Soundroom Images/Tracks** : M/S/R.
 - [ ] RD : **Glossary**, **Conversation Room**, **Endings**, **Class Introductions**, **Movie Subtitles**, **World Map Routes**, **Wii Banner** : chacun s'ouvre, M/S/R sur une valeur. **Jeu** pour le **Wii Banner** (menu Wii de Dolphin).
 - [ ] **Backgrounds** : **Add New Background...**, l'utiliser dans un message, **Jeu**.
