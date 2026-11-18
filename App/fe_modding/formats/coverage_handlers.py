@@ -480,7 +480,10 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
 # Event codes whose Radiant Dawn reader is identified: 3 and 4 are looked up
 # by the playback loop (0x800081d4, 0x80009ef8 with code 3); 0x1F's parameter
 # is compared with a battle index (0x800e2c38). Other codes keep PoR's
-# numbering by assumption, so they stay plausible.
+# numbering by assumption, so they stay plausible. Codes from 1000 up are
+# sound cues: the event handler 0x800e4b20 looks each one up in
+# sound_data's SND_SFX_MAYA_DATA (0x800f14b4) and plays the match.
+GA_FE10_EVENT_SFX = 1000
 GA_FE10_EVENT_KNOWN = frozenset((3, 4, 0x1F))
 
 
@@ -499,7 +502,7 @@ def _ga_fe10_events(cov: FileCoverage, start: int, end: int) -> None:
         for c in range(n):
             at = key + 4 + 4 * c
             code = _u16(data, at)
-            if code in GA_FE10_EVENT_KNOWN:
+            if code in GA_FE10_EVENT_KNOWN or code >= GA_FE10_EVENT_SFX:
                 cov.mark(at, 4, DECODED)
             else:
                 cov.mark(at, 4, PLAUSIBLE, f"RD event code {code:#x}")
@@ -846,13 +849,50 @@ def fe10data_file(cov: FileCoverage, walker: Walker) -> None:
 @handles("fe10 sound data",lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
          and name.endswith("#"))
 def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's cue registry and ``SND_*`` tables (``fe10_sound``):
+    every field is named by ``fe10_sound.CUE_FIELDS`` / ``SND_TABLES`` after
+    its RFEE01 reader. Strings the relocations point at are decoded."""
     from . import fe10_sound
 
-    hsdarc(cov)
-    for cue in fe10_sound.read_sound_data(cov.data):
+    data = cov.data
+    exports = hsdarc(cov)
+    data_size, pointer_count = struct.unpack_from(">II", data, 4)
+    pointers = struct.unpack_from(f">{pointer_count}I", data, HEADER_SIZE + data_size)
+    cues = fe10_sound.read_sound_data(data)
+    exported = set()
+    for cue in cues:
         start = HEADER_SIZE + cue.record_offset
-        cov.mark(start, 8, DECODED, f"{cue.name} name/resource")
-        cov.mark(start + 8, fe10_sound.RECORD_SIZE - 8, UNDECODED, f"{cue.name} parameters")
+        exported.add(start)
+        cov.fields(start, fe10_sound.CUE_FIELDS)
+    tables = fe10_sound.SND_TABLES
+    for name, start, _end in exports:
+        if name.startswith("SND_GROUP_"):
+            cov.mark(start, 8, DECODED)  # export name, BRSAR group label
+        elif name in fe10_sound.SND_COUNTS:
+            cov.mark(start, 4, DECODED)
+        elif name in tables:
+            row_size, layout = tables[name]
+            count = _u32(data, start)
+            cov.mark(start, 4, DECODED)
+            for i in range(count):
+                cov.fields(start + 4 + i * row_size, layout, f"{name} ")
+    # Strings: every relocated pointer names a NUL-terminated label.
+    for at in pointers:
+        target = _u32(data, HEADER_SIZE + at)
+        if not target:
+            continue
+        string = HEADER_SIZE + target
+        end = data.find(b"\0", string)
+        if end > string and cov.status[string] == UNCLASSIFIED:
+            cov.mark(string, end + 1 - string, DECODED)
+    # Two retail records repeat an exported cue's name; no export reaches them.
+    for at in pointers:
+        record = HEADER_SIZE + at
+        if (cov.status[record] == UNCLASSIFIED and record not in exported
+                and all(cov.status[record + k] == UNCLASSIFIED for k in range(fe10_sound.RECORD_SIZE))
+                and fe10_sound.looks_like_cue(data, record)):
+            cov.mark(record, fe10_sound.RECORD_SIZE, UNREAD, "cue record without an export (unreachable)")
+    cov.fill(PADDING, only_zero=True)
 
 
 def _fe10_growth(cov: FileCoverage) -> None:

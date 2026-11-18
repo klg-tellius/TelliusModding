@@ -5,10 +5,14 @@ records are exported individually under their cue names (``BGM_*``,
 ``SFX_*``, ``VOICE_*`` and related prefixes).  The first two fields point to
 the exported cue name and to the NW4R sound name registered by the BRSAR.
 
-Only those two relationships are named here.  The remaining seven words are
-kept verbatim until their runtime consumers have been confirmed.  Repointing
-to an already registered resource is consequently a fixed-width operation:
-the relocation table and every unrelated byte remain untouched.
+The other fields were traced to their RFEE01 readers and are listed in
+``CUE_FIELDS`` (the sound object keeps the cue at +0xC; update 0x80258c70).
+``read_sound_data`` still keeps the seven words verbatim, so repointing to an
+already registered resource is a fixed-width operation: the relocation table
+and every unrelated byte remain untouched.
+
+The ``SND_*`` exports are u32-counted tables (``SND_TABLES``); their readers
+are cited next to each layout.  Pad bytes are left out of the layouts.
 """
 
 from __future__ import annotations
@@ -22,6 +26,75 @@ from .fe8data import _symbol_entries
 
 RECORD_SIZE = 0x24
 CUE_PREFIXES = ("BGM_", "SFX_", "VOICE_", "SE_", "FF_")
+
+_D = 1  # coverage.DECODED (kept local: this module has no coverage import)
+
+# (offset, size, status, name) for the 36-byte cue record; +0x10 and +0x1F
+# are pads (zero on every retail disc).
+CUE_FIELDS = (
+    (0x00, 4, _D, "name"),
+    (0x04, 4, _D, "BRSAR sound name"),           # 0x80251c20
+    (0x08, 1, _D, "kind (0/1 stream, 2 SFX)"),    # switch 0x8025198c
+    (0x09, 1, _D, "volume /127"),                 # 0x80258f80
+    (0x0A, 2, _D, "pitch"),                       # pow2 0x80295aa4 -> 0x802a3000
+    (0x0C, 1, _D, "pitch divisor"),
+    (0x0D, 1, _D, "pan"),                         # 0x802a3008
+    (0x0E, 1, _D, "surround pan"),                # 0x802a3010
+    (0x0F, 1, _D, "low-pass filter"),             # 0x802a3018
+    (0x11, 1, _D, "main send"),                   # 0x802a3020
+    (0x12, 1, _D, "effect send"),                 # 0x802a305c
+    (0x13, 1, _D, "priority"),                    # 0x8025a880
+    (0x14, 1, _D, "no distance attenuation"),
+    (0x15, 1, _D, "max simultaneous plays"),      # 0x80252cbc
+    (0x16, 2, _D, "random pitch min"),            # 0x80251a68
+    (0x18, 2, _D, "random pitch max"),
+    (0x1A, 1, _D, "random volume min"),
+    (0x1B, 1, _D, "random volume max"),
+    (0x1C, 2, _D, "start delay (frames)"),        # 0x80258e74
+    (0x1E, 1, _D, "distance low-pass"),           # 0x8025949c..0x80259644
+    (0x20, 1, _D, "distance main send"),
+    (0x21, 1, _D, "distance effect send"),
+    (0x22, 2, _D, "Sound Room index"),            # 0x8024f3c8, 0x800cd7f4
+)
+
+# name -> (row size, row layout).  Each export starts with a u32 row count.
+SND_TABLES = {
+    # 0x8013a8d8: ambient / positioned environment emitters per map.
+    "SND_ENV_DATA": (0x18, (
+        (0x00, 4, _D, "map"), (0x04, 4, _D, "cue"), (0x08, 1, _D, "emitter kind"),
+        (0x09, 1, _D, "emitter state"), (0x0C, 12, _D, "position"))),
+    # 0x8013ac48 -> 0x8013ae18: per-map mixer settings.
+    "SND_MAP_DATA": (0x14, (
+        (0x00, 4, _D, "map"), (0x04, 1, _D, "mixer A /127"), (0x05, 1, _D, "mixer B /127"),
+        (0x08, 12, _D, "mixer floats"))),
+    # 0x800f14b4: .ga event codes >= 1000 -> SFX cue (binary search).
+    "SND_SFX_MAYA_DATA": (8, ((0x00, 4, _D, "event code"), (0x04, 4, _D, "cue"))),
+    # 0x80068398..0x800685b0, row match 0x800682c4.
+    "SND_MAP_BGM_DATA": (0x34, (
+        (0x00, 4, _D, "chapter"), (0x04, 1, _D, "condition kind"),
+        (0x08, 16, _D, "map music variants"), (0x18, 16, _D, "phase music"),
+        (0x28, 4, _D, "preparations"), (0x2C, 4, _D, "base"), (0x30, 4, _D, "select"))),
+    # 0x800689d4, row test 0x80068638: boss / pairing battle themes.
+    "SND_BATTLE_BGM_DATA": (0x1C, (
+        (0x00, 4, _D, "cue"), (0x04, 4, _D, "chapter"), (0x08, 8, _D, "PIDs"),
+        (0x10, 4, _D, "event flag"), (0x14, 2, _D, "classes"), (0x16, 2, _D, "armies"),
+        (0x18, 1, _D, "flag state"), (0x19, 1, _D, "either order"))),
+    # 0x800680d0: BRSAR group to load per chapter / flag.
+    "SND_CHAPTER_GROUP_DATA": (0x10, (
+        (0x00, 4, _D, "chapter"), (0x04, 4, _D, "flag"), (0x08, 1, _D, "flag state"),
+        (0x0C, 4, _D, "group"))),
+}
+SND_COUNTS = ("SND_BGM_DATA", "SND_SFX_DATA", "SND_VOICE_DATA")
+
+
+def looks_like_cue(data: bytes, offset: int) -> bool:
+    """An absolute ``offset`` whose first word is a pointer to a cue name."""
+    if offset + RECORD_SIZE > len(data):
+        return False
+    pointer = struct.unpack_from(">I", data, offset)[0]
+    at = HEADER_SIZE + pointer
+    return 0 < pointer and at < len(data) and data[at:at + 8].startswith(
+        tuple(prefix.encode() for prefix in CUE_PREFIXES))
 
 
 class Fe10SoundError(ValueError):
