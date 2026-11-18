@@ -25,6 +25,8 @@ First stable release.
 - Tellius Archive: Radiant Dawn sections in the lessons and systems pages.
 - Faster test runs (affected tests, disc samples, parallel runs) and a Dolphin input
   driver for in-game checks.
+- The app shows its version in the window title, on the start screen and in Help >
+  About; Tellius Patcher shows it in its title.
 - The code is released under the MIT License.
 
 ## v0.2.0 (2026-11-15)
