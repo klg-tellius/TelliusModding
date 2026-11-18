@@ -380,3 +380,7 @@ undecoded or unclassified **12.4 KB of 2.07 GB (0.0006 %)**, down from 1.21 MB; 
 the 60 KB of bone flag 0x4 as undecoded; the committed rule classifies it). What is left: FE10Effect flags and
 parameters (5 KB), FE10Anim data/header/motion flags (2.9 KB), `.ga` curve +8 (2.4 KB, 14 files), FE10PersonGrowth
 (1 KB), CONV_INFO_DATA +0x2C (404 B), `map.bin` flag bits (300 B), two `fe10 tables` fields (308 B).
+
+European and Japanese discs, same rules (the PAL disc needed `sound_data_<lang>.cms`, `<lang>_caption_data.bin` and
+its two leftover `.bat` packing scripts recognized): RFEP01 **15.2 KB of 2.54 GB (0.0006 %)**, RFEJ01 **11.8 KB of
+1.85 GB (0.0006 %)**, no handler failures. The open fields are the same as on RFEE01.
