@@ -53,9 +53,10 @@ class RegionPortTests(unittest.TestCase):
     def test_checked_entries_have_their_region_sites(self):
         for code in rd_regions.REGIONS:
             for entry in _rd_entries():
-                self.assertEqual(code in entry.versions, entry.id in VERIFIED[code], (code, entry.id))
-        self.assertEqual(len(VERIFIED["RFEP01"]), len(_rd_entries()))
-        missing = {e.id for e in _rd_entries()} - VERIFIED["RFEJ01"]
+                checked = entry.id in VERIFIED[code] or entry.id in rd_regions.HAND_PORTED
+                self.assertEqual(code in entry.versions, checked, (code, entry.id))
+        self.assertEqual(len(VERIFIED["RFEP01"] | rd_regions.HAND_PORTED), len(_rd_entries()))
+        missing = {e.id for e in _rd_entries()} - VERIFIED["RFEJ01"] - rd_regions.HAND_PORTED
         self.assertEqual(missing, {"rd.skill.wrath_hp_ratio"})
         self.assertNotIn(CATALOG.entries["rd.skill.wrath_hp_ratio"], CATALOG.entries_for("RFEJ01"))
 

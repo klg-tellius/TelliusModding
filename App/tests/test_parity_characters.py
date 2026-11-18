@@ -28,7 +28,7 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(PorSupports.can_add_partners)
         self.assertFalse(RdSupports.can_add_partners)  # every supporter lists all the others
         self.assertEqual(PorSupports.conversation_ranks, ("C", "B", "A"))
-        self.assertEqual(RdSupports.conversation_ranks, ())
+        self.assertEqual(RdSupports.conversation_ranks, ("C", "B", "A"))  # base conversations patch
 
     def test_shared_hub_order(self):
         from fe_modding.gui.pages import data

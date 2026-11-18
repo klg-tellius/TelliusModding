@@ -69,9 +69,12 @@ Radiant Dawn keeps the same idea, with its own tables. <span class="confidence c
 
 - **Who supports whom.** `RelianceData` lists every supporting character against all of them, themselves included. Each 8-byte entry holds the partner, a marker byte (0 or 255) that no game code reads, and a support speed from 0 to 4.
 - **Points.** `RelianceParam` gives the gains: 15 at each map start (30 in Part IV), 3 per phase next to the partner, 5 while carrying it, 4 per staff, 1 per Shove and 2 per Smite. The pair's speed adds +2, +1, 0, -1 or -2 to every gain. Only units of the same force with entries for each other gain points.
-- **Ranks.** C, B and A open at 50, 100 and 150 points. Points stop at the next threshold until the support menu's conversation raises the rank, which adds one point; a unit at 51 or more is at C, 101 B, 151 A.
+- **Ranks.** C, B and A open at 50, 100 and 150 points. Points stop at the next threshold until the base's Support screen forms or strengthens the support, which adds one point; a unit at 51 or more is at C, 101 B, 151 A.
 - **Bonds.** `KiznaData` pairs two characters with a kind and a signed bonus. Kind 1 adds the bonus to Critical and to Critical avoid when the two stand next to each other on the same side. The `AddKizna` script function makes temporary bonds, which the save keeps.
 - **The save** holds, per unit, one points byte per `RelianceData` partner, the one active partner, and three bit sets recording which C, B and A conversations it has seen.
+
+- **Forming a support.** Pairs form, rise and are erased on the base's **Support** screen (`BaseSupportProc`, `establish_or_rank_up_support_pair` 0x80215D04): it links the two units as each other's active partner, moves both point bytes one past the threshold and shows "Support level raised to C." No conversation plays there. The only conversation is the battlefield exchange (`E_GreetSeq`): when a unit ends its action next to its active partner and that rank's seen bit is clear, each says one generic line from its `yell_mini` file (see [RD conversation data](../formats/rd-conversation-data.md)). <span class="confidence confidence--confirmed">engine + in game</span>
+- **Full conversations (app patch).** The app's Game Code patch *Support conversations in the base* plays a full-screen conversation `MSUP_<A>_<B>_<rank>` from `common.m` before the pair forms, hiding the Support screen's panels (their scale set to 0) meanwhile. <span class="confidence confidence--confirmed">in game</span>
 
 See [Radiant Dawn](../meta/radiant-dawn.md#supports) for the retail values.
 

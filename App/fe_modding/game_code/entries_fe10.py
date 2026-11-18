@@ -857,5 +857,7 @@ CATALOG.add(Tunable(
     versions={RFEE01: (Field(_RD_ANIM_SCALE, "f32"),)}, requires=(_rd_anim_hook,)))
 
 
+from . import rd_support_talk  # noqa: E402,F401  (registers the base support conversations)
+
 # European and Japanese sites, moved from the ones above (rd_regions)
 _rd_regions.install(CATALOG)

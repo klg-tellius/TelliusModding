@@ -26,6 +26,9 @@ US = "RFEE01"
 EU = "RFEP01"
 JP = "RFEJ01"
 REGIONS = (EU, JP)
+#: Entries that give their own European and Japanese sites instead of the generated table's (data
+#: sites the table cannot place; each module says how its sites were found and checked).
+HAND_PORTED = frozenset({"rd.support.base_talk"})
 
 # Addresses below this are the OS globals and the cave, which every build shares.
 _FIRST_MOVABLE = 0x80004000
@@ -229,5 +232,5 @@ def install(catalog) -> None:
         install_entry(entry)
 
 
-__all__ = ["US", "EU", "JP", "REGIONS", "NotPortable", "relocate", "port_edit", "port_field",
+__all__ = ["US", "EU", "JP", "REGIONS", "HAND_PORTED", "NotPortable", "relocate", "port_edit", "port_field",
            "port_sites", "install", "install_entry", "CAVE_ADDRESS", "CAVE_SIZE", "ppc", "Tunable"]
