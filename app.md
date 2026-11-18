@@ -26,6 +26,7 @@ Three tiers, from quickest to slowest:
 
 - `python -m tools.affected_tests` without `--direct` follows imports all the way, and `--base main` covers a whole branch. `--pytest -n auto` runs the picked tests in parallel.
 - Disc tests that walk every file of a kind (models, maps, textures, messages) check a fixed sample (`tests/corpus.py`). Set `TELLIUS_CORPUS=full` to walk everything, and to check the counts that only hold for the whole disc. Do this before a pull request that changes a format.
+- The CI (`.github/workflows/tests.yml`) has no game data, so every disc test skips there. The `tests/test_synthetic_*.py` modules check the same readers and writers on small files that `tests/synthetic_data.py` writes from scratch (FE10Battle.cms, BRSTM, RWSD, sound_data.cms, the staff roll, opening.bnr, the glossary). When a format's tests need a disc, add a synthetic builder there too, so the CI still covers it. Never copy game bytes into a fixture.
 - `tools/release_check.py` finds the discs and saves under one folder (`por_work/GFEE01`, `rd_work/RFEE01`, `SaveFile/`, `SaveFile/rd/`; each can also be given on its own). `--all-regions` adds the European and Japanese discs, `--full` sets `TELLIUS_CORPUS=full`. Reports go to `App/release_check_reports/`.
 - `-n auto` needs the dev requirements: `python -m pip install -r requirements-dev.txt` (pytest and pytest-xdist).
 
