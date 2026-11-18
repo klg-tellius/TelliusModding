@@ -37,6 +37,8 @@ Every record of `FE8Data.bin` (character, class, item, skill…) is found by its
 
 **Remove** checks, before anything changes, every place that names the record's ID: pointer fields of `FE8Data.bin` (support lists, bonds, skill restriction lists, other records), and the strings of every game file that names records (`Scripts/*.cmb`, `zmap/*/dispos.cmp`, the shop files, `zdbx.cmp`, `FE8Anim.bin` and `sys/main.dol`). If one place names it, the removal is refused with the list. If none does, it asks to confirm; removing a record that is not the last one moves every later record up one number, and the confirmation says so.
 
+Radiant Dawn's **Remove** (Game Data tables and the character Stats form) runs the same check on its own files: `FE10Data.cms`, `Scripts/*.cmb`, every `zmap/*/dispos_<difficulty>.bin`, the `Shop/` files, `FE10Battle.cms`, `FE10Anim.cms` and `sys/main.dol`.
+
 So a released mod can append records safely, but removing or reordering characters, classes or items makes saves of the previous version load other records. The safe way to retire a record from a released mod is to leave it in place, unused.
 
 ## Guided walkthrough

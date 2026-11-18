@@ -24,7 +24,12 @@ Radiant Dawn exports the same parts where its files have them, with its own data
 - ``deployments/``, ``shops/``: as above, from ``zmap/<folder>/dispos_<diff>.bin`` and ``Shop/``;
 - ``messages/``: message bytecode in the editor's readable ``<...>`` notation;
 - ``scripts/*.fe10s``: event scripts decompiled with the FE10 dialect;
-- ``sound/``: the cue registry (``sound_data_en.cms``) and the BRSAR's sounds (TSV).
+- ``sound/``: the cue registry (``sound_data_en.cms``) and the BRSAR's sounds (TSV);
+- ``faces.tsv`` and ``faces_wide.tsv``: the 4:3 and 16:9 face tables (``Face/facedata.bin``,
+  ``Face/wide/facedata.bin``);
+- ``FE10Battle/``: the battle tables of ``FE10Battle.cms``: battle sceneries, battle units and
+  battle weapons by field name, and every one of its 21 tables row by row (relocated strings by
+  row offset, the rest of the row as hex).
 
 Export only: the binary files stay the source of truth. Each part is
 optional; a part that cannot be read is listed in the returned problems
@@ -233,14 +238,56 @@ def _fe10_sound(project, out: Path) -> list[Path]:
             _write_text(out / "sound" / "brsar_sounds.tsv", "\n".join(sounds) + "\n")]
 
 
-def _faces(files: Path, out: Path) -> list[Path]:
+def _faces(project, files: Path, out: Path) -> list[Path]:
     from .formats.fe9_portraits import read_face_table
+
+    if profile_of(project).data_dialect == "fe10":
+        return _fe10_faces(files, out)
 
     rows = ["fid\tname_key\tfile\tleft_eye\tright_eye\tmouth\tparts\tmenu_face\tauto_mouth\tdepth\tmenu_offset"]
     for r in read_face_table((files / "Face" / "facedata.bin").read_bytes()).values():
         rows.append("\t".join(str(v) for v in (r.fid, r.name_id, r.filename, r.left_eye, r.right_eye, r.mouth,
                                                 r.flags, r.mini_portrait, r.default_mouth, r.depth, r.menu_offset)))
     return [_write_text(out / "faces.tsv", "\n".join(rows) + "\n")]
+
+
+def _fe10_faces(files: Path, out: Path) -> list[Path]:
+    """Radiant Dawn: each face table (4:3, and the 16:9 one in ``Face/wide``) as TSV."""
+    from .formats import fe10_faces
+
+    head = "fid\tlarge_fid\tname_key\tfile\teye_a\teye_b\tmouth\tcut_in_origin\textra"
+    written = []
+    for name, table in (("faces.tsv", files / "Face" / "facedata.bin"),
+                        ("faces_wide.tsv", files / "Face" / "wide" / "facedata.bin")):
+        if not table.is_file():
+            continue
+        rows = [head] + ["\t".join((r.fid, r.large_fid, r.name_id, r.filename,
+                                    *(",".join(str(v) for v in pair) for pair in (r.eye_a, r.eye_b, r.mouth,
+                                                                                  r.cut_in_origin)),
+                                    ",".join(str(v) for v in r.extra)))
+                         for r in fe10_faces.read_face_data(table.read_bytes())]
+        written.append(_write_text(out / name, "\n".join(rows) + "\n"))
+    if not written:
+        raise FileNotFoundError(2, "No face table", "Face/facedata.bin")
+    return written
+
+
+def _fe10battle(project, out: Path) -> list[Path]:
+    """Radiant Dawn's ``FE10Battle.cms``: the three decoded tables by field, then every table row by
+    row."""
+    from .formats import fe10_battle, fe10_battle_scenery, fe10_battle_units, fe10_battle_weapons
+
+    data = project.read_logical("battle_data")
+    folder = out / "FE10Battle"
+    written = [_write_json(folder / "battle_sceneries.json", fe10_battle_scenery.read_sceneries(data)),
+               _write_json(folder / "battle_units.json", fe10_battle_units.read_units(data)),
+               _write_json(folder / "battle_weapons.json", fe10_battle_weapons.read_weapons(data))]
+    document = fe10_battle.read_fe10_battle(data)
+    for table in document.tables:
+        rows = [{"strings": {f"+{offset:#04x}": value for offset, value in record.strings},
+                 "raw": record.raw.hex()} for record in table.records]
+        written.append(_write_json(folder / "tables" / f"{table.name}.json", rows))
+    return written
 
 
 def _zdbx(project, out: Path) -> list[Path]:
@@ -264,6 +311,7 @@ PART_LABELS: dict[str, str] = {
     "scripts": "Event scripts (decompiled)",
     "sound": "Music and sound-effect cues",
     "faces": "Face table",
+    "FE10Battle": "Battle tables (sceneries, units, weapons and the rest of FE10Battle.cms)",
     "zdbx": "Battle-engine DBX tables",
 }
 
@@ -291,7 +339,8 @@ def export_project(project, dest: Path, parts: Optional[set[str]] = None,
         "FE10Data": lambda: _fe10data(project, dest), "FE10Growth": lambda: _fe10growth(project, dest),
         "shops": lambda: _shops(project, dest), "messages": lambda: _messages(project, dest),
         "scripts": lambda: _scripts(project, dest), "sound": lambda: _sound(project, dest),
-        "faces": lambda: _faces(files, dest), "zdbx": lambda: _zdbx(project, dest),
+        "faces": lambda: _faces(project, files, dest), "zdbx": lambda: _zdbx(project, dest),
+        "FE10Battle": lambda: _fe10battle(project, dest),
     }
     written, problems = [], []
     for name, label in parts_for(project):

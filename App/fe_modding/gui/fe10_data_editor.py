@@ -25,7 +25,7 @@ from ..project import ModProject
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .fe8_session import Fe10DataSession
-from . import message_reference
+from . import message_reference, record_actions
 from .widgets import SaveDiscardBar, ScrollFrame, TileBrowser
 from ..game_profile import files_root_of
 
@@ -956,9 +956,8 @@ class Fe10DataEditor(EditorPanel):
                 messagebox.showerror("Remove", f"{r.id} is still named by: {', '.join(users[:10])}"
                                      f"{'...' if len(users) > 10 else ''}. Change those first.", parent=self)
                 return
-        if self.kind in ("character", "class", "item"):
-            warning += ("\n\nOnly FE10Data.cms is searched for uses: map deployments and event scripts that "
-                        "name it are not checked for Radiant Dawn yet.")
+            if record_actions.refuse_if_named_in_files(self, self._project, r.id):
+                return
         if self.kind in fe10data.SAVED_BY_NUMBER:
             warning += ("\n\nSaves store these records by number: saves made before this change will load "
                        "the records after it under the wrong numbers.")

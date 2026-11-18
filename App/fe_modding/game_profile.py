@@ -291,7 +291,8 @@ RADIANT_DAWN_PROFILE = GameProfile(
     data_dialect="fe10",
     name_hash_buckets=2027,
     font_files=FONT_FILES_FE10,
-    text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound"),
+    text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound", "faces",
+                       "FE10Battle"),
     tutorial_files=(("Normal, English", "Tutorial/tut_data_n_en.bin"), ("Hard, English", "Tutorial/tut_data_h_en.bin"),
                     ("Normal, Japanese", "Tutorial/tut_data_n.bin"), ("Hard, Japanese", "Tutorial/tut_data_h.bin")),
     # same record layout as Path of Radiance. Playtests L2-L6 (Dolphin, 2026-11-03): with every
