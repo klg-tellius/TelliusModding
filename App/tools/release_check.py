@@ -26,8 +26,9 @@ Each folder can also be given on its own (``--por``, ``--rd``, ``--por-saves``, 
    European, then the Japanese discs.
 3. ``coverage <disc>``: the byte-coverage map of each disc (:mod:`fe_modding.formats.coverage`).
    It fails when a handler rejects a file, or when more than ``--max-open`` percent of the bytes
-   are still undecoded, leaving out the formats set aside for 1.0 (``SET_ASIDE_FORMATS``: the Wii
-   HOME Menu and client.bin). US discs by default, all six with ``--all-regions``.
+   are still undecoded, leaving out what is set aside for 1.0 (``system/HomeButton``, the Wii
+   HOME Menu, and client.bin). Every file is measured, the 48 MB sound archives and the videos
+   included. US discs by default, all six with ``--all-regions``.
 4. ``ga <disc>``: every ``.ga`` animation, loose or inside a ``pack`` archive, is read and written
    back byte for byte, and a Radiant Dawn footer moved by 64 bytes and back is unchanged.
 
@@ -54,12 +55,10 @@ from typing import Optional
 
 APP = Path(__file__).resolve().parent.parent
 REGIONS = {"E": "US", "P": "EU", "J": "JP"}
-#: Files the coverage and .ga walks leave out: video and streamed music (public codecs, minutes
-#: of reading for no field to find) and anything over 30 MB.
-COVERAGE_SKIP_SUFFIXES = (".thp", ".stm")
-COVERAGE_MAX_BYTES = 30_000_000
-#: Coverage formats set aside for 1.0 (the Wii HOME Menu's sounds, Nintendo's shared system
-#: data, and client.bin, the GBA program): reported, but left out of the pass/fail threshold.
+#: Coverage set aside for 1.0 (Julien's decision of 2026-11-18): the Wii HOME Menu, Nintendo's
+#: shared system data under ``system/HomeButton`` whatever its format, and client.bin, the GBA
+#: program. Reported, but left out of the pass/fail threshold.
+SET_ASIDE_PATHS = ("system/homebutton/",)
 SET_ASIDE_FORMATS = ("home menu sound", "home menu text", "client.bin")
 
 
@@ -244,20 +243,16 @@ def _unittest_counts(text: str) -> tuple[tuple[int, int, int, int], list[str]]:
 
 # ------------------------------------------------------------------ coverage
 
-def _disc_paths(files: Path) -> tuple[list[Path], list[str]]:
-    paths, skipped = [], []
+def _disc_paths(files: Path) -> list[Path]:
+    """Every file of the disc but tool output. Nothing is left out for its size or type: video,
+    streamed music and the big sound archives are measured too."""
+    paths = []
     for directory, subdirs, names in os.walk(files):
         subdirs[:] = sorted(d for d in subdirs if not d.endswith("_extracted"))
         for name in sorted(names):
-            path = Path(directory) / name
-            rel = path.relative_to(files).as_posix()
-            if name.endswith((".decomp", ".bak", ".decompressed")):
-                continue
-            if name.lower().endswith(COVERAGE_SKIP_SUFFIXES) or path.stat().st_size > COVERAGE_MAX_BYTES:
-                skipped.append(rel)
-                continue
-            paths.append(path)
-    return paths, skipped
+            if not name.endswith((".decomp", ".bak", ".decompressed")):
+                paths.append(Path(directory) / name)
+    return paths
 
 
 def coverage_job(game: str, code: str, root: str, saves: Optional[str], out: str) -> dict:
@@ -267,19 +262,23 @@ def coverage_job(game: str, code: str, root: str, saves: Optional[str], out: str
 
     start = time.time()
     files = Path(root) / "files"
-    report = c.Report()
-    walker = c.Walker(report)
-    paths, skipped = _disc_paths(files)
+    report, aside_report = c.Report(), c.Report()
+    walker, aside_walker = c.Walker(report), c.Walker(aside_report)
+    paths = _disc_paths(files)
     for path in paths:
-        walker.child(path.relative_to(files).as_posix(), path.read_bytes())
+        rel = path.relative_to(files).as_posix()
+        target = aside_walker if rel.lower().startswith(SET_ASIDE_PATHS) else walker
+        target.child(rel, path.read_bytes())
     if saves:  # the coverage map reads Path of Radiance's .gci saves; Radiant Dawn's have no handler
         for path in sorted(Path(saves).glob("*.gci")):
             walker.child(path.name, path.read_bytes())
-    leaf = report.totals(True)
+    leaf = [a + b for a, b in zip(report.totals(True), aside_report.totals(True))]
     total = sum(leaf) or 1
     open_bytes = leaf[c.UNCLASSIFIED] + leaf[c.UNDECODED]
-    aside = sum(t.counts[c.UNCLASSIFIED] + t.counts[c.UNDECODED]
-                for fmt, t in report.formats.items() if fmt in SET_ASIDE_FORMATS)
+    aside_leaf = aside_report.totals(True)
+    aside = aside_leaf[c.UNCLASSIFIED] + aside_leaf[c.UNDECODED] + sum(
+        t.counts[c.UNCLASSIFIED] + t.counts[c.UNDECODED]
+        for fmt, t in report.formats.items() if fmt in SET_ASIDE_FORMATS)
     failures = [f"{fmt}: {line}" for fmt, t in sorted(report.formats.items()) for line in t.failures]
     # The biggest open fields, for the summary.
     fields = []
@@ -289,9 +288,10 @@ def coverage_job(game: str, code: str, root: str, saves: Optional[str], out: str
                 fields.append((n, f"{fmt}: {name or '(unnamed)'} ({c.STATUS_NAMES[status]}, {count} files)"))
     fields.sort(reverse=True)
     base = Path(out) / f"coverage_{code}"
-    Path(f"{base}.txt").write_text(c.format_summary(report) + "\n" + c.format_fields(report), encoding="utf-8")
+    Path(f"{base}.txt").write_text(c.format_summary(report) + "\n" + c.format_fields(report)
+                                   + "\n\nSet aside for 1.0 (system/HomeButton):\n" + c.format_summary(aside_report)
+                                   + "\n" + c.format_fields(aside_report), encoding="utf-8")
     Path(f"{base}.md").write_text(c.format_markdown(report) + "\n", encoding="utf-8")
-    Path(f"{base}.skipped.txt").write_text("\n".join(skipped) + "\n", encoding="utf-8")
     return {
         "files": len(paths), "bytes": total, "open": open_bytes,
         "plausible": leaf[c.PLAUSIBLE], "unread": leaf[c.UNREAD],
