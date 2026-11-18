@@ -74,6 +74,10 @@ class Ctx(Context):
         self.region, self.variant = region, variant
 
     @property
+    def wii(self) -> bool:
+        return self.region.startswith("R")
+
+    @property
     def mod(self) -> bool:
         return self.variant == "mod"
 

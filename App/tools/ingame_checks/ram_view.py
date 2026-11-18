@@ -8,7 +8,7 @@ Unit layouts, seen in Dolphin on 2026-11-18 (US builds):
   items (8 bytes each: item record pointer, uses, flags).
 * Radiant Dawn: the unit array is allocated; the word at ``0x804CB810`` points to it (0x3F0-byte units,
   handle = slot + 1). +0xEC person record (FE10Data PersonData, +0 points to the PID), +0xF0 class,
-  +0xFC handle, +0x102/+0x103 tile X/Y, +0x114 HP, +0x1BC seven items of 0x28 bytes (record pointer,
+  +0xFC handle, +0xFE level, +0x102/+0x103 tile X/Y, +0x114 HP, +0x1BC seven items of 0x28 bytes (record pointer,
   uses).
 
 A record's first word points to its ID string in both games (PID, JID, IID).
@@ -42,7 +42,7 @@ class Layout:
 LAYOUTS = {
     "GFEE01": Layout(0x802B14E4, False, 0x280, 159, 0x188, 0x18C, 0x198, 0x19E, 0x1A8, 0x1CC, 8, 8, 0x19A,
                      0x80330708),
-    "RFEE01": Layout(0x804CB810, True, 0x3F0, 254, 0xEC, 0xF0, 0xFC, 0x102, 0x114, 0x1BC, 0x28, 7, -1,
+    "RFEE01": Layout(0x804CB810, True, 0x3F0, 254, 0xEC, 0xF0, 0xFC, 0x102, 0x114, 0x1BC, 0x28, 7, 0xFE,
                      0x803CAB38),
 }
 
