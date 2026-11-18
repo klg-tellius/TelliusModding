@@ -2,7 +2,7 @@
 id: "modding-sound-room-credits-tutorials"
 title: "Edit the Sound Room, credits and in-game tutorials"
 description: "The Sound Room's 64 tracks and slideshow, the staff credits, and the in-game tutorial list with its unlock and learned flags"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -154,6 +154,18 @@ The song titles shown during the roll ("Awakening", "Tomorrow's Hope"...) are pi
 | **New game starts with it** **unlocked** / **learned** × Normal, Hard, Maniac, Easy | Its state in a new game, per difficulty |
 | **Duplicate** / **Remove** | Add a copy / remove the entry |
 | **Save tutorials** / **Revert** | Write / reload `tut_data_en.bin` |
+
+## On Radiant Dawn
+
+Radiant Dawn's Extras menu has more screens, each with its own page on Assets ([Glossary, endings and other table files](../formats/rd-table-files.md)):
+
+- **Glossary**: the Info glossary's people, relation chart, affiliations and terms (`dictionary.bin`), and the flags that unlock each entry (`dictionaryF.bin`). Entries with the same PID in a row are one entry that grows as the story moves on. An added entry gets its unlock flag in the same position of its table, and a script sets it by name. The save keeps the unlocks in the system data: 128 bits for people and 64 for each of the other tables.
+- **Conversation Room**: the chapter and character lists (`conversationroom.bin`). A conversation shows once its bit is set in the system data.
+- **Class Introductions**: each class's scene in battle (unit, backdrop, sky, camera, up to five motions) with its picture and description (`FE10Intro.bin`, pictures on **Class Intro Pictures**). The scene starts at the first record of the chosen group.
+- **Endings** ([The ending and war record](79-ending-and-war-record.md)) and **Movie Subtitles** ([Chapter opening movies](41-chapter-opening-movies.md)).
+- **Wii Banner**: the channel title, in each Wii language, and the pictures the Wii Menu shows for the disc (`opening.bnr`). The game itself never reads it ([Wii disc banner](../formats/wii-banner.md)).
+
+The Sound Room records the tracks heard in the system data too, one bit per track. None of these Radiant Dawn pages has been checked in the game yet.
 
 ## Things to try next
 

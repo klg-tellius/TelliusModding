@@ -2,7 +2,7 @@
 id: "modding-laguz-units"
 title: "Make a laguz unit"
 description: "Paired human and beast classes, the transformation gauge in the character and the deployment, innate strikes, laguz items and their limits"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -104,6 +104,14 @@ Editing `JID_CAT/F` changes every cat: Lethe, Ranulf's form if he uses it, and y
 | **Transform gauge** (character) | Starting gauge of a new unit | character |
 | **Laguz gauge** (deployment, 1–19) | Starting gauge in that chapter; 0 keeps the character's | deployment row |
 | **Map models › Promoted** | The beast form's map model for this character | character |
+
+## On Radiant Dawn
+
+Radiant Dawn's laguz work the same way, with these values:
+
+- **Forms**: the class's **Other form** links the human and beast classes; transforming swaps the active class, rebuilds the skills and caps the current HP to the new maximum.
+- **Gauge**: 0 to 30. A character sets its starting gauge and four changes on its **Stats** tab: per turn and per battle, in each form. A unit transforms when the gauge reaches 30 and reverts at 0. Royals and fixed-form units count as full.
+- **Stats**: while transformed, Strength, Magic, Skill, Speed, Defense and Resistance are doubled (1.5 times for a half-shift), then capped by the transformed class. Luck and HP are not.
 
 ## Things to try next
 

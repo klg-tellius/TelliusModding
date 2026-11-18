@@ -2,7 +2,7 @@
 id: "modding-deployment-sections"
 title: "Design and connect deployment sections"
 description: "A complete guide to deployment variants, section names, headers, script callers, armies, and spawn timing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Deployment", "Sections", "Scripts"]
@@ -204,6 +204,14 @@ To revert, restore the original sections and script calls together. Deleting an 
 ## Limits and confidence
 
 The four-file structure, suffix behavior, section layout, header meanings, script-reference display, group/faction separation, occupied-tile handling, and structural writer are source-reviewed. Exact behavior of malformed names, overlapping forced placement, unusual link sections, and chapter-specific script helpers remains **unknown** until tested in that chapter.
+
+## On Radiant Dawn
+
+Radiant Dawn's deployment files are three loose files per map, not a packed `dispos.cmp`: `dispos_c.bin` (sections used on every difficulty), `dispos_n.bin` and `dispos_h.bin`. The section names carry the file's letter (`bmap0105_teki_n`). A script names a difficulty pair without its letter (`_dispos("bmap0105_teki", …)`), and the game takes that difficulty's copy; it names a `_c` section in full.
+
+A Radiant Dawn unit record is 0x68 bytes, with seven items and five skills. The Deployment tab edits the fields shared with Path of Radiance and keeps every other byte as it is.
+
+The player group (`<map>_mikata`) is a ranked list of sortie slots, leader first ([Radiant Dawn](../meta/radiant-dawn.md#part-4-armies)).
 
 ## Things to try next
 

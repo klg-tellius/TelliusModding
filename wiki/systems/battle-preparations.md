@@ -2,7 +2,7 @@
 id: "battle-preparations"
 title: "Battle Preparations"
 description: "How the prebattle map selects a roster, starting positions, equipment, inspection state, and resume save"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Chapters", "Deployment", "UI"]
@@ -49,6 +49,10 @@ The selected count is not sufficient by itself: a roster at the numeric maximum 
 <span id="fe9-sys-286"></span> **Preparation inspection.** The player can inspect terrain, enemies, inventories, ranges, and objectives without beginning turn 1. Displayed data comes from initialized chapter definitions/deployments but must not advance AI, events, RNG, or statuses.
 
 <span id="fe9-sys-287"></span> **Preparation save.** It preserves management and selected formation plus a resume point that reconstructs preparation, not an already-started tactical phase. Battle Start then commits roster/slots, runs map-start initialization/events, and enters the turn/phase cycle.
+
+## Radiant Dawn
+
+A Radiant Dawn chapter record's preparations byte decides the screen: 0 none (unless the script sets `イベント進撃`), 1 the usual screen, 2 and 5 in the Endgame. The player's sortie slots come from the deployment file's `<map>_mikata` group, a ranked list with the leader first. A unit it doesn't name takes a free slot in roster order. Scripts mark units with `UnitForcedSally` (must deploy), `UnitDontMoveSally` (locked tile) and `UnitNeverSally`, and set the slots with `SallySetByGroupRank` and `SallyAddByGroupRank`. Only units in force 0 or 5 are placed, so Part 4's stored armies stay off the map. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Interactions and edge cases
 

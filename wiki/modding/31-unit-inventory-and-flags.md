@@ -2,7 +2,7 @@
 id: "modding-unit-inventory-and-flags"
 title: "Set unit inventory, drops, skills, AI, and flags"
 description: "A field-by-field guide to deployment unit records, including equipment slots, drops, class rings, skills, AI, flags, destinations, and Laguz gauge"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Deployment", "Inventory", "AI"]
@@ -229,6 +229,12 @@ For a clean revert, restore the recorded field values or the backed-up deploymen
 Field labels, slot ranges, flag mappings, difficulty behavior, gauge range, and faction/drop handling are source-reviewed against the current application and format implementation. The engine effects of **0x80** remain unknown; this tutorial intentionally does not name it.
 
 AI labels select game routines whose full behavior depends on map geometry, targets, inventory, and engine state. The editor can store and validate labels but cannot prove an AI outcome without a controlled playtest. Class-ring and recruitment flags also require the matching campaign state.
+
+## On Radiant Dawn
+
+A Radiant Dawn deployed unit has seven item slots and five skill slots, and its AI is named by an attack, a move and a heal sequence and a move type. The **Use FE10Growth stats** flag builds the unit's eight stats from its character's row in `FE10Growth.cms` at its level; when no row applies, the usual class and personal bases are used.
+
+Item labels in the retail files sometimes carry a suffix (`/D` on enemies holding keys or vulneraries, probably dropped; `/L`, `/S`); class and skill labels can carry `/F` or `/F/N`. Their meanings are not traced, so keep them as you find them.
 
 ## Things to try
 

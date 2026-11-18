@@ -2,7 +2,7 @@
 id: "modding-check-project"
 title: "Check a project and fix problems"
 description: "Interpret every checker category, navigate to owners, and prove a repair without hiding warnings"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -116,6 +116,14 @@ Rename the file back to `c31.m` and press **Run check**: *0 errors, 4 warnings*,
 | Shops | An item that does not exist | |
 
 A check that cannot read its input says so as a warning, and the other checks still run.
+
+## On Radiant Dawn
+
+**Check** has a Radiant Dawn version. It looks for broken references in `FE10Data.cms` and `FE10Growth.cms` and for chapter files that are missing, and runs the same deployment, script and shop checks as on Path of Radiance. An untouched retail extraction reports no errors. A few retail oddities in places the game never reaches are reported as warnings, so they stay in your baseline:
+
+- the Part 4 `a`/`b` records and `CFINAL`, whose script or map is not on the disc;
+- a 3-15 event unit, `PID_TIBARN_EV`, that has no character record;
+- units placed on terrain their class can't enter, which the game moves to a passable tile nearby.
 
 ## Things to try next
 

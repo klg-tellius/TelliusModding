@@ -2,7 +2,7 @@
 id: "modding-sound-effects"
 title: "Add or replace sound effects"
 description: "A complete MusyX sound-effect workflow covering cue identity, groups, banks, samples, macros, replacement versus addition, volume, pan, range, ARAM cost, contextual testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Sound effects", "MusyX", "Audio"]

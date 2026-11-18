@@ -2,7 +2,7 @@
 id: "modding-skills"
 title: "Understand, assign, and rebalance skills"
 description: "A field-by-field guide to fixed skill slots, ownership, restrictions, scrolls, icons, capacity, effects, and activation tests"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Skills"]
@@ -156,6 +156,17 @@ Never “restore” a position-bound skill by deleting it or inserting another r
 | **Capacity cost** | `param1`, 0–255 cost against current class capacity. | Test exact-fit and one-point-over cases. |
 | **Has scroll (unread)** | `param2`, stored convention not read by the game. | Preserve; it does not create learning behavior. |
 | **Save FE8Data.bin** | Persists the shared skill definition and any other session edits. | Reopen the skill and every modified ownership source. |
+
+## On Radiant Dawn
+
+Radiant Dawn's skills are in `FE10Data.cms`, under **Game Data › Skills**. Instead of Path of Radiance's fixed limits, each skill carries two lists:
+
+- **Requirements**: the class types (`SFXC_…`) that can have the skill.
+- **Conditions**: the skills, classes and characters that can't.
+
+**Capacity** is the skill's cost against the class's skill capacity: when a unit learns a skill and goes over, the game removes removable skills until it fits. **Scroll item** names the item that teaches the skill. **Icon** is the icon drawn in the skill list.
+
+A character's own skills are a list on the character's **Stats** tab ([Create a character](10-create-character.md)), and a class's on the class. A skill given to a unit in a save is saved as learned, like a scroll's ([Saves](59-save-editor.md)).
 
 ## Things to try next
 

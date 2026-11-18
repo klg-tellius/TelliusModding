@@ -2,7 +2,7 @@
 id: "modding-preparations-and-bonus-exp"
 title: "Set deployment slots, forced units and bonus EXP"
 description: "Where a chapter's deployment slots, mandatory and locked units, and end-of-chapter bonus experience are written, and how to change them"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -132,6 +132,15 @@ def func_21():
 | `@on_scenario_end` (*12 - Scenario complete*) | Runs at the end of the chapter |
 | `AchieveSet(message_id, amount)` | One bonus line: label and amount |
 | `BMGetTurn()` | The turn the chapter ended on |
+
+## On Radiant Dawn
+
+On Radiant Dawn:
+
+- A chapter record's **Preparations mode** byte decides whether it has a preparations screen: 0 none (unless the script sets the flag `イベント進撃`), 1 the usual screen, 2 and 5 in the Endgame.
+- The script functions are `UnitForcedSally` (must deploy), `UnitDontMoveSally` (locked tile), `UnitNeverSally` (never deployable), and `SallySetByGroupRank` and `SallyAddByGroupRank` for the deployment slots of a group on the current difficulty.
+- The player group of the deployment file (`<map>_mikata`) is a ranked list of slots, leader first. A unit the group doesn't name takes a free slot in roster order ([Radiant Dawn](../meta/radiant-dawn.md#part-4-armies)).
+- Bonus-experience level-ups first run the ordinary growth routine, then trim or fill the result to their own number of stats, so the Game Code growth settings affect both.
 
 ## Things to try next
 

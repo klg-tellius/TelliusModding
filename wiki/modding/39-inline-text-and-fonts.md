@@ -2,7 +2,7 @@
 id: "modding-inline-text-and-fonts"
 title: "Control dialogue text, timing, icons, and fonts"
 description: "A practical guide to line and page control, pauses, typing sounds, colours, icons, text effects, scale, font switches, Tellius script, and glyph failures"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Dialogue", "Fonts", "Inline codes"]
@@ -272,6 +272,12 @@ To revert, restore the unformatted line or the backed-up chapter message file. R
 Font identities, inline code meanings, timing rates, fallback behavior, line scope, icons, scale/effect behavior, and editor font wrapping are source-reviewed. Some low-level colour/effect codes are supported by the engine but absent from retail dialogue; treat them as experimental and verify contrast/accessibility.
 
 Preview approximates runtime input, audio, mouth animation, and logs. Dolphin is required for final cadence, controller behavior, skip/handoff, and rasterization.
+
+## On Radiant Dawn
+
+Radiant Dawn writes its commands as bytes, not `$` codes, and the Dialogue tab shows them as `<…>` tags ([Message Format (Radiant Dawn)](../formats/rd-message-format.md)). The **Actions** list names them: Layout, Background, Cast, Speaker, Seat, Show and Remove portrait, Wait, New page, Continue, Pause power, Clear box, Stop and Resume mouth, Disable and Enable skipping. The glyph markup inside the text is Path of Radiance's: `#F01` fonts, `#C22` colours, `@{0}` values and `@[A]` button icons. A message switches font with `#F00` to `#F05`; font 5 is the furigana font.
+
+On a European disc the single bytes 0xA1 to 0xDF are accented Latin letters drawn by the European fonts, so the app reads and writes those files with that table ([Radiant Dawn](../meta/radiant-dawn.md#languages)).
 
 ## Things to try
 

@@ -2,7 +2,7 @@
 id: "modding-items-and-weapons"
 title: "Create, balance, and present an item or weapon"
 description: "A field-by-field guide to item identity, weapon rules, combat values, restrictions, effects, bonuses, icons, and battle models"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Items", "Weapons"]
@@ -177,6 +177,16 @@ If the copied IID has no `xwp/TUTORIAL_SPEAR.dbx`, mechanics can work while the 
 | **Stats** | Ten signed equipped/permanent-use bonus bytes. | Determine whether the template is held equipment or a consumed booster. |
 | **Growth %** | Eight signed equipped growth modifiers. | Use fixed growth and a known threshold-crossing level. |
 | **Save FE8Data.bin** | Writes the shared data session. | Reload the project before placing/testing the item. |
+
+## On Radiant Dawn
+
+Radiant Dawn's items are in `FE10Data.cms`, under **Game Data › Items**. Differences from Path of Radiance:
+
+- **Attributes** and **Effective against** are lists of any length below the fields.
+- An item's optional stat-bonus block is edited below the lists; adding or removing it changes the record's size, which the app handles.
+- **English article** picks *a* or *an* (255 chooses from the first letter). **Colour** indexes the item colour palette; every retail item uses 4.
+- Shops are per difficulty (`Shop/shopitem_n/h/m.bin`): see [Shops](46-shops.md).
+- On the Japanese disc an item record has no article and is 4 bytes shorter; the Japanese database has 293 items, not 296.
 
 ## Things to try next
 

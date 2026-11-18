@@ -2,7 +2,7 @@
 id: "modding-event-recipes"
 title: "Build reliable chapter events"
 description: "A trigger-condition-action-state method for village rewards, recruitment, boss dialogue, objectives, map changes, and other chapter events"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Events", "Scripting", "Objectives"]
@@ -296,6 +296,16 @@ To revert, restore the script plus every connected resource: registered flag, zo
 Trigger types/fields, the Script editor operations, flag semantics, objective commitment, and the trigger distinctions above are source-reviewed. Exact native/helper sequences for rewards, map phases, camera work, and some recruitment presentations vary by chapter; the compatible in-chapter reference remains authoritative.
 
 Play approximates some presentation and map-load behavior. Verify choices, complex camera/audio sequences, map transitions, event skip, and real save persistence in Dolphin.
+
+## On Radiant Dawn
+
+Radiant Dawn's scripts use the same triggers and the same method; the [script functions](../systems/rd-script-functions.md) differ. The retail chapter scripts use mostly `@before_phase`, `@on_battle`, `@on_death`, `@on_location`, `@on_area`, `@on_base_talk` and `@on_talk`. Points that change the recipes:
+
+- **Flags**: 128 script flags per file, named from `startup.cmb` (campaign flags) and the chapter's script (chapter flags).
+- **Victory**: setting `gf_complete` wins at the end of the next unit action, not at once. Every `@on_complete` event then runs in order, so a second win event can sit beside the chapter's own.
+- **Branches**: a chapter that branches ends with `CompleteSubChapter(route)`.
+- **Deployments**: `_dispos` and `_idispos` name a difficulty pair without its letter ([Reinforcements](32-reinforcements.md)).
+- **Withdrawal**: a character whose **Withdraws instead of dying in Parts** bit covers the chapter's Part retreats when defeated, unless the script set `gf_gameover`.
 
 ## Things to try
 

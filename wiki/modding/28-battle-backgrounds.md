@@ -2,7 +2,7 @@
 id: "modding-battle-backgrounds"
 title: "Assign battle scenery by map and terrain"
 description: "A complete guide to BattleTerrData rows, terrain columns, default fallback, scenery browsing, and testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Battle scenes", "Terrain"]
@@ -186,6 +186,15 @@ Revert individual cells by restoring their prior names/blanks. Revert row creati
 ## Limits and confidence
 
 The 77-column layout, map-row matching, two-stage fallback, UI filtering, folder resolution, and save boundary are source-reviewed. The 3D preview demonstrates asset readability, not exact native camera, lighting, combat effects, or every terrain transition. Those remain **unknown** until tested in the target battle.
+
+## On Radiant Dawn
+
+The **Battle scenes** tab works on Radiant Dawn with its own table: each map's row of `BattleTerrIndex` in `FE10Data.cms` gives one backdrop per terrain type, an index into the list `BattleTerrName` (`bg0101街`…). Two rules differ:
+
+- A map with no row of its own fights in front of one fixed backdrop, `bg魔法`, on every terrain type (Path of Radiance uses its first row).
+- An empty cell uses the row's first cell, as on Path of Radiance.
+
+A backdrop name is a record of `FE10Battle.cms`, whose models name the scenery folder in `zbg/` ([Radiant Dawn](../meta/radiant-dawn.md#battle-backdrops)). Thirteen backdrops, among them the generic plains and forest ones, are missing from the retail `BattleTerrName`, so no row can name them yet.
 
 ## Things to try next
 

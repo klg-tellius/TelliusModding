@@ -2,7 +2,7 @@
 id: "combat-mechanics"
 title: "Combat Resolution"
 description: "How an exchange of blows and its experience award are calculated"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Balance","Combat"]
@@ -238,6 +238,18 @@ This boundary lets animation options change presentation without changing outcom
 ## Worked example
 
   An attacker with 14 effective Speed fights a defender with 9. The +5 advantage clears the +4 threshold, so the attacker receives a second exchange if both units survive. If the attacker uses a Brave weapon, each attacker exchange contains two strikes: two before the counter and two in the follow-up, for as many as four attacker strikes. Each strike still rolls Hit separately, then Critical if it hits; Brave does not guarantee four successful hits and the Speed advantage does not multiply critical damage.
+
+## Radiant Dawn
+
+Radiant Dawn's combat follows the same order: the attack, the counter, then a follow-up for whichever side has at least 4 more attack speed. A strike's damage is attack minus the defense chosen for the weapon, at least 0, tripled on a critical. <span class="confidence confidence--confirmed">engine</span>
+
+- **Hit** uses two random numbers and their average, as on Path of Radiance. **Critical** is rolled with one number, only after a hit, so an ordinary strike uses two draws for the hit and a third for the critical. <span class="confidence confidence--confirmed">engine</span>
+- **Critical rate** starts from the unit's skill divided by 2 plus the weapon's critical. A unit with `SID_CRITRISE` adds the difficulty's class bonus (GameData +0x60). `SID_CRITUP5` to `SID_CRITUP25` add 5 to 25, and Wrath adds 50 while its HP condition holds (HP at or under 30 % on the US and European builds, under 20 % on the Japanese one). <span class="confidence confidence--confirmed">engine</span>
+- **Supports**: a paired partner within 3 tiles on the same force adds rank times both affinity rows of `DivineData`, then the total is halved: Attack, Defense, Hit, Avoid, Critical and Critical avoid. `DivineParam` adds Hit and Avoid for the unit's affinity against the map's. A kind-1 bond in `KiznaData` adds Critical while the two units are adjacent. <span class="confidence confidence--confirmed">engine</span>
+- **Terrain**: each side gets its tile's Defense, Resistance and Avoid bonus. <span class="confidence confidence--confirmed">engine</span>
+- **Biorhythm** changes Hit, Avoid and skill activation, not the core stats ([Biorhythm](biorhythm.md)). <span class="confidence confidence--confirmed">engine</span>
+
+The Battle Simulator's Radiant Dawn rules follow these formulas. Several smaller terms of the attack and hit formulas (authority, some skill modifiers) are not fully named yet. <span class="confidence confidence--strong">engine</span>
 
 ## Interactions and limits
 

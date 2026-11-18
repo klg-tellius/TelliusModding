@@ -2,7 +2,7 @@
 id: "modding-music"
 title: "Replace or add music"
 description: "A complete STM music workflow covering replacement versus new identity, cue-to-track resolution, input conversion, channels, sample rate, loops, encoding, assignment, transitions, Sound Room scope, testing, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Music", "Audio", "STM"]

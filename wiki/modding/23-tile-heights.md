@@ -2,7 +2,7 @@
 id: "modding-tile-heights"
 title: "Edit tile heights, slopes, and exits"
 description: "A corner-by-corner tutorial for unit, ground, and roof heights plus directional movement links"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Maps", "Heights", "Pathfinding"]
@@ -220,6 +220,10 @@ For manual rollback, restore every original corner on every edited layer plus ea
 ## Limits and confidence
 
 The three layer meanings, four-corner layout, one-step/400-unit conversion, height-filter threshold, link composition order, map-edge behavior, and editor controls are source-reviewed. Exact collision presentation, unusual imported meshes, absolute link semantics for every retail map, and movement interactions outside the tested class/map combination remain **unknown** until exercised in the target build.
+
+## On Radiant Dawn
+
+Radiant Dawn maps keep the same 12-byte panel records under other section names (`roofindex`/`roofpanel`, `baseindex`/`basepanel`), and the height tools edit them the same way. **Deduce from terrain and props** finds the ground by its material, since Radiant Dawn has no ground flag. Placed props on Radiant Dawn also have a sub-tile offset and a mirror switch ([Place props](24-map-props.md)).
 
 ## Things to try next
 

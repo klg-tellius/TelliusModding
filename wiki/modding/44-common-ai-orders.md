@@ -2,7 +2,7 @@
 id: "modding-common-ai-orders"
 title: "Create common AI orders"
 description: "Build and test stationary bosses, aggro enemies, patrols, thieves, healers, talkers, escape units, and target-filtered AI with explicit attack, move, heal, route, and equipment requirements"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "AI", "Enemies", "Maps"]
@@ -201,6 +201,15 @@ To revert one recipe, restore the unit's original four policy identities and equ
 ## Limits and confidence
 
 The recipes use source-reviewed editor behavior and executable-backed AI operations. Core attack, movement, healing, route, target-filter, talk, steal, and escape semantics are confirmed. Operations labeled tentative in Raw entries remain unsuitable as the sole basis for a critical objective without Dolphin testing. Play does not simulate every skill and adjacent-unit scoring detail, so final parity belongs to the built game.
+
+## On Radiant Dawn
+
+Radiant Dawn's AI is `Cp/cp_data.cms`, edited on the same AI page as readable `.fe10ai` source. Its instruction set has 82 entries instead of 52, so the recipes use Radiant Dawn's names ([AI engine and scoring](../systems/ai-engine-and-scoring.md#radiant-dawn)):
+
+- **Attack orders**: `CP_PERSONATK` attacks with a character filter, `CP_ALLUNITATK` attacks any hostile unit, and `CP_ALLJOBATK` uses a class filter. Variants such as `CP_ALLUNITATK_TEAMMOVE` and `_FLYING` (their own tile rules) and `_ONDST` (a destination limit) narrow it further.
+- **Chance**: an attack instruction runs only when a roll of 0–99 is below its first field, so 100 always runs and 0 never does.
+- **Weights**: a unit's `MTYPE_*` record holds signed weights, in 32nds, for each term of the attack score.
+- **Looting**: a unit loots villages only if it has `SID_VILLAGEDESTROY`, which only the Bandit class has in retail. The Game Code row **Bandits do not destroy villages** turns looting off.
 
 ## Related tutorials and references
 

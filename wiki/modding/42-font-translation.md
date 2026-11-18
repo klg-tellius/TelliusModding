@@ -2,7 +2,7 @@
 id: "modding-font-translation"
 title: "Import and validate a translation font"
 description: "A full workflow for choosing the correct game font, importing TTF/OTF/TTC glyphs, character scope, offsets, spacing, smoothing, CP932 limits, memory cost, and UI testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Fonts", "Translation", "Localization"]
@@ -274,6 +274,10 @@ Keep the licensed source font and chosen settings in project documentation, but 
 The five-font ownership, viewer/import controls, ranges, CP932 boundary, fallback behavior, preserved metrics, file synchronization, and import result categories are source-reviewed. Visual quality and memory/performance thresholds are design/runtime matters and depend on the chosen source and coverage.
 
 Preview is a faithful bitmap renderer but not every UI layout. Final clipping, widths, smoothing, boot loading, and long-session stability require Dolphin testing across real consumers.
+
+## On Radiant Dawn
+
+Radiant Dawn has the same five fonts (system, fe_font, talk, bigkana, alpha), each with a `_w` twin that a widescreen console draws, plus `ruby` for furigana. Every one is an LZ10 `.cms` with the same glyph format. A new glyph needs to go into both the font and its `_w` twin, or widescreen players see the old one. The Japanese disc has no `_w` fonts. The European fonts draw accented Latin letters in the single bytes 0xA1 to 0xDF, which are half-width katakana on the other discs.
 
 ## Things to try
 

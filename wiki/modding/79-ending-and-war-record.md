@@ -2,7 +2,7 @@
 id: "modding-ending-and-war-record"
 title: "Edit the ending and the war record"
 description: "The finale slideshow in ending.cmb, its artworks and timings, the war record's chapter labels in ending.m, and the character cards of the individual record"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -116,6 +116,14 @@ The game finds the card by name: `RID_END_` and the character's PID without `PID
 | Last `func_2` argument 1 | The music fades out with that artwork | Leave it on `RID_END_GR22` |
 | Replace an `_en` card | Changes the US card | Edit the card without `_en` for the Japanese game |
 | Same image size | The rect still draws the whole card | A new size needs the RID's source and destination changed |
+
+## On Radiant Dawn
+
+Radiant Dawn's screens after the last battle use other files:
+
+- **Endings**: `FE10Epilogue.bin` gives each character an ending when they survived, a line when wounded or killed, and up to three alternatives: an A support with a named partner, another unit alive, another unit killed. Edit them on the **Endings** page on Assets ([Glossary, endings and other table files](../formats/rd-table-files.md)).
+- **Staff roll**: the lines are messages of `Mess/e_ending.m` and the timings are in `StaffRollData.bin`; both are edited on the staff credits page ([Sound Room, credits and tutorials](73-sound-room-credits-tutorials.md)).
+- **Clear records**: each finished playthrough adds a clear record to the system data, with its difficulty, total turns and time. The Saves page's System data tab lists them ([Use the save editor](59-save-editor.md)).
 
 ## Things to try next
 

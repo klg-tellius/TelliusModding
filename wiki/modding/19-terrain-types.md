@@ -2,7 +2,7 @@
 id: "modding-terrain-types"
 title: "Edit terrain rules and movement costs"
 description: "A field-by-field tutorial for changing terrain bonuses, healing, blocking, and movement costs safely"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Terrain", "Movement"]
@@ -249,6 +249,16 @@ To revert cleanly, restore the original terrain values and repaint the test stri
 The fixed count of 77 terrain positions, the fifteen movement columns, the normal/flier bonus split, signed bonus ranges, healing byte, object flag, shared-block operation, and `255` impassable value are source-reviewed against the app's parser and editor behavior.
 
 The exact moment and presentation of every terrain effect can depend on game runtime logic, chapter scripting, class state, and other map systems. Those combinations are marked **unknown** until exercised in a built game. That is why this article requires normal, alternate, boundary, and reload tests instead of treating a saved value as proof.
+
+## On Radiant Dawn
+
+Radiant Dawn's terrain table (`TerrainData` in `FE10Data.cms`, **Game Data › Terrain**) has the same idea with more columns:
+
+- Avoid, Defense and Resistance, then a second set of the three (**alt**) whose use is not traced yet.
+- **Heal % per turn**, **Flags**, a **Step effect** and two **Move sounds**.
+- 23 movement-cost columns, one per movement type, where 255 is impassable. A class's **Movement type** picks the column.
+
+A chapter can also change the movement of mounted and beast units by a signed amount (ChapterData **Movement change**, −2 on six desert and snow maps). **Disable terrain combat bonuses** on the Game Code page turns off the Defense, Resistance and Avoid bonuses in combat only.
 
 ## Things to try next
 

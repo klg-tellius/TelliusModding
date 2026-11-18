@@ -2,7 +2,7 @@
 id: "modding-base-and-world-map-text"
 title: "Edit support, base, and world-map conversations"
 description: "A complete guide to yell.m support conversations, C/B/A message identities, base-info triggers, chapter narration, world-map layout, inherited context, ownership, and route testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Dialogue", "Supports", "Base", "World map"]
@@ -246,6 +246,12 @@ To revert, restore each owner independently: `yell.m` for support text, the chap
 File ownership, canonical support IDs, support editor behavior, base trigger fields, narration layout/sound/log semantics, and inheritance analysis are source-reviewed. Exact base/world-map availability and presentation sequences remain chapter-specific and must follow real callers.
 
 The app edits existing support/base/world-map content and can create messages; it does not infer a completely new base-screen or world-map route from text alone. Runtime route, skip, and persistence require Dolphin testing.
+
+## On Radiant Dawn
+
+On Radiant Dawn, conversations are listed in `FE10Conversation.cms`: each record names its chapter, its speakers and its message ([Conversation Lists (Radiant Dawn)](../formats/rd-conversation-data.md)). The Conversation Room in Extras lists them by chapter and by character from `conversationroom.bin` and shows one once its "seen" bit is set in the system data. The **Conversation Room** page on Assets edits those two lists.
+
+The world-map scenes draw each army's route along a curve in `gmap/curve/`; the **World Map Routes** page on Assets edits them ([World-map route lines](../formats/rd-world-map-routes.md)).
 
 ## Things to try
 

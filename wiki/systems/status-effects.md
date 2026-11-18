@@ -2,7 +2,7 @@
 id: "status-effects"
 title: "Status Effects & Temporary Bonuses"
 description: "How poison, sleep, silence, berserk, temporary Resistance, and terrain healing are stored and advanced"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Status", "Turns", "Combat"]
@@ -61,6 +61,10 @@ Application must distinguish immunity, replacement, and coexistence. The current
 <span id="fe9-sys-232-detail"></span> **Silence in that lifecycle.** Silence is a legality filter rather than an allegiance or inventory mutation. It suppresses applicable tome and staff choices for player and AI, and final resolution revalidates it if status changes after a menu was opened. Scripted operations remain governed by their own explicit predicates instead of an implicit exception matrix.
 
 <span id="fe9-sys-235"></span> **FE9-SYS-235 — Terrain healing.** Terrain records carry a percentage-of-max-HP heal value. The phase consequence reads the unit's current tile and effective maximum HP, applies integer recovery capped at maximum, and schedules its presentation. It does not create a saved status. Poison and terrain remain separate ordered phase handlers, and death/objective/event checks observe the HP produced by the consequence that just completed.
+
+## Radiant Dawn
+
+Radiant Dawn keeps a unit's status in its runtime record (+0x110 and +0x112). One routine counts the durations down, with one boundary at the start of a phase and another at its end. How a status is applied (accuracy, immunity) and how it is cured is not traced yet. <span class="confidence confidence--strong">engine</span>
 
 ## Interactions and limits
 

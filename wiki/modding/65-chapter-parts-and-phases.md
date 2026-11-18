@@ -2,7 +2,7 @@
 id: "modding-chapter-parts-and-phases"
 title: "Manage chapter parts and phases"
 description: "Add and remove map phases, turn one into a playable part with Complete18, and choose between parts and two-part chapters"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -153,6 +153,12 @@ The second battle reuses part 1's script: its turn events (`@on_phase(turn_from=
 | **Carry straight on into the next chapter (no save, no army clean-up)** (Overview) | Makes the transition to the next chapter work like Ch.27's 28 → 29 | Two records that should play as one chapter |
 
 Refusals of **Next playable chapter part**: *Chapter part openings have a gap* (an `Opening18_3` without `Opening18_2`), *The game supports at most four playable parts per chapter.*, *This chapter has no script to hold a playable part.*
+
+## On Radiant Dawn
+
+Map phases and playable parts are Path of Radiance features; Radiant Dawn has no part script functions. Its chapters that span several maps are separate chapters, each with its own `ChapterData` record and map folder (4-7a to 4-7e), linked in the story order. To add one, use **Chapters › Add chapter** and place it in the story flow ([Chapter IDs and story flow](07-chapter-ids-and-story-flow.md)).
+
+Who plays each army's phase is set on the Game Code page: **Army phases** has the same four choices as on Path of Radiance ([Game Code](57-game-code.md)).
 
 ## Things to try next
 

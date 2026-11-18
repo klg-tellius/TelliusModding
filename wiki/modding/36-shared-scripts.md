@@ -2,7 +2,7 @@
 id: "modding-shared-scripts"
 title: "Edit shared startup helpers and endings"
 description: "A safe workflow for startup.cmb exports, cross-chapter callers, global flag registration, ending.cmb, finale routing, and regression testing"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Scripting", "Campaign", "Endings"]
@@ -303,6 +303,10 @@ To revert a helper change, restore `startup.cmb` and its matching sidecar, then 
 The shared-file selection behavior, startup compile context, export discovery, argument-count validation, sidecar lifecycle, global registration ownership, and final campaign route are source-reviewed. The exact side effects of individual vanilla helpers remain function-specific; use their catalog entries and real call sites.
 
 Ending eligibility and ordering are authored and can be traced, but a complete census of every retail epilogue variant is outside this workflow. Final clear-data and skip equivalence require Dolphin testing from controlled saves.
+
+## On Radiant Dawn
+
+Radiant Dawn's `startup.cmb` holds 589 functions, so calls to it use the two-byte form of `localCall` ([Event Scripts (Radiant Dawn)](../formats/rd-event-scripts.md)). Beside the campaign flags it holds the Part 4 army hand-overs: each Part 4 chapter calls its own `TEAM_<chapter>_ED` when it ends, which stores the army that just played and brings out the next one. Changing the story order on the Chapters page rewrites these calls. `ending.cmb` holds the ending, and four tutorial scripts (`T01` to `T04`) load on demand.
 
 ## Things to try
 

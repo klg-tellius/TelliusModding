@@ -2,7 +2,7 @@
 id: "modding-difficulty-and-armies"
 title: "Tune difficulty and army groups"
 description: "A controlled tutorial for difficulty constants, chapter enemy levels, and numbered army groups"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Difficulty", "Armies"]
@@ -194,6 +194,18 @@ Revert by restoring each original byte and each section's original group. Removi
 ## Limits and confidence
 
 The exposed rows, byte ranges, regional row boundary, enemy-bonus behavior, group numbering, group-zero rule, and append/remove-last editor behavior are source-reviewed. Exact results of growth, regional menu reachability, scripted autolevelling, commander effects, and every presentation surface still require a built-game test. Those are marked **unknown** until the matrix is executed on the target build.
+
+## On Radiant Dawn
+
+Radiant Dawn's difficulty constants are the **Difficulty** tab of Game Data: 13 rows with one value per difficulty. Its columns are Easy, Normal, Hard and Maniac in the game's own naming; the US menu calls Normal, Hard and Maniac *Easy*, *Normal* and *Hard*. The rows include:
+
+- the kill and action EXP bases and multipliers, the bonus for killing a boss or a thief, and the weapon EXP multiplier;
+- the effective-level adjustments for second tier, third tier and laguz, which the EXP formulas use;
+- **Critical bonus with SID_CRITRISE**, the class critical bonus (Game Code can multiply it).
+
+**Yune's blessing** is a separate tab: the stat bonus the Endgame gives the player's and allied units on each difficulty.
+
+Each chapter record adds levels to its enemy units per difficulty (**Enemy levels**, up to the class's maximum level), can skip the chapter on some difficulties, and names the army group the player's units join (**Player army**). Armies are numbered groups in `GroupData` (**Groups** tab): 1 the Dawn Brigade, 15 the Greil Mercenaries, 18 to 20 the three Part 4 armies, 27 the Endgame. Part 4's army switches are done by the chapters' scripts; see [Radiant Dawn](../meta/radiant-dawn.md#part-4-armies).
 
 ## Things to try next
 

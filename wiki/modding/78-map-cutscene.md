@@ -2,7 +2,7 @@
 id: "modding-map-cutscene"
 title: "Script a map cutscene"
 description: "Camera, fades, units that appear and walk, a line of dialogue and giving the view back, read from a retail scene and written for a new one"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -133,6 +133,10 @@ In the Script tab, put the cursor where the call goes and press **Insert call…
 | `UnitFadeIn` before placing | The unit appears as it walks in | Place it in view and skip the fade |
 | `UnitMoveWait` before the line | The text waits for the walk | Talk during the walk (no wait) |
 | A turn-limited trigger | Runs once without a flag | A flag guard for scenes a condition starts |
+
+## On Radiant Dawn
+
+A Radiant Dawn map scene is written the same way: a script function on a turn or phase trigger that moves the camera, moves units and plays conversations. The names of the camera, movement and wait functions differ; look them up in [Script Functions (Radiant Dawn)](../systems/rd-script-functions.md), and start from a retail scene of the same kind, copied from a Radiant Dawn chapter.
 
 ## Things to try next
 

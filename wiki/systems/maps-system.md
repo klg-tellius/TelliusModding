@@ -2,7 +2,7 @@
 id: "maps-system"
 title: "Maps"
 description: "How one chapter's battlefield is assembled from terrain, placed 3D scenery, and unit deployment"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Structure","Graphics"]
@@ -96,6 +96,15 @@ As a worked example, a sight-3 unit with Torch contributes the larger temporary 
 `RoofOpen`/`RoofClose` animate the matching section, instant variants jump to the result, and `SetRoofEnable` changes whether the section participates before refreshing the map. Opening records tile type `0x22`, so checkpoint reload reconstructs the revealed state. During event skip the animation jumps to its correct endpoint; state recording remains separate and must still converge with normal execution.
 
 For a modded building, matching geometry is not enough: its footprint flags, roof panel elevations, open/close event, enabled state, and saved coordinate must describe the same area. Footprint membership is tested only while the map-wide footprint feature is enabled, the object is active, its descriptor allows footprint tests, and its runtime state is closed. `RoofOpen` changes that runtime endpoint and writes tile record `0x22`; instant and skipped routes reach the same endpoint without intermediate animation. Visibility/placement refresh follows the state change, so geometry presentation never decides occupancy or persistence.
+
+## Radiant Dawn
+
+Radiant Dawn's maps share one layout ([Map Format](../formats/map-format.md#radiant-dawn)). Points that change how they play: <span class="confidence confidence--confirmed">engine + files</span>
+
+- **Fog**: 100 of the 128 maps have the drawing fog (`mapfog`) on; this is the distance haze, not fog of war.
+- **Wrapping maps**: a map can move one step at each phase change over a set duration, and the terrain under the units moves with it. On 2-P's map over moving clouds, a tile reads Cloud and then Sky.
+- **Extra passes**: `mapshader` can give the water an extra pass and the ground an extra coloured pass.
+- **Movement**: a chapter can change the movement of mounted and beast units (−2 on six desert and snow maps).
 
 ## Interactions and review boundary
 

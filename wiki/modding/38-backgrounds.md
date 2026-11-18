@@ -2,7 +2,7 @@
 id: "modding-backgrounds"
 title: "Create and display dialogue backgrounds"
 description: "An in-depth workflow for background TPL images, RID resources, layers, cross-fades, brightness, overlays, script calls, dialogue context, and runtime verification"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Backgrounds", "Dialogue", "Graphics"]
@@ -244,6 +244,10 @@ To revert a new background, remove/restore the consumer references first, then r
 File/RID relationships, controls, ranges, image creation/resizing, and save separation are source-reviewed. Named layer modes and effects are decoded, but unusual multi-layer runtime composition can differ from the illustrative preview.
 
 Large assets consume game memory and unusual dimensions/layouts can behave differently in-engine. Cross-fades, overlays, event transitions, and skip paths require Dolphin verification.
+
+## On Radiant Dawn
+
+Radiant Dawn's conversation backgrounds are the same kind of TPL files in `s/`, described by `s/rect.bin`: 468 files on the US disc, with short names and no extension, each a 1024 × 336 picture. A conversation picks its background with the **Background** action, the message command `B`, or swaps it at once with `b` ([Message Format (Radiant Dawn)](../formats/rd-message-format.md)). A new background on Radiant Dawn has not been tested in the game yet.
 
 ## Things to try
 

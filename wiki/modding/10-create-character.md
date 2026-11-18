@@ -2,7 +2,7 @@
 id: "modding-create-character"
 title: "Create a character"
 description: "Add a character record from a template, give it its own name, change its stats, and place it in a chapter"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -204,6 +204,21 @@ The Guard now starts Ch.1 on Normal in Boyd's place. Boyd is no longer deployed 
 | **Personal bonus** | Added to the class base for each stat |
 | **Class growth %** / **Personal growth %** | The class's rates (read-only) / the character's |
 | **Fixed growth start** | Starting values of the fixed level-up mode; only player-side records have them |
+
+## On Radiant Dawn
+
+**New character…** works the same way. It appends a copy to `FE10Data.cms`, and the name key is a message of `Mess/e_common.m` (`common.m` on the Japanese disc). A Radiant Dawn character record grows and shrinks with its lists, so adding a skill moves every record after it; the app rewrites the file's pointers when it saves.
+
+The **Stats** tab follows Path of Radiance's layout, with Radiant Dawn's fields:
+
+- **Identity**: PID, name key (MPID), help key (MNPID), portrait (FID), class (JID) and affinity.
+- **Map models**: four animation IDs, one per tier. An empty first one uses the class's.
+- **Skills**: the personal skills as a list of SIDs separated by commas, with no fixed number of slots, and the class's innate skills as links. The weapon ranks cover twelve types, from sword to staff, including knife and strike: `-` keeps the class's rank, `*` makes the type usable without a rank.
+- **Level, unit details and stats**: level, sex, authority stars and biorhythm, then the personal bonuses and growths beside the class's bases and growths, and the personal weight. A starting stat is the class base plus the bonus, capped at the class's cap.
+- **Laguz gauge**: the gauge change per turn and per battle, in each form.
+- **Other decoded fields**, among them **Withdraws instead of dying in Parts**: one bit per Part (bit 4 is the Endgame) in which a defeat makes the character withdraw instead of dying.
+
+Deployments are per difficulty on Radiant Dawn: see [Deployment sections](29-deployment-sections.md).
 
 ## Things to try next
 

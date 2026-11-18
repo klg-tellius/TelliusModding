@@ -2,7 +2,7 @@
 id: "base-system"
 title: "The Base"
 description: "How the between-chapter hub gates conversations, army management, shops, forge, and warehouse"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Base", "Economy", "Progression"]
@@ -51,6 +51,10 @@ Campaign routing enters the base only where chapter state permits it. Initializa
 Info conversations are registered content: labels and participants identify an entry, selection runs its event, and a completion flag prevents replay. Manage is a collection of persistent editors rather than one formula, but they share cancel/commit and refresh boundaries. Warehouse transfers item instances between the 200-slot party array and eight-slot unit inventories. Forge performs base selection, stat/name/color editing, price confirmation, allocation, item delivery, gold debit, and used-flag commit as one transaction.
 
 <span id="fe9-sys-276-detail"></span> The Support menu's base-system boundary is reviewed: it queries the support owner for available rows, launches the selected conversation, and refreshes the hub afterward. The underlying conversation scheduler and affinity bonus consumer remain explicitly tracked in [Support System](./support-system.md), not as a base-hub gap. <span id="fe9-sys-279-detail"></span> Base shops delegate stock, buy/sell, delivery, cancellation, and report accounting to the reviewed transaction lifecycle in [Economy](./economy.md).
+
+## Radiant Dawn
+
+Radiant Dawn's bases are their own chapter records between story chapters. The next-chapter step enters a base record only on the difficulties its skip byte allows, and the base sub-chapters use 0x80. Base conversations are `@on_base_talk` events of the chapter script (101 in the retail scripts). A save made in a base resumes there: the save's resume byte is 2 in a base or the preparations. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Interactions and edge cases
 

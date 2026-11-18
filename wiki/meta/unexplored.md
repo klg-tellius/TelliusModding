@@ -50,4 +50,4 @@ This page records the boundaries of the current game description. An open item m
 
 ## Radiant Dawn
 
-  Radiant Dawn, the Wii sequel, runs on the same engine but changes many layouts. Its text, portraits, fonts, conversation lists and event scripts are described on [Radiant Dawn](./radiant-dawn.md); the rest of the archive still describes Path of Radiance only. For Radiant Dawn, open items include its European single-byte text tables, the composition of its dialogue window art, and every system not yet listed on that page.
+  Radiant Dawn, the Wii sequel, runs on the same engine but changes many layouts. What is established about it is on [Radiant Dawn](./radiant-dawn.md); most lessons and the main systems pages have a Radiant Dawn section, and the other pages describe Path of Radiance. For Radiant Dawn, open items include its European single-byte text tables, the composition of its dialogue window art, and every system not yet listed on that page.
