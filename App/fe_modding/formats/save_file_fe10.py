@@ -35,6 +35,25 @@ from typing import Iterable, Mapping, Optional, Sequence
 
 FILE_NAME = "FE10_US.dat"
 FILE_SIZE = 0x124000
+#: Each build's NAND file. The European build writes the same layout as the US one (same file size
+#: and writer code, region map of main.dol); the Japanese file is 0xAC000 bytes (main.dol
+#: 0x8023DE54 creates it with 0xB0000 - 0x4000) and its layout is not decoded.
+FILE_NAMES = {"RFEE01": "FE10_US.dat", "RFEP01": "FE10_EU.dat", "RFEJ01": "FE10_JP.dat"}
+#: The builds whose file this module reads.
+READABLE = ("RFEE01", "RFEP01")
+JP_FILE_SIZE = 0xAC000
+#: Each build's Wii title ID (the disc ID's first four letters in hex): the NAND data folder.
+TITLE_IDS = {"RFEE01": "52464545", "RFEP01": "52464550", "RFEJ01": "5246454a"}
+
+
+def data_path(disc_id: str) -> Path:
+    """The save folder of ``disc_id`` under a Dolphin user folder (``Wii/title/00010000/<id>/data``)."""
+    return Path("Wii/title/00010000") / TITLE_IDS[disc_id] / "data"
+
+
+def file_name(disc_id: str) -> str:
+    """The save file name of ``disc_id`` (``FE10_US.dat`` for an unknown one)."""
+    return FILE_NAMES.get(disc_id, FILE_NAME)
 SYSTEM_SIZE = 0x4000
 BLOCK_SIZE = 0x18000
 RECORDS_PER_BANK = 6
@@ -1183,6 +1202,14 @@ class SaveRecord:
         return bytes(self.raw)
 
 
+def find_in(folder: Path) -> Path:
+    """The save file in a NAND data folder: whichever build's file is there (US first)."""
+    for name in FILE_NAMES.values():
+        if (folder / name).is_file():
+            return folder / name
+    return folder / FILE_NAME
+
+
 class SaveFile:
     """The complete unencrypted RFEE01 NAND data file."""
 
@@ -1193,8 +1220,11 @@ class SaveFile:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "SaveFile":
+        if len(data) == JP_FILE_SIZE:
+            raise ValueError("This is a Japanese save (FE10_JP.dat). Its layout differs from the US and "
+                             "European saves and can't be read yet.")
         if len(data) != FILE_SIZE:
-            raise ValueError(f"RFEE01 save must be 0x{FILE_SIZE:X} bytes, found 0x{len(data):X}")
+            raise ValueError(f"A Radiant Dawn save must be 0x{FILE_SIZE:X} bytes, found 0x{len(data):X}")
         system = SaveRecord(data[:SYSTEM_SIZE], 0)
         records = []
         for index in range(TOTAL_BLOCKS):
@@ -1207,7 +1237,7 @@ class SaveFile:
     def from_path(cls, path: Path | str) -> "SaveFile":
         path = Path(path)
         if path.is_dir():
-            path = path / FILE_NAME
+            path = find_in(path)
         return cls.from_bytes(path.read_bytes())
 
     def active_records(self) -> list[SaveRecord]:
@@ -1298,12 +1328,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(description="Inspect an RFEE01 FE10_US.dat NAND save.")
+    parser = argparse.ArgumentParser(description="Inspect a Radiant Dawn FE10_US.dat or FE10_EU.dat NAND save.")
     parser.add_argument("save", type=Path, help="FE10_US.dat or its containing data folder")
     parser.add_argument("--roundtrip", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    path = args.save / FILE_NAME if args.save.is_dir() else args.save
+    path = find_in(args.save) if args.save.is_dir() else args.save
     save = SaveFile.from_bytes(path.read_bytes())
     active = save.active_records()
     rows = [{"label": record_label(record, active), "offset": record.offset,

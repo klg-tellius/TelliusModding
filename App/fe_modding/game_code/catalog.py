@@ -460,8 +460,16 @@ class Catalog:
             return []
         code = version.code if isinstance(version, GameVersion) else str(version)
         family = code[:1]
+
+        def offered(entry) -> bool:
+            if code in entry.versions:
+                return True
+            # another build's sites can still be found here by signature; without one, the
+            # option does not exist on this build (a Radiant Dawn rule a region changed)
+            return any(site_code[:1] == family and sites and all(s.signature is not None for s in sites)
+                       for site_code, sites in entry.versions.items())
         return [entry for entry in self.entries.values()
-                if any(site_code[:1] == family for site_code in entry.versions)]
+                if any(site_code[:1] == family for site_code in entry.versions) and offered(entry)]
 
     def groups_for(self, version: GameVersion | str | None) -> dict[str, list[Entry]]:
         """``version``'s entries by group, the groups in the catalogue's order so that both games'

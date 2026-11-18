@@ -110,8 +110,9 @@ class RdCheckTests(unittest.TestCase):
 
         from fe_modding import text_export
 
-        for rel in ("zmap/bmap0101/dispos_n.bin", "Shop/shopitem_n.bin", "Sound/sound_data_en.cms",
-                    "Sound/sound_us.brsar"):
+        from fe_modding.game_profile import RADIANT_DAWN_PROFILE as rd   # the disc's own sound files
+        sound = [rd.path(Path(FE10), name).relative_to(Path(FE10)).as_posix() for name in ("sound_data", "sound_archive")]
+        for rel in ("zmap/bmap0101/dispos_n.bin", "Shop/shopitem_n.bin", *sound):
             self.write(rel, (Path(FE10) / rel).read_bytes())
         out = Path(self._tmp.name) / "out"
         _written, problems = text_export.export_project(self.project, out, parts={"deployments", "shops", "sound"})

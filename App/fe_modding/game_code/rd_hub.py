@@ -27,7 +27,7 @@ Not done here, unlike Path of Radiance: removing the hub visit from the clear hi
 
 from __future__ import annotations
 
-from . import ppc, rd_story
+from . import ppc, rd_regions, rd_story
 from .catalog import CAVE_ADDRESS, Edit, Patch, State, in_cave
 
 RFEE01 = rd_story.RFEE01
@@ -136,6 +136,7 @@ PATCH = Patch(
     "rd.hub.routing", "Chapters", "Hub chapter routing",
     "Routes victories through a saved hub destination and pending story chapter.",
     {RFEE01: _edits()}, internal=True)
+rd_regions.install_entry(PATCH)
 
 
 def validate_slots(hub_chapter: int, active_slot: int, destination_slot: int, pending_slot: int) -> bytes:
@@ -172,7 +173,9 @@ class RdHubFlow:
         status = session.patch_status(PATCH)
         if status.state not in (State.ORIGINAL, State.APPLIED):
             raise ValueError(f"Hub routing cannot be patched: {status.detail}")
-        expected = PATCH.versions[RFEE01][0].patched if status.state == State.APPLIED else _word(_LWZ_R0)
+        code = session.version.code if session.version is not None else RFEE01
+        sites = PATCH.versions.get(code, PATCH.versions[RFEE01])
+        expected = sites[0].patched if status.state == State.APPLIED else _word(_LWZ_R0)
         if session.dol.read(DONE, 4) != expected:
             raise ValueError("The story hook's last step conflicts with another patch.")
         session.set_patch(PATCH, True)

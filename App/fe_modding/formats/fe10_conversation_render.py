@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image, ImageDraw
 
@@ -26,20 +27,24 @@ WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
 PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
-_TEXT_PALETTE = {b"RFEE01": 0x80383158}
+_TEXT_PALETTE = {b"RFEE01": 0x80383158, b"RFEP01": 0x80384CD8, b"RFEJ01": 0x8036D0D0}
 _COLOR_CODE = re.compile(r"#C([0-9A-Fa-f]{2})|#c")
 
 
 class Fe10ConversationAssets:
     """Everything the renderer reads from an extracted Radiant Dawn disc (loaded lazily)."""
 
-    def __init__(self, files_root: Path | str, language_prefix: str = "e_", wide: bool = False):
+    def __init__(self, files_root: Path | str, language_prefix: Optional[str] = None, wide: bool = False):
         """``wide``: the 16:9 assets (``Face/wide``, ``_w`` fonts and layouts). They use the same
         640x480 coordinates, with art squeezed horizontally that the console stretches back; show
-        the rendered frame stretched to 854x480 (:data:`WIDE_SIZE`)."""
+        the rendered frame stretched to 854x480 (:data:`WIDE_SIZE`). The Japanese disc has no
+        widescreen assets, so ``wide`` is dropped there. ``language_prefix`` defaults to ``e_``
+        where the disc has English text, else none."""
         self.files = as_path(files_root)
+        if language_prefix is None:
+            language_prefix = "e_" if (self.files / "Mess" / "e_common.m").is_file() else ""
         self.prefix = language_prefix
-        self.wide = wide
+        self.wide = wide and (self.files / "Fonts" / "talk_w.cms").is_file()
         self._layouts = self._backgrounds = self._font = self._names = None
         self._faces = None
         self._colors: dict[int, tuple[int, int, int, int]] = {}
@@ -125,9 +130,10 @@ class Fe10ConversationAssets:
         return canvas
 
     def text_color(self, index: int) -> tuple[int, int, int, int]:
-        """RFEE01's 40-entry RGBA palette used by the glyph renderer's ``#Cxx`` markup."""
+        """The 40-entry RGBA palette the glyph renderer uses for ``#Cxx`` markup (main.dol data;
+        the three retail builds hold the same colours)."""
         if not 0 <= index < 40:
-            raise ValueError(f"Text color {index:02X} is outside RFEE01's palette")
+            raise ValueError(f"Text color {index:02X} is outside the palette")
         if index not in self._colors:
             from ..game_code.dol import Dol
 

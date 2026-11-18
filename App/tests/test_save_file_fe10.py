@@ -372,6 +372,9 @@ class Fe10RealSaveTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"),
                          "set FE10_EXTRACTED_FILES to the extracted RFEE01 files folder")
     def test_real_unip_streams_end_exactly_at_soko(self):
+        from tests.corpus import disc_id
+        if disc_id(os.environ["FE10_EXTRACTED_FILES"]).startswith("RFEJ"):
+            self.skipTest("the US saves need the US or European FE10Data, not the Japanese one")
         from fe_modding.formats import lz10
 
         root = Path(os.environ["FE10_EXTRACTED_FILES"])
@@ -418,6 +421,9 @@ class Fe10RealSaveTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
     def test_unit_level_exp_hp_and_stats(self):
+        from tests.corpus import disc_id
+        if disc_id(os.environ["FE10_EXTRACTED_FILES"]).startswith("RFEJ"):
+            self.skipTest("the US saves need the US or European FE10Data, not the Japanese one")
         # Edward in the game-made 4-P file: Lv 6, Exp 74, HP 21/21, Str 8 Mag 0 Skl 13 Spd 13 Lck 8 Def 6 Res 0
         from fe_modding.formats import fe10data, lz10
         root = Path(os.environ["FE10_SAVES"])
@@ -449,6 +455,9 @@ class Fe10RealSaveTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")
     def test_class_items_skills_and_supports(self):
+        from tests.corpus import disc_id
+        if disc_id(os.environ["FE10_EXTRACTED_FILES"]).startswith("RFEJ"):
+            self.skipTest("the US saves need the US or European FE10Data, not the Japanese one")
         from fe_modding.formats import lz10
         root = Path(os.environ["FE10_SAVES"])
         path = next(iter((root.parent if root.is_file() else root).rglob("gamefaqs_30509_FE10_US.dat")), None)

@@ -43,17 +43,22 @@ class RdTests(unittest.TestCase):
             self.assertIn(shader.water, (0, 1))
             if shader.version < 2:
                 self.assertIsNone(shader.get("object"))
-        self.assertEqual(versions, Counter({2: 31, 1: 12}))
+        from tests.corpus import per_disc
+        # the Japanese maps mostly have the older version 1 record
+        self.assertEqual(versions, per_disc(FE10, Counter({2: 31, 1: 12}), jp=Counter({1: 26, 2: 17})))
 
     def test_patch_keeps_every_other_byte(self):
-        data = self._map("bmap0109")
+        from tests.corpus import per_disc
+        data = self._map(per_disc(FE10, "bmap0109", jp="bmap0303"))      # bmap0109 is version 1 on JP
         shader = map_file.read_map_bytes(data).shader
-        self.assertEqual((shader.version, shader.water, shader.value_60, shader.value_54), (2, 1, 3, 255))
+        self.assertEqual((shader.version, shader.water, shader.value_60, shader.value_54),
+                         per_disc(FE10, (2, 1, 3, 255), jp=(2, 1, 0, 255)))
         out = map_file.patch_shader_field(data, shader, "tint", 1)
         out = map_file.patch_shader_field(out, map_file.read_map_bytes(out).shader, "hundredths_5c", -60)
         after = map_file.read_map_bytes(out).shader
         self.assertEqual((after.tint, after.hundredths_5c), (1, -60))
-        self.assertEqual(sum(a != b for a, b in zip(out, data)), 3)  # tint, and both bytes of -60 (ffc4)
+        # tint, and the bytes of -60 (ffc4) the old value did not share (bmap0303 already had ff)
+        self.assertEqual(sum(a != b for a, b in zip(out, data)), per_disc(FE10, 3, jp=2))
         with self.assertRaises(map_file.MapFileError):
             map_file.patch_shader_field(data, shader, "water", 256)
         version1 = map_file.read_map_bytes(self._map("bmap0111")).shader

@@ -218,4 +218,15 @@ Closing an item requires all applicable evidence:
 5. A copied-save/disc Dolphin check when behavior or persistence changes.
 6. Removal of the corresponding `unknown_*` label, or a documented reserved/unused classification.
 
+## 2026-11-15: European and Japanese discs (parity Phase 3)
 
+- **Game Code on RFEP01 and RFEJ01.** Every RD entry's US sites move to the other builds through `rd_region_table.py` (made by `tools/build_rd_region_table.py` with `game_code/region_map.py`). Each moved entry was checked against the retail executable (its original bytes there, after branches and data addresses move) and applied and reverted with `game_code.verify`: all 137 entries plus story order, hub routing and the chapter jump on RFEP01; on RFEJ01 all but `rd.skill.wrath_hp_ratio`, whose rule differs (JP 0x80027F74 loads 0.2 and compares strictly). Seven JP sites were placed by hand (`MANUAL` in the tool). **Not checked in Dolphin.**
+- **SAVE-08: the Japanese save layout.** `FE10_JP.dat` is 0xAC000 bytes (RFEJ01 0x8023DE54 creates it with 0xB0000 - 0x4000); the record sizes and sections are not decoded and the Saves page refuses the file. No JP save is on hand.
+- **SAVE-09: the European save in game.** `FE10_EU.dat` is read with the US layout (same size, same writer code by the region map); no European save has been opened yet.
+- **TEXT-EU: the European text table** is decoded (`fe10_message.EU_TABLE`, from the glyphs of the European fonts); 65,413 messages round-trip. Bytes 0xA0 and 0xE0-0xFF outside two-byte characters have no glyph.
+- **The ten European-only natives** are catalogued from their registration (handlers named in `cmb/catalog.py`); their handlers are not traced.
+- **Disc tests on EU and JP (done).** Every RD disc test runs on whichever disc `FE10_EXTRACTED` points at: `tests/corpus.py` `disc_id`/`per_disc`/`require_us` give each region its own counts and files. All pass on RFEE01, RFEP01 and RFEJ01. The suspected JP gaps were test assumptions (the effect registry test used the US record count; the class sound lists are there).
+- **JP skills** have no article either (same 0x2C record, fields one byte earlier); found by the byte coverage, now decoded (`fe10data.SKILL_FIXED_JP`). Coverage places every byte on all three discs.
+- **Chapter +0x18** is the `N` message key label on JP (`N0101`, relocated), null on US/EU: now the `n_messages` field. What reads it is not traced.
+- **European movies** with five audio tracks are read (`thp.ThpInfo.audio_tracks`, `read_frame(track=)`); a replacement keeps the count, with the same audio in each track. Not checked in game.
+- **Staff roll text** is shown in the file's own encoding (it was raw bytes before), and the European languages are listed; every ending file on the three discs rebuilds byte for byte.

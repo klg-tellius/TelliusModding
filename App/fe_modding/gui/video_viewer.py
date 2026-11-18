@@ -392,7 +392,10 @@ class VideoViewer(EditorPanel):
             # upfront would exhaust both memory (every frame's full pixel
             # buffer resident at once) and the OS's open-file-handle limit
             # well before encoding even starts.
-            data = thp.encode_thp(frame_paths, pcm_channels, audio_frequency, fps)
+            # a replacement keeps the slot's per-language audio tracks; a new video has one
+            replacing = self._info is not None and dest_path == self._current_path
+            tracks = self._info.audio_tracks if replacing else 1
+            data = thp.encode_thp(frame_paths, pcm_channels, audio_frequency, fps, audio_tracks=tracks)
             dest_path.write_bytes(data)
             return data
 

@@ -387,11 +387,11 @@ def _import_terrain(rows,data):
 FE10_SHEETS={'character':'Characters','class':'Classes','item':'Items','skill':'Skills','terrain':'Terrain'}
 
 
-def _fe10_columns(kind):
+def _fe10_columns(kind,data=None):
  """``(column, field key, field kind)``: the record's fields, then its label lists as comma-separated
  text (skill lists hold mode/label pairs and stay out)."""
  from .formats import fe10data
- cols=[(d.key,d.key,d.kind) for d in fe10data.field_defs(kind)]
+ cols=[(d.key,d.key,d.kind) for d in fe10data.field_defs(kind,data)]
  cols+=[(key,key,'list') for k,key in fe10data._LIST_COUNT if k==kind and kind!='skill']
  return cols
 
@@ -399,7 +399,7 @@ def _fe10_columns(kind):
 def export_fe10(path,data,kind):
  """Export one FE10Data.cms table (``character``, ``class``, ``item``, ``skill``, ``terrain``)."""
  from .formats import fe10data
- cols=_fe10_columns(kind); rows=[['index',*(c for c,_k,_t in cols)]]
+ cols=_fe10_columns(kind,data); rows=[['index',*(c for c,_k,_t in cols)]]
  for record in fe10data.read_table(data,kind):
   row=[record.index]
   for _c,key,how in cols:
@@ -420,7 +420,7 @@ def import_fe10(path,data,kind):
  id_key=fe10data.ID_FIELD[kind]
  if 'index' not in header:
   return data,[f'{name}: missing index column']
- cols=[(header[c.casefold()],key,how) for c,key,how in _fe10_columns(kind) if c.casefold() in header]
+ cols=[(header[c.casefold()],key,how) for c,key,how in _fe10_columns(kind,data) if c.casefold() in header]
  if not cols:
   return data,[f'{name}: no editable columns found']
  out=data; errors=[]; count=len(fe10data.read_table(data,kind))

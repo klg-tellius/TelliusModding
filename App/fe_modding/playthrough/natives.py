@@ -51,7 +51,10 @@ PRESENTATION_PREFIXES = (
 )
 #: Presentation calls the game answers with something other than 0.
 PRESENTATION_RESULTS = {"_pldone": 1, "isFading": 0, "isFlash": 0, "isWipe": 0, "TalkExist": 0, "ProcExists": 0,
-                        "FRAME2MSEC": None, "MSEC2FRAME": None, "MStoF": None}
+                        "FRAME2MSEC": None, "MSEC2FRAME": None, "MStoF": None,
+                        # the European build's own natives (cmb catalog FE10_EU_ONLY_EXTERNS)
+                        "VIEnableDimming": 0, "UnitDispLoad": 0, "UnitDispFree": 0, "UnitDispUpdate": 0,
+                        "GetMessageWidth": 0, "GetMessageHeight": 0, "FileSweepMRAM": 0, "FileSweepERAM": 0}
 #: Script functions startup.cmb calls in the chapter script; a chapter without one answers 0, like the game.
 OPTIONAL_CHAPTER_FUNCTIONS = {"RegistLocationTT"}
 

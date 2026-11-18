@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 
 from ..formats import fe10_conversation, fe10_message
 from ..formats.fe10_conversation_render import SCENE_SIZE, WIDE_SIZE, Fe10ConversationAssets, render
-from ..game_profile import files_root_of
+from ..game_profile import files_root_of, message_prefix
 
 #: The game's Message Speed option, in frames (1/60 s) per glyph; Max shows the whole page at once.
 SPEEDS = {"Slow": 10, "Normal": 4, "Fast": 1, "Max": 0}
@@ -42,7 +42,7 @@ class Fe10ConversationPreview(ttk.Frame):
         self._files = files_root_of(project)
         self._assets: dict[tuple[str, bool], Fe10ConversationAssets] = {}
         self._wide = tk.BooleanVar(value=False)
-        self._prefix = "e_"
+        self._prefix = message_prefix(project)
         self._frames: list[fe10_conversation.Frame] = []
         self._source_positions = []
         self._index = 0

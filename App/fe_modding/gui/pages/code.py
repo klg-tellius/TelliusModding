@@ -40,7 +40,7 @@ RD_GROUP_NOTES = {
     "Promotion": "Promotion-item and automatic-promotion rules. Tier and scripted restrictions remain active.",
 }
 #: Builds whose groups take RD_GROUP_NOTES first.
-RD_VERSIONS = ("RFEE01",)
+RD_VERSIONS = ("RFEE01", "RFEP01", "RFEJ01")
 
 GROUP_NOTES = {
     "Combat rules": "Numbers the battle engine uses. The vanilla value is shown beside each field.",

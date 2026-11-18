@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from fe_modding.formats import brsar, brstm, fe10_sound, lz10, rbnk, rseq, rwsd, soundroom, thp
+from tests.corpus import per_disc
 
 
 class BrstmValidationTests(unittest.TestCase):
@@ -124,15 +125,17 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
 
     def test_every_brstm_header_and_representative_audio(self):
         paths = sorted((self.root / "Sound" / "strm").glob("*.brstm"))
-        self.assertEqual(len(paths), 1186)
+        self.assertEqual(len(paths), per_disc(self.root, 1186, eu=3146, jp=698))
         shapes = set()
         for path in paths:
             info = brstm.read_info(path.read_bytes())
             shapes.add((info.channel_count, info.sample_rate, info.loop_start is not None))
         self.assertIn((1, 22050, False), shapes)
-        self.assertIn((1, 44100, False), shapes)
+        if per_disc(self.root, True, jp=False):        # the Japanese disc has no 44.1 kHz stream
+            self.assertIn((1, 44100, False), shapes)
         self.assertIn((2, 32000, True), shapes)
-        dummy = self.root / "Sound" / "strm" / "DUMMY.brstm"
+        # the Japanese disc has no DUMMY.brstm: round-trip its first stream instead
+        dummy = self.root / "Sound" / "strm" / per_disc(self.root, "DUMMY.brstm", jp=paths[0].name)
         raw = dummy.read_bytes()
         audio = brstm.read_brstm(raw)
         rebuilt = brstm.write_brstm(audio, raw)
@@ -149,14 +152,17 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
         self.assertNotEqual(brstm.read_brstm(changed_bytes).channels[0][0], 0)
 
     def test_sound_catalogs_and_archives(self):
-        expected = {"sound_data.cms": 3334, "sound_data_en.cms": 3335}
+        expected = per_disc(self.root, {"sound_data.cms": 3334, "sound_data_en.cms": 3335},
+                            jp={"sound_data.cms": 3305})            # the JP disc has no English data
         for name, count in expected.items():
             data = lz10.decompress((self.root / "Sound" / name).read_bytes())
             cues = fe10_sound.read_sound_data(data)
             self.assertEqual(len(cues), count)
             base = next(cue for cue in cues if cue.name == "BGM_BASE1")
             self.assertEqual(fe10_sound.repoint_cue(data, base.name, base.resource), data)
-        for name, count in (("sound.brsar", 2307), ("sound_us.brsar", 2310)):
+        for name, count in per_disc(self.root, (("sound.brsar", 2307), ("sound_us.brsar", 2310)),
+                                    eu=(("sound.brsar", 2307), ("sound_us.brsar", 2311)),
+                                    jp=(("sound.brsar", 2333),)):
             data = (self.root / "Sound" / name).read_bytes()
             archive = brsar.read_brsar(data)
             self.assertEqual(len(archive.symbols), count)
@@ -164,7 +170,7 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
             self.assertIn("STRM_BGM_BTL_BOSS4", archive.symbols)
             self.assertGreater(len(archive.files), 1000)
             self.assertGreater(len(archive.sounds), 2000)
-        active = brsar.read_brsar((self.root / "Sound" / "sound_us.brsar").read_bytes())
+        active = brsar.read_brsar((self.root / "Sound" / per_disc(self.root, "sound_us.brsar", jp="sound.brsar")).read_bytes())
         title = next(sound for sound in active.sounds if sound.name == "STRM_BGM_FE_THEME1")
         self.assertEqual(title.external_path, "strm/fe10_bgm_sys_title1_32k.brstm")
 
@@ -172,10 +178,10 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
         for file in active.files:
             if file.magic == "RWSD":
                 parsed_files[file.index] = rwsd.read_rwsd(file.header, file.wave_data)
-        self.assertEqual(len(parsed_files), 180)
-        self.assertEqual(sum(len(item.waves) for item in parsed_files.values()), 963)
+        self.assertEqual(len(parsed_files), per_disc(self.root, 180, jp=179))
+        self.assertEqual(sum(len(item.waves) for item in parsed_files.values()), per_disc(self.root, 963, jp=962))
         wave_sounds = [sound for sound in active.sounds if sound.sound_type == 3]
-        self.assertEqual(len(wave_sounds), 1011)
+        self.assertEqual(len(wave_sounds), per_disc(self.root, 1011, jp=1010))
         for sound in wave_sounds:
             document = parsed_files[sound.file_index]
             preview = rwsd.render_entry(document, sound.info_index, max_seconds=0.01)
@@ -258,14 +264,21 @@ class RadiantDawnAudioCorpusTests(unittest.TestCase):
 
     def test_all_radiant_dawn_movies_use_the_shared_thp_codec(self):
         paths = sorted((self.root / "Movie").glob("*.thp"))
-        self.assertEqual(len(paths), 20)
+        self.assertEqual(len(paths), per_disc(self.root, 20, eu=21))
+        tracks = set()
         for path in paths:
             with path.open("rb") as stream:
                 info = thp.read_info(stream)
                 offsets = thp.iter_frame_offsets(stream, info)
+                if info.has_audio:
+                    _image, audio = thp.read_frame(stream, offsets[0], info, info.audio_tracks - 1)
+                    self.assertEqual(len(audio), info.audio_channels, path.name)
+            tracks.add(info.audio_tracks)
             self.assertEqual(len(offsets), info.num_frames, path.name)
             self.assertIn(info.height, (448, 480))
-            self.assertEqual(info.width, 608)
+            self.assertIn(info.width, per_disc(self.root, (608,), jp=(608, 640)))
+        # the European scene movies carry one audio track per language
+        self.assertEqual(tracks, per_disc(self.root, {1}, eu={1, 5}))
 
 
 if __name__ == "__main__":

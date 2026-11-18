@@ -91,15 +91,18 @@ class RadiantDawnRetailExportTests(unittest.TestCase):
         files = project.extracted_dir / "files"
         (files / "Face" / "wide").mkdir(parents=True)
         shutil.copy(source / "Face" / "facedata.bin", files / "Face" / "facedata.bin")
-        shutil.copy(source / "Face" / "wide" / "facedata.bin", files / "Face" / "wide" / "facedata.bin")
+        wide = (source / "Face" / "wide" / "facedata.bin").is_file()     # none on the Japanese disc
+        if wide:
+            shutil.copy(source / "Face" / "wide" / "facedata.bin", files / "Face" / "wide" / "facedata.bin")
         shutil.copy(source / "FE10Battle.cms", files / "FE10Battle.cms")
         out = Path(tmp.name) / "out"
         written, problems = text_export.export_project(project, out, parts={"faces", "FE10Battle"})
         self.assertFalse(problems)
         faces = (out / "faces.tsv").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(len(faces), 1 + 316)
+        from tests.corpus import per_disc
+        self.assertEqual(len(faces), 1 + per_disc(source, 316, eu=320))
         self.assertTrue(any(line.startswith("FID_MICAIAH\t") for line in faces))
-        self.assertTrue((out / "faces_wide.tsv").is_file())
+        self.assertEqual((out / "faces_wide.tsv").is_file(), wide)
         tables = sorted(p.stem for p in (out / "FE10Battle" / "tables").glob("*.json"))
         self.assertEqual(len(tables), 21)
         units = json.loads((out / "FE10Battle" / "battle_units.json").read_text(encoding="utf-8"))

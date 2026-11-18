@@ -109,5 +109,5 @@ class SaveRunTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), b"original")
 
     def test_wii_save_rejects_wrong_size(self):
-        with self.assertRaisesRegex(emulator.EmulatorError, "RFEE01 save"):
+        with self.assertRaisesRegex(emulator.EmulatorError, "Radiant Dawn save must be"):
             emulator.prepare_wii_save_run(self.extracted, self.run_dir, b"short")

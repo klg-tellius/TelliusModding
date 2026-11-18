@@ -32,17 +32,23 @@ class ProfileTests(unittest.TestCase):
 class RdTests(unittest.TestCase):
     def test_every_tutorial_list_round_trips(self):
         from fe_modding.formats import tut_data
+        found = 0
         for _label, rel in RADIANT_DAWN_PROFILE.tutorial_files:
+            if not (Path(FE10) / rel).is_file():        # the Japanese disc has only the Japanese lists
+                continue
+            found += 1
             raw = (Path(FE10) / rel).read_bytes()
             doc = tut_data.read_tut_data(raw)
             self.assertEqual(tut_data.build_tut_data(doc), raw, rel)
             self.assertTrue(all(len(e.start_flags) == 4 for e in doc.entries))
+        self.assertGreaterEqual(found, 2)
 
     def test_weapon_rows(self):
         from fe_modding.formats import fe10_battle_weapons as fw, lz10
         data = lz10.decompress((Path(FE10) / "FE10Battle.cms").read_bytes())
         weapons = fw.read_weapons(data)
-        self.assertEqual(len(weapons), 192)
+        from tests.corpus import per_disc
+        self.assertEqual(len(weapons), per_disc(FE10, 192, jp=189))
         iron = next(w for w in weapons if w.labels["key"] == "IRONSWORD" and w.labels["model"] == "IRONSWORD")
         self.assertEqual((iron.type, iron.labels["hit"]), (1, "EID_K_ATTK1"))
         self.assertEqual(fw.weapon_types(data)[1], "sw (剣)")

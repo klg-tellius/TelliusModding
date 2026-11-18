@@ -552,7 +552,7 @@ class Fe10DataEditor(EditorPanel):
             self._scenery_editor(body, r)
             return
         groups: dict[str, ttk.Frame] = {}
-        for d in fe10data.field_defs(self.kind):
+        for d in fe10data.field_defs(self.kind, self._data or None):
             frame = groups.get(d.group)
             if frame is None:
                 ttk.Label(body, text=d.group, style="Strong.TLabel").pack(anchor="w", pady=(10, 2))
@@ -643,7 +643,7 @@ class Fe10DataEditor(EditorPanel):
         old = r.values.get(key)
         if text == self._text(old):
             return
-        definition = next(d for d in fe10data.field_defs(self.kind) if d.key == key)
+        definition = next(d for d in fe10data.field_defs(self.kind, self._data or None) if d.key == key)
         try:
             if definition.kind == "label":
                 value = text or None
@@ -1011,7 +1011,8 @@ class _TitleCardDialog(tk.Toplevel):
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Write", style="Accent.TButton", command=self._write).pack(side="right", padx=4)
         self._result = None
-        path = self._files / chapter_images.FE10_CARD_FOLDER / chapter_images.fe10_card_name(chapter_id)
+        path = (self._files / chapter_images.FE10_CARD_FOLDER
+                / chapter_images.fe10_card_name(chapter_id, chapter_images.fe10_card_prefix(self._files)))
         if path.is_file():
             self._photo_current = ImageTk.PhotoImage(chapter_images.preview(path.read_bytes()))
             self._current.configure(image=self._photo_current)

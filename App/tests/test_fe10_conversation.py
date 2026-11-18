@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import fe10_conversation, fe10_message, fe10_rect, lz10
+from tests.corpus import per_disc
 
 
 def _files() -> Path | None:
@@ -21,6 +22,9 @@ def _files() -> Path | None:
 
 
 FILES = _files()
+#: the disc's language prefix and layout suffix: English on the US and European discs, none on the Japanese
+PREFIX = per_disc(FILES, "e_", jp="") if FILES else "e_"
+RECT_SUFFIX = "_en" if PREFIX else ""
 
 
 def raw(display: str) -> str:
@@ -136,15 +140,16 @@ class CorpusTest(unittest.TestCase):
         project = SimpleNamespace(extracted_dir=FILES.parent, game=Game.RADIANT_DAWN, profile=RADIANT_DAWN_PROFILE,
                                   read_logical=lambda name: lz10.decompress((FILES / "FE10Data.cms").read_bytes()))
         titles = chapters.chapter_titles(project)
-        self.assertEqual(titles["0102"], "I:1-Maiden of Miracles")
+        self.assertEqual(titles["0102"], per_disc(FILES, "I:1-Maiden of Miracles", eu="I:1 - Maiden of Miracles",
+                                                  jp="第一部 １章 奇跡の乙女"))
         self.assertIn("0407a", titles)
         path, data = chapter_images.fe10_title_card(FILES, "0102", titles["0102"])
-        self.assertEqual(path.name, "e_ch0102.cms")
+        self.assertEqual(path.name, f"{PREFIX}ch0102.cms")
         image = chapter_images.preview(data)
         self.assertEqual(image.size, (480, 160))
 
     def test_layouts_have_textboxes_and_seats(self):
-        layouts = fe10_rect.read_rect_path(FILES / "window" / "RectDesc_en.bin")
+        layouts = fe10_rect.read_rect_path(FILES / "window" / f"RectDesc{RECT_SUFFIX}.bin")
         two_box = layouts["RID_上下会話"]
         boxes = two_box.textboxes()
         self.assertEqual([b.position for b in boxes], list(range(8)))
@@ -157,7 +162,7 @@ class CorpusTest(unittest.TestCase):
         self.assertEqual(scene.textboxes()[0].position, -1)
         self.assertEqual(scene.textboxes()[0].window, "RID_TW")
         self.assertEqual(len(scene.seats()), 9)
-        base = fe10_rect.read_rect_path(FILES / "window" / "RectBase_en.bin")
+        base = fe10_rect.read_rect_path(FILES / "window" / f"RectBase{RECT_SUFFIX}.bin")
         for name in fe10_message.LAYOUT_NAMES:
             self.assertTrue("RID_" + name in layouts or "RID_" + name in base, name)
 
@@ -174,7 +179,7 @@ class CorpusTest(unittest.TestCase):
         from fe_modding.formats.fe10_faces import CUT_IN, FaceLibrary
 
         library = FaceLibrary(FILES)
-        self.assertEqual(len(library.records), 316)
+        self.assertEqual(len(library.records), per_disc(FILES, 316, eu=320))
         record, large = library.lookup("IKE")
         self.assertFalse(large)
         self.assertEqual(record.filename, "IKE.cms")
@@ -195,20 +200,23 @@ class CorpusTest(unittest.TestCase):
         from fe_modding.formats.fe10_conversation_render import Fe10ConversationAssets, render
 
         assets = Fe10ConversationAssets(FILES)
-        messages = message.read_messages_path(FILES / "Mess" / "e_c0101.m")
+        messages = message.read_messages_path(FILES / "Mess" / f"{PREFIX}c0101.m")
         for msg in messages:
             frames = fe10_conversation.build_frames(msg.text)
             with self.subTest(id=msg.speaker):
                 self.assertEqual(frames[-1].kind, "end")
                 image = render(frames[0], assets)
                 self.assertEqual(image.size, (640, 480))
-        self.assertEqual(assets.character_name("L_EDDIE"), "Edward")
+        self.assertEqual(assets.character_name("L_EDDIE"), per_disc(FILES, "Edward", jp="エディ"))
 
     def test_fonts_rebuild_with_the_same_glyphs(self):
         from fe_modding.formats import fe9_font, lz10
         from fe_modding.game_profile import RADIANT_DAWN_PROFILE
 
-        for name, rel in RADIANT_DAWN_PROFILE.font_files:
+        fonts = [(name, rel) for name, rel in RADIANT_DAWN_PROFILE.font_files if (FILES / rel).is_file()]
+        # the Japanese disc has no widescreen (_w) fonts
+        self.assertEqual(len(fonts), per_disc(FILES, len(RADIANT_DAWN_PROFILE.font_files), jp=6))
+        for name, rel in fonts:
             data = lz10.decompress((FILES / rel).read_bytes())
             font = fe9_font.GameFont(data)
             rebuilt = fe9_font.GameFont(fe9_font.rebuild(font))

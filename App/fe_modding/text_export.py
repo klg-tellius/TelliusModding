@@ -179,11 +179,20 @@ def _messages(project, out: Path) -> list[Path]:
     def readable(text: str) -> str:  # message.py reads bytes as cp437; show the game's own characters
         return game_text.decode(text.encode(message.ENCODING))
 
+    disc = ""
+    if fe10:
+        from .game_profile import disc_root_of
+        from .games import read_disc_id
+        try:
+            disc = read_disc_id(disc_root_of(project))
+        except Exception:  # noqa: BLE001 - no readable boot.bin
+            disc = ""
     written = []
     for path in sorted((files / "Mess").glob("*.m")):
         lines = []
+        encoding = fe10_message.encoding_for(path.name, disc)
         for m in message.read_messages_path(path):
-            body = fe10_message.to_display(m.text) if fe10 else readable(m.text)
+            body = fe10_message.to_display(m.text, encoding) if fe10 else readable(m.text)
             lines.append(f"## {readable(m.speaker)}\n{body}\n")
         written.append(_write_text(out / "messages" / f"{path.stem}.txt", "\n".join(lines)))
     return written

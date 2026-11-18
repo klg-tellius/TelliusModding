@@ -14,6 +14,10 @@ from fe_modding.exceptions import ProjectError
 from fe_modding.games import Game
 
 FE10 = os.environ.get("FE10_EXTRACTED_FILES")
+#: the disc's sound archive (sound.brsar on the Japanese disc)
+ARCHIVE_NAME = "sound_us.brsar"
+if FE10 and not (Path(FE10) / "Sound" / ARCHIVE_NAME).is_file():
+    ARCHIVE_NAME = "sound.brsar"
 TEMPLATE = "fe10_bgm_sys_base2_32k.brstm"
 
 
@@ -22,8 +26,9 @@ class FormatTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from fe_modding.formats import lz10
-        cls.archive = (Path(FE10) / "Sound" / "sound_us.brsar").read_bytes()
-        cls.cues = lz10.decompress((Path(FE10) / "Sound" / "sound_data_en.cms").read_bytes())
+        from fe_modding.game_profile import RADIANT_DAWN_PROFILE as rd   # the disc's own sound files
+        cls.archive = rd.path(Path(FE10), "sound_archive").read_bytes()
+        cls.cues = lz10.decompress(rd.path(Path(FE10), "sound_data").read_bytes())
 
     def test_every_retail_name_is_found_through_the_tree(self):
         from fe_modding.formats import brsar
@@ -117,7 +122,9 @@ class ProjectTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.project = ModProject.create(Path(tmp.name), "music", Game.RADIANT_DAWN)
         files = self.project.extracted_dir / "files"
-        for rel in ("Sound/sound_us.brsar", "Sound/sound_data_en.cms", f"Sound/strm/{TEMPLATE}"):
+        from fe_modding.game_profile import RADIANT_DAWN_PROFILE as rd   # the disc's own sound files
+        names = [rd.path(Path(FE10), name).relative_to(Path(FE10)).as_posix() for name in ("sound_archive", "sound_data")]
+        for rel in (*names, f"Sound/strm/{TEMPLATE}"):
             (files / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(Path(FE10) / rel, files / rel)
             (files / rel).chmod(0o666)
@@ -148,14 +155,14 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(rd_music.remove_track(self.project, new), [cue])
         self.assertFalse(new.exists())
         self.assertEqual(rd_music.added_cues(self.project), set())
-        archive = self._strm("x").parent.parent / "sound_us.brsar"
-        self.assertEqual(archive.read_bytes(), (Path(FE10) / "Sound" / "sound_us.brsar").read_bytes())
+        archive = self._strm("x").parent.parent / ARCHIVE_NAME
+        self.assertEqual(archive.read_bytes(), (Path(FE10) / "Sound" / ARCHIVE_NAME).read_bytes())
         self.assertIsNone(brsar.sound_id_of(archive.read_bytes(), sound))
 
     def test_new_sound_effect_and_its_removal(self):
         from fe_modding import rd_music
         from fe_modding.formats import brsar, fe10_sound
-        archive = self._strm("x").parent.parent / "sound_us.brsar"
+        archive = self._strm("x").parent.parent / ARCHIVE_NAME
         before = archive.read_bytes()
         self.assertEqual(rd_music.wave_template(self.project, None), "SFX_SYS_SELECT1")
         stereo = [[(i * 53) % 3000 - 1500 for i in range(4000)]] * 2  # mixed down to the template's mono

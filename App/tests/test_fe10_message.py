@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import fe10_message as F
-from tests.corpus import FULL, sample
+from tests.corpus import FULL, per_disc, sample
 from fe_modding.formats import message
 
 
@@ -152,7 +152,7 @@ class TextOrderTest(unittest.TestCase):
 class CorpusTest(unittest.TestCase):
     def paths(self):
         paths = sorted((FILES / "Mess").glob("*.m"))
-        self.assertGreater(len(paths), 200)
+        self.assertGreater(len(paths), per_disc(FILES, 200, jp=100))     # Japanese only: 108 files
         return paths
 
     def test_every_mess_file_rebuilds_byte_identically(self):

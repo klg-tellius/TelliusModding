@@ -35,6 +35,8 @@ class RdVariantTests(unittest.TestCase):
         rels += [f"ymu/mikaya{n}/mikaya{n}.tpl" for n in (1, 2, 3)]
         rels += [f"zu/{m}/{m}.tpl" for m in ("micL", "micU", "micS")]
         for rel in rels:
+            if not (source / rel).is_file():        # no widescreen portraits on the Japanese disc
+                continue
             (self.files / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(source / rel, self.files / rel)
             (self.files / rel).chmod(0o666)
@@ -45,7 +47,9 @@ class RdVariantTests(unittest.TestCase):
         from fe_modding.recolour import Recolour
 
         plan = cv.plan_character_variant(self.project, "PID_MICAIAH", "TEST")
-        self.assertEqual(len(plan.copies), 3 + 3 + 2)  # three tiers' map and battle textures, two portraits
+        from tests.corpus import per_disc
+        # three tiers' map and battle textures, two portraits (one on the Japanese disc: no Face/wide)
+        self.assertEqual(len(plan.copies), 3 + 3 + per_disc(FE10, 2, jp=1))
         self.assertEqual(plan.notes, [])
         cv.apply_variant(self.project, plan, Recolour(band=180, shift=120))
 
@@ -72,6 +76,8 @@ class RdVariantTests(unittest.TestCase):
         self.assertTrue((self.files / "zu/micL/micL_test.tpl").is_file())
 
         for folder in ("Face", "Face/wide"):
+            if not (self.files / folder / "facedata.bin").is_file():      # no Face/wide on the Japanese disc
+                continue
             faces = fe10_faces.read_face_data((self.files / folder / "facedata.bin").read_bytes())
             record = next(r for r in faces if r.fid == "FID_MICAIAH_TEST")
             self.assertEqual(record.filename, "MICAIAH_TEST.cms")

@@ -132,11 +132,20 @@ class Dol:
         return struct.unpack(f">{count}I", self.read(address, count * 4))
 
     def sda_bases(self) -> tuple[int | None, int | None]:
-        """(r2, r13) small-data bases, from the lis/addi pairs of ``__init_registers``."""
-        try:
-            words = self.words(0x800032B0, 0x24)
-        except DolError:
-            return None, None
+        """(r2, r13) small-data bases, from the lis/addi pairs of ``__init_registers``: at
+        0x800032B0 on GameCube builds, at 0x8000630C (lis/ori) on Radiant Dawn's."""
+        for start in (0x800032B0, 0x8000630C):
+            try:
+                words = self.words(start, 0x24)
+            except DolError:
+                continue
+            bases = self._sda_from(words)
+            if bases[0] is not None and bases[1] is not None:
+                return bases
+        return None, None
+
+    @staticmethod
+    def _sda_from(words) -> tuple[int | None, int | None]:
         values: dict[int, int] = {}
         high: dict[int, int] = {}
         for w in words:

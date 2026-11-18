@@ -145,6 +145,9 @@ ITEM_FIXED = (
                     ("bonus_count", "Optional-block flags")), "Item")
 )
 ITEM_FIXED_SIZE = 20
+#: The Japanese disc's items have no English article and no padding after it: 16 fixed bytes.
+JP_ITEM_DROPPED = frozenset({"article", "pad_13", "pad_14", "pad_15"})
+ITEM_FIXED_JP = [d for d in ITEM_FIXED if d.key not in JP_ITEM_DROPPED]
 
 # -- skill (SkillData) -----------------------------------------------------------------------------
 SKILL_LABELS = _labels(("sid", "ID"), ("msid", "Name key"), ("help", "Help key"), ("help_2", "Help key 2"),
@@ -153,6 +156,12 @@ SKILL_FIXED = _bytes("u8", (("number", "Number"), ("article", "English article")
                             ("icon", "Icon"), ("condition_count", "Condition count"),
                             ("requirement_count", "Requirement count"), ("padding_22", "Padding +0x22"),
                             ("padding_23", "Padding +0x23")), "Skill")
+#: The Japanese disc's skills have no English article either: the bytes after it move up one and a
+#: third padding byte fills the record (same 0x2C size).
+SKILL_FIXED_JP = _bytes("u8", (("number", "Number"), ("capacity", "Capacity"), ("icon", "Icon"),
+                               ("condition_count", "Condition count"), ("requirement_count", "Requirement count"),
+                               ("padding_21", "Padding +0x21"), ("padding_22", "Padding +0x22"),
+                               ("padding_23", "Padding +0x23")), "Skill")
 
 #: Lists per kind: key -> label shown in the editor.
 LISTS = {
@@ -166,6 +175,8 @@ COUNT_FIELDS = {"skill_count", "sound_count", "attribute_count", "effective_coun
                 "condition_count", "requirement_count"}
 
 FIELD_NOTES = {
+    "n_messages": "The chapter's N message key (N0101...). Set on the Japanese disc only; null on the US and "
+                  "European discs. What reads it is not traced.",
     "biorhythm": "0-9 picks a biorhythm curve; 255 has none.",
     "protected_parts": "Bit n set: in Part n+1 (bit 4: Endgame) the unit withdraws instead of dying, unless the "
                        "gf_gameover flag is set (0x8011f428 tests it against the chapter's Part bits).",
@@ -405,10 +416,48 @@ def _read_class(data: bytes, index: int, at: int) -> Record:
     return r
 
 
+def item_fixed(data) -> list:
+    """The item record's fixed fields in ``data``: the US and European layout, or the Japanese one
+    (:data:`ITEM_FIXED_JP`), whichever walks the item table exactly to SkillData's symbol."""
+    key = bytes(data[:0x40]) + len(data).to_bytes(4, "big")
+    layout = _ITEM_LAYOUT.get(key)
+    if layout is None:
+        layout = ITEM_FIXED
+        try:
+            start = table_start(data, "item")
+            end = fe8data.section_start(data, NEXT_SYMBOL["item"])
+            for candidate in (ITEM_FIXED, ITEM_FIXED_JP):
+                try:
+                    at = start + 4
+                    for i in range(_u32(data, start)):
+                        at = _read_item_with(data, i, at, candidate).end
+                except (struct.error, IndexError, KeyError, ValueError):
+                    continue
+                if end - 4 < at <= end:
+                    layout = candidate
+                    break
+        except (struct.error, IndexError, KeyError, ValueError):
+            pass
+        _ITEM_LAYOUT[key] = layout
+    return layout
+
+
+_ITEM_LAYOUT: dict[bytes, list] = {}
+
+
+def skill_fixed(data) -> list:
+    """The skill record's fixed bytes in ``data``: the Japanese layout where the items have it."""
+    return SKILL_FIXED_JP if item_fixed(data) is ITEM_FIXED_JP else SKILL_FIXED
+
+
 def _read_item(data: bytes, index: int, at: int) -> Record:
+    return _read_item_with(data, index, at, item_fixed(data))
+
+
+def _read_item_with(data: bytes, index: int, at: int, fixed) -> Record:
     r = Record("item", index, at, at)
     pos = _read_fields(data, r, ITEM_LABELS, at)
-    pos = _read_fields(data, r, ITEM_FIXED, pos)
+    pos = _read_fields(data, r, fixed, pos)
     pos = _read_label_list(data, r, "attributes", pos, r.values["attribute_count"])
     pos = _read_label_list(data, r, "effective", pos, r.values["effective_count"])
     r.offsets["bonuses"] = pos
@@ -481,7 +530,7 @@ def _read_skills(data: bytes) -> list[Record]:
         at = start + 4 + i * SKILL_RECORD_SIZE
         r = Record("skill", i, at, at + SKILL_RECORD_SIZE)
         pos = _read_fields(data, r, SKILL_LABELS, at)
-        _read_fields(data, r, SKILL_FIXED, pos)
+        _read_fields(data, r, skill_fixed(data), pos)
         for key, slot, count_key in (("conditions", 0x24, "condition_count"),
                                      ("requirements", 0x28, "requirement_count")):
             r.offsets[key] = at + slot
@@ -505,13 +554,14 @@ def record(data: bytes, kind: str, index: int) -> Record:
     return records[index]
 
 
-def field_defs(kind: str) -> list[FieldDef]:
-    """Every editable field of a kind, in record order (counts excluded)."""
+def field_defs(kind: str, data=None) -> list[FieldDef]:
+    """Every editable field of a kind, in record order (counts excluded). ``data`` picks the item
+    layout of its disc (:func:`item_fixed`); without it, the US one."""
     defs = {
         "character": CHARACTER_HEAD + CHARACTER_LABELS + CHARACTER_AFTER_SKILLS + CHARACTER_TAIL,
         "class": CLASS_LABELS + CLASS_FIXED + CLASS_AFTER_SKILLS + CLASS_TAIL,
-        "item": ITEM_LABELS + ITEM_FIXED,
-        "skill": SKILL_LABELS + SKILL_FIXED,
+        "item": ITEM_LABELS + (item_fixed(data) if data is not None else ITEM_FIXED),
+        "skill": SKILL_LABELS + (skill_fixed(data) if data is not None else SKILL_FIXED),
     }.get(kind)
     if defs is None:
         defs = FIXED_TABLES[kind].fields if kind in FIXED_TABLES else NO_BATTLE_FIELDS if kind == "no_battle" else []
@@ -764,8 +814,11 @@ def _chapter_fields() -> tuple:
     fields = [_f("cid", "ID", "label", 0x00, "Chapter"), _f("title", "Title key", "label", 0x04, "Chapter"),
               _f("map", "Map folder", "label", 0x08, "Chapter"), _f("script", "Script", "label", 0x0C, "Chapter"),
               _f("messages", "Message file", "label", 0x10, "Chapter")]
-    fields += [_f(f"reserved_{o:02x}", f"Reserved +0x{o:02X}", "u32", o, "Reserved (zero in retail)")
-               for o in (0x14, 0x18, 0x1C)]
+    # +0x18 names the chapter's N message key (N0101) on the Japanese disc; the US and European discs
+    # leave it null
+    fields += [_f("reserved_14", "Reserved +0x14", "u32", 0x14, "Reserved (zero in retail)"),
+               _f("n_messages", "N message key", "label", 0x18, "Chapter"),
+               _f("reserved_1c", "Reserved +0x1C", "u32", 0x1C, "Reserved (zero in retail)")]
     for d in range(3):
         base, group = 0x20 + 0x20 * d, f"Objectives, difficulty {d + 1}"
         fields += [_f(f"reserved_objective_head_{d}", "Reserved objective head", "u32", base, group),

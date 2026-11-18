@@ -11,7 +11,7 @@ This patch is only applied to the disposable ``build/dolphin_run/sys/main.dol`` 
 
 from __future__ import annotations
 
-from . import ppc
+from . import ppc, rd_regions
 from .catalog import CATALOG, CAVE_ADDRESS, Edit, Patch, Session, in_cave
 
 RFEE01 = "RFEE01"
@@ -89,7 +89,7 @@ _CHAPTER_HALFWORD = _CODE.index(_word(ppc.li(4, 0))) + 2
 
 JUMP_PATCH = CATALOG.add(Patch(
     "rd.dev.jump_chapter", "Radiant Dawn developer tools", "Boot into a chapter",
-    "Skips the title and starts an RFEE01 chapter with a fresh party (test launches only).",
+    "Skips the title and starts a chapter with a fresh party (test launches only).",
     versions={RFEE01: (
         Edit(_SCRIPT_SITE, _SCRIPT_ORIGINAL,
              _words(_CALL, JUMP_STUB, _GOTO_11, _SLEEP)),
@@ -97,12 +97,13 @@ JUMP_PATCH = CATALOG.add(Patch(
              wild=((_DIFFICULTY_HALFWORD, 2), (_CHAPTER_HALFWORD, 2))),
     )}, internal=True,
 ))
+rd_regions.install_entry(JUMP_PATCH)
 
 
 def install(session: Session, chapter_number: int, difficulty: int) -> None:
-    """Install the RFEE01 jump using the chapter's internal one-byte number."""
-    if session.version is None or session.version.code != RFEE01:
-        raise ValueError("The Radiant Dawn chapter jump currently supports RFEE01 only.")
+    """Install the jump using the chapter's internal one-byte number."""
+    if session.version is None or session.version.code not in JUMP_PATCH.versions:
+        raise ValueError("The chapter jump has no sites for this Radiant Dawn build.")
     if not 0 <= chapter_number <= 0xFF:
         raise ValueError(f"Chapter number {chapter_number} is out of range (0-255).")
     if difficulty not in DIFFICULTIES.values():

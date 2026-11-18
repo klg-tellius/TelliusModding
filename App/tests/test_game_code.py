@@ -452,6 +452,9 @@ class RetailCatalogTests(unittest.TestCase):
         path = Path(files).parent / "sys" / "main.dol" if files else None
         if path is None or not path.is_file():
             return
+        from tests.corpus import disc_id
+        if disc_id(files) != "RFEE01":               # the r2 constants below are RFEE01's
+            return
         dol = Dol.open(path)
         r2 = 0x804D4A60                              # _SDA2_BASE_ on RFEE01
         self.assertEqual(struct.unpack(">f", dol.read(r2 - 0x6C90, 4))[0], 45.0)
@@ -487,7 +490,10 @@ class RetailCatalogTests(unittest.TestCase):
 
     def test_catalog_entries_ids_are_unique_and_versioned(self):
         for entry in CATALOG.entries.values():
-            expected = {"RFEE01"} if next(iter(entry.versions)).startswith("R") else set(entries.ALL)
+            rd = next(iter(entry.versions)).startswith("R")
+            expected = {"RFEE01", "RFEP01", "RFEJ01"} if rd else set(entries.ALL)
+            if entry.id == "rd.skill.wrath_hp_ratio":      # a different rule on JP (rd_region_table)
+                expected = {"RFEE01", "RFEP01"}
             self.assertEqual(set(entry.versions), expected, entry.id)
 
     def test_every_version_verifies(self):
