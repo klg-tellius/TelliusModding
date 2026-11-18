@@ -2,7 +2,7 @@
 id: "modding-new-campaign-wizard"
 title: "Create a campaign skeleton"
 description: "Use every campaign-wizard choice, inspect generated resources, and replace copied assumptions safely"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tutorial_kind: "task"
@@ -200,6 +200,14 @@ The wizard saves what it writes. Build and test from a save made just before the
 
 - The checks, the copy and the routing are source-reviewed; the campaign of this lesson was created in the app on a US disc and then removed (app-tested).
 - Playing through the new chapters in Dolphin is [Build a three-chapter mini-campaign](62-mini-campaign.md) (unknown here).
+
+## On Radiant Dawn
+
+**New campaign** builds a Radiant Dawn campaign the same way, with these differences:
+
+- Chapters are added like **Add chapter**: each gets a number from 56 to 79 (so at most 24) and an id from `0501`, with its map, deployments, script, messages, shops, title and title card copied from its template chapter and renamed.
+- Characters are new FE10Data character records; a character's name is an `MPID_` message written to `Mess/e_common.m` and `common.m`.
+- The chapters join the story flow after the chapter you pick, in order (see the story flow's [Radiant Dawn notes](07-chapter-ids-and-story-flow.md#on-radiant-dawn)).
 
 ## Related tutorials and references
 

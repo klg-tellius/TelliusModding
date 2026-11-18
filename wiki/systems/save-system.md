@@ -2,7 +2,7 @@
 id: "save-system"
 title: "Save, Load & Resume System"
 description: "How Path of Radiance turns runtime state into Memory Card blocks and reconstructs the correct scene"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Saves", "Engine", "Compatibility"]
@@ -59,6 +59,18 @@ A safer content mod preserves table order and serialized sizes, appends within c
 ## Worked example
 
 Suppose a unit carries a forged sword while standing beside an opened chest in fog. The save stores the unit's character/class indices, mutable stats, tile, status, skills, item instance, and forge-pool reference; the forge record stores its name/stat steps/trail color; the tile table stores that the chest is open; map state stores fog/camera. On load, current database definitions supply the base sword/class/character, saved overlays restore progression and forge changes, and the map scene rebuilds visuals from the reconstructed state.
+
+## Radiant Dawn
+
+Radiant Dawn saves in the Wii's memory, not on a memory card: `FE10_US.dat` (`FE10_EU.dat` on the European disc) in the title's data folder. <span class="confidence confidence--confirmed">engine</span>
+
+- **Records.** The file holds a system record shared by every file, six files and six checkpoints. Each is a record of its own, with its file number, difficulty and chapter in its header.
+- **Sections.** A record is a stream of tagged sections, always in this order: `ITBL` (the record's own copy of the character, class, item, skill and AI name lists), `BMST` (chapter state and the 128 script flags), `MDST`, `UNIP` (254 unit slots), `SOKO` (the convoy), `FGPT`, `T  T` (the map's tile records), `RELD` and `KZND` (runtime relations and bonds) and `DEBU`.
+- **Reading.** The game reads the sections back in the same fixed order. It compares each tag but does not act on a mismatch, and no section carries its length, so a save cannot gain a new section: anything inserted shifts every later read, and bytes after the last section are dropped at the next save.
+- **Resume point.** `BMST` +0x9B (repeated in the record header) says where a file resumes: a base or the preparations, the end of a chapter, or after a chapter's opening. <span class="confidence confidence--confirmed">in game</span>
+- The Japanese disc's `FE10_JP.dat` is smaller (0xAC000 bytes) and its layout is not decoded.
+
+See [Radiant Dawn](../meta/radiant-dawn.md#saves) for the record layouts.
 
 ## Review boundary
 

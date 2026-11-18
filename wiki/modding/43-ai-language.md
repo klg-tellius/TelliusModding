@@ -2,7 +2,7 @@
 id: "modding-ai-language"
 title: "Read and edit AI scripts"
 description: "A deep guide to Path of Radiance AI scripts: sequence identity, readable syntax, registers, branches, candidates, threat limits, fallthrough, assignment, saving, and controlled tests"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "AI", "CP data", "Scripting"]
@@ -192,6 +192,10 @@ To revert, reassign the original sequence to the unit and save the deployment. I
 ## Limits and confidence
 
 Sequence layout, list-ID stability, readable compilation, candidate replacement, registers, chance semantics, sequence setters, and core operation meanings are source-reviewed against the editor and executable research. Play implements the documented common pipeline, but not every engine term or rare opcode has full parity. Unknown or non-confirmed operations are labeled in Raw entries. A successful app simulation is evidence for the authored logic, not a substitute for a built-game test.
+
+## On Radiant Dawn
+
+The AI page edits Radiant Dawn's `Cp/cp_data.cms` with the same tabs and the same readable language. Its instruction set is Radiant Dawn's own: 82 instructions (`CP_PERSONATK`, `CP_ALLUNITATK`, `CP_ALLUNITATK_FLYING`...) against Path of Radiance's 52, with their own names and operands, so copy scripts between the games with care. The code you applied is kept in `ai_sources/SEQ_*.fe10ai`. Character, class, item and skill names come from the project's FE10Data.
 
 ## Related tutorials and references
 

@@ -2,7 +2,7 @@
 id: "modding-shops"
 title: "Edit armory, vendor, forge, and gold"
 description: "A complete shop workflow covering chapter/difficulty ownership, armory and vendor order, global item prices, the forge grid, missing-shop creation, transaction tests, gold accounting, saving, and rollback"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "modding"
 article_type: "tutorial"
 tags: ["Guide", "Modding app", "Shops", "Forge", "Economy"]
@@ -166,6 +166,15 @@ To revert stock, restore or recreate the original W/I/F lists for that chapter/d
 ## Limits and confidence
 
 Shop section ownership, Easy/Normal sharing, list/grid layout, price formula, editor save boundaries, gold accounting, purchase/sale transaction order, forge lock and record pool are source-reviewed. Individual custom item behavior, unusual category presentation, and any executable patch remain dependent on their owning systems and require built-game testing.
+
+## On Radiant Dawn
+
+The Shops page edits Radiant Dawn's `Shop/shopitem_n.bin`, `shopitem_h.bin` and `shopitem_m.bin` the same way, with these differences:
+
+- Each armory and vendor row is three words: the item and two more words, which the editor keeps as they are.
+- The forge has six families, Swords, Lances, Axes, Bows, Knives and Magic, and ten bases.
+- A chapter also has a `SHOP_PERSON` section, copied with its shops.
+- Prices are shown from FE10Data but edited in **Game Data › Items**, since a price belongs to the item, not to a shop.
 
 ## Related tutorials and references
 

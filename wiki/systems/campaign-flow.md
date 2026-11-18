@@ -2,7 +2,7 @@
 id: "campaign-flow"
 title: "New Game & Campaign Flow"
 description: "How a new playthrough is initialized and routed through chapters, parts, bases, endings, and trial maps"
-games: ["path-of-radiance"]
+games: ["path-of-radiance", "radiant-dawn"]
 section: "systems"
 article_type: "system-reference"
 tags: ["Chapters", "Campaign", "Saves"]
@@ -66,6 +66,18 @@ A multi-part chapter can preserve selected party and story state while replacing
 - Trial maps require a return destination and must not mutate main-campaign ordering accidentally.
 - Structural database edits must be tested with both New Game and old saves.
 - Chapter-local flags should reset only at a true chapter start, not at every scene or part transition.
+
+## Radiant Dawn
+
+Radiant Dawn orders its campaign differently. <span class="confidence confidence--confirmed">engine</span>
+
+- **Records and numbers.** Each map of the story is a `ChapterData` record with a number (0-55 for the story, 80-83 for the tutorials). Every reader but one finds a chapter by its number. A chapter played on several maps is several records in a row (`C0407a` to `C0407e`).
+- **The next chapter** is read by position: the game starts one record past the current number and takes the first record it may enter. A record whose byte +0x8D is set is skipped unless the bit of the current difficulty is set in it; the attached `C0401a`/`C0401b` records can only be reached from a script.
+- **New game.** Starting a new game empties the unit lists and puts every unit slot back on the free list before the first chapter loads.
+- **Part 4 armies** are moved by the chapter scripts, not by the engine: units belong to numbered forces (0 on the map, 5 the army being played, 8 to 10 the three stored armies), and each Part 4 chapter's closing script puts the army just played back into its store and brings out the next one. The chapter record names the army group and its lord.
+- **Winning.** Setting `gf_complete` wins the map at the end of the next unit action, then every `on_complete` event of the script runs in order. <span class="confidence confidence--confirmed">in game</span>
+
+See [Radiant Dawn](../meta/radiant-dawn.md#chapter-order) for chapter rules and hub chapters.
 
 ## Interactions and review boundary
 
