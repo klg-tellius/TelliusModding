@@ -353,7 +353,9 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
 def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
     """``.g``: 16-byte header, 244-byte bones, name pool (GRAPHICS_NOTES,
     skeleton). Flags: the transform-term bits ``0x8``-``0x800`` and ``0x1``
-    are decoded, ``0x2``/``0x4`` are not."""
+    are decoded. ``0x2`` makes the pose copy the curve quaternion and the
+    matrix builder apply the bone's skin matrix (RFEE01 0x8000D1EC,
+    0x8000DFC4, 0x8000ED5C); nothing in RFEE01 tests ``0x4``."""
     from . import skeleton
 
     data = cov.data
@@ -364,7 +366,9 @@ def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
     for i in range(count):
         rec = 0x10 + 0xF4 * i
         cov.mark(rec, 0xF4, DECODED)
-        cov.bits(rec + 0x0C, 4, known=0xFFFFFFFF & ~0x6, name="bone.flags")
+        cov.bits(rec + 0x0C, 4, known=0xFFFFFFFF & ~0x4, name="bone.flags")
+        if data[rec + 0x0F] & 0x04 and cov.status[rec + 0x0F] == DECODED:
+            cov.mark(rec + 0x0F, 1, UNREAD, "bone.flags 0x4 (no reader)")
     cov.mark(pool, len(data) - pool, DECODED)
 
 
@@ -930,8 +934,10 @@ def _fe10_effects(cov: FileCoverage) -> None:
 def _fe10_rows(cov: FileCoverage, start: int, count: int, size: int, table: str, layout: dict) -> None:
     """Fixed rows of a Radiant Dawn table. ``layout`` maps a row offset to
     ``(size, kind, name)``: kind ``label`` (a string pointer, null or not),
-    ``bits`` (``name`` is ``(known, unread)`` for :func:`_rd_bits`), or a
-    coverage status. Relocated words are already marked by the container. Each
+    ``bits`` (``name`` is ``(known, unread)`` for :func:`_rd_bits`), ``flags``
+    (a big-endian field; ``name`` is ``(known, plausible)`` for
+    :meth:`FileCoverage.bits`), ``zero`` (a pad or a pointer the loader
+    fills in RAM: decoded only while zero), or a coverage status. Relocated words are already marked by the container. Each
     byte left unplaced in a row stays undecoded, named by its row offset."""
     for i in range(count):
         row = start + i * size
@@ -940,6 +946,10 @@ def _fe10_rows(cov: FileCoverage, start: int, count: int, size: int, table: str,
                 cov.mark(row + off, length, DECODED)
             elif kind == "bits":
                 _rd_bits(cov, row + off, known=name[0], unread=name[1], name=f"{table} +{off:#x}")
+            elif kind == "flags":
+                cov.bits(row + off, length, known=name[0], plausible=name[1], name=f"{table} +{off:#x}")
+            elif kind == "zero":
+                cov.zero(row + off, length, f"{table} {name}")
             elif kind == DECODED:
                 cov.mark(row + off, length, DECODED)
             else:
@@ -972,18 +982,53 @@ FE10_BATTLE_LAYOUTS = {
     "FE10BFlags": {0: (4, L, "")},
     "FE10BParam": {0: (4, L, "")},
     "FE10BTex": {0: (4, L, ""), 4: (4, L, "")},
-    "FE10BWeapon": {**{o: (4, L, "") for o in range(0, 0x20, 4)}, 0x20: (1, DECODED, "")},
-    # +0x08: 0x02 indoors, 0x08 mirrored, 0x10/0x20/0x40 the run-in; 0x01 and 0x04 have no reader.
+    "FE10BFootEffect": {o: (4, L, "") for o in range(0, 0x18, 4)},  # name, up to five effect IDs
+    "FE10BSFXData": {o: (4, L, "") for o in range(0, 0x14, 4)},  # name, up to four cues
+    "FE10BSkill": {o: (4, L, "") for o in range(0, 0x14, 4)},  # name, SID, up to three effect IDs
+    "FE10BSky": {0: (4, L, ""), 4: (4, L, "")},
+    # +0x04: eight s16 FE10BSFXData rows, one per ground column (0x800BA2C8).
+    "FE10BSFXList": {0: (4, L, ""), 4: (16, DECODED, "")},
+    # +0x04: s32 value in 1/65536, looked up by name (0x800A84A4).
+    "FE10BSetup": {0: (4, L, ""), 4: (4, DECODED, "")},
+    # +0x21: 0x01/0x02/0x04/0x08 tested by the weapon actor (0x800BC590, 0x800BF394,
+    # 0x800C0900, 0x800C0F94); +0x22: u16 scale read at 0x800BFD60.
+    "FE10BWeapon": {**{o: (4, L, "") for o in range(0, 0x20, 4)}, 0x20: (1, DECODED, ""),
+                    0x21: (1, "bits", (0x0F, 0x00)), 0x22: (2, DECODED, "")},
+    # +0x08: 0x01 and 0x08 are tested on the motion row (0x800B2178), +0x0A is read
+    # at 0x800B21DC. The other set bits and +0x0B are read through an object field
+    # shared with the camera-file row, so they stay plausible.
+    "FE10BMotion": {0: (4, L, ""), 4: (4, L, ""), 8: (2, "flags", (0x0009, 0xFFF6)),
+                    10: (1, DECODED, ""), 11: (1, PLAUSIBLE, "+0xb")},
+    # +0x08: camera-file flags, every set bit tested by 0x800A4420 / 0x800A6150
+    # (0xE000 is the target mode copied to the camera); +0x0B: chain id.
+    "FE10BCamFile": {0: (4, L, ""), 4: (4, L, ""), 8: (2, "flags", (0xEFFE, 0x0000)),
+                     10: (1, "zero", "pad"), 11: (1, DECODED, "")},
+    # +0x04: five s16 FE10BCamGroup rows by context (0x800A6D08), +0x0E pad.
+    "FE10BCamEffect": {0: (4, L, ""), 4: (10, DECODED, ""), 0x0E: (2, "zero", "pad")},
+    # +0x08 choice count; +0x0C/+0x10 are filled in RAM with the group's slices of
+    # FE10BCamFileIndex and FE10BCamFileRate (0x800A88F4).
+    "FE10BCamGroup": {0: (4, L, ""), 4: (4, L, ""), 8: (4, DECODED, ""), 0x0C: (8, "zero", "RAM pointers")},
+    # +0x08: sixteen pointers into FE10BCamGroupIndex, written in RAM (0x800A8A84).
+    "FE10BCamList": {0: (4, L, ""), 4: (4, L, ""), 8: (64, "zero", "RAM pointers")},
+    # FE10BCamType is loaded (0x800A8754) and never read.
+    "FE10BCamType": {0: (4, L, ""), 4: (4, UNREAD, "+0x4 (table without a reader)")},
+    # +0x08: map model flags. 0x02 indoors, 0x08 mirrored, 0x10/0x20/0x40 the run-in;
+    # 0x01 and 0x04 have no reader.
     "FE10BMapModel": {0: (4, L, ""), 4: (4, L, ""), 8: (1, "bits", (0x7A, 0x05)),
                       9: (5, DECODED, ""), 0x0E: (10, DECODED, "")},
-    "FE10BMapData": {0: (4, L, ""), 4: (10, DECODED, "")},
-    "FE10BCamFile": {0: (4, L, ""), 4: (4, L, "")},
-    "FE10BCamGroup": {11: (1, DECODED, "")},
+    "FE10BMapData": {0: (4, L, ""), 4: (10, DECODED, ""), 0x0E: (2, "zero", "pad")},
     "FE10BWeaponType": {4: (4, L, "")},
-    # +0x10: bit i tests FE10BFlags row i (18 rows, 0x800A7460); +0x18: the 20 FE10BParam values.
-    "FE10BUnit": {0: (4, L, ""), 4: (4, L, ""), 0x10: (1, "bits", (0x00, 0x00)), 0x11: (1, "bits", (0x03, 0x00)),
+    # +0x08/+0x0C: trail and aura effect IDs. +0x10: bit i tests FE10BFlags row i (18 rows,
+    # 0x800A7460); +0x14: bit i = FE10BWeaponType row i picks a random attack variant
+    # (0x800BEED8 from 0x800B78BC); +0x18: the 20 FE10BParam values; +0x40: per weapon
+    # type a 128-bit FE10BMotion set (0x800A7324); +0x140: six s16 FE10BCamList rows
+    # (0x800A6F34); +0x150 is set in RAM to the unit's FE10BTex rows.
+    "FE10BUnit": {0: (4, L, ""), 4: (4, L, ""), 8: (4, L, ""), 0x0C: (4, L, ""),
+                  0x10: (1, "bits", (0x00, 0x00)), 0x11: (1, "bits", (0x03, 0x00)),
                   0x12: (1, "bits", (0xFF, 0x00)), 0x13: (1, "bits", (0xFF, 0x00)),
-                  0x18: (40, DECODED, ""), 0x14C: (2, DECODED, "")},
+                  0x14: (4, "flags", (0xFFFF, 0)), 0x18: (40, DECODED, ""), 0x40: (256, DECODED, ""),
+                  0x140: (12, DECODED, ""), 0x14C: (2, DECODED, ""), 0x14E: (2, "zero", "pad"),
+                  0x150: (4, "zero", "RAM pointer")},
 }
 
 #: FE10Anim.cms rows (``fe10_anim``): labels, the header's ordinal and model
