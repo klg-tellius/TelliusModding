@@ -206,7 +206,7 @@ class CorpusTest(unittest.TestCase):
             with self.subTest(id=msg.speaker):
                 self.assertEqual(frames[-1].kind, "end")
                 image = render(frames[0], assets)
-                self.assertEqual(image.size, (640, 480))
+                self.assertEqual(image.size, (608, 480))  # the game's frame, stretched on screen
         self.assertEqual(assets.character_name("L_EDDIE"), per_disc(FILES, "Edward", jp="エディ"))
 
     def test_fonts_rebuild_with_the_same_glyphs(self):

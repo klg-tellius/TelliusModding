@@ -86,4 +86,6 @@ Radiant Dawn keeps Path of Radiance's message files and its scene language (layo
   </tbody></table>
 </div>
 
-  Open: the meaning of the flag letters `I`, `J`, `S`, `c`, `g`, `BO`, `KH`, `PL`/`PH`, `WO`/`WX`, the numbers of the `rc` and `FX` lists, and how the window art is cut into tiles. <span class="confidence confidence--open">open</span>
+  Open: the meaning of the flag letters `I`, `J`, `S`, `c`, `g`, `BO`, `KH`, `PL`/`PH`, `WO`/`WX`, the numbers of the `rc` and `FX` lists, and how the speech balloons' art is cut into tiles. <span class="confidence confidence--open">open</span>
+
+  The full-width text window is the textbox's window resource, `RID_TW` in `window/RectDesc_en.bin`: image 0 of `window/talk.tpl`, a 796×152 window with gold scrollwork at each end, drawn at y 296. In 4:3 the middle 608 pixels are drawn from x 0; in 16:9 all 796 pixels from x −94. Both centre it on x 304, because the game draws conversations in a 608-pixel-wide frame that the console stretches to the screen: the speech balloons also run from x 16 to 592. Image 1 of the same file is the scroll nameplate, and image 2 the page cursor's 15 frames (`RID_PAGECUR`). <span class="confidence confidence--confirmed">engine + files</span>

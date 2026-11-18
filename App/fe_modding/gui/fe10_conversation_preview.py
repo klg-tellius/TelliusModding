@@ -77,7 +77,7 @@ class Fe10ConversationPreview(ttk.Frame):
         self._canvas.pack(fill="both", expand=True, pady=(4, 0))
         self._canvas.bind("<Configure>", lambda e: self._schedule())
         ttk.Label(self, text="One picture per <wait>. Portraits, layout seats, balloon sizes, backgrounds and the font "
-                             "come from the disc; the window art is drawn as plain panels.",
+                             "come from the disc, as does the text window; speech balloons are drawn as plain panels.",
                   style="Muted.TLabel", wraplength=520, justify="left").pack(anchor="w", pady=(4, 0))
 
     @property

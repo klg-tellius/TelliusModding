@@ -3,8 +3,11 @@
 Engine data used as is: the layout's seats and text box (``window/RectDesc_en.bin``, and
 ``RectBase_en.bin`` for the base shop layout), the speech
 balloon geometry of position-bound boxes (``fe10_rect.balloon``), the portraits (``Face/``), the
-background rects (``s/rect.bin``) and the dialogue font (``Fonts/talk.cms``). The window art itself
-(``window/talk.tpl`` tiles) is not composed yet: boxes are drawn as plain panels of the right size.
+background rects (``s/rect.bin``) and the dialogue font (``Fonts/talk.cms``). The full-width text
+window is the textbox's own window resource (``RID_TW``: ``window/talk.tpl`` image 0 at y 296, its
+middle 608 pixels in 4:3, all 796 from x -94 in 16:9). Frames are drawn at :data:`FRAME_SIZE` and
+shown stretched to :data:`SCENE_SIZE` or :data:`WIDE_SIZE`; the nameplate is the scroll (image 1), placed by
+eye. Speech balloons are still drawn as plain panels of the right size.
 """
 from __future__ import annotations
 
@@ -22,11 +25,16 @@ from .fe10_faces import FaceLibrary
 from .fe9_font import GameFont
 from ..game_files import as_path
 
-SCENE_SIZE = (640, 480)
-WIDE_SIZE = (854, 480)    # how a 16:9 console shows the 640x480 frame
+#: The frame the game draws conversations in: 608 pixels wide (balloons run from x 16 to 592,
+#: ``FUN_8022a174``; the text window is centred on x 304), stretched by the console to the screen.
+FRAME_SIZE = (608, 480)
+SCENE_SIZE = (640, 480)   # how a 4:3 console shows the frame
+WIDE_SIZE = (854, 480)    # how a 16:9 console shows the frame
 BOX_HEIGHT = 112          # balloon height used for drawing (3 lines of 28 px plus margins)
 PANEL = (16, 20, 44, 215)
 NAME_PANEL = (60, 40, 20, 235)
+WINDOW_ART = "window/talk.tpl"
+NAMEPLATE_IMAGE = 1       # the parchment scroll behind the speaker's name
 _TEXT_PALETTE = {b"RFEE01": 0x80383158, b"RFEP01": 0x80384CD8, b"RFEJ01": 0x8036D0D0}
 _COLOR_CODE = re.compile(r"#C([0-9A-Fa-f]{2})|#c")
 
@@ -213,12 +221,12 @@ def _draw_styled(font: GameFont, image: Image.Image, display: str, xy: tuple[int
 
 
 def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
-    image = Image.new("RGBA", SCENE_SIZE, (0, 0, 0, 255))
+    image = Image.new("RGBA", FRAME_SIZE, (0, 0, 0, 255))
     if frame.background:
         background = assets.background(frame.background)
         if background is not None:
-            scale = SCENE_SIZE[0] / background.width
-            image.alpha_composite(background.resize((SCENE_SIZE[0], round(background.height * scale))))
+            scale = FRAME_SIZE[0] / background.width
+            image.alpha_composite(background.resize((FRAME_SIZE[0], round(background.height * scale))))
     layout = assets.layouts.get("RID_" + frame.layout)
     textboxes = layout.textboxes() if layout else []
     balloons = any(box.position >= 0 for box in textboxes)
@@ -270,11 +278,13 @@ def render(frame: Frame, assets: Fe10ConversationAssets) -> Image.Image:
             width = textbox.width if textbox else 576
             lines = textbox.lines if textbox else 3
             line_height = textbox.line_height if textbox else 28
-            draw.rounded_rectangle((tx - 48, ty - 18, tx - 48 + width, ty + lines * line_height + 14), 14,
-                                   fill=PANEL, outline=(200, 190, 160, 255), width=2)
+            if not _draw_resource(image, assets, textbox.window if textbox else "RID_TW"):
+                draw.rounded_rectangle((tx - 48, ty - 18, tx - 48 + width, ty + lines * line_height + 14), 14,
+                                       fill=PANEL, outline=(200, 190, 160, 255), width=2)
             speaker_index = box.speaker if box.speaker >= 0 else frame.current
             if 0 <= speaker_index < len(frame.cast):
-                _name(draw, image, assets, font, assets.character_name(frame.cast[speaker_index]), tx, ty - 40)
+                _name(draw, image, assets, font, assets.character_name(frame.cast[speaker_index]), tx, ty - 40,
+                      plate=assets.texture(WINDOW_ART, NAMEPLATE_IMAGE))
             if font:
                 _draw_styled(font, image, box.text, (tx, ty), assets, lines, line_height)
     return image
@@ -289,8 +299,42 @@ def _mirrored(facing: str, seats, position: int) -> bool:
     return bool(seats[position].facing) if 0 <= position < len(seats) else False
 
 
-def _name(draw, image, assets, font, name: str, x: int, y: int) -> None:
+def _draw_resource(image: Image.Image, assets: Fe10ConversationAssets, rid: str) -> bool:
+    """Draw a layout's still image resource (the text window ``RID_TW``) where its quads say; False when
+    the layouts have no such resource or its art is missing. A quad whose second corner repeats the first
+    is drawn at the source rectangle's own size."""
+    resource = assets.layouts.get(rid)
+    if resource is None:
+        return False
+    drawn = False
+    for quad in resource.quads():
+        texture = assets.texture(quad.file, quad.texture)
+        if texture is None:
+            continue
+        sx0, sy0, sx1, sy1 = quad.src
+        part = texture.crop((sx0, sy0, sx1, sy1)) if sx1 > sx0 and sy1 > sy0 else texture
+        x0, y0, x1, y1 = quad.dst
+        size = (x1 - x0, y1 - y0) if (x1, y1) != (x0, y0) else part.size
+        if size[0] <= 0 or size[1] <= 0:
+            continue
+        if size != part.size:
+            part = part.resize(size)
+        if quad.alpha < 255:
+            part = part.copy()
+            part.putalpha(part.getchannel("A").point(lambda a: a * quad.alpha // 255))
+        layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        layer.paste(part, (x0, y0))  # dst may start left of the frame (the 16:9 window at x -94)
+        image.alpha_composite(layer)
+        drawn = True
+    return drawn
+
+
+def _name(draw, image, assets, font, name: str, x: int, y: int, plate: Optional[Image.Image] = None) -> None:
     width = (font.measure(name) if font else 8 * len(name)) + 24
-    draw.rounded_rectangle((x - 12, y - 2, x - 12 + width, y + 28), 8, fill=NAME_PANEL)
+    if plate is not None:
+        # the scroll nameplate (talk.tpl image 1), stretched to the name
+        image.alpha_composite(plate.resize((max(width + 24, plate.width), 34)), (x - 24, y - 4))
+    else:
+        draw.rounded_rectangle((x - 12, y - 2, x - 12 + width, y + 28), 8, fill=NAME_PANEL)
     if font:
         font.draw(image, name, (x, y), line_height=28)
