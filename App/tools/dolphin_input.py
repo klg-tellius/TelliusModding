@@ -10,16 +10,16 @@ Usage (python -m tools.dolphin_input ...):
   dolphin_input press <out png or -> <key> [<key> ...]      press keys in turn (0.5 s apart), then screenshot
   dolphin_input hold <key> <seconds>                        hold one key
   dolphin_input shot <out png>
-  dolphin_input save <slot>        save state to slot 1 or 2 (Dolphin hotkeys, see HOTKEYS)
+  dolphin_input save 1            save state to slot 1 (Dolphin hotkey, see HOTKEYS)
   dolphin_input load 1
   dolphin_input stop
 
 Buttons (Wii Remote held sideways, Radiant Dawn's default; the GameCube pad gets the same keys):
 A=2 (OK), B=1 (Cancel), Start=+, Minus=-, Home, Up/Down/Left/Right = D-pad, WA=Wii A.
-WA (NOCONVERT) does not reach the game: open the map menu with A on an empty tile. Only save-state
-slot 1 works (KANA is not a usable hotkey); the --save_state start argument did not load a state either.
+WA is sent with KANA (checked on Radiant Dawn's map menu, 2026-11-17); NOCONVERT never reached the game.
+Only save-state slot 1 works; the --save_state start argument did not load a state either.
 Keys are spare DirectInput keys no Windows application uses: the Japanese-keyboard keys sent as extended
-scan codes E0 11..E0 17, YEN, CONVERT and NOCONVERT; F13-F15 and KANA are Dolphin hotkeys. DirectInput
+scan codes E0 11..E0 17, YEN, CONVERT and KANA; F13-F15 are Dolphin hotkeys. DirectInput
 has no codes for F16 and above, so Dolphin can't bind them.
 """
 import ctypes
@@ -56,14 +56,13 @@ BUTTONS = {  # button -> (key, Wii Remote control, GameCube control)
     "Down": ("AX", "D-Pad/Down", "D-Pad/Down"),
     "Right": ("UNLABELED", "D-Pad/Right", "D-Pad/Right"),
     "Minus": ("YEN", "Buttons/-", "Buttons/Z"),
-    "WA": ("NOCONVERT", "Buttons/A", "Buttons/X"),
+    "WA": ("KANA", "Buttons/A", "Buttons/X"),
     "Home": ("CONVERT", "Buttons/Home", "Buttons/Y"),
 }
 HOTKEYS = {  # key -> Dolphin hotkey
     "F13": "General/Take Screenshot",
     "F14": "Save State/Save State Slot 1",
     "F15": "Load State/Load State Slot 1",
-    "KANA": "Save State/Save State Slot 2",
 }
 
 user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
@@ -211,7 +210,7 @@ def main():
         grab(pid, sys.argv[2])
     elif cmd in ("save", "load"):
         slot = int(sys.argv[2])
-        key = {("save", 1): "F14", ("load", 1): "F15", ("save", 2): "KANA"}[(cmd, slot)]
+        key = {("save", 1): "F14", ("load", 1): "F15"}[(cmd, slot)]
         tap(key, 0.2)
         time.sleep(2)
         print(cmd, slot)
