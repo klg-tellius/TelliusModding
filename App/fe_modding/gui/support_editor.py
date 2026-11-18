@@ -336,7 +336,7 @@ class CharacterSupportsPanel(ttk.Frame):
             if rank is None:
                 button.config(state="normal")
                 continue
-            exists = talks is not None and conversation_id(self._pid, partner, rank) in talks
+            exists = talks is not None and self._layout.talk_id(self._pid, partner, rank) in talks
             button.config(state="normal", text=f"Edit {rank}" if exists else f"Create {rank}")
 
     def _apply_thresholds(self) -> None:

@@ -75,6 +75,11 @@ class SupportsModel:
     bond_note: str = ""
     #: Support conversation ranks with one Edit/Create button each; empty: one "Open conversations" link.
     conversation_ranks: tuple = ()
+
+    @staticmethod
+    def talk_id(pid: str, partner: str, rank: str) -> str:
+        """The message ID of the pair's conversation of ``rank``."""
+        return conversation_id(pid, partner, rank)
     affinity_names: tuple = ()
     affinity_note: str = ""
 
@@ -292,8 +297,20 @@ class RdSupports(SupportsModel):
                    PairField("Reserved marker (unused by the game)", 0, 255))
     pair_note = ("Radiant Dawn lists every supporting character against all of them (themselves included), so "
                  "the partners are edited, not added. Each character's own list is edited; the partner's list "
-                 "keeps its own entry. Double-click a partner to open their page.")
+                 "keeps its own entry. Double-click a partner to open their page. The Conversation buttons "
+                 "write the pair's C, B and A conversations (common.m); the game plays them when the support "
+                 "is formed or strengthened in the base once Game Code › Supports › Support conversations in "
+                 "the base is on.")
     can_add_partners = False
+    #: With the Game Code patch "Support conversations in the base", forming or raising a support in
+    #: the base plays MSUP_<A>_<B>_<rank> from common.m (:mod:`.game_code.rd_support_talk`).
+    conversation_ranks = RANKS
+
+    @staticmethod
+    def talk_id(pid: str, partner: str, rank: str) -> str:
+        from .game_code.rd_support_talk import conversation_id as rd_conversation_id
+        return rd_conversation_id(pid, partner, rank)
+
     bond_columns = (("This character is", 110), ("Bonus", 60))
     bond_fields = (PairField("Bonus", 0, 255),)
     bond_note = "The bonus between the two bonded units (5 or 10 in the retail data)."

@@ -295,10 +295,48 @@ class CharacterPage(Page):
         Conversation Lists), which are not one message per pair and rank."""
         if rank is None:
             self.shell.navigate(("asset", "conversation_lists"))
+        elif self.project.profile.data_dialect == "fe10":
+            self._open_rd_support_conversation(pid, partner, rank)
         else:
             self.shell.page("data").open_support_conversation(pid, partner, rank)
 
+    # Radiant Dawn: the base Support screen plays MSUP_<A>_<B>_<rank> from common.m (Game Code patch
+    # "Support conversations in the base"); a new one starts as a full-screen talk between the two.
+    RD_TALK_TEMPLATE = ("<FL|{a}|{b}><R:背景会話><seat:01><show_now:1D><seat:13><show:3D><B:デイン-路地-昼><w4>"
+                        "<speaker:01>...<wait>\n<speaker:13>...<wait>")
+
+    def _rd_talk_file(self):
+        folder = files_root_of(self.project) / "Mess"
+        return folder / ("e_common.m" if (folder / "e_common.m").is_file() else "common.m")
+
+    def _rd_talk_editor(self):
+        panel = self.shell.page("asset")._panels.get("conversations")
+        return getattr(panel, "_editor", None)
+
+    def _open_rd_support_conversation(self, pid: str, partner: str, rank: str) -> None:
+        msg_id = self._supports._layout.talk_id(pid, partner, rank)
+        if not self.shell.navigate(("asset", "conversations", self._rd_talk_file().name)):
+            return
+        editor = self._rd_talk_editor()
+        if editor is None:
+            return
+
+        def show():
+            if msg_id not in editor.message_ids():
+                text = self.RD_TALK_TEMPLATE.format(a="L_" + pid.removeprefix("PID_"),
+                                                    b="L_" + partner.removeprefix("PID_"))
+                if not editor.add_message(msg_id, fe10_message.to_raw(text)):
+                    return
+            editor.select_message(msg_id)
+        editor.after_idle(show)
+
     def _support_conversation_ids(self):
+        if self.project.profile.data_dialect == "fe10":
+            path = self._rd_talk_file()
+            editor = self._rd_talk_editor() if self.shell.existing_page("asset") is not None else None
+            ids = (editor.message_ids() if editor is not None and editor.current_path == path
+                   else read_conversation_ids(path))
+            return {i for i in ids if i.startswith("MSUP_")} if ids is not None else None
         data_page = self.shell.existing_page("data")
         if data_page is not None:
             return data_page.support_conversation_ids()

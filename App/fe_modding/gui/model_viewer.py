@@ -369,9 +369,15 @@ def _chunk_cull(chunk: model_fmt.TriChunk) -> str:
     return "none" if bits == 0x1800 else "front" if bits == 0x0800 else "back"
 
 
-def _chunk_blend_mode(chunk: model_fmt.TriChunk) -> str:
-    """Native `.gs` bit 0x40 selects GX_BM_BLEND/SRCALPHA/ONE."""
-    if chunk.format & 0x40:
+#: Radiant Dawn material byte +4 bit for additive drawing (see ``model.Material.flag0``).
+RD_MATERIAL_ADDITIVE = 0x20
+
+
+def _chunk_blend_mode(chunk: model_fmt.TriChunk, material: model_fmt.Material | None = None) -> str:
+    """Native `.gs` bit 0x40 selects GX_BM_BLEND/SRCALPHA/ONE. Radiant Dawn never sets it on map props
+    and marks additive materials instead (byte +4 bit 0x20: torch fire, glows, sparkles), whose
+    textures are drawn on black."""
+    if chunk.format & 0x40 or (material is not None and material.flag0 & RD_MATERIAL_ADDITIVE):
         return "additive"
     return "normal"
 
@@ -734,7 +740,8 @@ def _accumulate_mesh(
         if chunk.hidden:
             continue
         material_index = chunk.material_index
-        blend_mode = _chunk_blend_mode(chunk)
+        blend_mode = _chunk_blend_mode(
+            chunk, gs_model.materials[material_index] if 0 <= material_index < len(gs_model.materials) else None)
         cull = _chunk_cull(chunk)
         texture_image = None
         material_textures: list[tuple[int, _LoadedTexture, np.ndarray, str]] = []

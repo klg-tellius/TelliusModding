@@ -68,8 +68,9 @@ import math
 from dataclasses import dataclass, replace
 
 from .. import map_heights
-from ..formats import animation, map_file
-from .model_viewer import FIT_FRACTION, GridOverlay, MapTextureProjection, _LoadedSet, _ModelCanvas, _Triangle, load_named_model_set
+from ..formats import animation, engine_pose, map_file
+from .model_viewer import (FIT_FRACTION, GridOverlay, MapTextureProjection, _LoadedSet, _ModelCanvas, _skin_triangles,
+                           _Triangle, load_named_model_set)
 
 
 _NATIVE_TILE_SCALE = 5.0
@@ -515,12 +516,24 @@ def build_map_scene(
 STILL_ALPHA_SHARE = 1.0
 
 
+def _rest_pose_triangles(loaded: _LoadedSet) -> list[_Triangle]:
+    """A prop's triangles drawn through its bones at rest, as the engine draws them. A single-bone
+    shape stores its vertices in its bone's own space, so the stored positions alone put such parts
+    at the wrong size and place: Radiant Dawn's torch flame (``torh02``) hangs under bones scaled 0.5
+    and offset onto its stand, and without them it came out twice as big, centred on the stand's
+    corner and half under the ground."""
+    if not loaded.bones or not any(t.skin is not None for t in loaded.triangles):
+        return loaded.triangles
+    world, palette = engine_pose.pose(loaded.bones)
+    return _skin_triangles(loaded.triangles, world, palette)
+
+
 def _still_triangles(loaded: _LoadedSet) -> list[_Triangle]:
-    """A prop as a still picture shows it. Props that fade in and out from
-    nothing (``wave_99``'s shore foam: material alpha 0, raised by its
+    """A prop as a still picture shows it: at rest through its bones (:func:`_rest_pose_triangles`).
+    Props that fade in and out from nothing (``wave_99``'s shore foam: material alpha 0, raised by its
     ``.ga``'s footer slot-1 tracks) get each faded material at its track's
-    peak (times :data:`STILL_ALPHA_SHARE`) instead of staying invisible;
-    every other prop is unchanged."""
+    peak (times :data:`STILL_ALPHA_SHARE`) instead of staying invisible."""
+    loaded = replace(loaded, triangles=_rest_pose_triangles(loaded))
     if not loaded.animations or not any(t.alpha < 0.01 for t in loaded.triangles):
         return loaded.triangles
     try:

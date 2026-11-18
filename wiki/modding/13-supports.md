@@ -116,6 +116,16 @@ Bond effects: an adjacent same-army pair each gains the configured Critical, or 
 
 On Radiant Dawn, **Game Data › Supports** starts with **Pairs** too: every character against each partner in their list, with the partner's affinity, the support speed and a reserved marker (0 or 255; the game never reads it, so changing it does nothing). Use **Search** to narrow it by name, and double-click a pair to open the character's Supports tab. The other buttons open the tables: Supports, Support points, Bonds, Affinities, Affinity pairs and No-battle lists. Radiant Dawn lists each supporting character against all the others, so its Pairs list is much longer than Path of Radiance's.
 
+### Radiant Dawn: support conversations in the base
+
+The retail game plays no conversation when the base's **Support** screen forms a pair ("Create a support relationship?" **Yes**) or raises one (**Strengthen**). Its battlefield exchanges are only a line or two from each character. Turn on **Game Code › Supports › Support conversations in the base** to give pairs a full conversation, as in Path of Radiance:
+
+1. On a character's **Supports** tab, select a partner. The **Conversation** row has **C**, **B** and **A** buttons; they read **Create** until the conversation exists, then **Edit**.
+2. **Create C** opens **Assets › Conversations › e_common.m** (`common.m` on the Japanese disc) on a new message named `MSUP_<A>_<B>_C`, for example `MSUP_EDDIE_MICAIAH_C`: the two characters' IDs without `PID_`, in alphabetical order. It starts as a full-screen talk between the two characters, on a Daein background. Write it like any other conversation, then **Save**.
+3. Build and play. When the pair reaches C in the base, the Support screen gives way to the conversation, full screen. Once it ends, the support forms and the game reports "Support level raised to C." Pairs without a conversation form at once, as before.
+
+The patch hides the Support screen while the conversation plays and plays each rank's conversation once, when that rank is reached. It was checked in Dolphin on the US disc (C, B through Strengthen, and a pair without a conversation); the European and Japanese sites are matched from the US code and were not played.
+
 ## Things to try next
 
 1. **A bond.** On the Guard's **Supports**, **Add bond with** Boyd and set its **Effect** and **Value**; compare in the **Battle Simulator** with the two units adjacent.

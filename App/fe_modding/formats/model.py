@@ -99,6 +99,9 @@ class Material:
     color2: tuple[int, int, int, int]
     textures: list[MaterialTexture]
     flag1: int = 0  # .gs material byte +5; bit 0 changes the stage-0 TEV order
+    #: .gs material byte +4: Radiant Dawn's blend bits. 0x20 draws the material additively (fire, glows,
+    #: sparkles), 0x10 blended; zero on every Path of Radiance map prop, which uses the shape's 0x40 instead.
+    flag0: int = 0
 
 
 @dataclass(frozen=True)
@@ -328,6 +331,7 @@ def _read_materials(stream, addr, count) -> list[Material]:
                 color1=color1,
                 color2=color2,
                 textures=textures,
+                flag0=rec[1],
                 flag1=rec[2],
             )
         )

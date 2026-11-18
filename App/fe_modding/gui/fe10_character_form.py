@@ -28,11 +28,18 @@ WEAPON_TYPES = ("Sword", "Lance", "Axe", "Bow", "Knife", "Strike", "Fire", "Thun
 #: Fields whose value is a message ID: the message's text is shown beside them.
 MESSAGE_FIELDS = ("mpid", "mnpid")
 ANIMATION_FIELDS = ("aid_1", "aid_2", "aid_3", "aid_4")
-UNIT_FIELDS = ("level", "sex", "authority", "biorhythm")
+UNIT_FIELDS = ("level", "sex", "authority")
+BIORHYTHM_FIELDS = ("biorhythm", "biorhythm_phase", "biorhythm_step")
 GAUGE_FIELDS = ("gauge_turn", "gauge_battle", "gauge_turn_transformed", "gauge_battle_transformed")
-KNOWN_FIELDS = frozenset(IDENTITY_FIELDS + ("weapon_ranks",) + ANIMATION_FIELDS + UNIT_FIELDS + GAUGE_FIELDS
-                         + tuple(f"bonus_{key}" for key in STAT_KEYS) + ("bonus_weight",)
-                         + tuple(f"growth_{key}" for key in STAT_KEYS))
+#: Labels the form shows instead of the table's own (the ``sex`` byte is the unit's gender: 1 on every
+#: female character of the retail data, 0 on the rest).
+LABELS = {"sex": "Gender", "authority": "Authority stars", "biorhythm": "Type", "biorhythm_phase": "Starting phase",
+          "biorhythm_step": "Step per phase"}
+GENDERS = ("Male", "Female")
+#: The ``protected_parts`` bits, in order.
+PARTS = ("Part I", "Part II", "Part III", "Part IV", "Endgame")
+#: Bytes the form does not show: never read by the game, or padding. Their values are kept as they are.
+HIDDEN_FIELDS = ("unused_01", "reserved_t18", "padding_t27")
 
 
 class Fe10CharacterForm(ttk.Frame):
@@ -119,8 +126,13 @@ class Fe10CharacterForm(ttk.Frame):
         skill_entry.grid(row=0, column=1, sticky="w")
         ttk.Label(skills, text="Separate multiple IDs with commas.", style="SurfaceMuted.TLabel").grid(
             row=1, column=1, sticky="w", pady=(2, 4))
+        extra = self._vars["extra_skill"] = tk.StringVar(value=record.values.get("extra_skill") or "")
+        tip(ttk.Label(skills, text="Extra skill", style="Surface.TLabel"),
+            fe10data.FIELD_NOTES.get("extra_skill", "")).grid(row=2, column=0, sticky="w", padx=(0, 8), pady=2)
+        ttk.Combobox(skills, textvariable=extra, values=self._session.labels_by_prefix.get("SID_", []),
+                     width=36).grid(row=2, column=1, sticky="w", pady=2)
         innate = [v for v in (cls.lists.get("skills", []) if cls else []) if v]
-        for row, (label, sids) in enumerate((("Open skill", own), ("Class innate skills", innate)), 2):
+        for row, (label, sids) in enumerate((("Open skill", own), ("Class innate skills", innate)), 3):
             ttk.Label(skills, text=label, style="SurfaceMuted.TLabel").grid(row=row, column=0, sticky="w",
                                                                             padx=(0, 8), pady=2)
             links = ttk.Frame(skills, style="Surface.TFrame")
@@ -133,7 +145,7 @@ class Fe10CharacterForm(ttk.Frame):
                          bg_token="surface").pack(side="left", padx=(0, 10))
                 else:
                     ttk.Label(links, text=sid, style="SurfaceMuted.TLabel").pack(side="left", padx=(0, 10))
-        weapon_rank_grid(skills, 4, record.values.get("weapon_ranks"), cls.values.get("weapon_ranks") if cls else None,
+        weapon_rank_grid(skills, 5, record.values.get("weapon_ranks"), cls.values.get("weapon_ranks") if cls else None,
                          WEAPON_TYPES, self._vars,
                          "The game starts from the class's ranks; a letter here replaces the class's for that "
                          "weapon type. - keeps the class's rank, * makes the type usable without a set rank, E to S "
@@ -142,13 +154,40 @@ class Fe10CharacterForm(ttk.Frame):
         unit = self._group(self._body, "Level, unit details and stats")
         unit.master.pack(fill="x", pady=(12, 0))
         for column, key in enumerate(UNIT_FIELDS):
-            definition = definitions[key]
-            ttk.Label(unit, text=definition.label, style="Surface.TLabel").grid(
-                row=0, column=column * 2, sticky="w", padx=(0, 6))
-            self._entry(unit, 0, column * 2 + 1, key, record.values.get(key), 6)
+            tip(ttk.Label(unit, text=LABELS.get(key, definitions[key].label), style="Surface.TLabel"),
+                fe10data.FIELD_NOTES.get(key, "")).grid(row=0, column=column * 2, sticky="w", padx=(0, 6))
+            if key == "sex":
+                value = record.values.get(key)
+                var = self._vars[key] = tk.StringVar(
+                    value=GENDERS[value] if value in (0, 1) else "" if value is None else str(value))
+                ttk.Combobox(unit, textvariable=var, values=GENDERS, width=8, state="readonly").grid(
+                    row=0, column=column * 2 + 1, sticky="w", padx=(2, 18), pady=2)
+            else:
+                self._entry(unit, 0, column * 2 + 1, key, record.values.get(key), 6)
+        biorhythm = ttk.Frame(unit, style="Surface.TFrame")
+        biorhythm.grid(row=1, column=0, columnspan=8, sticky="w", pady=(8, 0))
+        ttk.Label(biorhythm, text="Biorhythm", style="SurfaceMuted.TLabel").grid(row=0, column=0, sticky="w",
+                                                                              padx=(0, 10))
+        for column, key in enumerate(BIORHYTHM_FIELDS):
+            tip(ttk.Label(biorhythm, text=LABELS[key], style="Surface.TLabel"),
+                fe10data.FIELD_NOTES.get(key, "")).grid(row=0, column=1 + column * 2, sticky="w", padx=(0, 6))
+            self._entry(biorhythm, 0, 2 + column * 2, key, record.values.get(key), 6)
+        parts = ttk.Frame(unit, style="Surface.TFrame")
+        parts.grid(row=2, column=0, columnspan=8, sticky="w", pady=(8, 0))
+        tip(ttk.Label(parts, text="Withdraws instead of dying in", style="SurfaceMuted.TLabel"),
+            fe10data.FIELD_NOTES.get("protected_parts", "")).pack(side="left", padx=(0, 10))
+        mask = record.values.get("protected_parts") or 0
+        self._vars["protected_parts"] = tk.StringVar(value=str(mask))
+        self._part_bits = []
+        for bit, name in enumerate(PARTS):
+            on = tk.BooleanVar(value=bool(mask >> bit & 1))
+            self._part_bits.append(on)
+            ttk.Checkbutton(parts, text=name, variable=on, style="Surface.TCheckbutton",
+                            command=self._parts_changed).pack(side="left", padx=(0, 8))
+        self._parts_high = mask & ~((1 << len(PARTS)) - 1)  # bits no box shows are kept
 
         grid = ttk.Frame(unit, style="Surface.TFrame")
-        grid.grid(row=1, column=0, columnspan=8, sticky="w", pady=(12, 0))
+        grid.grid(row=3, column=0, columnspan=8, sticky="w", pady=(12, 0))
         for column, name in enumerate(fe10data.STAT_NAMES, 1):
             ttk.Label(grid, text=name, style="SurfaceMuted.TLabel").grid(row=0, column=column, padx=4)
         rows = (
@@ -180,10 +219,17 @@ class Fe10CharacterForm(ttk.Frame):
                 row=0, column=column * 2, sticky="w", padx=(0, 6))
             self._entry(gauge, 0, column * 2 + 1, key, record.values.get(key), 6)
 
-        other = self._group(self._body, "Other decoded fields")
-        other.master.pack(fill="x", pady=(12, 0))
-        for row, definition in enumerate(d for d in fe10data.field_defs("character") if d.key not in KNOWN_FIELDS):
-            self._field(other, row, definition, record.values.get(definition.key))
+    def _parts_changed(self) -> None:
+        mask = self._parts_high | sum(1 << bit for bit, on in enumerate(self._part_bits) if on.get())
+        self._vars["protected_parts"].set(str(mask))
+
+    @staticmethod
+    def _parse(definition: fe10data.FieldDef, text: str):
+        """A form value as the table stores it (the gender's name as its byte)."""
+        if definition.key == "sex" and text in GENDERS:
+            return GENDERS.index(text)
+        return (text or None) if definition.kind == "label" else (
+            float(text) if definition.kind == "f32" else int(text))
 
     def _open_map_model(self, key: str) -> None:
         """The map model of an AID field; an empty first AID opens the class's own."""
@@ -251,9 +297,9 @@ class Fe10CharacterForm(ttk.Frame):
         data = self._session.data
         try:
             for definition in fe10data.field_defs("character"):
-                text = self._vars[definition.key].get().strip()
-                value = (text or None) if definition.kind == "label" else (
-                    float(text) if definition.kind == "f32" else int(text))
+                if definition.key not in self._vars:  # a hidden byte: kept as it is
+                    continue
+                value = self._parse(definition, self._vars[definition.key].get().strip())
                 current = fe10data.record(data, "character", index).values.get(definition.key)
                 if value != current:
                     data = fe10data.patch_field(data, "character", index, definition.key, value)
@@ -276,8 +322,7 @@ class Fe10CharacterForm(ttk.Frame):
         text = self._vars[key].get().strip()
         definition = next(d for d in fe10data.field_defs("character") if d.key == key)
         try:
-            value = (text or None) if definition.kind == "label" else (
-                float(text) if definition.kind == "f32" else int(text))
+            value = self._parse(definition, text)
         except ValueError:
             messagebox.showerror("Invalid value", f"{definition.label} must be a number.", parent=self)
             self._vars[key].set("" if current is None else str(current))
