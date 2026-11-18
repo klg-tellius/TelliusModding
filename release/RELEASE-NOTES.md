@@ -1,8 +1,8 @@
 # Tellius Modding v1.0.0.0
 
 The first stable release. Path of Radiance and Radiant Dawn are now edited from the
-same pages, Radiant Dawn works on the US, European and Japanese discs, and almost
-every byte of both games is read by a decoder the app uses.
+same pages, Radiant Dawn works on the US, European and Japanese discs, and all but
+a few kilobytes of both games are read by a decoder the app uses.
 
 ## Highlights
 
@@ -21,7 +21,7 @@ every byte of both games is read by a decoder the app uses.
   endings, class introductions, movie subtitles, world-map route lines and the Wii
   channel banner. Each file rebuilds byte for byte on all three discs.
 - **Decoding coverage.** On the US discs, the bytes left undecoded or unclassified are
-  0.005 % of Path of Radiance and 0.06 % of Radiant Dawn (down from 1.51 %).
+  0.005 % of Path of Radiance and 0.0006 % of Radiant Dawn (down from 1.51 %).
 - **The Tellius Archive covers both games.** Lessons and systems pages gain
   "On Radiant Dawn" sections.
 - **Open source under the MIT License.** The code can be used, changed and shared
@@ -111,18 +111,25 @@ Extras unlocks, Conversation Room order and subtitle edits.
 
 The coverage tool walks every file on the disc and reports each byte as decoded,
 plausible or open. Measured on the US discs (movies, `.stm` music and `.brsar` left
-out):
+out, and on Radiant Dawn the Wii HOME Menu's sound banks and `client.bin`):
 
 | Disc | Undecoded or unclassified |
 |---|---|
 | Path of Radiance (GFEE01) | 74,572 bytes of 1.44 GB (0.005 %) |
-| Radiant Dawn (RFEE01) | 1.21 MB of 2.07 GB (0.059 %) |
+| Radiant Dawn (RFEE01) | 12.4 KB of 2.07 GB (0.0006 %) |
 
-New on Radiant Dawn: every `.ga` animation footer slot (bone visibility, events,
-material alpha and colour, texture motion, particle emitters), field rules for
-`FE10Battle`, `FE10Anim`, `FE10Conversation`, `FE10Growth`, `FE10Effect`, `map.bin`,
-rect layouts and the staff roll, every font, the Wii banner, and the Wii HOME Menu's
-archives, layouts, textures and songs.
+New on Radiant Dawn: every `.ga` animation footer slot (bone visibility, events and
+their sound-effect codes, material alpha and colour, texture motion, particle
+emitters), all of `FE10Battle`, `sound_data` (every cue parameter and `SND_*` table),
+`.gs` material, texture and bone flags, field rules for `FE10Anim`,
+`FE10Conversation`, `FE10Growth`, `FE10Effect`, `map.bin`, rect layouts and the staff
+roll, every font, the Wii banner, and the Wii HOME Menu's archives, layouts, textures
+and songs.
+
+Still open on RFEE01, by size: `FE10Effect` flags and parameters (5 KB), `FE10Anim`
+flags and data parameters (2.9 KB), a curve field in 14 `.ga` files (2.4 KB),
+`FE10PersonGrowth` (1 KB) and a few hundred bytes of conversation, map and table
+fields. The European and Japanese discs have not been re-measured.
 
 ## Tellius Archive
 
