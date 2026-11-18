@@ -21,7 +21,7 @@ a few kilobytes of both games are read by a decoder the app uses.
   endings, class introductions, movie subtitles, world-map route lines and the Wii
   channel banner. Each file rebuilds byte for byte on all three discs.
 - **Decoding coverage.** On the US discs, the bytes left undecoded or unclassified are
-  0.005 % of Path of Radiance and 0.0006 % of Radiant Dawn (down from 1.51 %), with
+  about 0.003 % of Path of Radiance and 0.0006 % of Radiant Dawn (down from 1.51 %), with
   the same figure on the European and Japanese Radiant Dawn discs.
 - **The Tellius Archive covers both games.** Lessons and systems pages gain
   "On Radiant Dawn" sections.
@@ -116,7 +116,7 @@ Dawn the Wii HOME Menu's sound banks and `client.bin`:
 
 | Disc | Undecoded or unclassified |
 |---|---|
-| Path of Radiance US (GFEE01) | 74,572 bytes of 1.44 GB (0.005 %) |
+| Path of Radiance US (GFEE01) | 20.6 KB (about 0.003 %), of which 18.3 KB is `client.bin`; 2.3 KB without it |
 | Radiant Dawn US (RFEE01) | 12.4 KB of 2.07 GB (0.0006 %) |
 | Radiant Dawn Europe (RFEP01) | 15.2 KB of 2.54 GB (0.0006 %) |
 | Radiant Dawn Japan (RFEJ01) | 11.8 KB of 1.85 GB (0.0006 %) |

@@ -1339,7 +1339,7 @@ def _rd_rect(cov: FileCoverage) -> None:
 @handles("tut_data", lambda name, data: _base(name).startswith("tut_data"))
 def tut_data(cov: FileCoverage, walker: Walker) -> None:
     """Tutorial list (``tut_data.py``): head, three label tables and the 24-byte ``TUT_DATA``
-    rows (id, category/chapter/initial keys, display order, per-difficulty start flags,
+    rows (20 bytes on the Japanese disc, which has no Easy mode) (id, category/chapter/initial keys, display order, per-difficulty start flags,
     title key, script and function), all read by the tutorial browser or ``reinit_party_struct``."""
     from . import tut_data as td
 
@@ -1581,6 +1581,24 @@ def fe10_tables(cov: FileCoverage, walker: Walker) -> None:
     for i in range(HEADER_SIZE, end):
         if cov.status[i] == UNCLASSIFIED:
             cov.mark(i, 1, PADDING if data[i] == 0 else DECODED)
+
+
+@handles("MovieCaptionData.bin", lambda name, data: _base(name) == "moviecaptiondata.bin")
+def por_movie_captions(cov: FileCoverage, walker: Walker) -> None:
+    """Path of Radiance's European movie subtitles (``por_captions``): the movie list and the
+    16-byte caption rows (message key, start and end in milliseconds, placement), read by the THP
+    player at ``0x802070EC`` (GFEP01)."""
+    from . import por_captions as pc
+
+    data = cov.data
+    _roundtrip(cov, pc.build_captions(pc.read_captions(data)))
+    cov.mark(0, 0x10, DECODED)
+    cov.zero(0x10, 0x10, "header +0x10..+0x1F")
+    end = HEADER_SIZE + _u32(data, 4)
+    cov.mark(end, len(data) - end, DECODED)
+    for i in range(HEADER_SIZE, end):
+        if cov.status[i] == UNCLASSIFIED:
+            cov.mark(i, 1, PADDING if data[i] == 0 and i >= end - 3 else DECODED)
 
 
 @handles("gmap curve", lambda name, data: "gmap/curve/" in name.replace("\\", "/").lower() and _ext(name) == "bin")

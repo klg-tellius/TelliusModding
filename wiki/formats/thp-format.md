@@ -23,6 +23,10 @@ Cutscenes use Nintendo's THP format: frames are near-standard JPEGs, while audio
 
 The header describes components and the first frame. Each frame supplies video plus its matching audio slice and points indirectly to the next frame's total size. The player decodes the image, queues the associated samples, carries the next size forward, and repeats at the declared frame rate.
 
+## European subtitles
+
+Only the European disc (`GFEP01`) subtitles its movies. `MovieCaptionData.bin`, at the root of `files/`, is a [labeled-section](./labeled-section.md) file with no sections: a count of movies, then for each a pointer to its path (`movie/s01.thp`) and a pointer to its list of lines. A line is 16 bytes: a pointer to its message key (`MMC_SCENE01_01`, whose text is in each language's message files), the time it appears and the time it disappears, in milliseconds from the start of the movie, and a placement word (0 puts the text at the bottom, raised by its number of lines; the last line of `s08.thp` uses 1, a fixed height). A zero word ends each list. The player (`0x802070EC` in `GFEP01`'s `main.dol`) turns the times into frames of the current video mode, 50 or 60 Hz. The app reads and rebuilds the file (`formats/por_captions.py`); it has no editor for it yet. <span class="confidence confidence--confirmed">confirmed</span>
+
 ## Example: following the frame chain
 
 To reach frame 2, read frame 0 using the header's first size, obtain frame 1's size from frame 0, then obtain frame 2's size from frame 1. Treating each frame's `next_total_size` as its own current size shifts boundaries and corrupts the stream.
