@@ -21,7 +21,8 @@ a few kilobytes of both games are read by a decoder the app uses.
   endings, class introductions, movie subtitles, world-map route lines and the Wii
   channel banner. Each file rebuilds byte for byte on all three discs.
 - **Decoding coverage.** On the US discs, the bytes left undecoded or unclassified are
-  0.005 % of Path of Radiance and 0.0006 % of Radiant Dawn (down from 1.51 %).
+  0.005 % of Path of Radiance and 0.0006 % of Radiant Dawn (down from 1.51 %), with
+  the same figure on the European and Japanese Radiant Dawn discs.
 - **The Tellius Archive covers both games.** Lessons and systems pages gain
   "On Radiant Dawn" sections.
 - **Open source under the MIT License.** The code can be used, changed and shared
@@ -110,13 +111,15 @@ Extras unlocks, Conversation Room order and subtitle edits.
 ## Decoding coverage
 
 The coverage tool walks every file on the disc and reports each byte as decoded,
-plausible or open. Measured on the US discs (movies, `.stm` music and `.brsar` left
-out, and on Radiant Dawn the Wii HOME Menu's sound banks and `client.bin`):
+plausible or open. Movies, `.stm` music and `.brsar` are left out, and on Radiant
+Dawn the Wii HOME Menu's sound banks and `client.bin`:
 
 | Disc | Undecoded or unclassified |
 |---|---|
-| Path of Radiance (GFEE01) | 74,572 bytes of 1.44 GB (0.005 %) |
-| Radiant Dawn (RFEE01) | 12.4 KB of 2.07 GB (0.0006 %) |
+| Path of Radiance US (GFEE01) | 74,572 bytes of 1.44 GB (0.005 %) |
+| Radiant Dawn US (RFEE01) | 12.4 KB of 2.07 GB (0.0006 %) |
+| Radiant Dawn Europe (RFEP01) | 15.2 KB of 2.54 GB (0.0006 %) |
+| Radiant Dawn Japan (RFEJ01) | 11.8 KB of 1.85 GB (0.0006 %) |
 
 New on Radiant Dawn: every `.ga` animation footer slot (bone visibility, events and
 their sound-effect codes, material alpha and colour, texture motion, particle
@@ -129,7 +132,8 @@ and songs.
 Still open on RFEE01, by size: `FE10Effect` flags and parameters (5 KB), `FE10Anim`
 flags and data parameters (2.9 KB), a curve field in 14 `.ga` files (2.4 KB),
 `FE10PersonGrowth` (1 KB) and a few hundred bytes of conversation, map and table
-fields. The European and Japanese discs have not been re-measured.
+fields. The European and Japanese discs leave the same fields open. Path of Radiance
+was measured on the US disc.
 
 ## Tellius Archive
 
