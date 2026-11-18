@@ -30,6 +30,19 @@ Three tiers, from quickest to slowest:
 - `tools/release_check.py` finds the discs and saves under one folder (`por_work/GFEE01`, `rd_work/RFEE01`, `SaveFile/`, `SaveFile/rd/`; each can also be given on its own). `--all-regions` adds the European and Japanese discs, `--full` sets `TELLIUS_CORPUS=full`. Reports go to `App/release_check_reports/`.
 - `-n auto` needs the dev requirements: `python -m pip install -r requirements-dev.txt` (pytest and pytest-xdist).
 
+### In-game test runs (Dolphin)
+
+- `tools/session_playtest` builds small per-test patches and boots each in Dolphin for a person at the controller.
+- `tools/dolphin_input.py` presses buttons in a running Dolphin with spare keyboard keys (background input), for unattended checks. Radiant Dawn reads the sideways Wii Remote.
+- `tools/dolphin_ram.py` reads the running game's RAM from outside Dolphin (no debugger): the live process names (`E_BMapPlph`, `E_FileMenu`, `BaseProc`...) say which screen is up.
+- `tools/chapter_sweep` plays a whole story unattended and keeps the game's save after every chapter. `build` appends a victory to every story chapter script that fires when the player ends turn 1 (before the enemy phase, so no enemy moves; a Path of Radiance multipart chapter wins its current part). `drive` starts a New Game (PoR Difficult, RD Normal), skips events, ends turn 1, leaves bases and preparations, answers the save prompts and copies each save to `<out>/saves/`; `--resume <save>` restarts that save's chapter, and a `<out>/STOP` file stops it with Dolphin left open. `index` writes `saves/INDEX.md` (which chapter each save starts):
+
+  ```bash
+  python -m tools.chapter_sweep.build --game rd --base G:/ROM/rd_work/RFEE01 --work G:/ROM/tellius_test/rdcheck_work_RFEE01 --run G:/ROM/tellius_test/sweep_run_rd
+  python -m tools.chapter_sweep.drive --run G:/ROM/tellius_test/sweep_run_rd --out G:/ROM/tellius_test/sweep_out_rd
+  python -m tools.chapter_sweep.index --run G:/ROM/tellius_test/sweep_run_rd --out G:/ROM/tellius_test/sweep_out_rd
+  ```
+
 ## Architecture
 
 The app has four main layers:
