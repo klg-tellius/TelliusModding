@@ -10,6 +10,7 @@ reported as a failure instead of being counted as decoded.
 from __future__ import annotations
 
 import io
+import re
 import struct
 
 from . import lz10, pak
@@ -208,6 +209,15 @@ def midi_file(cov: FileCoverage, walker: Walker) -> None:
     cov.zero(at, len(data) - at, "MIDI trailing bytes")
 
 
+@handles("build script", lambda name, data: _ext(name) == "bat")
+def build_script(cov: FileCoverage, walker: Walker) -> None:
+    """``Fonts/fontPack.bat`` and ``system/HomeButton/hbmPack.bat`` on the PAL
+    disc: the developers' Windows packing scripts, left on the disc. Plain
+    text; the game never opens them."""
+    cov.data.decode("ascii")
+    cov.mark(0, len(cov.data), DECODED)
+
+
 @handles("home menu text", lambda name, data: _base(name) in ("home.csv", "config.txt")
          and "homebutton" in name.lower())
 def home_menu_text(cov: FileCoverage, walker: Walker) -> None:
@@ -241,6 +251,7 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
     count, table = _u32(data, 4), _u32(data, 8)
     cov.mark(0, 12, DECODED)
     cov.mark(table, 8 * count, DECODED)
+    end, lengths, seen, repeats = 0, {}, set(), 0
     for i in range(count):
         image, palette = struct.unpack_from(">II", data, table + 8 * i)
         height, width, fmt, texels = struct.unpack_from(">HHII", data, image)
@@ -256,10 +267,25 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
                 length = TplImageInfo(i, w, h, fmt, pos, palette, 0, 0, 0, 0, 0.0).data_length
             cov.mark(pos, length, DECODED)
             pos += length
+        end = max(end, pos)
+        lengths[image] = pos - texels
+        repeats += image in seen
+        seen.add(image)
         if palette:
             entries, _unpacked, _pad, _fmt, pal_data = struct.unpack_from(">HBBII", data, palette)
             cov.mark(palette, 12, DECODED)
             cov.mark(pal_data, 2 * entries, DECODED)
+    # window/unitranking.cms: entries 13-15 repeat entry 12's header, and three
+    # more images of that size follow the last texels. Nothing points to them.
+    if repeats and end < len(data):
+        last = max(lengths, key=lambda h: struct.unpack_from(">I", data, h + 8)[0])
+        if lengths[last] and len(data) - end == repeats * lengths[last]:
+            cov.mark(end, len(data) - end, UNREAD, "image data behind repeated image headers (unreachable)")
+            # Their own 0x24-byte headers follow the last referenced one.
+            for k in range(repeats):
+                header = max(lengths) + 0x24 * (k + 1)
+                if header + 0x24 <= len(data) and _u32(data, header + 8) == end + k * lengths[last]:
+                    cov.mark(header, 0x24, UNREAD, "image header no table entry points to")
     cov.fill(PADDING, only_zero=True)
 
 
@@ -267,12 +293,28 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
 
 def _gs_material_texture(cov: FileCoverage, rec: int, i: int) -> None:
     """28-byte material texture record (GRAPHICS_NOTES, materials): +0 bit 0
-    identity texture matrix, bit 5 sampler override; +4 tex_id; +8..+0x1B the
-    translation/scale/rotation floats of the non-identity branch."""
-    cov.bits(rec, 2, known=0x0021, name="texture.flags0")
-    cov.zero(rec + 2, 2, "texture.flags1 (zero on all 7,848 disc textures)")
+    identity texture matrix, bit 5 sampler override, bit 7 keeps the stage's
+    texcoord slot; +3 the stage kind (0-7, the switch at RFEE01 0x8001338C; 5
+    and 6 also flag the material at 0x80012508); +4 tex_id; +8..+0x1B the
+    translation/scale/rotation floats of the non-identity branch. +2 is the
+    texcoord slot the loader writes (0x80012560). Flag bits 0x2/0x4/0x8 and
+    +6 (two bytes 0-3 on Radiant Dawn) are read by no texture setup found in
+    RFEE01 (0x80012F00, 0x800124D0) and are classified as such."""
+    data = cov.data
+    flags0 = struct.unpack_from(">H", data, rec)[0]
+    cov.bits(rec, 2, known=0x00A1, plausible=0, name="texture.flags0")
+    if not flags0 & ~0x00AF & 0xFFFF and flags0 & 0x000E:
+        cov.mark(rec + 1, 1, UNREAD, "texture.flags0 0x2/0x4/0x8 (no reader)")
+    cov.zero(rec + 2, 1, "texture +2 (texcoord slot, set in RAM)")
+    if data[rec + 3] <= 7:
+        cov.mark(rec + 3, 1, DECODED)
+    else:
+        cov.mark(rec + 3, 1, UNDECODED, "texture stage kind > 7")
     cov.mark(rec + 4, 2, DECODED)
-    cov.mark(rec + 6, 2, UNDECODED, "texture +6")
+    if data[rec + 6] | data[rec + 7]:
+        cov.mark(rec + 6, 2, UNREAD, "texture +6 (no reader)")
+    else:
+        cov.mark(rec + 6, 2, PADDING, "texture +6")
     cov.mark(rec + 8, 0x14, DECODED)
 
 
@@ -301,11 +343,18 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
     for i in range(nums[4] if addrs[4] else 0):
         m = B + addrs[4] + 0x20 * i
         cov.mark(m, 0x20, DECODED)  # name, texture count and pointer, color0 (x1.25 at load)
-        cov.zero(m + 4, 1, "material +4 (zero on all 7,200 disc materials)")
-        # setup_gs_texcoord_and_material_color tests bit 0 of the +4 halfword
-        # (big-endian byte +5); the other bits still have no meaning.
-        cov.bits(m + 5, 1, known=0x01, name="material +5 flags")
-        cov.zero(m + 7, 1, "material +7 (zero on all 7,200 disc materials)")
+        # +4 halfword flags (zero on Path of Radiance but bit 0, which
+        # setup_gs_texcoord_and_material_color tests). RFEE01 tests 0xE000
+        # blend mode and 0x0030 z mode (0x800186C8), 0x0008 (0x80018814),
+        # 0x0001/0x0400 (0x80013EA0), 0x0040 (0x800145E0), 0x0080 (0x80013A84),
+        # 0x0200 (0x800094CC), 0x0800 (0x80016944), 0x1000 (0x80013D1C),
+        # 0x4000 (0x80012650), 0x8000 (0x800151EC). 0x0004 is only reachable
+        # through the caller-masked search at 0x80014D68.
+        flags = _u16(data, m + 4)
+        cov.bits(m + 4, 2, known=0xFFFB, name="material flags")
+        if flags & 0x0004 and cov.status[m + 5] == UNDECODED:
+            cov.mark(m + 5, 1, UNREAD, "material flags 0x4 (no direct reader)")
+        cov.zero(m + 7, 1, "material +7 (runtime flags, zero on disc)")
         cov.mark(m + 0x0C, 8, PLAUSIBLE, "material color1/color2")
         cov.zero(m + 0x18, 8, "material +0x18 trailer")
         tex_ptr, tex_count = _u32(body, addrs[4] + 0x20 * i + 0x14), body[addrs[4] + 0x20 * i + 6]
@@ -353,7 +402,9 @@ def gs_file(cov: FileCoverage, walker: Walker) -> None:
 def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
     """``.g``: 16-byte header, 244-byte bones, name pool (GRAPHICS_NOTES,
     skeleton). Flags: the transform-term bits ``0x8``-``0x800`` and ``0x1``
-    are decoded, ``0x2``/``0x4`` are not."""
+    are decoded. ``0x2`` makes the pose copy the curve quaternion and the
+    matrix builder apply the bone's skin matrix (RFEE01 0x8000D1EC,
+    0x8000DFC4, 0x8000ED5C); nothing in RFEE01 tests ``0x4``."""
     from . import skeleton
 
     data = cov.data
@@ -364,7 +415,9 @@ def skeleton_file(cov: FileCoverage, walker: Walker) -> None:
     for i in range(count):
         rec = 0x10 + 0xF4 * i
         cov.mark(rec, 0xF4, DECODED)
-        cov.bits(rec + 0x0C, 4, known=0xFFFFFFFF & ~0x6, name="bone.flags")
+        cov.bits(rec + 0x0C, 4, known=0xFFFFFFFF & ~0x4, name="bone.flags")
+        if data[rec + 0x0F] & 0x04 and cov.status[rec + 0x0F] == UNDECODED:
+            cov.mark(rec + 0x0F, 1, UNREAD, "bone.flags 0x4 (no reader)")
     cov.mark(pool, len(data) - pool, DECODED)
 
 
@@ -480,7 +533,10 @@ def _ga_fe10_footer(cov: FileCoverage, anim, footer: int) -> None:
 # Event codes whose Radiant Dawn reader is identified: 3 and 4 are looked up
 # by the playback loop (0x800081d4, 0x80009ef8 with code 3); 0x1F's parameter
 # is compared with a battle index (0x800e2c38). Other codes keep PoR's
-# numbering by assumption, so they stay plausible.
+# numbering by assumption, so they stay plausible. Codes from 1000 up are
+# sound cues: the event handler 0x800e4b20 looks each one up in
+# sound_data's SND_SFX_MAYA_DATA (0x800f14b4) and plays the match.
+GA_FE10_EVENT_SFX = 1000
 GA_FE10_EVENT_KNOWN = frozenset((3, 4, 0x1F))
 
 
@@ -499,7 +555,7 @@ def _ga_fe10_events(cov: FileCoverage, start: int, end: int) -> None:
         for c in range(n):
             at = key + 4 + 4 * c
             code = _u16(data, at)
-            if code in GA_FE10_EVENT_KNOWN:
+            if code in GA_FE10_EVENT_KNOWN or code >= GA_FE10_EVENT_SFX:
                 cov.mark(at, 4, DECODED)
             else:
                 cov.mark(at, 4, PLAUSIBLE, f"RD event code {code:#x}")
@@ -583,7 +639,10 @@ def _ga_particle_table(cov: FileCoverage, start: int, end: int, fe10: bool = Fal
         # selects the alternate TEV order.
         cov.bits(rec + 6, 2, known=0xFE17 if fe10 else 0xFE07, name="particle draw flags")
         cov.mark(rec + 0x0A, 2, DECODED)  # .gs material index
-        cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
+        if fe10:  # no load of +0x0C in RFEE01's particle code (0x80015000-0x80017400)
+            cov.mark(rec + 0x0C, 2, UNREAD, "particle emitter +0x0C (no reader)")
+        else:
+            cov.mark(rec + 0x0C, 2, UNDECODED, "particle emitter +0x0C")
         # Six signed /64 control slots. Modes 1, 2 and 4 read different
         # subsets; inactive slots contain defaults on the shipped disc.
         # +0E: mode-1 common S/T scale; +10: mode-2 GX point/line width;
@@ -843,16 +902,53 @@ def fe10data_file(cov: FileCoverage, walker: Walker) -> None:
         cov.mark(span.start, span.end - span.start, status[span.status], f"{span.section}.{span.name}")
 
 
-@handles("fe10 sound data",lambda name, data: _base(name) in ("sound_data.cms", "sound_data_en.cms")
+@handles("fe10 sound data",lambda name, data: re.fullmatch(r"sound_data(_[a-z]{2})?\.cms", _base(name)) is not None
          and name.endswith("#"))
 def fe10_sound_data(cov: FileCoverage, walker: Walker) -> None:
+    """Radiant Dawn's cue registry and ``SND_*`` tables (``fe10_sound``):
+    every field is named by ``fe10_sound.CUE_FIELDS`` / ``SND_TABLES`` after
+    its RFEE01 reader. Strings the relocations point at are decoded."""
     from . import fe10_sound
 
-    hsdarc(cov)
-    for cue in fe10_sound.read_sound_data(cov.data):
+    data = cov.data
+    exports = hsdarc(cov)
+    data_size, pointer_count = struct.unpack_from(">II", data, 4)
+    pointers = struct.unpack_from(f">{pointer_count}I", data, HEADER_SIZE + data_size)
+    cues = fe10_sound.read_sound_data(data)
+    exported = set()
+    for cue in cues:
         start = HEADER_SIZE + cue.record_offset
-        cov.mark(start, 8, DECODED, f"{cue.name} name/resource")
-        cov.mark(start + 8, fe10_sound.RECORD_SIZE - 8, UNDECODED, f"{cue.name} parameters")
+        exported.add(start)
+        cov.fields(start, fe10_sound.CUE_FIELDS)
+    tables = fe10_sound.SND_TABLES
+    for name, start, _end in exports:
+        if name.startswith("SND_GROUP_"):
+            cov.mark(start, 8, DECODED)  # export name, BRSAR group label
+        elif name in fe10_sound.SND_COUNTS:
+            cov.mark(start, 4, DECODED)
+        elif name in tables:
+            row_size, layout = tables[name]
+            count = _u32(data, start)
+            cov.mark(start, 4, DECODED)
+            for i in range(count):
+                cov.fields(start + 4 + i * row_size, layout, f"{name} ")
+    # Strings: every relocated pointer names a NUL-terminated label.
+    for at in pointers:
+        target = _u32(data, HEADER_SIZE + at)
+        if not target:
+            continue
+        string = HEADER_SIZE + target
+        end = data.find(b"\0", string)
+        if end > string and cov.status[string] == UNCLASSIFIED:
+            cov.mark(string, end + 1 - string, DECODED)
+    # Two retail records repeat an exported cue's name; no export reaches them.
+    for at in pointers:
+        record = HEADER_SIZE + at
+        if (cov.status[record] == UNCLASSIFIED and record not in exported
+                and all(cov.status[record + k] == UNCLASSIFIED for k in range(fe10_sound.RECORD_SIZE))
+                and fe10_sound.looks_like_cue(data, record)):
+            cov.mark(record, fe10_sound.RECORD_SIZE, UNREAD, "cue record without an export (unreachable)")
+    cov.fill(PADDING, only_zero=True)
 
 
 def _fe10_growth(cov: FileCoverage) -> None:
@@ -890,8 +986,10 @@ def _fe10_effects(cov: FileCoverage) -> None:
 def _fe10_rows(cov: FileCoverage, start: int, count: int, size: int, table: str, layout: dict) -> None:
     """Fixed rows of a Radiant Dawn table. ``layout`` maps a row offset to
     ``(size, kind, name)``: kind ``label`` (a string pointer, null or not),
-    ``bits`` (``name`` is ``(known, unread)`` for :func:`_rd_bits`), or a
-    coverage status. Relocated words are already marked by the container. Each
+    ``bits`` (``name`` is ``(known, unread)`` for :func:`_rd_bits`), ``flags``
+    (a big-endian field; ``name`` is ``(known, plausible)`` for
+    :meth:`FileCoverage.bits`), ``zero`` (a pad or a pointer the loader
+    fills in RAM: decoded only while zero), or a coverage status. Relocated words are already marked by the container. Each
     byte left unplaced in a row stays undecoded, named by its row offset."""
     for i in range(count):
         row = start + i * size
@@ -900,6 +998,10 @@ def _fe10_rows(cov: FileCoverage, start: int, count: int, size: int, table: str,
                 cov.mark(row + off, length, DECODED)
             elif kind == "bits":
                 _rd_bits(cov, row + off, known=name[0], unread=name[1], name=f"{table} +{off:#x}")
+            elif kind == "flags":
+                cov.bits(row + off, length, known=name[0], plausible=name[1], name=f"{table} +{off:#x}")
+            elif kind == "zero":
+                cov.zero(row + off, length, f"{table} {name}")
             elif kind == DECODED:
                 cov.mark(row + off, length, DECODED)
             else:
@@ -932,18 +1034,53 @@ FE10_BATTLE_LAYOUTS = {
     "FE10BFlags": {0: (4, L, "")},
     "FE10BParam": {0: (4, L, "")},
     "FE10BTex": {0: (4, L, ""), 4: (4, L, "")},
-    "FE10BWeapon": {**{o: (4, L, "") for o in range(0, 0x20, 4)}, 0x20: (1, DECODED, "")},
-    # +0x08: 0x02 indoors, 0x08 mirrored, 0x10/0x20/0x40 the run-in; 0x01 and 0x04 have no reader.
+    "FE10BFootEffect": {o: (4, L, "") for o in range(0, 0x18, 4)},  # name, up to five effect IDs
+    "FE10BSFXData": {o: (4, L, "") for o in range(0, 0x14, 4)},  # name, up to four cues
+    "FE10BSkill": {o: (4, L, "") for o in range(0, 0x14, 4)},  # name, SID, up to three effect IDs
+    "FE10BSky": {0: (4, L, ""), 4: (4, L, "")},
+    # +0x04: eight s16 FE10BSFXData rows, one per ground column (0x800BA2C8).
+    "FE10BSFXList": {0: (4, L, ""), 4: (16, DECODED, "")},
+    # +0x04: s32 value in 1/65536, looked up by name (0x800A84A4).
+    "FE10BSetup": {0: (4, L, ""), 4: (4, DECODED, "")},
+    # +0x21: 0x01/0x02/0x04/0x08 tested by the weapon actor (0x800BC590, 0x800BF394,
+    # 0x800C0900, 0x800C0F94); +0x22: u16 scale read at 0x800BFD60.
+    "FE10BWeapon": {**{o: (4, L, "") for o in range(0, 0x20, 4)}, 0x20: (1, DECODED, ""),
+                    0x21: (1, "bits", (0x0F, 0x00)), 0x22: (2, DECODED, "")},
+    # +0x08: 0x01 and 0x08 are tested on the motion row (0x800B2178), +0x0A is read
+    # at 0x800B21DC. The other set bits and +0x0B are read through an object field
+    # shared with the camera-file row, so they stay plausible.
+    "FE10BMotion": {0: (4, L, ""), 4: (4, L, ""), 8: (2, "flags", (0x0009, 0xFFF6)),
+                    10: (1, DECODED, ""), 11: (1, PLAUSIBLE, "+0xb")},
+    # +0x08: camera-file flags, every set bit tested by 0x800A4420 / 0x800A6150
+    # (0xE000 is the target mode copied to the camera); +0x0B: chain id.
+    "FE10BCamFile": {0: (4, L, ""), 4: (4, L, ""), 8: (2, "flags", (0xEFFE, 0x0000)),
+                     10: (1, "zero", "pad"), 11: (1, DECODED, "")},
+    # +0x04: five s16 FE10BCamGroup rows by context (0x800A6D08), +0x0E pad.
+    "FE10BCamEffect": {0: (4, L, ""), 4: (10, DECODED, ""), 0x0E: (2, "zero", "pad")},
+    # +0x08 choice count; +0x0C/+0x10 are filled in RAM with the group's slices of
+    # FE10BCamFileIndex and FE10BCamFileRate (0x800A88F4).
+    "FE10BCamGroup": {0: (4, L, ""), 4: (4, L, ""), 8: (4, DECODED, ""), 0x0C: (8, "zero", "RAM pointers")},
+    # +0x08: sixteen pointers into FE10BCamGroupIndex, written in RAM (0x800A8A84).
+    "FE10BCamList": {0: (4, L, ""), 4: (4, L, ""), 8: (64, "zero", "RAM pointers")},
+    # FE10BCamType is loaded (0x800A8754) and never read.
+    "FE10BCamType": {0: (4, L, ""), 4: (4, UNREAD, "+0x4 (table without a reader)")},
+    # +0x08: map model flags. 0x02 indoors, 0x08 mirrored, 0x10/0x20/0x40 the run-in;
+    # 0x01 and 0x04 have no reader.
     "FE10BMapModel": {0: (4, L, ""), 4: (4, L, ""), 8: (1, "bits", (0x7A, 0x05)),
                       9: (5, DECODED, ""), 0x0E: (10, DECODED, "")},
-    "FE10BMapData": {0: (4, L, ""), 4: (10, DECODED, "")},
-    "FE10BCamFile": {0: (4, L, ""), 4: (4, L, "")},
-    "FE10BCamGroup": {11: (1, DECODED, "")},
+    "FE10BMapData": {0: (4, L, ""), 4: (10, DECODED, ""), 0x0E: (2, "zero", "pad")},
     "FE10BWeaponType": {4: (4, L, "")},
-    # +0x10: bit i tests FE10BFlags row i (18 rows, 0x800A7460); +0x18: the 20 FE10BParam values.
-    "FE10BUnit": {0: (4, L, ""), 4: (4, L, ""), 0x10: (1, "bits", (0x00, 0x00)), 0x11: (1, "bits", (0x03, 0x00)),
+    # +0x08/+0x0C: trail and aura effect IDs. +0x10: bit i tests FE10BFlags row i (18 rows,
+    # 0x800A7460); +0x14: bit i = FE10BWeaponType row i picks a random attack variant
+    # (0x800BEED8 from 0x800B78BC); +0x18: the 20 FE10BParam values; +0x40: per weapon
+    # type a 128-bit FE10BMotion set (0x800A7324); +0x140: six s16 FE10BCamList rows
+    # (0x800A6F34); +0x150 is set in RAM to the unit's FE10BTex rows.
+    "FE10BUnit": {0: (4, L, ""), 4: (4, L, ""), 8: (4, L, ""), 0x0C: (4, L, ""),
+                  0x10: (1, "bits", (0x00, 0x00)), 0x11: (1, "bits", (0x03, 0x00)),
                   0x12: (1, "bits", (0xFF, 0x00)), 0x13: (1, "bits", (0xFF, 0x00)),
-                  0x18: (40, DECODED, ""), 0x14C: (2, DECODED, "")},
+                  0x14: (4, "flags", (0xFFFF, 0)), 0x18: (40, DECODED, ""), 0x40: (256, DECODED, ""),
+                  0x140: (12, DECODED, ""), 0x14C: (2, DECODED, ""), 0x14E: (2, "zero", "pad"),
+                  0x150: (4, "zero", "RAM pointer")},
 }
 
 #: FE10Anim.cms rows (``fe10_anim``): labels, the header's ordinal and model
@@ -1398,13 +1535,19 @@ _POOL_FILES = {"dictionary.bin", "dictionaryf.bin", "conversationroom.bin", "fe1
                "caption_data.bin"}
 
 
-@handles("fe10 tables", lambda name, data: _base(name) in _POOL_FILES)
+def _pool_base(name: str) -> str:
+    """The pool file's name without the PAL language prefix (``d_caption_data.bin``)."""
+    base = _base(name)
+    return base[2:] if re.fullmatch(r"[defis]_caption_data\.bin", base) else base
+
+
+@handles("fe10 tables", lambda name, data: _pool_base(name) in _POOL_FILES)
 def fe10_tables(cov: FileCoverage, walker: Walker) -> None:
     """Radiant Dawn's sorted-pool table files (``pool_file``) and their codecs: the glossary,
     Conversation Room lists, endings, class introductions and movie subtitles."""
     from . import fe10_captions, fe10_conversation_room, fe10_dictionary, fe10_epilogue, fe10_intro
 
-    data, base = cov.data, _base(cov.name)
+    data, base = cov.data, _pool_base(cov.name)
     codecs = {
         "dictionary.bin": (fe10_dictionary.read_dictionary, fe10_dictionary.build_dictionary),
         "dictionaryf.bin": (fe10_dictionary.read_dictionary_flags, fe10_dictionary.build_dictionary_flags),

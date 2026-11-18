@@ -1836,6 +1836,29 @@ def import_animation(
     # word 2 is the replaced animation's: Radiant Dawn's files carry 0x01000000 there, Path of Radiance's 0
     words[2] = template_anim.header.words[2] if template_anim is not None else 0
 
+    fe10 = template_anim is not None and template_anim.footer is not None \
+        and template_anim.footer.compact_raw is not None
+    if fe10:
+        # Radiant Dawn: keep the replaced file's footer (events, material and bone-visibility tracks,
+        # particles); write_animation moves its file offsets to the new keyframe end.
+        ga = animation.GaAnimation(
+            header=animation.GaHeader(tuple(words)), groups=groups, curves=curves, footer=template_anim.footer,
+            body_trailing=template_anim.body_trailing, fe10_region_start=template_anim.fe10_region_start)
+        if (groups == template_anim.groups and curves == template_anim.curves
+                and words[4:7] == list(template_anim.header.words[4:7]) and "fe10_events" not in extras):
+            return template, warnings
+        out = animation.write_animation(ga)
+        if "fe10_events" in extras:
+            keys = [animation.Fe10EventKey(int(f), tuple((int(c), int(p)) for c, p in pairs))
+                    for f, pairs in extras["fe10_events"]]
+            if keys != animation.fe10_events(out):
+                out = animation.fe10_set_footer_block(
+                    out, animation.FE10_EVENT_SLOT, animation.write_fe10_event_block(keys) if keys else None)
+        elif template_anim.header.end_frame != last_frame:
+            warnings.append("The replaced animation's footer (events, material tracks) is kept with its "
+                            f"timing ({template_anim.header.end_frame} frames, now {last_frame}).")
+        return (template if out == template else out), warnings
+
     footer = None
     if template_anim is not None and template_anim.footer is not None:
         footer = animation.GaFooter(

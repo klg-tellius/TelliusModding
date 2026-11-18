@@ -167,14 +167,20 @@ BATTLE_SUFFIXES = {
 HIDDEN_SCALE = 0.01
 
 
-def combat_codes(events: list[animation.EventKey]) -> set[int]:
-    return {c for key in events for c in key.codes if c in COMBAT_CODES}
+def combat_codes(events: list) -> set[int]:
+    """The combat codes of ``events`` (``EventKey`` codes, or Radiant Dawn's ``(code, parameter)``)."""
+    codes = (c[0] if isinstance(c, tuple) else c for key in events for c in key.codes)
+    return {c for c in codes if c in COMBAT_CODES}
+
+
+def _events(ga: bytes) -> list:
+    return animation.fe10_events(ga) if animation.is_fe10_animation(ga) else animation.read_animation_bytes(ga).events
 
 
 def event_errors(name: str, new_ga: bytes, vanilla_ga: bytes) -> list[str]:
     """The combat codes ``vanilla_ga`` carries that ``new_ga`` lacks."""
-    wanted = combat_codes(animation.read_animation_bytes(vanilla_ga).events)
-    have = combat_codes(animation.read_animation_bytes(new_ga).events)
+    wanted = combat_codes(_events(vanilla_ga))
+    have = combat_codes(_events(new_ga))
     missing = sorted(wanted - have)
     if not missing:
         return []
@@ -182,10 +188,19 @@ def event_errors(name: str, new_ga: bytes, vanilla_ga: bytes) -> list[str]:
     return [f"{name} lacks event code {listed}: the fight would wait for it forever."]
 
 
-def replace_events(ga: bytes, events: list[animation.EventKey]) -> bytes:
-    """``ga`` with its event track (footer slot 0) replaced."""
-    anim = animation.read_animation_bytes(ga)
+def replace_events(ga: bytes, events: list) -> bytes:
+    """``ga`` with its event track replaced: Path of Radiance's footer slot 0 (``EventKey``), or
+    Radiant Dawn's slot 5 (``Fe10EventKey``, ``(code, parameter)`` pairs; a bare code gets parameter
+    0)."""
     events = sorted(events, key=lambda k: k.frame)
+    if animation.is_fe10_animation(ga):
+        keys = [animation.Fe10EventKey(k.frame, tuple(tuple(c) if isinstance(c, (tuple, list)) else (c, 0)
+                                                       for c in k.codes)) for k in events]
+        if keys == animation.fe10_events(ga):
+            return ga
+        block = animation.write_fe10_event_block(keys) if keys else None
+        return animation.fe10_set_footer_block(ga, animation.FE10_EVENT_SLOT, block)
+    anim = animation.read_animation_bytes(ga)
     footer = anim.footer
     if events:
         if footer is None:

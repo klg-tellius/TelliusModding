@@ -107,6 +107,8 @@ Radiant Dawn's sound effects are `SFX_*` cues in `Sound/sound_data_en.cms`. Each
 - **Add sound effect…** asks for a cue name (`SFX_...`) and a WAV. The new effect gets a wave bank of its own holding one sound, `SE_<NAME>`. It copies the settings of the selected sound effect: its player, priorities, 3D settings and load group. With nothing selected it copies the menu select sound (`SFX_SYS_SELECT1`, always loaded). Pick a template that is loaded where the effect will play. The audio is mixed down to the template's channel count.
 - **Delete** removes an effect the project added: its cue, and its sound when no other cue plays it. The game's own effects can only be replaced.
 
+**Assets › Sound Tables** edits how and where the cues play: each cue's volume, pitch, pans, sends, priority, voice limit and random variation (**Cue parameters**), the ambient and positioned sounds of each map (**Environment sounds**, `SND_ENV_DATA`), each map's mixer (**Map mixer**, `SND_MAP_DATA`), and the sound each animation event code from 1000 up plays (**Animation sounds**, `SND_SFX_MAYA_DATA`; the rows stay sorted by code, since the game searches them in order).
+
 ## Things to try next
 
 1. **Replace a menu sound.** Select `SFX_SYS_SELECT1`, **Replace audio...** with a short click, and listen in the title menu after a build.

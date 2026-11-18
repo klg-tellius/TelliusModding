@@ -96,6 +96,26 @@ class AnimationCoverageTest(unittest.TestCase):
         with self.assertRaises(animation.AnimationError):
             animation.read_fe10_event_block(block[:32])
 
+    def test_radiant_dawn_sound_data(self):
+        """Cue fields, a SND_* table, the strings and an unexported cue record."""
+        import struct
+
+        from fe_modding.formats import coverage_handlers
+        from fe_modding.formats.common import HEADER_SIZE
+        from tests.test_fe10data import _container
+
+        cue = struct.pack(">II", 0x60, 0x68) + bytes(range(1, 9)) + b"\0" + bytes(range(9, 23)) + b"\0" + bytes(4)
+        table = struct.pack(">III", 1, 1000, 0)  # SND_SFX_MAYA_DATA: code 1000 -> cue at 0
+        body = cue + table + cue + bytes(0x60 - 0x24 - 12 - 0x24) + b"SFX_A\0\0\0" + b"SE_A\0\0\0\0"
+        pointers = [0, 4, 0x28, 0x30, 0x34]
+        data = _container(body, pointers, [("SFX_A", 0), ("SND_SFX_MAYA_DATA", 0x24)])
+        cov = FileCoverage(data, "fe10 sound data", "sound_data.cms#")
+        coverage_handlers.fe10_sound_data(cov, None)
+        record = HEADER_SIZE + 0x30
+        self.assertEqual(set(cov.status[record:record + 0x24]), {UNREAD})
+        rest = cov.status[:record] + cov.status[record + 0x24:]
+        self.assertFalse({UNCLASSIFIED, UNDECODED, PLAUSIBLE, UNREAD} & set(rest[0x18:]))
+
     def test_radiant_dawn_slots_are_decoded(self):
         """Slot 5 events, slot 0/6-12 key tables and slot 13 particles."""
         import struct
@@ -141,7 +161,8 @@ class AnimationCoverageTest(unittest.TestCase):
         self.assertEqual(totals.failures, [])
         self.assertEqual(totals.counts[UNCLASSIFIED], 0)
         # Only the emitter's +0x0C word has no identified reader.
-        self.assertEqual(totals.counts[UNDECODED], 2, totals.fields)
+        self.assertEqual(totals.counts[UNDECODED], 0, totals.fields)
+        self.assertEqual(totals.counts[UNREAD], 2, totals.fields)
         self.assertEqual({name for (status, name) in totals.fields if status == PLAUSIBLE},
                          {"particle curve last key frame", "particle stage local index",
                           "particle emitter local index", "particle emitter first global stage"})

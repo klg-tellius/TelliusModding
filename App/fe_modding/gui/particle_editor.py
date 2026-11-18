@@ -1,4 +1,8 @@
-"""Inspector for the editable particle fields of one effect animation."""
+"""Inspector for the editable particle fields of one effect animation.
+
+Both games: the emitters (Path of Radiance footer slot 8, Radiant Dawn slot 13), the event track
+and the per-material key tables (:func:`formats.particle_editor.track_slots`). A Radiant Dawn event
+is a list of ``code:parameter`` pairs."""
 
 from __future__ import annotations
 
@@ -21,8 +25,6 @@ FIELD_LABELS = {
     "y": "Initial Y", "z": "Initial Z", "channel": "Channel",
     "scale_shift": "Value divisor shift", "frame": "Local frame", "value": "Raw value",
 }
-TRACK_NAMES = {1: "Material alpha", 2: "Material colour (RGB565)",
-               3: "Texture U scroll", 4: "Texture V scroll"}
 
 
 class ParticleEditor(tk.Toplevel):
@@ -121,14 +123,13 @@ class ParticleEditor(tk.Toplevel):
 
     def _populate(self, keep: str | None = None) -> None:
         self._tree.delete(*self._tree.get_children())
-        events = animation.read_animation_bytes(self._data).events
+        events = edits.read_events(self._data)
         self._tree.insert("", "end", iid="events", text="Timing events", values=(f"{len(events)} events",))
         for index, event in enumerate(events):
             self._tree.insert("events", "end", iid=f"event:{index}", text=f"Frame {event.frame}",
-                              values=(", ".join(str(code) for code in event.codes),))
-        anim = animation.read_animation_bytes(self._data)
-        for slot, title in TRACK_NAMES.items():
-            block = anim.footer.blocks[slot] if anim.footer else None
+                              values=(self._codes_text(event.codes),))
+        for slot, (title, _alpha) in edits.track_slots(self._data).items():
+            block = animation.footer_block(self._data, slot)
             tracks = animation.read_material_tracks(block) if block else {}
             if block:
                 self._material_count = max(self._material_count, struct.unpack_from(">H", block)[0])
@@ -325,11 +326,15 @@ class ParticleEditor(tk.Toplevel):
             self._action("Add event", self._add_event)
             return
         index = int(iid.split(":")[1])
-        event = animation.read_animation_bytes(self._data).events[index]
+        event = edits.read_events(self._data)[index]
         self._heading.config(text=f"Event {index}")
-        self._help.config(text="Enter event codes as comma-separated decimal or hex numbers. Their meanings depend on the game action.")
+        self._help.config(text=(
+            "Enter code:parameter pairs separated by commas (decimal or hex). Codes from 1000 up play the sound "
+            "Sound Tables › Animation sounds gives them; 3 and 4 mark a loop's start and end."
+            if self._fe10 else
+            "Enter event codes as comma-separated decimal or hex numbers. Their meanings depend on the game action."))
         for row, (label, value) in enumerate((("Frame", str(event.frame)),
-                                               ("Codes", ", ".join(str(code) for code in event.codes)))):
+                                               ("Codes", self._codes_text(event.codes)))):
             key = "frame" if row == 0 else "codes"
             ttk.Label(self._properties, text=label).grid(row=row, column=0, sticky="w", pady=3)
             self._fields[key] = tk.StringVar(value=value)
@@ -338,13 +343,27 @@ class ParticleEditor(tk.Toplevel):
         self._properties.columnconfigure(1, weight=1)
         self._action("Remove event", lambda: self._remove(
             lambda: edits.replace_events(self._data,
-                                         [item for n, item in enumerate(animation.read_animation_bytes(self._data).events)
+                                         [item for n, item in enumerate(edits.read_events(self._data))
                                           if n != index]), "events"))
 
+    @property
+    def _fe10(self) -> bool:
+        return animation.is_fe10_animation(self._data)
+
+    def _codes_text(self, codes) -> str:
+        return ", ".join(f"{c[0]}:{c[1]}" if isinstance(c, tuple) else str(c) for c in codes)
+
+    def _event(self, frame: int, text: str):
+        if not self._fe10:
+            return animation.EventKey(frame, self._parse_codes(text))
+        pairs = []
+        for piece in filter(None, (p.strip() for p in text.split(","))):
+            code, _colon, parameter = piece.partition(":")
+            pairs.append((int(code.strip(), 0), int(parameter.strip() or "0", 0)))
+        return animation.Fe10EventKey(frame, tuple(pairs))
+
     def _tracks(self, slot: int) -> dict[int, animation.MaterialTrack]:
-        anim = animation.read_animation_bytes(self._data)
-        block = anim.footer.blocks[slot] if anim.footer else None
-        return animation.read_material_tracks(block) if block else {}
+        return edits.read_tracks(self._data, slot)
 
     def _show_material_fields(self, iid: str) -> None:
         for child in self._actions.winfo_children():
@@ -352,11 +371,11 @@ class ParticleEditor(tk.Toplevel):
         self._draw_curve(None, None)
         parts = iid.split(":")
         slot = int(parts[1])
-        title = TRACK_NAMES[slot]
+        title, alpha = edits.track_slots(self._data)[slot]
         self._heading.config(text=title)
         if len(parts) == 2:
             self._help.config(text="Tracks are indexed by .gs material. Values are stored as signed 16-bit integers."
-                                   + (" Alpha uses 0–255." if slot == 1 else ""))
+                                   + (" Alpha uses 0–255." if alpha else ""))
             self._action("Add track", lambda: self._add_material_track(slot))
             return
         index = int(parts[2])
@@ -390,7 +409,7 @@ class ParticleEditor(tk.Toplevel):
             return
         if index in self._tracks(slot):
             raise edits.ParticleEditError("That material already has a track.")
-        initial = 255 if slot == 1 else 0
+        initial = 255 if edits.track_slots(self._data)[slot][1] else 0
         self._change(self._replace_track(slot, index, animation.MaterialTrack(0, ((0, initial),))),
                      f"material:{slot}:{index}")
 
@@ -410,12 +429,13 @@ class ParticleEditor(tk.Toplevel):
         frame = simpledialog.askinteger("Add event", "Frame:", parent=self, minvalue=0, maxvalue=65535)
         if frame is None:
             return
-        codes_text = simpledialog.askstring("Add event", "Codes (comma-separated decimal or hex):",
-                                             parent=self)
+        codes_text = simpledialog.askstring(
+            "Add event", "Code:parameter pairs (comma-separated):" if self._fe10 else
+            "Codes (comma-separated decimal or hex):", parent=self)
         if codes_text is None:
             return
-        events = animation.read_animation_bytes(self._data).events
-        events.append(animation.EventKey(frame, self._parse_codes(codes_text)))
+        events = edits.read_events(self._data)
+        events.append(self._event(frame, codes_text))
         events.sort(key=lambda item: item.frame)
         self._change(edits.replace_events(self._data, events), "events")
 
@@ -498,8 +518,10 @@ class ParticleEditor(tk.Toplevel):
                                       initialvalue="|root|")
         if name is None:
             return
-        count = len(animation.read_particle_table_layout(self._data).emitters)
-        self._change(edits.add_emitter(self._data, name.strip()), f"e:{count}")
+        layout = animation.read_particle_table_layout(self._data)
+        if layout is None:
+            raise edits.ParticleEditError("This animation has no particle table to add an emitter to.")
+        self._change(edits.add_emitter(self._data, name.strip()), f"e:{len(layout.emitters)}")
 
     def _add_key(self, eidx: int, cidx: int, keep: str) -> None:
         frame = simpledialog.askinteger("Add key", "Local frame:", parent=self,
@@ -521,9 +543,8 @@ class ParticleEditor(tk.Toplevel):
         if iid.startswith("event:"):
             try:
                 index = int(iid.split(":")[1])
-                events = animation.read_animation_bytes(self._data).events
-                events[index] = animation.EventKey(int(self._fields["frame"].get().strip(), 0),
-                                                    self._parse_codes(self._fields["codes"].get()))
+                events = edits.read_events(self._data)
+                events[index] = self._event(int(self._fields["frame"].get().strip(), 0), self._fields["codes"].get())
                 events.sort(key=lambda item: item.frame)
                 self._change(edits.replace_events(self._data, events), "events")
             except (ValueError, animation.AnimationError, struct.error) as exc:

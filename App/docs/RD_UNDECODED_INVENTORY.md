@@ -294,6 +294,7 @@ For someone at the controller: `tools/session_playtest/rd_check_scenarios.py` (`
 - The map menu's Guide is the tutorial browser; the glossary is a base screen (Info), so checking it needs a file that reaches a base.
 - **Glossary (checked, EU):** reached by jumping into 1-4 with `gf_complete` set at the end of its opening; the chapter ends and the game goes on to the base before 1-5, where Library holds Records, Glossary and Character Tree. The six people 1-4's scripts unlock are listed. With `dictionary.bin` edited, the Daniel/Jorge relation showed the new label ("Siblings") in the new colour (0 = green, 2 = red), and Daniel's portrait moved 80 px left; the line image stayed, its position being a separate field. Jumping straight into a chapter with the resume byte set to 2 (preparations) left a black screen in 1-5.
 - **Endings: not reached by a jump.** Jumping into `C0407e` with an instant win plays the ending movie and slideshow, then Dolphin stops on an invalid read of 0xEC (RFEP01 PC 0x8026D384 = RFEE01 0x80287804). That is `FUN_80287358`, which `register_game_clear` (0x800434A0) calls for the clear record's character: it sorts the units of the player forces by the u16 at unit +0x384 (ties to the higher character number) and returns the last one's PersonData, with no check for an empty list. A jump starts with no army, so the list is empty. A real playthrough always has units; checking the epilogue needs a file that reaches the Endgame with its army.
+  With that call replaced by `li r3,0` in a test build (the caller then uses character 0), the ending reaches `EpilogueProc` and stops on a read from 0 in the message reader (RFEP01 0x80256040 = RFEE01 0x8026FF20, `FUN_8026FE48`), with the retail `FE10Epilogue.bin` as well as the edited one. Jumping into 4-E-4 instead, or deploying `bmap0407e_mikata_c` before the auto-win, did not give the game an army. The endings stay unchecked until a save with the Endgame's army is available.
 - **Still open in game:** endings, Wii banner, `mapshader` passes and the prop flag bits (MAP-04).
 
 
@@ -346,3 +347,40 @@ build where header word 2's three low bytes were still counted open (50 KB); the
 What is left on RFEE01, by size: the HOME Menu sound banks (424 KB), `sound_data` cue parameters and unplaced
 `SND_*` bytes (501 KB), FE10BUnit +0x40..+0x14B (64 KB), `.gs` bone flag bits 0x4/0x6 (60 KB), `.gs` texture +6
 (34 KB), `client.bin` GBA program (18 KB), one `.tpl` (17 KB) and smaller fields.
+
+## 2026-11-18 (2): everything else but the HOME Menu and `client.bin`
+
+Julien's scope for 1.0 leaves out the Wii HOME Menu (`system/HomeButton`) and the GBA `client.bin`. The rest was
+traced in RFEE01's `main.dol`:
+
+- **`sound_data*.cms`**: every cue field (`fe10_sound.CUE_FIELDS`: kind, volume, pitch and divisor, pans, filters,
+  sends, priority, voice limit, random pitch/volume, start delay, distance settings, Sound Room index; sound object
+  update `0x80258c70`) and every `SND_*` table (`SND_TABLES`: environment emitters `0x8013a8d8`, map mixer
+  `0x8013ac48`, `.ga` SFX events `0x800f14b4`, map/battle music `0x80068398`/`0x800689d4`, chapter groups
+  `0x800680d0`). Two cue records per file repeat an exported cue's name and no export reaches them (no-reader).
+- **`.ga` events**: codes from 1000 up are SFX cues looked up in `SND_SFX_MAYA_DATA` by the event handler
+  `0x800e4b20`.
+- **FE10Battle.cms**: FE10BUnit +0x40 is a 128-bit FE10BMotion set per weapon type (`0x800a7324`), +0x140 six
+  FE10BCamList rows (`0x800a6f34`), +0x14 the weapon types that pick a random attack variant (`0x800beed8`),
+  +0x08/+0x0C trail and aura effect IDs. FE10BWeapon +0x21/+0x22, FE10BCamFile +0x08 (`0x800a4420`),
+  FE10BCamEffect +0x04 (`0x800a6d08`), FE10BSetup +0x04 (`0x800a84a4`), FE10BSFXList +0x04 are named; the
+  pointers the loader writes in RAM (FE10BCamList +0x08, FE10BCamGroup +0x0C/+0x10, FE10BUnit +0x150) are zero on
+  disc; FE10BCamType is loaded and never read. FE10BMotion +0x08 bits other than 0x01/0x08 stay plausible.
+- **Skeletons**: bone flag 0x2 selects the curve quaternion and the skin matrix (`0x8000d1ec`, `0x8000ed5c`);
+  nothing tests 0x4.
+- **`.gs`**: material +4 flags (blend and z modes `0x800186c8`, the other bits cited in the rule; 0x4 only through a
+  caller mask), texture +3 stage kind (`0x8001338c`), +2 texcoord slot written in RAM; texture +6 and flag bits
+  0x2/0x4/0x8 have no reader in the texture setup.
+- **Particles**: emitter +0x0C has no load in the particle code.
+- **`window/unitranking.cms`**: table entries 13-15 repeat entry 12's header; the three images meant for them
+  (headers and texels) are unreachable.
+
+Full US run (movies and the two `.brsar` left out as before; HOME Menu and `client.bin` out of scope): leaf bytes
+undecoded or unclassified **12.4 KB of 2.07 GB (0.0006 %)**, down from 1.21 MB; no handler failures (the run counted
+the 60 KB of bone flag 0x4 as undecoded; the committed rule classifies it). What is left: FE10Effect flags and
+parameters (5 KB), FE10Anim data/header/motion flags (2.9 KB), `.ga` curve +8 (2.4 KB, 14 files), FE10PersonGrowth
+(1 KB), CONV_INFO_DATA +0x2C (404 B), `map.bin` flag bits (300 B), two `fe10 tables` fields (308 B).
+
+European and Japanese discs, same rules (the PAL disc needed `sound_data_<lang>.cms`, `<lang>_caption_data.bin` and
+its two leftover `.bat` packing scripts recognized): RFEP01 **15.2 KB of 2.54 GB (0.0006 %)**, RFEJ01 **11.8 KB of
+1.85 GB (0.0006 %)**, no handler failures. The open fields are the same as on RFEE01.

@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in the app is broken or gives a wrong result
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: The release you run (for example v0.2.0), or the commit when running from source.
+    validations:
+      required: true
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game and region
+      options:
+        - Path of Radiance (US)
+        - Path of Radiance (PAL)
+        - Path of Radiance (JP)
+        - Radiant Dawn (US)
+        - Radiant Dawn (PAL)
+        - Radiant Dawn (JP)
+        - Not game-specific
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Chapters > Chapter 5
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened, and what did you expect?
+      description: Paste any error text. Do not attach game files or disc images.
+    validations:
+      required: true

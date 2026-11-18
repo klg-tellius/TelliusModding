@@ -1,0 +1,34 @@
+name: Feature request
+description: Ask for a new feature or an improvement to the editor
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure yet or want to talk it through first? Start a thread in
+        [Discussions](https://github.com/klg-tellius/TelliusModding/discussions) instead.
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Path of Radiance
+        - Radiant Dawn
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What do you want to do?
+      description: Describe the mod or task this would make possible.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could the app help?
+      description: Where in the app you would expect it, or what it should look like.
+    validations:
+      required: false
