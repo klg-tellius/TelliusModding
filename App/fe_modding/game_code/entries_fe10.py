@@ -112,6 +112,35 @@ CATALOG.add(Patch(
     "Makes the ordinary critical-hit roll use a zero rate. Forced combat outcomes such as triangle attacks remain separate.",
     {RFEE01: (Edit(0x8002FFB0, _raw("A87F0458"), _word(ppc.li(3, 0))),)}))
 
+# build_combat_unit_derived_stats (0x8002F220) adds FUN_8010EF98's result to the critical rate of a
+# unit with SID_CRITRISE (0x8002F838). That getter, called from nowhere else, reads GameData +0x60,
+# one s16 per difficulty (the Game Data "Critical bonus with SID_CRITRISE" row). The hook rewrites
+# its tail: the four difficulty indices are stored already doubled, which frees the shift, and the
+# freed word multiplies the loaded bonus.
+_CLASS_CRIT_TAIL = 0x8010EFF4
+_class_crit_code = b"".join(_word(w) for w in (
+    ppc.li(0, 2), ppc.b(0x8010EFF8, 0x8010F010), ppc.li(0, 4), ppc.b(0x8010F000, 0x8010F010),
+    ppc.li(0, 6), ppc.b(0x8010F008, 0x8010F010), ppc.li(0, 0),
+    ppc.add(3, 31, 0), ppc.lwz(31, 0x0C, 1), ppc.lwz(0, 0x14, 1), ppc.lha(3, 0x60, 3), ppc.MTLR_R0,
+    ppc.mulli(3, 3, 1), ppc.addi(1, 1, 0x10), ppc.BLR))
+_CLASS_CRIT_MULLI = _CLASS_CRIT_TAIL + _class_crit_code.index(_word(ppc.mulli(3, 3, 1)))
+_class_crit_hook = CATALOG.add(Patch(
+    "rd.combat.class_crit.hook", G_RD_COMBAT, "Class critical bonus hook",
+    "Internal rewrite of the SID_CRITRISE bonus getter used by the class critical bonus setting.",
+    {RFEE01: (Edit(_CLASS_CRIT_TAIL,
+                   _raw("38000001480000183800000248000010380000034800000838000000"
+                        "5400083C7C7F021483E1000C80010014A86300607C0803A638210010"
+                        "4E800020"),
+                   _class_crit_code, wild=((_CLASS_CRIT_MULLI - _CLASS_CRIT_TAIL + 2, 2),)),)},
+    internal=True))
+_tunable(
+    "rd.combat.class_crit_multiplier", G_RD_COMBAT, "Class critical bonus multiplier",
+    "Units with SID_CRITRISE (Swordmasters, Snipers, Berserkers and their kin) add the difficulty's class "
+    "critical bonus times this (vanilla x1, 0 removes it, x2 doubles it). The bonus itself is the Game "
+    "Data row 'Critical bonus with SID_CRITRISE'.",
+    1, 0, 9, (Field(_CLASS_CRIT_MULLI, "imm16s", b"\x1c\x63"),), "x",
+    (_class_crit_hook,))
+
 # Every combat-unit constructor calls 0x8002F14C to copy the current terrain
 # record's Defence, Resistance and Avoid bytes to +0x464..+0x466.  Parity uses
 # the adjacent 0x8002F20C helper to clear exactly those three fields.  A tail
@@ -609,6 +638,18 @@ CATALOG.add(Patch(
         Edit(_RD_CROWN_ONLY_STUB, bytes(len(_crown_only_code)), _crown_only_code),
     )}))
 
+# Radiant Dawn's counterpart of Path of Radiance's Ike-and-thieves rule is the SID_EVENT_CC skill: the
+# UnitClassChange / InstantUnitClassChange script natives promote only units that have it, and the
+# shared item predicate FUN_8011FF28 refuses them (its second skill test, at 0x8011FF68). The patch
+# makes that test fail; the laguz test before it, the class's promotion link and the level stay.
+CATALOG.add(Patch(
+    "rd.promotion.story_units_use_items", G_RD_PROMOTION,
+    "Story-promoted units can use promotion items",
+    "Units with SID_EVENT_CC (who normally promote only through the story) can use a Master Seal or "
+    "Master Crown. A later scripted class change still promotes them again if their new class has a "
+    "promotion.",
+    {RFEE01: (Edit(0x8011FF68, _word(ppc.bl(0x8011FF68, 0x8011B77C)), _word(ppc.li(3, 0))),)}))
+
 
 # These routines normally reduce a skill-derived value to a probability.  The
 # paired edits replace that calculation with the constant success result used
@@ -769,6 +810,49 @@ for _index, (_army, _default) in enumerate(zip(_RD_PHASE_ARMIES, _RD_PHASE_DEFAU
         default=_default, minimum=0, maximum=2,
         versions={RFEE01: (Field(_RD_PHASE_ROUTINE + 8 * _index + 3, "u8"),)},
         requires=(_RD_PHASE_HOOK,), choices=_RD_PHASE_CHOICES))
+
+
+# -- Animation -------------------------------------------------------------------------------------
+G_RD_ANIM = "Animation"
+
+# FUN_8002C86C picks the battle's presentation: battle-flag bit 31 set is a map battle, clear the
+# animated scene (FUN_80044E88). The animated path needs a player unit on one side: after the
+# attacker's force byte (+0xF4 -> +8) is non-zero, `bne` at 0x8002CB68 sends a non-player defender
+# to the map battle. Then FUN_801220A0 gives the unit's animation setting (0 animated; 1 and 2 are
+# map battles here) and turns 0 into 1 for any non-player unit (`li r3,1` at 0x801221CC); its other
+# callers only test for 2.
+CATALOG.add(Patch(
+    "rd.anim.ally_npc_battles", G_RD_ANIM, "Animate ally and NPC battles",
+    "Battles between non-player units (allied, other and enemy armies) play the animated scene when "
+    "the Animation option is On, instead of the map battle.",
+    {RFEE01: (Edit(0x8002CB68, _raw("408200E8"), _word(ppc.NOP)),
+              Edit(0x801221CC, _raw("38600001"), _word(ppc.NOP)))}))
+
+# Every actor animation timer runs through FUN_800081D4, which multiplies the actor's frame rate
+# (+0x5C) by a global speed float (0x804CA040, 1.0, read and written by the game through
+# 0x80006CF8 / 0x80006D00) and adds it to the actor's time. The hook replaces that one global load
+# with a call that also multiplies it by a float in the cave, so the game's own speed changes
+# keep working on top of it.
+_RD_ANIM_STUB = CAVE_ADDRESS + 0xC00
+_RD_ANIM_SCALE = CAVE_ADDRESS + 0xC20
+_rd_anim_code = b"".join(_word(w) for w in (
+    0xC02D8000,                                   # lfs f1, speed(r13)
+    ppc.lis(12, _RD_ANIM_SCALE >> 16), ppc.lfs(0, _RD_ANIM_SCALE & 0xFFFF, 12),
+    ppc.fmuls(1, 1, 0), ppc.BLR))
+assert in_cave(_RD_ANIM_STUB, _RD_ANIM_SCALE + 4 - _RD_ANIM_STUB)
+assert len(_rd_anim_code) <= _RD_ANIM_SCALE - _RD_ANIM_STUB
+_rd_anim_hook = CATALOG.add(Patch(
+    "rd.anim.speed.hook", G_RD_ANIM, "Animation speed hook", "Scales the actor animation timer.",
+    {RFEE01: (Edit(0x8000820C, _raw("C02D8000"), _word(ppc.bl(0x8000820C, _RD_ANIM_STUB))),
+              Edit(_RD_ANIM_STUB, bytes(len(_rd_anim_code)), _rd_anim_code),
+              Edit(_RD_ANIM_SCALE, bytes(4), _word(0x3F800000), wild=((0, 4),)))},
+    internal=True))
+CATALOG.add(Tunable(
+    "rd.anim.speed", G_RD_ANIM, "Animation speed",
+    "Multiplies the speed of every 3D actor animation (battle scenes, units on the map, event models). "
+    "Logic keyed to animation events keeps its timing; scenes timed by fixed delays may look rushed above 2x.",
+    default=1.0, minimum=0.25, maximum=8.0, unit="x",
+    versions={RFEE01: (Field(_RD_ANIM_SCALE, "f32"),)}, requires=(_rd_anim_hook,)))
 
 
 # European and Japanese sites, moved from the ones above (rd_regions)

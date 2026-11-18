@@ -156,7 +156,24 @@ source_path: "meta/radiant-dawn.md"
 
   `T  T` is the map's tile records, as on Path of Radiance: 128 records of a tile, a type, a subtype and four values, then the number of live records. A file saved on 4-7e holds eight range-overlay records (type 6) in a ring around one tile. <span class="confidence confidence--confirmed">files</span>
 
-  The system record, shared by every file, holds eight bit sets, eight 16-bit values and 30 records of 24 bytes, ending at +0x3B4. What each part means is not traced. <span class="confidence confidence--confirmed">engine</span>
+  The system record, shared by every file, is the RAM block at `0x80427820` as `0x80245888` writes it, ending at +0x3B4. Seven of its bit sets are kept in big-endian 32-bit words, so the game's bit *n* is bit *n* mod 32 of word *n* ÷ 32. The conversation bits are a byte array instead, lowest bit first. <span class="confidence confidence--confirmed">engine + files</span>
+
+<div class="table-wrap">
+<table><thead><tr><th>Offset</th><th>Content</th></tr></thead><tbody>
+    <tr><td>+0x1C</td><td>Clears and unlocks, 64 bits: bits 0–3 the game cleared on Easy, Normal, Hard and Maniac (set with each clear record; any of them adds choices to the Options menu), bit 5 the full opening movie (<code>SetAvailableGrandOpening</code>). Bit 4 is set on cleared files, but nothing found reads it. Bit 49 makes a chapter load a debug deployment, <code>zmap/debug/dispos_c.bin</code>; no retail code sets it.</td></tr>
+    <tr><td>+0x24</td><td>Characters met, 128 bits, one per character number (PersonData +0x1C). A bit is set whenever that character's unit is created.</td></tr>
+    <tr><td>+0x34</td><td>Conversations seen, 768 bits. At start-up the game registers flag names in order: those of <code>CONV_INFO_DATA</code> in <a href="../../formats/rd-conversation-data/">FE10Conversation.cms</a>, then three per FE8 yell record. <code>TstConversationFlag</code> reads a bit by name. The names themselves are not saved.</td></tr>
+    <tr><td>+0x94</td><td>Sound Room tracks, 128 bits, set when a track first plays. One code path sets all 128 at once.</td></tr>
+    <tr><td>+0xA4, +0xB4, +0xBC, +0xC4</td><td>The glossary's unlock bits: people (128), relations, affiliations and terms (64 each); see <a href="../../formats/rd-table-files/">dictionaryF.bin</a>.</td></tr>
+    <tr><td>+0xCC</td><td>Eight u16, where the glossary was left: tab, people cursor, term cursor, two chart scroll pairs and the chart zoom, 0xFFFF when unset. The game stores its first scroll pair twice and never the second.</td></tr>
+    <tr><td>+0xDC</td><td>30 clear records of 24 bytes, one per finished playthrough, the oldest dropped when all are used: a 64-bit game ID (the one the file headers carry), the difficulty (0 Normal, 1 Hard, 2 Maniac, 3 Easy; −1 an empty slot), the playthrough byte, a character number, the total turns and a 64-bit total of the chapter times</td></tr>
+    <tr><td>+0x3AC</td><td>Language: the index of the <code>Mess/</code> prefix (<code>GetLanguage</code>); 1 on US files</td></tr>
+    <tr><td>+0x3AD</td><td>The file the chapter checkpoint (<code>_intr</code>) saves to, 0xFF on a new record</td></tr>
+    <tr><td>+0x3AE, +0x3B0</td><td>Two bytes and a word with no reader found</td></tr>
+  </tbody></table>
+</div>
+
+  The Saves page's System data tab names these parts, numbers the bits as the game does and lists the clear records. <span class="confidence confidence--confirmed">engine + files</span>
 
 ## Map and battle textures
 

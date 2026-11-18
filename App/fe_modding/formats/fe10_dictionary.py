@@ -53,9 +53,9 @@ FLAG_PREFIXES = {
     "DF_用語": (3, 0x18E0),
 }
 TABLE_NAMES = ("people", "relations", "affiliations", "terms")
-#: bits each table's array holds in the system record (up to the next array, or the cursor
-#: words at +0x18EA for the terms)
-FLAG_CAPACITY = (160, 96, 96, 80)
+#: bits each table's set holds: each is a bit-set object (a header word, then its data words) that
+#: save_write_system_record (0x80245888) writes as 16, 8, 8 and 8 bytes
+FLAG_CAPACITY = (128, 64, 64, 64)
 
 
 class DictionaryError(ValueError):

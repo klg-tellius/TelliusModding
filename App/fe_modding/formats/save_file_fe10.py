@@ -110,24 +110,77 @@ SUPPORT_SEEN_SIZE = 12
 
 # The system record (FE10ASYS), as 0x80245888 writes it: the header's first 0x1C bytes, then these
 # parts. Their sizes follow the RAM layout at 0x80427820 and add up to the 0x3B4 bytes every save holds.
-# What the bits and values mean is not traced yet.
+# Kinds: "words" is a bit set the game keeps in big-endian 32-bit words (game bit n is bit n % 32 of word
+# n / 32); "bytes" a bit array indexed byte by byte, lowest bit first.
 SYSTEM_PARTS = (
-    ("Bit set at +0x1C", 0x1C, 8, "bits"),
-    ("Bit set at +0x24", 0x24, 16, "bits"),
-    ("Bytes at +0x34", 0x34, 0x60, "bits"),
-    ("Bit set at +0x94", 0x94, 16, "bits"),
-    ("Bit set at +0xA4", 0xA4, 16, "bits"),
-    ("Bit set at +0xB4", 0xB4, 8, "bits"),
-    ("Bit set at +0xBC", 0xBC, 8, "bits"),
-    ("Bit set at +0xC4", 0xC4, 8, "bits"),
-    ("Values at +0xCC", 0xCC, 16, "u16"),
-    ("Records at +0xDC", 0xDC, 0x2D0, "records"),
-    ("Byte +0x3AC", 0x3AC, 1, "u8"),
-    ("Byte +0x3AD", 0x3AD, 1, "u8"),
-    ("Bytes +0x3AE", 0x3AE, 2, "u16"),
-    ("Word +0x3B0", 0x3B0, 4, "u32"),
+    ("Clears and unlocks", 0x1C, 8, "words"),       # RAM +0x20
+    ("Characters met", 0x24, 16, "words"),          # RAM +0x2C, by PersonData +0x1C (0x80245104)
+    ("Conversations seen", 0x34, 0x60, "bytes"),    # RAM +0x183C, 768 bits (0x8024519C / 0x80245368)
+    ("Sound Room tracks", 0x94, 16, "words"),       # RAM +0x18A0 (0x8024542C, read by 0x8026D63C)
+    ("Glossary: people", 0xA4, 16, "words"),        # RAM +0x18B4, dictionary_flag DF_人物
+    ("Glossary: relations", 0xB4, 8, "words"),      # RAM +0x18C8, DF_関係
+    ("Glossary: affiliations", 0xBC, 8, "words"),   # RAM +0x18D4, DF_国 / DF_所属
+    ("Glossary: terms", 0xC4, 8, "words"),          # RAM +0x18E0, DF_用語
+    ("Glossary view", 0xCC, 16, "u16"),             # RAM +0x18E8..+0x18F7 (0x80260140 / 0x802636F0)
+    ("Clear records", 0xDC, 0x2D0, "records"),      # RAM +0x18F8, 30 x 24 bytes (0x80245614)
+    ("Language", 0x3AC, 1, "u8"),                   # RAM +0x1BC8, GetLanguage
+    ("Checkpoint file", 0x3AD, 1, "u8"),            # RAM +0x1BC9, read by _intr
+    ("Bytes +0x3AE", 0x3AE, 2, "u16"),              # RAM +0x1BCA, no reader found
+    ("Word +0x3B0", 0x3B0, 4, "u32"),               # RAM +0x1BCC, no reader found
 )
+SYSTEM_PART_NOTES = {
+    "Clears and unlocks": "Bits 0-3: the game was cleared on Easy, Normal, Hard, Maniac (set with each clear "
+                          "record; any of them adds the Options menu's extra choices). Bit 5: the full opening "
+                          "movie (SetAvailableGrandOpening). Bit 4 is set on cleared files; its reader was not "
+                          "found. Bit 49 makes chapters load a debug deployment; no retail code sets it.",
+    "Characters met": "One bit per character number (PersonData +0x1C), set whenever that character's unit "
+                      "is created.",
+    "Conversations seen": "768 bits in the order the game registers the names from FE10Conversation's "
+                          "CONV_INFO_DATA records, then three per FE8 yell record; the Conversation Room "
+                          "lists a conversation once its bit is set (TstConversationFlag).",
+    "Sound Room tracks": "One bit per Sound Room track number, set the first time the track plays. The "
+                         "code at 0x8019AEA8 sets all 128 at once when a game-state counter is above 2.",
+    "Glossary: people": "The glossary's unlock bits: bit n is the dictionaryF.bin flag with bit n "
+                        "(DF_人物 names).",
+    "Glossary: relations": "Glossary relation-chart lines (DF_関係 flags).",
+    "Glossary: affiliations": "Glossary affiliations (DF_国 and DF_所属 flags).",
+    "Glossary: terms": "Glossary terms (DF_用語 flags).",
+    "Glossary view": "Where the glossary was left: tab, people cursor, term cursor, two chart scroll pairs "
+                     "(the game saves the first pair twice and never the second), chart zoom; 0xFFFF is unset.",
+    "Clear records": "One record per finished playthrough, newest last; when all 30 are used the oldest is "
+                     "dropped.",
+    "Language": "Index of the message-folder prefix (Mess/e_..., the European languages); 1 on US files.",
+    "Checkpoint file": "The file the chapter checkpoint saves to (0xFF on a new system record).",
+}
 SYSTEM_USED = 0x3B4
+#: system bit names for "Clears and unlocks", by game bit
+SYSTEM_UNLOCK_BITS = {0: "Cleared on Easy", 1: "Cleared on Normal", 2: "Cleared on Hard",
+                      3: "Cleared on Maniac", 4: "Set on cleared files (reader not found)",
+                      5: "Full opening movie", 49: "Debug deployment (no retail writer)"}
+GLOSSARY_VIEW = ("Tab", "People cursor", "Term cursor", "Chart x", "Chart y", "Chart x (unused)",
+                 "Chart y (unused)", "Chart zoom")
+#: a clear record's difficulty byte (the game's own numbers; the US menu calls 0-2 Easy, Normal, Hard)
+CLEAR_DIFFICULTIES = {0: "Normal", 1: "Hard", 2: "Maniac", 3: "Easy"}
+
+
+@dataclass
+class ClearRecord:
+    """One of the system record's 30 clear records (0x80245614, filled by 0x800434A0)."""
+    game_id: int        # +0x00 u64: the game state's +0x10 id, which the file headers also carry
+    difficulty: int     # +0x08 s8: -1 is an empty slot
+    playthrough: int    # +0x09 u8: the game state's +0x34
+    character: int      # +0x0A u16: a character number (PersonData +0x1C) from 0x80287358
+    turns: int          # +0x0C u32: total turns over the chapter history
+    time: int           # +0x10 u64: total of the chapter history's time values
+
+    @property
+    def empty(self) -> bool:
+        return self.difficulty < 0
+
+
+def system_word_bit(offset: int, bit: int) -> tuple[int, int]:
+    """``(file offset, mask)`` of game bit ``bit`` in a "words" set that starts at ``offset``."""
+    return offset + 4 * (bit >> 5) + 3 - ((bit & 31) >> 3), 1 << (bit & 7)
 # Tile record types: Path of Radiance's names (formats/save_file.TERRAIN_TYPES). Radiant Dawn files use the
 # same numbers for the ones seen (6 live on 4-7e, 0x23 in records left from earlier maps); the rest are not
 # checked on Radiant Dawn.
@@ -1081,6 +1134,32 @@ class SaveRecord:
             raise ValueError(f"character number must be 0..{self._table_size('character')}")
         self.replace_section_bytes("UNIP", unit.offset + unit.support_offset + SUPPORT_PARTNER,
                                    struct.pack(">H", person_number))
+
+    def clear_records(self) -> list[ClearRecord]:
+        """The system record's 30 clear records (:class:`ClearRecord`), empty slots included."""
+        data = self.system_part("Clear records")
+        out = []
+        for i in range(SYSTEM_RECORD_COUNT):
+            row = data[i * SYSTEM_RECORD_SIZE:(i + 1) * SYSTEM_RECORD_SIZE]
+            game_id, difficulty, playthrough, character, turns, time = struct.unpack(">QbBHIQ", row)
+            out.append(ClearRecord(game_id, difficulty, playthrough, character, turns, time))
+        return out
+
+    def system_bit(self, name: str, bit: int) -> bool:
+        """Game bit ``bit`` of a bit-set part, numbered as the game numbers it (see :data:`SYSTEM_PARTS`)."""
+        _, offset, size, kind = _system_part(name)
+        if not 0 <= bit < 8 * size:
+            raise ValueError(f"{name} has bits 0-{8 * size - 1}")
+        at, mask = system_word_bit(offset, bit) if kind == "words" else (offset + (bit >> 3), 1 << (bit & 7))
+        return bool(self.raw[at] & mask)
+
+    def set_system_bit(self, name: str, bit: int, on: bool) -> None:
+        _, offset, size, kind = _system_part(name)
+        if not 0 <= bit < 8 * size:
+            raise ValueError(f"{name} has bits 0-{8 * size - 1}")
+        at, mask = system_word_bit(offset, bit) if kind == "words" else (offset + (bit >> 3), 1 << (bit & 7))
+        value = self.raw[at] | mask if on else self.raw[at] & ~mask
+        self.set_system_bytes(at, bytes([value]))
 
     def system_part(self, name: str) -> bytes:
         """One part of the system record (:data:`SYSTEM_PARTS`) by its name."""
