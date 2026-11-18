@@ -112,7 +112,43 @@ def rejudge(checks) -> None:
     write_table(results)
 
 
+LOCK = ROOT / "runner.lock"
+
+
+class RunLock:
+    """One driven Dolphin at a time: a runner waits while another one holds the lock file."""
+
+    def __enter__(self):
+        import os
+        ROOT.mkdir(parents=True, exist_ok=True)
+        while True:
+            try:
+                self.fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(self.fd, str(os.getpid()).encode())
+                return self
+            except FileExistsError:
+                try:
+                    holder = int(LOCK.read_text() or 0)
+                except (OSError, ValueError):
+                    holder = 0
+                alive = holder and str(holder) in subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {holder}"], capture_output=True, text=True).stdout
+                if not alive:
+                    LOCK.unlink(missing_ok=True)      # left by a runner that was killed
+                    continue
+                time.sleep(10)
+
+    def __exit__(self, *exc):
+        import os
+        os.close(self.fd)
+        LOCK.unlink(missing_ok=True)
+
+
 def main() -> None:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--set", choices=SETS, required=True)
     parser.add_argument("--only", nargs="*")
@@ -126,8 +162,13 @@ def main() -> None:
     if args.rejudge:
         rejudge(checks)
         return
-    if dolphin_running():
-        sys.exit("Another Dolphin is running; close it first (the keys are global).")
+    with RunLock():
+        if dolphin_running():
+            sys.exit("Another Dolphin is running; close it first (the keys are global).")
+        run_checks(checks, args)
+
+
+def run_checks(checks, args) -> None:
     results_path = ROOT / "results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else {}
     works: dict = {}

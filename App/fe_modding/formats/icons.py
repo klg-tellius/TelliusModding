@@ -15,6 +15,11 @@ the copy the game reads, and the build copies the loose file into it):
   Confirmed against the vanilla skills (Chant's note, Steal's pouch,
   Counter's crossed arrows, Wing Shield's wing).
 
+Radiant Dawn's ``window/icon.cms`` (and its 16:9 twin ``icon_wide.cms``, 18 x 24 cells) has one more row
+of controller glyphs before the items: item icon ``N`` (FE10Data item ``icon``) is cell ``N + 128``.
+Seen in Dolphin (RFEE01, 2026-11-18): the Light tome's icon 115 is cell 243, and cells 128 + N match the
+Iron Sword, Iron Axe, Vulnerary, Herb, Fire and Steel Bow; cell 96 + N shows another item's picture.
+
 Assets › Icons (``gui/icon_viewer.py``) replaces them one by one.
 
 **Weapon models**: the battle (``setup_battle_scene`` ->
@@ -45,6 +50,8 @@ from ..game_files import as_path
 ICON_TPL = Path("window") / "icon.tpl"
 
 ITEM_IMAGE, ITEM_CELL, ITEM_FIRST_CELL = 0, 24, 96
+#: Radiant Dawn's first item cell (one more row of controller glyphs than Path of Radiance).
+RD_ITEM_FIRST_CELL = 128
 SKILL_IMAGE, SKILL_CELL = 1, 32
 COLUMNS = 32
 
@@ -53,8 +60,14 @@ def icon_path(files_root: Path) -> Path:
     return as_path(files_root) / ICON_TPL
 
 
-def item_cell(icon: int) -> int:
-    return ITEM_FIRST_CELL + icon
+def item_first_cell(game=None) -> int:
+    """The cell of item icon 0 on ``game``'s item sheet (Path of Radiance when ``game`` is None)."""
+    from ..games import Game
+    return RD_ITEM_FIRST_CELL if game is Game.RADIANT_DAWN else ITEM_FIRST_CELL
+
+
+def item_cell(icon: int, game=None) -> int:
+    return item_first_cell(game) + icon
 
 
 def skill_cell(icon_id: int) -> Optional[int]:

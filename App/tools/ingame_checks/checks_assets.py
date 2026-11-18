@@ -76,7 +76,8 @@ def icon_fixture(iid: str):
         else:
             icon = next(i for i in ctx.data.items if i.iid == iid).icon
             sheets = [("window/icon.tpl", 0, (24, 24))]
-        cell = 96 + icon
+        from fe_modding.formats import icons
+        cell = icons.item_cell(icon, ctx.project.game)
         for rel, image, (cw, ch) in sheets:
             path = files_root_of(ctx.project) / rel
             raw = path.read_bytes()

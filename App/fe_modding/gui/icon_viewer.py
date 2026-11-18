@@ -4,8 +4,9 @@ The game draws its small icons - item and weapon icons, menu glyphs, skill
 and status badges - from a few TPL sheets cut into a fixed grid:
 
 - ``window/icon.tpl`` (Path of Radiance) / ``window/icon.cms`` (Radiant
-  Dawn): image 0 is the 24x24 grid (menu glyphs, then the item icons from
-  cell 96: an item's ``icon`` field N is cell 96 + N), image 1 the 32x32
+  Dawn): image 0 is the 24x24 grid (menu glyphs, then the item icons: an
+  item's ``icon`` field N is cell 96 + N on Path of Radiance, 128 + N on
+  Radiant Dawn, which has one more row of glyphs), image 1 the 32x32
   grid (skills, statuses, affinities; a skill record's icon byte N is cell
   N - 1). Radiant Dawn keeps a squeezed copy
   for 16:9 in ``window/icon_wide.cms`` (18x24 and 24x32 cells, same grid);
@@ -46,7 +47,6 @@ from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 
 #: The item-icon number of an item record is the cell number minus this.
-ITEM_ICON_FIRST_CELL = icons.ITEM_FIRST_CELL
 PREVIEW_SIZE = 128
 ZOOMS = ("1x", "2x", "3x", "4x")
 
@@ -58,7 +58,8 @@ class IconSheet:
     image: int
     cell: tuple[int, int]
     wide: Optional[tuple[str, int, tuple[int, int]]] = None  # (path, image, cell) of the 16:9 twin
-    item_icons: bool = False  # cell 96 + N is item icon N
+    item_icons: bool = False  # cell item_first_cell + N is item icon N
+    item_first_cell: int = icons.ITEM_FIRST_CELL  # 96 on Path of Radiance, 128 on Radiant Dawn
     skill_icons: bool = False  # cell N - 1 is skill icon N
 
 
@@ -71,7 +72,8 @@ SHEETS = {
     ],
     Game.RADIANT_DAWN: [
         IconSheet("Items and menu icons", "window/icon.cms", 0, (24, 24),
-                  wide=("window/icon_wide.cms", 0, (18, 24)), item_icons=True),
+                  wide=("window/icon_wide.cms", 0, (18, 24)), item_icons=True,
+                  item_first_cell=icons.RD_ITEM_FIRST_CELL),
         IconSheet("Skill and status icons", "window/icon.cms", 1, (32, 32),
                   wide=("window/icon_wide.cms", 1, (24, 32)), skill_icons=True),
         IconSheet("Small icons", "etc/icon.tpl", 0, (16, 16)),
@@ -168,7 +170,7 @@ class IconViewer(EditorPanel):
         if kind in ("item", "skill") and number.isdigit():
             n = int(number)
             wanted = (lambda s: s.item_icons) if kind == "item" else (lambda s: s.skill_icons)
-            cell = icons.item_cell(n) if kind == "item" else icons.skill_cell(n)
+            cell = icons.item_cell(n, self._project.game) if kind == "item" else icons.skill_cell(n)
         else:
             wanted, cell = (lambda s: s.path == target), None
         index = next((i for i, s in enumerate(self._sheets) if wanted(s)), None)
@@ -401,9 +403,9 @@ class IconViewer(EditorPanel):
                 return f"  -  skill icon {number}" + (f": {', '.join(names)}" if names else "")
             return (f"Skill icon {number}, used by: " + ", ".join(names)) if names else (
                 f"Skill icon {number} (no skill uses it; the skill sheet also holds status icons).")
-        if not self._sheet.item_icons or cell < ITEM_ICON_FIRST_CELL:
+        if not self._sheet.item_icons or cell < self._sheet.item_first_cell:
             return ""
-        number = cell - ITEM_ICON_FIRST_CELL
+        number = cell - self._sheet.item_first_cell
         names = self._item_names.get(number, [])
         if short:
             return f"  -  item icon {number}" + (f": {', '.join(names)}" if names else "")

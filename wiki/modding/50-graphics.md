@@ -71,7 +71,7 @@ Path of Radiance reads the icon sheet bundled into `system.cmp`; the project bui
 
 ### Replace one icon cell
 
-Open **Assets › Icons** and choose the sheet in **Icon sheets** (*Items and menu icons*, *Skill and status icons*, *Small icons*, *Card icons 1–4*); the line above the grid names the file and its cells (*window/icon.tpl · 32 x 9 icons of 24x24, C8*). Navigate by grid/cell number. Item icon number `n` maps to cell `96 + n` in image 0 (24×24 cells). Skill icon number `n` maps to cell `n - 1` in image 1 (32×32 cells). Read **used by** before editing because several IIDs/SIDs can share a number.
+Open **Assets › Icons** and choose the sheet in **Icon sheets** (*Items and menu icons*, *Skill and status icons*, *Small icons*, *Card icons 1–4*); the line above the grid names the file and its cells (*window/icon.tpl · 32 x 9 icons of 24x24, C8*). Navigate by grid/cell number. Item icon number `n` maps to cell `96 + n` in image 0 (24×24 cells); on Radiant Dawn, whose sheet has one more row of controller glyphs, it is cell `128 + n` (checked in game). Skill icon number `n` maps to cell `n - 1` in image 1 (32×32 cells). Read **used by** before editing because several IIDs/SIDs can share a number.
 
 Press **Export icon…**, create an exact-size transparent PNG, then **Replace icon…**. The editor changes only that region and allocates colors from spare entries in the sheet's shared palette. Inspect adjacent cells and transparent edges. Press **Save** only after the preview is correct; **Discard changes** returns to the last saved bytes, while **Restore original file** restores the extracted sheet and removes every modification in it.
 
