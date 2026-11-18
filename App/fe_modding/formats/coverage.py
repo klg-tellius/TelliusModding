@@ -45,7 +45,7 @@ STATUS_NAMES = ("unclassified", "decoded", "plausible", "undecoded", "reserved",
 OPEN = (UNCLASSIFIED, PLAUSIBLE, UNDECODED, UNREAD)
 
 #: Formats that only hold other files; left out of the leaf totals.
-CONTAINERS = {"lz10", "pak"}
+CONTAINERS = {"lz10", "pak", "u8"}
 
 #: Files of an extracted tree that are tool output, not disc content.
 SKIPPED_SUFFIXES = (".decomp", ".bak", ".decompressed")
@@ -234,6 +234,7 @@ def walk_tree(root: Path, report: Report, progress: bool = False) -> None:
 
 # The handlers live in coverage_handlers so this module stays the framework.
 from . import coverage_handlers  # noqa: E402,F401  (registers the handlers)
+from . import coverage_nw4r  # noqa: E402,F401  (the NW4R sound archives)
 
 
 # ------------------------------------------------------------------ output

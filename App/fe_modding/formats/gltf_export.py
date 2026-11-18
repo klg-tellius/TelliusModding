@@ -618,6 +618,10 @@ def _export_animation(b: _Builder, bones, name: str, anim: animation.GaAnimation
         "loop_start": anim.header.loop_start_frame,
         "end_frame": anim.header.end_frame,
     }
+    if anim.footer is not None and anim.footer.compact_raw is not None:
+        # Radiant Dawn: the slot-5 events as [frame, [[code, parameter], ...]] (gltf_import reads them back)
+        extras["fe10_events"] = [[key.frame, [list(pair) for pair in key.codes]]
+                                 for key in animation.fe10_events(animation.write_animation(anim))]
     return {"name": name, "samplers": samplers, "channels": channels, "extras": extras}
 
 

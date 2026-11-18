@@ -3521,7 +3521,8 @@ class _RigMappingDialog(tk.Toplevel):
 
 class _EventEditorDialog(tk.Toplevel):
     """Edit an animation's event track: frame and codes per key. Codes the
-    battle script waits for (0, 1, 2) are marked; see ``rig_contract``."""
+    battle script waits for (0, 1, 2) are marked; see ``rig_contract``. On
+    Radiant Dawn each code has a parameter, typed ``code:parameter``."""
 
     def __init__(self, parent, label: str, path: Path, names: list[str]) -> None:
         super().__init__(parent)
@@ -3529,8 +3530,9 @@ class _EventEditorDialog(tk.Toplevel):
         self.transient(parent)
         self.result: tuple[str, list[animation.EventKey]] | None = None
         self._path = path
-        self._events: list[animation.EventKey] = []
+        self._events: list = []
         self._frames = 0
+        self._fe10 = False
 
         top = ttk.Frame(self, padding=8)
         top.pack(fill="both", expand=True)
@@ -3547,7 +3549,8 @@ class _EventEditorDialog(tk.Toplevel):
         ttk.Label(top, text="Frame").grid(row=3, column=0, sticky="w", pady=(6, 0))
         self._frame = tk.StringVar()
         ttk.Entry(top, textvariable=self._frame, width=8).grid(row=3, column=1, sticky="w", pady=(6, 0))
-        ttk.Label(top, text="Codes (comma-separated)").grid(row=4, column=0, sticky="w")
+        self._codes_label = ttk.Label(top, text="Codes (comma-separated)")
+        self._codes_label.grid(row=4, column=0, sticky="w")
         self._codes = tk.StringVar()
         ttk.Entry(top, textvariable=self._codes, width=30).grid(row=4, column=1, columnspan=3, sticky="we")
         row = ttk.Frame(top)
@@ -3558,7 +3561,9 @@ class _EventEditorDialog(tk.Toplevel):
         ttk.Label(
             top,
             text="0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release: combat waits for these.\n"
-            "50 footsteps, 0x14-0x1B trails (0x19 ends), 1000+ sounds.",
+            "50 footsteps, 0x14-0x1B trails (0x19 ends), 1000+ sounds.\n"
+            "Radiant Dawn: code:parameter pairs; 1000+ plays the cue Sound Tables › Animation sounds gives it,\n"
+            "3/4 mark a loop. Other codes follow Path of Radiance's numbering (not all traced in Radiant Dawn).",
             style="Muted.TLabel",
             justify="left",
         ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(6, 0))
@@ -3576,11 +3581,14 @@ class _EventEditorDialog(tk.Toplevel):
         if not name:
             return
         try:
-            anim = animation.read_animation_bytes(set_animation_bytes(self._path, name))
+            data = set_animation_bytes(self._path, name)
+            anim = animation.read_animation_bytes(data)
+            self._fe10 = animation.is_fe10_animation(data)
+            self._events = animation.fe10_events(data) if self._fe10 else list(anim.events)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read the animation", str(exc), parent=self)
             return
-        self._events = list(anim.events)
+        self._codes_label.config(text="Code:parameter pairs" if self._fe10 else "Codes (comma-separated)")
         self._frames = anim.header.end_frame
         self._info.config(text=f"{self._frames} frames, {'looping' if anim.header.loops else 'plays once'}")
         self._refresh()
@@ -3589,11 +3597,18 @@ class _EventEditorDialog(tk.Toplevel):
         self._events.sort(key=lambda k: k.frame)
         self._list.delete(0, "end")
         for key in self._events:
-            codes = ", ".join(
-                f"{c}*" if c in rig_contract.COMBAT_CODES else (f"{c} ({rig_contract.EVENT_NAMES[c]})" if c in rig_contract.EVENT_NAMES else str(c))
-                for c in key.codes
-            )
+            codes = ", ".join(self._code_label(c) for c in key.codes)
             self._list.insert("end", f"frame {key.frame}: {codes}")
+
+    @staticmethod
+    def _code_label(entry) -> str:
+        code, parameter = entry if isinstance(entry, tuple) else (entry, None)
+        text = str(code) if parameter is None else f"{code}:{parameter}"
+        if code in rig_contract.COMBAT_CODES:
+            return text + "*"
+        if code >= 1000:
+            return text + " (sound)"
+        return f"{text} ({rig_contract.EVENT_NAMES[code]})" if code in rig_contract.EVENT_NAMES else text
 
     def _pick(self) -> None:
         sel = self._list.curselection()
@@ -3601,21 +3616,27 @@ class _EventEditorDialog(tk.Toplevel):
             return
         key = self._events[sel[0]]
         self._frame.set(str(key.frame))
-        self._codes.set(", ".join(str(c) for c in key.codes))
+        self._codes.set(", ".join(f"{c[0]}:{c[1]}" if isinstance(c, tuple) else str(c) for c in key.codes))
 
-    def _parsed(self) -> animation.EventKey | None:
+    def _parsed(self):
         try:
             frame = int(self._frame.get())
-            codes = tuple(int(c.strip(), 0) for c in self._codes.get().split(",") if c.strip())
+            pieces = [c.strip() for c in self._codes.get().split(",") if c.strip()]
+            if self._fe10:
+                codes = tuple((int(c.partition(":")[0].strip(), 0), int(c.partition(":")[2].strip() or "0", 0))
+                              for c in pieces)
+            else:
+                codes = tuple(int(c, 0) for c in pieces)
         except ValueError:
             messagebox.showerror("Invalid event", "Frame and codes must be numbers.", parent=self)
             return None
-        if not codes or len(codes) > 4 or not 0 <= frame <= self._frames:
+        most = 255 if self._fe10 else 4
+        if not codes or len(codes) > most or not 0 <= frame <= self._frames:
             messagebox.showerror(
-                "Invalid event", f"One to four codes, and a frame from 0 to {self._frames}.", parent=self
+                "Invalid event", f"One to {most} codes, and a frame from 0 to {self._frames}.", parent=self
             )
             return None
-        return animation.EventKey(frame, codes)
+        return animation.Fe10EventKey(frame, codes) if self._fe10 else animation.EventKey(frame, codes)
 
     def _add(self) -> None:
         key = self._parsed()

@@ -349,11 +349,12 @@ class Fe10SaveTests(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("FE10_SAVES"),
-                     "set FE10_SAVES to a folder of FE10_US.dat files (any name ending in FE10_US.dat)")
+                     "set FE10_SAVES to a folder of saves (any name ending in FE10_US.dat, FE10_EU.dat or FE10_JP.dat)")
 class Fe10RealSaveTests(unittest.TestCase):
     def test_corpus_round_trips(self):
+        # every region's file: the European one has the US layout, the Japanese one stops after record 6
         root = Path(os.environ["FE10_SAVES"])
-        paths = [root] if root.is_file() else list(root.rglob("*" + sf.FILE_NAME))
+        paths = [root] if root.is_file() else [p for name in sf.FILE_NAMES.values() for p in root.rglob("*" + name)]
         self.assertTrue(paths)
         for path in paths:
             save = sf.SaveFile.from_bytes(path.read_bytes())

@@ -82,6 +82,91 @@ class AnimationCoverageTest(unittest.TestCase):
         self.assertEqual(totals.counts[UNCLASSIFIED], 0)
         self.assertEqual(totals.fields[(UNDECODED, "RD footer slot 9 block")][0], 4)
 
+    def test_radiant_dawn_event_track_reader(self):
+        import struct
+        from fe_modding.formats import animation
+
+        block = (struct.pack(">HHI3H", 3, 0, 0, 16, 0xFFFF, 24) + b"\0\0"
+                 + struct.pack(">HBB2H", 2, 0, 1, 0x1F, 0xFFFF)
+                 + struct.pack(">HBB4H", 9, 0, 2, 3, 0, 1000, 5))
+        self.assertEqual(animation.read_fe10_event_block(block), [
+            animation.Fe10EventKey(2, ((0x1F, -1),)),
+            animation.Fe10EventKey(9, ((3, 0), (1000, 5))),
+        ])
+        with self.assertRaises(animation.AnimationError):
+            animation.read_fe10_event_block(block[:32])
+
+    def test_radiant_dawn_sound_data(self):
+        """Cue fields, a SND_* table, the strings and an unexported cue record."""
+        import struct
+
+        from fe_modding.formats import coverage_handlers
+        from fe_modding.formats.common import HEADER_SIZE
+        from tests.test_fe10data import _container
+
+        cue = struct.pack(">II", 0x60, 0x68) + bytes(range(1, 9)) + b"\0" + bytes(range(9, 23)) + b"\0" + bytes(4)
+        table = struct.pack(">III", 1, 1000, 0)  # SND_SFX_MAYA_DATA: code 1000 -> cue at 0
+        body = cue + table + cue + bytes(0x60 - 0x24 - 12 - 0x24) + b"SFX_A\0\0\0" + b"SE_A\0\0\0\0"
+        pointers = [0, 4, 0x28, 0x30, 0x34]
+        data = _container(body, pointers, [("SFX_A", 0), ("SND_SFX_MAYA_DATA", 0x24)])
+        cov = FileCoverage(data, "fe10 sound data", "sound_data.cms#")
+        coverage_handlers.fe10_sound_data(cov, None)
+        record = HEADER_SIZE + 0x30
+        self.assertEqual(set(cov.status[record:record + 0x24]), {UNREAD})
+        rest = cov.status[:record] + cov.status[record + 0x24:]
+        self.assertFalse({UNCLASSIFIED, UNDECODED, PLAUSIBLE, UNREAD} & set(rest[0x18:]))
+
+    def test_radiant_dawn_slots_are_decoded(self):
+        """Slot 5 events, slot 0/6-12 key tables and slot 13 particles."""
+        import struct
+
+        events = struct.pack(">HHIH", 1, 0, 0, 10) + struct.pack(">HBB2H", 4, 0, 1, 3, 0)
+        tracks = struct.pack(">HHI2H", 2, 0, 0, 0xFFFF, 12) + struct.pack(">HH2h", 1, 0, 0, 255)
+        name = b"|root|\0\0"
+        body = 0x30
+        blocks = [(5, events), (0, tracks), (6, tracks), (9, tracks)]
+        layout, at = [], body
+        for slot, data in blocks:
+            layout.append((slot, at, data))
+            at += len(data)
+        particles_at = at
+        rec = particles_at + 8
+        name_at = rec + 0x34
+        stages_at = name_at + len(name)
+        ranges_at = stages_at + 12
+        curves_at = ranges_at + 8
+        keys_at = curves_at + 12
+        particles = bytearray(keys_at + 4 - particles_at)
+        struct.pack_into(">IHH", particles, 0, 0x12345678, 0, 1)
+        struct.pack_into(">IHHHh", particles, 8, name_at, 0, 0x0014, 0, 2)
+        struct.pack_into(">HH", particles, 8 + 0x1C, 7, 1)  # bone index, one stage
+        struct.pack_into(">4I", particles, 8 + 0x20, stages_at, ranges_at, curves_at, keys_at)
+        particles[name_at - particles_at:stages_at - particles_at] = name
+        struct.pack_into(">Hhh3h", particles, stages_at - particles_at, 0, 0, 10, 64, 0, 0)
+        struct.pack_into(">4H", particles, ranges_at - particles_at, 0, 0, 0, 1)
+        struct.pack_into(">HBBHHI", particles, curves_at - particles_at, 4, 0, 0, 0, 1, 0)
+        struct.pack_into(">Hh", particles, keys_at - particles_at, 0, 255)
+        layout.append((13, particles_at, bytes(particles)))
+        payload = b"".join(data for _, _, data in layout)
+        desc_at = body + len(payload)
+        # As on the disc, header word 0 names the last descriptor in the file
+        # and each ``next`` points back to the one before it.
+        descriptors = b""
+        for i, (slot, block_at, _) in enumerate(layout):
+            descriptors += struct.pack(">3I", slot, block_at, desc_at + 12 * (i - 1) if i else 0)
+        header = struct.pack(">12I", desc_at + 12 * (len(layout) - 1), 0, 0x1000000, 0x11, 0, 0, 0x40, 0, 0x30, 0x30, 0, 0x30)
+        report = Report()
+        Walker(report).child("rd.ga", header + payload + descriptors)
+        totals = report.formats["animation"]
+        self.assertEqual(totals.failures, [])
+        self.assertEqual(totals.counts[UNCLASSIFIED], 0)
+        # Only the emitter's +0x0C word has no identified reader.
+        self.assertEqual(totals.counts[UNDECODED], 0, totals.fields)
+        self.assertEqual(totals.counts[UNREAD], 2, totals.fields)
+        self.assertEqual({name for (status, name) in totals.fields if status == PLAUSIBLE},
+                         {"particle curve last key frame", "particle stage local index",
+                          "particle emitter local index", "particle emitter first global stage"})
+
 
 class ParticleLayoutTest(unittest.TestCase):
     def test_particle_header_stages_and_keys_are_classified_without_guessing_controls(self):
@@ -209,6 +294,66 @@ class Fe10ContainerTest(unittest.TestCase):
         report = Report()
         Walker(report).child("Fonts/system.cms", bytes(64))
         self.assertNotIn("fe10 container", report.formats)
+
+
+def _u8(files: dict) -> bytes:
+    """A U8 archive with one directory holding ``files`` (name -> bytes)."""
+    import struct
+
+    names = b"\0" + b"dir\0"
+    offsets = []
+    for name in files:
+        offsets.append(len(names))
+        names += name.encode() + b"\0"
+    count = 2 + len(files)
+    header_size = 12 * count + len(names)
+    data_start = (0x20 + header_size + 0x1F) & ~0x1F
+    nodes = struct.pack(">III", 0x01000000, 0, count) + struct.pack(">III", 0x01000001, 0, count)
+    body, at = b"", data_start
+    for (name, blob), name_at in zip(files.items(), offsets):
+        nodes += struct.pack(">III", name_at, at, len(blob))
+        body += blob + bytes(-len(blob) % 0x20)
+        at += len(blob) + (-len(blob) % 0x20)
+    head = b"\x55\xaa\x38\x2d" + struct.pack(">III", 0x20, header_size, data_start) + bytes(16)
+    table = nodes + names
+    return head + table + bytes(data_start - 0x20 - len(table)) + body
+
+
+class HomeMenuTest(unittest.TestCase):
+    def test_u8_members_are_walked(self):
+        import struct
+
+        layout = b"RLYT\xfe\xff\x00\x0a" + struct.pack(">IHH", 0x20, 0x10, 1) + b"lyt1" + struct.pack(">I", 0x10) + bytes(8)
+        midi = b"MThd" + struct.pack(">I", 6) + bytes(6) + b"MTrk" + struct.pack(">I", 2) + b"\xff\x2f"
+        report = Report()
+        Walker(report).child("system/HomeButton/test.arc", _u8({"a.brlyt": layout, "b.mid": midi}))
+        for fmt in ("u8", "nw4r layout", "midi"):
+            self.assertEqual(report.formats[fmt].failures, [], fmt)
+            self.assertEqual(report.formats[fmt].counts[UNDECODED] + report.formats[fmt].counts[UNCLASSIFIED], 0, fmt)
+        self.assertEqual(report.formats["nw4r layout"].files, 1)
+        self.assertEqual(report.formats["midi"].counts[DECODED], len(midi))
+
+    def test_nw4r_section_chain_must_end_at_the_file_size(self):
+        import struct
+
+        broken = b"RLAN\xfe\xff\x00\x0a" + struct.pack(">IHH", 0x20, 0x10, 1) + b"pat1" + struct.pack(">I", 0x08) + bytes(8)
+        report = Report()
+        Walker(report).child("system/HomeButton/x.brlan", broken)
+        self.assertEqual(len(report.formats["nw4r layout"].failures), 1)
+
+
+class Fe10RowsTest(unittest.TestCase):
+    def test_unplaced_row_bytes_are_named_by_offset(self):
+        from fe_modding.formats.coverage_handlers import _fe10_rows
+
+        cov = FileCoverage(bytes(24), "t", "t")
+        layout = {0: (4, "label", ""), 8: (2, UNDECODED, "flags")}
+        _fe10_rows(cov, 0, 2, 12, "T", layout)
+        fields = cov.open_fields()
+        self.assertEqual(fields[(UNDECODED, "T +0x4")], 8)    # bytes 4-7 of both rows
+        self.assertEqual(fields[(UNDECODED, "T flags")], 4)   # bytes 8-9 of both rows
+        self.assertEqual(fields[(UNDECODED, "T +0xa")], 4)    # bytes 10-11 of both rows
+        self.assertEqual(cov.status.count(DECODED), 8)
 
 
 FILES = os.environ.get("FE9_EXTRACTED_FILES")

@@ -25,6 +25,11 @@ laid out head, chapter labels, category labels, initial labels, ``TUT_DATA``, th
   +0x14   pointer: script function that plays it (``tut_01_Idou``)
   ======  =====================================================================================
 
+The Japanese disc (``GFEJ01``) has no Easy mode: its rows are 20 bytes, with three start flags
+(Normal, Hard, Maniac) and no padding, so the three pointers sit at +0x08, +0x0C and +0x10. A row's
+size is read from the file (the string pool starts right after the rows) and a file is rebuilt
+with the number of start flags its entries have.
+
 The browser's group builders count keys from 1, so a key of 0 never forms a group.
 """
 
@@ -38,6 +43,7 @@ from .common import HEADER_SIZE
 
 ENCODING = "shift_jis"
 ROW_SIZE = 24
+ROW_SIZE_JP = 20  # GFEJ01: three start flags (no Easy mode), no padding
 DIFFICULTIES = ("Normal", "Hard", "Maniac", "Easy")
 UNLOCKED, LEARNED = 2, 1
 LABEL_SECTIONS = ("TUT_CHAPTER", "TUT_CATEGORY", "TUT_INITIAL")
@@ -82,6 +88,20 @@ def _symbols(data: bytes, data_size: int, pointers: int, count: int) -> dict[str
     return out
 
 
+def _row_size(data: bytes, body: bytes, data_size: int, pointers: int, rows_at: int, count: int) -> int:
+    """24 (four start flags and padding) or 20 (the Japanese disc's three start flags): the string
+    pool, where the lowest pointer target lies, starts right after the rows."""
+    if not count:
+        return ROW_SIZE
+    fields = struct.unpack_from(f">{pointers}I", data, HEADER_SIZE + data_size)
+    targets = [struct.unpack_from(">I", body, f)[0] for f in fields]
+    pool = min((t for t in targets if t), default=0)
+    size, rest = divmod(pool - rows_at - 4, count)
+    if rest or size not in (ROW_SIZE, ROW_SIZE_JP):
+        raise TutDataError(f"TUT_DATA rows are {pool - rows_at - 4} bytes for {count} rows")
+    return size
+
+
 def read_tut_data(data: bytes) -> TutData:
     size, data_size, pointers, count = struct.unpack_from(">4I", data, 0)
     if size != len(data) or count != 5:
@@ -102,14 +122,16 @@ def read_tut_data(data: bytes) -> TutData:
 
     rows_at = sym["TUT_DATA"]
     (n,) = struct.unpack_from(">I", body, rows_at)
+    row_size = _row_size(data, body, data_size, pointers, rows_at, n)
+    flags = 4 if row_size == ROW_SIZE else 3
     entries = []
     for i in range(n):
-        r = rows_at + 4 + ROW_SIZE * i
-        b = body[r:r + 9]
-        if body[r + 9:r + 12] != bytes(3):
+        r = rows_at + 4 + row_size * i
+        b = body[r:r + 5 + flags]
+        if row_size == ROW_SIZE and body[r + 9:r + 12] != bytes(3):
             raise TutDataError(f"row {i}: padding bytes +9..+B are not zero")
-        title, script, function = struct.unpack_from(">3I", body, r + 12)
-        entries.append(TutorialEntry(b[0], b[1], b[2], struct.unpack("b", b[3:4])[0], b[4], list(b[5:9]),
+        title, script, function = struct.unpack_from(">3I", body, r + row_size - 12)
+        entries.append(TutorialEntry(b[0], b[1], b[2], struct.unpack("b", b[3:4])[0], b[4], list(b[5:5 + flags]),
                                      text(title), text(script), text(function)))
     return TutData(text(built), text(author), head_word, labels("TUT_CHAPTER"), labels("TUT_CATEGORY"),
                    labels("TUT_INITIAL"), entries)
@@ -125,7 +147,11 @@ def build_tut_data(tut: TutData) -> bytes:
         sections[name] = at
         at += 4 * len(values)
     sections["TUT_DATA"] = at
-    pool_start = at + 4 + ROW_SIZE * len(tut.entries)
+    flag_count = {len(e.start_flags) for e in tut.entries} or {4}
+    if len(flag_count) != 1 or not flag_count <= {3, 4}:
+        raise TutDataError("every tutorial needs the same number of start flags: 4, or 3 on the Japanese disc")
+    (flag_count,) = flag_count
+    pool_start = at + 4 + (ROW_SIZE if flag_count == 4 else ROW_SIZE_JP) * len(tut.entries)
     where, pool = {}, bytearray()
     for raw in sorted({s.encode(ENCODING) for s in strings if s}):
         where[raw] = pool_start + len(pool)
@@ -145,10 +171,8 @@ def build_tut_data(tut: TutData) -> bytes:
             put(s)
     body += struct.pack(">I", len(tut.entries))
     for e in tut.entries:
-        if len(e.start_flags) != 4:
-            raise TutDataError(f"tutorial {e.id}: four start flags (one per difficulty) are needed")
         body += bytes((e.id, e.category, e.chapter)) + struct.pack("b", e.order) + bytes((e.initial,))
-        body += bytes(e.start_flags) + bytes(3)
+        body += bytes(e.start_flags) + bytes(3 if flag_count == 4 else 0)
         for s in (e.title_key, e.script, e.function):
             put(s)
     body += pool

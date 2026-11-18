@@ -50,6 +50,7 @@ from ..video_viewer import VideoViewer
 from ..widgets import Card, CardGrid, ScrollFrame, section_header
 from .text_assets import ConversationsPanel, ScriptsPanel
 from ..fe10_conversation_lists import Fe10ConversationLists
+from ..fe10_sound_tables_editor import Fe10SoundTablesEditor
 from ..glossary_editor import GlossaryEditor
 from ..conversation_room_editor import ConversationRoomEditor
 from ..epilogue_editor import EpilogueEditor
@@ -103,6 +104,9 @@ ASSET_TOOLS = [
     ("battle_params", "Battle Unit Parameters", "⚙", "Battle model speed, range, jump attacks, flying, size (zu/*_prm.dbx)", battle_params_panel),
     ("dbx_files", "Battle Data", "▤", "The battle engine's native tables (.dbx files, or FE10Battle.cms on Radiant Dawn)", battle_data_viewer),
     ("sfx", "Sound Effects", "♪", "Sound-effect cues: names, resources and decoded parameters", SfxViewer),
+    ("sound_tables", "Sound Tables", "♩",
+     "Cue volume and pitch, chapter music, battle themes, map ambience, animation sounds (sound_data)",
+     Fe10SoundTablesEditor),
     ("sound_room", "Soundroom Images", "▦", "Soundroom slideshow pictures (soundroom.bin): order, position, add", SoundRoomEditor),
     ("tutorials", "Tutorials", "?", "The in-game tutorial lists (tut_data): groups, order, start flags", TutorialsEditor),
     ("staff_credits", "Staff Credits", "≡", "The end credits: edit, add and reorder lines", staff_credits_panel),
@@ -124,7 +128,7 @@ ASSET_FEATURES = {
     "battle_weapons": BATTLE_WEAPONS, "battle_sceneries": BATTLE_SCENERIES, "battle_cameras": BATTLE_CAMERAS,
     "battle_sim": BATTLE_SIM, "battle_params": BATTLE_PARAMS,
     "dbx_files": BATTLE_DATA,
-    "music": AUDIO, "sfx": AUDIO, "sound_room": AUDIO, "sound_room_tracks": AUDIO,
+    "music": AUDIO, "sfx": AUDIO, "sound_tables": AUDIO, "sound_room": AUDIO, "sound_room_tracks": AUDIO,
     "videos": VIDEO,
 }
 #: Tools that edit one logical file only some games have (``GameProfile.files``): hidden from the hub
@@ -133,7 +137,7 @@ ASSET_FILES = {"conversation_lists": "conversation_data", "glossary": "dictionar
                "conversation_room": "conversation_room", "endings": "epilogue_data",
                "class_intros": "intro_data", "intro_graphics": "intro_data",
                "subtitles": "caption_data", "subtitle_graphics": "caption_data",
-               "gmap_routes": "route_styles", "wii_banner": "wii_banner"}
+               "gmap_routes": "route_styles", "wii_banner": "wii_banner", "sound_tables": "sound_data"}
 #: Tools for data only some games have (``GameProfile.features``): absent from the hub, search and
 #: routes on a game without it, rather than "not available".
 ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
@@ -168,7 +172,7 @@ class AssetsHub(Page):
                             ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "wii_banner", "sound_room",
                                         "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
                                         "battle_scenery_graphics")),
-                            ("Sound and video", ("music", "sfx", "videos", "subtitles", "subtitle_graphics"))):
+                            ("Sound and video", ("music", "sfx", "sound_tables", "videos", "subtitles", "subtitle_graphics"))):
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")

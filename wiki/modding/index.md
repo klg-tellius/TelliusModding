@@ -17,6 +17,9 @@ source_path: "modding/index.md"
 
 Learn the Tellius Modding app by making controlled changes you can explain, test, and reverse. The curriculum covers the original 64 topics, but you no longer have to read them as one long numbered sequence. Choose a track for the thing you want to build, follow its prerequisites, and use the field references when you need to understand every control.
 
+!!! note "Radiant Dawn"
+    The lessons are written on *Path of Radiance*, and most of them work the same on *Radiant Dawn*: the pages and buttons are shared. Where Radiant Dawn differs, a lesson says so in an **On Radiant Dawn** section or in **Limits and confidence**. [What You Can Edit](../meta/what-you-can-edit.md) lists, for each game, what the app changes.
+
 !!! info "The tutorials are being deepened in phases"
     A deep tutorial explains exact UI actions, every relevant control, useful variations, interactions, failures, and a test matrix. Pages that still use the shorter format remain available while they are rewritten. The [coverage ledger](../meta/tutorial-coverage.md) records the migration state, and the [authoring standard](../meta/tutorial-authoring-standard.md) defines what “complete” means.
 

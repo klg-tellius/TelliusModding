@@ -1,7 +1,21 @@
 # Tellius Modding
 
-A Windows Python desktop editor for **Fire Emblem: Path of Radiance** and
-**Fire Emblem: Radiant Dawn**, with documentation of their file formats and systems.
+A Windows Python desktop editor for **Fire Emblem: Path of Radiance** (GameCube) and
+**Fire Emblem: Radiant Dawn** (Wii), with documentation of their file formats and systems.
+
+## What it does
+
+- Reads the US, European and Japanese discs of both games, and builds a playable image
+  (`.ciso` for Path of Radiance, `.wbfs` for Radiant Dawn).
+- Edits characters, classes, items, skills, supports, chapters and story order, maps,
+  deployments, event scripts, dialogue, shops, AI, models, battle presentation, music,
+  sound, video, saves and engine settings (Game Code), on both games.
+- Plays a chapter in the app or in Dolphin, and shares a mod as a patch that contains only
+  your changes (plus a Riivolution export for Radiant Dawn).
+
+[What You Can Edit](https://klg-tellius.github.io/TelliusModding/meta/what-you-can-edit/)
+lists every area game by game, with the known limits. You need your own copy of the game;
+no game data is included or downloaded.
 
 ## Download for Windows
 
@@ -34,7 +48,9 @@ Use **Settings > Disc and media tools** to download WIT and optional FFmpeg.
 The source build also recognizes tools installed manually under `App/tools/`.
 
 Supply your own game disc and keep extracted data and mod projects outside this
-repository.
+repository. Project setup, workspace features and known limitations are covered in the
+[Tellius Archive](https://klg-tellius.github.io/TelliusModding/): start with
+[Install the app and create a project](https://klg-tellius.github.io/TelliusModding/modding/01-install-create-project/).
 
 ## Tellius Archive (wiki)
 
@@ -52,6 +68,15 @@ file formats for both games.
     [event scripts](wiki/formats/event-script.md) and [maps](wiki/formats/map-format.md)
   - [Radiant Dawn coverage](wiki/meta/radiant-dawn.md) and the
     [glossary](wiki/meta/glossary.md)
+- Start with [What You Can Edit](https://klg-tellius.github.io/TelliusModding/meta/what-you-can-edit/) and
+  [Know the current limits](https://klg-tellius.github.io/TelliusModding/modding/63-known-limits/)
+
+Other documentation:
+
+- [Known bugs](docs/app/known-bugs.md)
+- [Application architecture](app.md)
+- Feature notes (hub chapters, promotions, extended flags, item restrictions, particle and
+  dialogue editors, 3D pipeline status) are in [App/docs](App/docs/)
 
 Spotted something wrong in an article? Use the
 [Archive correction](https://github.com/klg-tellius/TelliusModding/issues/new?template=archive-correction.yml)
@@ -95,7 +120,7 @@ Is there a feature you would like, a bug you hit, or something you want to ask?
   [issue](https://github.com/klg-tellius/TelliusModding/issues/new/choose).
 
 Please say which game and region you use (for example Path of Radiance US or Radiant
-Dawn PAL) and which release you run (for example v0.2.0, or the commit when running
+Dawn PAL) and which release you run (for example v1.0.0.0, or the commit when running
 from source). Do not attach game files.
 
 ## Verify
@@ -113,7 +138,8 @@ Tests that require an external game corpus may skip when it is absent. With
 
 See [credits and research resources](CREDITS.md), including the DspTool MIT
 notice and external-tool licenses. Original wiki text and diagrams are licensed
-CC BY-SA 4.0 as described in [CONTENT-LICENSE.md](CONTENT-LICENSE.md). No
-project-wide open-source license has been selected yet for the code; third-party
-components retain their own terms. Fire Emblem names identify the supported games.
-This is an independent project.
+CC BY-SA 4.0 as described in [CONTENT-LICENSE.md](CONTENT-LICENSE.md). The code
+is released under the [MIT License](LICENSE); third-party components retain their
+own terms. Neither license covers Nintendo or Intelligent Systems game data,
+trademarks or other game-derived material: supply your own disc. Fire Emblem names
+identify the supported games. This is an independent project.

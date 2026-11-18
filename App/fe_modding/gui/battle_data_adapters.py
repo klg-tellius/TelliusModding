@@ -4,7 +4,9 @@
   folder, edited as a Form (blocks and fields with English notes), a Layout (widgets on the
   640 x 480 screen) or the raw Text (``gui/dbx_form.py``); files can be added, deleted and restored.
 * Radiant Dawn (:class:`Fe10BattleAdapter`): ``FE10Battle.cms``, one group per fixed-row table and
-  one for the camera arrays; names and decoded links are editable, other fields read-only."""
+  one for the camera arrays. **Edit fields…** edits every named field of a row
+  (:mod:`formats.fe10_battle_fields`); **Motions by weapon…** edits which FE10BMotion rows an
+  FE10BUnit row may play with each weapon type."""
 
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from .. import battle_tables
 from ..exceptions import ProjectError
-from ..formats import dbx, fe10_battle
+from ..formats import dbx, fe10_battle, fe10_battle_fields
 from ..project import ModProject
 from .battle_browser import BattleBrowser, BrowserAdapter, Group, Item
 from .changelog import ChangeLog
@@ -240,7 +242,8 @@ class DbxAdapter(BrowserAdapter):
 class Fe10BattleAdapter(BrowserAdapter):
     display_name = "Battle Data"
     source = "FE10Battle.cms"
-    note = "Each table's rows. Names and decoded links are editable; the other fields are shown read-only."
+    note = ("Each table's rows. Edit fields… changes a row's named fields; bytes no field names (pads, "
+            "pointers the game fills in) are kept.")
     label_title = "Table / row"
     columns = (("strings", "Names", 300), ("words", "Values", 300))
     keeps_changes = True
@@ -305,7 +308,8 @@ class Fe10BattleAdapter(BrowserAdapter):
         self._detail.pack(fill="both", expand=True, pady=(5, 0))
 
     def actions(self):
-        return (("Edit names…", self._edit_strings), ("Edit scenery choice…", self._edit_map_variant))
+        return (("Edit fields…", self._edit_fields), ("Motions by weapon…", self._edit_motions),
+                ("Edit scenery choice…", self._edit_map_variant))
 
     def show(self, key: str | None) -> None:
         if key and key.startswith("array:"):
@@ -363,29 +367,35 @@ class Fe10BattleAdapter(BrowserAdapter):
         self._detail.configure(state="disabled")
 
     # -- edits ----------------------------------------------------------------------------
-    def _edit_strings(self) -> None:
+    def _edit_fields(self) -> None:
+        from .field_tables_panel import FieldsDialog
+
         key = self.selected()
         row = self._row(key)
-        if row is None or not row[0].records[row[1]].strings:
-            messagebox.showinfo(self.display_name, "Select a row that has names.", parent=self.page)
+        if row is None:
+            messagebox.showinfo(self.display_name, "Select a table row.", parent=self.page)
             return
         table, index = row
-        changed: dict[int, str] = {}
-        for offset, value in table.records[index].strings:
-            replacement = simpledialog.askstring(f"{table.name} row {index}", f"Relocated string at +{offset:#04x}:",
-                                                 initialvalue=value, parent=self.page)
-            if replacement is None:
-                return
-            if replacement != value:
-                changed[offset] = replacement
-        if not changed:
+        fields = fe10_battle_fields.FIELDS[table.name]
+        values = fe10_battle_fields.row_values(table.records[index], table.name)
+
+        def apply(changes: dict) -> None:
+            data = fe10_battle_fields.set_row(self._data, table.name, index, **changes)
+            self._edited(data, f"Edited {table.name} row {index}: " + ", ".join(sorted(changes)), key)
+
+        FieldsDialog(self.page, f"{table.name} row {index}", fields, values, apply,
+                     columns=3 if len(fields) > 24 else 1,
+                     note="Text fields are names (an empty box: none). A new name is added to the file.")
+
+    def _edit_motions(self) -> None:
+        key = self.selected()
+        row = self._row(key)
+        if row is None or row[0].name != "FE10BUnit":
+            messagebox.showinfo(self.display_name, "Select an FE10BUnit row.", parent=self.page)
             return
-        try:
-            data = fe10_battle.update_battle_record(self._data, table.name, index, strings=changed)
-        except (ValueError, IndexError) as exc:
-            self.error("Could not edit battle data", exc)
-            return
-        self._edited(data, f"Edited {table.name} row {index} strings", key)
+        table, index = row
+        MotionMatrixDialog(self.page, self._data, index,
+                           lambda data, what: self._edited(data, what, key))
 
     def _edit_map_variant(self) -> None:
         key = self.selected()
@@ -447,6 +457,55 @@ class Fe10BattleAdapter(BrowserAdapter):
     def discard(self) -> None:
         self._dirty = False
         self._data = None
+
+
+class MotionMatrixDialog(tk.Toplevel):
+    """Which FE10BMotion rows an FE10BUnit row may play, per FE10BWeaponType row (``FE10BUnit`` +0x40,
+    RFEE01 0x800A7324). ``done(data, description)`` receives the changed file."""
+
+    def __init__(self, parent: tk.Misc, data: bytes, index: int, done):
+        super().__init__(parent)
+        doc = fe10_battle.read_fe10_battle(data)
+        record = doc.table("FE10BUnit").records[index]
+        strings = dict(record.strings)
+        self.title(f"Motions by weapon — {strings.get(4) or '?'} #{index}")
+        self.transient(parent.winfo_toplevel())
+        self._data, self._index, self._done = data, index, done
+        self._motions = fe10_battle_fields.unit_motions(record)
+        weapons = fe10_battle_fields.row_names(data, "FE10BWeaponType")
+        motions = fe10_battle_fields.row_names(data, "FE10BMotion")
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, style="Muted.TLabel", wraplength=900, justify="left", text=(
+            f"{strings.get(0) or ''}: a tick lets the unit play that motion while holding that weapon type. "
+            "The game tests the bit before it picks an attack, dodge or idle motion.")).pack(anchor="w", pady=(0, 8))
+        grid = ttk.Frame(body)
+        grid.pack(fill="both", expand=True)
+        used = [w for w in range(fe10_battle_fields.WEAPON_TYPES) if w < len(weapons)]
+        for column, weapon in enumerate(used):
+            ttk.Label(grid, text=weapons[weapon].split(" (", 1)[0], anchor="center").grid(
+                row=0, column=column + 1, padx=1)
+        self._vars: dict[tuple[int, int], tk.BooleanVar] = {}
+        for line, name in enumerate(motions):
+            ttk.Label(grid, text=name).grid(row=line + 1, column=0, sticky="w", padx=(0, 6))
+            for column, weapon in enumerate(used):
+                var = tk.BooleanVar(value=line in self._motions[weapon])
+                ttk.Checkbutton(grid, variable=var).grid(row=line + 1, column=column + 1)
+                self._vars[(weapon, line)] = var
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Apply", command=self._ok, style="Accent.TButton").pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=(0, 6))
+        self.grab_set()
+
+    def _ok(self) -> None:
+        motions = [set(rows) for rows in self._motions]
+        for (weapon, motion), var in self._vars.items():
+            (motions[weapon].add if var.get() else motions[weapon].discard)(motion)
+        if motions != self._motions:
+            data = fe10_battle_fields.set_unit_motions(self._data, self._index, motions)
+            self._done(data, f"FE10BUnit row {self._index}: motions by weapon type")
+        self.destroy()
 
 
 def battle_data_viewer(parent: tk.Misc, project: ModProject, changelog: ChangeLog) -> EditorPanel:

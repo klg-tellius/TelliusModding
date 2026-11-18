@@ -28,6 +28,8 @@ You will turn a feature wish list into a verification ledger. Every dependency r
 
 ## Before you begin
 
+For which parts of each game the app edits, which discs it reads and what version 1.0 leaves out (the Wii HOME Menu, `client.bin`), start with [What You Can Edit](../meta/what-you-can-edit.md). The table below lists the engine's own boundaries, on Path of Radiance.
+
 List mechanics, chapters/screens, data additions, assets, executable changes, saves, and distribution requirements. Separate “assign an existing identity” from “create a new engine behavior.” A visible raw field or writable byte is not a support promise.
 
 ## How the editor fits together
@@ -124,6 +126,7 @@ This inventory summarizes current source-reviewed boundaries; it is not immutabl
 
 ## Related tutorials and references
 
+- [What You Can Edit](../meta/what-you-can-edit.md)
 - [Plan around campaign limits](09-campaign-limits.md)
 - [Uncovered Systems Roadmap](../meta/uncovered-systems-roadmap.md)
 - [FE8Data](../formats/fe8data.md)

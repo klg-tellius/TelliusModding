@@ -56,6 +56,7 @@ def main():
     licenses = app / 'licenses'
     licenses.mkdir(exist_ok=True)
     shutil.copytree(ROOT / 'App/licenses', licenses, dirs_exist_ok=True)
+    shutil.copyfile(ROOT / 'LICENSE', licenses / 'TelliusModding-LICENSE.txt')
     # Preserve all installed dependency notices in the clean build environment.
     versions = {}
     for dist in importlib.metadata.distributions():

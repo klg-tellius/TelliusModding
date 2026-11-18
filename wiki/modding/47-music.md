@@ -129,6 +129,15 @@ Radiant Dawn's music is in `Sound/strm/*.brstm`, and a cue reaches it in two ste
 
 A chapter's map music on Radiant Dawn is named in `sound_data`'s `SND_MAP_BGM_DATA`, one row per chapter, not in the chapter data. Scripts name cues directly.
 
+**Assets › Sound Tables** edits those rows and the other tables of `sound_data`:
+
+- **Chapter music** (`SND_MAP_BGM_DATA`): per chapter, the map music and its three alternates, the music of each army's phase, preparations, base and unit select. A chapter without a row has no music of its own.
+- **Battle themes** (`SND_BATTLE_BGM_DATA`): boss and pairing music. A row can require a chapter, a character and an opponent (PIDs), their class values and armies (-1 for any), and an event flag; the first matching row plays.
+- **Chapter sound groups** (`SND_CHAPTER_GROUP_DATA`): the BRSAR group each chapter loads, optionally behind a flag.
+- **Cue parameters**: each cue's kind, volume, pitch, pans, filters, sends, priority, voice limit, random pitch and volume, start delay, distance settings and Sound Room index.
+
+Text boxes take a cue, chapter ID (`C0101`), PID or flag name; a name the file does not hold yet is added. **Add (copy of selected)** and **Remove** change the number of rows. **Save** writes `sound_data`.
+
 ## Things to try next
 
 1. **A cue alias.** Select your new track, **New cue…** `BGM_TUTORIAL_THEME_ALT`, and use it in one chapter while the first cue stays on another.

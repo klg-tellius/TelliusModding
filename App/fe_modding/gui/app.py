@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .. import config
+from .. import __version__, config
 from ..exceptions import ProjectError
 from ..project import ModProject
 from . import theme
@@ -30,10 +30,28 @@ from .shell import NAV, Shell
 from .widgets import Card, CardGrid, ScrollFrame, disable_wheel_value_changes
 
 
+APP_NAME = "Tellius Modding"
+REPOSITORY_URL = "https://github.com/klg-tellius/TelliusModding"
+
+
+def window_title(project_name: str | None = None) -> str:
+    """The main window's title: the app name and version (``fe_modding.__version__``),
+    after the open project's name when there is one."""
+    title = f"{APP_NAME} {__version__}"
+    return f"{project_name} - {title}" if project_name else title
+
+
+def about_text() -> str:
+    return (f"{APP_NAME}\nVersion {__version__}\n\n"
+            "Modding toolkit for Fire Emblem: Path of Radiance and Radiant Dawn.\n\n"
+            "Code released under the MIT License; the wiki under CC BY-SA 4.0.\n"
+            f"{REPOSITORY_URL}")
+
+
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Tellius Modding")
+        self.title(window_title())
         self.geometry("1360x860")
         self.state("zoomed")
         self.minsize(960, 600)
@@ -116,7 +134,14 @@ class MainWindow(tk.Tk):
         settings_menu.add_command(label="Disc and media tools...", command=self._setup_tools)
         menubar.add_cascade(label="Settings", menu=settings_menu)
 
+        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu.add_command(label=f"About {APP_NAME}...", command=self._show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
         self.config(menu=menubar)
+
+    def _show_about(self) -> None:
+        messagebox.showinfo(f"About {APP_NAME}", about_text(), parent=self)
 
     def _setup_tools(self):
         from .tool_setup import ToolSetupDialog
@@ -138,7 +163,8 @@ class MainWindow(tk.Tk):
 
         ttk.Label(column, text="◆  Tellius Modding", style="Title.TLabel").pack(anchor="w")
         ttk.Label(column, text="Modding toolkit for Fire Emblem: Path of Radiance and Radiant Dawn.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(4, 24))
+                  style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
+        ttk.Label(column, text=f"Version {__version__}", style="Muted.TLabel").pack(anchor="w", pady=(2, 24))
 
         buttons = ttk.Frame(column, style="Page.TFrame")
         buttons.pack(anchor="w", pady=(0, 32))
@@ -248,7 +274,7 @@ class MainWindow(tk.Tk):
                                               if tool_applies(project, key)))
         self._shell.pack(fill="both", expand=True)
         self._shell.navigate(("home",))
-        self.title(f"{project.name} - Tellius Modding")
+        self.title(window_title(project.name))
 
     def _confirm_leave_project(self) -> bool:
         """Before closing a project with unsaved edits, offer to save them all."""
@@ -260,7 +286,7 @@ class MainWindow(tk.Tk):
         if not self._confirm_leave_project():
             return
         self._teardown()
-        self.title("Tellius Modding")
+        self.title(window_title())
         self._show_launcher()
 
     def _on_app_close(self) -> None:

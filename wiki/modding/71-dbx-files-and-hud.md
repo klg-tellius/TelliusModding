@@ -92,9 +92,10 @@ Its `pos` becomes `63,129`. **Save** is enabled and the status bar counts *1 uns
 
 On Radiant Dawn the page shows `FE10Battle.cms`, which holds the battle tables in one binary file. The list has one group per table (`FE10BUnit`, `FE10BMapData`, `FE10BCamFile`…) and one for the camera arrays; each row shows its names and its decoded values, and the right side every field of the selected row.
 
-- **Edit names…** changes the names of the selected row (texture, model and scenery names).
+- **Edit fields…** opens a form with every named field of the selected row: its names (texture, model, effect and scenery names; an empty box is none) and its numbers. On `FE10BUnit` that is the flag mask, the weapon types that pick a random attack variant, the twenty `FE10BParam` values, the six camera lists, the footstep sound set and the texture count; on `FE10BWeapon` the weapon type, the four actor flags and the scale; on `FE10BMotion` and `FE10BCamFile` the flags; on `FE10BSFXList` the eight ground columns; on `FE10BCamEffect` the camera group of each context; on `FE10BSetup` the value (65536 = 1.0). Each box has a **?** with the game routine that reads it.
+- **Motions by weapon…** (an `FE10BUnit` row) shows a grid of `FE10BMotion` rows against the sixteen weapon types: a tick lets the unit play that motion with that weapon type.
 - **Edit scenery choice…** sets which `FE10BMapModel` scenery a map key uses for each of its five variants.
-- The other fields are read-only. Edits are kept until **Save** (or **Discard changes**).
+- Bytes no field names (pads, the pointers the game fills in when it loads the file, `FE10BCamType`'s second word that nothing reads) are kept. Edits are kept until **Save** (or **Discard changes**).
 
 ## Things to try next
 

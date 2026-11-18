@@ -13,7 +13,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
-from .. import patch, runtime_tools, tools
+from .. import __version__, patch, runtime_tools, tools
 from ..exceptions import ModdingError
 from ..games import get_game_info
 
@@ -22,7 +22,7 @@ class ApplyPatchDialog(tk.Toplevel):
     def __init__(self, parent: tk.Misc, *, patch_path: str = "", standalone: bool = False):
         """``standalone``: the program's only window (Tellius Patcher), not a dialog over the app."""
         super().__init__(parent)
-        self.title("Tellius Patcher" if standalone else "Apply a patch")
+        self.title(f"Tellius Patcher {__version__}" if standalone else "Apply a patch")
         self.resizable(False, False)
         if not standalone:
             self.transient(parent.winfo_toplevel())
