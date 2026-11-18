@@ -42,7 +42,7 @@ def write_index(run: Path, out: Path) -> Path:
         if not match:
             continue
         number = int(match.group(1))
-        start = "New file (no chapter yet)" if number == 0 else labels.get(number, "end of the story (no chapter record)")
+        start = "New file (no chapter yet)" if number == 0 else labels.get(number, "after the Endgame (no chapter record)")
         rows.append(f"| `{path.name}` | {number} | {start} |")
     text = (f"# Chapter sweep saves ({manifest['region']})\n\n"
             f"Every story chapter was won when the player ended turn 1 (trigger `{manifest.get('trigger', 'on_phase')}`). "
