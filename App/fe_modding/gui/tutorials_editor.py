@@ -110,12 +110,17 @@ class TutorialsEditor(EditorPanel):
         ttk.Label(flags, text="unlocked").grid(row=0, column=1, padx=6)
         ttk.Label(flags, text="learned").grid(row=0, column=2, padx=6)
         self._flags: list[tuple[tk.BooleanVar, tk.BooleanVar]] = []
+        self._flag_buttons: list[list[ttk.Checkbutton]] = []
         for i, name in enumerate(self._flag_names):
             ttk.Label(flags, text=f"  {name}").grid(row=i + 1, column=0, sticky="w")
             pair = (tk.BooleanVar(), tk.BooleanVar())
+            row = []
             for c, var in enumerate(pair):
-                ttk.Checkbutton(flags, variable=var, command=self._apply).grid(row=i + 1, column=c + 1)
+                button = ttk.Checkbutton(flags, variable=var, command=self._apply)
+                button.grid(row=i + 1, column=c + 1)
+                row.append(button)
             self._flags.append(pair)
+            self._flag_buttons.append(row)
         note = self._project.profile.tutorial_flag_note
         if note:
             ttk.Label(flags, text=note, style="Muted.TLabel", wraplength=300, justify="left").grid(
@@ -192,9 +197,13 @@ class TutorialsEditor(EditorPanel):
                                 ("initial", self._data.initials)):
                 value = getattr(e, key)
                 self._vars[key].set(self._label(value, labels[value]) if value < len(labels) else str(value))
-            for (unlocked, learned), flag in zip(self._flags, e.start_flags):
+            # the Japanese disc has no Easy mode: its rows hold three start flags
+            for i, (unlocked, learned) in enumerate(self._flags):
+                flag = e.start_flags[i] if i < len(e.start_flags) else 0
                 unlocked.set(bool(flag & td.UNLOCKED))
                 learned.set(bool(flag & td.LEARNED))
+                for button in self._flag_buttons[i]:
+                    button.state(["!disabled"] if i < len(e.start_flags) else ["disabled"])
             self._title_text.config(text=self._texts.get(e.title_key, "(no text for this message key)"))
         finally:
             self._loading = False
@@ -220,7 +229,8 @@ class TutorialsEditor(EditorPanel):
                                  "Shift-JIS.", parent=self)
             self._on_select()
             return
-        flags = [(td.UNLOCKED if u.get() else 0) | (td.LEARNED if l.get() else 0) for u, l in self._flags]
+        flags = [(td.UNLOCKED if u.get() else 0) | (td.LEARNED if l.get() else 0)
+                 for u, l in self._flags[:len(e.start_flags)]]
         before = (e.id, e.order, e.chapter, e.category, e.initial, e.title_key, e.script, e.function, e.start_flags)
         e.id, e.order = new_id, order
         e.chapter, e.category, e.initial = groups["chapter"], groups["category"], groups["initial"]
