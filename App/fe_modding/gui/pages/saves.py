@@ -1,11 +1,15 @@
-"""Saves: open a Path of Radiance ``.gci`` and edit every decoded part of a
-save block (``formats/save_file.py``): party and chapter state, units,
-convoy, forged weapons, map objects, flags and the shared system data.
+"""Saves: open a save file and edit every decoded part of it, one tab per part,
+the same tabs on both games (a game leaves out the tabs it has no data for).
 
-Edits stay in memory until Save; writing re-encodes the block (the unit
-list changes size, so later chunks move) and recomputes its checksum. Names
-come from the project's FE8Data.bin and message texts; saves store table
-numbers, so a project that reordered those tables shows other names."""
+Path of Radiance: a memory-card ``.gci`` (``formats/save_file.py``), one save
+block at a time: party and chapter state, units, convoy, forged weapons, map
+objects, flags and the shared system data. Writing re-encodes the block (the
+unit list changes size, so later chunks move) and recomputes its checksum.
+Names come from the project's FE8Data.bin and message texts; saves store table
+numbers, so a project that reordered those tables shows other names.
+
+Radiant Dawn: the Dolphin NAND file ``FE10_US.dat``, through the adapter in
+:mod:`.saves_fe10` (the profile's ``save_format`` picks it)."""
 
 from __future__ import annotations
 
@@ -19,7 +23,6 @@ from ...formats import event_flags as ef
 from ...formats import extended_flags as xf
 from ...formats import save_file as sf
 from ...formats.cmb.parser import ParseError, parse
-from ...game_profile import SAVE_UNITS
 from .. import theme
 from ..shell import Page
 from ..widgets import ScrollFrame, info, section_header
@@ -137,12 +140,17 @@ class _Fields(ttk.Frame):
         if value == old:
             return
         obj = target()
-        if isinstance(attr, tuple):
-            raw = bytearray(getattr(obj, attr[0]))
-            raw[attr[1]] = value & 0xFF
-            setattr(obj, attr[0], bytes(raw))
-        else:
-            setattr(obj, attr, value)
+        try:
+            if isinstance(attr, tuple):
+                raw = bytearray(getattr(obj, attr[0]))
+                raw[attr[1]] = value & 0xFF
+                setattr(obj, attr[0], bytes(raw))
+            else:
+                setattr(obj, attr, value)
+        except (ValueError, IndexError, KeyError) as exc:
+            messagebox.showerror("Invalid value", f"{exc}", parent=self)
+            self.load()
+            return
         if on_set:
             on_set(value)
         self._editor.mark_dirty()
@@ -179,24 +187,26 @@ class _CheckList(ttk.Frame):
 class SaveEditorPage(Page):
     kind = "saves"
 
+    INFO = ("Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
+            "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
+            "(marked “loaded”). Keep the game closed while you overwrite a save it uses.")
+
     def __init__(self, shell):
         super().__init__(shell)
-        self._rd_editor = None
-        if not self.project.profile.supports(SAVE_UNITS):
-            from .saves_fe10 import Fe10SaveEditor
+        # the game's save adapter: None for Path of Radiance's .gci blocks (this class), else an object
+        # with the same tabs and file actions (Radiant Dawn's NAND file, saves_fe10.Fe10Saves)
+        self._game = None
+        if self.project.profile.save_format == "nand":
+            from .saves_fe10 import Fe10Saves
 
-            self._rd_editor = Fe10SaveEditor(self, shell)
-            self._rd_editor.pack(fill="both", expand=True)
-            return
+            self._game = Fe10Saves(self)
+        self._tab_keys = tuple(self._game.TABS) if self._game else tuple(TABS)
         head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
         head.pack(fill="x")
         title = ttk.Frame(head, style="Page.TFrame")
         title.pack(anchor="w", pady=(0, 8))
         ttk.Label(title, text="Saves", style="Title.TLabel").pack(side="left")
-        info(title, "Open a memory-card save (.gci, as exported by Dolphin or GCMM) to edit the party, units, "
-                    "convoy, forges and flags of one of its blocks. A file slot loads its newest valid block "
-                    "(marked “loaded”). Keep the game closed while you overwrite a save it uses.").pack(
-            side="left", padx=(8, 0), pady=(8, 0))
+        info(title, self._game.INFO if self._game else self.INFO).pack(side="left", padx=(8, 0), pady=(8, 0))
         top = ttk.Frame(self, style="Page.TFrame", padding=(28, 0))
         top.pack(fill="x")
         ttk.Button(top, text="Open save file…", command=self._open).pack(side="left")
@@ -211,7 +221,7 @@ class SaveEditorPage(Page):
         self._file_label.pack(side="left", padx=(12, 0))
         row = ttk.Frame(self, style="Page.TFrame", padding=(28, 8, 28, 0))
         row.pack(fill="x")
-        ttk.Label(row, text="Block").pack(side="left")
+        ttk.Label(row, text=self._game.PICKER_LABEL if self._game else "Block").pack(side="left")
         self._block_var = tk.StringVar()
         self._block_box = ttk.Combobox(row, textvariable=self._block_var, state="readonly", width=90)
         self._block_box.pack(side="left", padx=(6, 12))
@@ -222,12 +232,16 @@ class SaveEditorPage(Page):
         self._notebook = ttk.Notebook(self)
         self._notebook.pack(fill="both", expand=True, padx=28, pady=(8, 20))
         self._tabs: dict = {}
-        for key, title in TABS.items():
+        for key in self._tab_keys:
             frame = ttk.Frame(self._notebook, padding=8)
-            self._notebook.add(frame, text=title)
+            self._notebook.add(frame, text=TABS[key])
             self._tabs[key] = frame
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab(), add="+")
         self._tab = "overview"
+        if self._game is not None:
+            self._game.build(self._tabs)
+            self._sync()
+            return
 
         self._path: Optional[Path] = None
         self._savefile: Optional[sf.SaveFile] = None
@@ -255,26 +269,22 @@ class SaveEditorPage(Page):
 
     # -- routing ----------------------------------------------------------------------
     def show(self, route) -> bool:
-        if self._rd_editor is not None:
-            return True
-        if len(route) > 1 and route[1] in TABS:
+        if len(route) > 1 and route[1] in self._tab_keys:
             self._tab = route[1]
-            self._notebook.select(list(TABS).index(self._tab))
+            self._notebook.select(self._tab_keys.index(self._tab))
         return True
 
     def crumbs(self, route):
-        if self._rd_editor is not None:
-            return [("Tools", ("tools",)), ("Radiant Dawn saves", None)]
         return [("Tools", ("tools",)), ("Saves", ("saves",)), (TABS[self._tab], None)]
 
     def history_label(self, route):
         return "Saves"
 
     def _on_tab(self) -> None:
-        self._tab = list(TABS)[self._notebook.index("current")]
+        self._tab = self._tab_keys[self._notebook.index("current")]
         if self.shell.route and self.shell.route[0] == self.kind and self.shell.route[1:2] != (self._tab,):
             self.shell.replace_route((self.kind, self._tab))
-        if self._tab == "raw":
+        if self._tab == "raw" and self._game is None:
             self._fill_raw()
 
     # -- names ------------------------------------------------------------------------
@@ -325,18 +335,38 @@ class SaveEditorPage(Page):
         return out
 
     # -- file ---------------------------------------------------------------------------
+    def set_picker(self, file_text: str, labels: list, selected: str) -> None:
+        """For the game adapter: show the opened file and its files/blocks, then select one."""
+        self._file_label.config(text=file_text)
+        self._labels = list(labels)
+        self._block_box.configure(values=self._labels)
+        self._block_var.set(selected)
+        self._select_block()
+
+    def sync(self) -> None:
+        self._sync()
+
     def mark_dirty(self) -> None:
+        if self._game is not None:
+            self._game.changed()
+            return
         if self.block is not None:
             self._dirty_blocks.add(id(self.block))
         self._sync()
         self._refresh_lists()
 
+    def _dirty(self) -> bool:
+        return self._game.dirty if self._game is not None else bool(self._dirty_blocks)
+
     def _confirm_discard(self) -> bool:
-        return not self._dirty_blocks or messagebox.askyesno(
+        return not self._dirty() or messagebox.askyesno(
             "Discard changes?", "The open save has unsaved changes. Discard them?", parent=self)
 
     def _open(self) -> None:
         if not self._confirm_discard():
+            return
+        if self._game is not None:
+            self._game.open_dialog()
             return
         chosen = filedialog.askopenfilename(title="Open a save file", parent=self,
                                             filetypes=[("GameCube saves", "*.gci"), ("All files", "*.*")])
@@ -344,6 +374,8 @@ class SaveEditorPage(Page):
             self.open_path(Path(chosen))
 
     def open_path(self, path: Path) -> bool:
+        if self._game is not None:
+            return self._game.open_path(path)
         try:
             save = sf.SaveFile.from_bytes(path.read_bytes())
         except OSError as exc:
@@ -366,6 +398,9 @@ class SaveEditorPage(Page):
         return True
 
     def _select_block(self) -> None:
+        if self._game is not None:
+            self._game.select(self._block_var.get())
+            return
         if self._savefile is None or self._block_var.get() not in self._labels:
             return
         self.block = self._savefile.blocks[self._labels.index(self._block_var.get())]
@@ -391,10 +426,17 @@ class SaveEditorPage(Page):
                     self._select_block()
 
     def _save(self) -> None:
+        if self._game is not None:
+            if self._game.path is not None:
+                self._game.write(self._game.path)
+            return
         if self._path is not None and self._savefile is not None:
             self._write(self._path)
 
     def _save_as(self) -> None:
+        if self._game is not None:
+            self._game.save_as_dialog()
+            return
         if self._savefile is None:
             return
         chosen = filedialog.asksaveasfilename(title="Save the edited save as", parent=self, defaultextension=".gci",
@@ -405,6 +447,9 @@ class SaveEditorPage(Page):
 
     def _play(self) -> None:
         """Test the selected file-save block in Dolphin, as saved or moved to a chapter start."""
+        if self._game is not None:
+            self._game.play()
+            return
         block = self.block
         if self._savefile is None or block is None:
             return
@@ -431,6 +476,9 @@ class SaveEditorPage(Page):
         self.shell.play_from_save(self._path.name if self._path else "save.gci", data)
 
     def _check(self) -> None:
+        if self._game is not None:
+            self._game.check()
+            return
         if self.block is None:
             return
         problems = sf.validate(self.block, self._fe8())
@@ -445,10 +493,13 @@ class SaveEditorPage(Page):
             messagebox.showinfo("Check", "No problems found.", parent=self)
 
     def _sync(self) -> None:
-        has = self._savefile is not None
+        has = (self._game.save is not None) if self._game is not None else self._savefile is not None
         self._save_as_button.configure(state="normal" if has else "disabled")
         self._play_button.configure(state="normal" if has and self.shell.extracted else "disabled")
-        self._save_button.configure(state="normal" if self._dirty_blocks else "disabled")
+        self._save_button.configure(state="normal" if self._dirty() else "disabled")
+        if self._game is not None:
+            self._status.config(text=self._game.status() + (" · unsaved changes" if self._game.dirty else ""))
+            return
         if self.block is None:
             self._status.config(text="")
             return

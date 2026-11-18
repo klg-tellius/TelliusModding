@@ -76,7 +76,7 @@ CHARACTER_FORM = "character_form"  # the Character › Stats form with Open butt
 CHAPTER_RECORD_FORM = "chapter_record_form"  # Chapter › Chapter data: objectives, music, backgrounds
 SUPPORT_LIST = "support_list"  # per-partner support list with conversation links
 DATA_WORKSPACE = "data_workspace"  # Game Data as one tabbed workspace (supports, flags, AI, rect RIDs as tabs)
-SAVE_UNITS = "save_units"      # save editor with Units, Convoy, Forges, Map objects, Flags, System tabs
+SAVE_UNITS = "save_units"      # save editor with Units, Convoy, Flags and System tabs (Forges, Map objects: PoR)
 CHAPTER_FLOW = "chapter_flow"  # editable story flow (game_code.story_flow) and Add chapter
 NEW_CAMPAIGN = "new_campaign"  # Chapters › New campaign (several chapters and characters at once)
 HUB = "hub"                    # Chapters › Create hub (a hub chapter with links to chapters)
@@ -149,6 +149,9 @@ class GameProfile:
     tutorial_flag_names: tuple[str, ...] = ("Normal", "Hard", "Maniac", "Easy")
     #: shown under the start flags when what they do in game differs from Path of Radiance
     tutorial_flag_note: str = ""
+    #: Save files the Saves page opens: ``gci`` (a memory-card file of save blocks, ``formats/save_file.py``)
+    #: or ``nand`` (Dolphin's Wii NAND file ``FE10_US.dat``, ``formats/save_file_fe10.py``).
+    save_format: str = "gci"
 
     # -- files ------------------------------------------------------------------------------
     def logical(self, name: str) -> LogicalFile:
@@ -284,7 +287,8 @@ RADIANT_DAWN_PROFILE = GameProfile(
     features=frozenset({DATA_TABLES, CHAPTERS, DIALOGUE, SCRIPTS, SHOPS, AI, BATTLE_DATA, BATTLE_CAMERAS, MODELS, FONTS, ICONS, EFFECTS,
                         AUDIO, VIDEO, SAVES, GAME_CODE, PLAY, PLAYTHROUGH, BATTLE_SIM, PATCHES, DISC, BATTLE_SKIES,
                         MAP_DECODED, CHAPTER_FLOW, CHAPTER_RECORD_FORM, SUPPORT_LIST, TUTORIALS, BATTLE_WEAPONS, BATTLE_SCENERIES, BATTLE_PARAMS,
-                        NEW_CAMPAIGN, COLOUR_VARIANTS, CHARACTER_FORM, DATA_WORKSPACE, STAFF_CREDITS, HUB}),
+                        NEW_CAMPAIGN, COLOUR_VARIANTS, CHARACTER_FORM, DATA_WORKSPACE, STAFF_CREDITS, HUB,
+                        SAVE_UNITS}),
     message_dialect="fe10",
     script_dialect="fe10",
     battle_dialect="fe10",
@@ -293,6 +297,7 @@ RADIANT_DAWN_PROFILE = GameProfile(
     font_files=FONT_FILES_FE10,
     text_export_parts=("FE10Data", "FE10Growth", "deployments", "shops", "messages", "scripts", "sound", "faces",
                        "FE10Battle"),
+    save_format="nand",
     tutorial_files=(("Normal, English", "Tutorial/tut_data_n_en.bin"), ("Hard, English", "Tutorial/tut_data_h_en.bin"),
                     ("Normal, Japanese", "Tutorial/tut_data_n.bin"), ("Hard, Japanese", "Tutorial/tut_data_h.bin")),
     # same record layout as Path of Radiance. Playtests L2-L6 (Dolphin, 2026-11-03): with every

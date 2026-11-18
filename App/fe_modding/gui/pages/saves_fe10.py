@@ -1,737 +1,1122 @@
-"""Radiant Dawn RFEE01 NAND-save view used by :mod:`.saves`."""
+"""The Saves page's Radiant Dawn adapter: the Dolphin NAND file ``FE10_US.dat``
+(``formats/save_file_fe10.py``) shown in the page's own tabs with the page's controls.
+
+The file holds six files and six checkpoints (the page's File picker) and one system record (the
+System data tab). Edits change the record in memory; Save writes the whole file back with every
+record's checksum recomputed. Unknown bytes are kept as they are.
+
+Names come from the save's own ID lists (ITBL) and, for display names, bases, supports and flags,
+from the open workspace's FE10Data, messages and scripts."""
 
 from __future__ import annotations
 
 import os
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
+from ... import script_sources
+from ...formats import event_flags as ef
 from ...formats import save_file_fe10 as sf
-from ..widgets import info
+from ...formats.cmb.parser import ParseError, parse
+from ..widgets import ScrollFrame, section_header
+from .saves import OFF, ON, _CheckList, _Fields, _tree
+
+TABS = ("overview", "units", "convoy", "map", "flags", "system", "raw")
+INFO = ("Open the unencrypted FE10_US.dat from Dolphin's Radiant Dawn data folder "
+        "(Wii/title/00010000/52464545/data under Dolphin's user folder) to edit a file's chapter, units, "
+        "convoy and flags, and the system data every file shares. Unknown bytes are kept and the game's "
+        "checksums recomputed. Encrypted data.bin exports from a Wii can't be read. Keep the game closed "
+        "while you overwrite a save it uses.")
+PICKER_LABEL = "File"
+DEFAULT_THRESHOLDS = (50, 100, 150)   # retail RelianceParam
+RANK_NAMES = {0: "None", 1: "C", 2: "B", 3: "A"}
+# The system record's single values: grid attribute -> (offset, size).
+SYSTEM_FIELDS = {"byte_3ac": (0x3AC, 1), "byte_3ad": (0x3AD, 1), "bytes_3ae": (0x3AE, 2),
+                 "word_3b0": (0x3B0, 4), **{f"value_{i}": (0xCC + 2 * i, 2) for i in range(8)}}
 
 
-class Fe10SaveEditor(ttk.Frame):
-    """Structural editor for an unencrypted Dolphin ``FE10_US.dat`` save."""
+class _StateView:
+    """The battle state of a file, for the Overview grid."""
 
-    def __init__(self, parent: tk.Misc, shell):
-        super().__init__(parent, style="Page.TFrame")
-        self.shell = shell
-        self._path: Optional[Path] = None
-        self._save: Optional[sf.SaveFile] = None
-        self._records: list[sf.SaveRecord] = []
-        self._labels: list[str] = []
+    def __init__(self, record: sf.SaveRecord):
+        self._record = record
 
-        head = ttk.Frame(self, style="Page.TFrame", padding=(28, 12, 28, 4))
-        head.pack(fill="x")
-        title = ttk.Frame(head, style="Page.TFrame")
-        title.pack(anchor="w", pady=(0, 8))
-        ttk.Label(title, text="Radiant Dawn saves", style="Title.TLabel").pack(side="left")
-        info(title, "Open the unencrypted FE10_US.dat from Dolphin's RFEE01 NAND data folder. "
-                    "The editor preserves unknown bytes and recomputes the game's CRC-32. Encrypted Wii "
-                    "data.bin exports are not supported.").pack(side="left", padx=(8, 0), pady=(8, 0))
+    @property
+    def chapter(self) -> int:
+        return self._record.chapter_number
 
-        top = ttk.Frame(self, style="Page.TFrame", padding=(28, 0))
-        top.pack(fill="x")
-        ttk.Button(top, text="Open NAND folder…", command=self._open_folder).pack(side="left")
-        ttk.Button(top, text="Open FE10_US.dat…", command=self._open_file).pack(side="left", padx=(6, 0))
-        self._save_button = ttk.Button(top, text="Save", command=self._save_file, state="disabled")
-        self._save_button.pack(side="left", padx=(6, 0))
-        self._copy_button = ttk.Button(top, text="Save data-folder copy…", command=self._save_copy,
-                                       state="disabled")
-        self._copy_button.pack(side="left", padx=(6, 0))
-        self._check_button = ttk.Button(top, text="Check", command=self._check, state="disabled")
-        self._check_button.pack(side="left", padx=(6, 0))
-        self._play_button = ttk.Button(top, text="Play in Dolphin…", command=self._play, state="disabled")
-        self._play_button.pack(side="left", padx=(6, 0))
+    @chapter.setter
+    def chapter(self, value: int) -> None:
+        self._record.chapter_number = value
 
-        self._file_label = ttk.Label(self, text="No save open.", style="Muted.TLabel", padding=(28, 8, 28, 0))
-        self._file_label.pack(fill="x")
-        row = ttk.Frame(self, style="Page.TFrame", padding=(28, 8, 28, 0))
-        row.pack(fill="x")
-        ttk.Label(row, text="Record").pack(side="left")
-        self._record_var = tk.StringVar()
-        self._record_box = ttk.Combobox(row, textvariable=self._record_var, state="readonly", width=88)
-        self._record_box.pack(side="left", padx=(6, 12))
-        self._record_box.bind("<<ComboboxSelected>>", lambda _event: self._refresh())
-        self._status = ttk.Label(row, style="Muted.TLabel")
-        self._status.pack(side="left")
+    @property
+    def phase(self) -> int:
+        return self._record.army_phase
 
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True, padx=28, pady=(8, 20))
-        overview = ttk.Frame(notebook, padding=12)
-        convoy = ttk.Frame(notebook, padding=8)
-        units = ttk.Frame(notebook, padding=8)
-        flags = ttk.Frame(notebook, padding=8)
-        sections = ttk.Frame(notebook, padding=8)
-        raw = ttk.Frame(notebook, padding=8)
-        notebook.add(overview, text="Overview")
-        notebook.add(convoy, text="Convoy")
-        notebook.add(units, text="Units")
-        notebook.add(flags, text="Flags")
-        notebook.add(sections, text="Sections")
-        notebook.add(raw, text="Raw")
+    @phase.setter
+    def phase(self, value: int) -> None:
+        self._record.army_phase = value
 
-        self._summary = ttk.Label(overview, justify="left", anchor="nw")
+    @property
+    def turn(self) -> int:
+        return self._record.turn
+
+    @turn.setter
+    def turn(self, value: int) -> None:
+        self._record.turn = value
+
+
+class _UnitView:
+    """One unit for the Units grid: shown stats are the character's and class's bases plus the gains."""
+
+    def __init__(self, record: sf.SaveRecord, unit: sf.SavedUnit, bases: Optional[list[int]]):
+        self._record, self._unit, self._bases = record, unit, bases
+
+    @property
+    def job(self) -> int:
+        return self._unit.class_number
+
+    @job.setter
+    def job(self, value: int) -> None:
+        self._record.set_unit_class(self._unit, value)
+
+    @property
+    def army(self) -> int:
+        return self._unit.army
+
+    @army.setter
+    def army(self, value: int) -> None:
+        self._record.set_unit_army(self._unit, value)
+
+    @property
+    def level(self) -> int:
+        return self._unit.level
+
+    @level.setter
+    def level(self, value: int) -> None:
+        self._record.set_unit_state(self._unit, level=value)
+
+    @property
+    def exp(self) -> int:
+        return self._unit.experience
+
+    @exp.setter
+    def exp(self, value: int) -> None:
+        self._record.set_unit_state(self._unit, experience=value)
+
+    @property
+    def hp(self) -> int:
+        return self._unit.current_hp
+
+    @hp.setter
+    def hp(self, value: int) -> None:
+        self._record.set_unit_state(self._unit, current_hp=value)
+
+    def stat(self, i: int) -> Optional[int]:
+        return None if self._bases is None else self._bases[i] + self._unit.stat_gains[i]
+
+    def set_stat(self, i: int, value: int) -> None:
+        gains = list(self._unit.stat_gains)
+        gains[i] = value - self._bases[i]
+        self._record.set_unit_state(self._unit, stat_gains=gains)
+
+
+def _stat_property(i: int) -> property:
+    """Stat ``i`` of :class:`_UnitView` as an attribute (the grid binds attributes by name)."""
+    return property(lambda self: self.stat(i), lambda self, value: self.set_stat(i, value))
+
+
+for _i, _stat in enumerate(sf.UNIT_STATS):
+    setattr(_UnitView, f"stat_{_stat}", _stat_property(_i))
+
+
+class _ItemView:
+    """One of a unit's seven items (``unit`` set) or a convoy slot."""
+
+    def __init__(self, record: sf.SaveRecord, unit: Optional[sf.SavedUnit], slot: int, item):
+        self._record, self._unit, self._slot, self.saved = record, unit, slot, item
+
+    def _set(self, number: int, uses: int, flags: int) -> None:
+        if self._unit is not None:
+            self._record.set_unit_item(self._unit, self._slot, number, uses, flags)
+            return
+        if self.saved.forged:
+            raise ValueError("A forged item changes with the forge fields below.")
+        if not 0 <= uses <= 0xFF or not 0 <= flags <= 0xFF:
+            raise ValueError("uses and flags must be 0..255")
+        self._record.set_convoy_item(self._slot, number, 0 if number == 0 else uses << 8 | flags)
+
+    @property
+    def item(self) -> int:
+        return self.saved.item_number
+
+    @item.setter
+    def item(self, value: int) -> None:
+        self._set(value, self.saved.state >> 8, self.saved.state & 0xFF)
+
+    @property
+    def uses(self) -> int:
+        return self.saved.state >> 8
+
+    @uses.setter
+    def uses(self, value: int) -> None:
+        self._set(self.saved.item_number, value, self.saved.state & 0xFF)
+
+    @property
+    def flags(self) -> int:
+        return self.saved.state & 0xFF
+
+    @flags.setter
+    def flags(self, value: int) -> None:
+        self._set(self.saved.item_number, self.saved.state >> 8, value)
+
+
+class _SupportView:
+    """The selected support slot of the selected unit."""
+
+    def __init__(self, record: sf.SaveRecord, unit: sf.SavedUnit, slot: int, thresholds):
+        self._record, self._unit, self._slot, self._thresholds = record, unit, slot, thresholds
+
+    @property
+    def points(self) -> int:
+        return self._unit.support_points[self._slot]
+
+    @points.setter
+    def points(self, value: int) -> None:
+        self._record.set_unit_support_points(self._unit, self._slot, value)
+
+    @property
+    def rank(self) -> int:
+        return sf.support_rank(self.points, self._thresholds)
+
+    @rank.setter
+    def rank(self, value: int) -> None:
+        self.points = sf.rank_points(value, self._thresholds)
+
+
+class _TileTableView:
+    """The live count of a file's tile records."""
+
+    def __init__(self, record: sf.SaveRecord):
+        self._record = record
+
+    @property
+    def count(self) -> int:
+        return self._record.tile_records()[1]
+
+    @count.setter
+    def count(self, value: int) -> None:
+        self._record.set_tile_count(value)
+
+
+class _TileView:
+    """One tile record (x, y, type, subtype, four values)."""
+
+    def __init__(self, record: sf.SaveRecord, index: int):
+        self._record, self._index = record, index
+
+    def _get(self) -> sf.TileRecord:
+        return self._record.tile_records()[0][self._index]
+
+    def _set(self, **changes) -> None:
+        current = self._get()
+        values = {"x": current.x, "y": current.y, "type": current.type, "subtype": current.subtype,
+                  "values": current.values, **changes}
+        self._record.set_tile_record(self._index, sf.TileRecord(**values))
+
+    x = property(lambda self: self._get().x, lambda self, v: self._set(x=v))
+    y = property(lambda self: self._get().y, lambda self, v: self._set(y=v))
+    type = property(lambda self: self._get().type, lambda self, v: self._set(type=v))
+    subtype = property(lambda self: self._get().subtype, lambda self, v: self._set(subtype=v))
+    values = property(lambda self: self._get().values, lambda self, v: self._set(values=bytes(v)))
+
+
+class _SystemView:
+    """The system record's single values (:data:`SYSTEM_FIELDS`)."""
+
+    def __init__(self, record: sf.SaveRecord):
+        object.__setattr__(self, "_record", record)
+
+    def __getattr__(self, name: str) -> int:
+        if name not in SYSTEM_FIELDS:
+            raise AttributeError(name)
+        return self._record.system_value(*SYSTEM_FIELDS[name])
+
+    def __setattr__(self, name: str, value: int) -> None:
+        self._record.set_system_value(*SYSTEM_FIELDS[name], value)
+
+
+class Fe10Saves:
+    """Radiant Dawn's side of the Saves page (``page``: the :class:`SaveEditorPage`)."""
+
+    TABS = TABS
+    INFO = INFO
+    PICKER_LABEL = PICKER_LABEL
+
+    def __init__(self, page):
+        self.page = page
+        self.shell = page.shell
+        self.path: Optional[Path] = None
+        self.save: Optional[sf.SaveFile] = None
+        self.records: list[sf.SaveRecord] = []
+        self.labels: list[str] = []
+        self.record: Optional[sf.SaveRecord] = None
+        self._units: dict[int, sf.SavedUnit] = {}
+        self._unit_problem = ""
+        self._unit_slot: Optional[int] = None
+        self._support_slot: Optional[int] = None
+        self._convoy_slot: Optional[int] = None
+        self._tile: Optional[int] = None
+        self._fields: list[_Fields] = []
+        self._character_choices: dict = {}
+
+    # -- workspace ------------------------------------------------------------------------
+    def _database(self):
+        try:
+            session = self.shell.session
+        except Exception:  # noqa: BLE001 - no FE10Data: numbers and IDs only
+            return None
+        return getattr(session, "fe10", None) if session is not None else None
+
+    def _text(self, key) -> str:
+        index = getattr(self.shell, "index", None)
+        return index.text(key) if index is not None and getattr(index, "ready", False) and key else ""
+
+    def _lists(self) -> dict:
+        try:
+            return self.record.id_name_lists() if self.record is not None and not self.record.empty else {}
+        except (KeyError, ValueError):
+            return {}
+
+    def _name(self, kind: str, number: int) -> str:
+        """Display name of a number in the save's own list ``kind``."""
+        first = {"character": 1, "class": 1, "item": 1, "skill": 0}[kind]
+        ids = self._lists().get(kind, [])
+        if not 0 <= number - first < len(ids):
+            return f"#{number}"
+        record_id = ids[number - first]
+        database = self._database()
+        if database is not None:
+            rows = {"character": database.characters, "class": database.classes, "item": database.items,
+                    "skill": database.skills}[kind]
+            key = {"character": "mpid", "class": "mjid", "item": "miid", "skill": "msid"}[kind]
+            row = next((r for r in rows if r.id == record_id), None)
+            title = self._text(row.values.get(key)) if row is not None else ""
+            if title and title != row.values.get(key):
+                return f"{title} ({record_id})"
+        return record_id
+
+    def _choices(self, kind: str) -> dict:
+        first = {"character": 1, "class": 1, "item": 1, "skill": 0}[kind]
+        out = {0: "(empty)"} if kind == "item" else ({0: "(none)"} if kind == "character" else {})
+        out.update({i + first: self._name(kind, i + first) for i in range(len(self._lists().get(kind, [])))})
+        return out
+
+    def _support_counts(self) -> Optional[dict[int, int]]:
+        database = self._database()
+        if database is None or self.record is None:
+            return None
+        counts = {row.values["pid"]: len(row.lists["partners"]) for row in database.table("support")}
+        return {i: counts.get(pid, 0) for i, pid in enumerate(self._lists().get("character", []), 1)}
+
+    def _partners(self, unit: sf.SavedUnit) -> list[str]:
+        database = self._database()
+        pid = self._lists().get("character", [])[unit.person_number - 1]
+        row = next((r for r in database.table("support") if r.values["pid"] == pid), None) if database else None
+        return [partner[0] for partner in row.lists["partners"]] if row is not None else []
+
+    def _thresholds(self) -> tuple[int, int, int]:
+        try:
+            values = self._database().table("support_param")[0].values
+            return values["points_c"], values["points_b"], values["points_a"]
+        except (AttributeError, KeyError, IndexError, TypeError):
+            return DEFAULT_THRESHOLDS
+
+    def _bases(self, unit: sf.SavedUnit) -> Optional[tuple[list[int], list[int]]]:
+        """(character bonus + class base, class cap) per stat, from the open workspace."""
+        database = self._database()
+        lists = self._lists()
+        if database is None or not lists:
+            return None
+        pid = lists["character"][unit.person_number - 1] if 0 < unit.person_number <= len(lists["character"]) else None
+        jid = lists["class"][unit.class_number - 1] if 0 < unit.class_number <= len(lists["class"]) else None
+        person = next((c for c in database.characters if c.id == pid), None)
+        job = next((c for c in database.classes if c.id == jid), None)
+        if person is None or job is None:
+            return None
+        return ([person.values[f"bonus_{s}"] + job.values[f"base_{s}"] for s in sf.UNIT_STATS],
+                [job.values[f"cap_{s}"] for s in sf.UNIT_STATS])
+
+    # -- building -------------------------------------------------------------------------
+    def _fields_in(self, parent, columns: int = 2) -> _Fields:
+        f = _Fields(parent, self.page, columns)
+        self._fields.append(f)
+        return f
+
+    def build(self, tabs: dict) -> None:
+        self._build_overview(tabs["overview"])
+        self._build_units(tabs["units"])
+        self._build_convoy(tabs["convoy"])
+        self._build_map(tabs["map"])
+        self._build_flags(tabs["flags"])
+        self._build_system(tabs["system"])
+        self._build_raw(tabs["raw"])
+
+    def _build_overview(self, tab) -> None:
+        self._summary = ttk.Label(tab, justify="left", anchor="nw")
         self._summary.pack(fill="x")
-        self._edit_note = ttk.Label(overview, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "The battle-state header below is the currently verified editable subset. Chapter is the "
-            "game's internal chapter number; Phase is the internal army/phase byte. Other tagged data is "
-            "shown read-only until its serializer has been fully mapped."))
-        self._edit_note.pack(anchor="w", pady=(14, 6))
-        fields = ttk.Frame(overview)
-        fields.pack(anchor="w")
-        self._chapter = tk.StringVar()
-        self._phase = tk.StringVar()
-        self._turn = tk.StringVar()
-        for col, (label, variable, width) in enumerate((
-                ("Chapter number", self._chapter, 10), ("Phase", self._phase, 8), ("Turn", self._turn, 10))):
-            ttk.Label(fields, text=label).grid(row=0, column=col * 2, sticky="w", padx=(0 if col == 0 else 16, 5))
-            entry = ttk.Entry(fields, textvariable=variable, width=width)
-            entry.grid(row=0, column=col * 2 + 1, sticky="w")
-            entry.bind("<Return>", self._commit_bmst)
-            entry.bind("<FocusOut>", self._commit_bmst)
-        self._field_entries = list(fields.winfo_children())[1::2]
-        start = ttk.Frame(overview)
-        start.pack(anchor="w", pady=(10, 0))
-        self._start_button = ttk.Button(start, text="Start a chapter from its opening…",
-                                        command=self._start_chapter, state="disabled")
+        section_header(tab, "Battle state", "the chapter is the game's internal chapter number").pack(
+            anchor="w", pady=(12, 0))
+        f = self._fields_in(tab, 3)
+        f.pack(anchor="w", pady=(4, 10))
+        state = lambda: _StateView(self.record) if self._has("BMST") else None  # noqa: E731
+        f.add("Chapter", state, "chapter")
+        f.add("Phase (army)", state, "phase")
+        f.add("Turn", state, "turn", "u16")
+        start = ttk.Frame(tab)
+        start.pack(anchor="w", pady=(6, 0))
+        self._start_button = ttk.Button(start, text="Start a chapter from its opening…", command=self._start_chapter)
         self._start_button.pack(side="left")
         ttk.Label(start, style="Muted.TLabel", wraplength=640, justify="left", text=(
             "Makes the file a save from the end of the chapter before: the file menu offers Start Chapter "
             "and the chapter's opening plays (4-P's army split, for example). Changing only the chapter "
             "number keeps a base or preparations file where it was saved.")).pack(side="left", padx=(10, 0))
 
-        ttk.Label(convoy, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "All 316 serialized storage slots are shown. Item numbers refer to FE10Data.cms. "
-            "Ordinary items expose their state word. Existing forged items also expose their custom "
-            "name, Might/Hit/Critical/Weight step counts, and RGBA colour; their pool-owning state "
-            "word remains fixed.")).pack(anchor="w", pady=(0, 6))
-        convoy_frame = ttk.Frame(convoy)
-        convoy_frame.pack(fill="both", expand=True)
-        self._convoy_tree = ttk.Treeview(convoy_frame, columns=("slot", "item", "name", "state", "forge"),
-                                         show="headings", selectmode="browse", height=14)
-        for key, title, width in (("slot", "Slot", 60), ("item", "Item #", 75),
-                                  ("name", "Item", 300), ("state", "State", 100),
-                                  ("forge", "Forged", 140)):
-            self._convoy_tree.heading(key, text=title)
-            self._convoy_tree.column(key, width=width, stretch=key == "name")
-        convoy_scroll = ttk.Scrollbar(convoy_frame, command=self._convoy_tree.yview)
-        self._convoy_tree.configure(yscrollcommand=convoy_scroll.set)
-        convoy_scroll.pack(side="right", fill="y")
-        self._convoy_tree.pack(side="left", fill="both", expand=True)
-        self._convoy_tree.bind("<<TreeviewSelect>>", lambda _event: self._select_convoy())
-        edit = ttk.Frame(convoy)
-        edit.pack(fill="x", pady=(6, 0))
-        self._convoy_item = tk.StringVar()
-        self._convoy_state = tk.StringVar()
-        ttk.Label(edit, text="Item number").pack(side="left")
-        self._convoy_item_entry = ttk.Entry(edit, textvariable=self._convoy_item, width=10)
-        self._convoy_item_entry.pack(side="left", padx=(5, 14))
-        ttk.Label(edit, text="State (decimal or 0x…)").pack(side="left")
-        self._convoy_state_entry = ttk.Entry(edit, textvariable=self._convoy_state, width=12)
-        self._convoy_state_entry.pack(side="left", padx=(5, 8))
-        self._convoy_apply = ttk.Button(edit, text="Apply", command=self._apply_convoy)
-        self._convoy_apply.pack(side="left")
-        forge_edit = ttk.Frame(convoy)
-        forge_edit.pack(fill="x", pady=(6, 0))
-        self._forge_name = tk.StringVar()
-        self._forge_might = tk.StringVar()
-        self._forge_hit = tk.StringVar()
-        self._forge_critical = tk.StringVar()
-        self._forge_weight = tk.StringVar()
-        self._forge_colour = tk.StringVar()
+    def _build_units(self, tab) -> None:
+        left = ttk.Frame(tab)
+        left.pack(side="left", fill="y")
+        self._unit_tree = _tree(left, {"slot": ("Slot", 44, False), "name": ("Character", 150, False),
+                                       "class": ("Class", 140, False), "army": ("Army", 44, False),
+                                       "lv": ("Lv", 34, False)}, height=24)
+        self._unit_tree.bind("<<TreeviewSelect>>", lambda e: self._pick_unit())
+        self._unit_status = ttk.Label(left, style="Muted.TLabel", wraplength=420, justify="left")
+        self._unit_status.pack(anchor="w")
+
+        scroll = ScrollFrame(tab, padding=(16, 4))
+        scroll.pack(side="left", fill="both", expand=True)
+        b = scroll.body
+        unit = self._unit_view
+        section_header(b, "Identity").pack(anchor="w")
+        f = self._fields_in(b, 2)
+        f.pack(anchor="w", pady=(4, 10))
+        f.add("Class", unit, "job", {})
+        f.add("Army", unit, "army")
+        f.add("Level", unit, "level")
+        f.add("EXP (255 = none)", unit, "exp")
+        f.add("Current HP", unit, "hp")
+        self._identity_fields = f
+
+        section_header(b, "Stats", "as the game shows them: the bases plus what the unit gained").pack(anchor="w")
+        f = self._fields_in(b, 4)
+        f.pack(anchor="w", pady=(4, 2))
+        for name in sf.UNIT_STATS:
+            f.add(name.capitalize(), unit, f"stat_{name}", "u8", width=6)
+        self._caps = ttk.Label(b, style="Muted.TLabel")
+        self._caps.pack(anchor="w", pady=(0, 10))
+
+        section_header(b, "Items", "flags: 0x80 equipped, 0x20 forged (a forged item can't change here)").pack(
+            anchor="w")
+        f = self._fields_in(b, 3)
+        f.pack(anchor="w", pady=(4, 10))
+        for k in range(sf.UNIT_ITEM_SLOTS):
+            slot = (lambda k: lambda: self._item_view(k))(k)
+            f.add(f"Item {k + 1}", slot, "item", {})
+            f.add("Uses", slot, "uses", width=6)
+            f.add("Flags", slot, "flags", width=6)
+        self._item_fields = f
+
+        section_header(b, "Skills").pack(anchor="w")
+        self._skill_list = _CheckList(b, "Double-click to give or remove. A given skill is saved as learned, "
+                                         "like a scroll's; a unit holds at most 18.", height=8)
+        self._skill_list.pack(anchor="w", fill="x", pady=(4, 10))
+
+        section_header(b, "Supports", "points per RelianceData partner").pack(anchor="w")
+        self._support_note = ttk.Label(b, style="Muted.TLabel", wraplength=640, justify="left")
+        self._support_note.pack(anchor="w")
+        pair = ttk.Frame(b)
+        pair.pack(anchor="w", pady=(4, 0))
+        ttk.Label(pair, text="Support partner").pack(side="left")
+        self._partner_var = tk.StringVar()
+        self._partner_box = ttk.Combobox(pair, textvariable=self._partner_var, state="disabled", width=36,
+                                         height=20)
+        self._partner_box.pack(side="left", padx=(6, 0))
+        self._partner_box.bind("<<ComboboxSelected>>", lambda e: self._set_partner())
+        self._support_tree = _tree(b, {"slot": ("Slot", 44, False), "partner": ("Partner", 220, False),
+                                       "points": ("Points", 60, False), "rank": ("Rank", 60, True)}, height=8)
+        self._support_tree.bind("<<TreeviewSelect>>", lambda e: self._pick_support())
+        f = self._fields_in(b, 2)
+        f.pack(anchor="w", pady=(0, 10))
+        f.add("Points", self._support_view, "points")
+        f.add("Rank", self._support_view, "rank", dict(RANK_NAMES))
+
+    def _build_convoy(self, tab) -> None:
+        forge = ttk.Frame(tab)
+        forge.pack(side="bottom", fill="x", pady=(6, 0))
+        f = self._fields_in(tab, 3)
+        f.pack(side="bottom", anchor="w", pady=(6, 0))
+        f.add("Item", self._convoy_view, "item", {})
+        f.add("Uses", self._convoy_view, "uses", width=6)
+        f.add("Flags", self._convoy_view, "flags", width=6)
+        self._convoy_fields = f
+        self._forge_vars = {key: tk.StringVar() for key in ("name", "might", "hit", "crit", "weight", "rgba")}
         self._forge_entries = []
-        for label, variable, width in (
-                ("Forge name", self._forge_name, 18), ("Mt", self._forge_might, 5),
-                ("Hit", self._forge_hit, 5), ("Crit", self._forge_critical, 5),
-                ("Wt−", self._forge_weight, 5), ("RGBA", self._forge_colour, 12)):
-            ttk.Label(forge_edit, text=label).pack(side="left", padx=(10 if self._forge_entries else 0, 4))
-            entry = ttk.Entry(forge_edit, textvariable=variable, width=width)
+        for key, label, width in (("name", "Forge name", 16), ("might", "Mt", 5), ("hit", "Hit", 5),
+                                  ("crit", "Crit", 5), ("weight", "Wt−", 5), ("rgba", "RGBA", 10)):
+            ttk.Label(forge, text=label).pack(side="left", padx=(10 if self._forge_entries else 0, 4))
+            entry = ttk.Entry(forge, textvariable=self._forge_vars[key], width=width)
             entry.pack(side="left")
             self._forge_entries.append(entry)
+        self._forge_apply = ttk.Button(forge, text="Apply forge", command=self._apply_forge)
+        self._forge_apply.pack(side="left", padx=(10, 0))
+        self._convoy_tree = _tree(tab, {"slot": ("Slot", 50, False), "item": ("Item", 300, False),
+                                        "uses": ("Uses", 60, False), "forge": ("Forge", 160, True)}, height=20)
+        self._convoy_tree.bind("<<TreeviewSelect>>", lambda e: self._pick_convoy())
 
-        ttk.Label(units, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "Every unit of the file, as the game saved it. Select one to edit its level, EXP, current HP "
-            "and stats; stats are the numbers the game shows (the character's and the class's bases plus "
-            "what the unit has gained). The game shows a stat above the class cap at the cap. Skills, "
-            "items and supports are kept as they are."
-        )).pack(anchor="w", pady=(0, 6))
-        unit_frame = ttk.Frame(units)
-        unit_frame.pack(fill="both", expand=True)
-        self._unit_tree = ttk.Treeview(
-            unit_frame, columns=("slot", "pid", "jid", "army", "level", "exp", "hp", "skills", "items"),
-            show="headings", height=14, selectmode="browse")
-        for key, title, width in (
-                ("slot", "Slot", 50), ("pid", "Character", 180), ("jid", "Class", 160),
-                ("army", "Army", 50), ("level", "Lv", 40), ("exp", "Exp", 45), ("hp", "HP", 45),
-                ("skills", "Skills", 55), ("items", "Items", 50)):
-            self._unit_tree.heading(key, text=title)
-            self._unit_tree.column(key, width=width, stretch=key in ("pid", "jid"))
-        unit_scroll = ttk.Scrollbar(unit_frame, command=self._unit_tree.yview)
-        self._unit_tree.configure(yscrollcommand=unit_scroll.set)
-        unit_scroll.pack(side="right", fill="y")
-        self._unit_tree.pack(side="left", fill="both", expand=True)
-        self._unit_tree.bind("<<TreeviewSelect>>", lambda _e: self._select_unit())
-        unit_edit = ttk.Frame(units)
-        unit_edit.pack(anchor="w", pady=(6, 0))
-        self._unit_vars: dict[str, tk.StringVar] = {}
-        for col, (key, label) in enumerate((("level", "Lv"), ("experience", "Exp"), ("current_hp", "HP now"),
-                                            *((s, s.capitalize()) for s in sf.UNIT_STATS))):
-            ttk.Label(unit_edit, text=label).grid(row=0, column=col, sticky="w", padx=(0, 4))
-            var = tk.StringVar()
-            ttk.Entry(unit_edit, textvariable=var, width=5).grid(row=1, column=col, sticky="w", padx=(0, 4))
-            self._unit_vars[key] = var
-        self._unit_apply = ttk.Button(unit_edit, text="Apply", command=self._apply_unit, state="disabled")
-        self._unit_apply.grid(row=1, column=len(self._unit_vars), padx=(8, 0))
-        self._unit_caps = ttk.Label(units, style="Muted.TLabel")
-        self._unit_caps.pack(anchor="w")
-        self._unit_status = ttk.Label(units, style="Muted.TLabel")
-        self._unit_status.pack(anchor="w", pady=(6, 0))
-        self._units_by_slot: dict[int, sf.SavedUnit] = {}
+    def _build_map(self, tab) -> None:
+        ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left", text=(
+            "The map's tile records, as on Path of Radiance: opened chests, doors and roofs, visited villages, "
+            "range overlays and the rest. Only the first “count” records are live; the ones after it keep "
+            "leftover bytes. Type names are Path of Radiance's; Radiant Dawn files show range overlay (6) "
+            "and chest opened (0x23), the others are not checked on Radiant Dawn.")).pack(anchor="w")
+        f = self._fields_in(tab, 4)
+        f.pack(side="bottom", anchor="w", pady=(6, 0))
+        table = lambda: _TileTableView(self.record) if self._has("T  T") else None  # noqa: E731
+        tile = lambda: _TileView(self.record, self._tile) if self._has("T  T") and self._tile is not None else None  # noqa: E731
+        f.add("Count", table, "count", "u32")
+        f.add("X", tile, "x", "s8", width=6)
+        f.add("Y", tile, "y", "s8", width=6)
+        f.add("Type", tile, "type", dict(sf.TILE_TYPES))
+        f.add("Subtype", tile, "subtype", width=6)
+        for i in range(4):
+            f.add(f"Value {i}", tile, ("values", i), width=6)
+        self._map_tree = _tree(tab, {"n": ("#", 40, False), "xy": ("Tile", 70, False), "type": ("Type", 160, False),
+                                     "sub": ("Subtype", 60, False), "values": ("Values", 160, True)}, height=16)
+        self._map_tree.bind("<<TreeviewSelect>>", lambda e: self._pick_tile())
 
-        ttk.Label(flags, style="Muted.TLabel", wraplength=900, justify="left", text=(
-            "BMST stores 128 event-script bits. Slots are shown in native order: campaign flags "
-            "are registered from the low end and chapter flags from the high end. The exact name "
-            "of a slot depends on the scripts used by this save, so editing is intentionally by "
-            "stable slot number.")).pack(anchor="w", pady=(0, 6))
-        flag_frame = ttk.Frame(flags)
-        flag_frame.pack(fill="both", expand=True)
-        self._flag_tree = ttk.Treeview(flag_frame, columns=("slot", "state"), show="headings",
-                                       selectmode="browse", height=15)
-        self._flag_tree.heading("slot", text="Slot")
-        self._flag_tree.heading("state", text="State")
-        self._flag_tree.column("slot", width=100, stretch=False)
-        self._flag_tree.column("state", width=140, stretch=True)
-        flag_scroll = ttk.Scrollbar(flag_frame, command=self._flag_tree.yview)
-        self._flag_tree.configure(yscrollcommand=flag_scroll.set)
-        flag_scroll.pack(side="right", fill="y")
-        self._flag_tree.pack(side="left", fill="both", expand=True)
-        self._flag_tree.bind("<Double-1>", lambda _event: self._toggle_flag())
-        flag_actions = ttk.Frame(flags)
-        flag_actions.pack(fill="x", pady=(6, 0))
-        self._flag_toggle = ttk.Button(flag_actions, text="Toggle selected", command=self._toggle_flag,
-                                       state="disabled")
-        self._flag_toggle.pack(side="left")
-        self._flag_tree.bind("<<TreeviewSelect>>", lambda _event: self._sync_flag_button())
+    def _fill_map(self) -> None:
+        tree = self._map_tree
+        tree.delete(*tree.get_children())
+        if not self._has("T  T"):
+            return
+        try:
+            records, count = self.record.tile_records()
+        except ValueError:
+            return
+        for i, r in enumerate(records[:max(count, 0)]):
+            tree.insert("", "end", iid=str(i), values=(i + 1, f"{r.x}, {r.y}", sf.TILE_TYPES.get(r.type, r.type),
+                                                      r.subtype, " ".join(str(v) for v in r.values)))
+        if count < len(records):
+            tree.insert("", "end", iid=str(count), values=(count + 1, "", "(next free record)", "", ""),
+                        tags=("muted",))
+        if self._tile is not None and tree.exists(str(self._tile)):
+            tree.selection_set(str(self._tile))
 
-        self._section_tree = ttk.Treeview(sections, columns=("offset", "size"), show="tree headings", height=11)
-        self._section_tree.heading("#0", text="Tag")
-        self._section_tree.heading("offset", text="Payload offset")
-        self._section_tree.heading("size", text="Payload size")
-        self._section_tree.column("#0", width=130, stretch=False)
-        self._section_tree.column("offset", width=140, stretch=False)
-        self._section_tree.column("size", width=140, stretch=False)
-        self._section_tree.pack(fill="x")
-        self._section_tree.bind("<<TreeviewSelect>>", lambda _event: self._fill_section_preview())
-        self._section_text = self._text_area(sections)
+    def _pick_tile(self) -> None:
+        sel = self._map_tree.selection()
+        self._tile = int(sel[0]) if sel else None
+        for f in self._fields:
+            f.load()
 
-        ttk.Label(raw, text="Selected physical record as it will be written (read only).",
-                  style="Muted.TLabel").pack(anchor="w")
-        self._raw_text = self._text_area(raw)
-        self._sync()
+    def _build_flags(self, tab) -> None:
+        self._flags_note = ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left")
+        self._flags_note.pack(anchor="w")
+        self._flag_tree = _tree(tab, {"on": ("Set", 50, False), "slot": ("Slot", 60, False),
+                                      "name": ("Name", 280, False), "meaning": ("Meaning", 420, True)}, height=20)
+        self._flag_tree.bind("<Double-1>", lambda e: self._toggle_flag())
+        self._flag_tree.bind("<space>", lambda e: self._toggle_flag())
 
-    @staticmethod
-    def _text_area(parent: tk.Misc) -> tk.Text:
-        frame = ttk.Frame(parent)
+    def _build_system(self, tab) -> None:
+        scroll = ScrollFrame(tab, padding=(4, 4))
+        scroll.pack(fill="both", expand=True)
+        b = scroll.body
+        ttk.Label(b, style="Muted.TLabel", wraplength=900, justify="left", text=(
+            "Shared by every file. These are the parts of the system record as the game writes it; what each "
+            "bit and value means is not traced yet, so they are named by where they sit in the record.")).pack(
+            anchor="w")
+        f = self._fields_in(b, 4)
+        f.pack(anchor="w", pady=(6, 10))
+        system = lambda: _SystemView(self.save.system) if self._system_ok() else None  # noqa: E731
+        for name, (offset, size) in SYSTEM_FIELDS.items():
+            f.add(f"+0x{offset:X}", system, name, {1: "u8", 2: "u16", 4: "u32"}[size])
+        row = ttk.Frame(b)
+        row.pack(anchor="w", pady=(4, 0))
+        ttk.Label(row, text="Bit set").pack(side="left")
+        names = [p[0] for p in sf.SYSTEM_PARTS if p[3] == "bits"]
+        self._bits_var = tk.StringVar(value=names[0])
+        box = ttk.Combobox(row, textvariable=self._bits_var, values=names, state="readonly", width=24)
+        box.pack(side="left", padx=(6, 0))
+        box.bind("<<ComboboxSelected>>", lambda e: self._fill_system_bits())
+        self._bit_list = _CheckList(b, "Double-click a bit to switch it.", height=12)
+        self._bit_list.pack(anchor="w", fill="x", pady=(4, 10))
+        section_header(b, "Records", "30 records of 24 bytes (read only)").pack(anchor="w")
+        self._system_records = _tree(b, {"n": ("#", 40, False), "bytes": ("Bytes", 600, True)}, height=10)
+
+    def _build_raw(self, tab) -> None:
+        ttk.Label(tab, style="Muted.TLabel", wraplength=900, justify="left",
+                  text="The file's sections; select one to see only its bytes. Bytes are shown as they will be "
+                       "written (read only).").pack(anchor="w")
+        self._section_tree = _tree(tab, {"tag": ("Section", 90, False), "offset": ("Offset", 100, False),
+                                         "size": ("Size", 140, True)}, height=8)
+        self._section_tree.bind("<<TreeviewSelect>>", lambda e: self._fill_raw())
+        frame = ttk.Frame(tab)
         frame.pack(fill="both", expand=True, pady=(6, 0))
-        text = tk.Text(frame, wrap="none", font=("Consolas", 10), height=15)
-        scroll_y = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
-        scroll_x = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
-        text.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
-        scroll_y.pack(side="right", fill="y")
-        scroll_x.pack(side="bottom", fill="x")
-        text.pack(side="left", fill="both", expand=True)
-        return text
+        self._raw_text = tk.Text(frame, wrap="none", font=("Consolas", 10), height=16)
+        scroll = ttk.Scrollbar(frame, command=self._raw_text.yview)
+        self._raw_text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+        self._raw_text.pack(side="left", fill="both", expand=True)
 
+    # -- targets ----------------------------------------------------------------------------
+    def _has(self, section: str) -> bool:
+        return self.record is not None and not self.record.empty and self.record.section(section) is not None
+
+    def _system_ok(self) -> bool:
+        return self.save is not None and self.save.system.valid
+
+    def _unit(self) -> Optional[sf.SavedUnit]:
+        return self._units.get(self._unit_slot) if self._unit_slot is not None else None
+
+    def _unit_view(self) -> Optional[_UnitView]:
+        unit = self._unit()
+        if unit is None:
+            return None
+        known = self._bases(unit)
+        return _UnitView(self.record, unit, known[0] if known else None)
+
+    def _item_view(self, k: int) -> Optional[_ItemView]:
+        unit = self._unit()
+        return _ItemView(self.record, unit, k, unit.items[k]) if unit is not None else None
+
+    def _support_view(self) -> Optional[_SupportView]:
+        unit = self._unit()
+        if unit is None or self._support_slot is None or self._support_slot >= unit.support_slot_count:
+            return None
+        return _SupportView(self.record, unit, self._support_slot, self._thresholds())
+
+    def _convoy_view(self) -> Optional[_ItemView]:
+        if self._convoy_slot is None or not self._has("SOKO"):
+            return None
+        try:
+            return _ItemView(self.record, None, self._convoy_slot, self.record.convoy_items()[self._convoy_slot])
+        except (ValueError, IndexError):
+            return None
+
+    # -- file -------------------------------------------------------------------------------
     @property
     def dirty(self) -> bool:
-        return bool(self._save and (self._save.system.dirty or any(r.dirty for r in self._save.records)))
+        return bool(self.save and (self.save.system.dirty or any(r.dirty for r in self.save.records)))
 
-    def _record(self) -> Optional[sf.SaveRecord]:
-        value = self._record_var.get()
-        return self._records[self._labels.index(value)] if value in self._labels else None
-
-    def _confirm_discard(self) -> bool:
-        return not self.dirty or messagebox.askyesno(
-            "Discard changes?", "The open save has unsaved changes. Discard them?", parent=self)
-
-    def _open_folder(self) -> None:
-        if not self._confirm_discard():
-            return
-        chosen = filedialog.askdirectory(title="Choose RFEE01's NAND data folder", parent=self)
-        if not chosen:
-            return
-        folder = Path(chosen)
-        candidates = (folder / sf.FILE_NAME,
-                      folder / "Wii" / "title" / "00010000" / "52464545" / "data" / sf.FILE_NAME,
-                      folder / "title" / "00010000" / "52464545" / "data" / sf.FILE_NAME)
-        path = next((item for item in candidates if item.is_file()), candidates[0])
-        self.open_path(path)
-
-    def _open_file(self) -> None:
-        if not self._confirm_discard():
-            return
-        chosen = filedialog.askopenfilename(title="Open FE10_US.dat", parent=self,
-                                            filetypes=[("Radiant Dawn NAND save", "FE10_US.dat"),
+    def open_dialog(self) -> None:
+        chosen = filedialog.askopenfilename(title="Open FE10_US.dat", parent=self.page,
+                                            filetypes=[("Radiant Dawn save", "FE10_US.dat"),
                                                        ("DAT files", "*.dat"), ("All files", "*.*")])
         if chosen:
             self.open_path(Path(chosen))
 
-    def open_path(self, path: Path) -> bool:
+    def open_path(self, path: Path, keep: Optional[int] = None) -> bool:
         try:
             save = sf.SaveFile.from_path(path)
         except (OSError, ValueError) as exc:
-            messagebox.showerror("Could not open the save", str(exc), parent=self)
+            messagebox.showerror("Could not open the save", str(exc), parent=self.page)
             return False
         if path.is_dir():
             path = path / sf.FILE_NAME
-        self._path, self._save = path, save
-        self._records = [save.system, *save.records]
+        self.path, self.save = path, save
+        self.records = list(save.records)
         active = save.active_records()
-        self._labels = [sf.record_label(record, active) for record in self._records]
-        self._record_box.configure(values=self._labels)
-        preferred = active[0] if active else save.system
-        self._record_var.set(self._labels[self._records.index(preferred)])
-        self._file_label.configure(text=str(path))
-        self._refresh()
+        self.labels = [sf.record_label(record, active) for record in self.records]
+        if keep is not None:
+            preferred = self.records[keep]
+        else:
+            preferred = max(active, key=lambda r: r.timestamp_saved) if active else self.records[0]
+        self.page.set_picker(str(path), self.labels, self.labels[self.records.index(preferred)])
         return True
 
-    def _commit_bmst(self, _event=None) -> None:
-        record = self._record()
-        if record is None or record.empty or record.section("BMST") is None:
+    def select(self, label: str) -> None:
+        if label not in self.labels:
             return
-        try:
-            chapter, phase, turn = (int(value.get(), 0) for value in (self._chapter, self._phase, self._turn))
-            record.chapter_number = chapter
-            record.army_phase = phase
-            record.turn = turn
-        except ValueError as exc:
-            messagebox.showerror("Invalid battle state", str(exc), parent=self)
-        self._refresh()
+        self.record = self.records[self.labels.index(label)]
+        self._unit_slot = self._support_slot = self._convoy_slot = self._tile = None
+        self.refresh()
 
-    def _refresh(self) -> None:
-        record = self._record()
-        if record is None:
-            self._sync()
-            return
-        if record.empty:
-            summary = f"Offset 0x{record.offset:06X}\nEmpty file (0xFF-filled)."
-        else:
-            summary = (f"Offset 0x{record.offset:06X}\nMagic {record.magic.decode('ascii', 'replace')} · "
-                       f"version 0x{record.version:08X} · format 0x{record.format_version:08X}\n"
-                       f"Sequence {record.sequence} · stored CRC 0x{record.stored_crc:08X} · "
-                       f"checksum {'valid' if record.crc_ok else 'invalid'}")
-        self._summary.configure(text=summary)
-        editable = not record.empty and record.section("BMST") is not None
-        for entry in self._field_entries:
-            entry.configure(state="normal" if editable else "disabled")
-        if editable:
-            self._chapter.set(str(record.chapter_number))
-            self._phase.set(str(record.army_phase))
-            self._turn.set(str(record.turn))
-        else:
-            self._chapter.set("")
-            self._phase.set("")
-            self._turn.set("")
-        self._section_tree.delete(*self._section_tree.get_children())
-        for index, section in enumerate(record.sections):
-            self._section_tree.insert("", "end", iid=str(index), text=section.name,
-                                      values=(f"0x{section.data_offset:05X}", f"{section.size} (0x{section.size:X})"))
-        self._fill_section_preview()
-        self._fill_convoy()
-        self._fill_units()
-        self._fill_flags()
-        self._fill_hex(self._raw_text, record.build())
-        self._sync()
-
-    def _fill_section_preview(self) -> None:
-        record = self._record()
-        selected = self._section_tree.selection()
-        if record is None or not selected:
-            self._set_text(self._section_text, "")
-            return
-        section = record.sections[int(selected[0])]
-        self._fill_hex(self._section_text, record.section_bytes(section.name), base=section.data_offset)
-
-    def _item_name(self, number: int) -> str:
-        if not number:
-            return "(empty)"
-        # the save's own ITBL names the number; the project's database gives the display name
-        record = self._record()
-        try:
-            item_id = record.id_name("item", number) if record is not None else None
-        except ValueError:
-            item_id = None
-        session = getattr(self.shell, "session", None)
-        data = getattr(session, "fe10", None)
-        record_values = next((r.values for r in data.items if r.id == item_id), None) if data and item_id else None
-        if record_values is None and data is not None and item_id is None and 0 < number <= len(data.items):
-            record_values = data.items[number - 1].values
-        if record_values is None:
-            return item_id or f"#{number}"
-        values = record_values
-        item_id = item_id or values.get("iid") or values.get("id") or f"#{number}"
-        key = values.get("miid") or values.get("name") or values.get("name_key")
-        index = getattr(self.shell, "index", None)
-        title = index.text(key) if index is not None and getattr(index, "ready", False) and key else ""
-        return f"{title} ({item_id})" if title else str(item_id)
-
-    def _fill_convoy(self) -> None:
-        selected = self._convoy_tree.selection()
-        self._convoy_tree.delete(*self._convoy_tree.get_children())
-        record = self._record()
-        if record is None or record.empty or record.section("SOKO") is None:
-            self._set_convoy_controls(None)
-            return
-        try:
-            items = record.convoy_items()
-        except ValueError:
-            self._set_convoy_controls(None)
-            return
-        for item in items:
-            self._convoy_tree.insert("", "end", iid=str(item.slot),
-                                     values=(item.slot + 1, item.item_number, self._item_name(item.item_number),
-                                             f"0x{item.state:04X}", item.forged_name or ("yes" if item.forged else "")))
-        if selected and self._convoy_tree.exists(selected[0]):
-            self._convoy_tree.selection_set(selected[0])
-        self._select_convoy()
-
-    def _set_convoy_controls(self, item: Optional[sf.ConvoyItem]) -> None:
-        enabled = item is not None
-        forged = enabled and item.forged
-        self._convoy_item.set(str(item.item_number) if item is not None else "")
-        self._convoy_state.set(f"0x{item.state:04X}" if item is not None else "")
-        self._convoy_item_entry.configure(state="normal" if enabled else "disabled")
-        self._convoy_state_entry.configure(state="normal" if enabled and not forged else "disabled")
-        self._convoy_apply.configure(state="normal" if enabled else "disabled")
-        values = item.forge_values if forged else None
-        self._forge_name.set(item.forge_name_bytes.decode("shift_jis") if forged else "")
-        self._forge_might.set(str(values.might_steps) if values else "")
-        self._forge_hit.set(str(values.hit_steps) if values else "")
-        self._forge_critical.set(str(values.critical_steps) if values else "")
-        self._forge_weight.set(str(values.weight_reduction_steps) if values else "")
-        self._forge_colour.set(
-            f"#{values.red:02X}{values.green:02X}{values.blue:02X}{values.alpha:02X}" if values else "")
-        for entry in self._forge_entries:
-            entry.configure(state="normal" if forged else "disabled")
-
-    def _fill_units(self) -> None:
-        self._unit_tree.delete(*self._unit_tree.get_children())
-        record = self._record()
-        if record is None or record.empty or record.section("UNIP") is None:
-            self._unit_status.configure(text="No serialized unit table in this record.")
-            return
-        session = getattr(self.shell, "session", None)
-        database = getattr(session, "fe10", None)
-        if database is None:
-            self._unit_status.configure(
-                text="Open an extracted Radiant Dawn workspace to frame RelianceData support tails.")
-            return
-        try:
-            tables = record.id_tables()
-            counts_by_pid = {
-                row.values["pid"]: len(row.lists["partners"])
-                for row in database.table("support")
-            }
-            support_counts = {
-                number: counts_by_pid.get("PID_" + short_name, 0)
-                for number, short_name in enumerate(tables.characters, 1)
-            }
-            parsed = record.unit_records(support_counts)
-            occupied = [unit for unit in parsed if not unit.empty]
-            self._units_by_slot = {unit.slot: unit for unit in occupied}
-            self._unit_support_counts = support_counts
-            for unit in occupied:
-                pid = ("PID_" + tables.characters[unit.person_number - 1]
-                       if 0 < unit.person_number <= len(tables.characters)
-                       else f"#{unit.person_number}")
-                jid = ("JID_" + tables.classes[unit.class_number - 1]
-                       if 0 < unit.class_number <= len(tables.classes)
-                       else f"#{unit.class_number}")
-                item_count = sum(item.item_number != 0 for item in unit.items)
-                self._unit_tree.insert(
-                    "", "end", iid=str(unit.slot),
-                    values=(unit.slot + 1, pid, jid, unit.army, unit.level,
-                            "--" if unit.experience == 255 else unit.experience, unit.current_hp,
-                            len(unit.skills), item_count))
-            consumed = sum(unit.size for unit in parsed)
-            self._unit_status.configure(
-                text=f"{len(occupied)} occupied of {len(parsed)} slots · structurally consumed "
-                     f"{consumed} bytes")
-        except (KeyError, ValueError, IndexError, UnicodeError) as exc:
-            self._unit_status.configure(text=f"Could not decode UNIP: {exc}")
-
-    def _unit_bases(self, unit: sf.SavedUnit) -> Optional[tuple[list[int], list[int]]]:
-        """(character bonus + class base, class cap) per stat for ``unit``, from the open workspace."""
-        database = getattr(getattr(self.shell, "session", None), "fe10", None)
-        record = self._record()
-        if database is None or record is None:
-            return None
-        tables = record.id_tables()
-        pid = "PID_" + tables.characters[unit.person_number - 1] if 0 < unit.person_number <= len(tables.characters) else None
-        jid = "JID_" + tables.classes[unit.class_number - 1] if 0 < unit.class_number <= len(tables.classes) else None
-        person = next((c for c in database.characters if c.id == pid), None)
-        job = next((c for c in database.classes if c.id == jid), None)
-        if person is None or job is None:
-            return None
-        bases = [person.values[f"bonus_{s}"] + job.values[f"base_{s}"] for s in sf.UNIT_STATS]
-        return bases, [job.values[f"cap_{s}"] for s in sf.UNIT_STATS]
-
-    def _select_unit(self) -> None:
-        selected = self._unit_tree.selection()
-        unit = self._units_by_slot.get(int(selected[0])) if selected else None
-        known = self._unit_bases(unit) if unit is not None else None
-        self._unit_apply.configure(state="normal" if known is not None else "disabled")
-        if unit is None or known is None:
-            for var in self._unit_vars.values():
-                var.set("")
-            self._unit_caps.configure(text="")
-            return
-        bases, caps = known
-        self._unit_vars["level"].set(str(unit.level))
-        self._unit_vars["experience"].set(str(unit.experience))
-        self._unit_vars["current_hp"].set(str(unit.current_hp))
-        for stat, base, gain in zip(sf.UNIT_STATS, bases, unit.stat_gains):
-            self._unit_vars[stat].set(str(base + gain))
-        self._unit_caps.configure(text="Class caps: " + ", ".join(
-            f"{s.capitalize()} {c}" for s, c in zip(sf.UNIT_STATS, caps)))
-
-    def _apply_unit(self) -> None:
-        record = self._record()
-        selected = self._unit_tree.selection()
-        unit = self._units_by_slot.get(int(selected[0])) if selected else None
-        known = self._unit_bases(unit) if unit is not None else None
-        if record is None or unit is None or known is None:
-            return
-        bases, _caps = known
-        try:
-            values = {k: int(v.get(), 0) for k, v in self._unit_vars.items()}
-            record.set_unit_state(unit, level=values["level"], experience=values["experience"],
-                                  current_hp=values["current_hp"],
-                                  stat_gains=[values[s] - b for s, b in zip(sf.UNIT_STATS, bases)])
-        except ValueError as exc:
-            messagebox.showerror("Unit", str(exc), parent=self)
-            return
-        slot = unit.slot
-        self._refresh()
-        if self._unit_tree.exists(str(slot)):
-            self._unit_tree.selection_set(str(slot))
-
-    def _select_convoy(self) -> None:
-        record = self._record()
-        selected = self._convoy_tree.selection()
-        if record is None or not selected:
-            self._set_convoy_controls(None)
-            return
-        try:
-            item = record.convoy_items()[int(selected[0])]
-        except (ValueError, IndexError):
-            self._set_convoy_controls(None)
-            return
-        self._set_convoy_controls(item)
-
-    def _apply_convoy(self) -> None:
-        record = self._record()
-        selected = self._convoy_tree.selection()
-        if record is None or not selected:
-            return
-        try:
-            slot = int(selected[0])
-            item = record.convoy_items()[slot]
-            if item.forged:
-                colour_text = self._forge_colour.get().strip().removeprefix("#").removeprefix("0x")
-                if len(colour_text) != 8:
-                    raise ValueError("RGBA must contain exactly eight hexadecimal digits")
-                colour = bytes.fromhex(colour_text)
-                payload = sf.ForgePayload(
-                    int(self._forge_might.get(), 0), int(self._forge_hit.get(), 0),
-                    int(self._forge_critical.get(), 0), int(self._forge_weight.get(), 0), *colour)
-                record.update_forged_convoy_item(
-                    slot, item_number=int(self._convoy_item.get(), 0),
-                    name=self._forge_name.get(), payload=payload)
-            else:
-                record.set_convoy_item(slot, int(self._convoy_item.get(), 0),
-                                       int(self._convoy_state.get(), 0))
-        except (ValueError, IndexError) as exc:
-            messagebox.showerror("Invalid convoy item", str(exc), parent=self)
-            return
-        self._refresh()
-        if self._convoy_tree.exists(selected[0]):
-            self._convoy_tree.selection_set(selected[0])
-            self._convoy_tree.see(selected[0])
-
-    def _fill_flags(self) -> None:
-        selected = self._flag_tree.selection()
-        self._flag_tree.delete(*self._flag_tree.get_children())
-        record = self._record()
-        if record is None or record.empty or record.section("BMST") is None:
-            self._sync_flag_button()
-            return
-        try:
-            bits = record.script_flags()
-        except ValueError:
-            self._sync_flag_button()
-            return
-        for index, enabled in enumerate(bits):
-            self._flag_tree.insert("", "end", iid=str(index),
-                                   values=(index, "On" if enabled else "Off"))
-        if selected and self._flag_tree.exists(selected[0]):
-            self._flag_tree.selection_set(selected[0])
-        self._sync_flag_button()
-
-    def _sync_flag_button(self) -> None:
-        self._flag_toggle.configure(state="normal" if self._flag_tree.selection() else "disabled")
-
-    def _toggle_flag(self) -> None:
-        record = self._record()
-        selected = self._flag_tree.selection()
-        if record is None or not selected:
-            return
-        index = int(selected[0])
-        try:
-            record.set_script_flag(index, not record.script_flags()[index])
-        except (ValueError, IndexError) as exc:
-            messagebox.showerror("Could not edit flag", str(exc), parent=self)
-            return
-        self._refresh()
-        if self._flag_tree.exists(str(index)):
-            self._flag_tree.selection_set(str(index))
-            self._flag_tree.see(str(index))
-
-    @staticmethod
-    def _set_text(widget: tk.Text, value: str) -> None:
-        widget.configure(state="normal")
-        widget.delete("1.0", "end")
-        widget.insert("1.0", value)
-        widget.configure(state="disabled")
-
-    def _fill_hex(self, widget: tk.Text, data: bytes, *, base: int = 0) -> None:
-        lines = []
-        for offset in range(0, len(data), 16):
-            row = data[offset:offset + 16]
-            ascii_ = "".join(chr(byte) if 32 <= byte < 127 else "." for byte in row)
-            lines.append(f"{base + offset:06X}  {row.hex(' '):47}  {ascii_}")
-        self._set_text(widget, "\n".join(lines))
-
-    def _write(self, path: Path) -> bool:
-        if self._save is None:
+    def write(self, path: Path) -> bool:
+        if self.save is None:
             return False
         temp = path.with_name(path.name + ".tmp")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            temp.write_bytes(self._save.to_bytes())
+            temp.write_bytes(self.save.to_bytes())
             os.replace(temp, path)
+            banner = self.path.parent / "banner.bin" if self.path else None
+            if banner is not None and banner.is_file() and not (path.parent / "banner.bin").exists():
+                (path.parent / "banner.bin").write_bytes(banner.read_bytes())
         except OSError as exc:
             try:
                 temp.unlink(missing_ok=True)
             except OSError:
                 pass
-            messagebox.showerror("Could not write the save", str(exc), parent=self)
+            messagebox.showerror("Could not write the save", str(exc), parent=self.page)
             return False
-        self.shell.changelog.append(path.name, "Edited Radiant Dawn NAND save")
+        self.shell.changelog.append(path.name, "Edited Radiant Dawn save")
+        keep = self.records.index(self.record) if self.record in self.records else None
+        self.open_path(path, keep)
         return True
 
-    def _save_file(self) -> None:
-        if self._path is None or self._save is None:
+    def save_as_dialog(self) -> None:
+        if self.save is None:
             return
-        selected = self._record_var.get()
-        if self._write(self._path) and self.open_path(self._path) and selected in self._labels:
-            self._record_var.set(selected)
-            self._refresh()
+        chosen = filedialog.asksaveasfilename(title="Save the edited save as", parent=self.page,
+                                              initialfile=sf.FILE_NAME, defaultextension=".dat",
+                                              filetypes=[("Radiant Dawn save", "*.dat")])
+        if chosen:
+            self.write(Path(chosen))
 
-    def _save_copy(self) -> None:
-        if self._save is None:
-            return
-        chosen = filedialog.askdirectory(title="Choose the parent for an RFEE01 data-folder copy", parent=self)
-        if not chosen:
-            return
-        selected = Path(chosen)
-        data_dir = selected if selected.name.lower() == "data" else selected / "data"
-        destination = data_dir / sf.FILE_NAME
-        if destination.exists() and not messagebox.askyesno(
-                "Replace save copy?", f"{destination} already exists. Replace it?", parent=self):
-            return
-        if not self._write(destination):
-            return
-        banner = self._path.parent / "banner.bin" if self._path else None
+    def problems(self) -> list[str]:
+        """What :meth:`check` reports: header, checksum and unit-framing problems of the edited file."""
+        if self.save is None:
+            return []
         try:
-            if banner is not None and banner.is_file():
-                (data_dir / "banner.bin").write_bytes(banner.read_bytes())
-        except OSError as exc:
-            messagebox.showwarning("Save copied without banner", str(exc), parent=self)
-        messagebox.showinfo("Save copy created", f"Created {data_dir}", parent=self)
-
-    def _check(self) -> None:
-        if self._save is None:
-            return
-        try:
-            rebuilt = sf.SaveFile.from_bytes(self._save.to_bytes())
-            problems = sf.validate(rebuilt)
-        except ValueError as exc:
+            problems = sf.validate(sf.SaveFile.from_bytes(self.save.to_bytes()))
+            counts = self._support_counts()
+            if counts is not None:
+                for record in self.save.active_records():
+                    record.unit_records(counts)
+        except (KeyError, ValueError) as exc:
             problems = [str(exc)]
-        if problems:
-            messagebox.showwarning("Problems", "\n".join(problems[:30]), parent=self)
-        else:
-            messagebox.showinfo("Check", "All populated records have supported headers and valid checksums.",
-                                parent=self)
+        return problems
 
+    def check(self) -> None:
+        if self.save is None:
+            return
+        problems = self.problems()
+        if problems:
+            messagebox.showwarning("Problems", "\n".join(problems[:30]), parent=self.page)
+        else:
+            messagebox.showinfo("Check", "No problems found.", parent=self.page)
+
+    def play(self) -> None:
+        if self.save is None:
+            return
+        banner_path = self.path.parent / "banner.bin" if self.path else None
+        try:
+            banner = banner_path.read_bytes() if banner_path is not None and banner_path.is_file() else None
+        except OSError as exc:
+            messagebox.showerror("Could not read banner.bin", str(exc), parent=self.page)
+            return
+        self.shell.play_from_wii_save(self.save.to_bytes(), banner)
+
+    def status(self) -> str:
+        return f"{len(self._units)} unit(s)" if self._units else ""
+
+    def changed(self) -> None:
+        """After an edit: read the units again (a skill edit moves the records after it) and redraw."""
+        keep = self._unit_slot, self._support_slot, self._convoy_slot, self._tile
+        self.refresh()
+        self._unit_slot, self._support_slot, self._convoy_slot, self._tile = keep
+        if keep[3] is not None and self._map_tree.exists(str(keep[3])):
+            self._map_tree.selection_set(str(keep[3]))
+        for tree, key in ((self._unit_tree, keep[0]), (self._convoy_tree, keep[2]),
+                          (self._support_tree, None)):
+            if key is not None and tree.exists(str(key)):
+                tree.selection_set(str(key))
+                tree.see(str(key))
+        for f in self._fields:
+            f.load()
+        self._fill_unit_extras()
+        self._sync_forge()
+
+    # -- refresh ----------------------------------------------------------------------------
+    def refresh(self) -> None:
+        self._read_units()
+        self._fill_summary()
+        self._fill_units()
+        self._fill_convoy()
+        self._fill_map()
+        self._fill_flags()
+        self._fill_system()
+        self._fill_sections()
+        self._load_choices()
+        for f in self._fields:
+            f.load()
+        self._fill_unit_extras()
+        self._sync_forge()
+        self._start_button.configure(state="normal" if self._has("BMST") else "disabled")
+        self.page.sync()
+
+    def _read_units(self) -> None:
+        self._units, self._unit_problem = {}, ""
+        if not self._has("UNIP"):
+            return
+        counts = self._support_counts()
+        if counts is None:
+            self._unit_problem = "Open an extracted Radiant Dawn workspace: its FE10Data frames the units."
+            return
+        try:
+            self._units = {u.slot: u for u in self.record.unit_records(counts) if not u.empty}
+        except (KeyError, ValueError, IndexError) as exc:
+            self._unit_problem = f"Could not read the units: {exc}"
+
+    def _fill_summary(self) -> None:
+        record = self.record
+        if record is None:
+            self._summary.configure(text="")
+            return
+        if record.empty:
+            self._summary.configure(text="Empty file.")
+            return
+        lines = [f"Sequence {record.sequence} · checksum {'valid' if record.crc_ok else 'invalid'}"]
+        if self._has("BMST"):
+            resume = {2: "a base or the preparations", sf.RESUME_CHAPTER_END: "the end of the chapter before",
+                      0x0B: "the chapter's opening event"}.get(record.resume_step, f"step {record.resume_step}")
+            lines.append(f"Map {record.map_name or '(none)'} · resumes at {resume}")
+        self._summary.configure(text="\n".join(lines))
+
+    def _fill_units(self) -> None:
+        tree = self._unit_tree
+        tree.delete(*tree.get_children())
+        for slot, unit in self._units.items():
+            tree.insert("", "end", iid=str(slot), values=(slot + 1, self._name("character", unit.person_number),
+                                                          self._name("class", unit.class_number), unit.army,
+                                                          unit.level))
+        self._unit_status.configure(text=self._unit_problem)
+
+    def _load_choices(self) -> None:
+        """The class and item pickers list the save's own IDs."""
+        wanted = {"job": self._choices("class"), "item": self._choices("item")}
+        for fields_ in (self._identity_fields, self._item_fields, self._convoy_fields):
+            for i, (target, attr, kind, var, on_set, box) in enumerate(fields_._items):
+                if isinstance(attr, str) and attr in wanted and wanted[attr]:
+                    fields_._items[i] = (target, attr, wanted[attr], var, on_set, box)
+                    box.configure(values=[fields_._choice(v, n) for v, n in wanted[attr].items()])
+        self._character_choices = self._choices("character")
+        self._partner_box.configure(values=[_Fields._choice(v, n) for v, n in self._character_choices.items()])
+
+    def _pick_unit(self) -> None:
+        sel = self._unit_tree.selection()
+        slot = int(sel[0]) if sel else None
+        if slot == self._unit_slot:
+            return
+        self._unit_slot, self._support_slot = slot, None
+        for f in self._fields:
+            f.load()
+        self._fill_unit_extras()
+
+    def _fill_unit_extras(self) -> None:
+        unit = self._unit()
+        known = self._bases(unit) if unit is not None else None
+        self._caps.configure(text="Class caps: " + ", ".join(
+            f"{s.capitalize()} {c}" for s, c in zip(sf.UNIT_STATS, known[1])) if known else "")
+        self._fill_skills(unit)
+        self._fill_supports(unit)
+
+    def _fill_skills(self, unit: Optional[sf.SavedUnit]) -> None:
+        if unit is None:
+            self._skill_list.fill([], lambda i: False, lambda i, on: None)
+            return
+        have = {s.skill_number: s for s in unit.skills}
+        rows = []
+        for number in range(len(self._lists().get("skill", []))):
+            name = self._name("skill", number)
+            if number in have:
+                name += f"  ({sf.SKILL_SOURCES.get(have[number].source, have[number].source)})"
+            rows.append((number, f"{number:3d}  {name}"))
+
+        def set_(number: int, on: bool) -> None:
+            skills = [s for s in unit.skills if s.skill_number != number]
+            if on:
+                skills.append(sf.SavedSkill(number, 2, 0))
+            try:
+                self.record.set_unit_skills(unit, skills)
+            except ValueError as exc:
+                messagebox.showerror("Skills", str(exc), parent=self.page)
+                return
+            self.page.mark_dirty()
+        self._skill_list.fill(rows, lambda number: number in have, set_)
+
+    def _fill_supports(self, unit: Optional[sf.SavedUnit]) -> None:
+        tree = self._support_tree
+        tree.delete(*tree.get_children())
+        if unit is None or not unit.support_slot_count:
+            self._support_note.configure(text="" if unit is None else "This character has no supports.")
+            self._partner_box.configure(state="disabled")
+            self._partner_var.set("")
+            return
+        thresholds = self._thresholds()
+        partners = self._partners(unit)
+        lists = self._lists().get("character", [])
+        for slot, points in enumerate(unit.support_points):
+            pid = partners[slot] if slot < len(partners) else ""
+            name = self._name("character", lists.index(pid) + 1) if pid in lists else pid
+            tree.insert("", "end", iid=str(slot), values=(slot + 1, name, points,
+                                                          RANK_NAMES[sf.support_rank(points, thresholds)]))
+        if self._support_slot is not None and tree.exists(str(self._support_slot)):
+            tree.selection_set(str(self._support_slot))
+            tree.see(str(self._support_slot))
+        self._support_note.configure(text=(
+            f"Points stop at {thresholds[0]}, {thresholds[1]} and {thresholds[2]} until the support menu's "
+            "rank-up adds one, so a rank set here writes the value just past its threshold. The partner is the "
+            "one support a unit has at a time; setting it links the partner back and unlinks the pairs it "
+            "replaces, as the game does (points are kept)."))
+        self._partner_box.configure(state="readonly")
+        self._partner_var.set(_Fields._choice(unit.active_partner,
+                                              self._character_choices.get(unit.active_partner, "")))
+
+    def _pick_support(self) -> None:
+        sel = self._support_tree.selection()
+        self._support_slot = int(sel[0]) if sel else None
+        for f in self._fields:
+            f.load()
+
+    def _set_partner(self) -> None:
+        unit = self._unit()
+        if unit is None:
+            return
+        text = self._partner_var.get()
+        try:
+            number = int(text[text.rindex("(") + 1:-1]) if text.endswith(")") else int(text or 0)
+        except ValueError:
+            return
+        if number == unit.active_partner:
+            return
+        try:
+            self.link(unit.person_number, number)
+        except (ValueError, IndexError, KeyError) as exc:
+            messagebox.showerror("Support partner", str(exc), parent=self.page)
+            return
+        self.page.mark_dirty()
+
+    def link(self, person: int, partner: int) -> None:
+        """Pair characters ``person`` and ``partner`` (0: none) both ways, unlinking the pairs this replaces."""
+        counts = self._support_counts()
+
+        def unit_of(number: int) -> Optional[sf.SavedUnit]:
+            return next((u for u in self.record.unit_records(counts)
+                         if not u.empty and u.person_number == number and u.support_slot_count), None)
+
+        me = unit_of(person)
+        if me is None:
+            raise ValueError("this character has no supports")
+        old = me.active_partner
+        self.record.set_unit_active_partner(me, partner)
+        if old and old != partner:
+            other = unit_of(old)
+            if other is not None and other.active_partner == person:
+                self.record.set_unit_active_partner(other, 0)
+        if partner:
+            other = unit_of(partner)
+            if other is not None:
+                replaced = other.active_partner
+                self.record.set_unit_active_partner(other, person)
+                if replaced and replaced != person:
+                    third = unit_of(replaced)
+                    if third is not None and third.active_partner == partner:
+                        self.record.set_unit_active_partner(third, 0)
+
+    def _fill_convoy(self) -> None:
+        tree = self._convoy_tree
+        tree.delete(*tree.get_children())
+        if not self._has("SOKO"):
+            return
+        try:
+            items = self.record.convoy_items()
+        except ValueError:
+            return
+        for item in items:
+            tree.insert("", "end", iid=str(item.slot),
+                        values=(item.slot + 1, self._name("item", item.item_number) if item.item_number else "",
+                                item.state >> 8 if item.item_number else "",
+                                item.forged_name or ("yes" if item.forged else "")),
+                        tags=() if item.item_number else ("muted",))
+        if self._convoy_slot is not None and tree.exists(str(self._convoy_slot)):
+            tree.selection_set(str(self._convoy_slot))
+
+    def _pick_convoy(self) -> None:
+        sel = self._convoy_tree.selection()
+        self._convoy_slot = int(sel[0]) if sel else None
+        self._convoy_fields.load()
+        self._sync_forge()
+
+    def _sync_forge(self) -> None:
+        view = self._convoy_view()
+        item = view.saved if view is not None else None
+        values = item.forge_values if item is not None and item.forged else None
+        self._forge_vars["name"].set(item.forge_name_bytes.decode("shift_jis", "replace") if values else "")
+        for key, value in (("might", values.might_steps if values else ""),
+                           ("hit", values.hit_steps if values else ""),
+                           ("crit", values.critical_steps if values else ""),
+                           ("weight", values.weight_reduction_steps if values else "")):
+            self._forge_vars[key].set(str(value))
+        self._forge_vars["rgba"].set(f"#{values.red:02X}{values.green:02X}{values.blue:02X}{values.alpha:02X}"
+                                     if values else "")
+        state = "normal" if values is not None else "disabled"
+        for entry in self._forge_entries:
+            entry.configure(state=state)
+        self._forge_apply.configure(state=state)
+
+    def _apply_forge(self) -> None:
+        if self._convoy_slot is None:
+            return
+        v = self._forge_vars
+        try:
+            colour = v["rgba"].get().strip().removeprefix("#").removeprefix("0x")
+            if len(colour) != 8:
+                raise ValueError("RGBA is eight hexadecimal digits")
+            payload = sf.ForgePayload(int(v["might"].get(), 0), int(v["hit"].get(), 0), int(v["crit"].get(), 0),
+                                      int(v["weight"].get(), 0), *bytes.fromhex(colour))
+            self.record.update_forged_convoy_item(self._convoy_slot, name=v["name"].get(), payload=payload)
+        except (ValueError, IndexError) as exc:
+            messagebox.showerror("Forge", str(exc), parent=self.page)
+            return
+        self.page.mark_dirty()
+
+    # -- flags ------------------------------------------------------------------------------
+    def slot_names(self) -> tuple[list, int]:
+        """(name per BMST flag slot, number of campaign flags), from the workspace's scripts: the
+        campaign flags of startup.cmb, then the chapter flags of the file's map's script."""
+        project = self.page.project
+        table = ef.FE10_FLAGS
+        try:
+            globals_ = ef.global_flags(parse(script_sources.peek(project, script_sources.startup_path(project))),
+                                       table)
+        except (OSError, ValueError, ParseError, AttributeError):
+            globals_ = ef.global_flags_vanilla(table)
+        locals_: list = []
+        for chapter_id in sf.chapter_ids_for_map(self.record.map_name):
+            try:
+                path = script_sources.chapter_script(project, chapter_id)
+                if path is not None:
+                    locals_ = ef.local_flags(parse(script_sources.peek(project, path)))
+                    break
+            except (OSError, ValueError, ParseError, AttributeError):
+                break
+        return ef.slot_names(globals_, locals_, table.slot_count), len(globals_)
+
+    def _fill_flags(self) -> None:
+        tree = self._flag_tree
+        tree.delete(*tree.get_children())
+        if not self._has("BMST"):
+            self._flags_note.configure(text="")
+            return
+        try:
+            bits = self.record.script_flags()
+        except ValueError:
+            return
+        names, n_globals = self.slot_names()
+        stale = self.record.resume_step == sf.RESUME_CHAPTER_END
+        self._flags_note.configure(text=(
+            "This file was saved at the end of a chapter: starting the next one clears every chapter flag "
+            "below, so their bits are leftovers of the finished chapter." if stale else
+            "Chapter flags are named from the script of the file's map.")
+            + " Double-click a flag (or press Space) to switch it.")
+        for slot, on in enumerate(bits):
+            name = names[slot]
+            meaning = ef.FE10_FLAGS.glosses.get(name, "") if name else "No name in this chapter"
+            if name == ef.FE10_FLAGS.reserved_global:
+                meaning = "Reserved, unused"
+            if stale and slot >= n_globals:
+                meaning = ("stale - " + meaning) if meaning else "stale"
+            if not on and name is None:
+                continue
+            tree.insert("", "end", iid=str(slot), values=(ON if on else OFF, slot, name or "", meaning),
+                        tags=() if name else ("muted",))
+
+    def _toggle_flag(self) -> None:
+        sel = self._flag_tree.selection()
+        if not sel or not self._has("BMST"):
+            return
+        slot = int(sel[0])
+        on = not self.record.script_flags()[slot]
+        self.record.set_script_flag(slot, on)
+        self._flag_tree.set(sel[0], "on", ON if on else OFF)
+        self.page.sync()
+
+    # -- system / raw ---------------------------------------------------------------------
+    def _fill_system(self) -> None:
+        self._fill_system_bits()
+        tree = self._system_records
+        tree.delete(*tree.get_children())
+        if not self._system_ok():
+            return
+        data = self.save.system.system_part("Records at +0xDC")
+        for i in range(sf.SYSTEM_RECORD_COUNT):
+            row = data[i * sf.SYSTEM_RECORD_SIZE:(i + 1) * sf.SYSTEM_RECORD_SIZE]
+            tree.insert("", "end", iid=str(i), values=(i + 1, row.hex(" ")))
+
+    def _fill_system_bits(self) -> None:
+        if not self._system_ok():
+            self._bit_list.fill([], lambda i: False, lambda i, on: None)
+            return
+        system, name = self.save.system, self._bits_var.get()
+        start = next(p[1] for p in sf.SYSTEM_PARTS if p[0] == name)
+        rows = [(i, f"+0x{start + (i >> 3):X} bit 0x{1 << (i & 7):02X}")
+                for i in range(8 * len(system.system_part(name)))]
+
+        def get(i: int) -> bool:
+            return bool(system.system_part(name)[i >> 3] & (1 << (i & 7)))
+
+        def set_(i: int, on: bool) -> None:
+            data = bytearray(system.system_part(name))
+            data[i >> 3] = data[i >> 3] | (1 << (i & 7)) if on else data[i >> 3] & ~(1 << (i & 7))
+            system.set_system_part(name, bytes(data))
+            self.page.sync()
+        self._bit_list.fill(rows, get, set_)
+
+    def _fill_sections(self) -> None:
+        tree = self._section_tree
+        tree.delete(*tree.get_children())
+        if self.record is not None:
+            for i, section in enumerate(self.record.sections):
+                tree.insert("", "end", iid=str(i), values=(section.name, f"0x{section.data_offset:05X}",
+                                                           f"{section.size} (0x{section.size:X})"))
+        self._fill_raw()
+
+    def _fill_raw(self) -> None:
+        text = self._raw_text
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        sel = self._section_tree.selection()
+        if self.record is not None:
+            if sel:
+                section = self.record.sections[int(sel[0])]
+                data, base = self.record.section_bytes(section.name), section.data_offset
+            else:
+                data, base = self.record.build(), 0
+                data = data[:len(data.rstrip(b"\xff")) + 16]
+            text.insert("1.0", "\n".join(f"{base + o:06X}  {data[o:o + 16].hex(' ')}"
+                                         for o in range(0, len(data), 16)))
+        text.configure(state="disabled")
+
+    # -- chapter start ------------------------------------------------------------------------
     def _start_chapter(self) -> None:
-        record = self._record()
-        session = getattr(self.shell, "session", None)
-        database = getattr(session, "fe10", None)
-        if record is None or record.empty or record.section("BMST") is None:
+        database = self._database()
+        if not self._has("BMST"):
             return
         if database is None:
-            messagebox.showinfo("Start a chapter", "Open an extracted Radiant Dawn workspace first: the "
-                                "chapter list comes from its FE10Data.", parent=self)
+            messagebox.showinfo("Start a chapter", "Open an extracted Radiant Dawn workspace first: the chapter "
+                                "list comes from its FE10Data.", parent=self.page)
             return
         chapters = sorted((row for row in database.table("chapter") if row.values.get("number")),
                           key=lambda row: row.values["number"])
-        choices = [f"{row.values['cid']} ({row.values.get('map') or 'no map'})" for row in chapters]
-        from tkinter import simpledialog
-        current = next((i for i, row in enumerate(chapters) if row.values["number"] == record.chapter_number), 0)
-        answer = simpledialog.askstring(
-            "Start a chapter", "Chapter id to start from its opening (C0401 is 4-P):",
-            initialvalue=chapters[current].values["cid"], parent=self)
+        current = next((i for i, row in enumerate(chapters) if row.values["number"] == self.record.chapter_number), 0)
+        answer = simpledialog.askstring("Start a chapter", "Chapter id to start from its opening (C0401 is 4-P):",
+                                        initialvalue=chapters[current].values["cid"], parent=self.page)
         if not answer:
             return
         chosen = next((i for i, row in enumerate(chapters) if row.values["cid"].lower() == answer.strip().lower()),
                       None)
         if chosen is None:
-            messagebox.showerror("Start a chapter", f"No chapter {answer!r}. Known: {', '.join(choices[:12])}…",
-                                 parent=self)
+            known = ", ".join(row.values["cid"] for row in chapters[:12])
+            messagebox.showerror("Start a chapter", f"No chapter {answer!r}. Known: {known}…", parent=self.page)
             return
         target, before = chapters[chosen], chapters[chosen - 1] if chosen else chapters[chosen]
         affinity = next((row.index for row in database.table("affinity")
                          if row.values.get("affinity") == target.values.get("affinity")), 0)
         try:
-            record.start_at_chapter(target.values["number"], before.values.get("map") or target.values["map"],
-                                    affinity)
+            self.record.start_at_chapter(target.values["number"], before.values.get("map") or target.values["map"],
+                                         affinity)
         except ValueError as exc:
-            messagebox.showerror("Start a chapter", str(exc), parent=self)
+            messagebox.showerror("Start a chapter", str(exc), parent=self.page)
             return
-        self._refresh()
-
-    def _play(self) -> None:
-        if self._save is None:
-            return
-        banner_path = self._path.parent / "banner.bin" if self._path else None
-        try:
-            banner = banner_path.read_bytes() if banner_path is not None and banner_path.is_file() else None
-        except OSError as exc:
-            messagebox.showerror("Could not read banner.bin", str(exc), parent=self)
-            return
-        self.shell.play_from_wii_save(self._save.to_bytes(), banner)
-
-    def _sync(self) -> None:
-        has = self._save is not None
-        self._save_button.configure(state="normal" if self.dirty else "disabled")
-        self._copy_button.configure(state="normal" if has else "disabled")
-        self._check_button.configure(state="normal" if has else "disabled")
-        self._play_button.configure(state="normal" if has and self.shell.extracted else "disabled")
-        record = self._record() if has else None
-        self._start_button.configure(state="normal" if record is not None and not record.empty
-                                     and record.section("BMST") is not None else "disabled")
-        self._status.configure(text="Unsaved changes" if self.dirty else "")
+        self.page.mark_dirty()

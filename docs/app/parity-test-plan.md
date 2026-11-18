@@ -85,7 +85,7 @@ difficulty, and let it boot into the chapter.
       Expect: the skill activates far more often than retail (capped at 100%).
 - [ ] **Tools → Game Code → Level-up growth**: set HP gain per success to 3. Level a unit up.
       Expect: HP rises by 3 (or 0) on a level-up.
-- [ ] **Tools → Saves → Open NAND folder…** on the backed-up save folder copy: on the Convoy tab,
+- [ ] **Tools → Saves → Open save file…** on a copy of `FE10_US.dat`: on the Convoy tab,
       set an empty slot to item number 3 (`IID_IRONSWORD`), Save. Load that save in the game.
       Expect: the convoy holds an Iron Sword; the save loads with no corruption message.
 - [ ] To decode the Units and Flags tabs: make a save **later** in the game with at least one beorc

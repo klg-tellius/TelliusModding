@@ -144,6 +144,14 @@ source_path: "meta/radiant-dawn.md"
 
   `UNIP` has 254 unit slots, `SOKO` the convoy's 316 items. An item is its number and a state word; a forged item adds its name and eight more bytes. The 128 script flags are in `BMST`. <span class="confidence confidence--confirmed">engine</span>
 
+  An item's state word holds its uses in the high byte and flags in the low byte: 0x80 marks the equipped weapon, 0x20 a forged item. Each of a unit's skills carries a source byte: 0 for the character's own skills, 1 for the class's, 2 for a skill taught with a scroll. <span class="confidence confidence--confirmed">files</span>
+
+  A unit whose character has supports saves its one active partner (the partner's number in the save's character list, 0 for none) and one points byte per `RelianceData` partner. A saved pair points at each other, and the partner's points are the ones past a `RelianceParam` threshold: 51 or more is C, 101 B, 151 A. Points held exactly at 50, 100 or 150 wait for the support menu's rank-up, which adds one. Three bit sets, one per rank, record which support conversations the unit has seen. <span class="confidence confidence--confirmed">files</span>
+
+  `T  T` is the map's tile records, as on Path of Radiance: 128 records of a tile, a type, a subtype and four values, then the number of live records. A file saved on 4-7e holds eight range-overlay records (type 6) in a ring around one tile. <span class="confidence confidence--confirmed">files</span>
+
+  The system record, shared by every file, holds eight bit sets, eight 16-bit values and 30 records of 24 bytes, ending at +0x3B4. What each part means is not traced. <span class="confidence confidence--confirmed">engine</span>
+
 ## Map and battle textures
 
   A map animation ID (`FE10AnimHeader` in `FE10Anim.cms`) names one texture and one model folder: `AID_MIKAYA1` draws `ymu/mikaya1/mikaya1.tpl`. Map colours belong to the ID, not to an army: `AID_SOLDIER` (Begnion) is `soldier1_b`, `AID_SOLDIER_De` (Daein) is `soldier1_d`. A character's IDs are its `aid_1` to `aid_4`, one per tier. <span class="confidence confidence--confirmed">engine</span>
