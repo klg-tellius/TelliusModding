@@ -241,6 +241,7 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
     count, table = _u32(data, 4), _u32(data, 8)
     cov.mark(0, 12, DECODED)
     cov.mark(table, 8 * count, DECODED)
+    end, lengths, seen, repeats = 0, {}, set(), 0
     for i in range(count):
         image, palette = struct.unpack_from(">II", data, table + 8 * i)
         height, width, fmt, texels = struct.unpack_from(">HHII", data, image)
@@ -256,10 +257,25 @@ def tpl_file(cov: FileCoverage, walker: Walker) -> None:
                 length = TplImageInfo(i, w, h, fmt, pos, palette, 0, 0, 0, 0, 0.0).data_length
             cov.mark(pos, length, DECODED)
             pos += length
+        end = max(end, pos)
+        lengths[image] = pos - texels
+        repeats += image in seen
+        seen.add(image)
         if palette:
             entries, _unpacked, _pad, _fmt, pal_data = struct.unpack_from(">HBBII", data, palette)
             cov.mark(palette, 12, DECODED)
             cov.mark(pal_data, 2 * entries, DECODED)
+    # window/unitranking.cms: entries 13-15 repeat entry 12's header, and three
+    # more images of that size follow the last texels. Nothing points to them.
+    if repeats and end < len(data):
+        last = max(lengths, key=lambda h: struct.unpack_from(">I", data, h + 8)[0])
+        if lengths[last] and len(data) - end == repeats * lengths[last]:
+            cov.mark(end, len(data) - end, UNREAD, "image data behind repeated image headers (unreachable)")
+            # Their own 0x24-byte headers follow the last referenced one.
+            for k in range(repeats):
+                header = max(lengths) + 0x24 * (k + 1)
+                if header + 0x24 <= len(data) and _u32(data, header + 8) == end + k * lengths[last]:
+                    cov.mark(header, 0x24, UNREAD, "image header no table entry points to")
     cov.fill(PADDING, only_zero=True)
 
 
