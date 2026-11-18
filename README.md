@@ -95,7 +95,7 @@ Is there a feature you would like, a bug you hit, or something you want to ask?
   [issue](https://github.com/klg-tellius/TelliusModding/issues/new/choose).
 
 Please say which game and region you use (for example Path of Radiance US or Radiant
-Dawn PAL) and which release you run (for example v0.2.0, or the commit when running
+Dawn PAL) and which release you run (for example v1.0.0.0, or the commit when running
 from source). Do not attach game files.
 
 ## Verify
@@ -111,7 +111,8 @@ Tests that require an external game corpus may skip when it is absent.
 
 See [credits and research resources](CREDITS.md), including the DspTool MIT
 notice and external-tool licenses. Original wiki text and diagrams are licensed
-CC BY-SA 4.0 as described in [CONTENT-LICENSE.md](CONTENT-LICENSE.md). No
-project-wide open-source license has been selected yet for the code; third-party
-components retain their own terms. Fire Emblem names identify the supported games.
-This is an independent project.
+CC BY-SA 4.0 as described in [CONTENT-LICENSE.md](CONTENT-LICENSE.md). The code
+is released under the [MIT License](LICENSE); third-party components retain their
+own terms. Neither license covers Nintendo or Intelligent Systems game data,
+trademarks or other game-derived material: supply your own disc. Fire Emblem names
+identify the supported games. This is an independent project.
