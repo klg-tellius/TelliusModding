@@ -1362,6 +1362,35 @@ class ThpTests(unittest.TestCase):
         max_diff = max(abs(a - b) for a, b in zip(left, decoded_audio[0]))
         self.assertLess(max_diff, 2000)
 
+    def test_frames_use_the_retail_jpeg_marker_layout(self):
+        """The game shows a black picture for frames laid out as PIL writes
+        them; retail frames are SOI, one DQT, SOF0, one DHT (DC0, DC1, AC0,
+        AC1), SOS."""
+        from PIL import Image
+
+        data = thp.encode_thp([Image.new("RGB", (32, 16), (200, 40, 40))], None, 32000, 29.97)
+        stream = io.BytesIO(data)
+        info = thp.read_info(stream)
+        (offset,) = thp.iter_frame_offsets(stream, info)
+        frame = data[offset + 12:]
+        self.assertEqual(frame[:2], b"\xff\xd8")
+        pos, markers = 2, []
+        while frame[pos + 1] != 0xDA:
+            (length,) = struct.unpack(">H", frame[pos + 2:pos + 4])
+            markers.append(frame[pos + 1])
+            if frame[pos + 1] == 0xC4:
+                body, i, classes = frame[pos + 4:pos + 2 + length], 0, []
+                while i < len(body):
+                    classes.append(body[i])
+                    i += 17 + sum(body[i + 1:i + 17])
+                self.assertEqual(classes, [0x00, 0x01, 0x10, 0x11])
+            pos += 2 + length
+        self.assertEqual(markers, [0xDB, 0xC0, 0xC4])
+        image, _audio = thp.read_frame(stream, offset, info)
+        red, green, _blue = image.getpixel((5, 5))
+        self.assertGreater(red, 150)
+        self.assertLess(green, 80)
+
     def test_encode_rejects_non_multiple_of_16_dimensions(self):
         from PIL import Image
 

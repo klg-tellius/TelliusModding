@@ -489,7 +489,48 @@ def _build_audio_frame_bytes(
 def _encode_thp_jpeg(image: "Image.Image", quality: int) -> bytes:
     buffer = io.BytesIO()
     image.convert("RGB").save(buffer, "JPEG", quality=quality, subsampling=2, progressive=False)
-    return _escape_for_thp(buffer.getvalue())
+    return _escape_for_thp(_retail_marker_layout(buffer.getvalue()))
+
+
+def _retail_marker_layout(jpeg_bytes: bytes) -> bytes:
+    """Rewrite a PIL JPEG's header into the layout the game's THP decoder
+    reads: SOI, one DQT holding both tables, SOF0, one DHT holding the four
+    tables in the order DC0, DC1, AC0, AC1, then SOS (no APP0/JFIF). Retail
+    frames are laid out this way; PIL's (APP0, a DQT per table, a DHT per
+    table in DC0, AC0, DC1, AC1 order) plays its sound but leaves the picture
+    black in game."""
+
+    pos, dqt, dht, sof = 2, [], {}, None
+    while True:
+        if jpeg_bytes[pos] != 0xFF:
+            raise ThpError("Malformed JPEG header in encoded frame.")
+        marker = jpeg_bytes[pos + 1]
+        if marker == 0xDA:
+            break
+        (length,) = struct.unpack(">H", jpeg_bytes[pos + 2 : pos + 4])
+        body = jpeg_bytes[pos + 4 : pos + 2 + length]
+        if marker == 0xDB:
+            dqt.append(body)
+        elif marker == 0xC4:
+            i = 0
+            while i < len(body):
+                size = 17 + sum(body[i + 1 : i + 17])
+                dht[body[i]] = body[i : i + size]
+                i += size
+        elif marker == 0xC0:
+            sof = body
+        elif marker not in (0xE0,) and not 0xE1 <= marker <= 0xEF and marker != 0xFE:
+            raise ThpError(f"Unexpected JPEG marker 0x{marker:02X} in encoded frame.")
+        pos += 2 + length
+    if sof is None or sorted(dht) != [0x00, 0x01, 0x10, 0x11]:
+        raise ThpError("Encoded frame lacks the baseline frame header or Huffman tables THP needs.")
+
+    def segment(marker: int, body: bytes) -> bytes:
+        return bytes((0xFF, marker)) + struct.pack(">H", len(body) + 2) + body
+
+    out = b"\xff\xd8" + segment(0xDB, b"".join(dqt)) + segment(0xC0, sof)
+    out += segment(0xC4, b"".join(dht[k] for k in (0x00, 0x01, 0x10, 0x11)))
+    return out + jpeg_bytes[pos:]
 
 
 def _escape_for_thp(jpeg_bytes: bytes) -> bytes:
