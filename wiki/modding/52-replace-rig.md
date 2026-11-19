@@ -22,6 +22,8 @@ verification: ["source-reviewed", "unknown"]
 
 **Route:** Assets → 3D Models → Rig kit… / Replace rig… / Fit new rig…
 
+**Shortcut:** **New character model…** does **New slot…** and **Fit new rig…** in one go: it asks for the rigged model, makes the copy for the character or class you pick, then opens the joint mapping on the copy.
+
 !!! warning "Untested rig writer in game"
     Rig replacement/fitting is source-reviewed but has not completed Dolphin verification. Work on a disposable project copy and retain every generated/replaced file.
 
