@@ -122,10 +122,10 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import numpy as np
 from PIL import Image, ImageTk
 
-from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, pak, particle_preview, skeleton, tpl
+from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, map_file, pak, particle_preview, skeleton, tpl
 from ..formats import model as model_fmt
 from .. import blender as blender_tool
-from .. import map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
+from .. import animation_catalog, map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
 from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, fe10data, zdbx
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of, files_root_of
@@ -1006,49 +1006,13 @@ def _load_model_set(label: str, container_path: Path, pending: dict[Path, bytes]
     return _build_loaded_set(label, files, animations)
 
 
-def _is_battle_container(path: Path) -> bool:
-    """A battle-model body container: FE9's weapon ``.pak`` or FE10's
-    shared ``zu/<code>/pack.cmp``."""
-    path = Path(path)
-    return path.suffix.lower() == ".pak" or (
-        path.name.casefold() == "pack.cmp" and path.parent.parent.name.casefold() == "zu")
-
-
-def _is_uncompressed_pack(path: Path) -> bool:
-    return Path(path).suffix.lower() == ".pak"
-
-
-def _unpack(path: Path, data: bytes) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
-    raw = data if _is_uncompressed_pack(path) else lz10.decompress(data)
-    entries = pak.read_pak_entries(raw)
-    return entries, {e.name: pak.read_pak_file_content(raw, e) for e in entries}
-
-
-def _pack(path: Path, entries: list[pak.PakEntry], files: dict[str, bytes]) -> bytes:
-    packed = pak.pack_pak([(e.name, files[e.name]) for e in entries], [e.reserved for e in entries])
-    return packed if _is_uncompressed_pack(path) else lz10.compress(packed)
-
-
-def _read_container(container_path: Path) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
-    return _unpack(container_path, container_path.read_bytes())
-
-
-def _set_containers(container_path: Path) -> list[Path]:
-    """Every container that owns the set's body and skeleton."""
-    if _is_uncompressed_pack(container_path):
-        return sorted(container_path.parent.glob(f"{container_path.parent.name}_*.pak"))
-    return [container_path]
-
-
-def _animation_containers(container_path: Path) -> list[Path]:
-    """Archives holding a battle set's animations.
-
-    FE10's shared ``pack.cmp`` has the body and skeleton while sibling
-    ``.pak`` archives hold animations; FE9 keeps all three together.
-    """
-    if (_is_battle_container(container_path) and not _is_uncompressed_pack(container_path)):
-        return sorted(container_path.parent.glob("*.pak"))
-    return _set_containers(container_path)
+_is_battle_container = animation_catalog.is_battle_container
+_is_uncompressed_pack = animation_catalog.is_uncompressed_pack
+_unpack = animation_catalog.unpack
+_pack = animation_catalog.pack_container
+_read_container = animation_catalog.read_container
+_set_containers = animation_catalog.set_containers
+_animation_containers = animation_catalog.animation_containers
 
 
 def _loose_map_unit_texture(container_path: Path, files: dict[str, bytes]) -> Path | None:
@@ -1106,8 +1070,9 @@ def export_set_glb(container_path: Path) -> bytes:
     """A model set (pack plus the loose ``.ga`` next to it) as ``.glb``,
     through :func:`gltf_export.export_glb` - every ``.gs`` in the pack, the
     ``.g`` skeleton, textures resolved the same way the viewer resolves
-    them, and every animation the parser accepts."""
-    files, other_animations = _set_contents(container_path)
+    them, and every animation the parser accepts, named as :func:`kit_animation_names` names
+    them (so an exported set imports back clip for clip)."""
+    files, _other_animations = _set_contents(container_path)
     bones: list[skeleton.Bone] = []
     models, animations = [], []
     for name, content in files.items():
@@ -1116,9 +1081,10 @@ def export_set_glb(container_path: Path) -> bytes:
             bones = skeleton.read_skeleton(io.BytesIO(content))
         elif suffix == ".gs":
             models.append((Path(name).stem, model_fmt.read_model_bytes(content)))
-        elif suffix == ".ga":
-            animations.append((Path(name).stem, content))
-    animations += [(Path(name).stem, data) for name, data in other_animations]
+    # clip names as the rig kit and the imports use them: the file's stem, ``stem@pack`` when
+    # weapon archives hold different files of that name
+    animations = [(gltf_name, data) for gltf_name, _f, _p, data
+                  in kit_animation_names(set_animations_by_pack(container_path))]
     tpl_contents = {name: data for name, data in files.items() if Path(name).suffix.lower() == ".tpl"}
     textures = {i: t.image for i, t in _load_textures(tpl_contents).items()}
     decoded = []
@@ -2772,79 +2738,65 @@ def export_rig_kit(container_path: Path, target: Path) -> list[Path]:
     return [target, sheet, listing]
 
 
-def _set_animation_output(container_path: Path, target: str, ga: bytes) -> dict[Path, bytes]:
-    """The files to write so the set's animation ``target`` (a pack entry,
-    in every weapon pack that holds it, or a loose file) becomes ``ga``."""
-    out = {}
-    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
-    for pack_path in containers:
-        entries, files = _read_container(pack_path)
-        if target in files:
-            files[target] = ga
-            out[pack_path] = _pack(pack_path, entries, files)
-    if out:
-        return out
-    loose = container_path.parent / target
-    if loose.is_file():
-        return {loose: ga}
-    raise gltf_import.GltfImportError(f"{target} is not an animation of this set.")
+def _set_animation_output(container_path: Path, target: str, ga: bytes,
+                          pack: str | list[str] | None = None) -> dict[Path, bytes]:
+    """The files to write so the set's animation ``target`` becomes ``ga``: every archive holding
+    the same file (or ``pack``'s only), or the loose file (``animation_catalog.clip_targets``)."""
+    try:
+        return animation_catalog.clip_output(container_path, target, ga, pack)[0]
+    except animation_catalog.ClipError as exc:
+        raise gltf_import.GltfImportError(str(exc)) from exc
 
 
-def set_animation_bytes(container_path: Path, target: str) -> bytes:
-    """The current bytes of the set's animation ``target``."""
-    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
-    for pack_path in containers:
-        _e, files = _read_container(pack_path)
-        if target in files:
-            return files[target]
-    loose = container_path.parent / target
-    if loose.is_file():
-        return loose.read_bytes()
-    raise gltf_import.GltfImportError(f"{target} is not an animation of this set.")
+def set_animation_bytes(container_path: Path, target: str, pack: str | list[str] | None = None) -> bytes:
+    """The current bytes of the set's animation ``target`` (``pack``'s copy when given)."""
+    try:
+        return animation_catalog.clip_bytes(container_path, target, pack)
+    except animation_catalog.ClipError as exc:
+        raise gltf_import.GltfImportError(str(exc)) from exc
 
 
-def replace_animation_events(container_path: Path, target: str, events: list[animation.EventKey]) -> ModelImport:
-    """Rewrite the event track of the set's animation ``target``. Warns when
-    a code the battle script waits for (``rig_contract.COMBAT_CODES``) is
-    dropped."""
-    old = set_animation_bytes(container_path, target)
+def replace_animation_events(container_path: Path, target: str, events: list[animation.EventKey],
+                             pack: str | list[str] | None = None) -> ModelImport:
+    """Rewrite the event track of the set's animation ``target`` (every identical copy, or
+    ``pack``'s). Warns when a code the battle script waits for (``rig_contract.COMBAT_CODES``)
+    is dropped."""
+    old = set_animation_bytes(container_path, target, pack)
     ga = rig_contract.replace_events(old, events)
     warnings = [e.replace("the fight would", "the fight may") for e in rig_contract.event_errors(target, ga, old)]
-    return ModelImport(_set_animation_output(container_path, target, ga), warnings)
+    outputs, notes = animation_catalog.clip_output(container_path, target, ga, pack)
+    return ModelImport(outputs, notes + warnings)
+
+
+def replace_animation_with_ga(container_path: Path, ga_path: Path, target: str,
+                              pack: str | list[str] | None = None) -> ModelImport:
+    """Replace the set's clip ``target`` with a ``.ga`` file (one exported by Tellius Forge's
+    Blender add-on, for one): ``animation_catalog.replace_clip_with_ga``."""
+    try:
+        outputs, warnings = animation_catalog.replace_clip_with_ga(
+            container_path, target, Path(ga_path).read_bytes(), pack)
+    except animation_catalog.ClipError as exc:
+        raise gltf_import.GltfImportError(str(exc)) from exc
+    return ModelImport(outputs, warnings)
 
 
 def replace_animation_with_glb(
-    container_path: Path, gltf_path: Path, gltf_animation: str, target: str
+    container_path: Path, gltf_path: Path, gltf_animation: str, target: str, pack: str | list[str] | None = None
 ) -> ModelImport:
     """Rebuild the set's ``target`` animation (a pack entry or a loose file)
     from one glTF animation (``gltf_import.import_animation``), keeping the
     replaced file's events and loop settings unless the glTF carries its
-    own. A battle model's animation is rewritten in the weapon pack that
-    holds it."""
+    own. A battle model's clip is rewritten in every weapon archive holding
+    the same file, or in ``pack``'s only (``animation_catalog.clip_targets``)."""
     # FE10 battle models split the rig (``pack.cmp``) from the weapon
     # animation archives (sibling ``*.pak`` files). Keep the body archive
     # as the source of the skeleton/mesh even when the target animation is
     # found in a different archive.
     _body_entries, body_files = _read_container(_set_containers(container_path)[0])
-    containers = list(dict.fromkeys(_set_containers(container_path) + _animation_containers(container_path)))
-    target_container = container_path
-    target_entries: list[pak.PakEntry] | None = None
-    target_files: dict[str, bytes] | None = None
-    for pack_path in containers:
-        entries, files = _read_container(pack_path)
-        if target in files:
-            target_container, target_entries, target_files = pack_path, entries, files
-            break
     g_names = [n for n in body_files if Path(n).suffix.lower() == ".g"]
     if not g_names:
         raise gltf_import.GltfImportError(f"{container_path.name} has no skeleton.")
-    loose = container_path.parent / target
-    if target_files is not None:
-        template = target_files[target]
-    elif loose.is_file():
-        template = loose.read_bytes()
-    else:
-        raise gltf_import.GltfImportError(f"{target} is not an animation of this set.")
+    template = set_animation_bytes(container_path, target, pack)
     ga, warnings = gltf_import.import_animation(
         gltf_path.read_bytes(),
         body_files[g_names[0]],
@@ -2865,13 +2817,8 @@ def replace_animation_with_glb(
                 "blended-vertex buffer holds; the game clamps them there. Re-import the body after the animation "
                 "to resize that range."
             )
-    if target_files is None:
-        return ModelImport({loose: ga}, warnings)
-    target_files[target] = ga
-    assert target_entries is not None
-    return ModelImport(
-        {target_container: _pack(target_container, target_entries, target_files)}, warnings
-    )
+    outputs, notes = animation_catalog.clip_output(container_path, target, ga, pack)
+    return ModelImport(outputs, notes + warnings)
 
 
 class _NewSlotDialog(tk.Toplevel):
@@ -3530,17 +3477,28 @@ class _RigMappingDialog(tk.Toplevel):
         self.destroy()
 
 
+def clip_choice_label(clip: animation_catalog.ClipInfo) -> str:
+    """A clip in a choice list: ``fig1_dam_ax.ga [ax, ha]`` for a battle clip, the file name for a
+    map model's."""
+    packs = [p for p in clip.packs if p not in ("", "pack", "loose")]
+    return f"{clip.file} [{', '.join(packs)}]" if packs else clip.file
+
+
 class _EventEditorDialog(tk.Toplevel):
     """Edit an animation's event track: frame and codes per key. Codes the
     battle script waits for (0, 1, 2) are marked; see ``rig_contract``. On
     Radiant Dawn each code has a parameter, typed ``code:parameter``."""
 
-    def __init__(self, parent, label: str, path: Path, names: list[str]) -> None:
+    def __init__(self, parent, label: str, path: Path, clips: list[animation_catalog.ClipInfo],
+                 selected: animation_catalog.ClipInfo | None = None) -> None:
         super().__init__(parent)
         self.title(f"Events - {label}")
         self.transient(parent)
-        self.result: tuple[str, list[animation.EventKey]] | None = None
+        self.result: tuple[animation_catalog.ClipInfo, list[animation.EventKey]] | None = None
         self._path = path
+        self._clips = [c for c in clips if not c.error]
+        names = [clip_choice_label(c) for c in self._clips]
+        first = clip_choice_label(selected) if selected is not None and selected in self._clips else None
         self._events: list = []
         self._frames = 0
         self._fe10 = False
@@ -3548,8 +3506,9 @@ class _EventEditorDialog(tk.Toplevel):
         top = ttk.Frame(self, padding=8)
         top.pack(fill="both", expand=True)
         ttk.Label(top, text="Animation").grid(row=0, column=0, sticky="w")
-        self._animation_var = tk.StringVar(value=names[0] if names else "")
-        box = ttk.Combobox(top, textvariable=self._animation_var, values=names, state="readonly", width=36)
+        self._animation_var = tk.StringVar(value=first or (names[0] if names else ""))
+        self._names = names
+        box = ttk.Combobox(top, textvariable=self._animation_var, values=names, state="readonly", width=44)
         box.grid(row=0, column=1, columnspan=3, sticky="we")
         box.bind("<<ComboboxSelected>>", lambda e: self._load())
         self._info = ttk.Label(top, text="", style="Muted.TLabel")
@@ -3589,10 +3548,10 @@ class _EventEditorDialog(tk.Toplevel):
 
     def _load(self) -> None:
         name = self._animation_var.get()
-        if not name:
+        if not name or name not in self._names:
             return
         try:
-            data = set_animation_bytes(self._path, name)
+            data = self._clips[self._names.index(name)].data
             anim = animation.read_animation_bytes(data)
             self._fe10 = animation.is_fe10_animation(data)
             self._events = animation.fe10_events(data) if self._fe10 else list(anim.events)
@@ -3669,59 +3628,78 @@ class _EventEditorDialog(tk.Toplevel):
             self._refresh()
 
     def _ok(self) -> None:
-        self.result = (self._animation_var.get(), list(self._events))
+        name = self._animation_var.get()
+        if name in self._names:
+            self.result = (self._clips[self._names.index(name)], list(self._events))
         self.destroy()
 
 
-class _AnimationImportDialog(tk.Toplevel):
-    """Pick which glTF animation replaces which of the set's animations."""
+def match_clip(gltf_name: str, clips: list[animation_catalog.ClipInfo]) -> int | None:
+    """The clip a glTF animation is named after: ``fig1_at1_ax`` (the file's stem) or
+    ``fig1_dam_ax@ha`` (the stem in one weapon archive, as the rig kit and Export .glb name a
+    file that differs between archives)."""
+    stem, _at, pack = gltf_name.lower().partition("@")
+    for i, clip in enumerate(clips):
+        if clip.stem.lower() == stem and (not pack or pack in clip.packs):
+            return i
+    return None
 
-    def __init__(self, parent, gltf_names: list[str], targets: list[str]) -> None:
+
+class _AnimationImportDialog(tk.Toplevel):
+    """Pick which glTF animation replaces which of the set's clips."""
+
+    def __init__(self, parent, gltf_names: list[str], clips: list[animation_catalog.ClipInfo],
+                 selected: animation_catalog.ClipInfo | None = None) -> None:
         super().__init__(parent)
         self.title("Import animation")
         self.transient(parent)
-        self.result: tuple[str, str] | None = None
+        self.result: tuple[str, animation_catalog.ClipInfo] | None = None
         body = ttk.Frame(self, padding=10)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="glTF animation").grid(row=0, column=0, sticky="w")
         ttk.Label(body, text="Replaces").grid(row=0, column=1, sticky="w", padx=(10, 0))
         self._source = tk.Listbox(body, exportselection=False, height=14, width=28)
-        self._target = tk.Listbox(body, exportselection=False, height=14, width=28)
+        self._target = tk.Listbox(body, exportselection=False, height=14, width=36)
         self._source.grid(row=1, column=0, sticky="nsew")
         self._target.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         for name in gltf_names:
             self._source.insert("end", name)
-        for name in targets:
-            self._target.insert("end", name)
-        self._gltf_names, self._targets = gltf_names, targets
+        for clip in clips:
+            self._target.insert("end", clip_choice_label(clip))
+        self._gltf_names, self._clips = gltf_names, clips
         self._source.bind("<<ListboxSelect>>", lambda e: self._match_target())
+        ttk.Label(body, text="A clip listed with several weapons changes in each of them.",
+                  style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
         buttons = ttk.Frame(body)
-        buttons.grid(row=2, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(8, 0))
         ttk.Button(buttons, text="Import", command=self._ok).pack(side="left")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
+        if selected is not None and selected in clips:
+            self._select_target(clips.index(selected))
         if gltf_names:
             self._source.selection_set(0)
             self._match_target()
         self.grab_set()
 
+    def _select_target(self, i: int) -> None:
+        self._target.selection_clear(0, "end")
+        self._target.selection_set(i)
+        self._target.see(i)
+
     def _match_target(self) -> None:
         selection = self._source.curselection()
         if not selection:
             return
-        name = self._gltf_names[selection[0]].lower()
-        for i, target in enumerate(self._targets):
-            if Path(target).stem.lower() == name:
-                self._target.selection_clear(0, "end")
-                self._target.selection_set(i)
-                self._target.see(i)
-                break
+        found = match_clip(self._gltf_names[selection[0]], self._clips)
+        if found is not None:
+            self._select_target(found)
 
     def _ok(self) -> None:
         source, target = self._source.curselection(), self._target.curselection()
         if not source or not target:
             messagebox.showinfo("Import animation", "Pick a glTF animation and the animation it replaces.", parent=self)
             return
-        self.result = (self._gltf_names[source[0]], self._targets[target[0]])
+        self.result = (self._gltf_names[source[0]], self._clips[target[0]])
         self.destroy()
 
 
@@ -3948,6 +3926,11 @@ class _ImportReviewDialog(tk.Toplevel):
 
         try:
             self._preview.show(_load_model_set(label + " (imported)", container_path, result.outputs))
+            if label.startswith(("ymu/", "zu/")):
+                try:
+                    self._preview.set_clips(animation_catalog.set_clips(container_path, result.outputs))
+                except Exception:  # noqa: BLE001 - the plain list from show() stays
+                    pass
             if animation_name:
                 self._preview.select_animation(animation_name)
         except Exception as exc:  # noqa: BLE001 - the review still works without a preview
@@ -4895,7 +4878,11 @@ class _ModelPreview(ttk.Frame):
         self._particle_stages: tuple[particle_preview.Stage, ...] = ()
         self._playing = False
         self._play_after_id: str | None = None
+        self._play_started = 0.0
+        self._play_from = 0.0
         self._setting_frame = False
+        self._clips: list[animation_catalog.ClipInfo] = []
+        self._clip_events: list = []
         self._build_widgets()
 
     def cleanup(self) -> None:
@@ -4985,8 +4972,9 @@ class _ModelPreview(ttk.Frame):
             # can keep referencing them unconditionally instead of needing
             # an "if mesh_only" branch at every call site.
             self._bone_tree = ttk.Treeview(self)
-            self._anim_list = tk.Listbox(self)
+            self._clip_tree = ttk.Treeview(self)
             self._anim_summary_label = ttk.Label(self)
+            self._event_marks = tk.Canvas(self)
             self._curve_tree = ttk.Treeview(self)
             self._play_button = ttk.Button(self)
             self._frame_scale = ttk.Scale(self)
@@ -5008,28 +4996,68 @@ class _ModelPreview(ttk.Frame):
 
         anim_tab = ttk.Frame(notebook, padding=6)
         notebook.add(anim_tab, text="Animations")
-        ttk.Label(anim_tab, text="Animation files (.ga)").pack(anchor="w")
+        ttk.Label(anim_tab, text="Animation clips (.ga), by weapon").pack(anchor="w")
         anim_list_frame = ttk.Frame(anim_tab)
-        anim_list_frame.pack(fill="x", pady=(2, 6))
-        self._anim_list = tk.Listbox(anim_list_frame, height=8, exportselection=False)
-        self._anim_list.pack(fill="both", expand=True, side="left")
-        anim_scroll = ttk.Scrollbar(anim_list_frame, command=self._anim_list.yview)
+        anim_list_frame.pack(fill="both", expand=True, pady=(2, 6))
+        self._clip_tree = ttk.Treeview(anim_list_frame, columns=("role", "frames", "hit"), height=9,
+                                       selectmode="browse")
+        self._clip_tree.heading("#0", text="Clip")
+        self._clip_tree.heading("role", text="Role")
+        self._clip_tree.heading("frames", text="Frames")
+        self._clip_tree.heading("hit", text="Combat events")
+        self._clip_tree.column("#0", width=170, stretch=True)
+        self._clip_tree.column("role", width=150, stretch=True)
+        self._clip_tree.column("frames", width=56, anchor="e", stretch=False)
+        self._clip_tree.column("hit", width=110, stretch=False)
+        self._clip_tree.pack(fill="both", expand=True, side="left")
+        anim_scroll = ttk.Scrollbar(anim_list_frame, command=self._clip_tree.yview)
         anim_scroll.pack(fill="y", side="right")
-        self._anim_list.config(yscrollcommand=anim_scroll.set)
-        self._anim_list.bind("<<ListboxSelect>>", lambda e: self._on_animation_selected())
+        self._clip_tree.config(yscrollcommand=anim_scroll.set)
+        self._clip_tree.bind("<<TreeviewSelect>>", lambda e: self._on_animation_selected())
+        tip(self._clip_tree, "Each weapon archive's clips. A clip shared by several weapons is listed once, "
+                             "with the others in brackets: an import or an event edit changes every copy. "
+                             "Role: what the file name or the battle tables say plays it. Combat events: "
+                             "the frames of the hit (0), swing (1) and release (2) the fight waits for.")
 
-        self._anim_summary_label = ttk.Label(anim_tab, text="", style="Muted.TLabel", justify="left")
-        self._anim_summary_label.pack(anchor="w", pady=(0, 4))
+        self._anim_summary_label = ttk.Label(anim_tab, text="", style="Muted.TLabel", justify="left",
+                                             wraplength=420)
+        self._anim_summary_label.pack(anchor="w", pady=(0, 4), fill="x")
 
         playback_row = ttk.Frame(anim_tab)
-        playback_row.pack(fill="x", pady=(0, 4))
-        self._play_button = ttk.Button(playback_row, text="Play", command=self._toggle_play, state="disabled")
+        playback_row.pack(fill="x", pady=(0, 0))
+        self._play_button = ttk.Button(playback_row, text="Play", command=self._toggle_play, state="disabled",
+                                       width=6)
         self._play_button.pack(side="left")
+        ttk.Button(playback_row, text="<", width=2, command=lambda: self._step(-1)).pack(side="left",
+                                                                                          padx=(4, 0))
+        ttk.Button(playback_row, text=">", width=2, command=lambda: self._step(1)).pack(side="left")
         self._frame_scale = ttk.Scale(playback_row, from_=0, to=0, orient="horizontal", command=self._on_frame_scrub)
         self._frame_scale.config(state="disabled")
         self._frame_scale.pack(side="left", fill="x", expand=True, padx=(8, 8))
-        self._frame_label = ttk.Label(playback_row, text="", style="Muted.TLabel", width=10)
+        self._frame_label = ttk.Label(playback_row, text="", style="Muted.TLabel", width=12)
         self._frame_label.pack(side="left")
+
+        marks_row = ttk.Frame(anim_tab)
+        marks_row.pack(fill="x")
+        self._event_marks = tk.Canvas(marks_row, height=14, highlightthickness=0, bd=0)
+        self._event_marks.pack(fill="x")
+        self._event_marks.bind("<Configure>", lambda e: self._draw_event_marks())
+        self._event_marks.bind("<Button-1>", self._on_event_mark_click)
+        tip(self._event_marks, "Event frames of the clip: red for the hit, swing and release the fight waits "
+                               "for, grey for the others (sounds, trails, footsteps). Click one to go to it.")
+
+        options_row = ttk.Frame(anim_tab)
+        options_row.pack(fill="x", pady=(2, 4))
+        ttk.Label(options_row, text="Speed").pack(side="left")
+        self._speed_var = tk.StringVar(value="1x")
+        speed = ttk.Combobox(options_row, textvariable=self._speed_var, values=("0.25x", "0.5x", "1x"),
+                             state="readonly", width=6)
+        speed.pack(side="left", padx=(4, 10))
+        speed.bind("<<ComboboxSelected>>", lambda e: self._restart_clock())
+        self._loop_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_row, text="Loop", variable=self._loop_var,
+                        command=self._restart_clock).pack(side="left")
+        tip(speed, "1x plays at the game's 60 frames a second.")
 
         tip(self._frame_label, "Skeleton and mesh playback: forward kinematics and skinning built on the decoded "
                                "bind data, not itself checked against the game.")
@@ -5115,7 +5143,7 @@ class _ModelPreview(ttk.Frame):
             self._canvas.set_particles((), {})
             self._mesh_info_label.config(text=empty_message)
             self._bone_tree.delete(*self._bone_tree.get_children())
-            self._anim_list.delete(0, "end")
+            self.set_clips([])
             self._anim_summary_label.config(text="")
             self._curve_tree.delete(*self._curve_tree.get_children())
             self._frame_scale.config(to=0, state="disabled")
@@ -5142,29 +5170,58 @@ class _ModelPreview(ttk.Frame):
         )
         _populate_bone_tree(self._bone_tree, loaded.bones)
 
-        self._anim_list.delete(0, "end")
-        for name, _raw in loaded.animations:
-            self._anim_list.insert("end", name)
+        self.set_clips(animation_catalog.clips_from_animations(loaded.animations))
         self._anim_summary_label.config(text="")
         self._curve_tree.delete(*self._curve_tree.get_children())
 
-    def select_animation(self, name: str) -> None:
-        """Select (and pose) the loaded animation called ``name``."""
+    def set_clips(self, clips: list[animation_catalog.ClipInfo]) -> None:
+        """List ``clips`` (``animation_catalog.set_clips``): one branch per weapon archive when
+        there are several, else a flat list."""
+        self._clips = list(clips)
+        self._clip_tree.delete(*self._clip_tree.get_children())
+        groups = animation_catalog.clips_by_pack(self._clips)
+        index = {id(c): i for i, c in enumerate(self._clips)}
+        branches = len(groups) > 1
+        for pack, members in groups.items():
+            parent = ""
+            if branches:
+                fe10 = any(c.fe10 for c in members)
+                parent = self._clip_tree.insert(
+                    "", "end", iid=f"pack:{pack}", open=True,
+                    text=f"{animation_catalog.weapon_label(pack, fe10)} ({pack})" if pack not in ("pack", "loose")
+                    else pack)
+            for clip in members:
+                hits = clip.combat_frames()
+                hit_text = ", ".join(f"{animation_catalog.COMBAT_SHORT[c]} {'/'.join(map(str, f))}"
+                                     for c, f in sorted(hits.items()))
+                text = clip.file if len(clip.packs) <= 1 else f"{clip.file} (+{', '.join(clip.packs[1:])})"
+                self._clip_tree.insert(parent, "end", iid=f"clip:{index[id(clip)]}", text=text,
+                                       values=(clip.role or "", clip.frames or "", hit_text))
+
+    def selected_clip(self) -> animation_catalog.ClipInfo | None:
+        """The clip selected in the Animations tab."""
+        selection = self._clip_tree.selection()
+        if not selection or not selection[0].startswith("clip:"):
+            return None
+        return self._clips[int(selection[0].split(":", 1)[1])]
+
+    def select_animation(self, name: str, pack: str | None = None) -> None:
+        """Select (and pose) the clip whose file is ``name`` (in archive ``pack`` when given)."""
         if self._loaded is None:
             return
-        for i, (anim_name, _raw) in enumerate(self._loaded.animations):
-            if anim_name == name:
-                self._anim_list.selection_clear(0, "end")
-                self._anim_list.selection_set(i)
-                self._anim_list.see(i)
+        for i, clip in enumerate(self._clips):
+            if clip.file == name and (pack is None or pack in clip.packs):
+                iid = f"clip:{i}"
+                self._clip_tree.selection_set(iid)
+                self._clip_tree.see(iid)
                 self._on_animation_selected()
                 return
 
     def play_first_animation(self) -> None:
         """Select the loaded set's first animation and play it (a map prop's own ``.ga``)."""
-        if self._loaded is None or not self._loaded.animations:
+        if self._loaded is None or not self._clips:
             return
-        self.select_animation(self._loaded.animations[0][0])
+        self.select_animation(self._clips[0].file)
         if self._current_animation is not None and not self._playing:
             self._toggle_play()
 
@@ -5184,10 +5241,10 @@ class _ModelPreview(ttk.Frame):
         self._canvas.highlight_bone(bone_index)
 
     def _on_animation_selected(self) -> None:
-        selection = self._anim_list.curselection()
-        if not selection or self._loaded is None:
+        clip = self.selected_clip()
+        if clip is None or self._loaded is None:
             return
-        _name, raw = self._loaded.animations[selection[0]]
+        raw = clip.data
         try:
             anim = animation.read_animation_bytes(raw)
         except Exception as exc:  # noqa: BLE001
@@ -5199,13 +5256,23 @@ class _ModelPreview(ttk.Frame):
             self._particle_stages = ()
 
         bone_count = len(anim.groups)
-        self._anim_summary_label.config(
-            text=(
-                f"{len(anim.curves)} curves, {bone_count} animated bones, "
-                f"{anim.length_in_frames} frames, events: {len(anim.events)}, "
-                f"particle stages: {len(self._particle_stages)}"
-            )
-        )
+        self._clip_events = list(clip.events)
+        lines = []
+        if clip.role:
+            lines.append(clip.role[:1].upper() + clip.role[1:] + ".")
+        if clip.used_by:
+            lines.append("Played for: " + "; ".join(clip.used_by) + ".")
+        if len(clip.packs) > 1:
+            lines.append(f"In the {', '.join(clip.packs)} archives (one file: edits change every copy).")
+        lines.append(
+            f"{anim.length_in_frames} frames ({anim.length_in_frames / animation_catalog.FPS:.2f} s), "
+            f"{'loops' if anim.header.loops else 'plays once'}, {len(anim.curves)} curves, "
+            f"{bone_count} animated bones, particle stages: {len(self._particle_stages)}")
+        if clip.events:
+            lines.append("Events: " + "; ".join(
+                f"{k.frame}: " + ", ".join(animation_catalog.event_code_label(c) for c in k.codes)
+                for k in clip.events))
+        self._anim_summary_label.config(text="\n".join(lines))
 
         self._curve_tree.delete(*self._curve_tree.get_children())
         bone_names = {i: b.name for i, b in enumerate(self._loaded.bones)}
@@ -5229,6 +5296,7 @@ class _ModelPreview(ttk.Frame):
         self._frame_scale.config(to=max(anim.length_in_frames, 1), state="normal")
         self._set_frame(0)
         self._play_button.config(state="normal", text="Play")
+        self._draw_event_marks()
 
     # -- playback ---------------------------------------------------------
     def _update_pose_display(self, frame: float) -> None:
@@ -5256,7 +5324,8 @@ class _ModelPreview(ttk.Frame):
         }
         self._canvas.set_pose(positions, triangles)
         self._canvas.set_particles(samples, self._loaded.particle_materials)
-        self._frame_label.config(text=f"frame {frame:.0f}/{self._current_animation.length_in_frames}")
+        length = self._current_animation.length_in_frames
+        self._frame_label.config(text=f"frame {min(round(frame), length)}/{length}")
 
     def _on_frame_scrub(self, value_str: str) -> None:
         if not self._setting_frame:
@@ -5271,21 +5340,77 @@ class _ModelPreview(ttk.Frame):
             self._setting_frame = False
         self._update_pose_display(frame)
 
+    def _speed(self) -> float:
+        try:
+            return float(self._speed_var.get().rstrip("x"))
+        except (AttributeError, ValueError):
+            return 1.0
+
+    def _looping(self) -> bool:
+        return bool(self._loop_var.get()) if hasattr(self, "_loop_var") else True
+
+    def _restart_clock(self) -> None:
+        """Keep playing from the current frame with the new speed or loop setting."""
+        self._play_started = animation_catalog.clock()
+        self._play_from = float(self._frame_scale.get())
+
     def _toggle_play(self) -> None:
         if self._playing:
             self._stop_playback()
         else:
+            if self._current_animation is not None and not self._looping() and \
+                    self._frame_scale.get() >= self._current_animation.length_in_frames:
+                self._set_frame(0)
             self._playing = True
             self._play_button.config(text="Pause")
+            self._restart_clock()
             self._advance_frame()
 
     def _advance_frame(self) -> None:
+        """Show the frame the clock is at: the game's 60 frames a second times the speed, however
+        long a frame takes to draw (slow drawing skips frames, never slows the clip down)."""
         if not self._playing or self._current_animation is None:
             return
-        length = max(self._current_animation.length_in_frames, 1)
-        next_frame = (self._frame_scale.get() + 1) % (length + 1)
-        self._set_frame(next_frame)
-        self._play_after_id = self.after(33, self._advance_frame)
+        frame, ended = animation_catalog.playback_frame(
+            self._play_started, animation_catalog.clock(), self._current_animation.length_in_frames,
+            self._speed(), self._looping(), self._play_from)
+        self._set_frame(frame)
+        if ended:
+            self._stop_playback()
+            return
+        self._play_after_id = self.after(16, self._advance_frame)
+
+    def _step(self, delta: int) -> None:
+        """One frame back or forward (stops playback)."""
+        if self._current_animation is None:
+            return
+        self._stop_playback()
+        length = self._current_animation.length_in_frames
+        self._set_frame(min(max(round(self._frame_scale.get()) + delta, 0), length))
+
+    def _event_mark_positions(self) -> list[tuple[float, int, bool]]:
+        """``(x, frame, combat)`` of each event key along the marks strip, under the slider."""
+        if self._current_animation is None or not getattr(self, "_clip_events", None):
+            return []
+        try:
+            x0 = self._frame_scale.winfo_x()
+            width = self._frame_scale.winfo_width()
+        except tk.TclError:
+            return []
+        return [(x, frame, combat) for x, frame, combat in animation_catalog.event_marks(
+            self._clip_events, self._current_animation.length_in_frames, x0, width)]
+
+    def _draw_event_marks(self) -> None:
+        marks = self._event_marks
+        marks.delete("all")
+        for x, _frame, combat in self._event_mark_positions():
+            marks.create_line(x, 1, x, 13, fill="#d64545" if combat else "#8a8a8a", width=3 if combat else 2)
+
+    def _on_event_mark_click(self, event: tk.Event) -> None:
+        near = [(abs(x - event.x), frame) for x, frame, _c in self._event_mark_positions()]
+        if near and min(near)[0] <= 6:
+            self._step(0)
+            self._set_frame(min(near)[1])
 
     def _stop_playback(self) -> None:
         self._playing = False
@@ -5543,6 +5668,14 @@ class ModelViewer(EditorPanel):
         )
         self._kit_button = ttk.Button(buttons, text="Rig kit...", command=self._export_rig_kit, state="disabled")
         self._events_button = ttk.Button(buttons, text="Events...", command=self._edit_events, state="disabled")
+        self._export_ga_button = ttk.Button(
+            buttons, text="Export clip .ga...", command=self._export_clip_ga, state="disabled")
+        tip(self._export_ga_button, "The clip selected in the Animations tab as a .ga file, to edit in Blender "
+                                    "with Tellius Forge (Jade's add-on).")
+        self._import_ga_button = ttk.Button(
+            buttons, text="Replace clip from .ga...", command=self._import_clip_ga, state="disabled")
+        tip(self._import_ga_button, "Replace the clip selected in the Animations tab with a .ga file (Tellius "
+                                    "Forge's export, for one). A file with no events gets the replaced clip's.")
         self._fit_button = ttk.Button(buttons, text="Fit new rig...", command=self._fit_rig, state="disabled")
         self._restore_button = ttk.Button(
             buttons, text="Restore original...", command=self._restore_originals, state="disabled"
@@ -5570,6 +5703,7 @@ class ModelViewer(EditorPanel):
         # wrapped in rows so the button bar never widens the list pane
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
+                                    self._export_ga_button, self._import_ga_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
                                     self._new_character_button, self._remove_slot_button, self._tables_button,
                                     self._paint_kit_button, self._swatches_button)):
@@ -5630,6 +5764,8 @@ class ModelViewer(EditorPanel):
         self._import_rig_button.config(state="normal" if animatable else "disabled")
         self._kit_button.config(state="normal" if writable and label.startswith(("ymu/", "zu/")) else "disabled")
         self._events_button.config(state="normal" if animatable else "disabled")
+        self._export_ga_button.config(state="normal" if animatable else "disabled")
+        self._import_ga_button.config(state="normal" if animatable else "disabled")
         self._fit_button.config(state="normal" if animatable else "disabled")
         self._restore_button.config(
             state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
@@ -5648,6 +5784,11 @@ class ModelViewer(EditorPanel):
             messagebox.showerror("Could not read model", str(exc), parent=self)
             return
         self._preview.show(loaded)
+        if animatable:
+            try:
+                self._preview.set_clips(animation_catalog.set_clips(path))
+            except Exception:  # noqa: BLE001 - the plain list from show() stays
+                pass
 
     def _selected_set(self) -> tuple[str, Path] | None:
         selection = self._set_list.curselection()
@@ -6162,28 +6303,34 @@ class ModelViewer(EditorPanel):
             f"New rig from {Path(chosen).name}: its skeleton, every animation retargeted ({len(result.outputs)} files)",
         )
 
+    def _set_clips(self, path: Path) -> list[animation_catalog.ClipInfo] | None:
+        try:
+            return animation_catalog.set_clips(path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read the set", str(exc), parent=self)
+            return None
+
     def _edit_events(self) -> None:
         selected = self._selected_set()
         if selected is None:
             return
         label, path = selected
-        try:
-            names = sorted(set(set_animation_names(path)))
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Could not read the set", str(exc), parent=self)
+        clips = self._set_clips(path)
+        if clips is None:
             return
-        dialog = _EventEditorDialog(self, label, path, names)
+        dialog = _EventEditorDialog(self, label, path, clips, self._preview.selected_clip())
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        target, events = dialog.result
+        clip, events = dialog.result
         try:
-            result = replace_animation_events(path, target, events)
+            result = replace_animation_events(path, clip.file, events, animation_catalog.clip_packs(clips, clip))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not write the events", str(exc), parent=self)
             return
         self._review_and_write(
-            label, path, result, f"Events of {target}", f"Edited the events of {target}", animation_name=target
+            label, path, result, f"Events of {clip.file}", f"Edited the events of {clip.file}",
+            animation_name=clip.file
         )
 
     def _import_animation(self) -> None:
@@ -6200,20 +6347,21 @@ class ModelViewer(EditorPanel):
             return
         try:
             gltf_names = gltf_import.list_animations(Path(chosen).read_bytes(), Path(chosen).parent)
-            targets = set_animation_names(path)
+            clips = animation_catalog.set_clips(path)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read glTF", str(exc), parent=self)
             return
         if not gltf_names:
             messagebox.showerror("No animations", "The glTF file has no animations.", parent=self)
             return
-        dialog = _AnimationImportDialog(self, gltf_names, targets)
+        dialog = _AnimationImportDialog(self, gltf_names, clips, self._preview.selected_clip())
         self.wait_window(dialog)
         if dialog.result is None:
             return
-        source, target = dialog.result
+        source, clip = dialog.result
+        packs = animation_catalog.clip_packs(clips, clip)
         try:
-            result = self._busy(lambda: replace_animation_with_glb(path, Path(chosen), source, target))
+            result = self._busy(lambda: replace_animation_with_glb(path, Path(chosen), source, clip.file, packs))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not import animation", str(exc), parent=self)
             return
@@ -6221,10 +6369,75 @@ class ModelViewer(EditorPanel):
             label,
             path,
             result,
-            f"Replace {target} with {source}",
-            f"Replaced animation {target} with {source} from {Path(chosen).name}",
-            animation_name=target,
+            f"Replace {clip.file} with {source}",
+            f"Replaced animation {clip.file} with {source} from {Path(chosen).name}",
+            animation_name=clip.file,
         )
+
+    def _clip_for_ga(self, action: str) -> tuple[str, Path, list, animation_catalog.ClipInfo] | None:
+        """The selected set and the clip selected in its Animations tab, for the .ga buttons."""
+        selected = self._selected_set()
+        if selected is None:
+            return None
+        label, path = selected
+        clip = self._preview.selected_clip()
+        if clip is None:
+            messagebox.showinfo(action, "Pick the clip in the Animations tab first.", parent=self)
+            return None
+        clips = self._set_clips(path)
+        if clips is None:
+            return None
+        same = next((c for c in clips if c.file == clip.file and c.packs == clip.packs), clip)
+        return label, path, clips, same
+
+    def _export_clip_ga(self) -> None:
+        """Save the selected clip as it is stored, to open it in Blender with Tellius Forge."""
+        found = self._clip_for_ga("Export clip as .ga")
+        if found is None:
+            return
+        label, _path, _clips, clip = found
+        target = filedialog.asksaveasfilename(
+            title=f"Export {clip.file} of {label} as .ga",
+            defaultextension=".ga",
+            initialfile=clip.file,
+            filetypes=[("Tellius animation", "*.ga")],
+            parent=self,
+        )
+        if not target:
+            return
+        try:
+            Path(target).write_bytes(clip.data)
+        except OSError as exc:
+            messagebox.showerror("Could not export the clip", str(exc), parent=self)
+            return
+        messagebox.showinfo(
+            "Clip exported",
+            f"Wrote {target}.\n\nOpen it in Blender with Tellius Forge (File > Import > FE9 & FE10 Animation) "
+            "on the set's model, then use Replace clip from .ga... to bring the edited file back.",
+            parent=self)
+
+    def _import_clip_ga(self) -> None:
+        """Replace the selected clip with a .ga file (from Tellius Forge, or any other tool)."""
+        found = self._clip_for_ga("Replace clip from .ga")
+        if found is None:
+            return
+        label, path, clips, clip = found
+        chosen = filedialog.askopenfilename(
+            title=f"Replace {clip_choice_label(clip)} of {label} with a .ga file",
+            filetypes=[("Tellius animation", "*.ga"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not chosen:
+            return
+        packs = animation_catalog.clip_packs(clips, clip)
+        try:
+            result = replace_animation_with_ga(path, Path(chosen), clip.file, packs)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not import the clip", str(exc), parent=self)
+            return
+        self._review_and_write(
+            label, path, result, f"Replace {clip.file} with {Path(chosen).name}",
+            f"Replaced animation {clip.file} with {Path(chosen).name}", animation_name=clip.file)
 
     def _import_glb(self) -> None:
         selected = self._selected_set()

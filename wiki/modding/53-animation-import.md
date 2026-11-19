@@ -50,10 +50,18 @@ If the glTF does not supply an event track, the importer preserves the old event
 
 [![3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.](../assets/images/tutorials/screenshots/53-a-setup.png)](../assets/images/tutorials/screenshots/53-a-setup.png)
 
-<figcaption markdown="span">**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: **Animation files (.ga)** lists the set's clips; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Import animation…** and **Events...** work on this set.</figcaption>
+<figcaption markdown="span">**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: the clips of each weapon archive with their role, frames and combat events; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Import animation…** and **Events...** work on this set.</figcaption>
 </figure>
 
-Select the set in **Model sets** (`zu/fig1`, the Fighter) and open the **Animations** tab: **Animation files (.ga)** lists the clips (`fig1_at1_ax.ga`, the first attack with an axe). Selecting one gives its curves, animated bones, frames and events (*75 curves, 26 animated bones, 59 frames, events: 6*); **Play** / **Pause** and the slider step through it (*frame 0/59*). The **Skeleton** tab lists the bones. Preview the original animation. For battle models, confirm the weapon pack and role suffix (`at1`, `at2`, `cr1`, `dog`, `dam`, `ded`, combined follow-ups). Similar names are distinct presentation transitions. For map models, relate the file to the FE8Anim action mask.
+Select the set in **Model sets** (`zu/fig1`, the Fighter) and open the **Animations** tab. **Animation clips (.ga), by weapon** lists one branch per weapon archive (*axe (ax)*, *hand axe (ha)*…) with, for each clip:
+
+- **Role**: what the file name says it is (*attack 1*, *critical 1, followed by attack 1*, *dodge*…). Path of Radiance battle files follow `<model>_<role>_<weapon>`; Radiant Dawn's `att1_ax`, `cri1_ax`, `dog1_ax`… and its map clips `wait_1`, `atk_2`… are named too where the role is traced.
+- **Frames** and **Combat events**: the frames of the hit (code 0), swing (1) and release (2) the fight waits for.
+- A clip several weapons share is listed once, with the others in brackets (`fig1_dam_ax.ga (+ha)`): it is one file, and an import or an event edit changes every copy. When two archives hold different files of the same name, each is its own line and changes alone.
+
+Selecting a clip shows what plays it (the `zu/<code>.dbx` roles on Path of Radiance, the weapons and motions of `FE10Anim` on Radiant Dawn's map units), its length in frames and seconds, whether it loops, and each event by name (*41: 0 hit*, *50 footstep / dust*, *2510 sound*). **Play** runs at the game's 60 frames a second; **Speed** slows it to 0.5x or 0.25x, **Loop** stops it at the last frame, **<** / **>** step one frame. The marks under the slider are the event frames (red: hit, swing, release); click one to go to it. The **Skeleton** tab lists the bones.
+
+For battle models, confirm the weapon archive and role suffix (`at1`, `at2`, `cr1`, `dog`, `dam`, `ded`, combined follow-ups). Similar names are distinct presentation transitions. For map models, relate the file to the FE8Anim action mask.
 
 ### Import one clip
 
@@ -62,6 +70,16 @@ Press **Import animation…**, choose the glTF, select its animation and the tar
 Preview from frame 0 through the final recovery and across the loop boundary when applicable. Check root movement, foot contact, interpolation, weapon hand, and whether the last pose connects to the following idle/role.
 
 If animation extremes exceed the body's encoded blended-vertex range, follow the review warning and reimport/rebuild the body using the complete animation set. Clipping numeric ranges is not a safe substitute.
+
+### Edit a clip in Blender with Tellius Forge
+
+[Tellius Forge](https://github.com/ltra043/tellius-forge), by Jade, is a Blender add-on that opens and writes `.ga` files directly. It is not part of the app (it is GPL-3.0): **Settings › Preferences › Download and install Tellius Forge** fetches it from its repository and installs it in the Blender set there.
+
+1. Select the clip in the **Animations** tab, then **Export clip .ga...**. The file is saved as stored, under its own name.
+2. In Blender, import the model and the clip with Tellius Forge (*File › Import › FE9 & FE10 Animation*), edit, and export the action as `.ga`. Its guides cover the workflow: [animation workflow](https://github.com/ltra043/tellius-forge/blob/main/docs/animation-workflow.md), [which models' animations it handles](https://github.com/ltra043/tellius-forge/blob/main/docs/animation-compatibility.md). On Radiant Dawn, set the action's *ga_game_flag* to 1.
+3. Back in the app, select the same clip and **Replace clip from .ga...**. The file must be the set's game format and animate only bones the set's skeleton has. A file without events (an action made in Blender has none) gets the replaced clip's events, moved in proportion to the new length; check them in **Events...**.
+
+Tellius Forge reads the battle (`zu/`) archives' clips once exported this way, but its own compatibility notes cover map models: test battle clips in **Simulate a battle…** and Dolphin.
 
 ### Edit synchronization events
 
@@ -85,8 +103,10 @@ In Import Review, inspect proposed files and warnings, then **Write files**. Reo
 
 ## Understand every control
 
-- **Animations** tab, **Animation files (.ga)**, **Play** / **Pause**, slider and *frame N/M*: previews the selected encoded clip.
-- **Import animation…:** chooses source glTF animation and exact replacement target.
+- **Animations** tab, **Animation clips (.ga), by weapon**: each weapon archive's clips with role, frames and combat events; a shared clip once.
+- **Play** / **Pause**, **<** / **>**, slider, *frame N/M*, **Speed**, **Loop** and the event marks: preview at the game's 60 frames a second.
+- **Export clip .ga... / Replace clip from .ga...:** the selected clip to and from a `.ga` file (Tellius Forge).
+- **Import animation…:** chooses source glTF animation and exact replacement target (a clip listed with several weapons changes in each). A glTF animation named `stem@ha` targets the hand-axe archive's copy; **Export .glb** and **Rig kit** use the same names.
 - **Template:** preserves target role, events, and loop data when source omits them.
 - **Events… list:** ordered event keys shown by frame.
 - **Frame:** callback position within `0..length_in_frames`.
