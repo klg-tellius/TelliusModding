@@ -168,7 +168,8 @@ def captions_fixture(ctx):
 def play_movie_captions(driver, facts):
     """New Game plays s1 before the Prologue; screenshots every 2 s while a movie is up."""
     from .oracles import magenta_pixels
-    driver.until(lambda s: "E_THPP" in s.names, 12, label="s1 movie")
+    # the title's attract movie (TitleMovieProc) plays first; s1 comes after New Game
+    driver.until(lambda s: "E_THPP" in s.names and "TitleMovieProc" not in s.names, 15, label="s1 movie")
     best, shots = 0, []
     deadline = time.time() + 90
     k = 0

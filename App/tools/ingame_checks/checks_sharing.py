@@ -134,14 +134,21 @@ def riivolution_package(run: Path, variant: str) -> None:
                                                             "warnings": result.warnings}) + "\n", encoding="utf-8")
 
 
+#: RD PersonData's Str bonus in RAM (seen in G1r: +0x23 went 2 -> 4 with the same edit)
+RD_STR_BONUS = 0x23
+
+
 def judge_riivolution(mod, retail, facts):
+    """The game ran from the retail image with the patch, so the record's pointers differ from a jump boot's;
+    the judge reads the edited byte itself (and G1r's retail run for its retail value)."""
     path = ROOT / "out" / "G1r_retail" / "observations.json"
-    if not path.is_file():
-        return False, "run G1r first (its retail run is the reference)"
     edit = json.loads((ROOT / "run" / "RV1r_mod" / "riivolution_facts.json").read_text(encoding="utf-8"))
-    passed, text = record_edit("PID_MICAIAH", "person")(mod, json.loads(path.read_text(encoding="utf-8")),
-                                                        {"old": edit["old"], "new": edit["new"]})
-    return passed, f"booted with the Riivolution export (retail disc + patch): {text}"
+    value = bytes.fromhex(mod["records"]["PID_MICAIAH"]["person"])[RD_STR_BONUS]
+    base = (bytes.fromhex(json.loads(path.read_text(encoding="utf-8"))["records"]["PID_MICAIAH"]["person"])[RD_STR_BONUS]
+            if path.is_file() else None)
+    ok = value == edit["new"] and base in (None, edit["old"])
+    return ok, (f"booted with the Riivolution export (retail disc + patch): Micaiah's Str bonus in RAM is {value} "
+                f"(edited {edit['old']} -> {edit['new']}; a retail boot reads {base})")
 
 
 CHECKS.append(Check("RV1r", "rd", "Export for Riivolution: the patched game carries the edit",

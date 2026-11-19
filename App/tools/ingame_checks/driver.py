@@ -40,6 +40,9 @@ class Driver(Sweep):
                 raise ValueError(f"no RAM addresses for {region} yet")
             build = replace(build, game_id=region, party=RD_PARTY[region])
         super().__init__(run, out, out / "user", build)
+        # the sweep insists on the hardest difficulty (its New Game must skip the tutorials); a check sets
+        # its own difficulty (a jump's, or a save's), and TU1 wants Normal on purpose
+        self.difficulty_checked = True
 
     @property
     def card(self) -> Path:

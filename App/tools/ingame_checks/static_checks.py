@@ -136,9 +136,15 @@ def record_add_remove(region: str) -> tuple[bool, str]:
     added, index = fe8data.add_record(data, "character", "PID_INGAME_CHECK", copy_from=0)
     copy = next(c for c in fe8data.read_fe8data(added).characters if c.index == index)
     back = fe8data.remove_record(added, "character", index)
-    ok = copy.pid == "PID_INGAME_CHECK" and back == data
-    return ok, (f"copy {copy.pid} added as record {index}; after Remove the file is "
-                f"{'identical' if back == data else 'DIFFERENT'} ({len(back):,} / {len(data):,} bytes)")
+
+    def rows(blob):          # the records as the game reads them (the table may have moved in the file)
+        return [{k: v for k, v in vars(c).items() if k not in ("offset", "index")}
+                for c in fe8data.read_fe8data(blob).characters]
+    same = rows(back) == rows(data)
+    ok = copy.pid == "PID_INGAME_CHECK" and same
+    return ok, (f"copy {copy.pid} added as record {index}; after Remove the {len(rows(back))} character records are "
+                f"{'the original ones' if same else 'DIFFERENT'} (file {len(back):,} bytes, was {len(data):,}: "
+                f"the grown table stays at the end)")
 
 
 def main() -> None:
