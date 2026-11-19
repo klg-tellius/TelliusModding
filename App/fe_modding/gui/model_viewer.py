@@ -2883,6 +2883,8 @@ class _NewSlotDialog(tk.Toplevel):
         self.title(f"New slot from {label}")
         self.transient(parent)
         self.result: str | None = None
+        #: the new set's label in the model list (``zu/<code>`` or ``ymu/<folder>``)
+        self.new_label: str | None = None
         self._project = project
         self._battle = label.startswith("zu/")
         self._source = label.split("/", 1)[1]
@@ -2961,12 +2963,14 @@ class _NewSlotDialog(tk.Toplevel):
                 model_slots.assign_battle_model(self._project, name, jid=jid, pid=pid)
                 who = f"{pid} as {jid}" if pid else jid
                 self.result = f"New battle model zu/{name} (copy of {self._source}), used by {who}"
+                self.new_label = f"zu/{name}"
             else:
                 folder = self._folder.get().strip() or None
                 model_slots.clone_map_model(self._project, self._source_aid.get(), name, folder)
                 if pid:
                     model_slots.assign_map_model(self._project, pid, name, promoted=self._promoted.get())
                 where = f"ymu/{folder}" if folder else f"ymu/{self._source}"
+                self.new_label = where
                 who = ""
                 if pid:
                     who = f", used by {pid}" + (" (promoted)" if self._promoted.get() else "")
@@ -5510,7 +5514,7 @@ class ModelViewer(EditorPanel):
             tip(self._new_map_file_button, "Create a separate zmap folder and map.cmp, then make a flat Blender "
                                            "terrain kit for that new file without changing the template map.")
 
-        search_var = tk.StringVar()
+        search_var = self._search_var = tk.StringVar()
         ttk.Entry(left, textvariable=search_var).pack(fill="x", pady=(4, 4))
         search_var.trace_add("write", lambda *_: self._apply_filter(search_var.get()))
 
@@ -5544,6 +5548,11 @@ class ModelViewer(EditorPanel):
             buttons, text="Restore original...", command=self._restore_originals, state="disabled"
         )
         self._new_slot_button = ttk.Button(buttons, text="New slot...", command=self._new_slot, state="disabled")
+        self._new_character_button = ttk.Button(
+            buttons, text="New character model...", command=self._new_character_model, state="disabled")
+        tip(self._new_character_button, "A rigged humanoid .glb as a new model: copies this set under a new "
+                                        "name for one character or class (New slot...), then fits the model "
+                                        "onto the copy with the set's animations (Fit new rig...).")
         self._remove_slot_button = ttk.Button(
             buttons, text="Remove added slot...", command=self._remove_slot, state="disabled")
         self._tables_button = ttk.Button(buttons, text="Model tables...", command=self._model_tables)
@@ -5562,7 +5571,7 @@ class ModelViewer(EditorPanel):
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
-                                    self._remove_slot_button, self._tables_button,
+                                    self._new_character_button, self._remove_slot_button, self._tables_button,
                                     self._paint_kit_button, self._swatches_button)):
             # two per row: three cut labels such as "Import animation..." at the default pane width
             button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
@@ -5625,6 +5634,8 @@ class ModelViewer(EditorPanel):
         self._restore_button.config(
             state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
         self._new_slot_button.config(
+            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+        self._new_character_button.config(
             state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         self._remove_slot_button.config(
             state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
@@ -6118,6 +6129,10 @@ class ModelViewer(EditorPanel):
         )
         if not chosen:
             return
+        self._fit_rig_onto(label, path, Path(chosen))
+
+    def _fit_rig_onto(self, label: str, path: Path, chosen: Path) -> None:
+        """Fit the rigged model ``chosen`` onto the set ``label`` (mapping, reduction, review)."""
         try:
             setup = self._busy(lambda: prepare_rig_fit(path, Path(chosen)))
         except Exception as exc:  # noqa: BLE001
@@ -6452,6 +6467,52 @@ class ModelViewer(EditorPanel):
         self._reload_game_data()
         self._changelog.append(label, dialog.result)
         self._load_set_list()
+
+    def _new_character_model(self) -> None:
+        """New slot..., then Fit new rig... of a rigged humanoid onto the new slot, in one go."""
+        selected = self._selected_set()
+        if selected is None or not self._game_data_saved():
+            return
+        label, _path = selected
+        chosen = filedialog.askopenfilename(
+            title=f"New character model from {label}: a rigged humanoid model (it gets the set's animations)",
+            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")],
+            parent=self,
+        )
+        if not chosen:
+            return
+        try:
+            dialog = _NewSlotDialog(self, self._project, label)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read the game data", str(exc), parent=self)
+            return
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        self._reload_game_data()
+        self._changelog.append(label, dialog.result)
+        self._load_set_list()
+        target = next(((l, p) for l, p in self._all_sets if l == dialog.new_label), None)
+        if target is None or dialog.new_label == label:
+            messagebox.showinfo(
+                "New character model",
+                f"{dialog.result}.\nThe slot shares the files of {label}: give it its own folder, then use "
+                "Fit new rig... on it.", parent=self)
+            return
+        self._select_set(target[0])
+        self._fit_rig_onto(target[0], target[1], Path(chosen))
+
+    def _select_set(self, label: str) -> None:
+        """Show ``label`` in the list (clearing the filter) and select it."""
+        self._search_var.set("")
+        self._apply_filter("")
+        for index, (item, _path) in enumerate(self._filtered_sets):
+            if item == label:
+                self._set_list.selection_clear(0, "end")
+                self._set_list.selection_set(index)
+                self._set_list.see(index)
+                self._on_set_selected()
+                return
 
     def _model_tables(self) -> None:
         if not self._game_data_saved():
