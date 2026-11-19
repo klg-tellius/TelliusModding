@@ -237,6 +237,31 @@ class HubCreationTests(unittest.TestCase):
         self.assertTrue(source.endswith('    FadeWait()\n'))
         self.assertNotIn('Opening2', source)  # no preparations menu
 
+    def test_blank_map_files_matches_blank_map_on_an_open_archive(self):
+        # Any chapter's map can be blanked in place (Build tab › Terrain › New blank map).
+        from fe_modding import hub_creation
+        from fe_modding.formats import lz10, map_file, pak, tpl
+        from PIL import Image
+        from tests.test_map_heights import _map_bin
+
+        original_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        image = Image.new("RGBA", (64, 48), (10, 120, 200, 255))
+        for files in ([("map.bin", _map_bin()), ("flat.gs", b"donor"), ("texpack.tpl", original_tpl)],
+                      [("map.bin", _map_bin()), ("flat.gs", b"donor")]):
+            donor = lz10.compress(pak.pack_pak(files))
+            expected = lz10.decompress(hub_creation.blank_map(donor, 12, 9, ground_image=image))
+            packed = lz10.decompress(donor)
+            entries = pak.read_pak_entries(packed)
+            content = {e.name: pak.read_pak_file_content(packed, e) for e in entries}
+            hub_creation.blank_map_files(entries, content, 12, 9, ground_image=image)
+            self.assertEqual([e.name for e in entries], [e.name for e in pak.read_pak_entries(expected)])
+            for entry in pak.read_pak_entries(expected):
+                self.assertEqual(content[entry.name], pak.read_pak_file_content(expected, entry), entry.name)
+            parsed = map_file.read_map_bytes(content["map.bin"])
+            self.assertEqual((parsed.capacity.x_size, parsed.capacity.y_size), (12, 9))
+        with self.assertRaises(ValueError):
+            hub_creation.blank_map_files([], {"map.bin": _map_bin()}, 3, 9)
+
     def test_flat_map_has_selected_dimensions_and_only_ground(self):
         from fe_modding import hub_creation
         from fe_modding.formats import gs_file, lz10, map_file, pak, tpl

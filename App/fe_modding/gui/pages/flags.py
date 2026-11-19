@@ -555,6 +555,7 @@ class _ChapterTab(ttk.Frame):
         if extended:
             self._bank.pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="Open in the Script editor", command=self._open).pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="Free unused flags…", command=self._free_unused).pack(side="left", padx=(6, 0))
         if extended:
             ttk.Button(bar, text="Rename extended…", command=lambda: self._edit_extended()).pack(side="left", padx=(6, 0))
             ttk.Button(bar, text="Delete unused", command=lambda: self._edit_extended(delete=True)).pack(
@@ -674,6 +675,42 @@ class _ChapterTab(ttk.Frame):
         sel = self._tree.selection()
         function = self._sites[int(sel[0])].function if sel else "Startup"
         self._page.open_in_script_editor(path, function, self._chapter_id)
+
+    def _free_unused(self) -> None:
+        """Remove every chapter's registrations of flags no event uses
+        (``flag_cleanup``), after showing them."""
+        from ... import flag_cleanup
+        if self._page._layout is not None:
+            messagebox.showinfo("Free unused flags", "This project uses the extended flag banks: select an unused "
+                                "flag and use Delete unused instead.", parent=self)
+            return
+        try:
+            plan = flag_cleanup.unused_chapter_flags(self._page.project)
+        except (OSError, ValueError, ParseError, ProjectError) as exc:
+            messagebox.showerror("Free unused flags", str(exc), parent=self)
+            return
+        if not plan:
+            messagebox.showinfo("Free unused flags", "Every registered chapter flag is used by an event.", parent=self)
+            return
+        total = sum(len(names) for _path, names in plan.values())
+        lines = [f"{cid} · {self._page.chapter_title(cid)}: {', '.join(names)}" for cid, (_p, names) in plan.items()]
+        if not messagebox.askyesno(
+                "Free unused flags",
+                f"{total} chapter flags in {len(plan)} chapters are registered but never used by an event "
+                "(no get, set, clr or event label names them):\n\n" + "\n".join(lines[:25])
+                + ("\n…" if len(lines) > 25 else "")
+                + "\n\nRemove their registrations to free the slots? Each line becomes a 'pass' comment. "
+                  "The chapter flags after them move up one slot, so a suspend save made inside one of these "
+                  "chapters reads them shifted; saves made between chapters are unaffected.", parent=self):
+            return
+        changed = 0
+        for cid, (path, names) in plan.items():
+            if not self._page.edit_script(path, lambda source, names=names: ef.remove_unused_local_flags(source, names),
+                                          f"Freed {len(names)} unused chapter flags"):
+                break
+            changed += 1
+        messagebox.showinfo("Free unused flags", f"Freed unused flags in {changed} of {len(plan)} chapters.",
+                            parent=self)
 
 
 class _SaveTab(ttk.Frame):

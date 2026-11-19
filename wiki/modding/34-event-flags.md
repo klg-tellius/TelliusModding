@@ -175,6 +175,7 @@ Choose the block that actually resumes into your chapter; chapter-local names ar
 - **Add chapter flag...** appends to that chapter's `Startup` registration path.
 - **Open in the Script editor** opens the selected registration owner or `Startup`.
 - **Rename extended...** and **Delete unused** apply only to the selected extended entry.
+- **Free unused flags...** (vanilla flags) finds, in every chapter, the registrations no event uses: nothing in the chapter's script or in a shared script names the flag (no `get`, `set`, `clr`, talk/battle/base-conversation label, location name or other string), and the script has no dynamic flag call. After you confirm the list it turns each one into a `pass` comment, which frees its slot. Vanilla Path of Radiance has dozens of such registrations, mostly base-conversation flags (`情報NフラグN`) with no conversation and reinforcement flags of cut events. The chapter flags registered after a removed one move up one slot, so a suspend save made inside that chapter before the change reads them shifted; saves made between chapters are unaffected. Use it when a chapter has no room left, for example after a hub added its campaign flags.
 - **Used by** lists literal `get`, `set`, `clr`, and supported trigger references detected by the parser. Dynamic references require manual review.
 
 ### Excel actions
