@@ -107,6 +107,12 @@ Extras unlocks, Conversation Room order and subtitle edits.
 - Object flag edits keep the bits no control shows.
 - Paragon-style discs (IDs such as GFEE02), latin-1 file names, `system.cmp` data and
   `.cmb` padding are handled.
+- New weapons: **Battle Weapons › New weapon…** adds the item, its own `xwp/` model
+  (copied, with an optional `.glb` mesh) and its battle entry in one dialog, on both games
+  (a new `FE10BWeapon` row on Radiant Dawn). **3D Models › New slot…** copies a weapon model.
+- Weapon effects: the effect boxes list first what the game's own weapons of the same type
+  play and ask before any other; **Visual Effects › Recolour…** tints or turns the hues of an
+  effect's texture.
 
 ## Decoding coverage
 

@@ -116,3 +116,50 @@ def recolour_tpl(tpl_bytes: bytes, recolour: Recolour) -> bytes:
     if recolour.is_identity:
         return tpl_bytes
     return tpl.map_colours(tpl_bytes, recolour.apply)
+
+
+# -- effects --------------------------------------------------------------------------------------
+
+#: Texture formats with no colour: an effect drawn with them gets its colour from its material.
+GREY_FORMATS = (tpl.FORMAT_I4, tpl.FORMAT_I8, tpl.FORMAT_IA4, tpl.FORMAT_IA8)
+
+
+def tint(rgba: np.ndarray, hue: float, white_from: float = 0.55) -> np.ndarray:
+    """``rgba`` (..., 4 uint8) turned to one hue (degrees), keeping each pixel's brightness; the
+    near-white core of a glow (every channel above ``white_from``) fades to white. Alpha is kept."""
+    rgba = np.asarray(rgba, dtype=np.uint8)
+    rgb = rgba[..., :3].astype(np.float64) / 255
+    value = rgb.max(axis=-1)
+    colour = hsv_to_rgb(np.full(value.shape, float(hue) % 360), np.ones(value.shape), np.ones(value.shape))
+    white = np.clip((rgb.min(axis=-1) - white_from) / max(1 - white_from, 1e-6), 0, 1)[..., None]
+    out = rgba.copy()
+    out[..., :3] = np.round(np.clip(value[..., None] * (colour * (1 - white) + white), 0, 1) * 255).astype(np.uint8)
+    return out
+
+
+def recolour_effect_pack(parts: dict[str, bytes], *, shift: float | None = None,
+                         hue: float | None = None) -> tuple[dict[str, bytes], list[str]]:
+    """An effect pack (``effects.read_effect_pack``) with its texture recoloured: every hue turned by
+    ``shift`` degrees (greys and whites kept), or every colour tinted to ``hue`` (:func:`tint`).
+    Returns the new parts and notes (no texture, greyscale images left as they are)."""
+    import io
+
+    if (shift is None) == (hue is None):
+        raise ValueError("Give either a hue shift or a tint hue.")
+    notes: list[str] = []
+    out = dict(parts)
+    textures = [name for name in parts if name.lower().endswith(".tpl")]
+    if not textures:
+        return out, ["This effect has no texture: its colours come from its material."]
+    for name in textures:
+        infos = tpl.read_tpl_image_info(io.BytesIO(parts[name]))
+        grey = [i for i, info in enumerate(infos) if info.format in GREY_FORMATS]
+        if len(grey) == len(infos):
+            notes.append(f"{name}: greyscale texture ({tpl.format_name(infos[0].format)}); its colour comes "
+                         "from the effect's material colour tracks (Edit particles, tracks and events...).")
+            continue
+        if grey:
+            notes.append(f"{name}: {len(grey)} greyscale image(s) left as they are.")
+        mapping = Recolour(band=180, shift=shift).apply if shift is not None else (lambda a: tint(a, hue))
+        out[name] = tpl.map_colours(parts[name], mapping)
+    return out, notes
