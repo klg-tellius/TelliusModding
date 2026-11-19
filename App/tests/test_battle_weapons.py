@@ -72,6 +72,7 @@ class WeaponTests(unittest.TestCase):
         self.assertEqual((w.name, w.model_folder, w.kind, w.effect_id), ("DEVILAXE", "xwp/DEVILAXE", 2, "EID_K_FIRE2"))
         tome = bw.read_weapon(bw.new_weapon_dbx("FIRE", kind=4, missile=1))
         self.assertIsNone(tome.model_folder)
+        self.assertTrue(text.endswith("}\r\n\\\r\n"))  # closing backslash line, like retail tables
 
     @unittest.skipUnless(os.environ.get("FE9_ZDBX"), "set FE9_ZDBX to a zdbx.cmp to run the corpus test")
     def test_corpus(self):

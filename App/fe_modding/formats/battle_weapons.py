@@ -116,7 +116,8 @@ def new_weapon_dbx(name: str, *, kind: int, missile: int, model: str | None = No
     lines += ["{", "\tclass\tWeapon", f"\tname\t{name}"]
     if model:
         lines.append(f"\tmodel\t{model}")
-    lines += ["\tshow\t1", f"\tkind\t{int(kind)}", f"\tmissile\t{int(missile)}", "}"]
+    lines += ["\tshow\t1", f"\tkind\t{int(kind)}", f"\tmissile\t{int(missile)}", "}",
+              "\\"]  # every retail table ends with a lone backslash line
     text = eol.join(lines) + eol
     doc = dbx.parse(text)
     block = doc.find("Weapon")
