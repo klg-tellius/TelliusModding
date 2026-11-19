@@ -20,7 +20,7 @@ magic...). +0x21 holds actor flags 0x01/0x02/0x04/0x08 (set on thrown weapons, a
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import fe10_battle
 
@@ -69,3 +69,37 @@ def set_weapon(data: bytes, index: int, *, labels: dict | None = None, type: int
         raw[TYPE_OFFSET] = type
     strings = {STRING_FIELDS[key]: (value or None) for key, value in (labels or {}).items()}
     return fe10_battle.update_battle_record(data, TABLE, index, raw=bytes(raw), strings=strings)
+
+
+def add_weapon(data: bytes, copy_of: int, key: str, *, model: str | None = None,
+               labels: dict | None = None) -> tuple[bytes, int]:
+    """Append a copy of row ``copy_of`` whose key is ``key`` (the item ID without ``IID_``, as the
+    battle looks it up) and whose model is ``model`` (an ``xwp/`` folder; None: the copied row's).
+    ``labels`` overrides other string fields (``"hit"``, ``"effect"``...; None or "" clears one).
+    Returns the file and the new row's index."""
+    document = fe10_battle.read_fe10_battle(data)
+    table = document.table(TABLE)
+    if not 0 <= copy_of < len(table.records):
+        raise IndexError("FE10BWeapon row index is out of range.")
+    if not key or any(dict(r.strings).get(STRING_FIELDS["key"], "").upper() == key.upper() for r in table.records):
+        raise ValueError(f"FE10BWeapon already has a row for {key!r}.")
+    source = table.records[copy_of]
+    strings = dict(source.strings)
+    strings[STRING_FIELDS["key"]] = key
+    if model is not None:
+        strings[STRING_FIELDS["model"]] = model
+    for name, value in (labels or {}).items():
+        strings[STRING_FIELDS[name]] = value or None  # None: a null pointer
+    clone = replace(source, address=0, strings=tuple(sorted(strings.items())))
+    records = table.records + (clone,)
+    return fe10_battle.build_fe10_battle(fe10_battle._replace_table(document, TABLE, records)), len(table.records)
+
+
+def remove_weapon(data: bytes, index: int, vanilla_rows: int) -> bytes:
+    """Drop an added row (``index >= vanilla_rows``); the game's own rows are refused."""
+    document = fe10_battle.read_fe10_battle(data)
+    table = document.table(TABLE)
+    if not vanilla_rows <= index < len(table.records):
+        raise ValueError("Only added FE10BWeapon rows can be removed.")
+    records = table.records[:index] + table.records[index + 1:]
+    return fe10_battle.build_fe10_battle(fe10_battle._replace_table(document, TABLE, records))

@@ -7,14 +7,101 @@ at once; the first one keeps the vanilla archive for "Restore original"."""
 
 from __future__ import annotations
 
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, ttk
 
+from .. import weapon_slots
 from ..formats import battle_weapons as bw
 from .battle_table_viewer import BattleTableViewer, choice_label
 from ..game_profile import files_root_of
 
 
-class BattleWeaponsViewer(BattleTableViewer):
+class _WeaponEffects:
+    """Shared by both games' pages: New weapon..., and effect boxes that list first the effects
+    the game's own weapons of the same type play (``weapon_slots.effect_uses``) and ask before
+    applying one none of them plays."""
+
+    effect_keys: tuple = ()  # form keys of the effect boxes
+    effect_fields: dict = {}  # form key -> weapon_slots field ("effect", "target", "hit", "crit")
+
+    def __init__(self, parent, project, changelog, session=None):
+        self._session = session
+        self._uses = None
+        self._effect_names = None
+        super().__init__(parent, project, changelog)
+
+    def extra_actions(self, frame) -> None:
+        if self._session is not None and getattr(self._session, "available", False):
+            ttk.Button(frame, text="New weapon...", command=self._new_weapon).pack(side="left", padx=(6, 0))
+
+    def _new_weapon(self) -> None:
+        from .weapon_wizard import NewWeaponDialog
+
+        try:
+            NewWeaponDialog(self, self._project, self._changelog, self._session, self._weapon_added)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("New weapon", str(exc), parent=self)
+
+    def _weapon_added(self, key: str) -> None:
+        self._uses = None
+        self._preview_cache.clear()
+        self._load()
+        name = next((n for n in self._tables if n == key or n.startswith(f"{key} #")), None)
+        if name is not None and self._tree.exists(name):
+            self._tree.selection_set(name)
+            self._tree.see(name)
+
+    def form_group(self, name):
+        raise NotImplementedError
+
+    def _effect_data(self):
+        if self._uses is None:
+            try:
+                self._uses = weapon_slots.effect_uses(self._project)
+            except Exception:  # noqa: BLE001 - the boxes still take free text
+                self._uses = {}
+            try:
+                from ..formats import effects
+                from ..game_profile import files_root_of
+                self._effect_names = [e.name for e in effects.list_effects(files_root_of(self._project),
+                                                                           self._project.game) if e.registered]
+            except Exception:  # noqa: BLE001
+                self._effect_names = []
+        return self._uses, self._effect_names
+
+    def _show_selected(self) -> None:
+        super()._show_selected()
+        name = self._selected()
+        if name is None:
+            return
+        uses, names = self._effect_data()
+        group = self.form_group(name)
+        safe_lines = []
+        for key in self.effect_keys:
+            field = self.effect_fields.get(key, key)
+            safe = weapon_slots.safe_effects(self._project, group, field, uses)
+            self._boxes[key].configure(values=[""] + safe + [n for n in names if n not in safe])
+            label = weapon_slots.FIELD_LABELS[field]
+            safe_lines.append(f"{label}: " + (", ".join(safe[:5]) if safe else "none in vanilla"))
+        self._detail.config(text=self._detail.cget("text") + "\nVanilla weapons of this type play\n  "
+                            + "\n  ".join(safe_lines))
+
+    def _apply(self) -> None:
+        name = self._selected()
+        if name is not None:
+            uses, _names = self._effect_data()
+            chosen = {self.effect_fields.get(key, key): self._vars[key].get().strip() or None
+                      for key in self.effect_keys}
+            notes = weapon_slots.effect_warnings(self._project, self.form_group(name), chosen, uses)
+            if notes and not messagebox.askyesno(self.display_name, "\n".join(notes) + "\n\nApply anyway?",
+                                                 icon="warning", parent=self):
+                return
+        self._apply_edit()
+
+    def _apply_edit(self) -> None:
+        BattleTableViewer._apply(self)
+
+
+class BattleWeaponsViewer(_WeaponEffects, BattleTableViewer):
     display_name = "Battle weapons"
     changelog_scope = "Battle weapons"
     folder = "xwp"
@@ -33,8 +120,20 @@ class BattleWeaponsViewer(BattleTableViewer):
         ("Target effect", "damageEffId", None),
     )
 
+    effect_keys = ("effectId", "damageEffId")
+    effect_fields = {"effectId": "effect", "damageEffId": "target"}
+
     def name_of(self, path):
         return path[len("xwp/"):-len(".dbx")]
+
+    def form_group(self, name):
+        def number(key, default):
+            try:
+                return int(self._vars[key].get().split(" - ", 1)[0])
+            except ValueError:
+                return default
+        table = self._tables[name]
+        return number("kind", table.kind), number("missile", table.missile)
 
     def parse(self, text):
         return bw.read_weapon(text)
@@ -73,7 +172,7 @@ class BattleWeaponsViewer(BattleTableViewer):
         return name, bw.new_weapon_dbx(name, kind=0, missile=0, model=name if has_model else None)
 
 
-class Fe10BattleWeaponsViewer(BattleTableViewer):
+class Fe10BattleWeaponsViewer(_WeaponEffects, BattleTableViewer):
     """Radiant Dawn: the same page over the ``FE10BWeapon`` rows of ``FE10Battle.cms``
     (:mod:`formats.fe10_battle_weapons`). Several rows share a weapon key, so each is listed as
     ``KEY #row``; rows are edited, not added."""
@@ -98,6 +197,14 @@ class Fe10BattleWeaponsViewer(BattleTableViewer):
         ("Effect", "effect", None),
         ("Target effect", "target", None),
     )
+
+    effect_keys = ("hit", "crit", "effect", "target")
+
+    def form_group(self, name):
+        try:
+            return int(self._vars["type"].get().split(" - ", 1)[0])
+        except ValueError:
+            return self._tables[name].type
 
     def _load(self) -> None:
         from ..formats import fe10_battle_weapons as fw
@@ -165,7 +272,7 @@ class Fe10BattleWeaponsViewer(BattleTableViewer):
         return ("Effect names are EID_ entries (see Visual Effects); leave a box empty for none. The model is "
                 "an xwp/ folder. Rows are FE10Battle.cms's FE10BWeapon table.")
 
-    def _apply(self) -> None:
+    def _apply_edit(self) -> None:
         from ..formats import fe10_battle_weapons as fw
 
         name = self._selected()
@@ -205,7 +312,11 @@ class Fe10BattleWeaponsViewer(BattleTableViewer):
         self._after_edit(name, f"Restored {self.noun} {name}")
 
 
-def battle_weapons_panel(parent, project, changelog):
-    """The Battle Weapons page of the project's battle-data format (``GameProfile.battle_dialect``)."""
+def battle_weapons_panel(parent, project, changelog, session=None):
+    """The Battle Weapons page of the project's battle-data format (``GameProfile.battle_dialect``);
+    ``session`` (the shared game data) enables New weapon..."""
     cls = Fe10BattleWeaponsViewer if project.profile.battle_dialect == "fe10" else BattleWeaponsViewer
-    return cls(parent, project, changelog)
+    return cls(parent, project, changelog, session)
+
+
+battle_weapons_panel.uses_fe8_session = True
