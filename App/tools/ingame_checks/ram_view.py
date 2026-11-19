@@ -53,8 +53,11 @@ RD_PARTY = {"RFEP01": 0x803C34D8, "RFEJ01": 0x803AE338}
 _US = LAYOUTS["RFEE01"]
 _POOL_FROM_PARTY = 0x803D9A58 - _US.party
 _UNITS_FROM_PARTY = _US.units - _US.party
+#: the word pointing at the unit array, found by the DISC_e / DISC_j runs (2026-11-18): the US distance from
+#: the party data does not carry over (EU and JP move the .bss blocks differently)
+RD_UNIT_POINTERS = {"RFEP01": 0x804C6A18, "RFEJ01": 0x804A8180}
 for _code, _party in RD_PARTY.items():
-    LAYOUTS[_code] = Layout(_party + _UNITS_FROM_PARTY, True, _US.stride, _US.count, _US.person, _US.job,
+    LAYOUTS[_code] = Layout(RD_UNIT_POINTERS[_code], True, _US.stride, _US.count, _US.person, _US.job,
                             _US.handle, _US.x, _US.hp, _US.items, _US.item_stride, _US.item_count, _US.level, _party)
 
 

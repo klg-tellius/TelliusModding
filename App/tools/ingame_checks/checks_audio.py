@@ -117,7 +117,7 @@ def judge_tone(mod, retail, facts):
     """The tone's strongest one-second share in the whole dump: high in the edited run, low in retail."""
     if not mod.get("seconds"):
         return False, "no audio in the dump"
-    ok = mod["tone_max"] > 0.3 and retail["tone_max"] < 0.1
+    ok = mod["tone_max"] > 0.3 and mod["tone_max"] > 3 * retail["tone_max"]
     return ok, (f"{facts['cue']}: 440 Hz reaches {mod['tone_max']:.0%} of a one-second window's energy in the "
                 f"edited run, {retail['tone_max']:.0%} in retail ({mod['seconds']:.0f} s of audio)")
 

@@ -67,8 +67,10 @@ def play_units(driver, facts):
 
 def judge_new_character(mod, retail, facts):
     pids = {u[0] for u in mod["units"]}
-    ok = "PID_INGAME_HERO" in pids and "PID_OSCAR" not in pids and "PID_OSCAR" in {u[0] for u in retail["units"]}
-    return ok, f"{facts['change']}: on the map: {'PID_INGAME_HERO' in pids}; Oscar still there: {'PID_OSCAR' in pids}"
+    # another section deploys Oscar too, so only the new record's presence is judged
+    ok = "PID_INGAME_HERO" in pids and "PID_INGAME_HERO" not in {u[0] for u in retail["units"]}
+    return ok, (f"{facts['change']}: the new character is on the map: {'PID_INGAME_HERO' in pids} (Oscar is also "
+                f"deployed by another section: {'PID_OSCAR' in pids})")
 
 
 # -- SK1 / BQ1 (the menu-driven attack, on a bandit or on the boss) ------------------------------------------------
@@ -410,3 +412,30 @@ def judge_rock(mod, retail, facts):
 CHECKS.append(Check("RK1", "por", "Rolling rocks: an edited route is the one the pushed rock follows",
                     ["lesson 66 Script rocks"], play=play_enemy_phase_frames, judge=judge_rock,
                     setup=setup_rock_trigger, fixture=fixture_rock_route, start=Jump(26), minutes=15))
+
+
+# -- SK1 isolation: Dolphin closes at the first player phase with SK1's edit; which half causes it --------------------
+
+def fixture_astra_only(ctx):
+    slot = ctx.character("PID_IKE").sids.index(None)
+    ctx.set_character("PID_IKE", **{f"sid{slot}": "SID_STARTRICK"})
+    ctx.facts.update(change="Ike given SID_STARTRICK only (no Game Code change)")
+
+
+def fixture_astra_bonus_only(ctx):
+    ctx.set_code("proc.astra.bonus", 100)
+    ctx.facts.update(change="Game Code Astra chance +100 only (no skill given)")
+
+
+def judge_reaches_map(mod, retail, facts):
+    return "error" not in mod, f"{facts['change']}: the first player phase is reached and the game keeps running"
+
+
+CHECKS += [
+    Check("SK1a", "por", "SK1 isolation: Astra given, no Game Code", [], play=play_units, judge=judge_reaches_map,
+          setup=setup_bandit_no_crit, fixture=fixture_astra_only, start=START, retail=False),
+    Check("SK1b", "por", "SK1 isolation: Astra chance +100, no skill", [], play=play_units, judge=judge_reaches_map,
+          setup=setup_bandit_no_crit, fixture=fixture_astra_bonus_only, start=START, retail=False),
+]
+CHECKS.append(Check("SK1c", "por", "SK1 isolation: both halves, map only", [], play=play_units, judge=judge_reaches_map,
+                    setup=setup_bandit_no_crit, fixture=fixture_astra, start=START, retail=False))

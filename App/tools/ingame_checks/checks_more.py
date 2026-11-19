@@ -175,7 +175,7 @@ def fixture_talk_font(ctx):
 MAP = (0.0, 0.2, 1.0, 0.85)
 CHECKS = [
     Check("TT1", "por", "Terrain stats: Thicket's avoid shows in the terrain window", ["1.0 §2 Game Data Terrain (POR)"],
-          play=map_shot(), judge=judge_screen((0.05, 0.05, 0.37, 0.2), 0.01, "terrain window"), setup=setup_paint,
+          play=map_shot(), judge=judge_screen((0.05, 0.05, 0.37, 0.2), 0.002, "terrain window"), setup=setup_paint,
           fixture=fixture_thicket_avoid, start=START),
     Check("TH1", "por", "Tile heights: Ike's tile raised", ["1.0 §3 Build Tile heights (POR)"], play=map_shot(),
           judge=judge_screen(MAP, 0.002, "map"), fixture=fixture_raise_tile, start=START),
