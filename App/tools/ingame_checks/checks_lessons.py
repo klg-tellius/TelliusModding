@@ -349,3 +349,64 @@ CHECKS = [
                                  f"the pause menu differs from retail on {region_diff(r['shot'], m['shot']):.1%}"),
           fixture=lambda ctx: ctx.set_code("dev.pause_menus"), start=START),
 ]
+
+
+# -- RK1 (lesson 66, rolling rocks): Ch.25 (C26, bmap26). Each rock's SetRock tile holds a Daein soldier; when a
+# zone sets 岩トリガN, the next enemy phase gives that soldier SEQ_ROCKATTACK_FORCE and he pushes the rock along its
+# TTPMEntry path. Both runs set 岩トリガ１ at turn 1, so in enemy phase 1 the soldier on (4, 11) pushes rock 0 (the
+# prop on (5, 11)); the edited run first gives rock 0 a straight-down path through script_rocks.set_route, as the
+# Build tab's rock tool does. Frames are saved every second of the enemy phase (the camera follows the push).
+
+ROCK_TILE, ROCK_DIRECTION, ROCK_PATH = (4, 11), 2, "22222222"
+
+
+def setup_rock_trigger(ctx):
+    ctx.append_chapter_script(26, on_turn_one('set("岩トリガ１")', "CheckRockTrigger"))
+
+
+def fixture_rock_route(ctx):
+    from fe_modding import script_sources
+    from fe_modding.formats.cmb import script_rocks
+    script = script_sources.load(ctx.project, script_sources.chapter_script(ctx.project, "26"))
+    old = next(r for r in script_rocks.routes(script.source) if (r.x, r.y) == ROCK_TILE)
+    source = script_rocks.set_route(script.source, *ROCK_TILE, ROCK_DIRECTION, ROCK_PATH)
+    script_sources.save(ctx.project, script, source)
+    ctx.facts.update(change=f"rock 0 (prop {old.prop_tile}) path {old.path} -> {ROCK_PATH}")
+
+
+def play_enemy_phase_frames(driver, facts):
+    driver.to_player_phase(12)
+    driver.end_turns = True
+    seen, k = set(), 0
+    deadline = time.time() + 600
+    while time.time() < deadline:
+        st = driver.state()
+        if st.turn >= 2 and "E_BMapPlph" in st.names:
+            break
+        if st.phase != 0 and k < 40:
+            seen |= set(st.names)
+            driver.snap(f"enemy_{k:02d}")
+            k += 1
+        driver.step(st)
+        time.sleep(1.0)
+    driver.end_turns = False
+    return {"frames": k, "processes": sorted(seen), "shot": str(driver.snap("turn2"))}
+
+
+def judge_rock(mod, retail, facts):
+    from pathlib import Path as _Path
+    shares = []
+    for k in range(min(mod["frames"], retail["frames"])):
+        a = _Path(retail["shot"]).parent / f"enemy_{k:02d}.png"
+        b = _Path(mod["shot"]).parent / f"enemy_{k:02d}.png"
+        if a.is_file() and b.is_file():
+            shares.append(region_diff(str(a), str(b)))
+    rolled = [n for n in mod["processes"] if "Rock" in n or "Roll" in n or "TTPM" in n or "Iwa" in n]
+    best = max(shares, default=0.0)
+    return best > 0.05, (f"{facts['change']}: enemy-phase frames differ from retail by up to {best:.0%} "
+                         f"({len(shares)} frames compared; rock processes seen {rolled}; enemy_*.png)")
+
+
+CHECKS.append(Check("RK1", "por", "Rolling rocks: an edited route is the one the pushed rock follows",
+                    ["lesson 66 Script rocks"], play=play_enemy_phase_frames, judge=judge_rock,
+                    setup=setup_rock_trigger, fixture=fixture_rock_route, start=Jump(26), minutes=15))
