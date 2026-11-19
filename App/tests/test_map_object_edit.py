@@ -95,8 +95,30 @@ class FlagGroupTests(unittest.TestCase):
         self.assertIs(map_props.prop_flag_groups(por), map_props.PROP_FLAG_GROUPS)
         groups = map_props.prop_flag_groups(rd)
         self.assertEqual(dict(groups[0][2])[0x40], "Start hidden (Radiant Dawn)")
-        self.assertEqual(groups[1:], map_props.PROP_FLAG_GROUPS[1:])  # the masks L1 checked are shared
-        self.assertEqual([m for m, _l in groups[0][2]], [m for m, _l in map_props.PROP_FLAG_GROUPS[0][2]])
+        # seen in game (MAP-04 sweep): A4 hides an object on RD; B0 and effect bit 0x10 carry RD notes
+        self.assertIn("Hide this object", dict(groups[0][2])[0x10])
+        self.assertIn("no visible change", dict(groups[1][2])[0x01])
+        self.assertIn("unlit", dict(groups[3][2])[0x10])
+        for rd_group, por_group in zip(groups, map_props.PROP_FLAG_GROUPS):     # same bytes, same masks
+            self.assertEqual(rd_group[0], por_group[0])
+            self.assertEqual([m for m, _l in rd_group[2]], [m for m, _l in por_group[2]])
+        self.assertEqual(groups[2], map_props.PROP_FLAG_GROUPS[2])
+
+
+@unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES to an extracted files/ directory")
+class MissingAnimationTests(unittest.TestCase):
+    """A prop told to load its .ga without one in the pack hangs the opening event (MAP-04 sweep): Check warns."""
+
+    def test_flagged_stall_without_ga_is_reported_and_retail_is_clean(self):
+        from fe_modding.formats import map_file
+        path = os.path.join(os.environ["FE10_EXTRACTED_FILES"], "zmap", "bmap0101", "map.cmp")
+        files = map_props.map_pack_files(path)
+        self.assertEqual(map_props.objects_missing_animation(files), [])
+        data = map_file.read_map_bytes(files["map.bin"])
+        stall = next(o for o in data.build_desc if (o.filename or "").startswith("mrkt"))
+        files["map.bin"] = map_file.patch_object_field(files["map.bin"], stall, "flag_bits_c",
+                                                       stall.flag_bits_c | map_props.FLAG_C_LOAD_ANIMATION)
+        self.assertEqual(map_props.objects_missing_animation(files), [stall.filename])
 
 
 if __name__ == "__main__":

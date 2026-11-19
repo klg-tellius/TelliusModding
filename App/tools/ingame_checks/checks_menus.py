@@ -27,7 +27,8 @@ def walk(reach, presses, minutes: float = 10.0, settle: float = 1.5, hold: str =
     """Play (sweep policy) until ``reach(state)``, then press each entry of ``presses`` (a button, or
     ``"X+Y"`` for a chord: X held while Y is pressed) and screenshot after each."""
     def play(driver, facts):
-        driver.until(lambda s: reach(s) and time.time() - driver.since > settle, minutes, label="walk start")
+        driver.until(reach, minutes, label="walk start")     # at once: the sweep policy leaves a base after 1 s
+        time.sleep(settle)
         shots = [str(driver.snap("walk_00"))]
         for k, step in enumerate(presses, 1):
             if "+" in step:
@@ -105,14 +106,35 @@ def curves_fixture(ctx):
 
 
 def play_world_map(driver, facts):
+    """A screenshot every second for as long as the world map is up (the route line draws at some point in the
+    scene; the narration windows are advanced with A every few seconds)."""
     driver.until(lambda s: "E_GMapDisp" in s.names, 10, label="world map")
-    time.sleep(6)               # let the line draw (65-300 frames)
-    return {"shot": str(driver.snap("world_map")), "names": sorted(driver.state().names)}
+    k, names = 0, set()
+    deadline = time.time() + 120
+    while time.time() < deadline and k < 60:
+        st = driver.state()
+        if "E_GMapDisp" not in st.names:
+            break
+        names |= set(st.names)
+        driver.snap(f"map_{k:02d}")
+        k += 1
+        if k % 4 == 0:
+            driver.press("A", gap=0.3)
+        time.sleep(1.0)
+    return {"frames": k, "names": sorted(names), "shot": str(driver.snap("world_map"))}
 
 
 def judge_world_map(mod, retail, facts):
-    share = region_diff(retail["shot"], mod["shot"])
-    return share > 0.003, f"{facts['change']}: the world map differs from retail on {share:.2%} (see world_map.png)"
+    from pathlib import Path as _P
+    shares = []
+    for k in range(min(mod["frames"], retail["frames"])):
+        a, b = _P(retail["shot"]).parent / f"map_{k:02d}.png", _P(mod["shot"]).parent / f"map_{k:02d}.png"
+        if a.is_file() and b.is_file():
+            shares.append(region_diff(str(a), str(b)))
+    best = max(shares, default=0.0)
+    lines = [n for n in mod["names"] if "Curve" in n or "Line" in n or "Route" in n]
+    return best > 0.003, (f"{facts['change']}: across {len(shares)} world-map frames the most different one "
+                          f"differs from retail on {best:.2%}; route processes {lines} (map_*.png)")
 
 
 # -- probes: screenshots of a path, to set the paths above ------------------------------------------------------
@@ -171,7 +193,7 @@ def play_movie_captions(driver, facts):
     # the title's attract movie (TitleMovieProc) plays first; s1 comes after New Game
     driver.until(lambda s: "E_THPP" in s.names and "TitleMovieProc" not in s.names, 15, label="s1 movie")
     best, shots = 0, []
-    deadline = time.time() + 90
+    deadline = time.time() + 240
     k = 0
     while time.time() < deadline and "E_THPP" in driver.state().names:
         path = driver.snap(f"movie_{k:02d}")
@@ -200,7 +222,7 @@ def CheckPairedModel():
 
 
 def rescue_setup(ctx):
-    ctx.append_chapter_script("0102", RESCUE_EVENT)
+    ctx.append_chapter_script("0104", RESCUE_EVENT)      # 1-3: Sothe (13, 7) starts next to Micaiah (12, 7)
 
 
 def rig_fixture(ctx):
@@ -241,7 +263,7 @@ CHECKS += [
           fixture=captions_fixture, region="RFEP01", minutes=15),
     Check("R6", "rd", "Replace rig on the paired Sothe/Micaiah model: a rescue shows it as retail",
           ["rdcheck R6"], play=play_rescue, judge=judge_rescue, setup=rescue_setup, fixture=rig_fixture,
-          start=Jump("0102")),
+          start=Jump("0104")),
 ]
 
 RD_BASE_SAVE = SWEEP_SAVES["rd"] / "006_chapter05_FE10_US.dat"   # base before 1-4 (forge: SAVE-03)

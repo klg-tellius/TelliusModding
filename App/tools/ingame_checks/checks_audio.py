@@ -74,12 +74,13 @@ def fixture_por_bgmplay(ctx):
     import re
     cue = add_por_track(ctx)
     source = ctx.script_source(2)
-    match = re.search(r'BGMPlay\((\d+), "([^"]+)"\)', source)
-    if match is None:
-        raise RuntimeError("chapter 1's script has no BGMPlay(channel, cue)")
-    count = source.count(match.group(0))
-    ctx.replace_script(2, match.group(0), f'BGMPlay({match.group(1)}, "{cue}")', count)
-    ctx.facts.update(cue=cue, replaced=match.group(2))
+    from fe_modding import script_sources
+    new, count = re.subn(r'(BGM(?:Play|FadeIn)[(][0-9]+, )"[^"]+"', lambda m: m.group(1) + f'"{cue}"', source)
+    if not count:
+        raise RuntimeError("chapter 1's script has no BGMPlay/BGMFadeIn with a cue")
+    script = script_sources.load(ctx.project, script_sources.chapter_script(ctx.project, "02"))
+    script_sources.save(ctx.project, script, new)
+    ctx.facts.update(cue=cue, replaced=count)
 
 
 def strongest(rate: int, samples: list[int]) -> tuple[float, float]:

@@ -15,11 +15,6 @@ Open defects in the app that are confirmed but not yet fixed. Remove an entry on
 - **Cause (from the import warnings):** the import renames `map_base` to `map_base_mesh` so the map loader doesn't project textures onto it, and bakes the textures into `texpack.tpl` instead (PoR: 3.1 MB, twice any retail map). The retail look comes from the projected, blended map texturing, which the round trip doesn't keep.
 - **Impact:** an unchanged round trip is not invisible; edited terrain also loses the retail blending. Map *unit* models (B1/B1r) round-trip without a visible change.
 
-## Radiant Dawn: three prop flag labels don't match what the game does
-
-- **Where:** `fe_modding/map_props.py`, `RD_PROP_FLAG_GROUPS` (the map's prop panel).
-- **Observed in game** (MAP-04 sweep, 2026-11-18, each bit flipped on `bmap0101`'s three market stalls): A4 (0x10, labelled "Reserved, never set by retail maps") hides the stalls; B0 (0x01, labelled "Do not draw this placed object") changes nothing visible; effect bit 0x10 (labelled "Ignore footprint and tile-object tests") draws the stalls black and unlit. A6, B1 and effect 0x40 hide them as labelled.
-
 ## Radiant Dawn chapter weather shows no change
 
 - **Where:** ChapterData `weather` (+0x9C), Chapter data page.

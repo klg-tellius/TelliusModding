@@ -121,9 +121,10 @@ def fixture_bandits_stay(ctx):
                 for unit in section.units:
                     if str(unit[field["pid"]]).startswith("PID_BANDIT"):
                         unit[field["seq_move"]] = "SEQ_NOMOVE"
+                        unit[field["seq_attack"]] = "SEQ_NOATTACK"     # the attack order moves units too
                         count += 1
     ctx.write_dispos("bmap02", docs)
-    ctx.facts.update(change=f"{count} bandits' move order -> SEQ_NOMOVE")
+    ctx.facts.update(change=f"{count} bandits' orders -> SEQ_NOMOVE / SEQ_NOATTACK")
 
 
 def play_enemy_phase(driver, facts):
@@ -151,12 +152,12 @@ def fixture_camera_dist(ctx):
     text = battle_tables.read_entry(ctx.project, "zdbx/camera.dbx")
     changed = []
     for rig in battle_camera.read_rigs(text):
-        if rig.name.startswith("camChara") and rig.get("dist"):
-            value = float(rig.get("dist").split(",")[0]) * 2
+        if rig.get("dist"):
+            value = float(rig.get("dist").split(",")[0]) * 5
             text = battle_camera.set_rig_field(text, rig.name, "dist", f"{value:.1f}")
             changed.append(rig.name)
     battle_tables.write_entry(ctx.project, "zdbx/camera.dbx", text)
-    ctx.facts.update(change=f"camera dist doubled on {changed}")
+    ctx.facts.update(change=f"camera dist x5 on {changed}")
 
 
 # -- FT1 ----------------------------------------------------------------------------------------------------------

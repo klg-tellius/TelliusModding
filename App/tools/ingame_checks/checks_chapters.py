@@ -323,7 +323,8 @@ def CheckStaffRoll():
 
 
 def staff_setup(ctx):
-    ctx.append_chapter_script(1, STAFF_EVENT)
+    """StaffRoll as the first call of the Prologue's opening event (Opening0): a map event's roll draws nothing."""
+    ctx.replace_script(1, "def Opening0():\n", "def Opening0():\n    StaffRoll(20000)\n")
 
 
 def staff_fixture(ctx):
@@ -338,9 +339,9 @@ def staff_fixture(ctx):
 
 def play_staff_roll(driver, facts):
     import time
-    driver.until(lambda s: any("Staff" in n for n in s.names), 8, label="staff roll")
+    driver.until(lambda s: any("Staff" in n for n in s.names), 8, policy=False, label="staff roll")
     shots = []
-    for k in range(4):
+    for k in range(6):
         time.sleep(2.5)
         shots.append(str(driver.snap(f"staff_{k}")))
     return {"shot": shots[1], "shots": shots, "names": sorted(driver.state().names)}
@@ -356,3 +357,11 @@ def judge_staff(mod, retail, facts):
 CHECKS.append(Check("SC1", "por", "Staff Credits: added lines scroll in the credits", ["1.0 §4 Staff Credits (POR)"],
                     play=play_staff_roll, judge=judge_staff, setup=staff_setup, fixture=staff_fixture,
                     start=Jump(1), minutes=10))
+
+# other weathers on the same chapter: does any of them change the map?
+CHECKS += [
+    Check("W2r", "rd", "Chapter weather: Prologue at night", ["RD weather (known bug)"], play=map_shot(),
+          judge=judge_weather, fixture=weather_fixture("C0101", "夜"), start=Jump("0101")),
+    Check("W3r", "rd", "Chapter weather: Prologue in a sandstorm", ["RD weather (known bug)"], play=map_shot(),
+          judge=judge_weather, fixture=weather_fixture("C0101", "砂嵐"), start=Jump("0101")),
+]

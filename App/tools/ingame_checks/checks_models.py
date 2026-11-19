@@ -42,7 +42,9 @@ def body_round_trip(folder: str):
     return fixture
 
 
-def terrain_round_trip(folder: str):
+def terrain_round_trip(folder: str, keep_light: bool = False):
+    """As 3D Models' Import .glb on a map with the dialog's defaults: projected map texturing kept for a mesh
+    holding map_base (the dialog ticks it then), the light overlay as asked (the dialog leaves it off)."""
     def fixture(ctx):
         from fe_modding.game_profile import files_root_of
         from fe_modding.gui import model_viewer as mv
@@ -50,8 +52,9 @@ def terrain_round_trip(folder: str):
         with tempfile.TemporaryDirectory() as temp:
             glb = Path(temp) / f"{folder}.glb"
             glb.write_bytes(mv.export_map_terrain_glb(container))
-            result = mv.replace_map_terrain_with_glb(container, glb)
-        ctx.facts.update(files=_write(ctx, result.outputs), warnings=result.warnings[:5], model=f"zmap/{folder}")
+            result = mv.replace_map_terrain_with_glb(container, glb, map_texturing=True, keep_light=keep_light)
+        ctx.facts.update(files=_write(ctx, result.outputs), warnings=result.warnings[:5],
+                         model=f"zmap/{folder} (map texturing kept, light overlay {'kept' if keep_light else 'white'})")
     return fixture
 
 
@@ -75,4 +78,10 @@ CHECKS = [
     Check("B2r", "rd", "3D Models: the Prologue's map terrain exported to .glb and imported back",
           ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_same,
           fixture=terrain_round_trip("bmap0101"), start=Jump("0101")),
+    Check("B2L", "por", "3D Models: chapter 1's terrain round trip keeping the light overlay",
+          ["1.0 §4 3D Models ⭐ map terrain (POR)"], play=map_shot(), judge=judge_same,
+          fixture=terrain_round_trip("bmap02", keep_light=True), start=Jump(2)),
+    Check("B2Lr", "rd", "3D Models: the Prologue's terrain round trip keeping the light overlay",
+          ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_same,
+          fixture=terrain_round_trip("bmap0101", keep_light=True), start=Jump("0101")),
 ]

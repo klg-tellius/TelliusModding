@@ -468,3 +468,25 @@ CHECKS += [
           play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_fight_runs, setup=setup_attack_rd,
           fixture=fixture_camera_weight, start=Jump("0101")),
 ]
+
+
+# -- which SetConfig(0, value) turns RD's full battle scenes on (E1r and VX1r need them: map-only fights draw no
+# spell effect). One run per value, the K2r attack, judged by the processes the fight brings.
+
+def setup_config(value: int):
+    def setup(ctx):
+        setup_attack_rd(ctx)
+        ctx.append_chapter_script("0101", f'\n@on_phase(turn_from=1, turn_to=1, phase="player")\n'
+                                          f'def CheckConfig():\n    SetConfig(0, {value})\n')
+    return setup
+
+
+def judge_config(mod, retail, facts):
+    names = mod.get("battle_processes", [])
+    full = [n for n in names if n not in ("E_BMapBattle", "E_BWinBattleInfo", "E_BattleSeq", "E_MuEffect",
+                                          "E_PostEffect") and ("Btl" in n or "Battle" in n or "Kiri" in n)]
+    return bool(full), f"battle processes beyond the map fight: {full}; all: {[n for n in names if 'att' in n.lower()][:8]}"
+
+
+CHECKS += [Check(f"KA{v}", "rd", f"probe: SetConfig(0, {v}) and the battle scene", [], play=attack_play("PID_MICAIAH", RD_TILE),
+                 judge=judge_config, setup=setup_config(v), start=Jump("0101"), retail=False) for v in range(4)]

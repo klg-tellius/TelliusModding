@@ -184,9 +184,9 @@ def fixture_zone(ctx):
         source, name = script_zones.add_zone(source, script_zones.AREA, (*NORTH, *NORTH), "player", None,
                                              name="CheckZone")
         return source.replace(f"def {name}():\n    pass",
-                              f'def {name}():\n    UnitAddItem(UnitGetByPID("PID_IKE"), "IID_SILVERSWORD")', 1)
+                              f'def {name}():\n    UnitAddItem(UnitGetByPID("PID_IKE"), "IID_ELIXIR")', 1)
     _edit_c02(ctx, edit)
-    ctx.facts.update(change=f"player zone {NORTH} added: it gives Ike a Silver Sword")
+    ctx.facts.update(change=f"player zone {NORTH} added: it gives Ike an Elixir (his weapon slots are full)")
 
 
 def play_step_north(driver, facts):
@@ -204,7 +204,7 @@ def play_step_north(driver, facts):
 
 
 def judge_zone(mod, retail, facts):
-    ok = tuple(mod["tile"]) == NORTH and "IID_SILVERSWORD" in mod["items"] and "IID_SILVERSWORD" not in retail["items"]
+    ok = tuple(mod["tile"]) == NORTH and "IID_ELIXIR" in mod["items"] and "IID_ELIXIR" not in retail["items"]
     return ok, f"{facts['change']}: Ike on {tuple(mod['tile'])} with {mod['items']} (retail on {tuple(retail['tile'])} with {retail['items']})"
 
 
@@ -242,18 +242,13 @@ def fixture_layout(ctx):
     from fe_modding.formats import message
     from fe_modding.game_profile import files_root_of
     path = files_root_of(ctx.project) / "Mess" / "c02.m"
-    old, new = "上下会話".encode("shift_jis"), "背景なし会話".encode("shift_jis")
+    import re
+    new = "背景なし会話".encode("shift_jis")
     messages = message.read_messages_path(path)
-    changed = []
-    for m in messages:
-        raw = m.text.encode(message.ENCODING)
-        if b"$R" + old + b"|" in raw:
-            changed.append(message.Message(m.speaker, raw.replace(b"$R" + old + b"|", b"$R" + new + b"|")
-                                           .decode(message.ENCODING)))
-        else:
-            changed.append(m)
+    changed = [message.Message(m.speaker, re.sub(rb"[$]R[^|]*[|]", b"$R" + new + b"|", m.text.encode(message.ENCODING))
+                               .decode(message.ENCODING)) for m in messages]
     ctx.project.write_keeping_original(path, message.write_messages(changed))
-    ctx.facts.update(change=f"{sum(a.text != b.text for a, b in zip(messages, changed))} talks: layout 上下会話 -> 背景なし会話")
+    ctx.facts.update(change=f"{sum(a.text != b.text for a, b in zip(messages, changed))} talks: every layout -> 背景なし会話")
 
 
 def play_talks(driver, facts):
@@ -439,3 +434,15 @@ CHECKS += [
 ]
 CHECKS.append(Check("SK1c", "por", "SK1 isolation: both halves, map only", [], play=play_units, judge=judge_reaches_map,
                     setup=setup_bandit_no_crit, fixture=fixture_astra, start=START, retail=False))
+
+
+def fixture_astra_60(ctx):
+    slot = ctx.character("PID_IKE").sids.index(None)
+    ctx.set_character("PID_IKE", **{f"sid{slot}": "SID_STARTRICK"})
+    ctx.set_code("proc.astra.bonus", 60)
+    ctx.facts.update(change="Ike given SID_STARTRICK (Astra), Astra chance +60")
+
+
+CHECKS.append(Check("SK1d", "por", "Skill in a fight with Astra +60 (SK1 isolation: is +100 the crash?)",
+                    ["lesson 18 Skills"], play=attack_play(), judge=judge_astra, setup=setup_bandit_no_crit,
+                    fixture=fixture_astra_60, start=START))

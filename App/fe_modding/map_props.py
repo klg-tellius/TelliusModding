@@ -853,13 +853,31 @@ PROP_FLAG_GROUPS = (
 
 #: Radiant Dawn's map-role byte: no map-wide object bit (the ground is found by its material) and bit 6
 #: starts the object hidden. Its other groups were checked against Path of Radiance's labels in Dolphin
-#: (playtest L1, 2026-11-03: B0, B1 and effect bit 6 each hide 1-1's carts and market stall).
+#: (playtest L1, 2026-11-03: B0, B1 and effect bit 6 each hide 1-1's carts and market stall). The in-game
+#: MAP-04 sweep (2026-11-18, each bit flipped on the Prologue's three market stalls, bmap0101) adds: A4 hides
+#: them although no retail map sets it; B0 changed nothing visible there; effect bit 4 (0x10) draws them black.
 _RD_MAP_ROLE = ("flag_bits_a", "Map role", (
-    *PROP_FLAG_GROUPS[0][2][:6],
+    *PROP_FLAG_GROUPS[0][2][:4],
+    (0x10, "Hide this object (Radiant Dawn; never set by retail maps)"),
+    PROP_FLAG_GROUPS[0][2][5],
     (0x40, "Start hidden (Radiant Dawn)"),
     (0x80, "Reserved A7 (never set by retail maps)"),
 ))
-RD_PROP_FLAG_GROUPS = (_RD_MAP_ROLE, *PROP_FLAG_GROUPS[1:])
+
+
+def _rd_group(group, labels: dict):
+    field, title, bits = group
+    return field, title, tuple((bit, labels.get(bit, label)) for bit, label in bits)
+
+
+RD_PROP_FLAG_GROUPS = (
+    _RD_MAP_ROLE,
+    _rd_group(PROP_FLAG_GROUPS[1], {
+        0x01: "Do not draw this placed object (hid 1-1's carts; no visible change on the Prologue's stalls)"}),
+    PROP_FLAG_GROUPS[2],
+    _rd_group(PROP_FLAG_GROUPS[3], {
+        0x10: "Ignore footprint and tile-object tests (Radiant Dawn: also draws the object unlit, black)"}),
+)
 
 
 def prop_flag_groups(game=None, *, data=None) -> tuple:
@@ -940,3 +958,24 @@ def maps_with_same_prop(disc: Path, path: Path, name: str) -> list[Path]:
         except Exception:  # noqa: BLE001 - an unreadable map is just not a match
             continue
     return out
+
+
+#: ``flag_bits_c`` bit 1: the object loads ``<model>.ga`` from the map pack. Seen in Dolphin (MAP-04 sweep,
+#: 2026-11-18): set on objects whose pack has no such ``.ga``, the Prologue's opening event never ends.
+FLAG_C_LOAD_ANIMATION = 0x02
+
+
+def objects_missing_animation(files: dict[str, bytes]) -> list[str]:
+    """Models of a map pack (``{name: bytes}``, ``map.bin`` among them) that ask for their ``.ga``
+    animation (:data:`FLAG_C_LOAD_ANIMATION`) without the pack holding one."""
+    data = map_file.read_map_bytes(files["map.bin"])
+    names = {n.lower() for n in files}
+    return sorted({o.filename for o in data.build_desc
+                   if o.filename and o.flag_bits_c & FLAG_C_LOAD_ANIMATION and f"{o.filename.lower()}.ga" not in names})
+
+
+def map_pack_files(path: Path) -> dict[str, bytes]:
+    """A ``map.cmp`` (LZ10 or plain pak) as ``{name: bytes}``."""
+    raw = Path(path).read_bytes()
+    packed = lz10.decompress(raw) if raw[:1] == b"\x10" else raw
+    return {e.name: pak.read_pak_file_content(packed, e) for e in pak.read_pak_entries(packed)}

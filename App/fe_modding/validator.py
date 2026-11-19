@@ -228,6 +228,23 @@ def _check_chapter_files(project: ModProject, records, issues: list, titles: dic
                                 "No chapter leads to this one in the story flow, so it cannot be played in order.", route))
 
 
+def check_map_animations(project: ModProject, issues: list) -> None:
+    """A prop told to load its ``.ga`` animation (``flag_bits_c`` 0x02) whose map pack holds none: in Dolphin the
+    chapter's opening event then never ends (MAP-04 sweep, 2026-11-18). Both games."""
+    from . import map_props
+    zmap = files_root_of(project) / "zmap"
+    for path in sorted(zmap.glob("*/map.cmp")) if zmap.is_dir() else []:
+        try:
+            missing = map_props.objects_missing_animation(map_props.map_pack_files(path))
+        except Exception:  # noqa: BLE001 - an unreadable map is reported by the map checks
+            continue
+        for model in missing:
+            issues.append(Issue(WARNING, "Maps", f"zmap/{path.parent.name}/map.cmp",
+                                f"{model} is set to load its animation ({model}.ga), but the map has none: the "
+                                "chapter's opening event will not end. Clear the prop's 'Load matching .ga "
+                                "animation' flag or add the .ga."))
+
+
 def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) -> None:
     zmap = files_root_of(project) / "zmap"
     for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
@@ -397,6 +414,7 @@ def validate_project(project: ModProject, flow=None) -> Report:
     titles = chapters.chapter_titles(project)
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
+    check_map_animations(project, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
     _check_script_globals(project, issues)
     _check_shops(project, iids, issues)
