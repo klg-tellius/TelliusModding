@@ -81,6 +81,18 @@ If animation extremes exceed the body's encoded blended-vertex range, follow the
 
 Tellius Forge reads the battle (`zu/`) archives' clips once exported this way, but its own compatibility notes cover map models: test battle clips in **Simulate a battle…** and Dolphin.
 
+### Copy a clip from another model
+
+**Copy clip from another model...** replaces a clip of the selected set with another model's, with no export or import: from the same game (the male swordmaster's attack onto the female one) or from the other game (a Path of Radiance fighter's attack onto Radiant Dawn's, and back).
+
+1. Select the clip to replace in the **Animations** tab (or pick it in the dialog), then **Copy clip from another model...**.
+2. In **Copy from**, pick this project, a vanilla disc registered in *Settings › Vanilla discs* (the other game's included), or **Browse files folder...** for any extracted `files` folder.
+3. Pick the model and its clip. The dialog proposes the clip it replaces: the same name without the set codes (`swm1_at1_sw.ga` → `swf1_at1_sw.ga`), else the same role (Path of Radiance's `fig1_at1_ax.ga` → Radiant Dawn's `att1_ax.ga`). Change it if needed, then **Copy** and review.
+
+The clip is played on this set's skeleton: each bone matched by name (and `Head`/`_head_`, `Top`/`_top_` across the games) turns as the source bone deforms its mesh; the others keep their rest pose (the review lists both). A model sharing fewer than a quarter of the source's moving bones is refused: give it the animations with **Fit new rig...**. Within a game the source clip's events come along; between the games the replaced clip's are kept and moved to the new length, since sound and effect numbers differ between the discs. Check them in **Events...**, then in **Simulate a battle…** and Dolphin.
+
+A copy replaces an existing clip; it does not add a clip the set lacks.
+
 ### Edit synchronization events
 
 <!-- screenshot 53-c-events.png -->
@@ -106,6 +118,7 @@ In Import Review, inspect proposed files and warnings, then **Write files**. Reo
 - **Animations** tab, **Animation clips (.ga), by weapon**: each weapon archive's clips with role, frames and combat events; a shared clip once.
 - **Play** / **Pause**, **<** / **>**, slider, *frame N/M*, **Speed**, **Loop** and the event marks: preview at the game's 60 frames a second.
 - **Export clip .ga... / Replace clip from .ga...:** the selected clip to and from a `.ga` file (Tellius Forge).
+- **Copy clip from another model...:** another model's clip, from this game or the other one, onto the selected set's clip.
 - **Import animation…:** chooses source glTF animation and exact replacement target (a clip listed with several weapons changes in each). A glTF animation named `stem@ha` targets the hand-axe archive's copy; **Export .glb** and **Rig kit** use the same names.
 - **Template:** preserves target role, events, and loop data when source omits them.
 - **Events… list:** ordered event keys shown by frame.

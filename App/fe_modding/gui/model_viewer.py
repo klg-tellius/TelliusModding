@@ -2780,6 +2780,19 @@ def replace_animation_with_ga(container_path: Path, ga_path: Path, target: str,
     return ModelImport(outputs, warnings)
 
 
+def copy_animation_from_model(source_container: Path, source_file: str, target_container: Path, target_file: str,
+                              source_pack: str | list[str] | None = None,
+                              target_pack: str | list[str] | None = None) -> ModelImport:
+    """Replace the set's clip ``target_file`` with another set's clip, from this game or the other
+    one, played on this set's skeleton: ``animation_catalog.copy_clip``."""
+    try:
+        copied = animation_catalog.copy_clip(source_container, source_file, target_container, target_file,
+                                             source_pack=source_pack, target_pack=target_pack)
+    except animation_catalog.ClipError as exc:
+        raise gltf_import.GltfImportError(str(exc)) from exc
+    return ModelImport(copied.outputs, copied.warnings)
+
+
 def replace_animation_with_glb(
     container_path: Path, gltf_path: Path, gltf_animation: str, target: str, pack: str | list[str] | None = None
 ) -> ModelImport:
@@ -3700,6 +3713,144 @@ class _AnimationImportDialog(tk.Toplevel):
             messagebox.showinfo("Import animation", "Pick a glTF animation and the animation it replaces.", parent=self)
             return
         self.result = (self._gltf_names[source[0]], self._clips[target[0]])
+        self.destroy()
+
+
+class _CopyClipDialog(tk.Toplevel):
+    """Pick another model's clip (this project, a vanilla disc of either game, or any extracted
+    ``files`` folder) and the clip of this set it replaces."""
+
+    def __init__(self, parent, target_label: str, target_path: Path, clips: list[animation_catalog.ClipInfo],
+                 selected: animation_catalog.ClipInfo | None, sources: list[tuple[str, Path]]) -> None:
+        super().__init__(parent)
+        self.title(f"Copy a clip into {target_label}")
+        self.transient(parent)
+        self.result: tuple[str, Path, animation_catalog.ClipInfo, list, animation_catalog.ClipInfo] | None = None
+        self._target_code = target_path.parent.name
+        self._clips = clips
+        self._sources = list(sources)
+        self._sets: list[tuple[str, Path]] = []
+        self._source_clips: list[animation_catalog.ClipInfo] = []
+        self._source_path: Path | None = None
+        self._follow_source = selected is None
+
+        body = ttk.Frame(self, padding=10)
+        body.pack(fill="both", expand=True)
+        top = ttk.Frame(body)
+        top.grid(row=0, column=0, columnspan=3, sticky="ew")
+        ttk.Label(top, text="Copy from").pack(side="left")
+        self._source_box = ttk.Combobox(top, state="readonly", width=46, values=[label for label, _ in self._sources])
+        self._source_box.pack(side="left", padx=(6, 0))
+        self._source_box.bind("<<ComboboxSelected>>", lambda e: self._load_sets())
+        ttk.Button(top, text="Browse files folder...", command=self._browse).pack(side="left", padx=(6, 0))
+
+        ttk.Label(body, text="Model").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(body, text="Clip").grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(8, 0))
+        ttk.Label(body, text="Replaces (this set)").grid(row=1, column=2, sticky="w", padx=(10, 0), pady=(8, 0))
+        self._set_box = tk.Listbox(body, exportselection=False, height=16, width=18)
+        self._clip_box = tk.Listbox(body, exportselection=False, height=16, width=34)
+        self._target_box = tk.Listbox(body, exportselection=False, height=16, width=34)
+        self._set_box.grid(row=2, column=0, sticky="nsew")
+        self._clip_box.grid(row=2, column=1, sticky="nsew", padx=(10, 0))
+        self._target_box.grid(row=2, column=2, sticky="nsew", padx=(10, 0))
+        for clip in clips:
+            self._target_box.insert("end", f"{clip_choice_label(clip)}  {clip.role}".rstrip())
+        self._set_box.bind("<<ListboxSelect>>", lambda e: self._load_clips())
+        self._clip_box.bind("<<ListboxSelect>>", lambda e: self._match_target())
+        self._target_box.bind("<<ListboxSelect>>", lambda e: setattr(self, "_follow_source", False))
+        self._status = ttk.Label(body, text="", style="Muted.TLabel", wraplength=640, justify="left")
+        self._status.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(body, wraplength=640, justify="left", style="Muted.TLabel", text=(
+            "The clip is played on this set's skeleton: bones are matched by name, the others keep their "
+            "rest pose. Between the two games, the replaced clip's events (hit, sounds) are kept and moved "
+            "to the new length. A clip listed with several weapons changes in each of them.")).grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        buttons = ttk.Frame(body)
+        buttons.grid(row=5, column=0, columnspan=3, sticky="e", pady=(8, 0))
+        ttk.Button(buttons, text="Copy", command=self._ok).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=(6, 0))
+        body.columnconfigure(1, weight=1)
+        body.columnconfigure(2, weight=1)
+        body.rowconfigure(2, weight=1)
+
+        if selected is not None and selected in clips:
+            self._select(self._target_box, clips.index(selected))
+        if self._sources:
+            self._source_box.current(0)
+            self._load_sets()
+        else:
+            self._status.config(text="No files folder found: use Browse files folder... (a disc's extracted files).")
+        self.grab_set()
+
+    @staticmethod
+    def _select(box: tk.Listbox, i: int) -> None:
+        box.selection_clear(0, "end")
+        box.selection_set(i)
+        box.see(i)
+
+    def _browse(self) -> None:
+        chosen = filedialog.askdirectory(title="A disc's extracted files folder (the one holding zu/ and ymu/)",
+                                         parent=self)
+        if not chosen:
+            return
+        folder = Path(chosen)
+        if not (folder / "zu").is_dir() and (folder / "files" / "zu").is_dir():
+            folder = folder / "files"
+        if not animation_catalog.character_sets(folder):
+            messagebox.showinfo("Copy clip", f"No character models (zu/, ymu/) in {folder}.", parent=self)
+            return
+        self._sources.append((str(folder), folder))
+        self._source_box.config(values=[label for label, _ in self._sources])
+        self._source_box.current(len(self._sources) - 1)
+        self._load_sets()
+
+    def _load_sets(self) -> None:
+        index = self._source_box.current()
+        if index < 0:
+            return
+        root = self._sources[index][1]
+        self._sets = animation_catalog.character_sets(root)
+        self._set_box.delete(0, "end")
+        for label, _path in self._sets:
+            self._set_box.insert("end", label)
+        self._clip_box.delete(0, "end")
+        self._source_clips, self._source_path = [], None
+        game = {"fe9": "Path of Radiance", "fe10": "Radiant Dawn"}.get(animation_catalog.disc_game(root), "")
+        self._status.config(text=f"{len(self._sets)} models" + (f" ({game})" if game else "") + ".")
+
+    def _load_clips(self) -> None:
+        selection = self._set_box.curselection()
+        if not selection:
+            return
+        _label, path = self._sets[selection[0]]
+        try:
+            self._source_clips = [c for c in animation_catalog.set_clips(path) if not c.error]
+        except Exception as exc:  # noqa: BLE001
+            self._source_clips = []
+            self._status.config(text=f"Could not read {path}: {exc}")
+        self._source_path = path
+        self._clip_box.delete(0, "end")
+        for clip in self._source_clips:
+            self._clip_box.insert("end", f"{clip_choice_label(clip)}  {clip.role}".rstrip())
+
+    def _match_target(self) -> None:
+        selection = self._clip_box.curselection()
+        if not selection or self._source_path is None or not self._follow_source:
+            return
+        found = animation_catalog.matching_clip(self._source_clips[selection[0]], self._source_path.parent.name,
+                                                self._clips, self._target_code)
+        if found is not None:
+            self._select(self._target_box, self._clips.index(found))
+
+    def _ok(self) -> None:
+        source, target = self._clip_box.curselection(), self._target_box.curselection()
+        if not source or not target or self._source_path is None:
+            messagebox.showinfo("Copy clip", "Pick a model, its clip, and the clip of this set it replaces.",
+                                parent=self)
+            return
+        set_label = self._sets[self._set_box.curselection()[0]][0]
+        self.result = (set_label, self._source_path, self._source_clips[source[0]], self._source_clips,
+                       self._clips[target[0]])
         self.destroy()
 
 
@@ -5676,6 +5827,10 @@ class ModelViewer(EditorPanel):
             buttons, text="Replace clip from .ga...", command=self._import_clip_ga, state="disabled")
         tip(self._import_ga_button, "Replace the clip selected in the Animations tab with a .ga file (Tellius "
                                     "Forge's export, for one). A file with no events gets the replaced clip's.")
+        self._copy_clip_button = ttk.Button(
+            buttons, text="Copy clip from another model...", command=self._copy_clip, state="disabled")
+        tip(self._copy_clip_button, "Replace a clip of this set with another model's: same game or the other "
+                                    "one, played on this set's skeleton. No export or import.")
         self._fit_button = ttk.Button(buttons, text="Fit new rig...", command=self._fit_rig, state="disabled")
         self._restore_button = ttk.Button(
             buttons, text="Restore original...", command=self._restore_originals, state="disabled"
@@ -5703,7 +5858,7 @@ class ModelViewer(EditorPanel):
         # wrapped in rows so the button bar never widens the list pane
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
-                                    self._export_ga_button, self._import_ga_button,
+                                    self._export_ga_button, self._import_ga_button, self._copy_clip_button,
                                     self._fit_button, self._restore_button, self._new_slot_button,
                                     self._new_character_button, self._remove_slot_button, self._tables_button,
                                     self._paint_kit_button, self._swatches_button)):
@@ -5766,6 +5921,7 @@ class ModelViewer(EditorPanel):
         self._events_button.config(state="normal" if animatable else "disabled")
         self._export_ga_button.config(state="normal" if animatable else "disabled")
         self._import_ga_button.config(state="normal" if animatable else "disabled")
+        self._copy_clip_button.config(state="normal" if animatable else "disabled")
         self._fit_button.config(state="normal" if animatable else "disabled")
         self._restore_button.config(
             state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
@@ -6438,6 +6594,36 @@ class ModelViewer(EditorPanel):
         self._review_and_write(
             label, path, result, f"Replace {clip.file} with {Path(chosen).name}",
             f"Replaced animation {clip.file} with {Path(chosen).name}", animation_name=clip.file)
+
+    def _copy_clip(self) -> None:
+        """Replace a clip of the selected set with another model's (this game or the other one)."""
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, path = selected
+        clips = self._set_clips(path)
+        if clips is None:
+            return
+        chosen = self._preview.selected_clip()
+        selected_clip = next((c for c in clips if chosen is not None and c.file == chosen.file
+                              and c.packs == chosen.packs), None)
+        dialog = _CopyClipDialog(self, label, path, clips, selected_clip,
+                                 animation_catalog.copy_sources(files_root_of(self._project)))
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        source_label, source_path, source_clip, source_clips, target = dialog.result
+        try:
+            result = copy_animation_from_model(
+                source_path, source_clip.file, path, target.file,
+                animation_catalog.clip_packs(source_clips, source_clip), animation_catalog.clip_packs(clips, target))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not copy the clip", str(exc), parent=self)
+            return
+        source = f"{source_label}/{source_clip.file}"
+        self._review_and_write(
+            label, path, result, f"Replace {target.file} with {source}",
+            f"Replaced animation {target.file} with {source}", animation_name=target.file)
 
     def _import_glb(self) -> None:
         selected = self._selected_set()

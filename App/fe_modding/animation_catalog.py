@@ -457,6 +457,239 @@ def replace_clip_with_ga(container_path: Path, file: str, ga: bytes, pack: str |
     return out, notes + warnings
 
 
+# ---------------------------------------------------------------- copying from another model
+
+
+def character_sets(files_root: Path) -> list[tuple[str, Path]]:
+    """``(label, container)`` of every animated character set under a disc's ``files`` folder:
+    map units ``ymu/<folder>/pack.cmp`` and battle models ``zu/<code>`` (Radiant Dawn's
+    ``pack.cmp``, Path of Radiance's first weapon ``.pak``)."""
+    files_root = Path(files_root)
+    sets: list[tuple[str, Path]] = []
+    ymu = files_root / "ymu"
+    if ymu.is_dir():
+        sets += [(f"ymu/{p.parent.name}", p) for p in sorted(ymu.glob("*/pack.cmp"))]
+    zu = files_root / "zu"
+    if zu.is_dir():
+        for folder in sorted(p for p in zu.iterdir() if p.is_dir()):
+            shared = folder / "pack.cmp"
+            if shared.is_file():
+                sets.append((f"zu/{folder.name}", shared))
+                continue
+            paks = sorted(folder.glob(f"{folder.name}_*.pak"))
+            if paks:
+                sets.append((f"zu/{folder.name}", paks[0]))
+    return sets
+
+
+def disc_game(files_root: Path) -> str:
+    """``fe9`` or ``fe10`` for a disc's ``files`` folder (by its main data file), ``""`` if neither."""
+    files_root = Path(files_root)
+    if (files_root / "FE10Data.cms").is_file() or (files_root / "FE10Anim.cms").is_file():
+        return "fe10"
+    if (files_root / "FE8Data.bin").is_file() or (files_root / "zdbx.cmp").is_file():
+        return "fe9"
+    return ""
+
+
+def copy_sources(project_files: Path | None = None) -> list[tuple[str, Path]]:
+    """``(label, files folder)`` to copy clips from: the project's own files, then every disc
+    registered as a vanilla store (Settings > Vanilla discs), the other game's included."""
+    out: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    if project_files is not None and Path(project_files).is_dir():
+        out.append(("This project", Path(project_files)))
+        seen.add(Path(project_files).resolve())
+    try:
+        from . import vanilla_store
+        stores = vanilla_store.list_stores()
+    except Exception:  # noqa: BLE001 - no store registry: the project only
+        stores = []
+    for store in stores:
+        files = Path(store.root) / "files"
+        if not files.is_dir() or files.resolve() in seen:
+            continue
+        seen.add(files.resolve())
+        game = {"fe9": "Path of Radiance", "fe10": "Radiant Dawn"}.get(disc_game(files), "disc")
+        out.append((f"Vanilla {game} ({store.disc_id})", files))
+    return out
+
+
+def _clip_key(clip: ClipInfo, set_code: str) -> str:
+    """A clip's name without its set's code (``swm1_at1_sw`` -> ``at1_sw``)."""
+    stem = clip.stem.lower()
+    code = set_code.lower()
+    return stem[len(code) + 1:] if code and stem.startswith(code + "_") else stem
+
+
+def _role_base(role: str) -> str:
+    """``dodge 1`` -> ``dodge``; ``critical 1, followed by dodge`` stays as it is."""
+    return role.rstrip("0123456789 ").strip()
+
+
+def matching_clip(source: ClipInfo, source_set: str, targets: list[ClipInfo], target_set: str
+                  ) -> ClipInfo | None:
+    """The target clip that plays what ``source`` plays: same name once the set codes are dropped
+    (``swm1_at1_sw.ga`` -> ``swf1_at1_sw.ga``), else the same role (``fig1_at1_ax.ga``, attack 1,
+    -> Radiant Dawn's ``att1_ax.ga``), the same weapon first."""
+    key = _clip_key(source, source_set)
+    weapon = key.rsplit("_", 1)[-1] if "_" in key else ""
+    role = source.role.lower()
+    base = _role_base(role)
+    best, best_score = None, 0
+    for clip in targets:
+        other = _clip_key(clip, target_set)
+        if other == key:
+            return clip
+        target_role = clip.role.lower()
+        score = 0
+        if role and target_role == role:
+            score = 50
+        elif base and target_role and (_role_base(target_role) == base or base.endswith("/ " + target_role)
+                                       or target_role.endswith("/ " + base)):
+            score = 20
+        if score and weapon and other.rsplit("_", 1)[-1] == weapon:
+            score += 5
+        if score > best_score:
+            best, best_score = clip, score
+    return best
+
+
+def _body_files(container_path: Path) -> dict[str, bytes]:
+    """The pack holding the set's skeleton (and body)."""
+    _e, files = read_container(set_containers(Path(container_path))[0])
+    return files
+
+
+def _skeleton_data(container_path: Path) -> bytes:
+    files = _body_files(container_path)
+    found = [d for n, d in files.items() if Path(n).suffix.lower() == ".g"]
+    if not found:
+        raise ClipError(f"{Path(container_path).parent.name} has no skeleton.")
+    return found[0]
+
+
+#: Bones the two games name differently (Path of Radiance, Radiant Dawn).
+BONE_ALIASES = (("Head", "_head_"), ("Top", "_top_"))
+
+
+def bone_renames(source_names: list[str], target_names: set[str]) -> dict[str, str]:
+    """Source bone -> target bone for the names :data:`BONE_ALIASES` pairs, when the target has
+    the other name and not the source's own."""
+    out = {}
+    for a, b in BONE_ALIASES:
+        for old, new in ((a, b), (b, a)):
+            if old in source_names and old not in target_names and new in target_names and new not in source_names:
+                out[old] = new
+    return out
+
+
+def _rename_glb_nodes(glb: bytes, renames: dict[str, str]) -> bytes:
+    """``glb`` with the nodes named in ``renames`` renamed."""
+    import json
+    import struct
+
+    if not renames:
+        return glb
+    json_len = struct.unpack_from("<I", glb, 12)[0]
+    doc = json.loads(glb[20:20 + json_len].decode("utf-8"))
+    for node in doc.get("nodes", []):
+        if node.get("name") in renames:
+            node["name"] = renames[node["name"]]
+    text = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    text += b" " * (-len(text) % 4)
+    rest = glb[20 + json_len:]
+    body = struct.pack("<II", len(text), 0x4E4F534A) + text + rest
+    return struct.pack("<III", 0x46546C67, 2, 12 + len(body)) + body
+
+
+@dataclass
+class ClipCopy:
+    """What :func:`copy_clip` would write: the files, the notes for the review, and how many of
+    the source clip's animated bones the target skeleton has by name."""
+
+    outputs: dict[Path, bytes]
+    warnings: list[str]
+    matched: int
+    animated: int
+
+
+def copy_clip(source_container: Path, source_file: str, target_container: Path, target_file: str,
+              *, source_pack: str | list[str] | None = None, target_pack: str | list[str] | None = None
+              ) -> ClipCopy:
+    """The clip ``source_file`` of one character set played on another set's skeleton, in place
+    of its clip ``target_file``: same game or the other one.
+
+    The source clip is posed on its own skeleton and read back on the target's (through glTF, as an
+    imported animation: ``gltf_export`` then ``gltf_import.import_animation``). Bones are matched
+    by name; the target's other bones keep their rest pose. The clip is written in the target
+    game's format, over the replaced clip's footer (Radiant Dawn's material, visibility and
+    particle tracks).
+
+    Events: within a game, the source clip's (its hits, sounds, trails go with its motion). Across
+    the games, the replaced clip's moved in proportion to the new length: sound and effect numbers
+    differ between the discs, and the combat codes the fight waits for stay in place.
+
+    Refused when fewer than a quarter of the source clip's animated bones are in the target
+    skeleton (bones are matched by name, and :data:`BONE_ALIASES` across the games), or fewer than
+    six: the motion would not carry over (fit the model with Fit new rig... instead)."""
+    from .formats import gltf_export, gltf_import
+
+    source_data = clip_bytes(source_container, source_file, source_pack)
+    template = clip_bytes(target_container, target_file, target_pack)
+    try:
+        source_anim = animation.read_animation_bytes(source_data)
+    except Exception as exc:  # noqa: BLE001
+        raise ClipError(f"{source_file} could not be read: {exc}") from exc
+    source_bones = skeleton.read_skeleton_file(_skeleton_data(source_container)).bones
+    target_g = _skeleton_data(target_container)
+    target_bones = skeleton.read_skeleton_file(target_g).bones
+
+    target_names = {b.name for b in target_bones}
+    renames = bone_renames([b.name for b in source_bones], target_names)
+    animated = {renames.get(n, n) for n in
+                (source_bones[g.bone_index].name for g in source_anim.groups if g.bone_index < len(source_bones))}
+    matched = animated & target_names
+    if len(matched) < 6 or len(matched) * 4 < len(animated):
+        raise ClipError(
+            f"Only {len(matched)} of the {len(animated)} bones {source_file} moves are in the target skeleton "
+            "(bones are matched by name): the motion would not carry over. Give the target model the source "
+            "set's animations with Fit new rig... instead.")
+
+    glb = _rename_glb_nodes(gltf_export.export_glb([], source_bones, {}, [("clip", source_anim)]), renames)
+    try:
+        ga, warnings = gltf_import.import_animation(glb, target_g, animation_name="clip", template=template)
+    except Exception as exc:  # noqa: BLE001
+        raise ClipError(f"{source_file} could not be played on the target skeleton: {exc}") from exc
+    warnings = [w for w in warnings if not w.startswith(
+        ("Events copied", "The replaced animation's footer", "Animated joints with no bone"))]
+
+    same_game = animation.is_fe10_animation(source_data) == animation.is_fe10_animation(template)
+    new_end = animation.read_animation_bytes(ga).header.end_frame
+    if same_game:
+        events = rig_contract._events(source_data)
+        note = f"Events: {source_file}'s."
+    else:
+        old_end = animation.read_animation_bytes(template).header.end_frame
+        events = retimed_events(rig_contract._events(template), old_end, new_end)
+        note = (f"Events: {target_file}'s" + (f", moved from {old_end} to {new_end} frames" if old_end != new_end
+                                               else "") + " (sound and effect numbers differ between the games). "
+                "Check them with Events...")
+    ga = rig_contract.replace_events(ga, events)
+    missing = sorted(animated - target_names)
+    notes = [f"{len(matched)} of the {len(animated)} bones {source_file} moves are in the target skeleton."]
+    if missing:
+        shown = ", ".join(missing[:12]) + (", ..." if len(missing) > 12 else "")
+        notes.append(f"Not in the target skeleton (their motion is dropped): {shown}.")
+    still = sorted(target_names - animated - {b.name for b in target_bones if b.name.startswith("_")})
+    if still:
+        notes.append(f"{len(still)} target bones have no motion in the source clip and keep their rest pose.")
+    notes.append(note)
+    notes += [e.replace("the fight would", "the fight may") for e in rig_contract.event_errors(target_file, ga, template)]
+    outputs, where = clip_output(target_container, target_file, ga, target_pack)
+    return ClipCopy(outputs, where + notes + warnings, len(matched), len(animated))
+
+
 # ---------------------------------------------------------------- events
 
 #: Short names of the combat codes for the clip list.

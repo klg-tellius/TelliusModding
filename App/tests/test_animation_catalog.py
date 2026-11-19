@@ -14,6 +14,7 @@ from fe_modding import rig_contract
 from fe_modding.formats import animation, lz10, pak, skeleton
 
 RD_FILES = os.environ.get("FE10_EXTRACTED_FILES")
+POR_FILES = os.environ.get("FE9_EXTRACTED_FILES")
 
 
 def _ga(end=10, events=None, bone=0):
@@ -200,6 +201,108 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(cat.describe_clip("avoid_2.ga", battle=False, fe10=True), "dodge")
         self.assertEqual(cat.describe_clip("fig1_cr1_ax_at1.ga", battle=True, fe10=False),
                          "critical 1, followed by attack 1")
+
+
+def _moving_ga(end=12, bones=8, events=None):
+    """A Path of Radiance clip turning each of ``bones`` bones about Z."""
+    header = animation.GaHeader(words=(0, 0, 0, 0x11, 0, 1, end, 0, 0, 0, 0, 0))
+    groups, curves = [], []
+    for b in range(bones):
+        groups.append(animation.BoneGroup(b, 16, len(curves), 1))
+        curves.append(animation.AnimCurve(b, 5, 4, end, [animation.Keyframe(0, 0), animation.Keyframe(end, 8 + b)]))
+    data = animation.write_animation(animation.GaAnimation(header, groups, curves))
+    return rig_contract.replace_events(data, events) if events else data
+
+
+def _named_skeleton(names):
+    floats = tuple([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0] + [0.0] * 43)
+    bones = [skeleton.Bone(n, i - 1, (-1, -1, 0x180), floats, (i, 1)) for i, n in enumerate(names)]
+    return skeleton.write_skeleton_file(skeleton.SkeletonFile(root_name="[unknown]", bones=bones))
+
+
+BODY = ["Hips", "Spine", "Chest", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand"]
+
+
+def _copy_set(root: Path, code: str, names, clips) -> Path:
+    folder = root / "zu" / code
+    folder.mkdir(parents=True)
+    files = [(f"{code}.gs", b"gs"), (f"{code}.g", _named_skeleton(names))] + clips
+    (folder / f"{code}_sw.pak").write_bytes(pak.pack_pak(files))
+    return folder / f"{code}_sw.pak"
+
+
+class CopyClipTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.source = _copy_set(self.root, "swm1", BODY, [("swm1_at1_sw.ga", _moving_ga(12, events=HIT))])
+        self.target = _copy_set(self.root, "swf1", BODY, [("swf1_at1_sw.ga", _ga(20)), ("swf1_dog_sw.ga", _ga(8))])
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_the_copy_moves_the_target_as_the_source_and_keeps_the_source_events(self):
+        from fe_modding.formats import engine_pose
+        copied = cat.copy_clip(self.source, "swm1_at1_sw.ga", self.target, "swf1_at1_sw.ga")
+        self.assertEqual(list(copied.outputs), [self.target])
+        self.assertEqual((copied.matched, copied.animated), (8, 8))
+        ga = cat.unpack(self.target, copied.outputs[self.target])[1]["swf1_at1_sw.ga"]
+        bones = skeleton.read_skeleton_file(_named_skeleton(BODY)).bones
+        source = animation.read_animation_bytes(_moving_ga(12))
+        result = animation.read_animation_bytes(ga)
+        self.assertEqual(result.header.end_frame, 12)
+        for frame in (0.0, 6.0, 12.0):
+            want, _ = engine_pose.pose(bones, source, frame)
+            got, _ = engine_pose.pose(bones, result, frame)
+            for a, b in zip(want, got):
+                for r in range(3):
+                    for c in range(4):
+                        self.assertAlmostEqual(a[r][c], b[r][c], places=3)
+        self.assertEqual([(k.frame, k.codes) for k in rig_contract._events(ga)], [(4, (1,)), (6, (0, 1510))])
+
+    def test_a_skeleton_with_too_few_shared_bones_is_refused(self):
+        other = _copy_set(self.root, "drg1", [f"x{i}" for i in range(8)], [("drg1_at1_sw.ga", _ga(10))])
+        with self.assertRaises(cat.ClipError):
+            cat.copy_clip(self.source, "swm1_at1_sw.ga", other, "drg1_at1_sw.ga")
+
+    def test_matching_clip_drops_the_set_codes_then_compares_roles(self):
+        source = cat.set_clips(self.source)[0]
+        targets = cat.set_clips(self.target)
+        self.assertEqual(cat.matching_clip(source, "swm1", targets, "swf1").file, "swf1_at1_sw.ga")
+        rd = cat.clips_from_animations([("dog1_ax.ga", _ga(8)), ("att1_ax.ga", _ga(8))], battle=True)
+        for clip in rd:
+            clip.role = cat.FE10_BATTLE_PREFIXES[clip.stem.split("_")[0]]
+        self.assertEqual(cat.matching_clip(source, "swm1", rd, "figL").file, "att1_ax.ga")
+        dodge = cat.clips_from_animations([("swf1_dog_sw.ga", _ga(8))], battle=True)[0]
+        self.assertEqual(cat.matching_clip(dodge, "swf1", rd, "figL").file, "dog1_ax.ga")
+
+    def test_sources_list_the_project_then_each_vanilla_disc_once(self):
+        from unittest import mock
+        from fe_modding import vanilla_store
+        (self.root / "zdbx.cmp").write_bytes(b"")
+        disc = self.root / "rd"
+        (disc / "files").mkdir(parents=True)
+        (disc / "files" / "FE10Data.cms").write_bytes(b"")
+        stores = [vanilla_store.VanillaStore("a", disc, "RFEE01", 0, True),
+                  vanilla_store.VanillaStore("b", self.root.parent / "missing", "GFEE01", 0, True)]
+        with mock.patch.object(vanilla_store, "list_stores", return_value=stores):
+            sources = cat.copy_sources(self.root)
+        self.assertEqual(sources, [("This project", self.root), ("Vanilla Radiant Dawn (RFEE01)", disc / "files")])
+        self.assertEqual(cat.disc_game(self.root), "fe9")
+        self.assertEqual([label for label, _ in cat.character_sets(self.root)], ["zu/swf1", "zu/swm1"])
+
+
+@unittest.skipUnless(RD_FILES and POR_FILES, "set FE9_EXTRACTED_FILES and FE10_EXTRACTED_FILES")
+class CrossGameCopyTests(unittest.TestCase):
+    def test_a_path_of_radiance_attack_plays_on_a_radiant_dawn_fighter_and_back(self):
+        por = Path(POR_FILES) / "zu" / "fig1" / "fig1_ax.pak"
+        rd = Path(RD_FILES) / "zu" / "figL" / "pack.cmp"
+        there = cat.copy_clip(por, "fig1_at1_ax.ga", rd, "att1_ax.ga")
+        self.assertTrue(animation.is_fe10_animation(cat.unpack(rd.parent / "ax.pak", there.outputs[rd.parent / "ax.pak"])[1]["att1_ax.ga"]))
+        self.assertGreaterEqual(there.matched, 20)
+        back = cat.copy_clip(rd, "att1_ax.ga", por, "fig1_at1_ax.ga")
+        self.assertGreaterEqual(back.matched, 20)
+        self.assertTrue(any("Events: fig1_at1_ax.ga's" in w for w in back.warnings))
 
 
 @unittest.skipUnless(RD_FILES, "set FE10_EXTRACTED_FILES to Radiant Dawn's extracted files folder")
