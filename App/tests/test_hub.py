@@ -72,6 +72,36 @@ class HubRouterTests(unittest.TestCase):
         self.assertEqual(memory[PARTY + hub_flow.HISTORY_OFFSET + 8], 0)
 
 
+class HubAutoendTests(unittest.TestCase):
+    """The hub keeps the player phase open after the avatar acts (Options › Autoend Turns)."""
+
+    UNIT = 0x80400000
+
+    def check(self, current, *, hub_chapter=40, autoend_off=False):
+        code = {}
+        for edit in hub_flow.HUB_AUTOEND_PATCH.versions["GFEE01"]:
+            if edit.address >= CAVE_ADDRESS:
+                for i in range(0, len(edit.patched), 4):
+                    code[edit.address + i] = int.from_bytes(edit.patched[i:i + 4], "big")
+        memory = {hub_flow.HUB_CONFIG: hub_chapter, PARTY + 0x10: current,
+                  PARTY + 0x9E: 0x20 if autoend_off else 0, self.UNIT + 0x1A3: 0x01}
+        cpu = MiniPPC(code, memory)
+        cpu.r[3], cpu.r[5] = PARTY, self.UNIT
+        self.assertEqual(cpu.run(hub_flow.AUTOEND_ROUTINE, set()), -1)
+        return cpu.r[0], memory[self.UNIT + 0x1A3] & 1
+
+    def test_only_the_hub_skips_autoend_and_keeps_the_avatar_ready(self):
+        self.assertEqual(self.check(40), (1, 0))                    # hub: no autoend, action given back
+        self.assertEqual(self.check(6), (0, 1))                     # story chapter: retail behaviour
+        self.assertEqual(self.check(6, autoend_off=True), (1, 1))   # the player's own option still counts
+        self.assertEqual(self.check(0, hub_chapter=0), (0, 1))      # no hub installed
+
+    def test_hook_replaces_the_option_test(self):
+        site, routine = hub_flow.HUB_AUTOEND_PATCH.versions["GFEE01"]
+        self.assertEqual(site.original, bytes.fromhex("8803009E5400DFFE"))
+        self.assertTrue(CAVE_ADDRESS <= routine.address < hub_flow.HUB_HOOK)
+
+
 class HubPatchTests(unittest.TestCase):
     def test_install_preserves_the_existing_story_flow(self):
         path = RETAIL_DIR / "GFEE01.dol"
@@ -89,6 +119,7 @@ class HubPatchTests(unittest.TestCase):
             router.install(40, 30, 32, 40)
             self.assertTrue(router.installed)
             self.assertEqual(router.config(), bytes((40, 3, 0x40, 4, 5)))
+            self.assertEqual(editor.status(hub_flow.HUB_AUTOEND_PATCH).state, State.APPLIED)
             self.assertEqual(flow.status.state, State.APPLIED)
             self.assertEqual(chapter_flow.ChapterFlow(CodeEditor(root)).next_of(40), 40)
             with self.assertRaises(ValueError):
@@ -97,6 +128,7 @@ class HubPatchTests(unittest.TestCase):
                 flow.remove(40)
             router.remove()
             self.assertEqual(flow.status.state, State.APPLIED)
+            self.assertEqual(editor.status(hub_flow.HUB_AUTOEND_PATCH).state, State.ORIGINAL)
 
 
 class HubScriptTests(unittest.TestCase):
