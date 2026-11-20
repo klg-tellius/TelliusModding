@@ -74,6 +74,14 @@ class WeaponTests(unittest.TestCase):
         self.assertIsNone(tome.model_folder)
         self.assertTrue(text.endswith("}\r\n\\\r\n"))  # closing backslash line, like retail tables
 
+    def test_new_weapon_names_its_model_block(self):
+        """The Weapon block's ``model`` is the Model block's name, whatever the
+        file is called (``saber_r`` under ``name SABER_R`` crashed the battle)."""
+        text = bw.new_weapon_dbx("SABER_R", kind=0, missile=0, model="saber_r")
+        weapon_block = text[text.index("class\tWeapon"):]
+        self.assertIn("\tmodel\tSABER_R\r\n", weapon_block)
+        self.assertNotIn("saber_r", weapon_block)
+
     @unittest.skipUnless(os.environ.get("FE9_ZDBX"), "set FE9_ZDBX to a zdbx.cmp to run the corpus test")
     def test_corpus(self):
         files = zdbx.read_zdbx_files(Path(os.environ["FE9_ZDBX"]).read_bytes())
