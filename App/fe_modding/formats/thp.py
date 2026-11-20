@@ -582,7 +582,9 @@ def _encode_thp_jpeg(image: "Image.Image", quality: int) -> bytes:
     # a restart interval of one MCU row, as in retail frames (DRI 40 at 640 px)
     image.convert("RGB").save(buffer, "JPEG", quality=quality, subsampling=2, progressive=False,
                               restart_marker_rows=1)
-    return _escape_for_thp(_retail_marker_layout(buffer.getvalue()))
+    frame = _escape_for_thp(_retail_marker_layout(buffer.getvalue()))
+    # retail picture chunks are a multiple of 4 bytes, zero-padded after EOI
+    return frame + b"\0" * (-len(frame) % 4)
 
 
 def _retail_marker_layout(jpeg_bytes: bytes) -> bytes:

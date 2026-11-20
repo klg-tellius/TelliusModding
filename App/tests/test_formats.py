@@ -1386,6 +1386,8 @@ class ThpTests(unittest.TestCase):
                 self.assertEqual(classes, [0x00, 0x01, 0x10, 0x11])
             pos += 2 + length
         self.assertEqual(markers, [0xDB, 0xC0, 0xDD, 0xC4])
+        # the picture chunk is a multiple of 4 bytes, zero-padded after EOI
+        self.assertEqual(struct.unpack(">I", data[offset + 8:offset + 12])[0] % 4, 0)
         image, _audio = thp.read_frame(stream, offset, info)
         red, green, _blue = image.getpixel((5, 5))
         self.assertGreater(red, 150)
