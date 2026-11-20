@@ -508,14 +508,43 @@ def fit_rig(
                 break
         return best
 
+    # Map rigs place their pivots for skinning, not along the body: the
+    # retail lord's hip1 -> body1 points 62 degrees forward, the sword
+    # fighter's 96. Turning the model's trunk onto those directions bent its
+    # back, so on a map rig the trunk (pelvis up to the head) keeps the
+    # model's own upright rest; the animations add the game's turns to it.
+    upright: set[int] = set()
+    if not battle:
+        top = max((k for k in mapped if pelvis == k or pelvis in model.ancestors(k)), key=lambda k: model.pos[k][1])
+        upright = {pelvis, top} | {a for a in model.ancestors(top) if pelvis in model.ancestors(a)}
+
+    def own_direction(k):
+        """For a mapped joint without a mapped joint below it (a rider's
+        calf): the rotation that lays its bone along the game bone's own
+        child, else none (identity)."""
+        g = follow[k]
+        kids = [c for c in game.children(g) if not is_anchor(game.names[c]) and game.names[c] not in weapon_bones]
+        mk = [c for c in model.children(k) if np.linalg.norm(model.pos[c] - model.pos[k]) > 1e-6]
+        if not kids or not mk:
+            return np.eye(3)
+        gd = game.pos[kids[0]] - game.pos[g]
+        if np.linalg.norm(gd) < 1e-6:
+            return np.eye(3)
+        return _rotation_between(model.pos[mk[0]] - model.pos[k], gd)
+
     for k in order:
         if k in tgt and k not in roots:
             continue
         p = model.parent[k]
         if k not in roots:
             tgt[k] = tgt[p] + rot[p] @ (s * (model.pos[k] - model.pos[p]))
+        if k in upright:
+            rot[k] = np.eye(3)
+            continue
         t = toward(k)
-        if t is not None:
+        if t is None and not battle and follow[k] is not None:
+            rot[k] = own_direction(k)
+        elif t is not None:
             c, gc = t
             rot[k] = _rotation_between(model.pos[c] - model.pos[k], game.pos[gc] - game.pos[follow[k]])
         else:

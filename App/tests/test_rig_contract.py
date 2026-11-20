@@ -117,3 +117,40 @@ class DiscRigFitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _bare_rig(names, parents, positions, verts, vjoint):
+    from types import SimpleNamespace
+    import numpy as np
+    rest = np.tile(np.eye(4), (len(names), 1, 1))
+    rest[:, :3, 3] = positions
+    V = np.array(verts, float)
+    J = np.zeros((len(V), 4), int)
+    J[:, 0] = vjoint
+    W = np.zeros((len(V), 4))
+    W[:, 0] = 1
+    rig = rig_fit.Rig(doc=SimpleNamespace(doc={"animations": []}), nodes=[], node_parent={},
+                      joints=list(range(len(names))), names=list(names), parent=list(parents), rest=rest,
+                      V=V, N=np.tile([0.0, 0.0, 1.0], (len(V), 1)), UV=np.zeros((len(V), 2)), J=J, W=W,
+                      idx=np.arange(len(V) - len(V) % 3), image=None)
+    rig.joint_index = {n: k for k, n in enumerate(names)}
+    return rig
+
+
+class MapFitTrunkTests(unittest.TestCase):
+    def test_map_fit_keeps_the_trunk_upright_when_the_game_pivots_lean(self):
+        import numpy as np
+        # retail map rigs place body1 well in front of hip1 (the lord: 62 degrees)
+        game = _bare_rig(["hip1", "body1", "face1"], [-1, 0, 1],
+                         [(0, 1, 0), (0, 1.2, 0.5), (0, 2, 0.3)],
+                         [(0, 1, 0), (0, 1.2, 0.5), (0, 2.2, 0.3)], [0, 1, 2])
+        model = _bare_rig(["Hips", "Spine1", "Head"], [-1, 0, 1],
+                          [(0, 1, 0), (0, 1.5, 0), (0, 2, 0)],
+                          [(0, 0, 0), (0, 1.5, 0), (0, 2.2, 0)], [0, 1, 2])
+        mapping = {"Hips": "hip1", "Spine1": "body1", "Head": "face1"}
+        fit = rig_fit.fit_rig(model, game, mapping, battle=False)
+        out = rig_fit.read_rig(fit.glb)
+        top = out.V[out.V[:, 1].argmax()]
+        low = out.V[out.V[:, 1].argmin()]
+        self.assertAlmostEqual(float(top[2] - low[2]), 0.0, places=4)
+        self.assertAlmostEqual(float(top[0] - low[0]), 0.0, places=4)
