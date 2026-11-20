@@ -453,10 +453,18 @@ def fit_rig(
     mapped = [k for k in follow if follow[k] is not None]
     if not mapped:
         raise RigFitError("No joint of the model follows a game bone.")
-    # the pelvis: the mapped joint above all other mapped joints
+    # the pelvis: the mapped joint above all other mapped joints. A mounted
+    # model (rider and mount, each with its own tree) has one per tree: the
+    # one with the most mapped joints below it places the model, the others
+    # take the game's offset to it, and each gets its game bone's translation.
     roots = [k for k in mapped if not any(a in mapped for a in model.ancestors(k))]
-    if len(roots) != 1:
-        raise RigFitError("The mapped joints must hang from one joint (the pelvis): " + ", ".join(model.names[k] for k in roots))
+    games_roots = [follow[k] for k in roots]
+    if len(set(games_roots)) != len(games_roots) or any(
+        follow[b] in game.ancestors(follow[a]) for a in roots for b in roots if a != b
+    ):
+        raise RigFitError("The mapped joints must hang from one joint (the pelvis), or one per game tree: "
+                          + ", ".join(model.names[k] for k in roots))
+    roots.sort(key=lambda r: -sum(1 for k in mapped if r == k or r in model.ancestors(k)))
     pelvis = roots[0]
     g_pelvis = follow[pelvis]
 
@@ -469,9 +477,13 @@ def fit_rig(
     tgt: dict[int, np.ndarray] = {}
     gp = game.pos[g_pelvis]
     tgt[pelvis] = np.array([gp[0], (model.pos[pelvis][1] - m_low) * s, gp[2]])
-    for a in model.ancestors(pelvis):
-        tgt[a] = tgt[pelvis] + s * (model.pos[a] - model.pos[pelvis])
-        rot[a] = np.eye(3)
+    for r in roots:
+        # a rider sits on the mount where the game's rider sits
+        tgt.setdefault(r, tgt[pelvis] + game.pos[follow[r]] - gp)
+        for a in model.ancestors(r):
+            if a not in tgt:
+                tgt[a] = tgt[pelvis] + s * (model.pos[a] - model.pos[pelvis])
+                rot[a] = np.eye(3)
 
     def toward(k):
         """The game direction this joint's bone should point to at rest."""
@@ -493,10 +505,10 @@ def fit_rig(
         return best
 
     for k in order:
-        if k in tgt and k != pelvis:
+        if k in tgt and k not in roots:
             continue
         p = model.parent[k]
-        if k != pelvis:
+        if k not in roots:
             tgt[k] = tgt[p] + rot[p] @ (s * (model.pos[k] - model.pos[p]))
         t = toward(k)
         if t is not None:
@@ -600,13 +612,14 @@ def fit_rig(
     if image is None:
         image = Image.new("RGB", (64, 64), (200, 200, 200))
         warnings.append("The model has no texture: a plain grey one is used.")
-    image = image.convert("RGB")
+    # alpha is kept: cut-out parts (a cape's fringe, a mane) stay cut out
+    image = image.convert("RGBA")
     if extra_mesh is not None:
         EP, EN, EUV, EW, Eidx, eimg, box = extra_mesh
         size, split = 256, 192
-        atlas = Image.new("RGB", (size, size))
+        atlas = Image.new("RGBA", (size, size), (0, 0, 0, 255))
         atlas.paste(image.resize((split, size), Image.LANCZOS), (0, 0))
-        crop = eimg.convert("RGB").crop(box)
+        crop = eimg.convert("RGBA").crop(box)
         sc = min((size - split) / max(crop.size[0], 1), size / max(crop.size[1], 1))
         atlas.paste(crop.resize((max(1, int(crop.size[0] * sc)), max(1, int(crop.size[1] * sc))), Image.LANCZOS), (split, 0))
         UV = UV.copy()
@@ -630,7 +643,7 @@ def fit_rig(
     for anim, tracks, times in _game_animations(game):
         frames = {n: [] for n in names}
         scales = {n: [] for n in names}
-        hips = []
+        hips = {r: [] for r in roots}
         for t in times:
             world = _pose(game, tracks, t)
             wr: dict[str, np.ndarray] = {}
@@ -650,10 +663,11 @@ def fit_rig(
             for n in names:
                 p = parent_of[n]
                 frames[n].append(_quat_from_matrix(wr[p].T @ wr[n] if p else wr[n]))
-            node = game.joints[g_pelvis]
-            hips.append(world[node][:3, 3] - game.rest[g_pelvis][:3, 3])
-        anims.append((anim, times, frames, scales, np.array(hips)))
-    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, mname[pelvis], weapon_bones)
+            for r in roots:
+                g = follow[r]
+                hips[r].append(world[game.joints[g]][:3, 3] - game.rest[g][:3, 3])
+        anims.append((anim, times, frames, scales, {mname[r]: np.array(h) for r, h in hips.items()}))
+    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones)
     return FitResult(glb, warnings, dict(mapping))
 
 
@@ -732,7 +746,7 @@ def _pose(game: Rig, tracks, t) -> dict[int, np.ndarray]:
     return _node_worlds(game.nodes, game.node_parent, local)
 
 
-def _write_glb(joints, V, N, UV, weights, idx, image, anims, pelvis_name, weapon_bones) -> bytes:
+def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones) -> bytes:
     names = [j[0] for j in joints]
     index = {n: i for i, n in enumerate(names)}
     wpos = {n: p for n, _, p in joints}
@@ -784,10 +798,11 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, pelvis_name, weapon
                 continue
             samplers.append({"input": tin, "output": accessor(q, 5126, "VEC4"), "interpolation": "LINEAR"})
             channels.append({"sampler": len(samplers) - 1, "target": {"node": index[n], "path": "rotation"}})
-        parent = next(p for n, p, _ in joints if n == pelvis_name)
-        tr = (wpos[pelvis_name] - (wpos[parent] if parent else 0) + hips).astype(np.float32)
-        samplers.append({"input": tin, "output": accessor(tr, 5126, "VEC3"), "interpolation": "LINEAR"})
-        channels.append({"sampler": len(samplers) - 1, "target": {"node": index[pelvis_name], "path": "translation"}})
+        for pelvis_name, moves in hips.items():
+            parent = next(p for n, p, _ in joints if n == pelvis_name)
+            tr = (wpos[pelvis_name] - (wpos[parent] if parent else 0) + moves).astype(np.float32)
+            samplers.append({"input": tin, "output": accessor(tr, 5126, "VEC3"), "interpolation": "LINEAR"})
+            channels.append({"sampler": len(samplers) - 1, "target": {"node": index[pelvis_name], "path": "translation"}})
         for wb in sorted(weapon_bones):
             if wb in index and scales.get(wb):
                 sv = np.repeat(np.array(scales[wb], np.float32)[:, None], 3, axis=1)
@@ -798,6 +813,9 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, pelvis_name, weapon
             entry["extras"] = a["extras"]
         gl_anims.append(entry)
     png = io.BytesIO()
+    cut_out = image.mode == "RGBA" and image.getchannel("A").getextrema()[0] < 255
+    if not cut_out:
+        image = image.convert("RGB")
     image.save(png, "PNG")
     pos = accessor(V.astype(np.float32), 5126, "VEC3", True)
     nor = accessor(N.astype(np.float32), 5126, "VEC3")
@@ -817,7 +835,8 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, pelvis_name, weapon
                                                                    "JOINTS_0": jo, "WEIGHTS_0": we},
                                                     "indices": ind, "material": 0}]}],
         "materials": [{"name": "body", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0,
-                                                                  "roughnessFactor": 1}}],
+                                                                  "roughnessFactor": 1},
+                       **({"alphaMode": "MASK"} if cut_out else {})}],
         "textures": [{"source": 0, "sampler": 0}],
         "samplers": [{"magFilter": 9729, "minFilter": 9729, "wrapS": 10497, "wrapT": 10497}],
         "images": [{"bufferView": imgv, "mimeType": "image/png"}],
