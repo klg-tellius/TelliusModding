@@ -1364,8 +1364,8 @@ class ThpTests(unittest.TestCase):
 
     def test_frames_use_the_retail_jpeg_marker_layout(self):
         """The game shows a black picture for frames laid out as PIL writes
-        them; retail frames are SOI, one DQT, SOF0, one DHT (DC0, DC1, AC0,
-        AC1), SOS."""
+        them; retail frames are SOI, one DQT, SOF0, DRI, one DHT (DC0, DC1,
+        AC0, AC1), SOS."""
         from PIL import Image
 
         data = thp.encode_thp([Image.new("RGB", (32, 16), (200, 40, 40))], None, 32000, 29.97)
@@ -1385,11 +1385,29 @@ class ThpTests(unittest.TestCase):
                     i += 17 + sum(body[i + 1:i + 17])
                 self.assertEqual(classes, [0x00, 0x01, 0x10, 0x11])
             pos += 2 + length
-        self.assertEqual(markers, [0xDB, 0xC0, 0xC4])
+        self.assertEqual(markers, [0xDB, 0xC0, 0xDD, 0xC4])
         image, _audio = thp.read_frame(stream, offset, info)
         red, green, _blue = image.getpixel((5, 5))
         self.assertGreater(red, 150)
         self.assertLess(green, 80)
+
+    def test_restart_intervals_without_markers_round_trip(self):
+        """Retail frames restart every MCU row (DRI) but carry no RSTn
+        markers: the encoder strips them and the reader walks the scan to put
+        them back, so a multi-row picture decodes intact."""
+        from PIL import Image, ImageChops
+
+        gradient = Image.linear_gradient("L").resize((64, 48)).convert("RGB")
+        data = thp.encode_thp([gradient], None, 32000, 29.97, jpeg_quality=90)
+        stream = io.BytesIO(data)
+        info = thp.read_info(stream)
+        (offset,) = thp.iter_frame_offsets(stream, info)
+        size = struct.unpack(">I", data[offset + 8:offset + 12])[0]
+        frame = data[offset + 12:offset + 12 + size]
+        self.assertEqual(len(thp._restart_offsets(frame, frame.find(b"\xff\xda") + 2, frame.rfind(b"\xff\xd9"))), 2)
+        image, _audio = thp.read_frame(stream, offset, info)
+        low, high = ImageChops.difference(image.convert("RGB"), gradient).getextrema()[0]
+        self.assertLess(high, 24)
 
     def test_encode_rejects_non_multiple_of_16_dimensions(self):
         from PIL import Image
