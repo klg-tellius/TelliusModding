@@ -612,6 +612,10 @@ def fit_rig(
             if w > 0:
                 key = mname[int(model.J[v, slot])]
                 d[key] = d.get(key, 0) + w
+        if not battle and d:
+            # every retail map model is skinned rigidly (one bone per vertex):
+            # the map renderer bends vertices shared by 2-4 bones wrongly
+            d = {max(d, key=d.get): 1.0}
         weights.append(d)
     if image is None:
         image = Image.new("RGB", (64, 64), (200, 200, 200))
