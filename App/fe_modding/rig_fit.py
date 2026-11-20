@@ -495,10 +495,14 @@ def fit_rig(
             stack = [c]
             while stack:
                 x = stack.pop()
-                if follow[x] is not None and follow[x] != g and g in game.ancestors(follow[x]):
+                # a joint at the same place (on the model or in the game) gives no
+                # direction: look past it
+                apart = (np.linalg.norm(model.pos[x] - model.pos[k]) > 1e-6 and follow[x] is not None
+                         and np.linalg.norm(game.pos[follow[x]] - game.pos[g]) > 1e-6)
+                if follow[x] is not None and follow[x] != g and g in game.ancestors(follow[x]) and apart:
                     best = (x, follow[x])
                     break
-                if follow[x] is None or follow[x] == g:
+                if follow[x] is None or follow[x] == g or not apart:
                     stack.extend(model.children(x))
             if best:
                 break
@@ -658,8 +662,10 @@ def fit_rig(
                 R0 = _orthonormal(game.rest[g][:3, :3])
                 wr[n] = R @ R0.T
                 if n in weapon_bones:
-                    scales[n].append(np.linalg.norm(world[node][:3, :3], axis=0).mean()
-                                     / max(np.linalg.norm(game.rest[g][:3, :3], axis=0).mean(), 1e-9))
+                    # relative to the rest scale, unless the weapon is hidden (scale 0) at rest
+                    rest_scale = np.linalg.norm(game.rest[g][:3, :3], axis=0).mean()
+                    current = np.linalg.norm(world[node][:3, :3], axis=0).mean()
+                    scales[n].append(current / rest_scale if rest_scale > 1e-4 else current)
             for n in names:
                 p = parent_of[n]
                 frames[n].append(_quat_from_matrix(wr[p].T @ wr[n] if p else wr[n]))
