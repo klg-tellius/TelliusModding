@@ -594,8 +594,18 @@ def fit_rig(
             parent_name = carrier
         joints.append((gname, parent_name, position))
         wpos[gname] = position
-        jfollow[gname] = gk if gname in weapon_bones else None
+        # weapon bones, the bones under them (a bow's limbs bend) and anchors turn with their
+        # game bone: the game animates some anchors itself (an archer's _r_hand_ holds the
+        # arrow at its own angle while drawing)
+        jfollow[gname] = gk if in_weapon or is_anchor(gname) else None
         added.add(gname)
+    # weapon bones keep the game's rest orientation: a weapon model or an
+    # arrow drawn at such a bone is turned as on the retail rig (a bow's
+    # BW bones were 90 degrees off with identity rests)
+    rest_rot: dict[str, np.ndarray] = {}
+    for gk, gname in enumerate(game.names):
+        if gname in added and (gname in weapon_bones or any(game.names[a] in weapon_bones for a in game.ancestors(gk))):
+            rest_rot[gname] = _orthonormal(game.rest[gk][:3, :3])
     missing = [n for n in game.names if is_anchor(n) and n not in added]
     if missing:
         warnings.append("Anchors not carried over: " + ", ".join(missing))
@@ -672,12 +682,16 @@ def fit_rig(
                     scales[n].append(current / rest_scale if rest_scale > 1e-4 else current)
             for n in names:
                 p = parent_of[n]
-                frames[n].append(_quat_from_matrix(wr[p].T @ wr[n] if p else wr[n]))
+                o = wr[n] @ rest_rot[n] if n in rest_rot else wr[n]
+                if p:
+                    op = wr[p] @ rest_rot[p] if p in rest_rot else wr[p]
+                    o = op.T @ o
+                frames[n].append(_quat_from_matrix(o))
             for r in roots:
                 g = follow[r]
                 hips[r].append(world[game.joints[g]][:3, 3] - game.rest[g][:3, 3])
         anims.append((anim, times, frames, scales, {mname[r]: np.array(h) for r, h in hips.items()}))
-    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones)
+    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot)
     return FitResult(glb, warnings, dict(mapping))
 
 
@@ -756,7 +770,10 @@ def _pose(game: Rig, tracks, t) -> dict[int, np.ndarray]:
     return _node_worlds(game.nodes, game.node_parent, local)
 
 
-def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones) -> bytes:
+def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot=None) -> bytes:
+    rest_rot = rest_rot or {}
+    eye = np.eye(3)
+    parent_of = {n: p for n, p, _ in joints}
     names = [j[0] for j in joints]
     index = {n: i for i, n in enumerate(names)}
     wpos = {n: p for n, _, p in joints}
@@ -781,6 +798,14 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones) -> by
     nodes = []
     for n, p, pos in joints:
         node = {"name": n, "translation": [float(x) for x in (pos - (wpos[p] if p else 0))]}
+        if n in rest_rot:
+            # translation stays in the parent's frame: the parent's rest rotation is undone
+            local = rest_rot.get(p, eye).T @ rest_rot[n]
+            node["translation"] = [float(x) for x in rest_rot.get(p, eye).T @ (pos - (wpos[p] if p else 0))]
+            node["rotation"] = [float(x) for x in _quat_from_matrix(local)]
+        elif p in rest_rot:
+            node["translation"] = [float(x) for x in rest_rot[p].T @ (pos - wpos[p])]
+            node["rotation"] = [float(x) for x in _quat_from_matrix(rest_rot[p].T)]
         kids = [index[c] for c, pp, _ in joints if pp == n]
         if kids:
             node["children"] = kids
@@ -795,7 +820,9 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones) -> by
             Wt[v, slot] = w / total
     ibm = np.array([np.eye(4) for _ in names], np.float32)
     for i, n in enumerate(names):
-        ibm[i][:3, 3] = -wpos[n]
+        r = rest_rot.get(n, np.eye(3))
+        ibm[i][:3, :3] = r.T
+        ibm[i][:3, 3] = -(r.T @ wpos[n])
     mesh_node = len(nodes)
     nodes.append({"name": "body", "mesh": 0, "skin": 0})
     gl_anims = []
@@ -804,7 +831,7 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones) -> by
         tin = accessor(times.astype(np.float32), 5126, "SCALAR", True)
         for n in names:
             q = np.array(frames[n], np.float32)
-            if np.allclose(np.abs(q[:, 3]), 1.0, atol=1e-6):
+            if n not in rest_rot and parent_of.get(n) not in rest_rot and np.allclose(np.abs(q[:, 3]), 1.0, atol=1e-6):
                 continue
             samplers.append({"input": tin, "output": accessor(q, 5126, "VEC4"), "interpolation": "LINEAR"})
             channels.append({"sampler": len(samplers) - 1, "target": {"node": index[n], "path": "rotation"}})
