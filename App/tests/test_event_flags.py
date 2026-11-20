@@ -173,6 +173,31 @@ class SourceEditTests(unittest.TestCase):
         self.assertIn("already", ef.check_flag_name("other", ["other"]))
         self.assertIn("Shift-JIS", ef.check_flag_name("snow☃", []))
 
+    def test_unused_chapter_flags_are_found_and_freed(self):
+        self.assertEqual(ef.unused_local_flags(CHAPTER), ["boss_talk", "chest_2"])
+        source = ef.remove_unused_local_flags(CHAPTER, ef.unused_local_flags(CHAPTER))
+        self.assertEqual(ef.local_flags(parse(source)), ["chest_1", "reinforcements"])
+        self.assertEqual(source.count(ef.UNUSED_LOCAL_NOTE), 2)
+        self.assertEqual(len(source.splitlines()), len(CHAPTER.splitlines()))  # line numbers kept
+        compile_source(source)
+        self.assertEqual(ef.unused_local_flags(source), [])
+
+    def test_event_labels_and_other_literals_count_as_uses(self):
+        talk = CHAPTER + '\n@on_talk(pid1="PID_IKE", pid2="PID_MIST", flag=1, name="boss_talk")\ndef talk():\n    pass\n'
+        self.assertEqual(ef.unused_local_flags(talk), ["chest_2"])
+        visit = CHAPTER + '\n@on_location(x=1, y=2, action="visit", name="chest_2")\ndef visit():\n    pass\n'
+        self.assertEqual(ef.unused_local_flags(visit), ["boss_talk"])
+
+    def test_a_dynamic_flag_call_disables_the_scan(self):
+        self.assertEqual(ef.unused_local_flags(CHAPTER + "\ndef dyn(a):\n    set(a)\n"), [])
+
+    def test_hub_capacity_error_says_what_to_do(self):
+        from fe_modding import hub
+        self.assertIn("Free unused flags", hub._capacity_hint(CHAPTER, 92, 4))  # needs 1, 2 unused
+        self.assertIn("can free 2 of the 3", hub._capacity_hint(CHAPTER, 94, 4))
+        used = CHAPTER.replace('    regist("boss_talk")\n', "").replace('    regist("chest_2")\n', "")
+        self.assertIn("Every flag of this chapter is used", hub._capacity_hint(used, 94, 2))
+
     def test_reordering_vanilla_globals_warns(self):
         vanilla = "def RegistGlobalFlags():\n" + "".join(
             f'    extern("global", "{name}")\n' for name, _ in ef.VANILLA_GLOBAL_FLAGS)
@@ -221,6 +246,19 @@ class ScriptSourceTests(unittest.TestCase):
         self.assertEqual(again.note, "your saved source")
         self.assertIn("# a comment", again.source)
         self.assertEqual(script_sources.peek(self.project, path), again.source)
+
+    def test_free_unused_flags_in_a_project(self):
+        from fe_modding import flag_cleanup, script_sources
+
+        mess = self.scripts.parent / "Mess"
+        mess.mkdir()
+        (mess / "c05.m").write_bytes(b"")  # the chapter list comes from the dialogue files
+        plan = flag_cleanup.unused_chapter_flags(self.project)
+        self.assertEqual({cid: names for cid, (_path, names) in plan.items()}, {"05": ["boss_talk", "chest_2"]})
+        self.assertEqual(flag_cleanup.free_unused_flags(self.project), {"05": ["boss_talk", "chest_2"]})
+        path = self.scripts / "C05.cmb"
+        self.assertEqual(ef.local_flags(parse(script_sources.peek(self.project, path))), ["chest_1", "reinforcements"])
+        self.assertEqual(flag_cleanup.unused_chapter_flags(self.project), {})
 
     def test_chapter_compile_sees_project_globals_and_helpers(self):
         from fe_modding import script_sources

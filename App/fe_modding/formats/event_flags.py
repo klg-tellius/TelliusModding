@@ -350,8 +350,10 @@ def rename_flag_references(source: str, old: str, new: str) -> str:
     return "".join(lines)
 
 
-def remove_unused_registration(source: str, name: str, entry: str, native: str) -> str:
-    """Remove a standalone unused registration without changing other statements."""
+def remove_unused_registration(source: str, name: str, entry: str, native: str,
+                               note: str = "Extended flag retired; its slot is reserved.") -> str:
+    """Remove a standalone unused registration without changing other statements
+    (the line becomes ``pass  # <note>``)."""
     import re
     from .cmb.parser import parse
     module = parse(source)
@@ -367,8 +369,52 @@ def remove_unused_registration(source: str, name: str, entry: str, native: str) 
     if not re.fullmatch(r'\s*' + re.escape(_call_source(native, name)) + r'\s*(?:#.*)?', line.rstrip("\r\n")):
         raise ValueError("Registration must be a standalone generated statement before deletion")
     indent = line[:len(line) - len(line.lstrip())]
-    lines[index] = indent + "pass  # Extended flag retired; its slot is reserved.\n"
+    lines[index] = indent + f"pass  # {note}\n"
     return "".join(lines)
+
+
+UNUSED_LOCAL_NOTE = "Unused chapter flag removed; its slot is free."
+
+
+def unused_local_flags(source: str) -> list[str]:
+    """Chapter flags ``Startup`` registers that nothing else in the script
+    names: no ``get``/``set``/``clr``, no event label, no other string
+    literal. Conservative: a script with a dynamic flag call (a name that
+    is not a literal) has none, and only standalone ``regist("...")`` lines
+    qualify, so each one can go with :func:`remove_unused_registration`.
+    A vanilla chapter commonly has a few (left over from cut events)."""
+    import re
+    from .cmb.decompiler import quote
+    from .cmb.parser import parse
+
+    module = parse(source)
+    functions = {fd.name for fd in module.functions}
+    for fd in module.functions:
+        for call in _calls(fd.body):
+            if call.name in ("get", "set", "clr", "regist", "global") and \
+                    not (not call.extern and call.name in functions) and \
+                    (not call.args or not isinstance(call.args[0], A.Str)):
+                return []
+    lines = source.splitlines()
+    out = []
+    for site in registration_sites(module, "Startup", "regist"):
+        literal = quote(site.name)
+        if source.count(literal) != 1 or site.name in out:
+            continue
+        line = lines[site.line - 1]
+        if re.fullmatch(r'\s*' + re.escape(_call_source("regist", site.name)) + r'\s*(?:#.*)?', line):
+            out.append(site.name)
+    return out
+
+
+def remove_unused_local_flags(source: str, names: Iterable[str]) -> str:
+    """Remove the registrations of ``names`` (from :func:`unused_local_flags`),
+    freeing their slots. Later chapter flags move up one slot each, so a
+    suspend save made inside this chapter before the change reads them
+    shifted; saves made between chapters are unaffected."""
+    for name in names:
+        source = remove_unused_registration(source, name, "Startup", "regist", UNUSED_LOCAL_NOTE)
+    return source
 
 
 def exported_functions(module: A.Module) -> dict[str, int]:
