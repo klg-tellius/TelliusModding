@@ -105,8 +105,8 @@ TOOL_HELP = {
     "terrain": "Click or drag over tiles to paint the chosen type.\nRight-click a tile to pick its type.",
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
-    "roof": "Drag a rectangle over a room to build a roof there, then place a door inside it or next to it:\n"
-            "the door lifts the roof when it opens.",
+    "roof": "Drag a rectangle over a room whose walls are already built to put a roof on them (only the roof is\n"
+            "made). Then place a door inside it or next to it: the door lifts the roof when it opens.",
     "unit": "Click a tile to add a unit there; the dialog asks for its section (each says what it is for).",
     "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
@@ -746,8 +746,7 @@ class MapBuilder(EditorPanel):
         self._roof_images: dict[str, str] = {}  # "File: name" -> path
         choices = list(roof_kit.PRESETS) + [ROOF_IMAGE_FILE]
         self._roof_vars = {}
-        for key, label, default in (("roof", "Roof texture", roof_kit.ROOF_PRESET),
-                                    ("walls", "Wall texture", roof_kit.WALL_PRESET)):
+        for key, label, default in (("roof", "Roof texture", roof_kit.ROOF_PRESET),):
             ttk.Label(frame, text=label).pack(anchor="w", pady=(6, 0))
             var = tk.StringVar(value=default)
             box = ttk.Combobox(frame, textvariable=var, values=choices, state="readonly", width=30)
@@ -761,7 +760,9 @@ class MapBuilder(EditorPanel):
         ttk.Combobox(row, textvariable=self._roof_style, values=["Gable", "Flat"], state="readonly",
                      width=8).pack(side="left", padx=(6, 0))
         for label, attr, default, hint in (
-                ("Wall height", "_roof_wall_height", "5", "Map units (5 = one tile). Vanilla rooms are 5 to 7 high."),
+                ("Wall height", "_roof_wall_height", "5",
+                 "Height of the room's existing walls, where the roof rests. Map units (5 = one tile); "
+                 "vanilla rooms are 5 to 7 high."),
                 ("Ridge rise", "_roof_rise", "2.5", "How far a gable's ridge rises above the walls.")):
             row = ttk.Frame(frame)
             row.pack(anchor="w", fill="x", pady=(4, 0))
@@ -769,9 +770,6 @@ class MapBuilder(EditorPanel):
             var = tk.StringVar(value=default)
             ttk.Spinbox(row, textvariable=var, from_=0, to=40, increment=0.5, width=6).pack(side="left", padx=(6, 0))
             setattr(self, attr, var)
-        self._roof_walls = tk.BooleanVar(value=True)
-        tip(ttk.Checkbutton(frame, text="Walls down to the ground", variable=self._roof_walls),
-            "Untick when the map already has walls round the room: only the roof is built.").pack(anchor="w", pady=(4, 0))
         self._tool_frames["roof"] = frame
 
     def _roof_texture_chosen(self, var: tk.StringVar, box: ttk.Combobox, default: str) -> None:
@@ -806,9 +804,9 @@ class MapBuilder(EditorPanel):
         x0, y0, x1, y1 = rect
         try:
             spec = roof_kit.RoofSpec(
-                x1 - x0 + 1, y1 - y0 + 1, self._roof_image("roof"), self._roof_image("walls"),
+                x1 - x0 + 1, y1 - y0 + 1, self._roof_image("roof"),
                 style=self._roof_style.get().lower(), wall_height=float(self._roof_wall_height.get()),
-                rise=float(self._roof_rise.get()), walls=self._roof_walls.get())
+                rise=float(self._roof_rise.get()))
             roof_kit.check_spec(spec)
         except (ValueError, OSError, KeyError, map_file.MapFileError) as exc:
             messagebox.showerror("Add roof", str(exc), parent=self)

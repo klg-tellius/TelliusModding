@@ -31,9 +31,9 @@ First stable release.
 - Path of Radiance doors and building roofs placed with the Map Builder work as in the
   retail game: a closed door blocks its tile, a roof hides its room and lifts when a door
   in or next to it opens. The editor fills the roof layer the game reads for them.
-- Map Builder: new **Add roof** tool. Drag a rectangle of tiles, pick roof and wall
-  textures (built-in presets or an image file) and a gable or flat shape: the roof model
-  is generated and placed as a working building roof.
+- Map Builder: new **Add roof** tool. Drag a rectangle over a room whose walls are already
+  built, pick a texture (built-in presets or an image file) and a gable or flat shape: a
+  roof model is generated on top of the walls and placed as a working building roof.
 
 ## v0.2.0 (2026-11-15)
 

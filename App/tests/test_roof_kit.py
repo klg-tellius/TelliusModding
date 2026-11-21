@@ -7,15 +7,15 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fe_modding import map_props, roof_kit
-from fe_modding.formats import map_file, pak, tpl
 from test_map_heights import _map_bin
 from test_map_props import _roof_corners, _roof_terrain, _terrain
 
+from fe_modding import roof_kit
+from fe_modding.formats import map_file, pak, tpl
+
 
 def _spec(width=3, depth=2, **kw):
-    return roof_kit.RoofSpec(width, depth, roof_kit.preset_image(roof_kit.ROOF_PRESET),
-                             roof_kit.preset_image(roof_kit.WALL_PRESET), **kw)
+    return roof_kit.RoofSpec(width, depth, roof_kit.preset_image(roof_kit.ROOF_PRESET), **kw)
 
 
 def _files(size=5):
@@ -32,17 +32,15 @@ class RoofKitTests(unittest.TestCase):
         for name in roof_kit.PRESETS:
             self.assertEqual(roof_kit.preset_image(name).size, (64, 64), name)
 
-    def test_gable_geometry_fills_the_rectangle(self):
+    def test_only_the_roof_is_built_on_top_of_the_walls(self):
         spec = _spec(4, 2)
-        parts = roof_kit.roof_triangles(spec)
-        self.assertEqual(set(parts), {"roof", "walls"})
-        points = [p for tris in parts.values() for tri, _uv in tris for p in tri]
+        points = [p for tri, _uv in roof_kit.roof_triangles(spec) for p in tri]
         xs, ys, zs = zip(*points)
         self.assertEqual((min(xs), max(xs), min(zs), max(zs)), (0.0, 20.0, 0.0, 10.0))
         self.assertAlmostEqual(max(ys), spec.top)
-        self.assertEqual(min(ys), 0.0)
+        self.assertEqual(min(ys), spec.wall_height)  # no walls: nothing below the eaves
         flat = roof_kit.roof_triangles(_spec(4, 2, style="flat"))
-        self.assertTrue(all(p[1] == spec.wall_height for tri, _uv in flat["roof"] for p in tri))
+        self.assertTrue(all(p[1] == spec.wall_height for tri, _uv in flat for p in tri))
         self.assertTrue(roof_kit.roof_glb(spec).startswith(b"glTF"))
 
     def test_check_spec_rejects_unusable_roofs(self):
