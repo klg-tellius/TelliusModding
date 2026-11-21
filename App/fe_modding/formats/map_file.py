@@ -666,6 +666,8 @@ class MapExtra:
 MAP_EXTRA_SIGHT_MASK = 0x000C0000
 MAP_EXTRA_WEATHER_MASK = 0x01F00000
 MAP_EXTRA_OBJECT_ORDER_MASK = 0x20000000
+#: Footprint tests: the engine applies closed doors' roof-layer terrain only when this bit is set.
+MAP_EXTRA_FOOTPRINT_MASK = 0x10000000
 #: Largest weather id a Radiant Dawn story map uses (bmap0308); the field holds up to 31.
 RD_WEATHER_MAX = 21
 
@@ -1777,6 +1779,106 @@ def add_build_object(data: bytes, obj: MapObject) -> tuple[bytes, int]:
     payload, fields = _desc_payload(data, [*parsed.build_desc, obj], [*pointers, name_pointer])
     data = replace_section(data, "mapbuilddesc", payload, fields)
     return _set_counts(data, len(parsed.build_desc) + 1, len(parsed.build_inst)), len(parsed.build_desc)
+
+
+
+# -- doors ----------------------------------------------------------------------------
+
+#: ``mapbuilddesc`` flag_bits_c bit of an openable door model.
+DOOR_OBJECT_FLAG = 0x10
+#: The terrain a closed door gives its tiles (``TerrainData`` index 28, cost 255 for every unit).
+DOOR_TERRAIN = "扉"
+#: Roof-layer terrains vanilla puts under door models (17 tiles 扉, one castle gate 城門).
+CLOSED_DOOR_TERRAINS = frozenset({"扉", "城門"})
+
+
+def door_tiles(data: "MapData") -> set[tuple[int, int]]:
+    """Tiles covered by placed door models (``DOOR_OBJECT_FLAG``), clipped to the map."""
+    width, height = data.capacity.x_size, data.capacity.y_size
+    tiles = set()
+    for inst in data.build_inst:
+        if not 0 <= inst.desc_index < len(data.build_desc):
+            continue
+        if not data.build_desc[inst.desc_index].flag_bits_c & DOOR_OBJECT_FLAG:
+            continue
+        for x in range(max(inst.x2, 0), min(inst.end_x2, width - 1) + 1):
+            for y in range(max(inst.y2, 0), min(inst.end_y2, height - 1) + 1):
+                tiles.add((x, y))
+    return tiles
+
+
+def door_warnings(data: "MapData") -> list[str]:
+    """Why this map's door models would not block movement in game, whatever their terrain."""
+    if data.layout.game == "fe10" or data.capacity is None or not door_tiles(data):
+        return []
+    if data.panel_index_roof is None:
+        return ["This map has no roof layer (panelindexRoof), so its doors cannot block movement."]
+    if data.extra is not None and not data.extra.unknown_tail & MAP_EXTRA_FOOTPRINT_MASK:
+        return ["mapextra bit 0x10000000 is clear: the game ignores this map's doors, which stay passable."]
+    return []
+
+
+def sync_door_terrain(data: bytes) -> tuple[bytes, list[str]]:
+    """Make the map's door models block movement while closed, as vanilla doors do.
+
+    How the game decides (US ``main.dol`` ``0x80044450``, which rebuilds the terrain grid on
+    load and whenever an object opens or closes): every tile first takes the terrain of the
+    combined ``uniquepanel`` layer; then, when mapextra bit ``0x10000000`` is set, every tile
+    of a door, roof or house object that is still closed takes the terrain of the
+    ``uniquepanelRoof`` layer instead. ``DoorOpen`` only changes the object's state and
+    reruns that pass, so the tile goes back to the combined layer's terrain. Every vanilla
+    door tile (18 in the US maps) is floor or plain in the combined layer and 扉 or 城門 in
+    the roof layer, with the same corner elevations in both.
+
+    This gives every door tile whose roof terrain is not a closed-door terrain a roof record
+    with the combined layer's corners and 扉, and gives back the combined record to roof
+    tiles left with a closed-door terrain by a door that was moved or removed (a tile that
+    is 扉 in the combined layer too is a permanent door terrain and is kept). Path of
+    Radiance only: Radiant Dawn maps are returned unchanged. Returns the new map.bin and
+    warnings about what the engine still needs."""
+    parsed = read_map_bytes(data)
+    if parsed.layout.game == "fe10" or parsed.capacity is None or parsed.panel_index is None:
+        return data, []
+    doors = door_tiles(parsed)
+    warnings = door_warnings(parsed)
+    if parsed.panel_index_roof is None:
+        return data, warnings
+
+    def name(panel: UniquePanel) -> str:
+        return pointer_string(data, panel.terrain_type_ptr)
+
+    def corners(panel: UniquePanel) -> tuple[int, int, int, int]:
+        return (panel.top_left_elevation, panel.top_right_elevation,
+                panel.bottom_left_elevation, panel.bottom_right_elevation)
+
+    width, height = parsed.capacity.x_size, parsed.capacity.y_size
+    changes = {}
+    for x in range(width):
+        for y in range(height):
+            roof = parsed.unique_panel_roof[parsed.panel_index_roof[x][y]]
+            combined = parsed.unique_panel[parsed.panel_index[x][y]]
+            if (x, y) in doors:
+                if name(roof) not in CLOSED_DOOR_TERRAINS:
+                    changes[(x, y)] = (corners(combined), DOOR_TERRAIN)
+            elif name(roof) in CLOSED_DOOR_TERRAINS and name(combined) not in CLOSED_DOOR_TERRAINS:
+                changes[(x, y)] = (corners(combined), name(combined))
+    if not changes:
+        return data, warnings
+    pointers = {}
+    for _corners, terrain in changes.values():
+        if terrain not in pointers:
+            data, pointers[terrain] = add_pool_string(data, terrain)
+    parsed = read_map_bytes(data)
+    records = [corners(p) + (p.terrain_type_ptr,) for p in parsed.unique_panel_roof]
+    index_of = {r: i for i, r in reversed(list(enumerate(records)))}
+    grid = [list(column) for column in parsed.panel_index_roof]
+    for (x, y), (tile_corners, terrain) in changes.items():
+        record = tile_corners + (pointers[terrain],)
+        if record not in index_of:
+            index_of[record] = len(records)
+            records.append(record)
+        grid[x][y] = index_of[record]
+    return write_panel_layer(data, "panelindexRoof", "uniquepanelRoof", grid, records), warnings
 
 
 def footprint_tiles(obj: MapObject) -> tuple[int, int]:

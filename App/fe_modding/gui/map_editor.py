@@ -180,6 +180,13 @@ class MapEditor(EditorPanel):
         """Set ``tiles`` to terrain type ``name``; returns how many changed."""
         grid = self._terrain_grid
         changed = {tile: name for tile in tiles if grid is not None and grid[tile[0]][tile[1]] != name}
+        if name in map_file.CLOSED_DOOR_TERRAINS and self._map_data is not None:
+            doors = sorted(set(changed) & map_file.door_tiles(self._map_data))
+            if doors:
+                raise map_file.MapFileError(
+                    f"{doors[0]} holds a door model. A closed door already blocks its tiles with the roof layer's "
+                    f"{map_file.DOOR_TERRAIN}; painting {name} here would block the tile once the door opens instead. "
+                    "Paint the floor here and keep the door model.")
         if changed:
             self._pak_contents[self._map_bin_name] = map_file.set_tile_terrains(self._pak_contents[self._map_bin_name], changed)
             self._changed(f"Set {len(changed)} tiles to {self.terrain_label(name)} ({name})")

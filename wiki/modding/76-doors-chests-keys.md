@@ -43,6 +43,8 @@ A door or a chest is three things that must agree on one tile:
 
 A door's code is `DoorOpen(EventGetX(), EventGetY())` followed by `set("<name>")`; retail doors also set a story flag for what is behind them (`set("扉セフェラン")`). The visible door or chest is a map prop; the event opens it.
 
+A door blocks movement through two terrain layers, not one. While the door is closed, the game gives its tiles the terrain of the map's **roof** layer; once `DoorOpen` runs, they take the terrain of the main layer again. Retail doors are *Door (扉)* in the roof layer and floor in the main layer. Placing, moving, turning or deleting a door prop in the Map Builder keeps the roof layer in step: its tiles get *Door (扉)* there and keep their floor in the main layer. Do not paint *Door (扉)* on a door prop's tile in the main layer: the door would let units through while closed and block them once open, so the editor refuses it. The map also needs its *mapextra* footprint bit (`0x10000000`, set on every retail map with a door); the Map Builder warns when it is missing.
+
 Who can open them:
 
 | Unit | Doors | Chests |

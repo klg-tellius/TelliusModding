@@ -1466,6 +1466,9 @@ class MapBuilder(EditorPanel):
 
         if not self._edit_map(edit, log_text):
             return False
+        door_warnings = map_file.door_warnings(self._map.map_data) if self._map.map_data is not None else []
+        if door_warnings:
+            messagebox.showwarning("Doors", "\n".join(door_warnings), parent=self)
         if old_rock is not None and source is not None:
             new_data = self._map.map_data
             new_index = out.get("index")

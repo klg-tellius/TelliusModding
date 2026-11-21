@@ -255,5 +255,70 @@ class DiscAnimatedPropTests(unittest.TestCase):
 
 
 
+def _door_map(footprint_bit=True):
+    """A 3x3 map with a roof layer whose ``tree`` object is an openable door model."""
+    data = _map_bin(width=3, height=3, roof_elevations=[0])
+    parsed = map_file.read_map_bytes(data)
+    data = map_file.patch_object_field(data, parsed.build_desc[1], "flag_bits_c", 0x13)
+    if footprint_bit:
+        data = map_file.patch_extra_field(data, parsed.extra, "unknown_tail", map_file.MAP_EXTRA_FOOTPRINT_MASK)
+    return {"map.bin": data}
+
+
+def _roof_terrain(files, x, y):
+    parsed = map_file.read_map_bytes(files["map.bin"])
+    return map_file.pointer_string(files["map.bin"], parsed.unique_panel_roof[parsed.panel_index_roof[x][y]].terrain_type_ptr)
+
+
+def _terrain(files, x, y):
+    return map_file.terrain_grid(files["map.bin"])[x][y]
+
+
+class DoorTerrainTests(unittest.TestCase):
+    """A closed door blocks its tiles through the roof layer's terrain (main.dol 0x80044450)."""
+
+    def test_placed_door_gets_roof_door_terrain_and_keeps_its_floor(self):
+        files = _door_map()
+        self.assertEqual(_roof_terrain(files, 0, 0), "plain")  # the map's own door, never synced
+        index = map_props.place_prop(files, "tree", 2, 1)
+        self.assertEqual((_roof_terrain(files, 2, 1), _roof_terrain(files, 0, 0)), ("扉", "扉"))
+        self.assertEqual(_terrain(files, 2, 1), "plain")  # combined layer: what the open door leaves
+        self.assertEqual(_roof_terrain(files, 1, 1), "plain")
+        parsed = map_file.read_map_bytes(files["map.bin"])
+        roof = parsed.unique_panel_roof[parsed.panel_index_roof[2][1]]
+        combined = parsed.unique_panel[parsed.panel_index[2][1]]
+        self.assertEqual((roof.top_left_elevation, roof.bottom_right_elevation),
+                         (combined.top_left_elevation, combined.bottom_right_elevation))
+        self.assertEqual(map_file.door_warnings(parsed), [])
+
+        map_props.move_instance(files, index, 1, 2)
+        self.assertEqual((_roof_terrain(files, 2, 1), _roof_terrain(files, 1, 2)), ("plain", "扉"))
+        map_props.remove_instance(files, index)
+        self.assertEqual(_roof_terrain(files, 1, 2), "plain")
+
+    def test_sync_is_stable_and_keeps_permanent_door_terrain(self):
+        files = _door_map()
+        before = files["map.bin"] = map_file.sync_door_terrain(files["map.bin"])[0]
+        self.assertEqual(map_file.sync_door_terrain(before), (before, []))
+        # 扉 in both layers without a door model is a permanent door tile: left alone
+        files["map.bin"] = map_file.set_tile_terrains(files["map.bin"], {(2, 2): "扉"})
+        parsed = map_file.read_map_bytes(files["map.bin"])
+        grid = [list(c) for c in parsed.panel_index_roof]
+        records = [(p.top_left_elevation, p.top_right_elevation, p.bottom_left_elevation, p.bottom_right_elevation,
+                    p.terrain_type_ptr) for p in parsed.unique_panel_roof]
+        grid[2][2] = grid[0][0]
+        files["map.bin"] = map_file.write_panel_layer(files["map.bin"], "panelindexRoof", "uniquepanelRoof", grid, records)
+        map_props.sync_doors(files)
+        self.assertEqual((_terrain(files, 2, 2), _roof_terrain(files, 2, 2)), ("扉", "扉"))
+
+    def test_warns_when_the_game_would_ignore_doors(self):
+        files = _door_map(footprint_bit=False)
+        self.assertIn("0x10000000", " ".join(map_props.sync_doors(files)))
+        no_roof = {"map.bin": _map_bin(width=3, height=3)}
+        parsed = map_file.read_map_bytes(no_roof["map.bin"])
+        no_roof["map.bin"] = map_file.patch_object_field(no_roof["map.bin"], parsed.build_desc[1], "flag_bits_c", 0x13)
+        self.assertIn("roof layer", " ".join(map_props.sync_doors(no_roof)))
+
+
 if __name__ == "__main__":
     unittest.main()
