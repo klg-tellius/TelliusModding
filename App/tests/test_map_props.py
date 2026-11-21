@@ -255,9 +255,9 @@ class DiscAnimatedPropTests(unittest.TestCase):
 
 
 
-def _door_map(footprint_bit=True):
+def _door_map(footprint_bit=True, size=3):
     """A 3x3 map with a roof layer whose ``tree`` object is an openable door model."""
-    data = _map_bin(width=3, height=3, roof_elevations=[0])
+    data = _map_bin(width=size, height=size, roof_elevations=[0])
     parsed = map_file.read_map_bytes(data)
     data = map_file.patch_object_field(data, parsed.build_desc[1], "flag_bits_c", 0x13)
     if footprint_bit:
@@ -318,6 +318,63 @@ class DoorTerrainTests(unittest.TestCase):
         parsed = map_file.read_map_bytes(no_roof["map.bin"])
         no_roof["map.bin"] = map_file.patch_object_field(no_roof["map.bin"], parsed.build_desc[1], "flag_bits_c", 0x13)
         self.assertIn("roof layer", " ".join(map_props.sync_doors(no_roof)))
+
+
+def _roof_map():
+    """A 4x4 map: object ``flat`` is the terrain, ``tree`` becomes a 3x2 building roof 6
+    units tall on (0, 0) and ``door`` an openable door model."""
+    files = _door_map(size=4)
+    data = files["map.bin"]
+    for field, value in (("flag_bits_c", 0x08), ("effect_type", 0x09), ("size_x", 15.0), ("size_y", 6.0), ("size_z", 10.0)):
+        data = map_file.patch_object_field(data, map_file.read_map_bytes(data).build_desc[1], field, value)
+    data, _index = map_file.add_build_object(data, map_file.MapObject(0, 0, 0, 5, 5, 3, 0, 0, 0x13, 0, "door"))
+    # the map's tree instance on (0, 0): give it the roof's footprint
+    records = map_file.instance_records(data)
+    records[1] = map_file.instance_record(map_file.read_map_bytes(data).build_desc[1], 1, 0, 0, 0, 0.0)
+    files["map.bin"] = map_file.set_build_instances(data, records)
+    return files
+
+
+def _roof_corners(files, x, y):
+    parsed = map_file.read_map_bytes(files["map.bin"])
+    return parsed.unique_panel_roof[parsed.panel_index_roof[x][y]].top_left_elevation
+
+
+class RoofTerrainTests(unittest.TestCase):
+    """A closed building roof gives its tiles the roof layer; a door in or next to it lifts it."""
+
+    def test_roof_fills_the_roof_layer_and_keeps_the_floor(self):
+        files = _roof_map()
+        parsed = map_file.read_map_bytes(files["map.bin"])
+        self.assertEqual(map_file.roof_instances(parsed), [1])
+        self.assertTrue(any("touches no door" in w for w in map_file.door_warnings(parsed)))
+        map_props.place_prop(files, "door", 1, 2)  # just below the roof's 3x2 footprint
+        for tile in [(0, 0), (2, 1)]:
+            self.assertEqual(_roof_terrain(files, *tile), "屋根")
+            self.assertEqual(_roof_corners(files, *tile), -2400)  # 6 units above the ground
+            self.assertEqual(_terrain(files, *tile), "plain")    # the room the opened roof shows
+        self.assertEqual(_roof_terrain(files, 1, 2), "扉")
+        self.assertEqual(_roof_terrain(files, 3, 3), "plain")
+        self.assertEqual(map_file.door_warnings(map_file.read_map_bytes(files["map.bin"])), [])
+
+    def test_walls_stay_and_a_moved_roof_gives_its_tiles_back(self):
+        files = _roof_map()
+        files["map.bin"] = map_file.set_tile_terrains(files["map.bin"], {(1, 0): "壁"})
+        map_props.sync_doors(files)
+        self.assertEqual((_roof_terrain(files, 0, 0), _roof_terrain(files, 1, 0)), ("屋根", "壁"))
+        map_props.move_instance(files, 1, 1, 2)
+        self.assertEqual(_roof_terrain(files, 0, 0), "plain")
+        self.assertEqual(_roof_terrain(files, 2, 3), "屋根")
+
+    def test_deduced_heights_keep_the_roof_up_and_the_floor_down(self):
+        from fe_modding import map_heights
+        files = _roof_map()
+        map_props.sync_doors(files)
+        data = map_file.read_map_bytes(files["map.bin"])
+        corners = map_heights.deduce_corners(files, data, [(0, 0), (3, 3)])
+        self.assertEqual(corners[(0, 0)]["roof"], (-2400,) * 4)
+        self.assertEqual(corners[(0, 0)]["combined"], (0,) * 4)
+        self.assertEqual(corners[(3, 3)]["roof"], corners[(3, 3)]["combined"])
 
 
 if __name__ == "__main__":

@@ -28,8 +28,9 @@ First stable release.
 - The app shows its version in the window title, on the start screen and in Help >
   About; Tellius Patcher shows it in its title.
 - The code is released under the MIT License.
-- Path of Radiance door props placed with the Map Builder block movement while closed:
-  the editor fills the roof layer the game reads for closed doors.
+- Path of Radiance doors and building roofs placed with the Map Builder work as in the
+  retail game: a closed door blocks its tile, a roof hides its room and lifts when a door
+  in or next to it opens. The editor fills the roof layer the game reads for them.
 
 ## v0.2.0 (2026-11-15)
 

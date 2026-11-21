@@ -45,6 +45,8 @@ A door's code is `DoorOpen(EventGetX(), EventGetY())` followed by `set("<name>")
 
 A door blocks movement through two terrain layers, not one. While the door is closed, the game gives its tiles the terrain of the map's **roof** layer; once `DoorOpen` runs, they take the terrain of the main layer again. Retail doors are *Door (扉)* in the roof layer and floor in the main layer. Placing, moving, turning or deleting a door prop in the Map Builder keeps the roof layer in step: its tiles get *Door (扉)* there and keep their floor in the main layer. Do not paint *Door (扉)* on a door prop's tile in the main layer: the door would let units through while closed and block them once open, so the editor refuses it. The map also needs its *mapextra* footprint bit (`0x10000000`, set on every retail map with a door); the Map Builder warns when it is missing.
 
+Building roofs work the same way, as on the mansion map (`bmap17`): a roof prop (flag byte c `0x08`, like `mansionroof_selinos_05` or `castleroof_dayne_01`) gives its tiles the roof layer while it is closed, *Roof (屋根)* at the top of the roof, which only fliers cross. When a door inside its tiles or next to them opens, the game lifts the roof by itself, with no `RoofOpen` in the script, and the tiles show the room: floor, chests and stairs from the main layer. Copy a roof from bmap17, bmap22 or bmap28 with **Add from another map...**, place it over the room, then place the door. The Map Builder fills the roof layer under it (walls stay walls, the door stays *Door*), keeps the room's floor in the main layer, and warns when no door touches the roof, since only a script `RoofOpen` could lift it then.
+
 Who can open them:
 
 | Unit | Doors | Chests |

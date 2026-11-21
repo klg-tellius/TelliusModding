@@ -1682,8 +1682,10 @@ def pointer_string(data: bytes, pointer: int) -> str:
 
 def terrain_grid(data: bytes) -> Optional[Grid]:
     """Each tile's terrain-type name (``[x][y]``), from the combined
-    ``uniquepanel`` layer - the layer the game takes a tile's terrain from.
-    The ground layer's names describe the ground under objects."""
+    ``uniquepanel`` layer - the layer the game takes a tile's terrain from,
+    except under closed doors and roofs, which take the roof layer's
+    (see ``sync_door_terrain``). The ground layer's names describe the
+    ground under objects."""
     parsed = read_map_bytes(data)
     if parsed.capacity is None or parsed.panel_index is None:
         return None
@@ -1782,67 +1784,135 @@ def add_build_object(data: bytes, obj: MapObject) -> tuple[bytes, int]:
 
 
 
-# -- doors ----------------------------------------------------------------------------
+# -- doors and roofs ----------------------------------------------------------------
+#
+# How the game blocks closed doors and roofs (US ``main.dol``):
+# - ``0x80044450`` rebuilds the terrain grid on load and whenever an object opens or closes.
+#   Every tile first takes the terrain of the combined ``uniquepanel`` layer. Then, when
+#   mapextra bit ``0x10000000`` is set, every footprint tile (``x2..end_x2``, ``y2..end_y2``)
+#   of a still-closed object (state & 3 == 0) whose flag word has ``0x1000`` (flag byte c
+#   0x10, door) or ``0x800`` (flag byte c 0x08) and not ``0x10`` (effect byte 0x10) takes
+#   the terrain of the ``uniquepanelRoof`` layer instead.
+# - ``DoorOpen`` / ``InstantDoorOpen`` (``0x8019f4a8`` / ``0x8019f7cc``) open the door object,
+#   then look for flag-0x800 objects whose footprint holds the door tile, or failing that a
+#   tile next to it (``0x80046f14``), open them too, and rerun the terrain pass. That is how
+#   a mansion roof lifts with its door without any ``RoofOpen`` in the script.
 
-#: ``mapbuilddesc`` flag_bits_c bit of an openable door model.
+#: ``mapbuilddesc`` flag_bits_c bit of an openable door model (runtime flag 0x1000).
 DOOR_OBJECT_FLAG = 0x10
+#: flag_bits_c bit of objects that use the roof layer while closed (runtime flag 0x800).
+ROOF_OBJECT_FLAG = 0x08
 #: The terrain a closed door gives its tiles (``TerrainData`` index 28, cost 255 for every unit).
 DOOR_TERRAIN = "扉"
 #: Roof-layer terrains vanilla puts under door models (17 tiles 扉, one castle gate 城門).
 CLOSED_DOOR_TERRAINS = frozenset({"扉", "城門"})
+#: The terrain of a closed roof (only fliers cross it).
+ROOF_TERRAIN = "屋根"
+#: Main-layer terrains a roof leaves as they are in the roof layer: vanilla keeps the walls
+#: inside a roof's footprint as walls at their own height.
+ROOF_KEEPS = frozenset({"壁", "移動不可"})
+#: A building roof is at least this tall (map units) and covers at least this many tiles;
+#: smaller flag-0x08 objects are rocks, pit covers or ship gangways.
+ROOF_MIN_HEIGHT = 5.0
+ROOF_MIN_TILES = 4
+
+
+def clipped_footprint(data: "MapData", inst: "MapBuildInstance") -> list[tuple[int, int]]:
+    """The tiles an instance covers (``x2..end_x2``, ``y2..end_y2``), clipped to the map."""
+    width, height = data.capacity.x_size, data.capacity.y_size
+    return [(x, y) for x in range(max(inst.x2, 0), min(inst.end_x2, width - 1) + 1)
+            for y in range(max(inst.y2, 0), min(inst.end_y2, height - 1) + 1)]
 
 
 def door_tiles(data: "MapData") -> set[tuple[int, int]]:
     """Tiles covered by placed door models (``DOOR_OBJECT_FLAG``), clipped to the map."""
-    width, height = data.capacity.x_size, data.capacity.y_size
     tiles = set()
     for inst in data.build_inst:
-        if not 0 <= inst.desc_index < len(data.build_desc):
-            continue
-        if not data.build_desc[inst.desc_index].flag_bits_c & DOOR_OBJECT_FLAG:
-            continue
-        for x in range(max(inst.x2, 0), min(inst.end_x2, width - 1) + 1):
-            for y in range(max(inst.y2, 0), min(inst.end_y2, height - 1) + 1):
-                tiles.add((x, y))
+        if 0 <= inst.desc_index < len(data.build_desc) and data.build_desc[inst.desc_index].flag_bits_c & DOOR_OBJECT_FLAG:
+            tiles.update(clipped_footprint(data, inst))
     return tiles
 
 
+def is_roof_object(obj: MapObject) -> bool:
+    """A building roof that lifts with its door: flag byte c 0x08 without the door, wall,
+    thicket or ballista bits (0x10/0x20/0x40/0x80; most houses carry 0x20), with effect bit
+    0x08 (every vanilla roof; Gallia's houses, flag c 0x0B, have effect 0x01) and not effect
+    bit 0x10 (which the engine excludes), at least ``ROOF_MIN_HEIGHT`` tall and ``ROOF_MIN_TILES`` tiles wide. Every
+    vanilla mansion and castle roof (bmap17, bmap22, bmap28) qualifies."""
+    if (obj.flag_bits_c & 0xF8) != ROOF_OBJECT_FLAG or (obj.effect_type & 0x18) != 0x08:
+        return False
+    if obj.size_y < ROOF_MIN_HEIGHT or obj.flag_bits_a & 0xC0:
+        return False
+    across, along = footprint_tiles(obj)
+    return across * along >= ROOF_MIN_TILES
+
+
+def roof_elevation(obj: MapObject, inst: "MapBuildInstance") -> int:
+    """The roof layer's corner elevation over a roof: the top of its bounding box above the
+    placement height (bmap17's roofs: 5 + 6.28 units = -4513, as stored)."""
+    top = -5.0 * inst.height() + obj.size_y
+    return max(-32768, min(32767, round(top * -400.0)))
+
+
+def roof_instances(data: "MapData") -> list[int]:
+    return [i for i, inst in enumerate(data.build_inst)
+            if 0 <= inst.desc_index < len(data.build_desc) and is_roof_object(data.build_desc[inst.desc_index])]
+
+
 def door_warnings(data: "MapData") -> list[str]:
-    """Why this map's door models would not block movement in game, whatever their terrain."""
-    if data.layout.game == "fe10" or data.capacity is None or not door_tiles(data):
+    """Why this map's doors and roofs would not work in game, whatever their terrain."""
+    if data.layout.game == "fe10" or data.capacity is None:
+        return []
+    doors = door_tiles(data)
+    roofs = roof_instances(data)
+    if not doors and not roofs:
         return []
     if data.panel_index_roof is None:
-        return ["This map has no roof layer (panelindexRoof), so its doors cannot block movement."]
+        return ["This map has no roof layer (panelindexRoof), so its doors and roofs cannot block movement."]
+    warnings = []
     if data.extra is not None and not data.extra.unknown_tail & MAP_EXTRA_FOOTPRINT_MASK:
-        return ["mapextra bit 0x10000000 is clear: the game ignores this map's doors, which stay passable."]
-    return []
+        warnings.append("mapextra bit 0x10000000 is clear: the game ignores this map's doors and roofs.")
+    for index in roofs:
+        inst = data.build_inst[index]
+        near = {(x + dx, y + dy) for x, y in clipped_footprint(data, inst)
+                for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))}
+        if not near & doors:
+            name = data.build_desc[inst.desc_index].filename
+            warnings.append(f"Roof {name} on ({inst.x}, {inst.y}) touches no door: only a script "
+                            "RoofOpen can lift it (a door inside its tiles or next to them lifts it on opening).")
+    return warnings
 
 
 def sync_door_terrain(data: bytes) -> tuple[bytes, list[str]]:
-    """Make the map's door models block movement while closed, as vanilla doors do.
+    """Fill the roof layer the way vanilla does under doors and building roofs, so a closed
+    door blocks its tile and a closed roof hides its room (see the notes above).
 
-    How the game decides (US ``main.dol`` ``0x80044450``, which rebuilds the terrain grid on
-    load and whenever an object opens or closes): every tile first takes the terrain of the
-    combined ``uniquepanel`` layer; then, when mapextra bit ``0x10000000`` is set, every tile
-    of a door, roof or house object that is still closed takes the terrain of the
-    ``uniquepanelRoof`` layer instead. ``DoorOpen`` only changes the object's state and
-    reruns that pass, so the tile goes back to the combined layer's terrain. Every vanilla
-    door tile (18 in the US maps) is floor or plain in the combined layer and 扉 or 城門 in
-    the roof layer, with the same corner elevations in both.
+    - Door tiles (``DOOR_OBJECT_FLAG``) whose roof terrain is not 扉 or 城門 get 扉 with the
+      combined layer's corners. Vanilla's 18 door tiles are 扉 or 城門 there and floor or
+      plain in the combined layer, with the same corners.
+    - Other tiles under a roof (:func:`is_roof_object`) whose roof record still copies the
+      combined one (a new or blank map) get 屋根 at :func:`roof_elevation`, except walls (``ROOF_KEEPS``), which keep the combined
+      record, as vanilla does. The room's floor, chests and stairs stay in the combined layer:
+      that is what the opened roof shows.
+    - Roof-layer tiles left with 扉, 城門 or 屋根 by a door or roof that was moved or removed
+      get the combined record back; a tile with the same terrain in both layers is a permanent
+      one and is kept.
 
-    This gives every door tile whose roof terrain is not a closed-door terrain a roof record
-    with the combined layer's corners and 扉, and gives back the combined record to roof
-    tiles left with a closed-door terrain by a door that was moved or removed (a tile that
-    is 扉 in the combined layer too is a permanent door terrain and is kept). Path of
-    Radiance only: Radiant Dawn maps are returned unchanged. Returns the new map.bin and
-    warnings about what the engine still needs."""
+    Path of Radiance only: Radiant Dawn maps are returned unchanged. Every staged US retail
+    map comes back byte for byte. Returns the new map.bin and :func:`door_warnings`."""
     parsed = read_map_bytes(data)
     if parsed.layout.game == "fe10" or parsed.capacity is None or parsed.panel_index is None:
         return data, []
-    doors = door_tiles(parsed)
     warnings = door_warnings(parsed)
     if parsed.panel_index_roof is None:
         return data, warnings
+    doors = door_tiles(parsed)
+    roofed = {}
+    for index in roof_instances(parsed):
+        inst = parsed.build_inst[index]
+        elevation = roof_elevation(parsed.build_desc[inst.desc_index], inst)
+        for tile in clipped_footprint(parsed, inst):
+            roofed[tile] = min(elevation, roofed.get(tile, elevation))  # the highest roof wins
 
     def name(panel: UniquePanel) -> str:
         return pointer_string(data, panel.terrain_type_ptr)
@@ -1851,17 +1921,28 @@ def sync_door_terrain(data: bytes) -> tuple[bytes, list[str]]:
         return (panel.top_left_elevation, panel.top_right_elevation,
                 panel.bottom_left_elevation, panel.bottom_right_elevation)
 
-    width, height = parsed.capacity.x_size, parsed.capacity.y_size
+    placed_terrains = CLOSED_DOOR_TERRAINS | {ROOF_TERRAIN}
     changes = {}
-    for x in range(width):
-        for y in range(height):
+    for x in range(parsed.capacity.x_size):
+        for y in range(parsed.capacity.y_size):
             roof = parsed.unique_panel_roof[parsed.panel_index_roof[x][y]]
             combined = parsed.unique_panel[parsed.panel_index[x][y]]
+            roof_name, combined_name = name(roof), name(combined)
             if (x, y) in doors:
-                if name(roof) not in CLOSED_DOOR_TERRAINS:
+                if roof_name not in CLOSED_DOOR_TERRAINS:
                     changes[(x, y)] = (corners(combined), DOOR_TERRAIN)
-            elif name(roof) in CLOSED_DOOR_TERRAINS and name(combined) not in CLOSED_DOOR_TERRAINS:
-                changes[(x, y)] = (corners(combined), name(combined))
+            elif (x, y) in roofed:
+                if combined_name in ROOF_KEEPS:
+                    # a wall stays a wall while the roof is closed (vanilla: 壁, or 屋根 over bmap28's
+                    # outer walls); one painted after the roof layer was made gets the combined record
+                    if roof_name not in ROOF_KEEPS | {ROOF_TERRAIN}:
+                        changes[(x, y)] = (corners(combined), combined_name)
+                    continue
+                if roof_name != ROOF_TERRAIN and (corners(roof), roof_name) == (corners(combined), combined_name):
+                    # only a roof layer still copying the combined one: a tile set by hand is kept
+                    changes[(x, y)] = ((roofed[(x, y)],) * 4, ROOF_TERRAIN)
+            elif roof_name in placed_terrains and combined_name != roof_name:
+                changes[(x, y)] = (corners(combined), combined_name)
     if not changes:
         return data, warnings
     pointers = {}
@@ -1873,7 +1954,7 @@ def sync_door_terrain(data: bytes) -> tuple[bytes, list[str]]:
     index_of = {r: i for i, r in reversed(list(enumerate(records)))}
     grid = [list(column) for column in parsed.panel_index_roof]
     for (x, y), (tile_corners, terrain) in changes.items():
-        record = tile_corners + (pointers[terrain],)
+        record = tuple(tile_corners) + (pointers[terrain],)
         if record not in index_of:
             index_of[record] = len(records)
             records.append(record)
