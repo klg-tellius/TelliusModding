@@ -78,6 +78,10 @@ class MiniPPC:
                 self.r[ra] = self.r[rd] & self.r[rb]
             elif op == 31 and (w >> 1) & 0x3FF == 32:       # cmplw
                 self._compare(self.r[ra], self.r[rb], False)
+            elif op == 7:                                   # mulli
+                self.r[rd] = (self.r[ra] * _s16(imm)) & 0xFFFFFFFF
+            elif op == 31 and (w >> 1) & 0x3FF == 266:      # add
+                self.r[rd] = (self.r[ra] + self.r[rb]) & 0xFFFFFFFF
             elif op == 31 and (w >> 1) & 0x3FF == 444:      # or (mr)
                 self.r[ra] = self.r[rd] | self.r[rb]
             elif op == 21:                                  # rlwinm (no record form)
