@@ -61,7 +61,7 @@ import queue
 import re
 import threading
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
 import numpy as np
@@ -105,6 +105,8 @@ TOOL_HELP = {
     "terrain": "Click or drag over tiles to paint the chosen type.\nRight-click a tile to pick its type.",
     "prop": "Click a tile to place the chosen prop there.\nAdd from another map... copies any chapter's prop here.",
     "heights": "Click a tile to edit its corner heights, or drag to select a rectangle of tiles.",
+    "roof": "Drag a rectangle over a room whose walls are already built to put a roof on them (only the roof is\n"
+            "made). Then place a door inside it or next to it: the door lifts the roof when it opens.",
     "unit": "Click a tile to add a unit there; the dialog asks for its section (each says what it is for).",
     "zone": "Drag a rectangle (or click a tile) to add a zone that runs a script function.\n"
             "Click a zone to edit it, drag it to move it; Shift+drag draws over an existing zone. "
@@ -115,6 +117,7 @@ ZONE_COLORS = {"player": "#4fc3f7", "enemy": "#ff8a65"}
 LOCATION_COLOR = "#ce93d8"
 ZONE_KINDS = {"Area - a unit enters": script_zones.AREA, "Location - a unit acts on a tile": script_zones.LOCATION}
 NEW_FUNCTION = "New function"
+ROOF_IMAGE_FILE = "Image file..."
 
 
 #: Terrain colours by category: passable ground is light and green to tan, water blue,
@@ -680,7 +683,8 @@ class MapBuilder(EditorPanel):
         self._tool_buttons = {}
         tools = (("select", "Select / move", "↖"), ("terrain", "Paint terrain", "▧"),
                  ("prop", "Place prop", "⌂"), ("heights", "Tile heights", "⌗"),
-                 ("unit", "Place unit", "♙"), ("zone", "Script function / zone", "fx"))
+                 ("roof", "Add roof", "▲"), ("unit", "Place unit", "♙"),
+                 ("zone", "Script function / zone", "fx"))
         for key, label, icon in tools:
             button = ttk.Button(toolbar, text=icon,
                                 style="BuildToolbarActive.TButton" if key == "select"
@@ -734,6 +738,99 @@ class MapBuilder(EditorPanel):
                 pass
             self._toolbar_tooltip = None
 
+    def _build_roof_tool(self, parent: ttk.Frame) -> None:
+        from .. import roof_kit
+
+        frame = ttk.Frame(parent)
+        ttk.Label(frame, text=TOOL_HELP["roof"], style="Muted.TLabel", wraplength=260, justify="left").pack(anchor="w")
+        self._roof_images: dict[str, str] = {}  # "File: name" -> path
+        choices = list(roof_kit.PRESETS) + [ROOF_IMAGE_FILE]
+        self._roof_vars = {}
+        for key, label, default in (("roof", "Roof texture", roof_kit.ROOF_PRESET),):
+            ttk.Label(frame, text=label).pack(anchor="w", pady=(6, 0))
+            var = tk.StringVar(value=default)
+            box = ttk.Combobox(frame, textvariable=var, values=choices, state="readonly", width=30)
+            box.pack(anchor="w", fill="x")
+            box.bind("<<ComboboxSelected>>", lambda _e, v=var, b=box, d=default: self._roof_texture_chosen(v, b, d))
+            self._roof_vars[key] = var
+        row = ttk.Frame(frame)
+        row.pack(anchor="w", fill="x", pady=(6, 0))
+        ttk.Label(row, text="Shape").pack(side="left")
+        self._roof_style = tk.StringVar(value="Gable")
+        ttk.Combobox(row, textvariable=self._roof_style, values=["Gable", "Flat"], state="readonly",
+                     width=8).pack(side="left", padx=(6, 0))
+        for label, attr, default, hint in (
+                ("Wall height", "_roof_wall_height", "5",
+                 "Height of the room's existing walls, where the roof rests. Map units (5 = one tile); "
+                 "vanilla rooms are 5 to 7 high."),
+                ("Ridge rise", "_roof_rise", "2.5", "How far a gable's ridge rises above the walls.")):
+            row = ttk.Frame(frame)
+            row.pack(anchor="w", fill="x", pady=(4, 0))
+            tip(ttk.Label(row, text=label), hint).pack(side="left")
+            var = tk.StringVar(value=default)
+            ttk.Spinbox(row, textvariable=var, from_=0, to=40, increment=0.5, width=6).pack(side="left", padx=(6, 0))
+            setattr(self, attr, var)
+        self._tool_frames["roof"] = frame
+
+    def _roof_texture_chosen(self, var: tk.StringVar, box: ttk.Combobox, default: str) -> None:
+        if var.get() != ROOF_IMAGE_FILE:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Texture image (repeats once per tile)",
+                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.tga"), ("All files", "*.*")])
+        if not path:
+            var.set(default)
+            return
+        from pathlib import Path
+
+        label = f"File: {Path(path).name}"
+        self._roof_images[label] = path
+        values = [v for v in box.cget("values") if v != ROOF_IMAGE_FILE and v != label] + [label, ROOF_IMAGE_FILE]
+        box.configure(values=values)
+        var.set(label)
+
+    def _roof_image(self, key: str):
+        from PIL import Image
+
+        from .. import roof_kit
+
+        choice = self._roof_vars[key].get()
+        if choice in roof_kit.PRESETS:
+            return roof_kit.preset_image(choice)
+        return Image.open(self._roof_images[choice]).convert("RGBA")
+
+    def _add_roof(self, rect) -> None:
+        from .. import roof_kit
+
+        x0, y0, x1, y1 = rect
+        try:
+            spec = roof_kit.RoofSpec(
+                x1 - x0 + 1, y1 - y0 + 1, self._roof_image("roof"),
+                style=self._roof_style.get().lower(), wall_height=float(self._roof_wall_height.get()),
+                rise=float(self._roof_rise.get()))
+            roof_kit.check_spec(spec)
+        except (ValueError, OSError, KeyError, map_file.MapFileError) as exc:
+            messagebox.showerror("Add roof", str(exc), parent=self)
+            return
+        out = {}
+
+        def edit(entries, files):
+            out["name"], out["index"], out["warnings"] = roof_kit.add_roof(entries, files, x0, y0, spec)
+
+        self._record()
+        try:
+            self._map.edit_pack(edit, f"Added a roof over ({x0}, {y0})-({x1}, {y1})")
+        except Exception as exc:  # noqa: BLE001
+            self._undo.pop()
+            self._update_buttons()
+            messagebox.showerror("Add roof", str(exc), parent=self)
+            return
+        self._update_buttons()
+        self._refresh_prop_list()
+        self._select(("prop", out["index"]))
+        warnings = list(dict.fromkeys(w for w in out["warnings"] if "touches no door" not in w))
+        if warnings:
+            messagebox.showwarning("Add roof", "\n".join(warnings), parent=self)
+
     def _choose_tool(self, tool: str) -> None:
         self._tool.set(tool)
         self._tool_changed()
@@ -772,6 +869,8 @@ class MapBuilder(EditorPanel):
         ttk.Combobox(row, textvariable=self._prop_angle, values=list(ANGLES), state="readonly", width=6).pack(side="left", padx=(6, 0))
         ttk.Button(frame, text="Add from another map...", command=self._add_prop_from_map).pack(anchor="w", pady=(6, 0))
         self._tool_frames["prop"] = frame
+
+        self._build_roof_tool(parent)
 
         frame = ttk.Frame(parent)
         ttk.Label(frame, text="Click a tile, or drag a rectangle. Tick Heights below the map to shade them "
@@ -1477,6 +1576,9 @@ class MapBuilder(EditorPanel):
 
         if not self._edit_map(edit, log_text):
             return False
+        door_warnings = map_file.door_warnings(self._map.map_data) if self._map.map_data is not None else []
+        if door_warnings:
+            messagebox.showwarning("Doors", "\n".join(door_warnings), parent=self)
         if old_rock is not None and source is not None:
             new_data = self._map.map_data
             new_index = out.get("index")
@@ -2050,6 +2152,9 @@ class MapBuilder(EditorPanel):
             self._canvas.preview_tiles([tile], self._paint_color())
         elif tool == "prop":
             self._place_prop(tile)
+        elif tool == "roof":
+            self._press_state = {"kind": "roof_new", "start": tile}
+            self._canvas.preview_rect((*tile, *tile), "#ffb74d")
         elif tool == "unit":
             self._place_unit(tile)
         elif tool == "hub":
@@ -2080,6 +2185,9 @@ class MapBuilder(EditorPanel):
             else:
                 state["tiles"].add(tile)
             self._canvas.preview_tiles(state["tiles"], self._paint_color())
+        elif state["kind"] == "roof_new":
+            state["to"] = tile
+            self._canvas.preview_rect(_ordered(state["start"], tile), "#ffb74d")
         elif state["kind"] == "zone_new":
             if ZONE_KINDS[self._zone_kind.get()] == script_zones.LOCATION:
                 state["start"] = tile
@@ -2109,6 +2217,9 @@ class MapBuilder(EditorPanel):
             return
         if state["kind"] == "zone_new":
             self._add_zone(_ordered(state["start"], state.get("to", state["start"])))
+            return
+        if state["kind"] == "roof_new":
+            self._add_roof(_ordered(state["start"], state.get("to", state["start"])))
             return
         if state["kind"] == "paint":
             name = self._terrain_choices.get(self._terrain_var.get())
