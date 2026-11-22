@@ -78,8 +78,21 @@ class MiniPPC:
                 self.r[ra] = self.r[rd] & self.r[rb]
             elif op == 31 and (w >> 1) & 0x3FF == 32:       # cmplw
                 self._compare(self.r[ra], self.r[rb], False)
+            elif op == 7:                                   # mulli
+                self.r[rd] = (self.r[ra] * _s16(imm)) & 0xFFFFFFFF
+            elif op == 31 and (w >> 1) & 0x3FF == 266:      # add
+                self.r[rd] = (self.r[ra] + self.r[rb]) & 0xFFFFFFFF
             elif op == 31 and (w >> 1) & 0x3FF == 444:      # or (mr)
                 self.r[ra] = self.r[rd] | self.r[rb]
+            elif op == 21:                                  # rlwinm (no record form)
+                sh, mb, me = rb, (w >> 6) & 31, (w >> 1) & 31
+                value = self.r[rd]
+                rotated = ((value << sh) | (value >> (32 - sh))) & 0xFFFFFFFF if sh else value
+                mask = 0
+                for bit in range(32):
+                    if (mb <= me and mb <= bit <= me) or (mb > me and (bit >= mb or bit <= me)):
+                        mask |= 1 << (31 - bit)
+                self.r[ra] = rotated & mask
             elif op == 18:                                  # b
                 delta = w & 0x03FFFFFC
                 nxt = pc + (delta - 0x04000000 if delta & 0x02000000 else delta)

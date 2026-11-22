@@ -155,7 +155,7 @@ class CreateHubDialog(tk.Toplevel):
 
     def _choose_image(self) -> None:
         chosen = filedialog.askopenfilename(
-            parent=self, title="Hub ground image",
+            parent=self, title="Ground image",
             filetypes=(("Images", "*.png *.jpg *.jpeg *.bmp *.tga *.webp"), ("All files", "*.*")))
         if chosen:
             self._ground_image.set(chosen)
@@ -199,13 +199,18 @@ class CreateHubDialog(tk.Toplevel):
 
 
 class EditHubGroundDialog(tk.Toplevel):
-    """Choose a replacement for an existing generated blank-hub ground."""
+    """Choose a replacement for an existing generated blank-hub ground, or -
+    with ``size`` - the size and ground of a new blank map (any chapter)."""
 
-    def __init__(self, parent, appearance, *, initial_mode: str | None = None) -> None:
+    def __init__(self, parent, appearance, *, initial_mode: str | None = None,
+                 size: tuple[int, int] | None = None, title: str = "Edit hub ground",
+                 note: str | None = None) -> None:
         super().__init__(parent)
-        self.title("Edit hub ground")
+        self.title(title)
+        self._title = title
         self.resizable(False, False)
         self.result = None
+        self._size = size
         self._has_current_image = appearance.image is not None
         self._mode = tk.StringVar(value=initial_mode or ("image" if self._has_current_image else "color"))
         self._color = "#" + "".join(f"{channel:02X}" for channel in appearance.color)
@@ -216,8 +221,19 @@ class EditHubGroundDialog(tk.Toplevel):
 
         body = ttk.Frame(self, padding=16)
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="Change only the generated flat ground; tiles, props and hub links are preserved.",
+        ttk.Label(body, text=note or "Change only the generated flat ground; tiles, props and hub links are preserved.",
                   style="Muted.TLabel", wraplength=430, justify="left").pack(anchor="w", pady=(0, 10))
+        self._width = tk.StringVar(value=str(size[0]) if size else "")
+        self._height = tk.StringVar(value=str(size[1]) if size else "")
+        if size is not None:
+            size_row = ttk.Frame(body)
+            size_row.pack(fill="x", pady=(0, 6))
+            ttk.Label(size_row, text="Size").pack(side="left")
+            ttk.Entry(size_row, textvariable=self._width, width=4).pack(side="left", padx=(8, 0))
+            ttk.Label(size_row, text="×").pack(side="left", padx=3)
+            ttk.Entry(size_row, textvariable=self._height, width=4).pack(side="left")
+            tip(ttk.Label(size_row, text="tiles", style="Muted.TLabel"),
+                f"Width × height: {MIN_SIZE}–{MAX_SIZE} tiles per side.").pack(side="left", padx=(4, 0))
 
         color_row = ttk.Frame(body)
         color_row.pack(fill="x", pady=3)
@@ -259,7 +275,7 @@ class EditHubGroundDialog(tk.Toplevel):
         self._fit_picker.configure(state="readonly" if image else "disabled")
 
     def _choose_color(self) -> None:
-        _rgb, chosen = colorchooser.askcolor(self._color, parent=self, title="Hub ground color")
+        _rgb, chosen = colorchooser.askcolor(self._color, parent=self, title="Ground color")
         if chosen:
             self._color = chosen.upper()
             self._color_text.set(self._color)
@@ -267,7 +283,7 @@ class EditHubGroundDialog(tk.Toplevel):
 
     def _choose_image(self) -> None:
         chosen = filedialog.askopenfilename(
-            parent=self, title="Hub ground image",
+            parent=self, title="Ground image",
             filetypes=(("Images", "*.png *.jpg *.jpeg *.bmp *.tga *.webp"), ("All files", "*.*")))
         if chosen:
             self._image_path = chosen
@@ -276,11 +292,20 @@ class EditHubGroundDialog(tk.Toplevel):
     def _accept(self) -> None:
         use_image = self._mode.get() == "image"
         if use_image and not self._image_path and not self._has_current_image:
-            messagebox.showerror("Edit hub ground", "Choose a ground image.", parent=self)
+            messagebox.showerror(self._title, "Choose a ground image.", parent=self)
             return
         if self._image_path and not Path(self._image_path).is_file():
-            messagebox.showerror("Edit hub ground", "The selected ground image no longer exists.", parent=self)
+            messagebox.showerror(self._title, "The selected ground image no longer exists.", parent=self)
             return
         color = tuple(int(self._color[i:i + 2], 16) for i in (1, 3, 5))
         self.result = color, self._image_path or None, self._fit.get() == "tile", use_image
+        if self._size is not None:
+            try:
+                width, height = int(self._width.get()), int(self._height.get())
+            except ValueError:
+                width = height = 0
+            if not (MIN_SIZE <= width <= MAX_SIZE and MIN_SIZE <= height <= MAX_SIZE):
+                messagebox.showerror(self._title, f"Width and height must be {MIN_SIZE}–{MAX_SIZE} tiles.", parent=self)
+                return
+            self.result = (*self.result, (width, height))
         self.destroy()
