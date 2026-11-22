@@ -74,6 +74,9 @@ class BattleTableViewer(EditorPanel):
     def note(self) -> str:
         return ""
 
+    def extra_actions(self, frame: ttk.Frame) -> None:
+        """Add page-specific buttons after Apply / Restore / Add."""
+
     def model_of(self, name: str) -> tuple[str, Path] | str | None:
         """The 3D model to preview for entry ``name``: (label, pack), or a
         sentence saying why there is none; None: the page has no preview."""
@@ -144,6 +147,7 @@ class BattleTableViewer(EditorPanel):
         self._restore_btn.pack(side="left", padx=(6, 0))
         if self.can_add:
             ttk.Button(actions, text=f"Add {self.noun}...", command=self._add).pack(side="left", padx=(6, 0))
+        self.extra_actions(actions)
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=360, justify="left")
         self._status.pack(anchor="w", pady=(8, 0))
         self._preview = None  # the 3D preview, made when an entry first has a model

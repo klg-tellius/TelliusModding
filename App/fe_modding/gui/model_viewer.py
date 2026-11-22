@@ -5925,12 +5925,13 @@ class ModelViewer(EditorPanel):
         self._fit_button.config(state="normal" if animatable else "disabled")
         self._restore_button.config(
             state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
+        weapon = label.startswith("xwp/") and not label.startswith("xwp/forge/")
         self._new_slot_button.config(
-            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+            state="normal" if label.startswith(("ymu/", "zu/")) or weapon else "disabled")
         self._new_character_button.config(
             state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
         self._remove_slot_button.config(
-            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
+            state="normal" if label.startswith(("ymu/", "zu/")) or weapon else "disabled")
         paintable = "normal" if is_map_container(path) else "disabled"
         self._paint_kit_button.config(state=paintable)
         self._swatches_button.config(state=paintable)
@@ -6852,9 +6853,14 @@ class ModelViewer(EditorPanel):
 
     def _new_slot(self) -> None:
         selected = self._selected_set()
-        if selected is None or not self._game_data_saved():
+        if selected is None:
             return
         label, _path = selected
+        if label.startswith("xwp/"):
+            self._new_weapon_slot(label.split("/", 1)[1])
+            return
+        if not self._game_data_saved():
+            return
         try:
             dialog = _NewSlotDialog(self, self._project, label)
         except Exception as exc:  # noqa: BLE001
@@ -6927,11 +6933,57 @@ class ModelViewer(EditorPanel):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not read the game data", str(exc), parent=self)
 
+    def _new_weapon_slot(self, source: str) -> None:
+        """Copy a weapon model under a new name (the copy then takes its own mesh)."""
+        from .. import weapon_slots
+
+        name = simpledialog.askstring(
+            "New weapon model",
+            f"Copy xwp/{source} as (lowercase letters, digits, underscore).\n"
+            "Use the item ID without IID_, in lower case, for a new weapon (iid_saber: saber).\n"
+            "Battle Weapons > New weapon... makes the item and its battle entry too.",
+            parent=self)
+        if not name:
+            return
+        try:
+            weapon_slots.clone_weapon_model(self._project, source, name.strip().lower())
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not copy the weapon model", str(exc), parent=self)
+            return
+        new_label = f"xwp/{name.strip().lower()}"
+        self._changelog.append(new_label, f"Copied xwp/{source} as {new_label}")
+        self._load_set_list()
+        self._select_set(new_label)
+        messagebox.showinfo(
+            "New weapon model",
+            f"{new_label} is a copy of xwp/{source}. Import .blend/.glb... gives it its own mesh.\n"
+            "Tip: Export .glb... the original first and model over it in Blender, so the grip stays in the hand.",
+            parent=self)
+
     def _remove_slot(self) -> None:
         selected = self._selected_set()
-        if selected is None or not self._game_data_saved():
+        if selected is None:
             return
         label, _path = selected
+        if label.startswith("xwp/"):
+            from .. import weapon_slots
+
+            name = label.split("/", 1)[1]
+            try:
+                if not weapon_slots.is_added_model(self._project, name):
+                    raise ValueError("The game's own weapon models are protected.")
+                if not messagebox.askyesno("Remove added model", f"Delete the added weapon model {label}?",
+                                           parent=self):
+                    return
+                weapon_slots.remove_weapon_model(self._project, name)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Could not remove model", str(exc), parent=self)
+                return
+            self._changelog.append(label, f"Removed added weapon model {label}")
+            self._load_set_list()
+            return
+        if not self._game_data_saved():
+            return
         try:
             if label.startswith("zu/"):
                 code = label.split("/", 1)[1]
