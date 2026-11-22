@@ -154,6 +154,20 @@ def tool_applies(project, key: str) -> bool:
 LIST_PANELS = (ConversationsPanel, ScriptsPanel)
 
 
+#: The hub's sections and their tiles, in order. Tools left out are still reachable by search (Ctrl+K).
+HUB_SECTIONS = (
+    ("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "conversation_room", "glossary",
+                                 "endings", "class_intros", "tutorials", "staff_credits", "fonts")),
+    ("Characters and models", ("portraits", "models", "animation_data", "map_models", "tilesets", "map_objects")),
+    ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
+    ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "wii_banner",
+                "sound_room", "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
+                "battle_scenery_graphics")),
+    ("Sound and video", ("music", "sfx", "sound_tables", "sound_room_tracks", "videos", "subtitles",
+                         "subtitle_graphics")),
+)
+
+
 class AssetsHub(Page):
     kind = "assets"
 
@@ -164,15 +178,7 @@ class AssetsHub(Page):
         ttk.Label(scroll.body, text="Assets", style="Title.TLabel").pack(anchor="w")
         ttk.Label(scroll.body, text="Game files shared by every chapter. Replacing one changes it everywhere it's used.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 16))
-        for title, keys in (("Text, scripts and fonts", ("conversations", "scripts", "conversation_lists", "conversation_room", "glossary",
-                                                     "endings", "class_intros", "fonts")),
-                            ("Characters and models", ("portraits", "models", "animation_data", "map_models",
-                                                       "tilesets", "map_objects")),
-                            ("Battle", ("battle_weapons", "battle_sceneries", "battle_cameras", "battle_params", "dbx_files", "effects")),
-                            ("Images", ("backgrounds", "illustrations", "ending", "world_map", "gmap_routes", "intro_graphics", "wii_banner", "sound_room",
-                                        "icons", "ui_windows", "etc_graphics", "equipment", "sky_graphics",
-                                        "battle_scenery_graphics")),
-                            ("Sound and video", ("music", "sfx", "sound_tables", "videos", "subtitles", "subtitle_graphics"))):
+        for title, keys in HUB_SECTIONS:
             section_header(scroll.body, title).pack(anchor="w", pady=(12, 8))
             grid = CardGrid(scroll.body, card_width=280)
             grid.pack(fill="x")

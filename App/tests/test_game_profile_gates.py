@@ -211,3 +211,31 @@ class UnavailableStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AssetsHubTileTests(unittest.TestCase):
+    """Every Assets tool a game has gets a tile; only search-only exceptions are left out."""
+
+    def test_tutorials_credits_and_tracks_have_tiles_on_both_games(self):
+        from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
+        from fe_modding.gui.pages.assets import ASSET_FILES, HUB_SECTIONS, tool_applies
+
+        sections = {key: title for title, keys in HUB_SECTIONS for key in keys}
+        self.assertEqual(sections["tutorials"], "Text, scripts and fonts")
+        self.assertEqual(sections["staff_credits"], "Text, scripts and fonts")
+        self.assertEqual(sections["sound_room_tracks"], "Sound and video")
+        for profile in (PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE):
+            project = SimpleNamespace(profile=profile)
+            for key in ("tutorials", "staff_credits", "sound_room_tracks"):
+                with self.subTest(game=profile.display_name, key=key):
+                    self.assertTrue(tool_applies(project, key))
+                    self.assertNotIn(key, ASSET_FILES)
+
+    def test_hub_keys_are_known_and_unique(self):
+        from fe_modding.gui.pages.assets import HUB_SECTIONS, TOOLS_BY_KEY
+
+        keys = [key for _title, keys in HUB_SECTIONS for key in keys]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertLessEqual(set(keys), set(TOOLS_BY_KEY))
+        # Battle Simulator is a Tools page entry; it stays off the Assets hub on purpose.
+        self.assertEqual(set(TOOLS_BY_KEY) - set(keys), {"battle_sim"})
