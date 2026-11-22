@@ -61,9 +61,19 @@ For battle sets, remember that the same body/skeleton participates in multiple w
 
 Open **Fit new rig…** and select the rigged model. The dialog *Fit new rig - zu/&lt;code&gt;* explains: *Each model joint turns like the game bone it follows. Blank: the joint follows its parent (fingers, hair...). The pelvis must be the one mapped joint all the others hang from.* The table lists model joints (indented by depth) and the guessed game bone of each. Check root/pelvis first, then spine/chest/neck/head, shoulders/arms/hands, hips/legs/feet, and any tails/wings. Detect mirrored left/right matches and mappings that cross body chains.
 
+Next to the table, both skeletons are drawn from the front (the character's left on your right). Click a model joint in the drawing or the list: it turns orange, and so does the game bone it follows. Click a bone of the game drawing to make the selected joint follow it; **Clear joint** blanks it. Blue joints follow a game bone, grey ones their parent; a red joint carries part of the mesh while nothing above it is mapped, so it would stay frozen. **Mirror left to right** copies the left side's mapping onto the right (and **Mirror right to left** the reverse): joints are paired by name (`Left`/`Right`, `L_`/`R_`, `.L`/`.R`, `hidari`/`migi`) or, failing that, by mirrored position; the message lists the joints it could not pair.
+
+Two options sit under the table. **Lowest vertex on the ground** is the default height. **Feet: ankle at the game ankle's height** puts the lowest mapped joint at the height of the game bone it follows: use it when the mesh stops at the ankles or wears thick soles, which otherwise make the head sink or float. **Draw both sides of faces** (on by default) draws every face from both sides, as most retail capes, hair and cloth are: a downloaded model often has faces pointing inward, which vanish when drawn one-sided (holes, a cape seen through the face). Untick it for a model that already carries an inside copy of its faces.
+
 Blank means a joint is not driven by a mapped game bone; it may remain in bind pose. Many model joints mapped to one game bone can be intentional for twist/deformation, but test them. Use **Save mapping...** (*Save the joint mapping*, a `.json` file) to keep the reviewed table and **Load mapping...** (*Load a joint mapping*) to reuse it on the next export of the same model. **Fit** builds the fitted model; **Cancel** stops. If offered mesh reduction, set a budget deliberately; locked weapon joints are preserved but silhouette and weights still need review.
 
 Keep the generated fitted glTF. Open it in Blender and inspect bind pose and several animation frames before accepting the game-file transaction.
+
+### Add anchors and check the rig
+
+**Add anchor bones...** adds the bones the engine finds by name. Type one in (name, the bone it goes under, an offset from that bone) or pick another set under **Copy the anchors of** and press **Copy**: every anchor that set has and this one lacks is listed under the matching bone (same name, else the bone the comparison of the two bodies pairs it with) at the same place, scaled to this set's height. Check each bone and offset (select a row, change it, **Update selected**), then **Add anchors**. Example: a map model fitted on a sword class has no `_ex1_`/`_ex2_`, so its spells show no effect; copy them from `ymu/sene` (the Sage) before giving it the Sage's spell clips. The anchors have no animation track: they follow their bone in every clip. The change goes through **Replace rig...** and its review.
+
+**Check rig...** lists what the skeleton lacks: the anchors every map model (`_s1_`, `_s2_`) or battle model (`_r_hand_`, `_l_hand_`, `_root_`, `_cam_`) has; on a map model, the trail anchors its clips start (event `0x18` needs `_ex1_`/`_ex2_`, `0x14` `_sw1_`/`_sw2_`, `0x16` `_ax1_`/`_ax2_`...); the anchors the vanilla set had; bone and triangle counts above the disc's largest models; and map vertices blended between bones (every retail map model has one bone per vertex). The fit review repeats its problems. The Skeleton tab names what each anchor does.
 
 ### Review Replace-rig coverage
 
@@ -81,6 +91,10 @@ Compare triangle/vertex/texture figures, proposed files, mapping method, and eve
 - **Replace rig…:** new skeleton/body plus animation rebuild/retarget under preserved anchors.
 - **Fit new rig…:** transfers the game's motion chains to a differently named humanoid rig.
 - **Load/Save mapping:** reproducible mapping JSON; it does not modify game files.
+- **Mirror left to right / right to left:** copies one side's mapping onto the other.
+- **Feet / Draw both sides of faces:** height from the ankles instead of the lowest vertex; faces drawn from both sides.
+- **Add anchor bones…:** engine anchors typed in or copied from another set.
+- **Check rig…:** what the skeleton lacks for the engine and the set's clips.
 - **Generated fitted glTF:** review artifact and future source, not proof of in-game success.
 - **Import Review → Bones:** shows each joint, destination bone, and matching method.
 - **Warnings:** texture-variant loss, dropped tracks, bind-pose bones, reused clips, visibility/range concerns.
@@ -116,6 +130,12 @@ Character/class model selection happens before loading the rig. A perfect import
 ## Troubleshooting
 
 **Import says animations are missing.** Supply clips named after every target listed by the Rig kit. A new map skeleton cannot reuse unrelated old tracks.
+
+**A spell or a weapon trail shows no effect on a map model.** Run **Check rig...**: the clip starts a trail whose anchors the skeleton lacks. Add them with **Add anchor bones...** (copy `_ex1_`/`_ex2_` from the Sage, `ymu/sene`).
+
+**The head sinks into the floor or the model floats.** Fit again with **Feet: ankle at the game ankle's height**.
+
+**Holes in the model, or a cape seen through the face.** Fit again with **Draw both sides of faces** ticked.
 
 **Weapon floats or follows the torso.** Restore/check required anchors and hand mapping. Do not weight visible body geometry to socket-only bones.
 

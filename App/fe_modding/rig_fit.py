@@ -46,6 +46,9 @@ from .formats import gltf_import
 
 FOLLOW_PARENT = ""
 
+#: Height options of :func:`fit_rig`.
+FLOOR_MESH, FLOOR_FEET = "mesh", "feet"
+
 
 class RigFitError(Exception):
     pass
@@ -439,9 +442,19 @@ def fit_rig(
     *,
     battle: bool,
     weapon_bones: set[str] = frozenset(),
+    floor: str = FLOOR_MESH,
+    double_sided: bool = False,
 ) -> FitResult:
     """Build the glTF of ``model`` on its own skeleton with every animation
-    of the ``game`` rig kit (see the module docstring)."""
+    of the ``game`` rig kit (see the module docstring).
+
+    ``floor`` sets the height: :data:`FLOOR_MESH` puts the model's lowest
+    vertex on the ground and its top at the game mesh's; :data:`FLOOR_FEET`
+    puts its lowest mapped joint (an ankle) at the height of the game bone
+    it follows, for a model whose mesh stops at the ankles or wears long
+    shoes. ``double_sided`` draws both sides of every face, as most retail
+    capes, hair and cloth do (shape flags ``0x1800``): a downloaded model's
+    faces that point inward are shown instead of vanishing."""
     warnings: list[str] = []
     ix = game.joint_index
     follow = {}
@@ -472,6 +485,19 @@ def fit_rig(
     g_top = game.V[:, 1].max()
     m_low, m_top = model.V[:, 1].min(), model.V[:, 1].max()
     s = g_top / (m_top - m_low)
+    if floor == FLOOR_FEET:
+        # the lowest mapped joint and its game bone stand at the same height; the top still meets
+        foot = min(mapped, key=lambda k: (game.pos[follow[k]][1], model.pos[k][1]))
+        g_foot, m_foot = game.pos[follow[foot]][1], model.pos[foot][1]
+        if g_top - g_foot > 1e-6 and m_top - m_foot > 1e-6:
+            s = (g_top - g_foot) / (m_top - m_foot)
+            m_low = m_foot - g_foot / s
+            warnings.append(f"Feet: {model.names[foot]} placed at the height of {game.names[follow[foot]]} "
+                            f"({g_foot:.2f}); the mesh's lowest point is at {(model.V[:, 1].min() - m_low) * s:.2f}.")
+        else:
+            warnings.append("Feet: no mapped joint below the top; the lowest vertex stands on the ground.")
+    elif floor != FLOOR_MESH:
+        raise RigFitError(f"Unknown floor option {floor!r}.")
     order = sorted(range(len(model.names)), key=lambda k: len(model.ancestors(k)))
     rot: dict[int, np.ndarray] = {}
     tgt: dict[int, np.ndarray] = {}
@@ -720,7 +746,7 @@ def fit_rig(
                 g = follow[r]
                 hips[r].append(world[game.joints[g]][:3, 3] - game.rest[g][:3, 3])
         anims.append((anim, times, frames, scales, {mname[r]: np.array(h) for r, h in hips.items()}))
-    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot)
+    glb = _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot, double_sided)
     return FitResult(glb, warnings, dict(mapping))
 
 
@@ -799,7 +825,8 @@ def _pose(game: Rig, tracks, t) -> dict[int, np.ndarray]:
     return _node_worlds(game.nodes, game.node_parent, local)
 
 
-def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot=None) -> bytes:
+def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_rot=None,
+               double_sided: bool = False) -> bytes:
     rest_rot = rest_rot or {}
     eye = np.eye(3)
     parent_of = {n: p for n, p, _ in joints}
@@ -902,7 +929,8 @@ def _write_glb(joints, V, N, UV, weights, idx, image, anims, weapon_bones, rest_
                                                     "indices": ind, "material": 0}]}],
         "materials": [{"name": "body", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0,
                                                                   "roughnessFactor": 1},
-                       **({"alphaMode": "MASK"} if cut_out else {})}],
+                       **({"alphaMode": "MASK"} if cut_out else {}),
+                       **({"doubleSided": True} if double_sided else {})}],
         "textures": [{"source": 0, "sampler": 0}],
         "samplers": [{"magFilter": 9729, "minFilter": 9729, "wrapS": 10497, "wrapT": 10497}],
         "images": [{"bufferView": imgv, "mimeType": "image/png"}],

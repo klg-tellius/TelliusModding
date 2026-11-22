@@ -125,13 +125,14 @@ from PIL import Image, ImageTk
 from ..formats import animation, engine_pose, gltf_export, gltf_import, gs_file, gs_stats, map_file, pak, particle_preview, skeleton, tpl
 from ..formats import model as model_fmt
 from .. import blender as blender_tool
-from .. import animation_catalog, map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, terrain_conform
+from .. import animation_catalog, map_heights, map_props, mesh_reduce, model_slots, rig_contract, rig_fit, rig_tools, terrain_conform
 from .. import terrain_kit, terrain_paint
 from ..formats import anim_registry, fe8data, fe10data, zdbx
 from ..game_profile import PATH_OF_RADIANCE_PROFILE, logical_game_path_of, files_root_of
 from ..games import Game
 from ..project import ModProject
 from . import gpu_renderer
+from . import theme
 from .changelog import ChangeLog
 from .editor_panel import EditorPanel
 from .terrain_paint_dialogs import (AtlasSwatchesDialog, NewMapKitDialog, PaintImportOptions, PaintKitDialog,
@@ -2671,15 +2672,20 @@ def fit_new_rig(
     mapping: dict[str, str],
     fitted_path: Path | None = None,
     max_triangles: int | None = None,
+    *,
+    floor: str = rig_fit.FLOOR_MESH,
+    double_sided: bool = False,
 ) -> ModelImport:
     """Put a rigged model on the set as a new rig (``rig_fit.fit_rig``):
     its own skeleton, every animation of the set retargeted onto it, then
     the regular rig import. ``fitted_path`` keeps the generated glTF.
     ``max_triangles`` reduces the fitted mesh first (``mesh_reduce``; the
-    weapon meshes are kept)."""
+    weapon meshes are kept). ``floor`` and ``double_sided``: see
+    ``rig_fit.fit_rig``."""
     import tempfile
 
-    fit = rig_fit.fit_rig(setup.model, setup.game, mapping, battle=setup.battle, weapon_bones=setup.weapon_bones)
+    fit = rig_fit.fit_rig(setup.model, setup.game, mapping, battle=setup.battle, weapon_bones=setup.weapon_bones,
+                          floor=floor, double_sided=double_sided)
     if max_triangles is not None:
         reduced = mesh_reduce.reduce_glb(fit.glb, max_triangles, locked_joints=setup.weapon_bones)
         if reduced.triangles_after < reduced.triangles_before:
@@ -2699,8 +2705,99 @@ def fit_new_rig(
     if fitted_path is not None:
         fitted_path.write_bytes(fit.glb)
         fit.warnings.append(f"The fitted model (its skeleton and every animation) was saved as {fitted_path}.")
+    try:
+        fit.warnings += [f"Rig check: {f.text}" for f in check_rig(container_path, pending=result.outputs)
+                         if f.level == "error"]
+    except Exception:  # noqa: BLE001 - the check never blocks a fit
+        pass
     result.warnings[:0] = fit.warnings
     return result
+
+
+def anchor_copies(source_container: Path, target_container: Path) -> list[rig_tools.AnchorCopy]:
+    """The anchors of another set that this one lacks, placed under the
+    bone of the same name at the other set's offset scaled to this one
+    (``rig_tools.anchor_offsets``)."""
+    source = rig_kit_glb(source_container)
+    target = rig_kit_glb(target_container)
+    try:
+        s_rig, s_chains = _kit_body(source_container, *source)
+        t_rig, t_chains = _kit_body(target_container, *target)
+        bone_map = rig_fit.auto_mapping(s_rig, s_chains, t_rig, t_chains)
+    except Exception:  # noqa: BLE001 - an unusual body: nearest bones only
+        bone_map = {}
+    return rig_tools.anchor_offsets(source[0], target[0], bone_map=bone_map)
+
+
+def _kit_body(container_path: Path, glb: bytes, bones: list[skeleton.Bone],
+              named: list[tuple[str, str, str, bytes]]) -> tuple["rig_fit.Rig", "rig_fit.Chains"]:
+    """A set's rig kit (``rig_kit_glb``) as a ``rig_fit.Rig`` and its body chains (anchors and map
+    weapons left out)."""
+    rig = rig_fit.read_rig(glb, single_texture=False)
+    weapon = set() if _is_battle_container(container_path) else _map_weapon_bones(bones, named)
+    skip = {k for k, n in enumerate(rig.names) if gltf_import.is_anchor_name(n) or n.startswith("carrier_")}
+    skip |= {k for k, n in enumerate(rig.names)
+             if n in weapon or any(rig.names[a] in weapon for a in rig.ancestors(k))}
+    return rig, rig_fit.body_chains(rig, skip, rig_fit.game_ends(rig, weapon))
+
+
+def set_bone_positions(container_path: Path) -> tuple[list[str], dict[str, tuple[float, float, float]]]:
+    """The set's bone names (rig kit order) and rest positions."""
+    glb, _b, _n = rig_kit_glb(container_path)
+    names, _parents, pos, _rot = rig_tools.glb_joints(glb)
+    return names, {n: tuple(float(v) for v in p) for n, p in zip(names, pos)}
+
+
+def add_anchor_bones(
+    container_path: Path, anchors: list[tuple[str, str, tuple[float, float, float]]]
+) -> ModelImport:
+    """The set with anchor bones added, each ``(name, parent bone, offset
+    from it)``: the rig kit gets the new joints, then goes through the
+    regular rig import (Replace rig...). The new bones have no animation
+    track, so they follow their parent in every clip. A battle set's clips
+    are carried over by bone name; a map set's are rebuilt from the kit."""
+    import tempfile
+
+    battle = _is_battle_container(container_path)
+    glb, _bones, _named = rig_kit_glb(container_path)
+    specs = rig_tools.anchor_joint_specs(glb, anchors, battle=battle)
+    new_glb = rig_tools.add_joints_to_glb(glb, specs)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "anchors.glb"
+        if battle:
+            path.write_bytes(rig_tools.strip_animations(new_glb))
+            result = replace_battle_rig_with_glb(container_path, path, new_rig=False)
+        else:
+            path.write_bytes(new_glb)
+            result = replace_rig_with_glb(container_path, path)
+    result.warnings.insert(0, "Anchor bones added: " + ", ".join(
+        f"{name} under {parent}" for name, parent, _offset in anchors))
+    return result
+
+
+def check_rig(container_path: Path, reference_container: Path | None = None,
+              pending: dict[Path, bytes] | None = None) -> list[rig_tools.Finding]:
+    """What the set's skeleton lacks for the engine and its animations
+    (``rig_tools.rig_check``), against ``reference_container`` (the vanilla
+    set) when given."""
+    files, animations = _set_contents(container_path, pending)
+    battle = _is_battle_container(container_path)
+    g = next((d for n, d in files.items() if Path(n).suffix.lower() == ".g"), None)
+    if g is None:
+        return [rig_tools.Finding("error", "The set has no skeleton.")]
+    bones = skeleton.read_skeleton_file(g).bones
+    gs = next((d for n, d in files.items() if Path(n).suffix.lower() == ".gs"), None)
+    if not battle:
+        animations = animations + [(n, d) for n, d in files.items() if Path(n).suffix.lower() == ".ga"]
+    reference = None
+    if reference_container is not None and reference_container.is_file():
+        try:
+            ref_files, _ref_anims = _set_contents(reference_container)
+            ref_g = next(d for n, d in ref_files.items() if Path(n).suffix.lower() == ".g")
+            reference = skeleton.read_skeleton_file(ref_g).bones
+        except Exception:  # noqa: BLE001 - no usable reference: checked on its own
+            reference = None
+    return rig_tools.rig_check(bones, animations, battle=battle, body_gs=gs, reference_bones=reference)
 
 
 def export_rig_kit(container_path: Path, target: Path) -> list[Path]:
@@ -3418,25 +3515,37 @@ class _MapReduceDialog(tk.Toplevel):
 
 class _RigMappingDialog(tk.Toplevel):
     """Which game bone each joint of the model follows (guessed from the
-    body's shape; blank: the joint follows its parent)."""
+    body's shape; blank: the joint follows its parent), with both
+    skeletons drawn side by side: click a model joint, then the game bone
+    it should follow. ``result`` is the mapping, ``options`` the fit
+    options (``floor``, ``double_sided``)."""
+
+    CANVAS_W, CANVAS_H = 250, 430
 
     def __init__(self, parent, label: str, setup: RigFitSetup) -> None:
         super().__init__(parent)
         self.title(f"Fit new rig - {label}")
         self.transient(parent)
         self.result: dict[str, str] | None = None
+        self.options: dict[str, object] = {}
         self._setup = setup
+        self._selected: str | None = None
         top = ttk.Frame(self, padding=8)
         top.pack(fill="both", expand=True)
         ttk.Label(
             top,
             text="Each model joint turns like the game bone it follows. Blank: the joint follows its parent "
-            "(fingers, hair...).\nThe pelvis must be the one mapped joint all the others hang from.",
+            "(fingers, hair...).\nThe pelvis must be the one mapped joint all the others hang from. Click a joint "
+            "of the model (left drawing or list), then the game bone it follows (right drawing).",
             justify="left",
         ).pack(anchor="w")
-        frame = ttk.Frame(top)
-        frame.pack(fill="both", expand=True, pady=(6, 0))
-        canvas = tk.Canvas(frame, height=420, width=460, highlightthickness=0)
+        body = ttk.Frame(top)
+        body.pack(fill="both", expand=True, pady=(6, 0))
+
+        # the list of joints
+        frame = ttk.Frame(body)
+        frame.pack(side="left", fill="both", expand=True)
+        canvas = tk.Canvas(frame, height=self.CANVAS_H, width=430, highlightthickness=0)
         scroll = ttk.Scrollbar(frame, command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -3444,23 +3553,175 @@ class _RigMappingDialog(tk.Toplevel):
         canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
+        self._list_canvas = canvas
         game_bones = [""] + [n for n in setup.game.names if not gltf_import.is_anchor_name(n)]
+        self._game_choices = set(game_bones)
         self._vars: dict[str, tk.StringVar] = {}
+        self._rows: dict[str, ttk.Label] = {}
         model = setup.model
         order = sorted(range(len(model.names)), key=lambda k: (len(model.ancestors(k)), k))
+        self._row_of: dict[str, int] = {}
         for row, k in enumerate(order):
             name = model.names[k]
-            ttk.Label(inner, text="  " * len(model.ancestors(k)) + name).grid(row=row, column=0, sticky="w")
+            row_label = ttk.Label(inner, text="  " * len(model.ancestors(k)) + name, cursor="hand2")
+            row_label.grid(row=row, column=0, sticky="w")
+            row_label.bind("<Button-1>", lambda e, n=name: self._select(n, scroll_list=False))
             var = tk.StringVar(value=setup.mapping.get(name, ""))
-            ttk.Combobox(inner, textvariable=var, values=game_bones, width=24).grid(row=row, column=1, sticky="w")
+            box = ttk.Combobox(inner, textvariable=var, values=game_bones, width=24)
+            box.grid(row=row, column=1, sticky="w")
+            box.bind("<FocusIn>", lambda e, n=name: self._select(n, scroll_list=False))
+            var.trace_add("write", lambda *_: self._redraw())
             self._vars[name] = var
+            self._rows[name] = row_label
+            self._row_of[name] = row
+        self._row_count = len(order)
+
+        # the two skeletons
+        drawings = ttk.Frame(body)
+        drawings.pack(side="left", fill="y", padx=(8, 0))
+        heads = ttk.Frame(drawings)
+        heads.pack(fill="x")
+        ttk.Label(heads, text="Model", width=34).pack(side="left")
+        ttk.Label(heads, text="Game rig").pack(side="left")
+        pair = ttk.Frame(drawings)
+        pair.pack()
+        self._model_canvas = tk.Canvas(pair, width=self.CANVAS_W, height=self.CANVAS_H, highlightthickness=1,
+                                       highlightbackground=theme.color("border"), background=theme.color("field"))
+        self._game_canvas = tk.Canvas(pair, width=self.CANVAS_W, height=self.CANVAS_H, highlightthickness=1,
+                                      highlightbackground=theme.color("border"), background=theme.color("field"))
+        self._model_canvas.pack(side="left")
+        self._game_canvas.pack(side="left", padx=(6, 0))
+        tip(self._model_canvas, "The model's joints, seen from the front. Blue: follows a game bone; grey: follows "
+                                "its parent; red: carries part of the mesh but nothing above it is mapped, so it "
+                                "would not move. Click a joint to select it.")
+        tip(self._game_canvas, "The game rig's bones. Blue: some model joint follows it; orange: the selected "
+                               "joint's bone. Click a bone to make the selected joint follow it.")
+        self._model_outline = rig_tools.skeleton_outline(model.names, model.parent, model.pos)
+        game_keep = [k for k, n in enumerate(setup.game.names) if n in self._game_choices and n]
+        self._game_index = game_keep
+        self._game_outline = rig_tools.skeleton_outline(
+            [setup.game.names[k] for k in game_keep],
+            [game_keep.index(setup.game.parent[k]) if setup.game.parent[k] in game_keep else -1 for k in game_keep],
+            setup.game.pos[game_keep] if game_keep else setup.game.pos[:0],
+        )
+        self._model_canvas.bind("<Button-1>", lambda e: self._pick(self._model_outline, e, model=True))
+        self._game_canvas.bind("<Button-1>", lambda e: self._pick(self._game_outline, e, model=False))
+        legend = ttk.Label(drawings, text="", style="Muted.TLabel", justify="left", wraplength=2 * self.CANVAS_W)
+        legend.pack(anchor="w", pady=(4, 0))
+        self._status = legend
+
+        # options
+        options = ttk.LabelFrame(top, text="Fit options", padding=6)
+        options.pack(fill="x", pady=(8, 0))
+        self._floor_var = tk.StringVar(value=rig_fit.FLOOR_MESH)
+        ttk.Radiobutton(options, text="Lowest vertex on the ground", value=rig_fit.FLOOR_MESH,
+                        variable=self._floor_var).grid(row=0, column=0, sticky="w")
+        feet = ttk.Radiobutton(options, text="Feet: ankle at the game ankle's height", value=rig_fit.FLOOR_FEET,
+                               variable=self._floor_var)
+        feet.grid(row=0, column=1, sticky="w", padx=(12, 0))
+        tip(feet, "For a model whose mesh stops at the ankles (some Awakening models) or wears thick soles: the "
+                  "lowest mapped joint goes where the game bone it follows is, instead of the lowest vertex "
+                  "standing on the ground. Avoids heads that sink or float.")
+        self._two_sided_var = tk.BooleanVar(value=True)
+        two = ttk.Checkbutton(options, text="Draw both sides of faces", variable=self._two_sided_var)
+        two.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        tip(two, "Shape flags 0x1800, as most retail capes, hair and cloth. A downloaded model often has faces "
+                 "that point inward: drawn one-sided they vanish (holes, a cape seen through the face). Untick "
+                 "for a model that already carries an inside copy of its faces.")
+
         buttons = ttk.Frame(top)
         buttons.pack(fill="x", pady=(8, 0))
         ttk.Button(buttons, text="Load mapping...", command=self._load).pack(side="left")
         ttk.Button(buttons, text="Save mapping...", command=self._save).pack(side="left", padx=(6, 0))
+        mirror_lr = ttk.Button(buttons, text="Mirror left to right", command=lambda: self._mirror("left"))
+        mirror_lr.pack(side="left", padx=(12, 0))
+        tip(mirror_lr, "Copy the mapping of the character's left side to its right side (joints matched by name, "
+                       "Left/Right, L/R, hidari/migi, else by position).")
+        ttk.Button(buttons, text="Mirror right to left", command=lambda: self._mirror("right")).pack(
+            side="left", padx=(6, 0))
+        ttk.Button(buttons, text="Clear joint", command=self._clear_selected).pack(side="left", padx=(6, 0))
         ttk.Button(buttons, text="Fit", command=self._ok).pack(side="right")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=(0, 6))
+        self._redraw()
         self.grab_set()
+
+    # -- drawing ---------------------------------------------------------------
+    def _to_canvas(self, point: tuple[float, float]) -> tuple[float, float]:
+        return point[0] * self.CANVAS_W, point[1] * self.CANVAS_H
+
+    def _draw(self, canvas: tk.Canvas, outline: rig_tools.Outline, colours: dict[str, str],
+              selected: str | None) -> None:
+        canvas.delete("all")
+        for k, (p, point) in enumerate(zip(outline.parent, outline.points)):
+            if p >= 0:
+                x0, y0 = self._to_canvas(outline.points[p])
+                x1, y1 = self._to_canvas(point)
+                canvas.create_line(x0, y0, x1, y1, fill=theme.color("faint"))
+        for name, point in zip(outline.names, outline.points):
+            x, y = self._to_canvas(point)
+            r = 5 if name == selected else 3
+            fill = theme.color("warn") if name == selected else colours.get(name, theme.color("faint"))
+            canvas.create_oval(x - r, y - r, x + r, y + r, fill=fill, outline=fill)
+        if selected in outline.names:
+            x, y = self._to_canvas(outline.points[outline.names.index(selected)])
+            canvas.create_text(x + 8, y, text=selected, anchor="w", fill=theme.color("fg"))
+
+    def _redraw(self) -> None:
+        mapping = self._current()
+        dead = set(rig_tools.unmapped_deforming(self._setup.model, mapping))
+        model_colours = {}
+        for name in self._setup.model.names:
+            if mapping.get(name):
+                model_colours[name] = theme.color("accent")
+            elif name in dead:
+                model_colours[name] = theme.color("danger")
+        followed = {v for v in mapping.values() if v}
+        game_colours = {n: theme.color("accent") for n in followed}
+        target = mapping.get(self._selected or "", "")
+        self._draw(self._model_canvas, self._model_outline, model_colours, self._selected)
+        self._draw(self._game_canvas, self._game_outline, game_colours, target or None)
+        for name, label in self._rows.items():
+            label.configure(foreground=theme.color("danger") if name in dead else "")
+        mapped = sum(1 for v in mapping.values() if v)
+        text = f"{mapped} joints follow a game bone, {len(mapping) - mapped} follow their parent."
+        if dead:
+            text += " Not moving (nothing above them is mapped): " + ", ".join(sorted(dead))
+        self._status.configure(text=text)
+
+    def _pick(self, outline: rig_tools.Outline, event: tk.Event, *, model: bool) -> None:
+        best, best_d = None, 12.0
+        for name, point in zip(outline.names, outline.points):
+            x, y = self._to_canvas(point)
+            d = math.hypot(x - event.x, y - event.y)
+            if d < best_d:
+                best, best_d = name, d
+        if best is None:
+            return
+        if model:
+            self._select(best)
+        elif self._selected is not None:
+            self._vars[self._selected].set(best)
+
+    def _select(self, name: str, scroll_list: bool = True) -> None:
+        self._selected = name
+        if scroll_list and self._row_count:
+            self._list_canvas.yview_moveto(max(0.0, (self._row_of[name] - 3) / self._row_count))
+        self._redraw()
+
+    # -- actions ---------------------------------------------------------------
+    def _mirror(self, source: str) -> None:
+        outcome = rig_tools.mirror_mapping(self._setup.model, self._setup.game, self._current(), source)
+        for name, value in outcome.mapping.items():
+            if name in self._vars and self._vars[name].get().strip() != value:
+                self._vars[name].set(value)
+        note = f"{len(outcome.changed)} joints mirrored."
+        if outcome.unmatched:
+            note += " No mirror found for: " + ", ".join(outcome.unmatched)
+        messagebox.showinfo("Mirror", note, parent=self)
+
+    def _clear_selected(self) -> None:
+        if self._selected is not None:
+            self._vars[self._selected].set("")
 
     def _current(self) -> dict[str, str]:
         return {name: var.get().strip() for name, var in self._vars.items()}
@@ -3486,8 +3747,207 @@ class _RigMappingDialog(tk.Toplevel):
             Path(path).write_text(json.dumps(self._current(), indent=1), encoding="utf-8")
 
     def _ok(self) -> None:
+        unknown = sorted({v for v in self._current().values() if v and v not in self._game_choices})
+        if unknown:
+            messagebox.showerror("Unknown bones", "Not bones of this set: " + ", ".join(unknown), parent=self)
+            return
         self.result = self._current()
+        self.options = {"floor": self._floor_var.get(), "double_sided": bool(self._two_sided_var.get())}
         self.destroy()
+
+
+class _AnchorDialog(tk.Toplevel):
+    """Anchor bones to add to a set: typed in (name, the bone it goes
+    under, offset from that bone) or copied from another set at the same
+    place. ``result`` is the list of ``(name, parent, offset)``."""
+
+    def __init__(self, parent, label: str, path: Path, sources: list[tuple[str, Path]]) -> None:
+        super().__init__(parent)
+        self.title(f"Add anchor bones - {label}")
+        self.transient(parent)
+        self.result: list[tuple[str, str, tuple[float, float, float]]] | None = None
+        self._path = path
+        self._sources = sources
+        self._bones, _positions = set_bone_positions(path)
+        body_bones = [b for b in self._bones if not gltf_import.is_anchor_name(b)]
+        top = ttk.Frame(self, padding=8)
+        top.pack(fill="both", expand=True)
+        ttk.Label(top, text="The engine finds anchors by name: weapon hands, shadow points, trail and spell "
+                            "effect ends. New anchors have no animation track: they follow the bone they go "
+                            "under in every clip.", justify="left", wraplength=620).pack(anchor="w")
+        have = [b for b in self._bones if gltf_import.is_anchor_name(b)]
+        ttk.Label(top, text="This set's anchors: " + (", ".join(have) if have else "none"),
+                  style="Muted.TLabel", wraplength=620, justify="left").pack(anchor="w", pady=(4, 6))
+
+        form = ttk.Frame(top)
+        form.pack(fill="x")
+        ttk.Label(form, text="Name").grid(row=0, column=0, sticky="w")
+        self._anchor_name = tk.StringVar(value="_ex1_")
+        name_box = ttk.Combobox(form, textvariable=self._anchor_name, values=rig_tools.anchor_names(), width=12)
+        name_box.grid(row=1, column=0, sticky="w")
+        ttk.Label(form, text="Under bone").grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self._parent = tk.StringVar(value=body_bones[0] if body_bones else "")
+        ttk.Combobox(form, textvariable=self._parent, values=self._bones, width=22, state="readonly").grid(
+            row=1, column=1, sticky="w", padx=(8, 0))
+        self._offset = [tk.StringVar(value="0") for _ in range(3)]
+        for i, axis in enumerate("xyz"):
+            ttk.Label(form, text=f"Offset {axis}").grid(row=0, column=2 + i, sticky="w", padx=(8, 0))
+            ttk.Entry(form, textvariable=self._offset[i], width=7).grid(row=1, column=2 + i, sticky="w", padx=(8, 0))
+        ttk.Button(form, text="Add", command=self._add).grid(row=1, column=5, padx=(8, 0))
+        self._hint = ttk.Label(top, text="", style="Muted.TLabel", wraplength=620, justify="left")
+        self._hint.pack(anchor="w", pady=(2, 0))
+        self._anchor_name.trace_add("write", lambda *_: self._describe())
+        self._describe()
+
+        copy_row = ttk.Frame(top)
+        copy_row.pack(fill="x", pady=(8, 0))
+        ttk.Label(copy_row, text="Copy the anchors of").pack(side="left")
+        self._source = tk.StringVar()
+        ttk.Combobox(copy_row, textvariable=self._source, values=[s for s, _p in sources], width=28,
+                     state="readonly").pack(side="left", padx=(6, 6))
+        copy_button = ttk.Button(copy_row, text="Copy", command=self._copy)
+        copy_button.pack(side="left")
+        tip(copy_button, "Every anchor of that set this one lacks, under the matching bone (same name, else the "
+                         "bone the body comparison pairs with it), at the same place scaled to this set's height. "
+                         "Check each bone before adding.")
+
+        self._tree = ttk.Treeview(top, columns=("parent", "offset", "from"), height=8, selectmode="browse")
+        for col, text, width in (("#0", "Anchor", 90), ("parent", "Under bone", 150), ("offset", "Offset", 170),
+                                 ("from", "From", 150)):
+            self._tree.heading(col, text=text)
+            self._tree.column(col, width=width, stretch=col == "from")
+        self._tree.pack(fill="both", expand=True, pady=(8, 0))
+        self._tree.bind("<<TreeviewSelect>>", lambda e: self._edit_selected())
+        rows = ttk.Frame(top)
+        rows.pack(fill="x", pady=(4, 0))
+        ttk.Button(rows, text="Update selected", command=self._update).pack(side="left")
+        ttk.Button(rows, text="Remove selected", command=self._remove).pack(side="left", padx=(6, 0))
+        ttk.Button(rows, text="Add anchors", style="Accent.TButton", command=self._ok).pack(side="right")
+        ttk.Button(rows, text="Cancel", command=self.destroy).pack(side="right", padx=(0, 6))
+        self.grab_set()
+
+    def _describe(self) -> None:
+        name = self._anchor_name.get().strip()
+        self._hint.configure(text=rig_tools.describe_anchor(name) if gltf_import.is_anchor_name(name) else
+                             "An anchor name starts and ends with an underscore (_ex1_).")
+
+    def _form(self) -> tuple[str, str, tuple[float, float, float]] | None:
+        name, parent = self._anchor_name.get().strip(), self._parent.get().strip()
+        try:
+            offset = tuple(float(v.get().replace(",", ".")) for v in self._offset)
+        except ValueError:
+            messagebox.showerror("Offset", "The offset takes three numbers.", parent=self)
+            return None
+        if not gltf_import.is_anchor_name(name):
+            messagebox.showerror("Name", "An anchor name starts and ends with an underscore (_ex1_).", parent=self)
+            return None
+        if name in self._bones or name in self._pending_names():
+            messagebox.showerror("Name", f"{name} is already in the skeleton or the list.", parent=self)
+            return None
+        if parent not in self._bones:
+            messagebox.showerror("Bone", "Choose the bone the anchor goes under.", parent=self)
+            return None
+        return name, parent, offset  # type: ignore[return-value]
+
+    def _pending_names(self) -> set[str]:
+        return {self._tree.item(i, "text") for i in self._tree.get_children()}
+
+    @staticmethod
+    def _offset_text(offset) -> str:
+        return " ".join(f"{v:.3f}" for v in offset)
+
+    def _add(self) -> None:
+        row = self._form()
+        if row is not None:
+            name, parent, offset = row
+            self._tree.insert("", "end", text=name, values=(parent, self._offset_text(offset), "typed in"))
+
+    def _copy(self) -> None:
+        label = self._source.get()
+        source = next((p for s, p in self._sources if s == label), None)
+        if source is None:
+            return
+        try:
+            copies = anchor_copies(source, self._path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read the set", str(exc), parent=self)
+            return
+        taken = self._pending_names()
+        added = 0
+        for c in copies:
+            if c.name in taken:
+                continue
+            self._tree.insert("", "end", text=c.name, values=(c.parent, self._offset_text(c.offset),
+                                                              f"{label} ({c.source_parent})"))
+            added += 1
+        if not added:
+            messagebox.showinfo("Copy anchors", f"{label} has no anchor this set lacks.", parent=self)
+
+    def _edit_selected(self) -> None:
+        selection = self._tree.selection()
+        if not selection:
+            return
+        item = self._tree.item(selection[0])
+        self._anchor_name.set(item["text"])
+        self._parent.set(item["values"][0])
+        for var, value in zip(self._offset, str(item["values"][1]).split()):
+            var.set(value)
+
+    def _update(self) -> None:
+        selection = self._tree.selection()
+        if not selection:
+            return
+        old = self._tree.item(selection[0])
+        self._tree.delete(selection[0])
+        row = self._form()
+        if row is None:
+            self._tree.insert("", "end", text=old["text"], values=old["values"])
+            return
+        name, parent, offset = row
+        self._tree.insert("", "end", text=name, values=(parent, self._offset_text(offset), old["values"][2]))
+
+    def _remove(self) -> None:
+        for item in self._tree.selection():
+            self._tree.delete(item)
+
+    def _ok(self) -> None:
+        rows = []
+        for item in self._tree.get_children():
+            data = self._tree.item(item)
+            parent = str(data["values"][0])
+            if parent not in self._bones:
+                messagebox.showerror("Bone", f"Choose the bone {data['text']} goes under.", parent=self)
+                return
+            offset = tuple(float(v) for v in str(data["values"][1]).split())
+            rows.append((data["text"], parent, offset))
+        if not rows:
+            messagebox.showinfo("Add anchor bones", "Add an anchor to the list first.", parent=self)
+            return
+        self.result = rows
+        self.destroy()
+
+
+class _RigCheckDialog(tk.Toplevel):
+    """The rig check's findings (``check_rig``)."""
+
+    def __init__(self, parent, label: str, findings: list[rig_tools.Finding], compared: str) -> None:
+        super().__init__(parent)
+        self.title(f"Check rig - {label}")
+        self.transient(parent)
+        top = ttk.Frame(self, padding=8)
+        top.pack(fill="both", expand=True)
+        ttk.Label(top, text=compared, style="Muted.TLabel", wraplength=640, justify="left").pack(anchor="w")
+        text = tk.Text(top, width=90, height=18, wrap="word", relief="flat", background=theme.color("field"),
+                       foreground=theme.color("fg"))
+        text.pack(fill="both", expand=True, pady=(6, 0))
+        marks = {"error": ("Problem: ", "danger"), "warning": ("Check: ", "warn"), "ok": ("", "fg")}
+        for level, (_mark, colour) in marks.items():
+            text.tag_configure(level, foreground=theme.color(colour))
+        for finding in sorted(findings, key=lambda f: ("error", "warning", "ok").index(f.level)):
+            mark, _colour = marks[finding.level]
+            text.insert("end", mark + finding.text + "\n\n", finding.level)
+        text.configure(state="disabled")
+        ttk.Button(top, text="Close", command=self.destroy).pack(anchor="e", pady=(6, 0))
 
 
 def clip_choice_label(clip: animation_catalog.ClipInfo) -> str:
@@ -4141,11 +4601,14 @@ def _populate_bone_tree(tree: ttk.Treeview, bones: list[skeleton.Bone]) -> None:
         still: list[tuple[int, skeleton.Bone]] = []
         for index, bone in remaining:
             parent = bone.parent_index
+            text = f"{index}: {bone.name}"
+            if gltf_import.is_anchor_name(bone.name):
+                text += f"  [anchor: {rig_tools.describe_anchor(bone.name)}]"
             if parent == -1:
-                item_by_index[index] = tree.insert("", "end", text=f"{index}: {bone.name}")
+                item_by_index[index] = tree.insert("", "end", text=text)
                 progressed = True
             elif parent in item_by_index:
-                item_by_index[index] = tree.insert(item_by_index[parent], "end", text=f"{index}: {bone.name}")
+                item_by_index[index] = tree.insert(item_by_index[parent], "end", text=text)
                 progressed = True
             else:
                 still.append((index, bone))
@@ -5832,6 +6295,14 @@ class ModelViewer(EditorPanel):
         tip(self._copy_clip_button, "Replace a clip of this set with another model's: same game or the other "
                                     "one, played on this set's skeleton. No export or import.")
         self._fit_button = ttk.Button(buttons, text="Fit new rig...", command=self._fit_rig, state="disabled")
+        self._anchor_button = ttk.Button(
+            buttons, text="Add anchor bones...", command=self._add_anchors, state="disabled")
+        tip(self._anchor_button, "Add engine anchors (_ex1_/_ex2_ for spell effects, trail ends, shadow points...) "
+                                 "under a bone, typed in or copied from another set at the same place.")
+        self._check_button = ttk.Button(buttons, text="Check rig...", command=self._check_rig, state="disabled")
+        tip(self._check_button, "What the skeleton lacks for the engine and the set's clips: anchors a trail or "
+                                "spell needs, anchors the vanilla set had, bone and triangle counts against the "
+                                "disc's models, map vertices shared between bones.")
         self._restore_button = ttk.Button(
             buttons, text="Restore original...", command=self._restore_originals, state="disabled"
         )
@@ -5859,7 +6330,8 @@ class ModelViewer(EditorPanel):
         for i, button in enumerate((self._export_button, self._blend_button, self._import_button, self._import_anim_button,
                                     self._import_rig_button, self._kit_button, self._events_button,
                                     self._export_ga_button, self._import_ga_button, self._copy_clip_button,
-                                    self._fit_button, self._restore_button, self._new_slot_button,
+                                    self._fit_button, self._anchor_button, self._check_button,
+                                    self._restore_button, self._new_slot_button,
                                     self._new_character_button, self._remove_slot_button, self._tables_button,
                                     self._paint_kit_button, self._swatches_button)):
             # two per row: three cut labels such as "Import animation..." at the default pane width
@@ -5923,6 +6395,8 @@ class ModelViewer(EditorPanel):
         self._import_ga_button.config(state="normal" if animatable else "disabled")
         self._copy_clip_button.config(state="normal" if animatable else "disabled")
         self._fit_button.config(state="normal" if animatable else "disabled")
+        self._anchor_button.config(state="normal" if animatable else "disabled")
+        self._check_button.config(state="normal" if animatable else "disabled")
         self._restore_button.config(
             state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
         weapon = label.startswith("xwp/") and not label.startswith("xwp/forge/")
@@ -6448,7 +6922,8 @@ class ModelViewer(EditorPanel):
             max_triangles = max_triangles or None
         fitted = Path(chosen).with_name(f"{Path(chosen).stem}_on_{label.replace('/', '_')}.glb")
         try:
-            result = self._busy(lambda: fit_new_rig(path, setup, dialog.result, fitted, max_triangles))
+            result = self._busy(lambda: fit_new_rig(path, setup, dialog.result, fitted, max_triangles,
+                                                    **dialog.options))
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not fit the rig", str(exc), parent=self)
             return
@@ -6459,6 +6934,56 @@ class ModelViewer(EditorPanel):
             f"Fit {Path(chosen).name} onto {label}",
             f"New rig from {Path(chosen).name}: its skeleton, every animation retargeted ({len(result.outputs)} files)",
         )
+
+    def _add_anchors(self) -> None:
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, path = selected
+        kind = label.split("/", 1)[0] + "/"
+        sources = [(s, p) for s, p in self._all_sets if s.startswith(kind) and s != label]
+        try:
+            dialog = _AnchorDialog(self, label, path, sources)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not read the skeleton", str(exc), parent=self)
+            return
+        self.wait_window(dialog)
+        if not dialog.result:
+            return
+        anchors = dialog.result
+        try:
+            result = self._busy(lambda: add_anchor_bones(path, anchors))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not add the anchors", str(exc), parent=self)
+            return
+        names = ", ".join(name for name, _parent, _offset in anchors)
+        self._review_and_write(label, path, result, f"Add anchor bones to {label}", f"Anchor bones added: {names}")
+
+    def _vanilla_container(self, path: Path) -> Path | None:
+        """The vanilla disc's copy of a set's container, when the disc had it."""
+        try:
+            relative = path.relative_to(files_root_of(self._project)).as_posix()
+            from ..game_files import files_of
+            found = files_of(self._project).vanilla_path(f"files/{relative}")
+        except Exception:  # noqa: BLE001 - no vanilla copy known
+            return None
+        return found if found is not None and found.is_file() and found.resolve() != path.resolve() else None
+
+    def _check_rig(self) -> None:
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, path = selected
+        reference = self._vanilla_container(path)
+        try:
+            findings = self._busy(lambda: check_rig(path, reference))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Could not check the rig", str(exc), parent=self)
+            return
+        compared = ("Compared with the vanilla set." if reference is not None else
+                    "No vanilla copy of this set (an added slot): checked against what the engine and its "
+                    "clips need.")
+        _RigCheckDialog(self, label, findings, compared)
 
     def _set_clips(self, path: Path) -> list[animation_catalog.ClipInfo] | None:
         try:

@@ -81,6 +81,11 @@ a few kilobytes of both games are read by a decoder the app uses.
 - New skeletons can be fitted on Radiant Dawn map units: the pose model now applies
   the loader's joint-orient rule.
 - Window images preview Radiant Dawn layouts and backgrounds.
+- 3D Models: the **Fit new rig…** mapping draws both skeletons (click a joint, then the
+  game bone), mirrors one side onto the other, and adds two options: feet at the game
+  ankle's height and faces drawn from both sides. New **Add anchor bones…** (typed in or
+  copied from another set) and **Check rig…** (missing anchors, trail anchors the clips
+  need, bone counts, blended map vertices).
 
 ### Game data and checks
 
