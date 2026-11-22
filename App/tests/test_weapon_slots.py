@@ -102,7 +102,7 @@ class PorWeaponTests(_PorFixture, unittest.TestCase):
         table = bw.read_weapon(dict(zdbx.read_zdbx_files((self.files / "zdbx.cmp").read_bytes()))
                                ["xwp/SABER.dbx"].decode("shift_jis"))
         self.assertEqual((table.model_folder, table.model, table.kind, table.missile, table.effect_id),
-                         ("xwp/SABER", "saber", 0, 0, "EID_SPARK"))
+                         ("xwp/SABER", "SABER", 0, 0, "EID_SPARK"))
         self.assertTrue((self.files / "xwp" / "saber" / "saber.cmp").is_file())
         texts = {m.speaker: m.text for m in message.read_messages_path(self.files / "Mess" / "common.m")}
         self.assertEqual((texts["MIID_SABER"], texts["MH_I_SABER"], texts["MIID_TESTITEM"]),
