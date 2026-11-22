@@ -99,15 +99,14 @@ edited European and Japanese saves, promotion items on story units, map light an
 class introductions, animation speed, animated ally and NPC battles, glossary edits,
 Extras unlocks, Conversation Room order and subtitle edits.
 
-## Path of Radiance
+## Both games
 
 - **Roster tab** on chapter pages: pick a fixed team or the player's army, set the
   team's tiles, set every other unit aside, and choose who joins or leaves the army at
   the end of the chapter, without writing script. **Check turn 1** shows who is on the
-  map with a new save and with a full army. The playthrough simulator now follows the
-  game's army rule for `_mikata_` groups.
-
-## Both games
+  map with a new save and with a full army. The playthrough simulator now follows each
+  game's army rule for `_mikata_` groups (Radiant Dawn: the "Place this character" and
+  "Create if absent" record flags, lords on their own tile).
 
 - Saves, Battle Data and Battle Cameras are one page each (`battle_browser`), with a
   per-game adapter. The four per-game viewers are gone.

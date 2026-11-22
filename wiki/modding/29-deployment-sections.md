@@ -203,19 +203,26 @@ To revert, restore the original sections and script calls together. Deleting an 
 
 ## Choose who plays the chapter (Roster tab)
 
-The player section's **name** decides how Path of Radiance fills it, not only its units:
+On **Path of Radiance**, the player section's **name** decides how the game fills it, not only its units:
 
 - A name with `_mikata_` (`bmap05_mikata_c`) is an **army group**. Each unit record is a starting tile. The game puts the **first units of the player's army** on those tiles, in army order, whoever the records name. Ike's own record still places Ike. The named characters only matter on a new save, when the army is empty. So replacing Boyd by another character in `bmap02_mikata_n` works from a fresh file, but a save with a bigger army still puts its own first units there.
 - Any other name (`bmap05_avatar_c`) is a **fixed team**: the game places exactly the listed characters, from the reserve, or creates them.
 
+On **Radiant Dawn**, a `_mikata_` group (`bmap0101_mikata_n`) is also filled from the army, but each record's flags (the `growth_flags` field of the Build tab) can override it:
+
+- **Place this character** (0x0800): the record places its own character when that character is in the army. Vanilla 1-1 sets it on Micaiah and Edward, Part 3's first map on every Greil Mercenary.
+- **Create if absent** (0x0008): a character who doesn't exist yet is created, and placed when the record is a player record.
+- The other tiles take the first units of the reserve in army order. Lords (skill `SID_HERO`) only stand on their own record's tile. There is no exception for an empty army: on a new save, a record without the flags places nobody.
+- A character away in force 7 (or in another division) is not in the army: their tile goes to a reserve unit.
+
 The **Roster** tab sets this for you:
 
-1. Open the chapter, then **Roster**. The tab shows the group the script deploys first and its units.
-2. Pick **Player's army** or **Fixed team**. With **Fixed team**, **Apply** renames the group to `_avatar_` and every script call that names it.
+1. Open the chapter, then **Roster**. The tab shows the group the script deploys first and its units. The tile is where the unit stands once deployed (where an animated deployment walks it to).
+2. Pick **Player's army** or **Fixed team**. With **Fixed team**, **Apply** renames the group to `_avatar_` and every script call that names it (Path of Radiance), or sets **Place this character** and **Create if absent** on every record and keeps the name (Radiant Dawn: the preparations and the Armies page look for `_mikata_`). **Player's army** undoes it.
 3. Add, remove or move characters and set their tiles (**Set tile**).
 4. **Set every other unit aside** (fixed team): right after the team is deployed, every other player unit on the map goes back to the reserve.
-5. **End of chapter**: characters who **join the army** (they enter the reserve) and who **leave** it (out of the army until a later deployment names them, the way chapter 5 sets Oscar and Boyd aside).
-6. **Apply**, then **Check turn 1**. The check plays the opening in the playthrough simulator twice, with a new save and with a save holding every character of the earlier chapters, and lists who is on the map at the first player phase. It warns when a character doesn't exist, when the script still deploys the group under its old name, when other army groups are deployed, and when a preparations screen lets the player swap units.
+5. **End of chapter**: characters who **join the army** (they enter the reserve) and who **leave** it (force 7, out of the army until a later deployment names them, the way Path of Radiance's chapter 5 sets Oscar and Boyd aside and Radiant Dawn's 2-1 sets Marcia aside).
+6. **Apply**, then **Check turn 1**. The check plays the opening in the playthrough simulator twice, with a new save and with a save holding every character of the earlier chapters, and lists who is on the map at the first player phase. It warns when a character doesn't exist, when the script still deploys the group under its old name, when other army groups are deployed, when a lord can't take another tile (Radiant Dawn), and when a preparations screen lets the player swap units.
 
 The script lines the tab writes sit between `# >>> Roster tab` and `# <<< Roster tab` on the **Script** tab; applying again replaces them. Test the chapter in Dolphin with a save that has a large army before you share it.
 

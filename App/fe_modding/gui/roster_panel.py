@@ -1,4 +1,4 @@
-"""Chapters › Roster (Path of Radiance): who plays the chapter and how the game picks them,
+"""Chapters › Roster (Path of Radiance and Radiant Dawn): who plays the chapter and how the game picks them,
 who else is set aside, and who joins or leaves the army when it ends
 (:mod:`fe_modding.chapter_roster`). **Check turn 1** plays the opening in the playthrough
 simulator with a new save and with a save holding the whole army."""
@@ -18,6 +18,21 @@ MODE_HELP = {
     cr.FIXED: "Fixed team: exactly the listed characters, each on their tile, taken from the reserve or "
               "created. Group name with _avatar_ (renamed from _mikata_ on Apply, script calls included).",
 }
+RD_MODE_HELP = {
+    cr.ARMY: "Player's army: each tile takes the next unit of the reserve, in army order; lords (skill SID_HERO) "
+             "only stand on their own tile. The listed characters only matter on a new save. The records' "
+             "\"Place this character\" flag is cleared on Apply.",
+    cr.FIXED: "Fixed team: exactly the listed characters, each on their tile, taken from the reserve or "
+              "created. Apply sets the records' \"Place this character\" and \"Create if absent\" flags, as "
+              "vanilla 1-1 does for Micaiah and Edward; the group keeps its _mikata_ name.",
+}
+LEAVE_HELP = ("Runs when the map goal is achieved (the script's @on_complete function). Joining characters "
+              "enter the reserve from a generated group; leaving characters go to force 7 (out of the army, "
+              "as vanilla chapter 5 does with Oscar and Boyd) until a deployment names them.")
+RD_LEAVE_HELP = ("Runs when the map goal is achieved (the script's @on_complete function). Joining characters "
+                 "enter the reserve from a generated group (Join, force 5); leaving characters go to force 7 with "
+                 "TeamTransferPID (out of the army, as vanilla 2-1 does with Marcia) until a deployment names "
+                 "them or a script brings them back to force 5.")
 
 
 class RosterPanel(ttk.Frame):
@@ -59,7 +74,7 @@ class RosterPanel(ttk.Frame):
             row.pack(fill="x", anchor="w")
             ttk.Radiobutton(row, text=label, value=mode, variable=self._mode,
                             command=self._mode_changed).pack(side="left")
-            info(row, MODE_HELP[mode]).pack(side="left", padx=(4, 0))
+            info(row, self._help()[mode]).pack(side="left", padx=(4, 0))
         self._group = ttk.Label(team, text="", style="Muted.TLabel")
         self._group.pack(anchor="w", pady=(2, 6))
 
@@ -97,9 +112,7 @@ class RosterPanel(ttk.Frame):
 
         end = ttk.LabelFrame(self._content, text="End of chapter", padding=8)
         end.pack(fill="x", anchor="w", pady=(10, 0))
-        info(end, "Runs when the map goal is achieved (the script's @on_complete function). Joining characters "
-                  "enter the reserve from a generated group; leaving characters go to force 7 (out of the army, "
-                  "as vanilla chapter 5 does with Oscar and Boyd) until a deployment names them.").pack(anchor="w")
+        info(end, RD_LEAVE_HELP if cr.game_of(self.project) == "fe10" else LEAVE_HELP).pack(anchor="w")
         self._joins = self._pid_list(end, "Join the army")
         self._leaves = self._pid_list(end, "Leave the army")
 
@@ -165,8 +178,7 @@ class RosterPanel(ttk.Frame):
         self._roster = None
         self._write_report([])
         if not cr.is_supported(self.project):
-            self._show_unsupported("The Roster tab is for Path of Radiance chapters. Radiant Dawn's armies "
-                                   "are set in the Overview's story flow.")
+            self._show_unsupported("The Roster tab is for Path of Radiance and Radiant Dawn chapters.")
             return
         if self._chapter is None:
             self._show_unsupported("No chapter.")
@@ -209,12 +221,15 @@ class RosterPanel(ttk.Frame):
         self._set_aside_check.configure(state="normal" if fixed else "disabled")
         if self._roster.groups:
             preview = cr.ChapterRoster(self._roster.chapter_id, self._roster.folder, list(self._roster.groups),
-                                       mode=self._mode.get())
+                                       mode=self._mode.get(), game=self._roster.game)
             renames = preview.renamed_groups()
             text = "Group: " + ", ".join(renames.get(g, g) for g in self._roster.groups)
             if renames:
                 text += "  (renamed from " + ", ".join(renames) + " on Apply)"
             self._group.configure(text=text)
+
+    def _help(self) -> dict:
+        return RD_MODE_HELP if cr.game_of(self.project) == "fe10" else MODE_HELP
 
     # -- team edits -------------------------------------------------------------------------------------
     def _selected(self) -> None:
@@ -264,7 +279,8 @@ class RosterPanel(ttk.Frame):
         if self._roster is None:
             return None
         roster = cr.ChapterRoster(self._roster.chapter_id, self._roster.folder, list(self._roster.groups),
-                                  mode=self._mode.get(), other_player_groups=list(self._roster.other_player_groups))
+                                  mode=self._mode.get(), other_player_groups=list(self._roster.other_player_groups),
+                                  game=self._roster.game)
         for item in self._tree.get_children():
             _name, pid, x, y = self._tree.item(item, "values")
             roster.members.append(cr.Member(pid, int(x), int(y)))

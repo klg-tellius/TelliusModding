@@ -65,7 +65,7 @@ The chapter page shows each piece on its own tab:
 | **Build** | The map and its units, props, terrain, heights and script zones | [Use the map Build tab](21-map-build-basics.md) |
 | **Map settings** | The map's size, camera and environment | [Configure map settings and chapter objectives](27-map-settings.md) |
 | **Chapter data** | The chapter record: names, objectives, scenes, music | [Configure map settings and chapter objectives](27-map-settings.md) |
-| **Roster** | Who plays the chapter, who is set aside, who joins or leaves at the end (Path of Radiance) | [Design and connect deployment sections](29-deployment-sections.md#choose-who-plays-the-chapter-roster-tab) |
+| **Roster** | Who plays the chapter, who is set aside, who joins or leaves at the end | [Design and connect deployment sections](29-deployment-sections.md#choose-who-plays-the-chapter-roster-tab) |
 | **Dialogue** | `Mess/c06.m` | [Author and connect a dialogue scene](37-dialogue-editor.md) |
 | **Script** | `Scripts/C06.cmb` | [Edit, compile, and test event scripts](33-script-editor.md) |
 | **Shops** | The chapter's armory and vendor | [Edit armory, vendor, forge, and gold](46-shops.md) |

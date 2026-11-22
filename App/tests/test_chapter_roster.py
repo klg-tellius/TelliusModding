@@ -1,5 +1,5 @@
-"""The Chapters › Roster tab's model (``chapter_roster``) and the Path of Radiance
-deployment rules it relies on in the playthrough simulator (``playthrough.setup``).
+"""The Chapters › Roster tab's model (``chapter_roster``) and the Path of Radiance and
+Radiant Dawn deployment rules it relies on in the playthrough simulator (``playthrough.setup``).
 
 Synthetic: no game data needed. With ``FE9_EXTRACTED_FILES`` set, the roster of a
 vanilla chapter is applied and checked on a copy of its files."""
@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fe_modding import chapter_roster as cr  # noqa: E402
 from fe_modding.formats import dispo, fe8data, lz10, message, pak  # noqa: E402
 from fe_modding.formats.cmb import compile_source, read_cmb, write_cmb  # noqa: E402
+from fe_modding.formats.cmb.model import FE10  # noqa: E402
 from fe_modding.playthrough import natives, setup  # noqa: E402
 from fe_modding.playthrough.simulation import Simulation  # noqa: E402
 from fe_modding.playthrough.state import PLAYER, GameState  # noqa: E402
@@ -39,9 +40,10 @@ def _fe8():
     return fe8data.Fe8Data(characters=characters, classes=[cls], items=[], skills=[])
 
 
-def _record(pid, x, y, flags=0):
+def _record(pid, x, y, flags=0, rd_flags=0):
     record = [0] * 48
     record[F["pid"]], record[F["level"]], record[F["flags"]] = pid, 1, flags
+    record[dispo.FE10_GROWTH_FLAGS_FIELD] = rd_flags
     record[F["pos_x"]] = record[F["pos2_x"]] = x
     record[F["pos_y"]] = record[F["pos2_y"]] = y
     return record
@@ -126,10 +128,11 @@ class ArmyRuleTests(unittest.TestCase):
         setup.deploy(world, state, "g_avatar_c", animate=False)
         self.assertEqual(_on_map(state), {})
 
-    def test_rule_is_path_of_radiance_only(self):
+    def test_both_games_have_army_groups(self):
         world = _world({"g_mikata_c": [_record("PID_LUKE", 1, 1)]})
-        world.dialect = type(world.dialect)(**{**world.dialect.__dict__, "name": "fe10"})
-        self.assertFalse(setup.is_army_group(world, "g_mikata_c"))
+        self.assertTrue(setup.is_army_group(world, "g_mikata_c"))
+        self.assertTrue(setup.is_army_group(_rd(world), "g_mikata_c"))
+        self.assertFalse(setup.is_army_group(_rd(world), "g_avatar_c"))
 
     def test_opening_with_set_aside_block_leaves_only_the_team(self):
         source = ("@export\ndef Opening0():\n"
@@ -153,6 +156,44 @@ class ArmyRuleTests(unittest.TestCase):
         self.assertEqual(fresh.on_map, [("PID_LUKE", 4, 4)])
         self.assertEqual(full.on_map, [("PID_CHROM", 4, 4)])
         self.assertTrue(any("takes the slot" in line for line in full.log))
+
+
+def _rd(world):
+    world.dialect = type(world.dialect)(**{**world.dialect.__dict__, "name": "fe10"})
+    return world
+
+
+PLACE, CREATE = dispo.FE10_PLACE_THIS_CHARACTER, dispo.FE10_CREATE_IF_ABSENT
+
+
+class RadiantDawnArmyRuleTests(unittest.TestCase):
+    """US main.dol 0x8010BF00 (gathering) and 0x8010C200 (placing) for ``_mikata_`` groups."""
+
+    def test_place_flag_puts_the_character_on_its_tile_the_others_take_the_reserve(self):
+        world = _rd(_world({"bmap0101_mikata_n": [_record("PID_LISSA", 1, 1), _record("PID_LUKE", 4, 4, rd_flags=PLACE)]}))
+        state = setup.initial_state(world, army=("PID_CHROM", "PID_LISSA", "PID_LUKE"))
+        setup.deploy(world, state, "bmap0101_mikata_n", animate=False)
+        self.assertEqual(_on_map(state), {"PID_LUKE": (4, 4), "PID_CHROM": (1, 1)})
+
+    def test_lords_only_take_their_own_tile(self):
+        world = _rd(_world({"g_mikata_n": [_record("PID_LUKE", 1, 1), _record("PID_IKE", 2, 2)]}))
+        state = setup.initial_state(world, army=("PID_IKE", "PID_CHROM"))
+        state.unit_by_pid("PID_IKE").skills.append(setup.LORD_SKILL)
+        setup.deploy(world, state, "g_mikata_n", animate=False)
+        self.assertEqual(_on_map(state), {"PID_CHROM": (1, 1), "PID_IKE": (2, 2)})
+
+    def test_create_flag_places_an_absent_character_and_an_empty_army_places_nobody_else(self):
+        world = _rd(_world({"g_mikata_n": [_record("PID_LUKE", 1, 1), _record("PID_VADER", 4, 4, rd_flags=CREATE)]}))
+        state = setup.initial_state(world)
+        setup.deploy(world, state, "g_mikata_n", animate=False)
+        self.assertEqual(_on_map(state), {"PID_VADER": (4, 4)})  # no empty-army exception on Radiant Dawn
+
+    def test_a_character_away_in_force_seven_is_replaced_from_the_reserve(self):
+        world = _rd(_world({"g_mikata_n": [_record("PID_LUKE", 1, 1, rd_flags=PLACE | CREATE)]}))
+        state = setup.initial_state(world, army=("PID_LUKE", "PID_CHROM"))
+        natives.handler(world, "UnitTransferToForce")(_Vm(world, state), [state.unit_by_pid("PID_LUKE").uid, 7])
+        setup.deploy(world, state, "g_mikata_n", animate=False)
+        self.assertEqual(_on_map(state), {"PID_CHROM": (1, 1)})
 
 
 class _Vm:
@@ -265,6 +306,11 @@ class RosterFileTests(unittest.TestCase):
         with self.assertRaisesRegex(cr.RosterError, "twice"):
             cr.plan_roster(self.project, roster)
 
+    def test_fixed_team_renames_a_rank_call_too(self):
+        roster = cr.ChapterRoster("35", "bmap35", ["bmap35_mikata_n", "bmap35_mikata_h"], mode=cr.FIXED)
+        source = cr.plan_source('def f():\n    DisposRank("bmap35_mikata")\n', roster, {})
+        self.assertIn('DisposRank("bmap35_avatar")', source)
+
     def test_check_warns_about_a_call_to_the_old_group_name(self):
         roster = cr.read_roster(self.project, "35")
         roster.mode = cr.FIXED
@@ -277,6 +323,112 @@ class RosterFileTests(unittest.TestCase):
             sidecar.unlink()
         report = cr.check_roster(self.project, "35", army=[])
         self.assertTrue(any("calls that group bmap35_avatar_c" in w for w in report.warnings), report.warnings)
+
+
+RD_SCRIPT = '''@export
+def Opening0():
+    MapLoad("bmap0101")
+    UnitWalkDir(4)
+    DisposRank("bmap0101_mikata")
+    UnitWalkDir(0)
+    DisposWait()
+    WaitM(200)
+
+@on_complete(flag="gf_complete")
+def func_1():
+    WaitM(250)
+    set("gf_complete")
+'''
+
+RD_STARTUP = '''@export
+def TeamTransferPID(pid, force):
+    UnitTransferToForce(UnitGetByPID(pid), force)
+'''
+
+
+def _rd_document(names, pid):
+    document = dispo.parse_dispo(build_minimal_dispo_bytes(tuple(n.encode() for n in names)))
+    document.dialect = "fe10"
+    for section in document.sections:
+        section.units = [dispo.DispoUnitValues(unit, raw=bytes(dispo.FE10_RECORD_SIZE)) for unit in section.units]
+        for unit in section.units:
+            unit[F["pid"]] = pid if "mikata" in section.name else "PID_ZAKO"
+            unit[F["faction"]] = 0 if "mikata" in section.name else 1
+            unit[F["pos_x"]], unit[F["pos2_x"]] = 1, 4  # walks in from x=1
+            unit[dispo.FE10_GROWTH_FLAGS_FIELD] = PLACE | CREATE if "mikata" in section.name else 0
+    return dispo.build_dispo(document)
+
+
+def _rd_project(tmp):
+    from fe_modding.games import Game
+    from fe_modding.project import ModProject
+
+    project = ModProject.create(Path(tmp), "roster rd", Game.RADIANT_DAWN)
+    files = project.extracted_dir / "files"
+    for folder in ("Scripts", "Mess", "zmap/bmap0101"):
+        (files / folder).mkdir(parents=True, exist_ok=True)
+    (files / "Mess" / "c0101.m").write_bytes(message.write_messages([]))
+    (files / "Scripts" / "startup.cmb").write_bytes(write_cmb(compile_source(RD_STARTUP, dialect=FE10).script))
+    (files / "Scripts" / "C0101.cmb").write_bytes(write_cmb(compile_source(RD_SCRIPT, dialect=FE10).script))
+    for letter in "nh":
+        (files / f"zmap/bmap0101/dispos_{letter}.bin").write_bytes(
+            _rd_document((f"bmap0101_mikata_{letter}", f"bmap0101_teki_{letter}"), "PID_LUKE"))
+    (files / "zmap/bmap0101/dispos_c.bin").write_bytes(_rd_document(("bmap0101_ev00_c", "bmap0101_ev01_c"), "PID_X"))
+    return project
+
+
+class RadiantDawnRosterFileTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.project = _rd_project(self._tmp.name)
+        self.zmap = self.project.extracted_dir / "files/zmap/bmap0101"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _section(self, letter, name):
+        return dispo.parse_dispo((self.zmap / f"dispos_{letter}.bin").read_bytes()).section(name)
+
+    def test_reads_the_rank_groups_and_the_mode_from_the_place_flag(self):
+        self.assertTrue(cr.is_supported(self.project))
+        roster = cr.read_roster(self.project, "0101")
+        self.assertEqual((roster.game, roster.mode, roster.groups),
+                         ("fe10", cr.FIXED, ["bmap0101_mikata_n", "bmap0101_mikata_h"]))
+        self.assertEqual([(m.pid, m.x, m.y) for m in roster.members], [("PID_LUKE", 4, 0)])  # the tile walked to
+
+    def test_army_mode_clears_the_flag_and_keeps_the_name(self):
+        roster = cr.read_roster(self.project, "0101")
+        roster.mode = cr.ARMY
+        plan = cr.apply_roster(self.project, roster)
+        self.assertIn('DisposRank("bmap0101_mikata")', plan.source)
+        self.assertEqual(sorted(p.name for p, _data in plan.deployment_writes), ["dispos_h.bin", "dispos_n.bin"])
+        for letter in "nh":
+            unit = self._section(letter, f"bmap0101_mikata_{letter}").units[0]
+            self.assertEqual(unit[dispo.FE10_GROWTH_FLAGS_FIELD], CREATE)
+            self.assertEqual((unit[F["pos_x"]], unit[F["pos2_x"]]), (1, 4))  # unchanged tile: walk-in kept
+        self.assertEqual(cr.read_roster(self.project, "0101").mode, cr.ARMY)
+
+    def test_fixed_team_with_blocks_and_a_new_member(self):
+        roster = cr.read_roster(self.project, "0101")
+        roster.members.append(cr.Member("PID_VADER", 6, 2))
+        roster.set_aside, roster.joins, roster.leaves = True, ["PID_LISSA"], ["PID_CHROM"]
+        plan = cr.apply_roster(self.project, roster)
+        lines = plan.source.splitlines()
+        wait = lines.index("    DisposWait()")
+        self.assertTrue(lines[wait + 1].strip().startswith(cr.BLOCK_START))  # after the walk-in, not before
+        self.assertIn("            UnitEscape(roster_unit)", lines)
+        complete = next(i for i, line in enumerate(lines) if line.startswith("def func_1"))
+        self.assertEqual(lines[complete + 2:complete + 4],
+                         ['    Join("bmap0101_roster_join_c", 5)', '    TeamTransferPID("PID_CHROM", 7)'])
+        vader = self._section("h", "bmap0101_mikata_h").units[1]
+        self.assertEqual((vader[F["pid"]], vader[F["pos2_x"]], vader[F["pos2_y"]]), ("PID_VADER", 6, 2))
+        self.assertEqual(vader[dispo.FE10_GROWTH_FLAGS_FIELD], PLACE | CREATE)
+        join = self._section("c", "bmap0101_roster_join_c")
+        self.assertEqual([(u[F["pid"]], u[dispo.FE10_GROWTH_FLAGS_FIELD]) for u in join.units], [("PID_LISSA", CREATE)])
+        again = cr.read_roster(self.project, "0101")
+        self.assertEqual((again.mode, again.set_aside, again.joins, again.leaves),
+                         (cr.FIXED, True, ["PID_LISSA"], ["PID_CHROM"]))
+        self.assertEqual(cr.apply_roster(self.project, again).source, plan.source)
 
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted POR files/ directory")
