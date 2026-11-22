@@ -103,6 +103,7 @@ Columns: the page of the app, then the functions for each game. "Shared" means o
 | Item and skill icons | Assets › Icons | Shared: `formats.icons:read_icon_images`, `item_icon` | same |
 | New battle or map model slot | Assets › Model slots | Shared: `model_slots:clone_battle_model`, `assign_battle_model`, `clone_map_model`, `assign_map_model` | same |
 | Import a 3D model (glTF) | Assets › 3D Models | Shared: `formats.gltf_import:import_static_model`, `import_skinned_model`, `import_animation` | same |
+| Fit a rigged model, anchors, rig check | Assets › 3D Models | Shared: `gui.model_viewer:prepare_rig_fit`, `fit_new_rig` (`floor=rig_fit.FLOOR_FEET`, `double_sided=True`), `anchor_copies`, `add_anchor_bones`, `check_rig`; `rig_tools:mirror_mapping` | same |
 | Battle tables (weapons, units, cameras) | Assets › Battle ... | `formats.zdbx:read_zdbx_archive`, `build_zdbx_archive`, `set_job_model` | `formats.fe10_battle:read_fe10_battle`, `build_fe10_battle`, `update_battle_record` |
 | Particle effects | Assets › Effects | Shared: `formats.particle_editor:edit_emitter`, `add_emitter` (see [PARTICLE_EDITOR.md](../../App/docs/PARTICLE_EDITOR.md)) | same |
 | Music | Assets › Music | `formats.stm:wav_path_to_stm_audio`, `write_stm` (replace a `Sound/*.stm` track) | `rd_music:add_track`, `add_cue`, `remove_track`; `formats.brstm:wav_path_to_brstm_audio`, `write_brstm` |
