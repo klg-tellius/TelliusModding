@@ -298,12 +298,7 @@ def _by_pos(vm, a):
 
 
 def _force_members(vm, force: int) -> list:
-    units = sorted(vm.state.units.values(), key=lambda u: u.uid)
-    if force == 5:
-        return [u for u in units if u.faction == PLAYER and u.hidden and not u.dead]
-    if force == 6:
-        return [u for u in units if u.dead]
-    return [u for u in units if u.faction == force and u.on_map]
+    return setup.force_members(vm.state, force)
 
 
 @native("ForceGetFirst")
@@ -318,11 +313,7 @@ def _force_count(vm, a):
 
 
 def _force_of(unit: SimUnit) -> int:
-    if unit.dead:
-        return 6
-    if unit.hidden and unit.faction == PLAYER:
-        return 5
-    return unit.faction
+    return setup.force_of(unit)
 
 
 @native("UnitGetNext")
@@ -499,11 +490,13 @@ def _transfer(vm, a):
     force = int(a[1])
     if force in (0, 1, 2, 3):
         unit.faction = force
-        unit.hidden = False
+        unit.hidden = unit.away = False
     elif force == 5:
-        unit.faction, unit.hidden = PLAYER, True
+        unit.faction, unit.hidden, unit.away = PLAYER, True, False
     elif force == 6:
         unit.dead = True
+    elif force == 7:  # out of the army until a deployment names it (vanilla C05 sets Oscar and Boyd aside)
+        unit.faction, unit.hidden, unit.away = PLAYER, True, True
     if force != ENEMY:
         for item in unit.items:
             item[2] = False
