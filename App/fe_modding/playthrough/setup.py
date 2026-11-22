@@ -9,6 +9,16 @@ character's own (``dispo`` docstring). Autolevelled units (flag 0x01) gain
 the class growths' *average* for every level above their base - the game
 rolls them, so real units differ by a few points.
 
+**Player groups on Path of Radiance** follow ``main.dol``'s two deployment rules
+(US addresses). A group whose name contains ``_mikata_`` (``strstr`` at 0x80107874)
+is an *army* group (0x8010764c): each record is only a starting tile. Its
+character is created in the reserve when the army is empty or the record has
+``FLAG_SPAWN_WHEN_ABSENT``, then the **first unit of the reserve** (force 5, in
+army order, Ike aside) takes the tile. Ike's own record places Ike. Any other
+name places the listed character itself (0x80107468): the reserve unit, a unit
+set aside in force 7, or a new one; a character in force 6 (dead) is skipped.
+A save's army is given to :func:`initial_state` as ``army``.
+
 The chapter starts like the game's fixed sequence (archive ``chapters``
 article): ``RegistGlobalFlags`` (``startup.cmb``, run at boot), the
 chapter's ``Startup``, ``Opening0``, ``Opening1`` and ``Opening2`` (the base
@@ -127,6 +137,52 @@ def nearest_free(world: World, state: GameState, tile: tuple, unit: Optional[Sim
     return tile
 
 
+ARMY_GROUP_MARK = "_mikata_"
+LEADER_PID = "PID_IKE"  # the army rule's exception (main.dol string 0x80273948)
+
+
+def force_of(unit: SimUnit) -> int:
+    """The game's force list of a unit: 0-3 on the map, 5 the reserve, 6 dead, 7 set aside."""
+    if unit.dead:
+        return 6
+    if unit.away:
+        return 7
+    if unit.hidden and unit.faction == PLAYER:
+        return 5
+    return unit.faction
+
+
+def force_members(state: GameState, force: int) -> list:
+    """A force's units in list order (creation order stands in for the game's list order)."""
+    units = sorted(state.units.values(), key=lambda u: u.uid)
+    if force in (5, 6, 7):
+        return [u for u in units if force_of(u) == force]
+    return [u for u in units if u.faction == force and u.on_map]
+
+
+def is_army_group(world: World, group: str) -> bool:
+    """Path of Radiance deploys a ``_mikata_`` group from the reserve, not by PID."""
+    return world.dialect.name == "fe9" and ARMY_GROUP_MARK in group
+
+
+def _army_unit(world: World, state: GameState, record: list, group: str, army_was_empty: bool) -> Optional[SimUnit]:
+    """The unit an army-group record places (main.dol 0x8010764c), or None when the reserve is empty."""
+    pid = record[F["pid"]]
+    own = state.unit_by_pid(pid) if isinstance(pid, str) and pid else None
+    if own is None and isinstance(pid, str) and pid and (
+            army_was_empty or int(record[F["flags"]] or 0) & dispo.FLAG_SPAWN_WHEN_ABSENT):
+        own = state.add_unit(make_unit(world, record, group))
+        own.faction, own.hidden = PLAYER, True
+    elif own is not None and own.away:
+        own.away = False
+        own.faction, own.hidden = PLAYER, True
+    if own is not None and own.dead:
+        own = None
+    if own is not None and own.pid == LEADER_PID:
+        return own
+    return next((u for u in force_members(state, 5) if u.pid != LEADER_PID), None)
+
+
 def deploy(world: World, state: GameState, group: str, *, animate: bool = True, exact: bool = False,
            force: Optional[int] = None, hidden: bool = False, only: Optional[set] = None) -> list:
     """Place a deployment group's units (``Dispos`` and friends). Returns the units.
@@ -135,16 +191,34 @@ def deploy(world: World, state: GameState, group: str, *, animate: bool = True, 
     if section is None:
         state.emit("warn", f"Deployment group {group!r} not found")
         return []
+    army_group = force is None and not hidden and is_army_group(world, group)
+    army_was_empty = not force_members(state, PLAYER) and not force_members(state, 5)
     placed = []
     for record in section.units:
         pid = record[F["pid"]]
         if only is not None and pid not in only:
             continue
-        unit = _reusable(state, pid, placed)
+        if army_group:
+            unit = _army_unit(world, state, record, group, army_was_empty)
+            if unit is None:
+                state.emit("warn", f"{group}: no reserve unit left for the slot of {world.name(pid)}")
+                continue
+            if unit.pid != pid:
+                state.emit("log", f"{group}: {world.name(unit.pid)} takes the slot of {world.name(pid)} "
+                                  "(an army group places the reserve's first unit)", uid=unit.uid)
+        else:
+            if (world.dialect.name == "fe9" and int(record[F["faction"]] or 0) == PLAYER
+                    and any(u.pid == pid and u.dead for u in state.units.values())
+                    and _reusable(state, pid, placed) is None):
+                continue  # force 6: the game places nobody (main.dol 0x80107528)
+            unit = _reusable(state, pid, placed)
         if unit is None:
             unit = state.add_unit(make_unit(world, record, group))
         if force is not None:
             unit.faction = force
+        elif army_group:
+            unit.faction = PLAYER
+        unit.away = False
         unit.dead = False
         unit.hidden = hidden
         start = (int(record[F["pos_x"]]), int(record[F["pos_y"]]))
@@ -194,10 +268,19 @@ def opening_tasks(world: World) -> list:
     return tasks
 
 
-def initial_state(world: World, *, seed: int = 0, deploy_groups: tuple = ()) -> GameState:
+def army_member(world: World, pid: str) -> list:
+    """A deployment record for a character of a save's army: its own class and base level."""
+    record = [0] * 48
+    record[F["pid"]] = pid
+    record[F["level"]] = 1
+    return record
+
+
+def initial_state(world: World, *, seed: int = 0, deploy_groups: tuple = (), army: tuple = ()) -> GameState:
     """The state before the chapter's first step: the opening scripts queued,
     then the first player phase. ``deploy_groups`` are placed first (used when
-    the chapter has no script, or to skip the opening)."""
+    the chapter has no script, or to skip the opening). ``army`` is a save's
+    army: those characters wait in the reserve (force 5), in that order."""
     from ..battle_sim import Fe10Rng, Fe9Rng
     from ..formats.event_flags import ENGINE_FLAGS
 
@@ -205,6 +288,10 @@ def initial_state(world: World, *, seed: int = 0, deploy_groups: tuple = ()) -> 
     capacity = world.dialect.flag_slots
     flags = [[name, False] for name in ENGINE_FLAGS] + [[None, False] for _ in range(capacity - len(ENGINE_FLAGS))]
     state = GameState(rng=rng, flags=flags, flag_capacity=capacity)
+    for pid in army:
+        if pid in world.characters and state.unit_by_pid(pid) is None:
+            unit = state.add_unit(make_unit(world, army_member(world, pid), "army"))
+            unit.faction, unit.hidden = PLAYER, True
     for group in deploy_groups:
         deploy(world, state, group, animate=False)
     state.out.clear()

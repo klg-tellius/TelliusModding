@@ -201,6 +201,24 @@ Deployment edits made through Build use Build's Undo/Redo and **Save Chapter**. 
 
 To revert, restore the original sections and script calls together. Deleting an experimental section is safe only after its calls are removed. For broad Excel imports or reorderings, restore `dispos.cmp` from the pre-edit copy.
 
+## Choose who plays the chapter (Roster tab)
+
+The player section's **name** decides how Path of Radiance fills it, not only its units:
+
+- A name with `_mikata_` (`bmap05_mikata_c`) is an **army group**. Each unit record is a starting tile. The game puts the **first units of the player's army** on those tiles, in army order, whoever the records name. Ike's own record still places Ike. The named characters only matter on a new save, when the army is empty. So replacing Boyd by another character in `bmap02_mikata_n` works from a fresh file, but a save with a bigger army still puts its own first units there.
+- Any other name (`bmap05_avatar_c`) is a **fixed team**: the game places exactly the listed characters, from the reserve, or creates them.
+
+The **Roster** tab sets this for you:
+
+1. Open the chapter, then **Roster**. The tab shows the group the script deploys first and its units.
+2. Pick **Player's army** or **Fixed team**. With **Fixed team**, **Apply** renames the group to `_avatar_` and every script call that names it.
+3. Add, remove or move characters and set their tiles (**Set tile**).
+4. **Set every other unit aside** (fixed team): right after the team is deployed, every other player unit on the map goes back to the reserve.
+5. **End of chapter**: characters who **join the army** (they enter the reserve) and who **leave** it (out of the army until a later deployment names them, the way chapter 5 sets Oscar and Boyd aside).
+6. **Apply**, then **Check turn 1**. The check plays the opening in the playthrough simulator twice, with a new save and with a save holding every character of the earlier chapters, and lists who is on the map at the first player phase. It warns when a character doesn't exist, when the script still deploys the group under its old name, when other army groups are deployed, and when a preparations screen lets the player swap units.
+
+The script lines the tab writes sit between `# >>> Roster tab` and `# <<< Roster tab` on the **Script** tab; applying again replaces them. Test the chapter in Dolphin with a save that has a large army before you share it.
+
 ## Limits and confidence
 
 The four-file structure, suffix behavior, section layout, header meanings, script-reference display, group/faction separation, occupied-tile handling, and structural writer are source-reviewed. Exact behavior of malformed names, overlapping forced placement, unusual link sections, and chapter-specific script helpers remains **unknown** until tested in that chapter.
