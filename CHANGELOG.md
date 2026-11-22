@@ -28,6 +28,14 @@ First stable release.
 - The app shows its version in the window title, on the start screen and in Help >
   About; Tellius Patcher shows it in its title.
 - The code is released under the MIT License.
+- 3D Models: the Animations tab lists each weapon's clips with their role, length and
+  combat events, plays them at the game's speed (with 0.5x and 0.25x) and marks event
+  frames under the slider. An imported clip shared by several weapons now changes in
+  each of them. Clips go to and from Jade's Tellius Forge Blender add-on as `.ga` files,
+  which Settings > Preferences can download and install.
+- 3D Models: Copy clip from another model... replaces a clip with another model's, from
+  the same game or the other one (Path of Radiance <-> Radiant Dawn), played on the set's
+  own skeleton.
 
 ## v0.2.0 (2026-11-15)
 
