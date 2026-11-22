@@ -408,6 +408,20 @@ def _retarget_avatar_bytes(compressed: bytes, old_pid: str, new_pid: str, new_ji
     return lz10.compress(pak.pack_pak(files, reserved))
 
 
+def _capacity_hint(source: str, global_count: int, local_count: int) -> str:
+    """What to do when a chapter's flags no longer fit beside the hub's."""
+    needed = global_count + local_count - (ef.SLOT_COUNT - 1)
+    unused = len(ef.unused_local_flags(source))
+    if unused >= needed:
+        return (f" {unused} of its chapter flags are never used by an event: Game Data › Flags › Chapter "
+                "flags › Free unused flags… removes them, then install the hub again.")
+    if unused:
+        return (f" Free unused flags… (Game Data › Flags › Chapter flags) can free {unused} of the {needed} "
+                "slots needed; remove the other flags and the events that use them in the chapter's script.")
+    return (f" Every flag of this chapter is used: remove {needed} of them and the events that use them in the "
+            "chapter's script, or use the extended flag banks.")
+
+
 def prepare(project, setup: HubSetup) -> dict:
     """Validate and compile all source changes without writing project files."""
     if profile_of(project).script_dialect == "fe10":
@@ -511,7 +525,7 @@ def _prepare(project, setup: HubSetup, *, extended_layout=None, migration=None) 
                        if extended_layout is not None else len(locals_))
         problem = ef.capacity_problem(global_count, local_count)
         if problem:
-            raise ValueError(f"Chapter {cid}: {problem}")
+            raise ValueError(f"Chapter {cid}: {problem}.{_capacity_hint(source, global_count, local_count)}")
     if extended_layout is not None:
         extended_layout.validate_registrations(new_globals, local_registrations)
         from .formats.extended_flags import FlagCompileContext

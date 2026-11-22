@@ -151,6 +151,14 @@ In Battle Simulator, compare the template and copy with identical combatants. Co
 
 If the copied IID has no `xwp/TUTORIAL_SPEAR.dbx`, mechanics can work while the battle weapon is invisible. In **Assets → Battle Weapons / 3D Models**, copy or create the mapping from the template, inspect the normal and forged variants, and render again. Do not “fix” an invisible weapon by changing the character's body model.
 
+### A new weapon in one go
+
+**Assets › Battle Weapons › New weapon…** does the whole chain at once, on both games: the item (a copy of a template weapon, with its own **Name** and **Description**), its own model folder `xwp/<id in lower case>/` (a copy of the template's model, of another model, or none), an optional **New mesh (.glb)** imported into that copy, and its battle entry (`xwp/<ID>.dbx` on Path of Radiance, a new `FE10BWeapon` row on Radiant Dawn) with the chosen effects. Path of Radiance also sets the **Trail colour** there. Stats, ranks and properties are copied from the template: edit them afterwards in Game Data. Game Data is saved with the new item (unsaved edits there are saved too, after a question).
+
+For the mesh, **Export .glb…** the template's model in 3D Models first and model over it in Blender: the game moves the weapon with the hand bone of the copied model, so a mesh at the same place and scale stays in the hand. **3D Models › New slot…** on any `xwp/` model also copies it under a new name, and **Remove added slot…** deletes an added one.
+
+The effect boxes list first the effects the game's own weapons of the same type play, then every other registered effect. A choice none of them plays is shown in red with the type that does play it: an effect made for a thrown weapon (`EID_K_THUNDER2_WP`, the Sonic Axe's) crashed Path of Radiance when a sword using it struck. A copy of a safe effect (**Visual Effects › Add effect…**, then **Recolour…**) counts as safe, since it keeps the same skeleton and animation. On a sword, the vanilla effects are the waves of Ragnell, Alondite and Gurgurant (`EID_REPPU1`-`3`); the **Trail colour** is the effect that is always safe.
+
 ## Understand every control
 
 | Control | Input and meaning | Selection and verification |
@@ -187,6 +195,7 @@ Radiant Dawn's items are in `FE10Data.cms`, under **Game Data › Items**. Diffe
 - **English article** picks *a* or *an* (255 chooses from the first letter). **Colour** indexes the item colour palette; every retail item uses 4.
 - Shops are per difficulty (`Shop/shopitem_n/h/m.bin`): see [Shops](46-shops.md).
 - On the Japanese disc an item record has no article and is 4 bytes shorter; the Japanese database has 293 items, not 296.
+- **Battle Weapons › New weapon…** adds a new `FE10BWeapon` row (a copy of the template's, keyed by the new ID without `IID_`), with the hit, critical, weapon and target effects. Whether the game looks rows up by that key has only been checked in the app's battle preview, not yet in Dolphin.
 
 ## Things to try next
 

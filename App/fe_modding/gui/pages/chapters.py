@@ -43,16 +43,17 @@ from ..deployment_editor import DeploymentEditor
 from ..dialogue_editor import DialogueEditor
 from ..map_builder import MapBuilder
 from ..map_editor import MapEditor
+from ..roster_panel import RosterPanel
 from ..script_editor import ScriptEditor
 from ..shop_editor import ShopEditor
 from ..shell import Page, plain_text
 from ..widgets import Card, CardGrid, Link, ScrollFrame, fold_toggle, info, section_header
 
-TABS = ["overview", "build", "map_settings", "chapter_data", "dialogue", "script", "shops", "battle"]
+TABS = ["overview", "build", "map_settings", "chapter_data", "roster", "dialogue", "script", "shops", "battle"]
 #: Old routes to tabs that were merged into another.
 TAB_ALIASES = {"map": "build", "deployment": "build", "settings": "map_settings"}
 TAB_LABELS = {"overview": "Overview", "build": "Build", "map_settings": "Map settings",
-              "chapter_data": "Chapter data", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
+              "chapter_data": "Chapter data", "roster": "Roster", "dialogue": "Dialogue", "script": "Script", "shops": "Shops",
               "battle": "Battle scenes"}
 
 
@@ -587,8 +588,11 @@ class ChapterPage(Page):
         self._map_settings = MapSettingsPanel(self._notebook, self._build)
         self._chapter_data = ChapterDataPanel(self._notebook, self._build,
                                               session_provider=lambda: shell.session)
+        # The chapter's team: writes the deployment and the script itself, after saving their edits.
+        self._roster = RosterPanel(self._notebook, project, names=self._character_names,
+                                   before_write=self._roster_before_write, after_write=self._roster_after_write)
         for key, panel in (("build", self._build), ("map_settings", self._map_settings),
-                           ("chapter_data", self._chapter_data), ("dialogue", self._dialogue),
+                           ("chapter_data", self._chapter_data), ("roster", self._roster), ("dialogue", self._dialogue),
                            ("script", self._script), ("shops", self._shops), ("battle", self._battle)):
             self._notebook.add(panel, text=TAB_LABELS[key])
         self._notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
@@ -673,6 +677,9 @@ class ChapterPage(Page):
         self._dialogue.select_chapter(paths.dialogue)
         self._script.select_chapter(paths.script)
         self._shops.select_chapter(chapter_id)
+        self._roster.show_chapter(chapter_id)
+        if self._tab == "roster":
+            self._roster.ensure_loaded()
         self._configure_phases(phases)
         if profile_of(self.project).supports(MAP_PHASES) and phases:
             self._phase_label.pack(side="left", padx=(0, 6))
@@ -1044,6 +1051,35 @@ class ChapterPage(Page):
         if 0 <= position < len(self._ids):
             self.shell.navigate(("chapter", self._ids[position], self._tab))
 
+    # -- roster ----------------------------------------------------------------------------------
+    def _character_names(self) -> dict:
+        index = self.shell.index
+        return {pid: info.name or pid for pid, info in getattr(index, "by_pid", {}).items()} if index else {}
+
+    def _roster_before_write(self) -> bool:
+        """The Roster tab rewrites the deployment and the script: their unsaved edits are saved first."""
+        dirty = [p for p in (self._map, self._deployment, self._script) if p.dirty]
+        if dirty:
+            names = ", ".join(p.display_name for p in dirty)
+            if not messagebox.askyesno("Save first?", f"Applying the roster rewrites this chapter's deployment "
+                                       f"and script. Save the unsaved changes ({names}) first?", parent=self):
+                return False
+            for panel in dirty:
+                if not panel.save():
+                    return False
+        return True
+
+    def _roster_after_write(self, summary: str) -> None:
+        self.shell.changelog.append(f"Chapter {self._title_of(self._chapter)}", summary)
+        paths = chapters.chapter_paths(self.project, self._chapter)
+        self._script.reload_if_open(paths.script)
+        phase = self._phase
+        self._phase = None
+        if phase is not None:
+            self._set_phase(phase)
+        self._build.set_chapter(self._chapter)
+        self._overview_stale = True
+
     # -- tabs ------------------------------------------------------------------------------------
     def _select_tab(self, tab: str) -> None:
         self._tab = tab
@@ -1055,6 +1091,8 @@ class ChapterPage(Page):
         self._tab = TABS[self._notebook.index("current")]
         if self._tab == "overview" and self._overview_stale and self._chapter is not None:
             self._render_overview()
+        if self._tab == "roster":
+            self._roster.ensure_loaded()
         route = self.shell.route
         if route and route[0] == self.kind and self._chapter is not None and route[2:3] != (self._tab,):
             self.shell.replace_route(("chapter", self._chapter, self._tab))

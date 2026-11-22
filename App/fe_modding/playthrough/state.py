@@ -68,6 +68,7 @@ class SimUnit:
     done: bool = False  # acted this phase
     dead: bool = False
     hidden: bool = False  # off the map (not deployed yet, or removed by a script)
+    away: bool = False  # set aside out of the army (force 7, ``UnitTransferToForce(unit, 7)``)
     boss: bool = False
     status: str = ""  # sleep, silence, berserk (a status staff's effect), "" = none
     status_turns: int = 0  # phases of its side the status still lasts

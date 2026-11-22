@@ -40,10 +40,13 @@ this module.
 from __future__ import annotations
 
 import io
+import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Optional
+
+import numpy as np
 
 from . import dsp_adpcm
 
@@ -270,8 +273,96 @@ def _dejpegify(data: bytes) -> bytes:
     scan_data = data[scan_start:eoi]
     suffix = data[eoi:]
 
+    restarts = _restart_offsets(data, scan_start, eoi)
+    if restarts:
+        # retail frames restart every DRI MCUs without the RSTn markers; put them back
+        pieces, last = [], 0
+        for k, cut in enumerate(restarts):
+            pieces.append(scan_data[last:cut - scan_start].replace(b"\xff", b"\xff\x00"))
+            pieces.append(bytes((0xFF, 0xD0 + k % 8)))
+            last = cut - scan_start
+        pieces.append(scan_data[last:].replace(b"\xff", b"\xff\x00"))
+        return prefix + b"".join(pieces) + suffix
     escaped = scan_data.replace(b"\xff", b"\xff\x00")
     return prefix + escaped + suffix
+
+
+def _restart_offsets(data: bytes, scan_start: int, eoi: int) -> list[int]:
+    """Where each restart interval after the first begins in a THP frame's
+    un-stuffed scan (byte offsets into ``data``), found by walking the
+    Huffman codes; empty when the frame has no DRI or can't be walked."""
+    pos, dri, tables, size, comps = 2, 0, {}, None, None
+    while pos + 4 <= len(data) and data[pos] == 0xFF:
+        marker = data[pos + 1]
+        (length,) = struct.unpack(">H", data[pos + 2 : pos + 4])
+        body = data[pos + 4 : pos + 2 + length]
+        if marker == 0xDD:
+            (dri,) = struct.unpack(">H", body[:2])
+        elif marker == 0xC0:
+            size = struct.unpack(">HH", body[1:5])
+            comps = [(body[7 + 3 * c] >> 4) * (body[7 + 3 * c] & 15) for c in range(body[5])]
+        elif marker == 0xC4:
+            i = 0
+            while i < len(body):
+                counts = body[i + 1 : i + 17]
+                values = body[i + 17 : i + 17 + sum(counts)]
+                code, table, v = 0, {}, 0
+                for bits in range(1, 17):
+                    for _ in range(counts[bits - 1]):
+                        table[(bits, code)] = values[v]
+                        v += 1
+                        code += 1
+                    code <<= 1
+                tables[body[i]] = table
+                i += 17 + sum(counts)
+        elif marker == 0xDA:
+            selectors = [(body[2 + 2 * c] >> 4, body[2 + 2 * c] & 15) for c in range(body[0])]
+            start = pos + 2 + length
+            break
+        pos += 2 + length
+    else:
+        return []
+    if not dri or size is None or comps is None or len(selectors) != len(comps):
+        return []
+    bits = np.unpackbits(np.frombuffer(data[start:eoi], np.uint8))
+    bit = 0
+
+    def code(table):
+        nonlocal bit
+        value = 0
+        for length in range(1, 17):
+            value = (value << 1) | int(bits[bit])
+            bit += 1
+            if (length, value) in table:
+                return table[(length, value)]
+        raise ThpError("Bad Huffman code")
+
+    mcu_w = 16 if comps[0] == 4 or comps[0] == 2 else 8
+    mcu_h = 16 if comps[0] == 4 else 8
+    mcus = -(-size[1] // mcu_w) * -(-size[0] // mcu_h)
+    offsets = []
+    try:
+        for mcu in range(mcus):
+            if mcu and mcu % dri == 0:
+                bit = -(-bit // 8) * 8
+                offsets.append(start + bit // 8)
+            for blocks, (dc, ac) in zip(comps, selectors):
+                for _ in range(blocks):
+                    extra = code(tables[dc])  # (code() moves ``bit`` itself)
+                    bit += extra
+                    k = 1
+                    while k < 64:
+                        rs = code(tables[0x10 | ac])
+                        if rs & 15 == 0:
+                            if rs >> 4 != 15:
+                                break
+                            k += 16
+                            continue
+                        k += (rs >> 4) + 1
+                        bit += rs & 15
+    except (IndexError, ThpError, KeyError):
+        return []
+    return offsets
 
 
 # -- encoding -----------------------------------------------------------------
@@ -488,8 +579,58 @@ def _build_audio_frame_bytes(
 
 def _encode_thp_jpeg(image: "Image.Image", quality: int) -> bytes:
     buffer = io.BytesIO()
-    image.convert("RGB").save(buffer, "JPEG", quality=quality, subsampling=2, progressive=False)
-    return _escape_for_thp(buffer.getvalue())
+    # a restart interval of one MCU row, as in retail frames (DRI 40 at 640 px)
+    image.convert("RGB").save(buffer, "JPEG", quality=quality, subsampling=2, progressive=False,
+                              restart_marker_rows=1)
+    frame = _escape_for_thp(_retail_marker_layout(buffer.getvalue()))
+    # retail picture chunks are a multiple of 4 bytes, zero-padded after EOI
+    return frame + b"\0" * (-len(frame) % 4)
+
+
+def _retail_marker_layout(jpeg_bytes: bytes) -> bytes:
+    """Rewrite a PIL JPEG's header into the layout the game's THP decoder
+    reads: SOI, one DQT holding both tables, SOF0, DRI (when the encoder
+    wrote restart intervals), one DHT holding the four tables in the order
+    DC0, DC1, AC0, AC1, then SOS (no APP0/JFIF). Retail
+    frames are laid out this way; PIL's (APP0, a DQT per table, a DHT per
+    table in DC0, AC0, DC1, AC1 order) plays its sound but leaves the picture
+    black in game."""
+
+    pos, dqt, dht, sof, dri = 2, [], {}, None, None
+    while True:
+        if jpeg_bytes[pos] != 0xFF:
+            raise ThpError("Malformed JPEG header in encoded frame.")
+        marker = jpeg_bytes[pos + 1]
+        if marker == 0xDA:
+            break
+        (length,) = struct.unpack(">H", jpeg_bytes[pos + 2 : pos + 4])
+        body = jpeg_bytes[pos + 4 : pos + 2 + length]
+        if marker == 0xDB:
+            dqt.append(body)
+        elif marker == 0xC4:
+            i = 0
+            while i < len(body):
+                size = 17 + sum(body[i + 1 : i + 17])
+                dht[body[i]] = body[i : i + size]
+                i += size
+        elif marker == 0xC0:
+            sof = body
+        elif marker == 0xDD:
+            dri = body
+        elif marker not in (0xE0,) and not 0xE1 <= marker <= 0xEF and marker != 0xFE:
+            raise ThpError(f"Unexpected JPEG marker 0x{marker:02X} in encoded frame.")
+        pos += 2 + length
+    if sof is None or sorted(dht) != [0x00, 0x01, 0x10, 0x11]:
+        raise ThpError("Encoded frame lacks the baseline frame header or Huffman tables THP needs.")
+
+    def segment(marker: int, body: bytes) -> bytes:
+        return bytes((0xFF, marker)) + struct.pack(">H", len(body) + 2) + body
+
+    out = b"\xff\xd8" + segment(0xDB, b"".join(dqt)) + segment(0xC0, sof)
+    if dri is not None:
+        out += segment(0xDD, dri)
+    out += segment(0xC4, b"".join(dht[k] for k in (0x00, 0x01, 0x10, 0x11)))
+    return out + jpeg_bytes[pos:]
 
 
 def _escape_for_thp(jpeg_bytes: bytes) -> bytes:
@@ -509,5 +650,8 @@ def _escape_for_thp(jpeg_bytes: bytes) -> bytes:
     scan_data = jpeg_bytes[scan_start:eoi]
     suffix = jpeg_bytes[eoi:]
 
-    unescaped = scan_data.replace(b"\xff\x00", b"\xff")
+    # Retail frames keep the restart intervals (each byte-aligned) but not
+    # their RSTn markers: the game's decoder realigns every DRI MCUs itself.
+    # In stuffed data 0xFF 0xD0-0xD7 can only be a marker, so drop those first.
+    unescaped = re.sub(rb"\xff[\xd0-\xd7]", b"", scan_data).replace(b"\xff\x00", b"\xff")
     return prefix + unescaped + suffix

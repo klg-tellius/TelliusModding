@@ -75,6 +75,20 @@ class SettingsDialog(tk.Toplevel):
             style="Muted.TLabel", wraplength=420, justify="left",
         )
         self._addon_status.pack(anchor="w")
+        forge_row = ttk.Frame(modeling)
+        forge_row.pack(fill="x", pady=(8, 0))
+        self._forge_button = ttk.Button(forge_row, text="Download and install Tellius Forge",
+                                        command=self._install_tellius_forge)
+        self._forge_button.pack(side="left")
+        self._forge_status = ttk.Label(
+            modeling,
+            text="Jade's add-on: imports and exports .ga animations, bodies and skeletons in Blender "
+                 "(File > Import / Export > FE9 & FE10). Downloaded from " + blender.TELLIUS_FORGE_PAGE +
+                 " (GPL-3.0, not part of this app). Use it with 3D Models › Export clip .ga... and "
+                 "Replace clip from .ga...",
+            style="Muted.TLabel", wraplength=420, justify="left",
+        )
+        self._forge_status.pack(anchor="w")
 
         vanilla = ttk.LabelFrame(body, text="Vanilla files", padding=(12, 8))
         vanilla.pack(fill="x", pady=(12, 0))
@@ -123,14 +137,26 @@ class SettingsDialog(tk.Toplevel):
 
     def _install_addon(self) -> None:
         """Install the add-on with Blender in the background (it saves Blender's preferences)."""
+        self._run_install(
+            self._addon_button, self._addon_status, "Tellius Terrain add-on", blender.install_addon,
+            lambda path: f"Installed and enabled in {path}. Restart Blender if it is open.")
+
+    def _install_tellius_forge(self) -> None:
+        """Download Jade's Tellius Forge and install it with Blender in the background."""
+        self._run_install(
+            self._forge_button, self._forge_status, "Tellius Forge", blender.install_tellius_forge,
+            lambda found: f"Tellius Forge {found[1]} installed and enabled in {found[0]}. Restart Blender if it "
+                          "is open. Install it again to update.")
+
+    def _run_install(self, button, status_label, title: str, install, done_text) -> None:
         self._save_blender()
-        self._addon_button.state(["disabled"])
-        self._addon_status.config(text="Installing… Blender is running in the background.")
+        button.state(["disabled"])
+        status_label.config(text="Installing… Blender is running in the background.")
         results: "queue.Queue" = queue.Queue()
 
         def worker() -> None:
             try:
-                results.put(("ok", blender.install_addon()))
+                results.put(("ok", install()))
             except Exception as exc:  # noqa: BLE001
                 results.put(("error", str(exc)))
 
@@ -143,12 +169,12 @@ class SettingsDialog(tk.Toplevel):
                 return
             if not self.winfo_exists():
                 return
-            self._addon_button.state(["!disabled"])
+            button.state(["!disabled"])
             if status == "ok":
-                self._addon_status.config(text=f"Installed and enabled in {payload}. Restart Blender if it is open.")
+                status_label.config(text=done_text(payload))
             else:
-                self._addon_status.config(text="The add-on was not installed.")
-                messagebox.showerror("Tellius Terrain add-on", payload, parent=self)
+                status_label.config(text=f"{title} was not installed.")
+                messagebox.showerror(title, payload, parent=self)
 
         threading.Thread(target=worker, daemon=True).start()
         self.after(150, poll)

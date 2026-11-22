@@ -313,30 +313,7 @@ class HubTool(ttk.Frame):
             self._save()
 
     def _edit_ground(self) -> None:
-        from .hub_dialog import EditHubGroundDialog
-        replace_custom = False
-        try:
-            appearance = self._builder.hub_ground_appearance()
-        except Exception as exc:  # noqa: BLE001 - format and archive errors are presented together
-            if not messagebox.askyesno(
-                    "Replace 3D terrain?",
-                    f"{exc}\n\nReplace this terrain model with a flat image plane? This permanently removes "
-                    "the terrain geometry when the chapter is saved. Tactical tiles and hub links are preserved, "
-                    "but height-shaped props may float or intersect the new plane.",
-                    icon="warning", parent=self):
-                return
-            from ..hub_creation import DEFAULT_GROUND_COLOR, GroundAppearance
-            appearance = GroundAppearance(DEFAULT_GROUND_COLOR, None, False)
-            replace_custom = True
-        dialog = EditHubGroundDialog(self, appearance, initial_mode="image" if replace_custom else None)
-        self.wait_window(dialog)
-        if dialog.result is None:
-            return
-        color, image_path, tiled, use_image = dialog.result
-        try:
-            self._builder.edit_hub_ground(color, image_path, tiled, use_image, replace_custom)
-        except Exception as exc:  # noqa: BLE001 - Pillow and map-format errors are presented together
-            messagebox.showerror("Could not edit hub ground", str(exc), parent=self)
+        self._builder.edit_ground_dialog(self)
 
     def _add(self) -> None:
         chapter = self._choices.get(self._new_link.get())

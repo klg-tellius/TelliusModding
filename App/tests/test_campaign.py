@@ -103,6 +103,15 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(texts["MPID_NEWBIE"], "Newbie")
         self.assertEqual(texts["MCT01"], "Prologue")
 
+    def test_each_copy_gets_its_own_recruitment_order(self):
+        cast = [campaign.CharacterSpec("PID_A", "PID_IKE", "A"), campaign.CharacterSpec("PID_B", "PID_IKE", "B")]
+        result = campaign.add_campaign(self.project, self.fe8, [], cast)
+        characters = fe8data.read_fe8data(result.fe8data).characters
+        new = [c.roster_order for c in characters if c.pid in ("PID_A", "PID_B")]
+        old = {c.roster_order for c in characters if c.pid not in ("PID_A", "PID_B")}
+        self.assertEqual(len(set(new)), 2)
+        self.assertFalse(old & set(new))
+
     # -- order ------------------------------------------------------------------------------------
     def test_story_order_sets_only_the_links_that_change(self):
         class Flow:

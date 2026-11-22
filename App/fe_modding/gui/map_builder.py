@@ -845,6 +845,17 @@ class MapBuilder(EditorPanel):
         self._terrain_combo.pack(anchor="w", fill="x")
         self._rect_fill = tk.BooleanVar(value=False)
         ttk.Checkbutton(frame, text="Fill a rectangle", variable=self._rect_fill).pack(anchor="w", pady=(4, 0))
+        ground = ttk.LabelFrame(frame, text="Ground", padding=(6, 4))
+        ground.pack(anchor="w", fill="x", pady=(12, 0))
+        row = ttk.Frame(ground)
+        row.pack(anchor="w")
+        ttk.Button(row, text="Edit ground…", command=lambda: self.edit_ground_dialog(self)).pack(side="left")
+        ttk.Button(row, text="New blank map…", command=self._new_blank_map).pack(side="left", padx=(6, 0))
+        info(row, "Edit ground: show a solid color or an image (stretched or tiled) on a flat ground. A 3D "
+                  "terrain model can be replaced by the flat plane. Tiles, props and units are kept.\n\n"
+                  "New blank map: replace this chapter's map with a flat one of the chosen size, with the "
+                  "color or image as ground. Props are removed and every tile becomes plain ground; paint the "
+                  "terrain types afterwards. Units outside the new size must be moved.").pack(side="left", padx=(6, 0))
         self._tool_frames["terrain"] = frame
 
         frame = ttk.Frame(parent)
@@ -3141,6 +3152,78 @@ class MapBuilder(EditorPanel):
     def hub_changed(self) -> None:
         self._refresh_canvas()
 
+    def edit_ground_dialog(self, parent) -> None:
+        """Ask for a solid color or an image and show it on the map's flat
+        ground; offer to flatten a 3D terrain model first. Any chapter."""
+        from ..hub_creation import DEFAULT_GROUND_COLOR, GroundAppearance
+        from .hub_dialog import EditHubGroundDialog
+        replace_custom = False
+        try:
+            appearance = self.hub_ground_appearance()
+        except Exception as exc:  # noqa: BLE001 - format and archive errors are presented together
+            if not messagebox.askyesno(
+                    "Replace 3D terrain?",
+                    f"{exc}\n\nReplace this terrain model with a flat image plane? This permanently removes "
+                    "the terrain geometry when the chapter is saved. Tactical tiles and hub links are preserved, "
+                    "but height-shaped props may float or intersect the new plane.",
+                    icon="warning", parent=parent):
+                return
+            appearance = GroundAppearance(DEFAULT_GROUND_COLOR, None, False)
+            replace_custom = True
+        dialog = EditHubGroundDialog(parent, appearance, initial_mode="image" if replace_custom else None,
+                                     title="Edit ground")
+        parent.wait_window(dialog)
+        if dialog.result is None:
+            return
+        color, image_path, tiled, use_image = dialog.result
+        try:
+            self.edit_hub_ground(color, image_path, tiled, use_image, replace_custom)
+        except Exception as exc:  # noqa: BLE001 - Pillow and map-format errors are presented together
+            messagebox.showerror("Could not edit the ground", str(exc), parent=parent)
+
+    def _new_blank_map(self) -> None:
+        from ..hub_creation import DEFAULT_GROUND_COLOR, GroundAppearance
+        from .hub_dialog import EditHubGroundDialog
+        if self._map_path is None:
+            return
+        size = self.map_size() or (16, 16)
+        dialog = EditHubGroundDialog(
+            self, GroundAppearance(DEFAULT_GROUND_COLOR, None, False), size=tuple(size), title="New blank map",
+            note="Replace this chapter's map with a flat ground. Props are removed and every tile becomes plain "
+                 "ground; units are kept where they are. Undo restores the old map.")
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        color, image_path, tiled, use_image, (width, height) = dialog.result
+        try:
+            self.make_blank_map(width, height, color, image_path if use_image else None, tiled)
+        except Exception as exc:  # noqa: BLE001 - Pillow and map-format errors are presented together
+            messagebox.showerror("Could not create the blank map", str(exc), parent=self)
+
+    def make_blank_map(self, width: int, height: int, color, image_path, tiled: bool) -> None:
+        """Replace the open map with a flat ``width`` x ``height`` one
+        (:func:`hub_creation.blank_map_files`), undoably."""
+        from .. import hub_creation
+        image = None
+        if image_path:
+            with Image.open(image_path) as opened:
+                image = opened.convert("RGBA").copy()
+        self._record()
+        try:
+            self._map.edit_pack(
+                lambda entries, files: hub_creation.blank_map_files(
+                    entries, files, width, height, ground_color=color, ground_image=image,
+                    tile_ground_image=tiled),
+                f"New blank map ({width}x{height})")
+        except Exception:
+            self._undo.pop()
+            self._update_buttons()
+            raise
+        self._canvas.cell = 28
+        self._backdrop = None
+        self._rendered_props = None
+        self._refresh_catalogs()
+
     def hub_ground_appearance(self):
         from .. import hub_creation
         return hub_creation.flat_ground_appearance(self._map.pak_contents)
@@ -3166,7 +3249,7 @@ class MapBuilder(EditorPanel):
                 lambda entries, files: hub_creation.replace_flat_ground(
                     entries, files, ground_color=color, ground_image=image, tile_ground_image=tiled,
                     replace_custom_terrain=replace_custom_terrain),
-                "Changed hub ground appearance")
+                "Changed ground appearance")
         except Exception:
             self._undo.pop()
             self._update_buttons()

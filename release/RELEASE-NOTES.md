@@ -101,12 +101,25 @@ Extras unlocks, Conversation Room order and subtitle edits.
 
 ## Both games
 
+- **Roster tab** on chapter pages: pick a fixed team or the player's army, set the
+  team's tiles, set every other unit aside, and choose who joins or leaves the army at
+  the end of the chapter, without writing script. **Check turn 1** shows who is on the
+  map with a new save and with a full army. The playthrough simulator now follows each
+  game's army rule for `_mikata_` groups (Radiant Dawn: the "Place this character" and
+  "Create if absent" record flags, lords on their own tile).
+
 - Saves, Battle Data and Battle Cameras are one page each (`battle_browser`), with a
   per-game adapter. The four per-game viewers are gone.
 - Build tab map image: tile (0,0) is drawn top-left, matching the grid.
 - Object flag edits keep the bits no control shows.
 - Paragon-style discs (IDs such as GFEE02), latin-1 file names, `system.cmp` data and
   `.cmb` padding are handled.
+- New weapons: **Battle Weapons › New weapon…** adds the item, its own `xwp/` model
+  (copied, with an optional `.glb` mesh) and its battle entry in one dialog, on both games
+  (a new `FE10BWeapon` row on Radiant Dawn). **3D Models › New slot…** copies a weapon model.
+- Weapon effects: the effect boxes list first what the game's own weapons of the same type
+  play and ask before any other; **Visual Effects › Recolour…** tints or turns the hues of an
+  effect's texture.
 
 ## Decoding coverage
 

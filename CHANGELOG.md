@@ -22,12 +22,22 @@ First stable release.
   props, blank hub maps, new skeletons on map units.
 - Decoding coverage on the US discs: about 0.003 % of Path of Radiance and 0.0006 % of Radiant
   Dawn left undecoded or unclassified.
+- Chapter pages gain a Roster tab on both games (fixed team or player's army, set the
+  others aside, join/leave at the end, turn 1 check with a new save and a full army).
 - Tellius Archive: Radiant Dawn sections in the lessons and systems pages.
 - Faster test runs (affected tests, disc samples, parallel runs) and a Dolphin input
   driver for in-game checks.
 - The app shows its version in the window title, on the start screen and in Help >
   About; Tellius Patcher shows it in its title.
 - The code is released under the MIT License.
+- 3D Models: the Animations tab lists each weapon's clips with their role, length and
+  combat events, plays them at the game's speed (with 0.5x and 0.25x) and marks event
+  frames under the slider. An imported clip shared by several weapons now changes in
+  each of them. Clips go to and from Jade's Tellius Forge Blender add-on as `.ga` files,
+  which Settings > Preferences can download and install.
+- 3D Models: Copy clip from another model... replaces a clip with another model's, from
+  the same game or the other one (Path of Radiance <-> Radiant Dawn), played on the set's
+  own skeleton.
 - Path of Radiance doors and building roofs placed with the Map Builder work as in the
   retail game: a closed door blocks its tile, a roof hides its room and lifts when a door
   in or next to it opens. The editor fills the roof layer the game reads for them.

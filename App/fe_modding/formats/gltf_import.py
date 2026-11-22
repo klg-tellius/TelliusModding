@@ -1905,6 +1905,16 @@ def is_anchor_name(name: str) -> bool:
 BATTLE_BONE_FLAGS = 0x26
 
 
+def _template_rest_rotation(bone: Optional[skeleton.Bone]):
+    """The rest rotation of a template battle bone, or None when it has none."""
+    if bone is None or not engine_pose.bone_flags(bone) & (engine_pose.FLAG_ROTATE | engine_pose.FLAG_JOINT_ORIENT):
+        return None
+    m = engine_pose.local_matrix(engine_pose.bone_values(bone), engine_pose.bone_flags(bone), engine_pose.rotation_order(bone))
+    if all(abs(m[r][c] - (1.0 if r == c else 0.0)) < 1e-6 for r in range(3) for c in range(3)):
+        return None
+    return [row[:3] for row in m]
+
+
 def build_skeleton(
     gltf_data: bytes,
     base_dir: Optional[Path | str] = None,
@@ -1927,7 +1937,8 @@ def build_skeleton(
     matrix), no pivot, the inverse bind position as skinning matrix, flags
     ``0x26`` (the template's own when it has one). A template bone with
     flags 0 (a socket following its parent) stays so, wherever the glTF
-    puts it; template pivot bones keep the pivot convention. The engine attaches weapons to battle socket
+    puts it; template pivot bones keep the pivot convention. Only an
+    anchor, or a bone under the same-named parent, counts as the same bone. The engine attaches weapons to battle socket
     bones (``_r_hand_``) by their world matrix, which the pivot convention
     would leave at the origin. :func:`import_skinned_model` and
     :func:`import_animation` work on either.
@@ -1992,8 +2003,9 @@ def build_skeleton(
         return (bind[12], bind[13], bind[14])
 
     old = {b.name: b for b in template} if template is not None else {}
-    # where each built bone's rest world matrix puts the origin of its children
-    origin: dict[int, tuple[float, float, float]] = {}
+    # each built bone's rest world matrix (battle convention: translations, and the rest
+    # rotation of a template bone that has one)
+    rest_world: dict[int, skeleton.Mat3x4] = {}
     bones = []
     for j in order:
         k = joints.index(j)
@@ -2002,20 +2014,34 @@ def build_skeleton(
         values = [0.0] * engine_pose.VALUE_COUNT
         values[engine_pose.SLOT_SCALE : engine_pose.SLOT_SCALE + 3] = [1.0, 1.0, 1.0]
         source = old.get(names[k])
+        if source is not None and not is_anchor_name(names[k]):
+            # a joint named like a template node elsewhere in the tree (a fitted model's ``head``
+            # joint vs the game's ``head`` mesh node under ``<model>_model``) is a new bone
+            old_parent = template[source.parent_index].name if source.parent_index >= 0 else None
+            if old_parent != (names[joints.index(parent)] if parent is not None else None):
+                source = None
         old_flags = engine_pose.bone_flags(source) if source is not None else None
         battle = template is not None and not (old_flags is not None and old_flags & engine_pose.FLAG_ROTATE_PIVOT)
+        parent_world = rest_world[parent] if parent is not None else skeleton.IDENTITY_3X4
         if battle:
-            base = origin[parent] if parent is not None else (0.0, 0.0, 0.0)
-            offset = tuple(a - b for a, b in zip(pivot, base))
             flags = BATTLE_BONE_FLAGS if old_flags is None else old_flags
             if flags & engine_pose.FLAG_TRANSLATE:
+                rotation = _template_rest_rotation(source)
+                if rotation is not None:
+                    # a template bone turned at rest (a bow's BW bones): it keeps its
+                    # rotation values, so a weapon drawn on it faces as in the game
+                    values = engine_pose.bone_values(source)
+                # the translation that puts the joint at its bind position under the parent
+                inverse_parent = engine_pose.invert_3x4(parent_world)
+                offset = engine_pose.apply(inverse_parent, pivot)
                 values[engine_pose.SLOT_TRANSLATE : engine_pose.SLOT_TRANSLATE + 3] = offset
-                values[31:43] = [c for row in engine_pose.translation(*offset) for c in row]
-                origin[j] = tuple(a + b for a, b in zip(base, offset))
-                skin = engine_pose.translation(*(-c for c in origin[j]))
+                local = engine_pose.local_matrix(values, flags, engine_pose.rotation_order(source) if rotation is not None else 1)
+                values[31:43] = [c for row in local for c in row]
+                rest_world[j] = skeleton.mul_3x4(parent_world, local)
+                skin = engine_pose.invert_3x4(rest_world[j])
             else:  # a socket that follows its parent (vanilla flags 0): identity skin, no offset
                 values[31:43] = [c for row in skeleton.IDENTITY_3X4 for c in row]
-                origin[j] = base
+                rest_world[j] = parent_world
                 skin = skeleton.IDENTITY_3X4
             floats = tuple(c for row in skin for c in row) + tuple(values)
         else:
@@ -2024,7 +2050,7 @@ def build_skeleton(
             values[engine_pose.SLOT_SCALE_PIVOT : engine_pose.SLOT_SCALE_PIVOT + 3] = pivot
             values[31:43] = [c for row in skeleton.IDENTITY_3X4 for c in row]
             floats = tuple(c for row in skeleton.IDENTITY_3X4 for c in row) + tuple(values)
-            origin[j] = origin[parent] if parent is not None else (0.0, 0.0, 0.0)
+            rest_world[j] = parent_world
         siblings = children.get(parent, [])
         pos = siblings.index(j)
         next_sibling = index[siblings[pos + 1]] if pos + 1 < len(siblings) else -1

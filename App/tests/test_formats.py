@@ -1,3 +1,4 @@
+import dataclasses
 import io
 import json
 import math
@@ -1362,6 +1363,55 @@ class ThpTests(unittest.TestCase):
         max_diff = max(abs(a - b) for a, b in zip(left, decoded_audio[0]))
         self.assertLess(max_diff, 2000)
 
+    def test_frames_use_the_retail_jpeg_marker_layout(self):
+        """The game shows a black picture for frames laid out as PIL writes
+        them; retail frames are SOI, one DQT, SOF0, DRI, one DHT (DC0, DC1,
+        AC0, AC1), SOS."""
+        from PIL import Image
+
+        data = thp.encode_thp([Image.new("RGB", (32, 16), (200, 40, 40))], None, 32000, 29.97)
+        stream = io.BytesIO(data)
+        info = thp.read_info(stream)
+        (offset,) = thp.iter_frame_offsets(stream, info)
+        frame = data[offset + 12:]
+        self.assertEqual(frame[:2], b"\xff\xd8")
+        pos, markers = 2, []
+        while frame[pos + 1] != 0xDA:
+            (length,) = struct.unpack(">H", frame[pos + 2:pos + 4])
+            markers.append(frame[pos + 1])
+            if frame[pos + 1] == 0xC4:
+                body, i, classes = frame[pos + 4:pos + 2 + length], 0, []
+                while i < len(body):
+                    classes.append(body[i])
+                    i += 17 + sum(body[i + 1:i + 17])
+                self.assertEqual(classes, [0x00, 0x01, 0x10, 0x11])
+            pos += 2 + length
+        self.assertEqual(markers, [0xDB, 0xC0, 0xDD, 0xC4])
+        # the picture chunk is a multiple of 4 bytes, zero-padded after EOI
+        self.assertEqual(struct.unpack(">I", data[offset + 8:offset + 12])[0] % 4, 0)
+        image, _audio = thp.read_frame(stream, offset, info)
+        red, green, _blue = image.getpixel((5, 5))
+        self.assertGreater(red, 150)
+        self.assertLess(green, 80)
+
+    def test_restart_intervals_without_markers_round_trip(self):
+        """Retail frames restart every MCU row (DRI) but carry no RSTn
+        markers: the encoder strips them and the reader walks the scan to put
+        them back, so a multi-row picture decodes intact."""
+        from PIL import Image, ImageChops
+
+        gradient = Image.linear_gradient("L").resize((64, 48)).convert("RGB")
+        data = thp.encode_thp([gradient], None, 32000, 29.97, jpeg_quality=90)
+        stream = io.BytesIO(data)
+        info = thp.read_info(stream)
+        (offset,) = thp.iter_frame_offsets(stream, info)
+        size = struct.unpack(">I", data[offset + 8:offset + 12])[0]
+        frame = data[offset + 12:offset + 12 + size]
+        self.assertEqual(len(thp._restart_offsets(frame, frame.find(b"\xff\xda") + 2, frame.rfind(b"\xff\xd9"))), 2)
+        image, _audio = thp.read_frame(stream, offset, info)
+        low, high = ImageChops.difference(image.convert("RGB"), gradient).getextrema()[0]
+        self.assertLess(high, 24)
+
     def test_encode_rejects_non_multiple_of_16_dimensions(self):
         from PIL import Image
 
@@ -2561,6 +2611,35 @@ class SkinnedImportTests(unittest.TestCase):
             for a, b in zip(engine_pose.apply(w0[2], (0.0, 3.0, 0.0)), engine_pose.apply(w1[2], (0.0, 3.0, 0.0))):
                 self.assertAlmostEqual(a, b, delta=2e-3)
         self.assertEqual({c.bone_index for c in back.curves}, {1})
+
+    def test_template_node_elsewhere_in_the_tree_is_not_the_same_bone(self):
+        # a fitted model's ``arm`` joint under ``root``; the template's ``arm`` is a pivot mesh node
+        # under ``model`` (like ``head`` under ``swm1_model``): the joint gets the battle convention
+        glb = gltf_export.export_glb([("body", model.read_model_bytes(self.gs_bytes))], self.bones, None, [("atk", self.anim)])
+        elsewhere = [_rig_bone("model", -1, (0.0, 0.0, 0.0)), _rig_bone("arm", 0, (0.0, 0.0, 0.0))]
+        built, _w = gltf_import.build_skeleton(glb, template=elsewhere)
+        self.assertEqual(built.bones[1].unknown_ints[2], gltf_import.BATTLE_BONE_FLAGS)
+        same_place = [_rig_bone("root", -1, (0.0, 0.0, 0.0)), _rig_bone("arm", 0, (0.0, 0.0, 0.0))]
+        built, _w = gltf_import.build_skeleton(glb, template=same_place)
+        self.assertEqual(built.bones[1].unknown_ints[2], 0x180)
+
+    def test_template_bone_turned_at_rest_keeps_its_rotation(self):
+        # a bow's BW001 is turned 90 degrees at rest: a weapon model posed on it faces that way,
+        # so the rebuilt bone keeps the rotation (and its skin undoes the rest pose)
+        glb = gltf_export.export_glb([("body", model.read_model_bytes(self.gs_bytes))], self.bones, None, [("atk", self.anim)])
+        turned = _rig_bone("arm", 0, (0.0, 0.0, 0.0), flags=0x34)
+        floats = list(turned.unknown_floats)
+        floats[engine_pose.VALUE_OFFSET + engine_pose.SLOT_ROTATE + 2] = 90.0
+        turned = dataclasses.replace(turned, unknown_floats=tuple(floats))
+        template = [_rig_bone("root", -1, (0.0, 0.0, 0.0), flags=0x26), turned]
+        built, _w = gltf_import.build_skeleton(glb, template=template)
+        arm = built.bones[1]
+        self.assertEqual(arm.unknown_ints[2], 0x34)
+        world = engine_pose.world_matrices(built.bones, engine_pose.local_matrices(built.bones, None, 0))
+        self.assertAlmostEqual(world[1][0][1], -1.0, places=5)  # x maps from y: turned about z
+        for r, row in enumerate(skeleton.mul_3x4(world[1], engine_pose.skin_matrix(arm))):
+            for c, value in enumerate(row):
+                self.assertAlmostEqual(value, 1.0 if r == c else 0.0, places=5)
 
     def test_new_skeleton_from_the_armature(self):
         glb = gltf_export.export_glb([("body", model.read_model_bytes(self.gs_bytes))], self.bones, None, [("atk", self.anim)])
