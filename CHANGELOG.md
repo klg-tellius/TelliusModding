@@ -44,6 +44,13 @@ First stable release.
 - Map Builder: new **Add roof** tool. Drag a rectangle over a room whose walls are already
   built, pick a texture (built-in presets or an image file) and a gable or flat shape: a
   roof model is generated on top of the walls and placed as a working building roof.
+- Every chapter map gets **Edit ground…** and **New blank map…**; **Free unused flags…**
+  frees chapter flags that nothing uses.
+- 3D Models: **New character model…** (new slot and rig fit in one go).
+- New weapons and weapon effects on both games (**Battle Weapons › New weapon…**,
+  **Visual Effects › Recolour…**).
+- Assets: tiles for Tutorials, Staff Credits and Soundroom Tracks.
+- A guide for agents and scripts driving the app from Python (`docs/app/agent-modding-api.md`).
 
 ## v0.2.0 (2026-11-15)
 
