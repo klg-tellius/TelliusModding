@@ -180,7 +180,9 @@ class Fe10FilesTest(unittest.TestCase):
                 if path.is_file() and path.suffix.lower() in components:
                     check(str(path.relative_to(FILES)), path.read_bytes())
         if FULL:
-            self.assertEqual(components, {".gs": 5342, ".g": 5342, ".ga": 16415})
+            self.assertEqual(components, per_disc(FILES, {".gs": 5342, ".g": 5342, ".ga": 16415},
+                                                  eu={".gs": 5772, ".g": 5772, ".ga": 16847},
+                                                  jp={".gs": 5267, ".g": 5267, ".ga": 16531}))
         else:
             self.assertTrue(all(components.values()), components)
 

@@ -403,6 +403,7 @@ class AddStoryChapterTests(unittest.TestCase):
         for name in shop.DIFFICULTY_FILES.values():
             doc = shop.parse_shop((self.files / "shop" / name).read_bytes())
             self.assertIsNotNone(doc.shop("W", 33), name)
+        self.project.write_logical("game_data", plan.fe8data)    # as the Chapters page saves it
         self.assertEqual(chapters.chapter_titles(self.project)["33"], "Ch.8x: A New Road")
         from fe_modding import chapter_images
         strip = chapter_images.preview((self.files / "window/chapter2/chap33.cms").read_bytes())
@@ -423,6 +424,7 @@ class AddStoryChapterTests(unittest.TestCase):
         for name in shop.DIFFICULTY_FILES.values():
             doc = shop.parse_shop((self.files / "shop" / name).read_bytes())
             self.assertFalse(any(doc.shop(kind, 33) for kind in shop.SHOP_KINDS), name)
+        self.project.write_logical("game_data", removed.fe8data)
         self.assertNotIn("33", chapters.chapter_titles(self.project))
         self.assertEqual(chapter_flow.ChapterFlow(CodeEditor(self.project.extracted_dir)).next_of(9), 10)
 

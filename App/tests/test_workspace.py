@@ -170,7 +170,7 @@ class ProjectIndexTests(unittest.TestCase):
         ike = self.index.by_pid["PID_IKE"]
         self.assertEqual(ike.name, per_disc(Path(os.environ["FE9_EXTRACTED"]) / "files", "Ike", jp="アイク"))
         self.assertEqual(ike.portrait_file, "IKE.cms")
-        self.assertEqual(ike.class_name, "Ranger")
+        self.assertEqual(ike.class_name, per_disc(Path(os.environ["FE9_EXTRACTED"]) / "files", "Ranger", jp="レンジャー"))
         self.assertEqual(ike.category, "playable")
         self.assertIn("PID_IKE_EV", ike.variants)
         self.assertTrue(ike.battle_model and ike.battle_model.startswith("zu/"))
