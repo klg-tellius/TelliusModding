@@ -106,7 +106,7 @@ Import the edited GLB into the same terrain slot. The **Terrain import** dialog 
 
 **Mask image** supplies a replacement road/shore mask. Leaving it empty preserves the current one. If the terrain has no current mask, selecting map texturing requires you to provide one.
 
-**Keep the map's light overlay** reuses the old final light texture. It is ticked when the file holds the map's own terrain (`map_base`). That overlay was painted for the old ground, so it may produce mismatched shadows after major reshaping. With the option off, the importer uses white and leaves imported colors unmodified, which makes the map look flatter. Checked in Dolphin: an unchanged round trip with the overlay kept looks like retail (under 0.5% of the screen differs on both games), while a white overlay changed 19% of Radiant Dawn's Prologue.
+**Keep the map's light overlay** reuses the old final light texture. It is ticked when the file holds the map's own terrain (`map_base`). That overlay was painted for the old ground, so it may produce mismatched shadows after major reshaping. With the option off, the importer uses white and leaves imported colors unmodified, which makes the map look flatter. Checked in Dolphin: an unchanged round trip with the overlay kept looks like retail (0.1-0.2% of the screen differs on both games); with a white overlay parts of Radiant Dawn's Prologue come out lighter (1.7%).
 
 For the first pass, keep map texturing when the export used it, keep the current mask, keep the light overlay, and choose whether the small edit is visual-only or should move tactical ground. Turn the overlay off only when the new ground is too different for the old shadows.
 

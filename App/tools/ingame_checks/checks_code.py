@@ -615,14 +615,25 @@ def setup_config(value: int):
     return setup
 
 
-def judge_config(mod, retail, facts):
-    names = mod.get("battle_processes", [])
-    full = [n for n in names if n in ("E_BUnitActor", "E_BCamActor", "E_BSkyActor")]
-    return bool(full), f"full battle scene processes: {full}; on-map fight: {[n for n in names if 'OnBt' in n]}"
+#: SetConfig(0, value) -> the fight RD plays (KA probes, 2026-11-19): 0 and 3 the full battle scene, 1 and 2
+#: the on-map fight. E1r, VX1r, W1b and W2b rely on 0.
+CONFIG_SCENE = {0: "full", 1: "map", 2: "map", 3: "full"}
 
 
-CHECKS += [Check(f"KA{v}", "rd", f"probe: SetConfig(0, {v}) and the battle scene", [], play=attack_play("PID_MICAIAH", RD_TILE),
-                 judge=judge_config, setup=setup_config(v), start=Jump("0101"), retail=False) for v in range(4)]
+def judge_config(value: int):
+    def judge(mod, retail, facts):
+        names = mod.get("battle_processes", [])
+        full = [n for n in names if n in ("E_BUnitActor", "E_BCamActor", "E_BSkyActor")]
+        on_map = [n for n in names if "OnBt" in n]
+        seen = "full" if full else "map" if on_map else "none"
+        return seen == CONFIG_SCENE[value], (f"SetConfig(0, {value}) gives the {seen} fight (expected "
+                                             f"{CONFIG_SCENE[value]}): full-scene processes {full}, on-map {on_map}")
+    return judge
+
+
+CHECKS += [Check(f"KA{v}", "rd", f"SetConfig(0, {v}) gives the {CONFIG_SCENE[v]} fight", [],
+                 play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_config(v), setup=setup_config(v),
+                 start=Jump("0101"), retail=False) for v in range(4)]
 
 
 # -- weather in the battle scene (RD): the ChapterData weather label looks like it picks the battle sky, not the
@@ -748,3 +759,43 @@ CHECKS += [
           play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
           fixture=fixture_sonic_kills, start=Jump(2), retail=False),
 ]
+
+
+
+# -- E1p / E1w as checks of game behaviour: a melee battle table attacking from range turns the screen magenta
+# for good (whatever effects the item has), and the project check warns about the weapon in the same build.
+
+def with_ranged_melee_warning(fixture):
+    def wrapped(ctx):
+        from fe_modding import validator
+        fixture(ctx)
+        issues: list = []
+        validator.check_ranged_melee_weapons(ctx.project, ctx.data, issues)
+        ctx.facts.update(warned=[i.where for i in issues])
+    return wrapped
+
+
+def judge_magenta_warned(mod, retail, facts):
+    magenta = flat_magenta_frames(mod)
+    warned = "xwp/IRONSWORD.dbx" in facts.get("warned", [])
+    return magenta > 0 and warned, (f"{facts['change']}: {magenta} flat magenta frames (a melee battle table "
+                                    f"attacking from range); the project check "
+                                    f"{'warns about xwp/IRONSWORD.dbx' if warned else 'says nothing'}")
+
+
+def fixture_fire_fe8_only(ctx):
+    """The Flame Lance's effects on the Iron Sword in FE8Data only (its battle table stays a melee one)."""
+    from fe_modding.formats import fe8data
+    sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "weapon_effect", "EID_FIRE2_WP")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "effect", "EID_FIRE2")
+    ctx.facts.update(change="Iron Sword effects -> EID_FIRE2 / EID_FIRE2_WP in FE8Data (battle table untouched)")
+
+
+for _check in CHECKS:
+    if _check.id == "E1p":
+        _check.fixture = fixture_fire_fe8_only     # E1's fixture now also rewrites the battle table
+    if _check.id in ("E1p", "E1w"):
+        _check.title = _check.title.replace("E1 isolation: ", "Ranged melee weapon: ") + " - magenta, and warned"
+        _check.fixture = with_ranged_melee_warning(_check.fixture)
+        _check.judge = judge_magenta_warned

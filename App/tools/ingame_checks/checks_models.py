@@ -4,7 +4,8 @@ through the Models page's own functions, and Write files.
 * B1 / B1r: the lord's map model (``ymu/lord``, ``ymu/mikaya1``): ``export_set_glb`` then
   ``replace_body_with_glb``.
 * B2 / B2r: chapter 1's / the Prologue's map terrain: ``export_map_terrain_glb`` then
-  ``replace_map_terrain_with_glb`` (defaults: heights followed, conformed).
+  ``replace_map_terrain_with_glb`` (the dialog's defaults: heights followed, conformed, map texturing and
+  light overlay kept). B2Wr: the same with a white overlay, which flattens the map (why the default).
 
 The files really change (the import rebuilds them), but the map must look the same as retail: the judge
 compares the first player phase's screen and accepts a small difference only. The screenshots are kept
@@ -42,9 +43,9 @@ def body_round_trip(folder: str):
     return fixture
 
 
-def terrain_round_trip(folder: str, keep_light: bool = False):
-    """As 3D Models' Import .glb on a map with the dialog's defaults: projected map texturing kept for a mesh
-    holding map_base (the dialog ticks it then), the light overlay as asked (the dialog leaves it off)."""
+def terrain_round_trip(folder: str, keep_light: bool = True):
+    """As 3D Models' Import .glb on a map with the dialog's defaults: projected map texturing and the light
+    overlay kept for a mesh holding map_base (the dialog ticks both then, since 2026-11-24)."""
     def fixture(ctx):
         from fe_modding.game_profile import files_root_of
         from fe_modding.gui import model_viewer as mv
@@ -56,6 +57,15 @@ def terrain_round_trip(folder: str, keep_light: bool = False):
         ctx.facts.update(files=_write(ctx, result.outputs), warnings=result.warnings[:5],
                          model=f"zmap/{folder} (map texturing kept, light overlay {'kept' if keep_light else 'white'})")
     return fixture
+
+
+def judge_white_overlay(mod, retail, facts):
+    """The case behind the dialog's default: with a white overlay the ground comes out lighter (1.7% of the screen,
+    2026-11-24; the kept overlay: 0.2%). An earlier 18.9% reading was not the overlay."""
+    share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
+    return share > 0.01, (f"{facts['model']}: the map differs from retail on {share:.1%} (expected over 1%, "
+                          f"against 0.2% with the overlay kept: why the import keeps it by default; B2r covers "
+                          f"the default)")
 
 
 def judge_same(mod, retail, facts):
@@ -78,10 +88,7 @@ CHECKS = [
     Check("B2r", "rd", "3D Models: the Prologue's map terrain exported to .glb and imported back",
           ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_same,
           fixture=terrain_round_trip("bmap0101"), start=Jump("0101")),
-    Check("B2L", "por", "3D Models: chapter 1's terrain round trip keeping the light overlay",
-          ["1.0 §4 3D Models ⭐ map terrain (POR)"], play=map_shot(), judge=judge_same,
-          fixture=terrain_round_trip("bmap02", keep_light=True), start=Jump(2)),
-    Check("B2Lr", "rd", "3D Models: the Prologue's terrain round trip keeping the light overlay",
-          ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_same,
-          fixture=terrain_round_trip("bmap0101", keep_light=True), start=Jump("0101")),
+    Check("B2Wr", "rd", "3D Models: the Prologue's terrain round trip with a white light overlay",
+          ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_white_overlay,
+          fixture=terrain_round_trip("bmap0101", keep_light=False), start=Jump("0101")),
 ]

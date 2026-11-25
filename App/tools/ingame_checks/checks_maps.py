@@ -93,6 +93,39 @@ def judge_vs_base(mod, retail, facts):
     return True, f"{facts['change']}: {seen} ({share:.1%} of the map against MAPBASE; see shots)"
 
 
+# -- MP_c_02: stalls told to load a .ga they don't have: the opening event never ends (game behaviour, 2026-11-18).
+# The check asserts the hang and that the project check warns about it on the same edit.
+
+def hang_fixture(group: str, bit: int, label: str):
+    edit = prop_fixture(group, bit, label)
+
+    def fixture(ctx):
+        from fe_modding import validator
+        edit(ctx)
+        issues: list = []
+        validator.check_map_animations(ctx.project, issues)
+        ctx.facts.update(warned=[i.message[:90] for i in issues if FOLDER in i.where])
+    return fixture
+
+
+def play_until_hang(minutes: float = 4.0):
+    def play(driver, facts):
+        try:
+            driver.to_player_phase(minutes)
+        except Exception as error:  # noqa: BLE001 - the expected outcome
+            return {"hung": True, "why": str(error)[:160], "shot": str(driver.snap("hang"))}
+        return {"hung": False, "shot": str(driver.snap("map"))}
+    return play
+
+
+def judge_hang_warned(mod, retail, facts):
+    warned = facts.get("warned", [])
+    return mod["hung"] and bool(warned), (
+        f"{facts['change']}: the opening {'never ends' if mod['hung'] else 'ends'} "
+        f"({mod.get('why', 'player phase reached')}); the project check "
+        f"{'warns: ' + warned[0] if warned else 'says nothing'}")
+
+
 def judge_base(mod, retail, facts):
     return True, "reference screenshot of the unedited Prologue"
 
@@ -110,6 +143,12 @@ def _checks():
     groups = [_RD_MAP_ROLE, *PROP_FLAG_GROUPS[1:]]
     for group, _title, bits in groups:
         for bit, label in bits:
+            if group == "flag_bits_c" and bit == 0x02:
+                out.append(Check("MP_c_02", "rd", f"prop flag {group} {bit:#04x}: {label} - the opening hangs and "
+                                 f"the project check warns", ["MAP-04 prop flags"], play=play_until_hang(),
+                                 judge=judge_hang_warned, fixture=hang_fixture(group, bit, label),
+                                 start=Jump("0101"), retail=False))
+                continue
             out.append(Check(f"MP_{group.removeprefix('flag_bits_')}_{bit:02x}", "rd", f"prop flag {group} {bit:#04x}: "
                              f"{label}", ["MAP-04 prop flags"], play=map_shot(), judge=judge_vs_base,
                              fixture=prop_fixture(group, bit, label), start=Jump("0101"), retail=False))

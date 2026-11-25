@@ -170,21 +170,21 @@ CHECKS = [
 PROBES = [
     Check("PROBE_por_base", "por", "probe: PoR base menu", [], play=probe(lambda s: bool(s.names & BASE),
           ["Down", "Down", "Down", "A", "B", "Down", "A", "B"]), judge=lambda m, r, f: (True, "probe"),
-          card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"), retail=False, minutes=12),
+          card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"), retail=False, minutes=12, probe=True),
     Check("PROBE_por_base2", "por", "probe: PoR base menu from its first entry (Outfit, then Manage)", [],
           play=probe(lambda s: bool(s.names & BASE), ["A", "Down", "Down", "B", "Down", "A", "Down", "Down"]),
           judge=lambda m, r, f: (True, "probe"), card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"),
-          retail=False, minutes=12),
+          retail=False, minutes=12, probe=True),
     Check("PROBE_por_base3", "por", "probe: PoR base Outfit, Ike picked, his command list", [],
           play=probe(lambda s: bool(s.names & BASE), ["A", "A", "Down", "Down", "Down", "Down", "A"]),
           judge=lambda m, r, f: (True, "probe"), card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"),
-          retail=False, minutes=12),
+          retail=False, minutes=12, probe=True),
     Check("PROBE_por_extras", "por", "probe: PoR title extras", [], play=probe(
           lambda s: bool({"E_Title", "TitleProc"} & s.names), ["A", "Down", "A", "Down", "A", "Down", "A"], 3),
-          judge=lambda m, r, f: (True, "probe"), retail=False),
+          judge=lambda m, r, f: (True, "probe"), retail=False, probe=True),
     Check("PROBE_rd_extras", "rd", "probe: RD title extras", [], play=probe(
           lambda s: bool({"E_Title", "TitleProc"} & s.names), ["A", "Down", "A", "Down", "A", "Down", "A"], 3),
-          judge=lambda m, r, f: (True, "probe"), retail=False),
+          judge=lambda m, r, f: (True, "probe"), retail=False, probe=True),
 ]
 CHECKS += PROBES
 
@@ -316,4 +316,5 @@ RD_BASE_SAVE = SWEEP_SAVES["rd"] / "006_chapter05_FE10_US.dat"   # base before 1
 
 CHECKS.append(Check("PROBE_rd_base", "rd", "probe: RD base menu (forge path for SAVE-03)", [], play=probe(
     lambda s: bool(s.names & BASE), ["Down", "A", "B", "Down", "A", "B", "Down", "A", "B", "Down", "A", "B"]),
-    judge=lambda m, r, f: (True, "probe"), card=card_from(RD_BASE_SAVE, "FE10_US.dat"), retail=False, minutes=12))
+    judge=lambda m, r, f: (True, "probe"), card=card_from(RD_BASE_SAVE, "FE10_US.dat"), retail=False, minutes=12,
+    probe=True))

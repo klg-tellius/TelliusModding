@@ -3354,7 +3354,7 @@ class _TerrainImportOptions(tk.Toplevel):
         self._conform = tk.BooleanVar(value=True)
         self._texturing = tk.BooleanVar(value=has_map_base)
         # a map's own terrain coming back (it holds map_base): keep the light made for it. Seen in Dolphin: an
-        # unchanged RD round trip with a white overlay differs from retail on 19% of the screen, 0.4% with it kept
+        # unchanged round trip looks like retail with it kept (0.1-0.2% of the screen); white lightens the ground (1.7%)
         self._keep_light = tk.BooleanVar(value=has_map_base)
         self._mask = tk.StringVar()
         ttk.Checkbutton(

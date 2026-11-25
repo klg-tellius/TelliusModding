@@ -69,6 +69,13 @@ def _run_once(check, variant: str, facts: dict) -> dict:
 
 
 def judge(check, mod: dict, retail, facts: dict) -> tuple[str, str]:
+    if check.probe:
+        if "error" in mod:
+            return "INFO", f"probe: the run stopped ({mod['error']})"
+        try:
+            return "INFO", f"probe: {check.judge(mod, retail, facts)[1]}"
+        except Exception as error:  # noqa: BLE001
+            return "INFO", f"probe: {type(error).__name__}: {error}"
     if "error" in mod:
         return "FAIL", f"mod run: {mod['error']}"
     if retail is not None and "error" in retail:

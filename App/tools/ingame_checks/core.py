@@ -58,6 +58,7 @@ class Check:
     retail: bool = True                         # False: judge(mod, None, ctx) only
     audio: bool = False                         # dump the game's audio (Driver.audio_mark / audio_since)
     package: Optional[Callable] = None          # package(run_dir, variant) -> disc image Dolphin boots instead
+    probe: bool = False                         # a run that finds a value or a path: recorded as INFO, never FAIL
 
     def __post_init__(self):
         if not self.region:
