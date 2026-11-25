@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import (logical_game_path_of, AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_SKIES,
+from ...game_profile import (files_root_of, logical_game_path_of, AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_SKIES,
                              BATTLE_WEAPONS,
                              CHAPTERS,
                              EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
@@ -162,7 +162,22 @@ def has_asset_file(project, key: str) -> bool:
 def tool_applies(project, key: str) -> bool:
     """Whether the Assets tool ``key`` exists for this project's game."""
     feature = ASSET_APPLIES.get(key)
-    return feature is None or profile_of(project).supports(feature)
+    if feature is not None and not profile_of(project).supports(feature):
+        return False
+    if key == "staff_credits" and profile_of(project).message_dialect != "fe10":
+        return _has_por_staff_roll(project)
+    return True
+
+
+def _has_por_staff_roll(project) -> bool:
+    """Path of Radiance's staff roll is ``ending/staffroll_noa.bin`` (US) or ``staffroll.bin``
+    (Japan); the European disc has neither (its credits are other files), so the tool is absent."""
+    from ..staffroll_editor import FILE_NAMES
+    try:
+        folder = files_root_of(project) / "ending"
+        return any((folder / name).is_file() for name in FILE_NAMES)
+    except Exception:  # noqa: BLE001 - not extracted yet: keep the tool, its page says why
+        return True
 
 
 #: Tools that list files for other pages to open (they take the shell).
