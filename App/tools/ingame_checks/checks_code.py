@@ -156,6 +156,13 @@ def fixture_crit_one(ctx):
 BATTLE = ("E_Battle", "E_Kiri", "E_BattleSubProc", "E_Netuzo", "BattleProc", "E_BtlMain")
 
 
+#: battle frames per fight and the time between them: four a second, so a spell's phases are each caught in
+#: both runs and frames_differ can match them whatever the timing (2026-11-24: frames a second apart caught the
+#: two runs at different phases of the same spell and read that as a 22% change)
+BATTLE_FRAMES = 40
+BATTLE_FRAME_GAP = 0.25
+
+
 def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
     """The cursor starts on ``attacker``: A selects it, A stays, then A through Attack, weapon and target
     until a battle process appears. Observes the target's HP and the attacker's record before and after."""
@@ -182,16 +189,23 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
             raise RuntimeError(f"no battle started after 8 A presses ({sorted(driver.state().names)})")
         deadline = time.time() + 180
         seen: set = set()
-        frame, next_frame = 0, time.time()
+        frame, next_frame, quotes = 0, time.time(), 0
         while time.time() < deadline and (any(n.startswith(BATTLE) for n in driver.state().names)
                                           or not {"E_BMapPlph"} <= driver.state().names):
             names = driver.state().names
             seen |= set(names)
-            if time.time() >= next_frame and frame < 10:      # a frame a second, for a look
+            talking = any(n.startswith(("E_Talk", "E_LevelUp", "E_Lvup", "E_GrowUp")) for n in names)
+            # BATTLE_FRAMES frames, BATTLE_FRAME_GAP apart; none while a quote is up (a boss's quote filled every frame of
+            # the RD Prologue fight, round 3)
+            if time.time() >= next_frame and frame < BATTLE_FRAMES and not talking:
                 driver.snap(f"battle_{frame:02d}")
-                frame, next_frame = frame + 1, time.time() + 1.0
+                frame, next_frame = frame + 1, time.time() + BATTLE_FRAME_GAP
             # a battle conversation (a boss's or a talk event's quote) or the level-up window waits for A
-            if any(n.startswith(("E_Talk", "E_LevelUp", "E_Lvup", "E_GrowUp")) for n in names):
+            if talking:
+                if quotes < 6 and any(n.startswith("E_Talk") for n in names):   # the quote's own frames
+                    time.sleep(0.6)
+                    driver.snap(f"quote_{quotes:02d}")
+                    quotes += 1
                 driver.press("A", gap=1.0)
             time.sleep(0.5)
         time.sleep(3)
@@ -339,11 +353,27 @@ CHECKS.append(Check("K3r", "rd", "Growth gain per success in a real level-up", [
 # fight doesn't (the effect's), and finish without new invalid accesses.
 
 def fixture_fire_effect(ctx):
-    from fe_modding.formats import fe8data
+    """The Battle Weapons edit: xwp/IRONSWORD.dbx made a wave blade like the Sonic Sword's (kind 8, missile 2)
+    with the Flame Lance's fire effects, and the item's FE8Data effects to match. E1 isolations (2026-11-24):
+    the FE8Data effects alone on a plain-sword table turn a range-2 fight flat magenta (E1, E1p, E1w), while the
+    retail Sonic Sword at range 2 draws fine (E1s) - the xwp table is what the battle reads."""
+    from fe_modding import battle_tables
+    from fe_modding.formats import battle_weapons, fe8data
+    text = battle_tables.read_entry(ctx.project, "xwp/IRONSWORD.dbx")
+    # the Sonic Sword's pattern in fire: the wave effect, then the _WP effect on the target (round 12 with the
+    # Flame Lance's projectile effect as the wave: the fight worked, then the screen turned magenta)
+    for field, value in (("kind", "8"), ("missile", "2"), ("effectId", "EID_K_FIRE2"),
+                         ("damageEffId", "EID_K_FIRE2_WP")):
+        text = battle_weapons.set_weapon_field(text, field, value)
+    battle_tables.write_entry(ctx.project, "xwp/IRONSWORD.dbx", text)
     sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
     ctx.facts.update(old=getattr(sword, "weapon_effect", None),
                      change=f"Iron Sword weapon effect {getattr(sword, 'weapon_effect', None)} -> EID_FIRE2_WP")
     ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "weapon_effect", "EID_FIRE2_WP")
+    # round 7 (2026-11-24): the weapon effect alone left every frame as retail; the Flame Lance carries both
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "effect", "EID_FIRE2")
+    ctx.facts.update(change=ctx.facts["change"] + ", effect -> EID_FIRE2; xwp/IRONSWORD kind 8, missile 2, "
+                            "effectId EID_K_FIRE2, damageEffId EID_K_FIRE2_WP")
 
 
 def judge_new_processes(mod, retail, facts):
@@ -352,9 +382,48 @@ def judge_new_processes(mod, retail, facts):
                          f"fight {extra[:8]} (frames in shots/battle_*.png)")
 
 
+RANGED_TILE = (12, 15)      # two tiles north of Ike's start: a magic weapon casts its spell only at range 2
+
+
+def setup_attack_ranged(ctx):
+    """setup_attack, then the bandit two tiles away and the Iron Sword given range 1-2 like the Flame Lance (both
+    runs). Round 7 (2026-11-24): in melee the fire effects left every frame as retail, as a magic weapon fights
+    physically next to its target."""
+    from fe_modding.formats import dispo, fe8data
+    setup_attack(ctx)
+    sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "max_range", 2)
+    docs = {n: d for n, d in ctx.dispos("bmap02").items() if n == "dispos_h.bin"}
+    field = dispo.FIELD
+    for doc in docs.values():
+        unit = next(u for s in doc.sections if s.name.endswith("_first_h") for u in s.units
+                    if (u[field["pos_x"]], u[field["pos_y"]]) == ATTACK_TILE)
+        for key in ("pos", "pos2"):
+            unit[field[f"{key}_x"]], unit[field[f"{key}_y"]] = RANGED_TILE
+    ctx.write_dispos("bmap02", docs)
+
+
+def judge_fire_wave(mod, retail, facts):
+    """The fire wave: damage at range, fire on screen (orange pixels), no magenta. No retail comparison: retail's
+    Iron Sword given range 2 is a melee actor attacking from range, which is the magenta case itself."""
+    from PIL import Image
+    def orange(path):
+        img = Image.open(path).convert("RGB").resize((96, 51))
+        px = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+        return sum(1 for r, g, b in px if r > 200 and 60 < g < 180 and b < 80) / len(px)
+    frames = sorted(Path(mod["shot"]).parent.glob("battle_*.png"))
+    fire = max((orange(f) for f in frames), default=0.0)
+    lost = mod["before"]["target_hp"] - mod["target_hp_after"]
+    magenta = flat_magenta_frames(mod)
+    return lost > 0 and fire > 0.03 and not magenta, (
+        f"{facts['change']}: from two tiles the bandit lost {lost} HP, fire covers up to {fire:.0%} of a frame, "
+        f"{magenta} magenta frames (battle_*.png)")
+
+
 CHECKS.append(Check("E1", "por", "Battle Weapons: the Iron Sword fights with the fire effect",
-                    ["1.0 §4 Battle Weapons fire effect (POR)"], play=play_attack, judge=lambda m, r, f: judge_fight_looks_different(m, r, f),
-                    setup=setup_attack, fixture=fixture_fire_effect, start=Jump(2)))
+                    ["1.0 §4 Battle Weapons fire effect (POR)"], play=attack_play("PID_IKE", RANGED_TILE),
+                    judge=judge_fire_wave, setup=setup_attack_ranged, fixture=lambda ctx: fixture_fire_no_crit(ctx),
+                    start=Jump(2), retail=False))
 
 
 # -- Battle Data: zdbx/param.dbx's InitPosL (the left combatant's start, -20) moved to -30 through battle_tables, as
@@ -385,25 +454,77 @@ CHECKS.append(Check("BD1", "por", "Battle Data: an edited param.dbx and a fight 
 
 # -- more battle visuals, all with the same menu-driven attack (the frames are kept for a look) -----------------
 
-def frames_differ(mod, retail, first: int = 1, last: int = 9) -> float:
-    """The largest share of the screen that differs between the two runs' battle frames of the same index
-    (frames are taken a second apart from the battle's start, so effects line up within a frame or two)."""
-    from .oracles import region_diff
-    shares = []
-    for k in range(first, last + 1):
-        a = Path(retail["shot"]).parent / f"battle_{k:02d}.png"
-        b = Path(mod["shot"]).parent / f"battle_{k:02d}.png"
-        if a.is_file() and b.is_file():
-            shares.append(region_diff(str(a), str(b)))
-    return max(shares) if shares else 0.0
+def _frame(path: Path):
+    from PIL import Image
+    return Image.open(path).convert("L").resize((240, 127))
+
+
+def _share(a, b, threshold: int = 40) -> float:
+    from PIL import ImageChops
+    hist = ImageChops.difference(a, b).point(lambda v: 255 if v > threshold else 0).histogram()
+    return hist[255] / max(1, a.width * a.height)
+
+
+def frames_differ(mod, retail, first: int = 0, last: int | None = None, window: int = 8,
+                  sustained: int = 4) -> float:
+    """How unlike retail the edited fight looks: each edited battle frame is matched with the closest retail frame
+    within ``window`` frames of it (the two runs drift by a frame or more). The ``sustained``-th worst match is
+    returned: a change has to show on that many frames (one second at four frames a second). A timing offset
+    matches a neighbour, and a single flash of a spell caught in one run only is ignored (W2b, 2026-11-24: one
+    frame at 26%, the others at 0-6%)."""
+    def frames(obs):
+        return sorted(Path(obs["shot"]).parent.glob("battle_*.png"))
+    ours, theirs = frames(mod), frames(retail)
+    if not ours or not theirs:
+        return 0.0
+    ours = ours[first:None if last is None else last + 1]
+    loaded = [_frame(p) for p in theirs]
+    matches = []
+    for offset, path in enumerate(ours, first):
+        frame = _frame(path)
+        near = loaded[max(0, offset - window):offset + window + 1] or loaded
+        matches.append(min(_share(frame, other) for other in near))
+    matches.sort(reverse=True)
+    return matches[min(sustained, len(matches)) - 1]
+
+
+def flat_magenta_frames(obs) -> int:
+    """Battle frames that are nearly all magenta: Dolphin's missing-texture colour, seen when a fight asks for
+    an effect its weapon actor can't play (E1, 2026-11-24)."""
+    from PIL import Image
+    count = 0
+    for path in sorted(Path(obs["shot"]).parent.glob("battle_*.png")) + [Path(obs["shot"])]:
+        px = Image.open(path).convert("RGB").resize((96, 51)).get_flattened_data()             if hasattr(Image.Image, "get_flattened_data") else Image.open(path).convert("RGB").resize((96, 51)).getdata()
+        px = list(px)
+        count += sum(1 for r, g, b in px if r > 150 and b > 150 and g < 40) > len(px) // 2
+    return count
 
 
 def judge_fight_looks_different(mod, retail, facts):
     lost = mod["before"]["target_hp"] - mod["target_hp_after"]
+    magenta = flat_magenta_frames(mod)
+    if magenta:
+        return False, (f"{facts.get('change', '')}: {magenta} frames of the edited fight are flat magenta (a "
+                       f"missing texture), the screen is broken")
     share = frames_differ(mod, retail)
     return lost > 0 and share > 0.05, (f"{facts.get('change', '')}: the fight ran to its end (target lost {lost} HP); "
                                        f"the most different battle frame differs from retail on {share:.0%} of the "
                                        f"screen (battle_*.png)")
+
+
+def setup_attack_rd_animated(ctx):
+    """setup_attack_rd plus SetConfig(0, 0) at turn 1: the full battle scene (KA0 probe, 2026-11-19: 0 brings
+    E_BUnitActor/E_BCamActor/E_BSkyActor, 1 and 2 the on-map fight, the jump's default the map fight)."""
+    setup_attack_rd(ctx)
+    ctx.append_chapter_script("0101", ANIMATIONS_ON)
+
+
+#: an event that switches RD's battle animations on (SetConfig(0, 0)) at the first player phase
+ANIMATIONS_ON = """
+@on_phase(turn_from=1, turn_to=1, phase="player")
+def CheckAnimationsOn():
+    SetConfig(0, 0)
+"""
 
 
 def fixture_scenery(ctx):
@@ -411,19 +532,24 @@ def fixture_scenery(ctx):
     from fe_modding.formats import fe8data
     rows = fe8data.read_battle_terrain(ctx.fe8)
     row = next(r for r in rows if r.map_name == "bmap02")
-    old = row.scenes[0]
-    row.scenes[0] = "crimea_night"
+    old = list(row.scenes)
+    # round 7 (2026-11-24): only the first scene changed left the fight as retail; every scene of the row now
+    row.scenes[:] = ["crimea_night" if scene else scene for scene in row.scenes]
     ctx.fe8 = fe8data.write_battle_terrain(ctx.fe8, rows)
-    ctx.facts.update(change=f"bmap02 battle scene {old} -> crimea_night")
+    ctx.facts.update(change=f"bmap02 battle scenes {old} -> crimea_night")
 
 
 def fixture_light_fire(ctx):
-    """RD Battle Weapons: the Light tome's spell effect (its second effect, EID_LIGHT) is Fire's (EID_FIRE)."""
+    """RD Battle Weapons: both of the Light tome's effects (the head effect and the spell) are Fire's. Round 6
+    (2026-11-24): with only effect_2 changed the fight still drew Light's beam."""
     from fe_modding.formats import fe10data
     data = ctx.project.read_logical("game_data")
     light = next(r for r in fe10data.read_table(data, "item") if r.id == "IID_LIGHT")
-    ctx.facts.update(change=f"IID_LIGHT spell effect {light.values.get('effect_2')} -> EID_FIRE")
-    ctx.project.write_logical("game_data", fe10data.patch_field(data, "item", light.index, "effect_2", "EID_FIRE"))
+    old = (light.values.get("effect"), light.values.get("effect_2"))
+    data = fe10data.patch_field(data, "item", light.index, "effect", "EID_HEAD_FIRE")
+    data = fe10data.patch_field(data, "item", light.index, "effect_2", "EID_FIRE")
+    ctx.project.write_logical("game_data", data)
+    ctx.facts.update(change=f"IID_LIGHT effects {old} -> (EID_HEAD_FIRE, EID_FIRE)")
 
 
 def fixture_light_particles(ctx):
@@ -431,18 +557,25 @@ def fixture_light_particles(ctx):
     from fe_modding.formats import effects, particle_editor
     from fe_modding.formats import animation
     from fe_modding.game_profile import files_root_of
-    path = effects.pack_path(files_root_of(ctx.project), "EID_LIGHT")
-    parts = effects.read_effect_pack(path.read_bytes())
-    ga = next(blob for name, blob in parts.items() if name.endswith(".ga"))
-    layout = animation.read_particle_table_layout(ga)
-    for index, _emitter in enumerate(layout.emitters):
-        values = {}
-        for key in ("scale_s", "scale_t", "mode1_scale"):
-            value = particle_editor.field_value(ga, layout.emitters[index].record_offset, particle_editor.EMITTER_FIELDS[key])
-            values[key] = max(-32768, min(32767, value * 4))
-        ga = particle_editor.edit_emitter(ga, index, **values)
-    ctx.project.write_keeping_original(path, effects.build_effect_pack(effects.replace_part(parts, "ga", ga)))
-    ctx.facts.update(change=f"EID_LIGHT: {len(layout.emitters)} emitters drawn four times bigger")
+    counts = {}
+    for eid in ("EID_HEAD_LIGHT", "EID_LIGHT"):      # the beam on screen is the head effect (round 6)
+        path = effects.pack_path(files_root_of(ctx.project), eid)
+        parts = effects.read_effect_pack(path.read_bytes())
+        ga = next(blob for name, blob in parts.items() if name.endswith(".ga"))
+        layout = animation.read_particle_table_layout(ga)
+        if layout is None:              # EID_HEAD_LIGHT has no particle table
+            counts[eid] = 0
+            continue
+        for index, _emitter in enumerate(layout.emitters):
+            values = {}
+            for key in ("scale_s", "scale_t", "mode1_scale"):
+                value = particle_editor.field_value(ga, layout.emitters[index].record_offset,
+                                                    particle_editor.EMITTER_FIELDS[key])
+                values[key] = max(-32768, min(32767, value * 4))
+            ga = particle_editor.edit_emitter(ga, index, **values)
+        ctx.project.write_keeping_original(path, effects.build_effect_pack(effects.replace_part(parts, "ga", ga)))
+        counts[eid] = len(layout.emitters)
+    ctx.facts.update(change=f"Light's emitters drawn four times bigger: {counts}")
 
 
 def fixture_camera_weight(ctx):
@@ -459,10 +592,11 @@ CHECKS += [
           start=Jump(2)),
     Check("E1r", "rd", "Battle Weapons: Light fights with Fire's spell effect",
           ["1.0 §4 Battle Weapons effect (RD)"], play=attack_play("PID_MICAIAH", RD_TILE),
-          judge=judge_fight_looks_different, setup=setup_attack_rd, fixture=fixture_light_fire, start=Jump("0101")),
+          judge=judge_fight_looks_different, setup=setup_attack_rd_animated, fixture=fixture_light_fire,
+          start=Jump("0101")),
     Check("VX1r", "rd", "Visual Effects: the Light spell's particles four times bigger",
           ["1.0 §4 Visual Effects / particle editor (RD)"], play=attack_play("PID_MICAIAH", RD_TILE),
-          judge=judge_fight_looks_different, setup=setup_attack_rd, fixture=fixture_light_particles,
+          judge=judge_fight_looks_different, setup=setup_attack_rd_animated, fixture=fixture_light_particles,
           start=Jump("0101")),
     Check("BD1r", "rd", "Battle Data: an edited FE10Battle field and a fight", ["1.0 §4 Battle Data ⭐ (RD)"],
           play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_fight_runs, setup=setup_attack_rd,
@@ -483,10 +617,134 @@ def setup_config(value: int):
 
 def judge_config(mod, retail, facts):
     names = mod.get("battle_processes", [])
-    full = [n for n in names if n not in ("E_BMapBattle", "E_BWinBattleInfo", "E_BattleSeq", "E_MuEffect",
-                                          "E_PostEffect") and ("Btl" in n or "Battle" in n or "Kiri" in n)]
-    return bool(full), f"battle processes beyond the map fight: {full}; all: {[n for n in names if 'att' in n.lower()][:8]}"
+    full = [n for n in names if n in ("E_BUnitActor", "E_BCamActor", "E_BSkyActor")]
+    return bool(full), f"full battle scene processes: {full}; on-map fight: {[n for n in names if 'OnBt' in n]}"
 
 
 CHECKS += [Check(f"KA{v}", "rd", f"probe: SetConfig(0, {v}) and the battle scene", [], play=attack_play("PID_MICAIAH", RD_TILE),
                  judge=judge_config, setup=setup_config(v), start=Jump("0101"), retail=False) for v in range(4)]
+
+
+# -- weather in the battle scene (RD): the ChapterData weather label looks like it picks the battle sky, not the
+# map (W1r-W3r saw no map change). Same Micaiah attack with the full scene on, Prologue set to snow / night.
+
+def judge_weather_battle(mod, retail, facts):
+    share = frames_differ(mod, retail)
+    sky = "E_BSkyActor" in mod.get("battle_processes", [])
+    return sky and share > 0.02, (f"weather {facts['old']} -> {facts['new']}: full battle scene "
+                                  f"{'on' if sky else 'OFF'}; the most different battle frame differs from retail "
+                                  f"on {share:.1%} of the screen (battle_*.png)")
+
+
+def _weather(chapter_id, weather):
+    from .checks_chapters import weather_fixture
+    return weather_fixture(chapter_id, weather)
+
+
+CHECKS += [
+    Check(f"W{n}b", "rd", f"Chapter weather: Prologue fights in {label} (battle scene)", ["RD weather (known bug)"],
+          play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_weather_battle, setup=setup_attack_rd_animated,
+          fixture=_weather("C0101", weather), start=Jump("0101"))
+    for n, label, weather in ((1, "snow", "雪"), (2, "the night", "夜"))
+]
+
+
+# -- E1 isolation: the range-2 fire fight turned the screen magenta for good (round 8). Is it the effect not being
+# loaded for the chapter? The same edit, with a bandit far away carrying a real Flame Lance (EID_FIRE2 in use).
+
+def setup_attack_ranged_lance_loaded(ctx):
+    """setup_attack_ranged with a Flame Lance on the (4, 4) bandit (round 9: still 33 of 40 frames magenta)."""
+    from fe_modding.formats import dispo
+    setup_attack_ranged(ctx)
+    docs = {n: d for n, d in ctx.dispos("bmap02").items() if n == "dispos_h.bin"}
+    field = dispo.FIELD
+    for doc in docs.values():
+        far = next(u for s in doc.sections if s.name.endswith("_first_h") for u in s.units
+                   if str(u[field["pid"]]).startswith("PID_BANDIT") and (u[field["pos_x"]], u[field["pos_y"]]) == (4, 4))
+        far[field["item1"]] = "IID_FRAMELANCE"
+    ctx.write_dispos("bmap02", docs)
+
+
+def judge_no_magenta(mod, retail, facts):
+    from PIL import Image
+    def share(path):
+        px = list(Image.open(path).convert("RGB").resize((96, 51)).getdata())
+        return sum(1 for r, g, b in px if r > 150 and b > 150 and g < 40) / len(px)
+    frames = sorted(Path(mod["shot"]).parent.glob("battle_*.png"))
+    magenta = sum(share(f) > 0.5 for f in frames)
+    return magenta == 0, (f"{facts['change']}: {magenta} of {len(frames)} battle frames flat magenta "
+                          f"(the bandit {mod['before']['target_hp']} -> {mod['target_hp_after']} HP)")
+
+
+CHECKS.append(Check("E1p", "por", "E1 isolation: the fire effects with a Flame Lance in the chapter", [],
+                    play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta,
+                    setup=setup_attack_ranged_lance_loaded, fixture=fixture_fire_effect, start=Jump(2), retail=False))
+
+
+
+# -- E1 isolation 2: the Flame Lance's fire on a sword, or any magic-sword effect at range? The Sonic Sword's wind.
+
+def fixture_wind_effect(ctx):
+    from fe_modding.formats import fe8data
+    sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "weapon_effect", "EID_WIND2_WP")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "effect", "EID_WIND2")
+    ctx.facts.update(change="Iron Sword effects -> EID_WIND2 / EID_WIND2_WP (the Sonic Sword's)")
+
+
+CHECKS.append(Check("E1w", "por", "E1 isolation: a sword's own magic (Sonic Sword wind) at range 2", [],
+                    play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta,
+                    setup=setup_attack_ranged, fixture=fixture_wind_effect, start=Jump(2), retail=False))
+
+
+
+# -- E1 isolation 3: the retail Sonic Sword itself (its own effects, nothing edited but Ike's sword rank) at range 2.
+# Round 10: any magic effect put on the Iron Sword turned a range-2 fight magenta (fire and wind alike).
+
+def fixture_real_sonic_sword(ctx):
+    from fe_modding.formats import dispo
+    ctx.set_character("PID_IKE", weapon_ranks="B--------")
+    docs = {n: d for n, d in ctx.dispos("bmap02").items() if n == "dispos_h.bin"}
+    field = dispo.FIELD
+    for doc in docs.values():
+        ike = next(u for s in doc.sections for u in s.units if u[field["pid"]] == "PID_IKE")
+        ike[field["item0"]] = "IID_SONICBLADE"
+    ctx.write_dispos("bmap02", docs)
+    ctx.facts.update(change="Ike holds the retail Sonic Sword (sword rank B)")
+
+
+CHECKS.append(Check("E1s", "por", "E1 isolation: the retail Sonic Sword at range 2", [],
+                    play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta,
+                    setup=setup_attack_ranged, fixture=fixture_real_sonic_sword, start=Jump(2), retail=False))
+
+
+
+# -- E1 isolation 4 (round 13: the fire wave blade killed with a forced critical, then 11 frames went magenta;
+# the retail Sonic Sword, which did not kill, drew none). E1c: E1 without the forced critical. E1k: the retail
+# Sonic Sword with 255 critical, so it kills at range.
+
+def fixture_fire_no_crit(ctx):
+    from fe_modding.formats import fe8data
+    fixture_fire_effect(ctx)
+    sword = next(i for i in ctx.data.items if i.iid == "IID_IRONSWORD")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, sword.index, "crit", 0)
+    ctx.facts.update(change=ctx.facts["change"] + "; crit 0")
+
+
+def fixture_sonic_kills(ctx):
+    from fe_modding.formats import fe8data
+    fixture_real_sonic_sword(ctx)
+    blade = next(i for i in ctx.data.items if i.iid == "IID_SONICBLADE")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, blade.index, "crit", 255)
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, blade.index, "hit", 255)
+    ctx.facts.update(change=ctx.facts["change"] + "; Sonic Sword hit and crit 255 (kills at range)")
+
+
+CHECKS += [
+    Check("E1c", "por", "E1 isolation: the fire wave blade without a forced critical", [],
+          play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
+          fixture=fixture_fire_no_crit, start=Jump(2), retail=False),
+    Check("E1k", "por", "E1 isolation: the retail Sonic Sword killing at range", [],
+          play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
+          fixture=fixture_sonic_kills, start=Jump(2), retail=False),
+]

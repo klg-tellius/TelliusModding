@@ -121,9 +121,15 @@ def fixture_caps_c02(ctx):
 
 
 def judge_boss_quote(mod, retail, facts):
-    from .checks_code import frames_differ
-    share = frames_differ(mod, retail, 0, 9)
-    return share > 0.01, f"{facts['change']}: the battle's frames (its quote first) differ from retail by up to {share:.1%}"
+    """The quote's frames (quote_NN.png, taken while the battle talk is up) compared one by one."""
+    from pathlib import Path
+    from .oracles import region_diff
+    ours = sorted(Path(mod["shot"]).parent.glob("quote_*.png"))
+    theirs = {p.name: p for p in Path(retail["shot"]).parent.glob("quote_*.png")}
+    shares = [region_diff(str(theirs[p.name]), str(p)) for p in ours if p.name in theirs]
+    share = max(shares, default=0.0)
+    return share > 0.01, (f"{facts['change']}: {len(shares)} frames of the battle quote differ from retail by up to "
+                          f"{share:.1%} (quote_*.png)")
 
 
 # -- DF1 ------------------------------------------------------------------------------------------------------------
@@ -243,12 +249,13 @@ def fixture_layout(ctx):
     from fe_modding.game_profile import files_root_of
     path = files_root_of(ctx.project) / "Mess" / "c02.m"
     import re
-    new = "背景なし会話".encode("shift_jis")
+    # the opening is seat style (背景会話); 背景なし会話 drew the same window (round 2), so the world-map one
+    old, new = "背景会話".encode("shift_jis"), "GMAP会話".encode("shift_jis")
     messages = message.read_messages_path(path)
-    changed = [message.Message(m.speaker, re.sub(rb"[$]R[^|]*[|]", b"$R" + new + b"|", m.text.encode(message.ENCODING))
+    changed = [message.Message(m.speaker, m.text.encode(message.ENCODING).replace(b"$R" + old + b"|", b"$R" + new + b"|")
                                .decode(message.ENCODING)) for m in messages]
     ctx.project.write_keeping_original(path, message.write_messages(changed))
-    ctx.facts.update(change=f"{sum(a.text != b.text for a, b in zip(messages, changed))} talks: every layout -> 背景なし会話")
+    ctx.facts.update(change=f"{sum(a.text != b.text for a, b in zip(messages, changed))} talks: 背景会話 -> GMAP会話")
 
 
 def play_talks(driver, facts):

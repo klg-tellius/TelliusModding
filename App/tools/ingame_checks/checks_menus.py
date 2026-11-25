@@ -10,12 +10,15 @@ screen fails the check rather than passing it.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from .core import SWEEP_SAVES, Check, Jump
 from .oracles import region_diff
 
 POR_BASE_SAVE = SWEEP_SAVES["por"] / "010_chapter09_01-GFEE-FIREEMBLEM8J.gci"   # base before Ch.8
 RD_4_1_SAVE = SWEEP_SAVES["rd"] / "035_chapter35_FE10_US.dat"                 # continues into 4-1
+RD_1_2_SAVE = SWEEP_SAVES["rd"] / "004_chapter03_FE10_US.dat"                 # continues into 1-2, Micaiah in the
+#                                                                                 party (a jump fields Laura alone)
 RD_1_9_SAVE = SWEEP_SAVES["rd"] / "011_chapter10_FE10_US.dat"                 # continues into 1-9
 
 
@@ -40,7 +43,13 @@ def walk(reach, presses, minutes: float = 10.0, settle: float = 1.5, hold: str =
                 driver.press(step, gap=1.2)
             time.sleep(settle)
             shots.append(str(driver.snap(f"walk_{k:02d}")))
-        return {"shot": shots[-1], "shots": shots, "names": sorted(driver.state().names)}
+        good = [shot for shot in shots if shot not in ("None", "") and Path(shot).is_file()
+                and Path(shot).stat().st_size > 1000]
+        if len(good) < len(shots):          # a screenshot can fail now and then (SH1 retail, 2026-11-24): retake
+            time.sleep(1.0)
+            again = driver.snap(f"walk_{len(presses):02d}_again")
+            good += [str(again)] if again else []
+        return {"shot": good[-1] if good else "", "shots": shots, "names": sorted(driver.state().names)}
     return play
 
 
@@ -72,8 +81,9 @@ def shop_fixture(ctx):
 
 
 BASE = {"BasesProc", "BaseProc"}
-#: base menu: the Shop entry opens the Armory first (path from the probe run; see the module doc)
-SHOP_PATH = ["Down", "Down", "Down", "A", "A"]
+#: base menu (cursor on Outfit): Outfit, Ike, his Shop command (four rows down), then Armory, the first entry of
+#: the shop list (PROBE_por_base3, 2026-11-19; the old path opened Info)
+SHOP_PATH = ["A", "A", "Down", "Down", "Down", "Down", "A", "A", "wait2"]
 
 
 # -- R4 (RD 4-1): the army group re-saved through the story flow; the status screen's army name ----------------
@@ -161,6 +171,14 @@ PROBES = [
     Check("PROBE_por_base", "por", "probe: PoR base menu", [], play=probe(lambda s: bool(s.names & BASE),
           ["Down", "Down", "Down", "A", "B", "Down", "A", "B"]), judge=lambda m, r, f: (True, "probe"),
           card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"), retail=False, minutes=12),
+    Check("PROBE_por_base2", "por", "probe: PoR base menu from its first entry (Outfit, then Manage)", [],
+          play=probe(lambda s: bool(s.names & BASE), ["A", "Down", "Down", "B", "Down", "A", "Down", "Down"]),
+          judge=lambda m, r, f: (True, "probe"), card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"),
+          retail=False, minutes=12),
+    Check("PROBE_por_base3", "por", "probe: PoR base Outfit, Ike picked, his command list", [],
+          play=probe(lambda s: bool(s.names & BASE), ["A", "A", "Down", "Down", "Down", "Down", "A"]),
+          judge=lambda m, r, f: (True, "probe"), card=card_from(POR_BASE_SAVE, "01-GFEE-FIREEMBLEM8J.gci"),
+          retail=False, minutes=12),
     Check("PROBE_por_extras", "por", "probe: PoR title extras", [], play=probe(
           lambda s: bool({"E_Title", "TitleProc"} & s.names), ["A", "Down", "A", "Down", "A", "Down", "A"], 3),
           judge=lambda m, r, f: (True, "probe"), retail=False),
@@ -206,9 +224,30 @@ def play_movie_captions(driver, facts):
     return {"best": best, "counts": shots, "shot": str(path) if shots else ""}
 
 
+def caption_band(path: str) -> tuple[float, float]:
+    """(stddev, mean) of the caption band's grey levels: text has a high stddev; the replaced flat pictures a low
+    one over a brighter band. Captions are intensity textures, so the magenta fixture shows grey (2026-11-19)."""
+    from PIL import Image, ImageStat
+    img = Image.open(path).convert("L")
+    w, h = img.size
+    stat = ImageStat.Stat(img.crop((int(w * 0.33), int(h * 0.90), int(w * 0.67), int(h * 0.95))))
+    return stat.stddev[0], stat.mean[0]
+
+
+def _flat_frames(obs) -> int:
+    from pathlib import Path
+    count = 0
+    for shot in Path(obs["shot"]).parent.glob("movie_*.png"):
+        std, mean = caption_band(str(shot))
+        count += std < 10 and mean > 80
+    return count
+
+
 def judge_captions(mod, retail, facts):
-    return mod["best"] > 300 and retail["best"] < 50, (f"{facts['change']}: up to {mod['best']} magenta pixels "
-                                                       f"during the movie, retail {retail['best']} (movie_*.png)")
+    m, r = _flat_frames(mod), _flat_frames(retail)
+    return m >= 3 and r == 0, (f"{facts['change']}: {m} movie frames show a flat replaced picture in the caption "
+                               f"band (retail {r}); captions are intensity textures, so magenta draws grey "
+                               f"(movie_*.png)")
 
 
 # -- R6 (RD): the paired Sothe/Micaiah model after Replace rig, shown by a scripted rescue on 1-1 ------------------
@@ -217,12 +256,18 @@ RESCUE_EVENT = """
 # In-game check: Sothe picks Micaiah up (the paired model)
 @on_phase(turn_from=1, turn_to=1, phase="player")
 def CheckPairedModel():
+    InstantDisposRank("bmap0103_z01")
+    UnitSetPos(UnitGetByPID("PID_MICAIAH"), 15, 22)
+    UnitSetPos(UnitGetByPID("PID_SOTHE"), 15, 22)
     UnitRescue(UnitGetByPID("PID_SOTHE"), UnitGetByPID("PID_MICAIAH"))
 """
 
 
 def rescue_setup(ctx):
-    ctx.append_chapter_script("0104", RESCUE_EVENT)      # 1-3: Sothe (13, 7) starts next to Micaiah (12, 7)
+    # 1-2: Sothe is its z01 reinforcement (the chapter's script deploys him at turn 3 on (9, 11)); a jump or a
+    # turn-1 sweep save never has him in the party, so the event deploys him. The 1-2 save brings Micaiah (a jump
+    # fields Laura alone); she is set on (15, 22) and Sothe on the nearest free tile, next to her
+    ctx.append_chapter_script("0103", RESCUE_EVENT)
 
 
 def rig_fixture(ctx):
@@ -247,7 +292,8 @@ def play_rescue(driver, facts):
     game = GameRam(driver.ram, driver.build.game_id)
     sothe = game.unit("PID_SOTHE")
     status = int.from_bytes(game.record(sothe.address + 0x10C, 4), "big")
-    return {"carrying": bool(status & 0x2), "shot": str(driver.snap("rescue"))}
+    where = {u.pid: [u.x, u.y] for u in game.units() if u.pid in ("PID_SOTHE", "PID_MICAIAH", "PID_LAURA")}
+    return {"carrying": bool(status & 0x2), "status": status, "where": where, "shot": str(driver.snap("rescue"))}
 
 
 def judge_rescue(mod, retail, facts):
@@ -263,7 +309,7 @@ CHECKS += [
           fixture=captions_fixture, region="RFEP01", minutes=15),
     Check("R6", "rd", "Replace rig on the paired Sothe/Micaiah model: a rescue shows it as retail",
           ["rdcheck R6"], play=play_rescue, judge=judge_rescue, setup=rescue_setup, fixture=rig_fixture,
-          start=Jump("0104")),
+          card=card_from(RD_1_2_SAVE, "FE10_US.dat"), minutes=12),
 ]
 
 RD_BASE_SAVE = SWEEP_SAVES["rd"] / "006_chapter05_FE10_US.dat"   # base before 1-4 (forge: SAVE-03)

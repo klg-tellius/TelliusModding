@@ -79,8 +79,30 @@ class WorkProject:
         if not (self.extracted / "sys" / "main.dol").is_file():
             print(f"Copying the clean disc to {self.extracted} (once)...", flush=True)
             shutil.copytree(base, self.extracted, dirs_exist_ok=True)
+        self._resync_with_base()
         self.snapshot = _snapshot(self.extracted)
         self.revert()
+
+    def _resync_with_base(self) -> None:
+        """Put back every disc file that no longer matches the clean disc (size or time; copies keep the disc's
+        times). A run stopped between a fixture and its revert leaves its edits here, and a snapshot taken over
+        them would treat them as clean from then on (2026-11-24: a moved chapter 1 bandit outlived a stopped run)."""
+        restored = []
+        for folder, _dirs, files in os.walk(self.base):
+            for name in files:
+                clean = Path(folder) / name
+                rel = clean.relative_to(self.base).as_posix()
+                path = self.extracted / rel
+                cs = clean.stat()
+                if path.is_file():
+                    st = path.stat()
+                    if st.st_size == cs.st_size and st.st_mtime_ns == cs.st_mtime_ns:
+                        continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(clean, path)
+                restored.append(rel)
+        if restored:
+            print(f"Restored {len(restored)} work files from the clean disc: {restored[:5]}", flush=True)
 
     def _clean_project_folder(self) -> None:
         keep = {"project.json", "extracted"}

@@ -130,18 +130,21 @@ def fixture_bandits_stay(ctx):
 def play_enemy_phase(driver, facts):
     driver.to_player_phase(8)
     game = GameRam(driver.ram, driver.build.game_id)
-    before = {u.handle: (u.x, u.y) for u in game.units() if u.pid.startswith("PID_BANDIT")}
+    before = {u.handle: (u.pid, u.x, u.y) for u in game.units() if u.pid.startswith("PID_BANDIT")}
     driver.end_turns = True
     driver.until(lambda s: s.turn >= 2 and "E_BMapPlph" in s.names, 8, label="turn 2")
     after = {u.handle: (u.x, u.y) for u in game.units() if u.pid.startswith("PID_BANDIT")}
-    moved = sum(1 for h, pos in before.items() if after.get(h) not in (None, pos))
-    return {"moved": moved, "bandits": len(before), "shot": str(driver.snap("turn2"))}
+    moves = [[pid, [x, y], list(after[h])] for h, (pid, x, y) in before.items() if after.get(h) not in (None, (x, y))]
+    #: _EV bandits are moved by chapter 1's event script, whatever their AI says
+    moved = sum(1 for pid, _a, _b in moves if "_EV" not in pid)
+    return {"moved": moved, "moves": moves, "bandits": len(before), "shot": str(driver.snap("turn2"))}
 
 
 def judge_ai(mod, retail, facts):
     ok = mod["moved"] == 0 and retail["moved"] > 0
-    return ok, f"{facts['change']}: bandits that moved in the first enemy phase: edited {mod['moved']} of " \
-               f"{mod['bandits']}, retail {retail['moved']} of {retail['bandits']}"
+    return ok, (f"{facts['change']}: AI-driven bandits that moved in the first enemy phase: edited {mod['moved']} "
+                f"of {mod['bandits']}, retail {retail['moved']} of {retail['bandits']}; edited moves "
+                f"{mod.get('moves', '(not recorded)')}")
 
 
 # -- BC1 ----------------------------------------------------------------------------------------------------------
@@ -156,8 +159,25 @@ def fixture_camera_dist(ctx):
             value = float(rig.get("dist").split(",")[0]) * 5
             text = battle_camera.set_rig_field(text, rig.name, "dist", f"{value:.1f}")
             changed.append(rig.name)
+    # the side view of a normal fight is cam0, the scene camera, which has a position and no dist (round 2:
+    # dist x5 alone left every frame as retail)
+    text = battle_camera.set_rig_field(text, "cam0", "pos", "0.0, 25.0, 150.0")
     battle_tables.write_entry(ctx.project, "zdbx/camera.dbx", text)
-    ctx.facts.update(change=f"camera dist x5 on {changed}")
+    # round 3: rig edits alone barely changed a fight (2%): each xcam script's keyframes carry their own dist,
+    # which films the attack. Every keyframe of every script three times farther.
+    from dataclasses import replace
+    scripts = 0
+    for name in battle_tables.entry_names(ctx.project, "xcam", ".dbx"):
+        source = battle_tables.read_entry(ctx.project, name)
+        try:
+            script = battle_camera.read_script(source)
+        except battle_camera.CameraError:
+            continue
+        frames = [replace(f, dist=f.dist * 3) for f in script.keyframes]
+        battle_tables.write_entry(ctx.project, name, battle_camera.set_script_keyframes(source, frames))
+        scripts += 1
+    ctx.facts.update(change=f"camera dist x5 on {changed}; cam0 pos (0, 9.5, 60) -> (0, 25, 150); "
+                            f"every keyframe of {scripts} xcam scripts 3x farther")
 
 
 # -- FT1 ----------------------------------------------------------------------------------------------------------
