@@ -245,6 +245,34 @@ def check_map_animations(project: ModProject, issues: list) -> None:
                                 "animation' flag or add the .ga."))
 
 
+def check_ranged_melee_weapons(project: ModProject, fe8, issues: list) -> None:
+    """A weapon that reaches 2 or more tiles while its battle table (``xwp/<NAME>.dbx``) is a melee one (missile
+    0) and it has no gale effect (``EID_REPPU*``, as on Ragnell): attacking from range turns the battle screen
+    flat magenta and it stays that way (in-game checks E1/E1p/E1w, 2026-11-24). Path of Radiance."""
+    from . import battle_tables
+    from .formats import battle_weapons
+    try:
+        tables = battle_tables.read_entries(project, "xwp")
+    except Exception:  # noqa: BLE001 - no battle archive: nothing to compare
+        return
+    for item in fe8.items:
+        if not item.iid or (item.max_range or 0) < 2 or item.max_range == 255:
+            continue
+        text = tables.get(f"xwp/{item.iid[4:]}.dbx")
+        if text is None:
+            continue
+        try:
+            weapon = battle_weapons.read_weapon(text)
+        except Exception:  # noqa: BLE001
+            continue
+        if weapon.missile == 0 and not str(getattr(item, "effect", None) or "").startswith("EID_REPPU"):
+            issues.append(Issue(WARNING, "Items", f"xwp/{item.iid[4:]}.dbx",
+                                f"{item.iid} reaches {item.max_range} tiles, but its battle weapon is a melee one "
+                                f"(Flight 0) with no gale effect: attacking from range turns the battle screen "
+                                f"magenta. Give it a thrown or wave Type and Flight in Battle Weapons, or range 1.",
+                                ("asset", "battle_weapons", item.iid[4:])))
+
+
 def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) -> None:
     zmap = files_root_of(project) / "zmap"
     for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
@@ -415,6 +443,7 @@ def validate_project(project: ModProject, flow=None) -> Report:
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
     check_map_animations(project, issues)
+    check_ranged_melee_weapons(project, fe8, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
     _check_script_globals(project, issues)
     _check_shops(project, iids, issues)

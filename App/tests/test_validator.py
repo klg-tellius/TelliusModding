@@ -209,6 +209,28 @@ class RetailChecks(unittest.TestCase):
         report = validator.validate_project(project, flow)
         self.assertEqual([str(i) for i in report.errors], [])
 
+    def test_a_melee_weapon_given_range_is_flagged_and_retail_is_not(self):
+        """In game (E1, 2026-11-24): the Iron Sword given range 2 turns a ranged fight flat magenta."""
+        from dataclasses import replace
+        from types import SimpleNamespace
+        from fe_modding.formats import fe8data
+        files = Path(os.environ["FE9_EXTRACTED_FILES"])
+
+        class Retail(ModProject):
+            @property
+            def extracted_dir(self):
+                return files.parent
+
+        project = Retail(name="retail", game=Game.PATH_OF_RADIANCE, directory=files.parent.parent)
+        fe8 = fe8data.read_fe8data((files / "FE8Data.bin").read_bytes())
+        issues = []
+        validator.check_ranged_melee_weapons(project, fe8, issues)
+        self.assertEqual(issues, [])          # Ragnell and the like reach 2 tiles through their gale effect
+        items = [replace(i, max_range=2) if i.iid == "IID_IRONSWORD" else i for i in fe8.items]
+        validator.check_ranged_melee_weapons(project, SimpleNamespace(items=items), issues)
+        self.assertEqual([i.where for i in issues], ["xwp/IRONSWORD.dbx"])
+        self.assertEqual(issues[0].route, ("asset", "battle_weapons", "IRONSWORD"))
+
 
 if __name__ == "__main__":
     unittest.main()
