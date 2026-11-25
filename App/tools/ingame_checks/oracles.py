@@ -80,8 +80,18 @@ def map_shot(name: str = "map"):
         import time
         driver.to_player_phase(8)
         time.sleep(1.5)
-        return {"shot": str(driver.snap(name))}
+        return {"shot": str(driver.snap(name)), "processes": sorted(driver.state().names)}
     return play
+
+
+#: Map processes that are not weather effects (Radiant Dawn); ``E_MapWeather`` is the controller that starts
+#: the effect process (``E_MapCloud``, ``E_MapSnow``, ...) for the map's weather id.
+NON_WEATHER = {"E_MapDisp", "E_MapShader", "E_MapWeather"}
+
+
+def weather_effects(names) -> set:
+    """The weather effect processes among ``names`` (W4r/W4b, 2026-11-25: snow runs E_MapSnow, cloudy E_MapCloud)."""
+    return {n for n in names or () if n.startswith("E_Map") and n not in NON_WEATHER}
 
 
 def tone_profile(dump, hz: int = 440) -> dict:

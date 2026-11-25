@@ -158,7 +158,7 @@ Radiant Dawn has no `.dbx` tables: the three pages edit rows of `FE10Battle.cms`
 | --- | --- |
 | **Footstep effect** | The `FE10BFootEffect` row played under the fighters' feet: None, Dust, Dust (night), Water spray, Snow spray, Rain spray, Coins |
 | **Footstep ground** | Which column of each fighter's footstep sound set plays: Plain, Sand, Water, Snow, Rain, Floor, Coins |
-| **Indoors** | The chapter's battle weather and sky are not applied |
+| **Indoors** | The map's weather effect and sky are not applied |
 | **Mirrored** | The backdrop is drawn mirrored |
 | **Fighters run in** | The attacker may run up to the target (on variants 0 and 2) |
 | **Mirror / Turn 180° when they run in** | What happens to the backdrop when they do |

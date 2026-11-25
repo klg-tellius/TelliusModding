@@ -163,6 +163,24 @@ BATTLE_FRAMES = 40
 BATTLE_FRAME_GAP = 0.25
 
 
+#: Radiant Dawn's two battle units (attacker, defender; 0x4A0 bytes each) and their s16 raw hit, avoid and final
+#: hit (research/rd/COMBAT_NOTES.md). Read once the battle process is up, before the first strike.
+RD_BATTLE_UNITS = (0x803C8E80, 0x803C9320)
+RD_ODDS = {"raw_hit": 0x44E, "avoid": 0x450, "hit": 0x452}
+
+
+def battle_odds(driver) -> dict | None:
+    """Each side's hit numbers in the starting battle (Radiant Dawn US only; None elsewhere)."""
+    import struct
+    if driver.build.game_id != "RFEE01":
+        return None
+    sides = {}
+    for side, base in zip(("attacker", "defender"), RD_BATTLE_UNITS):
+        raw = driver.ram.read(base + 0x44E, 6)
+        sides[side] = dict(zip(RD_ODDS, struct.unpack(">3h", raw)))
+    return sides
+
+
 def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE, frames: int | None = None):
     """The cursor starts on ``attacker``: A selects it, A stays, then A through Attack, weapon and target
     until a battle process appears. Observes the target's HP and the attacker's record before and after."""
@@ -189,6 +207,7 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE, frames: int | None 
         if not started:
             driver.snap("no_battle")
             raise RuntimeError(f"no battle started after 8 A presses ({sorted(driver.state().names)})")
+        odds = battle_odds(driver)
         deadline = time.time() + 180 / driver.speed
         seen: set = set()
         frame, next_frame, quotes = 0, time.time(), 0
@@ -214,6 +233,7 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE, frames: int | None 
         after = next((u for u in game.units() if u.handle == target.handle), None)
         me = game.unit(attacker)
         return {"before": before, "target_hp_after": after.hp if after else 0, "battle_processes": sorted(seen),
+                "odds": odds,
                 "after": {"level": me.level, "raw": game.record(me.address, stride).hex()},
                 "shot": str(driver.snap("after"))}
     return play
@@ -640,15 +660,42 @@ CHECKS += [Check(f"KA{v}", "rd", f"SetConfig(0, {v}) gives the {CONFIG_SCENE[v]}
                  start=Jump("0101"), retail=False) for v in range(4)]
 
 
-# -- weather in the battle scene (RD): the ChapterData weather label looks like it picks the battle sky, not the
-# map (W1r-W3r saw no map change). Same Micaiah attack with the full scene on, Prologue set to snow / night.
+# -- weather in the battle scene (RD). ChapterData weather is read only for promotion scenes outside a fight
+# (E_CCProc modes 1-4, 0x80186144); a fight takes the map's weather id (0x804CB834, set from mapextra by
+# 0x8013A35C) unless an event overrides it. So the chapter field must leave the fight's weather as retail. The
+# oracle is the weather effect process (E_MapCloud on the Prologue, E_MapSnow with the map set to snow, W4b):
+# the frames of three retail-vs-retail-like runs differed by 3.7-4.4%, and the hit numbers are no oracle
+# either: the bandit's raw hit and avoid moved by 5-15 between retail runs (biorhythm), which is what the
+# 2026-11-04 parity run's "54 -> 69" was.
+
+def _odds_note(mod, retail):
+    a, b = mod.get("odds"), retail.get("odds")
+    if not a or not b:
+        return "hit numbers not read"
+    return f"defender hit {a['defender']['hit']} (retail {b['defender']['hit']}; varies by run)"
+
+
+def _weather_note(mod, retail):
+    from .oracles import weather_effects
+    ours = weather_effects(mod.get("battle_processes"))
+    theirs = weather_effects(retail.get("battle_processes"))
+    return ours, theirs, f"weather effect {sorted(ours)} (retail {sorted(theirs)})"
+
 
 def judge_weather_battle(mod, retail, facts):
-    share = frames_differ(mod, retail)
     sky = "E_BSkyActor" in mod.get("battle_processes", [])
-    return sky and share > 0.02, (f"weather {facts['old']} -> {facts['new']}: full battle scene "
-                                  f"{'on' if sky else 'OFF'}; the most different battle frame differs from retail "
-                                  f"on {share:.1%} of the screen (battle_*.png)")
+    ours, theirs, note = _weather_note(mod, retail)
+    return sky and ours == theirs, (
+        f"weather {facts['old']} -> {facts['new']}: full battle scene {'on' if sky else 'OFF'}; {note} "
+        f"(expected: as retail); frames differ by {frames_differ(mod, retail):.1%}; {_odds_note(mod, retail)}")
+
+
+def judge_map_weather_battle(mod, retail, facts):
+    sky = "E_BSkyActor" in mod.get("battle_processes", [])
+    ours, theirs, note = _weather_note(mod, retail)
+    return sky and "E_MapSnow" in ours and "E_MapSnow" not in theirs, (
+        f"map weather code {facts['old']} -> {facts['new']}: full battle scene {'on' if sky else 'OFF'}; {note}; "
+        f"snowflakes in the fight (battle_*.png); {_odds_note(mod, retail)}")
 
 
 def _weather(chapter_id, weather):
@@ -656,11 +703,21 @@ def _weather(chapter_id, weather):
     return weather_fixture(chapter_id, weather)
 
 
+def _map_weather(folder, code):
+    from .checks_chapters import map_weather_fixture
+    return map_weather_fixture(folder, code)
+
+
 CHECKS += [
-    Check(f"W{n}b", "rd", f"Chapter weather: Prologue fights in {label} (battle scene)", ["RD weather (known bug)"],
+    Check(f"W{n}b", "rd", f"Chapter weather: Prologue fights in {label} look and hit as retail",
+          ["RD weather (known bug)"],
           play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_weather_battle, setup=setup_attack_rd_animated,
           fixture=_weather("C0101", weather), start=Jump("0101"))
     for n, label, weather in ((1, "snow", "雪"), (2, "the night", "夜"))
+] + [
+    Check("W4b", "rd", "Map weather: Prologue's fights in snow", ["RD weather: Map settings weather"],
+          play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_map_weather_battle, setup=setup_attack_rd_animated,
+          fixture=_map_weather("bmap0101", 5), start=Jump("0101")),
 ]
 
 

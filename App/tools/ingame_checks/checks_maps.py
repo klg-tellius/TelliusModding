@@ -26,10 +26,10 @@ MAP_AREA = (0.0, 0.22, 1.0, 0.88)
 SKIP_SHADER = {"water"}
 
 
-def _edit_map_bin(ctx, edit):
+def _edit_map_bin(ctx, edit, folder: str = FOLDER):
     from fe_modding.formats import lz10, map_file, pak
     from fe_modding.game_profile import files_root_of
-    path = files_root_of(ctx.project) / "zmap" / FOLDER / "map.cmp"
+    path = files_root_of(ctx.project) / "zmap" / folder / "map.cmp"
     raw = path.read_bytes()
     compressed = raw[:1] == b"\x10"
     packed = lz10.decompress(raw) if compressed else raw

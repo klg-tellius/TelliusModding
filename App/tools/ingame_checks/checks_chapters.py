@@ -269,10 +269,43 @@ def weather_fixture(chapter_id: str, weather: str):
 
 
 def judge_weather(mod, retail, facts):
-    from .oracles import region_diff
+    """ChapterData weather is the weather of promotion scenes played outside a fight (E_CCProc modes 1-4 read it
+    with +0x98, at 0x80186144); nothing on the map reads it, so the map must look like retail."""
+    from .oracles import region_diff, weather_effects
     share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
-    return share > 0.05, f"weather {facts['old']} -> {facts['new']}: the map differs from retail on {share:.1%} " \
-                         f"of the screen below the windows (see shots)"
+    ours, theirs = weather_effects(mod.get("processes")), weather_effects(retail.get("processes"))
+    same = ours == theirs or "processes" not in mod or "processes" not in retail
+    return share < 0.01 and same, (f"weather {facts['old']} -> {facts['new']}: the map differs from retail on "
+                                   f"{share:.1%} of the screen below the windows; weather effect "
+                                   f"{sorted(ours) or 'not recorded'} (retail {sorted(theirs) or 'not recorded'}) "
+                                   f"(expected: no change)")
+
+
+# -- the map's own weather (RD): bmap0101's mapextra weather code from 1 (cloudy) to 5 (snow), as Map settings
+# writes it. 0x8013A35C turns the code into the weather id the map and the battle scenes use (5 -> snow).
+
+def map_weather_fixture(folder: str, code: int):
+    def fixture(ctx):
+        from fe_modding.formats import map_file
+        from .checks_maps import _edit_map_bin
+
+        def edit(data, parsed):
+            old = parsed.extra.weather_id
+            ctx.facts.update(old=old, new=code, change=f"{folder} mapextra weather {old} -> {code}")
+            return map_file.patch_extra_mode(data, parsed.extra, "weather_id", code)
+        _edit_map_bin(ctx, edit, folder)
+    return fixture
+
+
+def judge_map_weather(mod, retail, facts):
+    """Snow on the map is sparse flakes (1.2% of the screen in W4r's first run), too little for a pixel judge;
+    the weather effect process the map runs is the oracle, the shot the evidence."""
+    from .oracles import region_diff, weather_effects
+    share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
+    ours, theirs = weather_effects(mod.get("processes")), weather_effects(retail.get("processes"))
+    return "E_MapSnow" in ours and "E_MapSnow" not in theirs, (
+        f"map weather code {facts['old']} -> {facts['new']}: weather effect {sorted(ours)} (retail {sorted(theirs)}); "
+        f"the map differs from retail on {share:.1%} of the screen (snowflakes, see shots)")
 
 
 from .oracles import map_shot  # noqa: E402
@@ -282,8 +315,11 @@ CHECKS += [
           play=map_shot(), judge=judge_terrain, fixture=terrain_fixture("bmap02", (12, 17)), start=Jump(2)),
     Check("T2r", "rd", "Terrain paint: the lord's tile is Thicket", ["1.0 §3 Build ⭐ terrain paint (RD)"],
           play=map_shot(), judge=judge_terrain, fixture=terrain_fixture("bmap0101", (10, 11)), start=Jump("0101")),
-    Check("W1r", "rd", "Chapter weather: Prologue in snow", ["1.0 §3 RD weather (open since 2026-10-28)"],
+    Check("W1r", "rd", "Chapter weather: Prologue in snow leaves the map as it is",
+          ["1.0 §3 RD weather (open since 2026-10-28)"],
           play=map_shot(), judge=judge_weather, fixture=weather_fixture("C0101", "雪"), start=Jump("0101")),
+    Check("W4r", "rd", "Map weather: Prologue's map in snow", ["RD weather: Map settings weather"],
+          play=map_shot(), judge=judge_map_weather, fixture=map_weather_fixture("bmap0101", 5), start=Jump("0101")),
 ]
 
 
@@ -358,10 +394,11 @@ CHECKS.append(Check("SC1", "por", "Staff Credits: added lines scroll in the cred
                     play=play_staff_roll, judge=judge_staff, setup=staff_setup, fixture=staff_fixture,
                     start=Jump(1), minutes=10))
 
-# other weathers on the same chapter: does any of them change the map?
+# other chapter weathers: none of them may change the map either
 CHECKS += [
-    Check("W2r", "rd", "Chapter weather: Prologue at night", ["RD weather (known bug)"], play=map_shot(),
-          judge=judge_weather, fixture=weather_fixture("C0101", "夜"), start=Jump("0101")),
-    Check("W3r", "rd", "Chapter weather: Prologue in a sandstorm", ["RD weather (known bug)"], play=map_shot(),
+    Check("W2r", "rd", "Chapter weather: Prologue at night leaves the map as it is", ["RD weather (known bug)"],
+          play=map_shot(), judge=judge_weather, fixture=weather_fixture("C0101", "夜"), start=Jump("0101")),
+    Check("W3r", "rd", "Chapter weather: Prologue in a sandstorm leaves the map as it is", ["RD weather (known bug)"],
+          play=map_shot(),
           judge=judge_weather, fixture=weather_fixture("C0101", "砂嵐"), start=Jump("0101")),
 ]
