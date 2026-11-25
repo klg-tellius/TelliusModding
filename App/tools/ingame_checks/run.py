@@ -47,7 +47,7 @@ def run_variant(check, variant: str, facts: dict) -> dict:
 def _run_once(check, variant: str, facts: dict) -> dict:
     run = ROOT / "run" / f"{check.id}_{variant}"
     out = ROOT / "out" / f"{check.id}_{variant}"
-    driver = Driver(run, out, check.region, audio=check.audio)
+    driver = Driver(run, out, check.region, audio=check.audio, speed=check.speed)
     started = time.time()
     obs: dict = {}
     try:

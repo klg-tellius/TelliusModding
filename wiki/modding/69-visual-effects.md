@@ -112,6 +112,8 @@ Press **Add effect…**. Set **Effect name** `EID_TUTORIAL_FIRE`, keep **Clone e
 | **Apply fields** | Applies the shown fields to the effect in the editor. |
 | **Save effect** / **Undo** / **Discard edits** / **Close** | Write the pack, undo the last change, drop all edits, close (asks when edits are unsaved). |
 
+Checked in game on Radiant Dawn's Light spell: textures replaced in its pack (`EID_K_LIGHT`) show in the fight, but the emitters' **initial S/T scale** and **mode 1 scale** set four times higher change nothing visible. Their exact effect is not known yet.
+
 ## Things to try next
 
 1. **A new colour.** In the copy, change a key of **Material colour (RGB565)** and watch the preview.

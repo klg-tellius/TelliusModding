@@ -58,6 +58,7 @@ class Check:
     retail: bool = True                         # False: judge(mod, None, ctx) only
     audio: bool = False                         # dump the game's audio (Driver.audio_mark / audio_since)
     package: Optional[Callable] = None          # package(run_dir, variant) -> disc image Dolphin boots instead
+    speed: float = 1.0                          # Dolphin's emulation speed (0.25: four times slower)
     probe: bool = False                         # a run that finds a value or a path: recorded as INFO, never FAIL
 
     def __post_init__(self):

@@ -132,8 +132,11 @@ CLASS_FIXED_SIZE = 16
 # 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 optional-block flags);
 # attributes; effectivenesses; optional ten-byte stat and eight-byte extension blocks; word padding.
 ITEM_LABELS = _labels(("iid", "ID"), ("miid", "Name key"), ("help", "Help key"), ("weapon_type", "Weapon type"),
-                      ("display_type", "Displayed type"), ("rank", "Weapon rank"), ("effect", "Effect"),
-                      ("effect_2", "Effect 2"), ("effect_3", "Effect 3"), group="Identity")
+                      ("display_type", "Displayed type"), ("rank", "Weapon rank"),
+                      # seen in game (E1r/E1rm, 2026-11-24): these play in the fight shown on the map; a battle
+                      # scene takes its effects from the weapon's FE10BWeapon row (Battle Weapons)
+                      ("effect", "Effect (map fight)"), ("effect_2", "Effect 2 (map fight)"), ("effect_3", "Effect 3"),
+                      group="Identity")
 ITEM_FIXED = (
     _bytes("u16", (("icon", "Icon"), ("price", "Price per use")), "Item")
     + _bytes("u8", (("might", "Might"), ("hit", "Hit"), ("crit", "Critical"), ("weight", "Weight"),

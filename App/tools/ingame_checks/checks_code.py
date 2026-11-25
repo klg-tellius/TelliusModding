@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .core import Check, Jump
+from .core import ROOT, Check, Jump
 from .ram_view import GameRam
 
 NEW_MULTIPLIER = 2
@@ -163,7 +163,7 @@ BATTLE_FRAMES = 40
 BATTLE_FRAME_GAP = 0.25
 
 
-def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
+def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE, frames: int | None = None):
     """The cursor starts on ``attacker``: A selects it, A stays, then A through Attack, weapon and target
     until a battle process appears. Observes the target's HP and the attacker's record before and after."""
     def play(driver, facts):
@@ -177,6 +177,8 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
             raise RuntimeError(f"no unit on {tile}: {[(u.pid, u.x, u.y) for u in game.units()]}")
         me = game.unit(attacker)
         before = {"target_hp": target.hp, "level": me.level, "raw": game.record(me.address, stride).hex()}
+        for stale in list((driver.out / "shots").glob("battle_*.png")) + list((driver.out / "shots").glob("quote_*.png")):
+            stale.unlink()          # frames of an earlier run of this check would mix with this one's
         driver.snap("before")
         started = False
         for _ in range(8):
@@ -187,7 +189,7 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
         if not started:
             driver.snap("no_battle")
             raise RuntimeError(f"no battle started after 8 A presses ({sorted(driver.state().names)})")
-        deadline = time.time() + 180
+        deadline = time.time() + 180 / driver.speed
         seen: set = set()
         frame, next_frame, quotes = 0, time.time(), 0
         while time.time() < deadline and (any(n.startswith(BATTLE) for n in driver.state().names)
@@ -197,8 +199,8 @@ def attack_play(attacker: str = "PID_IKE", tile=ATTACK_TILE):
             talking = any(n.startswith(("E_Talk", "E_LevelUp", "E_Lvup", "E_GrowUp")) for n in names)
             # BATTLE_FRAMES frames, BATTLE_FRAME_GAP apart; none while a quote is up (a boss's quote filled every frame of
             # the RD Prologue fight, round 3)
-            if time.time() >= next_frame and frame < BATTLE_FRAMES and not talking:
-                driver.snap(f"battle_{frame:02d}")
+            if time.time() >= next_frame and frame < (frames or BATTLE_FRAMES) and not talking:
+                driver.snap(f"battle_{frame:03d}")
                 frame, next_frame = frame + 1, time.time() + BATTLE_FRAME_GAP
             # a battle conversation (a boss's or a talk event's quote) or the level-up window waits for A
             if talking:
@@ -540,16 +542,18 @@ def fixture_scenery(ctx):
 
 
 def fixture_light_fire(ctx):
-    """RD Battle Weapons: both of the Light tome's effects (the head effect and the spell) are Fire's. Round 6
-    (2026-11-24): with only effect_2 changed the fight still drew Light's beam."""
-    from fe_modding.formats import fe10data
-    data = ctx.project.read_logical("game_data")
-    light = next(r for r in fe10data.read_table(data, "item") if r.id == "IID_LIGHT")
-    old = (light.values.get("effect"), light.values.get("effect_2"))
-    data = fe10data.patch_field(data, "item", light.index, "effect", "EID_HEAD_FIRE")
-    data = fe10data.patch_field(data, "item", light.index, "effect_2", "EID_FIRE")
-    ctx.project.write_logical("game_data", data)
-    ctx.facts.update(change=f"IID_LIGHT effects {old} -> (EID_HEAD_FIRE, EID_FIRE)")
+    """RD Battle Weapons: the LIGHT row of FE10Battle's FE10BWeapon table given the FIRE row's effect and target,
+    as the Battle Weapons page writes it. Group C (2026-11-24): the item's own ItemData effect fields (effect,
+    effect_2) changed nothing drawn; this table is RD's twin of PoR's xwp tables, which the battle reads."""
+    from fe_modding.formats import fe10_battle_weapons as bw
+    data = ctx.project.read_logical("battle_data")
+    rows = bw.read_weapons(data)
+    light = next(r for r in rows if r.labels.get("key") == "LIGHT")
+    fire = next(r for r in rows if r.labels.get("key") == "FIRE")
+    labels = dict(light.labels, effect=fire.labels["effect"], target=fire.labels["target"])
+    ctx.project.write_logical("battle_data", bw.set_weapon(data, light.index, labels=labels, type=light.type))
+    ctx.facts.update(change=f"FE10BWeapon LIGHT effect/target ({light.labels['effect']}, {light.labels['target']}) "
+                            f"-> ({fire.labels['effect']}, {fire.labels['target']})")
 
 
 def fixture_light_particles(ctx):
@@ -558,7 +562,7 @@ def fixture_light_particles(ctx):
     from fe_modding.formats import animation
     from fe_modding.game_profile import files_root_of
     counts = {}
-    for eid in ("EID_HEAD_LIGHT", "EID_LIGHT"):      # the beam on screen is the head effect (round 6)
+    for eid in ("EID_K_LIGHT",):     # the LIGHT battle-weapon row's effect (EID_LIGHT/EID_HEAD_LIGHT: nothing, round 6)
         path = effects.pack_path(files_root_of(ctx.project), eid)
         parts = effects.read_effect_pack(path.read_bytes())
         ga = next(blob for name, blob in parts.items() if name.endswith(".ga"))
@@ -799,3 +803,139 @@ for _check in CHECKS:
         _check.title = _check.title.replace("E1 isolation: ", "Ranged melee weapon: ") + " - magenta, and warned"
         _check.fixture = with_ranged_melee_warning(_check.fixture)
         _check.judge = judge_magenta_warned
+
+
+
+# -- VX1t / VX1r (group C, 2026-11-24): Light's particles on screen. Scaling them alone could not be judged from
+# screenshots (the beam, one frame long, dominates). Both runs draw EID_K_LIGHT's textures magenta (alpha kept);
+# VX1r also draws the particles four times bigger, so its magenta area must clearly exceed VX1t's.
+
+def _light_textures_magenta(ctx):
+    import io
+    from PIL import Image
+    from fe_modding.formats import effects, tpl
+    from fe_modding.game_profile import files_root_of
+    path = effects.pack_path(files_root_of(ctx.project), "EID_K_LIGHT")
+    parts = effects.read_effect_pack(path.read_bytes())
+    name = next(n for n in parts if n.endswith(".tpl"))
+    data = parts[name]
+    images = tpl.read_tpl_images(io.BytesIO(data))
+    for index, image in enumerate(images):
+        alpha = image.convert("RGBA").getchannel("A")
+        flat = Image.new("RGBA", image.size, (255, 0, 255, 255))
+        flat.putalpha(alpha)
+        data = tpl.replace_image(data, index, flat)
+    ctx.project.write_keeping_original(path, effects.build_effect_pack(effects.replace_part(parts, "tpl", data)))
+    return len(images)
+
+
+def fixture_light_magenta(ctx):
+    count = _light_textures_magenta(ctx)
+    ctx.facts.update(change=f"EID_K_LIGHT: {count} textures magenta (alpha kept)")
+
+
+def fixture_light_magenta_bigger(ctx):
+    count = _light_textures_magenta(ctx)
+    fixture_light_particles(ctx)
+    ctx.facts.update(change=f"EID_K_LIGHT: {count} textures magenta, particles four times bigger")
+
+
+def magenta_area(obs) -> float:
+    """The most magenta-ish screen share in any battle frame (additive magenta over a dark scene included)."""
+    from PIL import Image
+    best = 0.0
+    for path in sorted(Path(obs["shot"]).parent.glob("battle_*.png")):
+        img = Image.open(path).convert("RGB").resize((160, 85))
+        px = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+        best = max(best, sum(1 for r, g, b in px if r > 110 and b > 110 and g < 0.6 * min(r, b)) / len(px))
+    return best
+
+
+def judge_light_drawn(mod, retail, facts):
+    m, r = magenta_area(mod), magenta_area(retail)
+    return m > 0.005 and r < 0.001, (f"{facts['change']}: up to {m:.1%} of a battle frame magenta (retail {r:.2%}): "
+                                     f"the LIGHT row's effect pack is what the fight draws")
+
+
+def judge_light_bigger(mod, retail, facts):
+    import json
+    base = ROOT / "out" / "VX1t_mod" / "observations.json"
+    if not base.is_file():
+        return False, "run VX1t first"
+    t = magenta_area(json.loads(base.read_text(encoding="utf-8")))
+    m = magenta_area(mod)
+    return m > 1.5 * t and m > 0.005, (f"{facts['change']}: up to {m:.1%} of a frame magenta, against {t:.1%} "
+                                       f"with the textures alone (VX1t)")
+
+
+for _check in CHECKS:
+    if _check.id == "VX1r":
+        _check.title = "Visual Effects: Light's particles four times bigger (magenta marked)"
+        _check.fixture = fixture_light_magenta_bigger
+        _check.judge = judge_light_bigger
+CHECKS.append(Check("VX1t", "rd", "Visual Effects: Light's effect textures magenta (the pack the fight draws)",
+                    ["1.0 §4 Visual Effects (RD)"], play=attack_play("PID_MICAIAH", RD_TILE),
+                    judge=judge_light_drawn, setup=setup_attack_rd_animated, fixture=fixture_light_magenta,
+                    start=Jump("0101")))
+
+
+
+def fire_area(obs) -> float:
+    from PIL import Image
+    best = 0.0
+    for path in sorted(Path(obs["shot"]).parent.glob("battle_*.png")):
+        img = Image.open(path).convert("RGB").resize((96, 51))
+        px = list(img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata())
+        best = max(best, sum(1 for r, g, b in px if r > 200 and 60 < g < 180 and b < 80) / len(px))
+    return best
+
+
+def judge_light_fights_with_fire(mod, retail, facts):
+    """Fire on screen in the edited fight and none in retail's (the impact is short: one frame at four a second,
+    so the sustained-frames judge can't see it; group C, 2026-11-24)."""
+    m, r = fire_area(mod), fire_area(retail)
+    lost = mod["before"]["target_hp"] - mod["target_hp_after"]
+    return lost > 0 and m > 0.02 and r < 0.005, (f"{facts['change']}: fire covers up to {m:.1%} of a battle frame "
+                                                f"(retail {r:.1%}); the target lost {lost} HP")
+
+
+for _check in CHECKS:
+    if _check.id == "E1r":
+        _check.judge = judge_light_fights_with_fire
+
+
+
+# -- E1rm (group C): what the item's own effect fields drive. The battle scene takes its effects from the
+# FE10BWeapon row (E1r); with SetConfig(0, 1) the fight plays on the map, which may use ItemData's EID_* effects.
+
+def fixture_light_item_fire(ctx):
+    from fe_modding.formats import fe10data
+    data = ctx.project.read_logical("game_data")
+    light = next(r for r in fe10data.read_table(data, "item") if r.id == "IID_LIGHT")
+    old = (light.values.get("effect"), light.values.get("effect_2"))
+    data = fe10data.patch_field(data, "item", light.index, "effect", "EID_HEAD_FIRE")
+    data = fe10data.patch_field(data, "item", light.index, "effect_2", "EID_FIRE")
+    ctx.project.write_logical("game_data", data)
+    ctx.facts.update(change=f"ItemData IID_LIGHT effects {old} -> (EID_HEAD_FIRE, EID_FIRE), on-map fight")
+
+
+def judge_map_fire(mod, retail, facts):
+    """The on-map fight's fireball is small at map scale (under 1% of the screen) and retail's Light draws none."""
+    m, r = fire_area(mod), fire_area(retail)
+    return m > 0.004 and r < 0.001, (f"{facts['change']}: fire covers up to {m:.1%} of a frame of the on-map "
+                                     f"fight (retail {r:.1%}): the item's own effects drive the on-map fight, the "
+                                     f"FE10BWeapon row the battle scene (E1r)")
+
+
+CHECKS.append(Check("E1rm", "rd", "Items: Light's own effect fields in the on-map fight", ["1.0 §4 Items effects (RD)"],
+                    play=attack_play("PID_MICAIAH", RD_TILE), judge=judge_map_fire,
+                    setup=setup_config(1), fixture=fixture_light_item_fire, start=Jump("0101")))
+
+
+
+# VX1t and VX1r at 30% speed with 150 frames: the spell's phases (beam, impact) each land on several frames, so
+# the two runs' largest magenta areas compare like with like (at full speed they caught different moments).
+for _check in CHECKS:
+    if _check.id in ("VX1t", "VX1r", "E1rm"):     # E1rm: the on-map fight is over in a few frames at full speed
+        _check.speed, _check.minutes = 0.3, 20
+        _check.play = attack_play("PID_MICAIAH", RD_TILE, frames=150)

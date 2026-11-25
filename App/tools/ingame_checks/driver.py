@@ -31,8 +31,9 @@ class Timeout(RuntimeError):
 
 
 class Driver(Sweep):
-    def __init__(self, run: Path, out: Path, region: str, audio: bool = False):
+    def __init__(self, run: Path, out: Path, region: str, audio: bool = False, speed: float = 1.0):
         self.audio = audio
+        self.speed = speed          # Dolphin's emulation speed: below 1, screenshots see more of each effect
         build = BUILDS["GFEE01" if region.startswith("G") else "RFEE01"]
         if region not in ("GFEE01", "RFEE01"):
             from dataclasses import replace
@@ -72,6 +73,7 @@ class Driver(Sweep):
                 "--config=Dolphin.DSP.Volume=0", "--config=Dolphin.Interface.ConfirmStop=False",
                 "--config=Dolphin.Interface.UsePanicHandlers=False",
                 *(["--config=Dolphin.DSP.DumpAudio=True"] if self.audio else []),
+                *([f"--config=Dolphin.Core.EmulationSpeed={self.speed}"] if self.speed != 1.0 else []),
                 "--config=Dolphin.Core.EnableCheats=False",
                 "--config=Dolphin.Analytics.Enabled=False", "--config=Dolphin.Analytics.PermissionAsked=True"]
         if not self.build.wii:
