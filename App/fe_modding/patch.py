@@ -211,7 +211,7 @@ def create_project_patch(project: ModProject, dest: Path | str) -> PatchSummary:
         raise PatchError("The project's source disc image is missing - choose it again first.")
     if not project.has_extracted_files:
         raise PatchError("Nothing extracted yet - extract the source disc image first.")
-    project.sync_system_archive()  # as a build would: system.cmp carries copies of loose files (none on Radiant Dawn)
+    project.prepare_disc_files()  # as a build does: chapter name images, then system.cmp's copies of loose files
     with tempfile.TemporaryDirectory(prefix=".patch_base_", dir=project.directory) as temp:
         base = Path(temp) / "disc"
         tools.extract_disc(project.source_path, base, overwrite=True, wii=project.profile.wii)
@@ -224,7 +224,7 @@ def _create_overlay_patch(project: ModProject, dest: Path | str) -> PatchSummary
     problems = project.input_problems()
     if problems:
         raise PatchError("The vanilla files this project reads have problems:\n  " + "\n  ".join(problems[:10]))
-    project.sync_system_archive()
+    project.prepare_disc_files()  # as a build does
     files, store = project.files, project.input_store
     hashes = store.file_hashes()
     changes = files.changes()

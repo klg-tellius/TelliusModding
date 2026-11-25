@@ -294,6 +294,30 @@ class HubCreationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hub_creation.blank_map_files([], {"map.bin": _map_bin()}, 3, 9)
 
+    def test_blank_map_has_a_roof_layer_and_the_door_hit_test(self):
+        # Doors and roofs placed on a blank map must block tiles (they read the roof layer).
+        from fe_modding import hub_creation
+        from fe_modding.formats import lz10, map_file, pak
+        from tests.test_map_heights import _map_bin
+
+        source = _map_bin()
+        try:
+            map_file.section_bytes(source, "panelindexRoof")
+            had_roof = True
+        except map_file.MapFileError:
+            had_roof = False
+        packed = lz10.decompress(lz10.compress(pak.pack_pak([("map.bin", source), ("flat.gs", b"donor")])))
+        entries = pak.read_pak_entries(packed)
+        content = {e.name: pak.read_pak_file_content(packed, e) for e in entries}
+        hub_creation.blank_map_files(entries, content, 12, 9)
+        parsed = map_file.read_map_bytes(content["map.bin"])
+        self.assertIsNotNone(parsed.panel_index_roof, "had a roof layer before" if had_roof else "added")
+        self.assertEqual(parsed.panel_index_roof, parsed.panel_index)
+        self.assertTrue(parsed.unique_panel_roof)
+        if parsed.extra is not None:
+            self.assertTrue(parsed.extra.unknown_tail & map_file.MAP_EXTRA_FOOTPRINT_MASK)
+        self.assertFalse([w for w in map_file.door_warnings(parsed) if "roof layer" in w or "0x10000000" in w])
+
     def test_flat_map_has_selected_dimensions_and_only_ground(self):
         from fe_modding import hub_creation
         from fe_modding.formats import gs_file, lz10, map_file, pak, tpl
@@ -472,12 +496,18 @@ class RealAssetIntegrationTests(unittest.TestCase):
             shutil.copytree(source / "shop", files / "shop")
             (project.extracted_dir / "sys").mkdir(exist_ok=True)
             dol = RETAIL_DIR / "GFEE01.dol"
-            if not dol.is_file() and os.environ.get("FE9_EXTRACTED"):  # the extracted disc's own copy
-                dol = Path(os.environ["FE9_EXTRACTED"]) / "sys" / "main.dol"
+            boot = b"GFEE01\0\0" + bytes(0x438)
+            if not dol.is_file() and os.environ.get("FE9_EXTRACTED"):
+                # The extracted disc's own executable, with its own boot.bin: the European and
+                # Japanese discs' DOLs are another region than GFEE01 (a mismatch is a code conflict).
+                disc = Path(os.environ["FE9_EXTRACTED"]) / "sys"
+                dol = disc / "main.dol"
+                if (disc / "boot.bin").is_file():
+                    boot = (disc / "boot.bin").read_bytes()
             if not dol.is_file():
                 self.skipTest("no retail GFEE01 DOL (research/main_dol/dols or FE9_EXTRACTED)")
             shutil.copy(dol, project.extracted_dir / "sys" / "main.dol")
-            (project.extracted_dir / "sys" / "boot.bin").write_bytes(b"GFEE01\0\0" + bytes(0x438))
+            (project.extracted_dir / "sys" / "boot.bin").write_bytes(boot)
 
             plan = chapters.add_story_chapter(project, (files / "FE8Data.bin").read_bytes(), "05", 33, "Hub")
             project.write_logical("game_data", plan.fe8data)

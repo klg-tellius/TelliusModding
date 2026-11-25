@@ -634,7 +634,7 @@ class Shell(ttk.Frame):
         project = self.project
 
         def work():
-            project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
+            project.prepare_disc_files()        # as a build: name images, then system.cmp's copies
             return emulator.prepare_chapter_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                                 chapter_id, difficulty)
         label = f"{chapter_id:02d}" if isinstance(chapter_id, int) else str(chapter_id)
@@ -654,7 +654,7 @@ class Shell(ttk.Frame):
         project = self.project
 
         def work():
-            project.sync_system_archive()       # the game reads FE8Data.bin & co. from system.cmp
+            project.prepare_disc_files()        # as a build: name images, then system.cmp's copies
             return emulator.prepare_save_run(project.disc_tree(), project.build_dir / emulator.RUN_FOLDER,
                                              gci_name, gci)
 
@@ -685,7 +685,7 @@ class Shell(ttk.Frame):
         project = self.project
 
         def work():
-            project.sync_system_archive()
+            project.prepare_disc_files()
             return emulator.prepare_wii_save_run(project.disc_tree(),
                                                  project.build_dir / emulator.RUN_FOLDER,
                                                  save_data, banner)

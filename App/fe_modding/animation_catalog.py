@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import rig_contract
 from .formats import animation, lz10, pak, skeleton
+from .game_files import GamePath
 from .game_profile import PATH_OF_RADIANCE_PROFILE, RADIANT_DAWN_PROFILE
 
 #: Frames per second of every ``.ga`` (the battle tables count 60 ticks a second; the glTF
@@ -33,16 +34,22 @@ class ClipError(Exception):
 # ---------------------------------------------------------------- containers
 
 
+
+def _path(path):
+    """A path as given: a project :class:`GamePath` keeps its layers (a project's output files
+    over the vanilla ones), so a glob lists the merged folder; anything else becomes a Path."""
+    return path if isinstance(path, GamePath) else Path(path)
+
 def is_battle_container(path: Path) -> bool:
     """A battle-model body container: FE9's weapon ``.pak`` or FE10's
     shared ``zu/<code>/pack.cmp``."""
-    path = Path(path)
+    path = _path(path)
     return path.suffix.lower() == ".pak" or (
         path.name.casefold() == "pack.cmp" and path.parent.parent.name.casefold() == "zu")
 
 
 def is_uncompressed_pack(path: Path) -> bool:
-    return Path(path).suffix.lower() == ".pak"
+    return _path(path).suffix.lower() == ".pak"
 
 
 def unpack(path: Path, data: bytes) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
@@ -57,12 +64,12 @@ def pack_container(path: Path, entries: list[pak.PakEntry], files: dict[str, byt
 
 
 def read_container(container_path: Path) -> tuple[list[pak.PakEntry], dict[str, bytes]]:
-    return unpack(container_path, Path(container_path).read_bytes())
+    return unpack(container_path, _path(container_path).read_bytes())
 
 
 def set_containers(container_path: Path) -> list[Path]:
     """Every container that owns the set's body and skeleton."""
-    container_path = Path(container_path)
+    container_path = _path(container_path)
     if is_uncompressed_pack(container_path):
         return sorted(container_path.parent.glob(f"{container_path.parent.name}_*.pak"))
     return [container_path]
@@ -74,7 +81,7 @@ def animation_containers(container_path: Path) -> list[Path]:
     FE10's shared ``pack.cmp`` has the body and skeleton while sibling
     ``.pak`` archives hold animations; FE9 keeps all three together.
     """
-    container_path = Path(container_path)
+    container_path = _path(container_path)
     if is_battle_container(container_path) and not is_uncompressed_pack(container_path):
         return sorted(container_path.parent.glob("*.pak"))
     return set_containers(container_path)
@@ -83,8 +90,8 @@ def animation_containers(container_path: Path) -> list[Path]:
 def pack_name(container_path: Path, archive: Path) -> str:
     """The clip-list name of an archive: the weapon (``ax`` of ``bole_ax.pak`` or ``ax.pak``),
     ``pack`` for a map model's ``pack.cmp``."""
-    archive = Path(archive)
-    if not is_battle_container(Path(container_path)) or archive.suffix.lower() != ".pak":
+    archive = _path(archive)
+    if not is_battle_container(_path(container_path)) or archive.suffix.lower() != ".pak":
         return "pack"
     return archive.stem.rsplit("_", 1)[-1]
 
@@ -157,7 +164,7 @@ def describe_clip(file: str, battle: bool, fe10: bool) -> str:
 
 def _files_root(container_path: Path) -> Path:
     """The disc's ``files`` folder above a ``ymu/``/``zu/`` set."""
-    return Path(container_path).parent.parent.parent
+    return _path(container_path).parent.parent.parent
 
 
 def _fe9_battle_users(container_path: Path) -> dict[str, list[str]]:
@@ -167,7 +174,7 @@ def _fe9_battle_users(container_path: Path) -> dict[str, list[str]]:
         return {}
     users: dict[str, list[str]] = {}
     try:
-        lines = rig_contract.read_battle_roles(zdbx_path.read_bytes(), Path(container_path).parent.name)
+        lines = rig_contract.read_battle_roles(zdbx_path.read_bytes(), _path(container_path).parent.name)
     except Exception:  # noqa: BLE001 - a damaged table only loses the role column
         return {}
     for key, stem in lines:
@@ -188,7 +195,7 @@ def _fe10_map_users(container_path: Path) -> dict[str, list[str]]:
         table = fe10_anim.read_fe10_anim(lz10.decompress(data) if data[:1] == b"\x10" else data)
     except Exception:  # noqa: BLE001
         return {}
-    folder = Path(container_path).parent.name.lower()
+    folder = _path(container_path).parent.name.lower()
     users: dict[str, set[str]] = {}
     for model in table.models:
         if model.folder.lower() != folder:
@@ -268,7 +275,7 @@ def _clip(file: str, packs: list[str], data: bytes, battle: bool) -> ClipInfo:
 def set_clips(container_path: Path, pending: dict[Path, bytes] | None = None) -> list[ClipInfo]:
     """Every clip of the set, archive by archive in file order, a file shared by several archives
     once. ``pending`` maps paths to bytes an import would write (the review shows those)."""
-    container_path = Path(container_path)
+    container_path = _path(container_path)
     pending = pending or {}
 
     def data_of(path: Path) -> bytes:
@@ -339,7 +346,7 @@ def clip_targets(container_path: Path, file: str, pack: str | list[str] | None =
     same bytes as the first one: identical copies are one clip (Boyd's damage clip is played with
     the axe and the hand axe), so they change together. Copies that differ stay as they are, and
     the note says so."""
-    container_path = Path(container_path)
+    container_path = _path(container_path)
     containers = list(dict.fromkeys(set_containers(container_path) + animation_containers(container_path)))
     holders: list[tuple[Path, bytes]] = []
     for archive in containers:
@@ -398,7 +405,7 @@ def clip_output(container_path: Path, file: str, ga: bytes, pack: str | list[str
 
 
 def _skeleton_bone_count(container_path: Path) -> int | None:
-    for archive in set_containers(Path(container_path)):
+    for archive in set_containers(_path(container_path)):
         _e, files = read_container(archive)
         for name, data in files.items():
             if Path(name).suffix.lower() == ".g":
@@ -557,7 +564,7 @@ def matching_clip(source: ClipInfo, source_set: str, targets: list[ClipInfo], ta
 
 def _body_files(container_path: Path) -> dict[str, bytes]:
     """The pack holding the set's skeleton (and body)."""
-    _e, files = read_container(set_containers(Path(container_path))[0])
+    _e, files = read_container(set_containers(_path(container_path))[0])
     return files
 
 
@@ -565,7 +572,7 @@ def _skeleton_data(container_path: Path) -> bytes:
     files = _body_files(container_path)
     found = [d for n, d in files.items() if Path(n).suffix.lower() == ".g"]
     if not found:
-        raise ClipError(f"{Path(container_path).parent.name} has no skeleton.")
+        raise ClipError(f"{_path(container_path).parent.name} has no skeleton.")
     return found[0]
 
 

@@ -456,10 +456,18 @@ def main(argv: Optional[list[str]] = None) -> int:
                 results.append(Result(name, ok, summary, value["seconds"], value["bad"][:30]))
 
     text = format_summary(results, discs, notes, args, time.time() - started)
-    print("\n" + text)
+    # The file first: a console that can't show every character (cp1252 when the output is
+    # redirected on Windows) must not lose the summary.
     (out / "SUMMARY.md").write_text(text + "\n", encoding="utf-8")
+    _print_safely("\n" + text)
     print(f"\nReports: {out}")
     return 0 if results and all(r.ok is not False for r in results) and any(r.ok for r in results) else 1
+
+
+def _print_safely(text: str) -> None:
+    """Print ``text``, replacing what the console's encoding can't show."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    print(text.encode(encoding, "replace").decode(encoding, "replace"))
 
 
 def format_summary(results: list[Result], discs, notes: list[str], args, seconds: float) -> str:

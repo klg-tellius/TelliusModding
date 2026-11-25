@@ -42,10 +42,12 @@ DATA_FILES = ("FE10Data.cms", "FE10Growth.cms", "FE10Anim.cms", "FE10Battle.cms"
 @unittest.skipUnless(FILES, "set FE10_EXTRACTED_FILES to the files/ folder of an extracted Radiant Dawn disc")
 class Fe10FilesTest(unittest.TestCase):
     def test_every_profile_file_is_on_the_disc(self):
+        # The Japanese disc has no movie subtitles (the Assets page hides that tool there).
+        absent = per_disc(FILES, set(), jp={"caption_data"})
         for name in RADIANT_DAWN_PROFILE.files:
             path = RADIANT_DAWN_PROFILE.path(FILES, name)
             with self.subTest(name=name):
-                self.assertTrue(path.is_file(), path)
+                self.assertEqual(path.is_file(), name not in absent, path)
 
     def test_data_files_decompress_and_recompress_byte_identically(self):
         for rel in DATA_FILES:
@@ -65,7 +67,9 @@ class Fe10FilesTest(unittest.TestCase):
         self.assertGreater(len(symbols), 100)
 
     def test_phase6_texture_corpus_uses_the_shared_tpl_codec(self):
-        expected = {"Face": 634, "illust": 172, "window": 213, "gmap": 14, "etc": 21}
+        expected = per_disc(FILES, {"Face": 634, "illust": 172, "window": 213, "gmap": 14, "etc": 21},
+                            eu={"Face": 642, "illust": 210, "window": 644, "gmap": 14, "etc": 21},
+                            jp={"Face": 317, "illust": 0, "window": 103, "gmap": 7, "etc": 20})
         for folder, count in expected.items():
             paths = sorted(p for p in (FILES / folder).rglob("*")
                            if p.is_file() and p.suffix.lower() in (".tpl", ".cms"))
@@ -142,7 +146,7 @@ class Fe10FilesTest(unittest.TestCase):
             if p.is_file() and p.suffix.lower() in (".cmp", ".pak")
         )
         if FULL:
-            self.assertEqual(len(archives), 2291)
+            self.assertEqual(len(archives), per_disc(FILES, 2291, eu=2721, jp=2216))
         archives = sample(archives, keep=("mikaya1", "archer1"), size=60)
         components = {".gs": 0, ".g": 0, ".ga": 0}
 
@@ -176,7 +180,9 @@ class Fe10FilesTest(unittest.TestCase):
                 if path.is_file() and path.suffix.lower() in components:
                     check(str(path.relative_to(FILES)), path.read_bytes())
         if FULL:
-            self.assertEqual(components, {".gs": 5342, ".g": 5342, ".ga": 16415})
+            self.assertEqual(components, per_disc(FILES, {".gs": 5342, ".g": 5342, ".ga": 16415},
+                                                  eu={".gs": 5772, ".g": 5772, ".ga": 16847},
+                                                  jp={".gs": 5267, ".g": 5267, ".ga": 16531}))
         else:
             self.assertTrue(all(components.values()), components)
 
