@@ -118,3 +118,24 @@ class ReleaseCheckOutputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PorStaffCreditsTileTests(unittest.TestCase):
+    """The European Path of Radiance disc has no staff roll file: no Staff Credits tile there."""
+
+    def test_tile_follows_the_staff_roll_file(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+        from fe_modding.game_profile import PATH_OF_RADIANCE_PROFILE
+        from fe_modding.gui.pages import assets
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ending").mkdir()
+            project = SimpleNamespace(profile=PATH_OF_RADIANCE_PROFILE)
+            with mock.patch.object(assets, "files_root_of", return_value=root):
+                self.assertFalse(assets.tool_applies(project, "staff_credits"))
+                (root / "ending" / "staffroll.bin").write_bytes(b"")
+                self.assertTrue(assets.tool_applies(project, "staff_credits"))
