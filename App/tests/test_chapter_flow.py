@@ -371,8 +371,12 @@ class AddStoryChapterTests(unittest.TestCase):
         plan = chapters.add_story_chapter(self.project, fe8, "09", 33, "Ch.8x: A New Road", after=9, flow=flow)
 
         record = fe8data.read_chapter_data(plan.fe8data)[plan.record_index]
-        self.assertEqual((record.chapter_id, record.map_name, record.script, record.message, record.title_key),
-                         (33, "bmap33", "C33", "C33", "MCT33"))
+        self.assertEqual((record.chapter_id, record.map_name, record.script, record.message),
+                         (33, "bmap33", "C33", "C33"))
+        if fe8data.japanese_chapter_layout(fe8):    # the Japanese record holds its title as text
+            self.assertEqual((record.title_key, record.title_text), (None, "Ch.8x: A New Road"))
+        else:
+            self.assertEqual(record.title_key, "MCT33")
         self.assertIn("bmap33", [r.map_name for r in fe8data.read_battle_terrain(plan.fe8data)])
 
         # the copied script loads and deploys its own (renamed) maps; the neighbour's map stays

@@ -233,6 +233,36 @@ def blank_map(compressed: bytes, width: int, height: int, *,
     return _pack_entries(packed, content)
 
 
+def _ensure_roof_layer(data: bytes) -> bytes:
+    """Path of Radiance: give a map without one an (empty) roof panel layer, which the blanking
+    below fills like the main one. The game takes a closed door's or roof's terrain from that
+    layer, so without it doors and roofs placed later never block a tile (``map_file.door_warnings``)."""
+    try:
+        map_file.section_bytes(data, "panelindexRoof")
+        return data
+    except map_file.MapFileError:
+        pass
+    following = next(name for name in ("panelindexBase", "maplight", "mapfog", "mapgrid", "mapextra")
+                     if _has_section(data, name))
+    data = map_file.insert_section_before(data, following, "panelindexRoof", bytes(4))
+    return map_file.insert_section_before(data, following, "uniquepanelRoof", bytes(12))
+
+
+def _has_section(data: bytes, name: str) -> bool:
+    try:
+        map_file.section_bytes(data, name)
+        return True
+    except map_file.MapFileError:
+        return False
+
+
+def _blank_extra_flags(flags: int, por: bool) -> int:
+    """A blank map's mapextra flags: no water; on Path of Radiance, the roof and door hit test
+    (0x10000000) on, so doors and roofs placed on it work as in the retail maps that have them."""
+    flags &= ~map_props.MAP_FLAG_WATER
+    return flags | map_file.MAP_EXTRA_FOOTPRINT_MASK if por else flags
+
+
 def blank_map_files(entries: list[pak.PakEntry], content: dict[str, bytes], width: int, height: int, *,
                     ground_color: tuple[int, int, int] = DEFAULT_GROUND_COLOR,
                     ground_image: Image.Image | None = None, tile_ground_image: bool = False) -> None:
@@ -257,6 +287,9 @@ def blank_map_files(entries: list[pak.PakEntry], content: dict[str, bytes], widt
     if ground is None:
         raise ValueError("The starter map has no usable ground model.")
     base_index = parsed.build_desc.index(ground)
+    por = parsed.layout.game == "fe9"
+    if por:
+        data = _ensure_roof_layer(data)
     # Replace every present panel layer with one flat panel and a zero-index grid.
     for index_name, panel_name in (("panelindex", "uniquepanel"),
                                    ("panelindexRoof", "uniquepanelRoof"),
@@ -298,7 +331,7 @@ def blank_map_files(entries: list[pak.PakEntry], content: dict[str, bytes], widt
                              ("half_x_size", _half(width, layout)), ("half_y_size", _half(height, layout)),
                              ("texture_projection_extent_x2", min(255, 2 * max(width, height))),
                              ("grid_buffer", 0),
-                             ("unknown_tail", parsed.extra.unknown_tail & ~map_props.MAP_FLAG_WATER)):
+                             ("unknown_tail", _blank_extra_flags(parsed.extra.unknown_tail, por))):
             data = map_file.patch_extra_field(data, parsed.extra, field, value)
     content["map.bin"] = data
     white = tpl.build_tpl([(Image.new("RGBA", (8, 8), "white"), tpl.FORMAT_I4)], wrap=tpl.WRAP_CLAMP)

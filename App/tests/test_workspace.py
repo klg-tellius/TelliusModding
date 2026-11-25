@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.corpus import per_disc
 from fe_modding import chapters
 from fe_modding.games import Game
 from fe_modding.game_profile import RADIANT_DAWN_PROFILE
@@ -167,7 +168,7 @@ class ProjectIndexTests(unittest.TestCase):
 
     def test_ike(self):
         ike = self.index.by_pid["PID_IKE"]
-        self.assertEqual(ike.name, "Ike")
+        self.assertEqual(ike.name, per_disc(Path(os.environ["FE9_EXTRACTED"]) / "files", "Ike", jp="アイク"))
         self.assertEqual(ike.portrait_file, "IKE.cms")
         self.assertEqual(ike.class_name, "Ranger")
         self.assertEqual(ike.category, "playable")
@@ -187,7 +188,8 @@ class ProjectIndexTests(unittest.TestCase):
 
     def test_chapters_have_game_titles_and_phases(self):
         prologue = self.index.by_chapter["01"]
-        self.assertEqual(prologue.title, "Prologue: Mercenaries")
+        self.assertEqual(prologue.title, per_disc(Path(os.environ["FE9_EXTRACTED"]) / "files",
+                                                  "Prologue: Mercenaries", jp="序章\u3000傭兵"))
         self.assertEqual(self.index.by_chapter["07"].phases, ("bmap07",))
         self.assertIn("bmap06_2", self.index.by_chapter["06"].phases)
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.corpus import per_disc
 from fe_modding.formats.fe9_conversation import InitialContext, build_timeline, tokenize
 from fe_modding.formats.fe9_portraits import FaceAsset, FaceRecord, read_face_table
 from fe_modding.formats.fe9_font import GameFont
@@ -174,7 +175,8 @@ class LocalResourceTests(unittest.TestCase):
 
     def test_game_font_lookup_matches_engine(self):
         system=self.assets.font('system')  # from Fonts/system.cms, as load_system_font does
-        self.assertEqual(system.glyph('①').code,0x8740)  # NEC row: circled 1
+        # NEC row: circled 1; the European system.cms has no ① (white star, as for any absent glyph)
+        self.assertEqual(system.glyph('①').code,per_disc(Path(os.environ['FE9_EXTRACTED'])/'files',0x8740,eu=0x8199))
         self.assertEqual(system.glyph('唸').code,0x8199)  # absent from system.cms: white star
         self.assertEqual(self.assets.font('alpha').glyph('~').code,0x20)  # no star either: first record
         with self.assertRaises(ValueError):

@@ -13,6 +13,11 @@ class StaffRollTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES")
     def test_retail_files_round_trip(self):
-        for name in ("staffroll.bin", "staffroll_noa.bin"):
-            data = (Path(os.environ["FE9_EXTRACTED_FILES"]) / "ending" / name).read_bytes()
-            self.assertEqual(sr.build_staffroll(sr.read_staffroll(data)), data, name)
+        # The US disc has both; the European one only staffroll_noa.bin, the Japanese one only
+        # staffroll.bin (the Staff Credits page opens whichever the disc has).
+        found = [path for name in ("staffroll.bin", "staffroll_noa.bin")
+                 if (path := Path(os.environ["FE9_EXTRACTED_FILES"]) / "ending" / name).is_file()]
+        self.assertTrue(found)
+        for path in found:
+            data = path.read_bytes()
+            self.assertEqual(sr.build_staffroll(sr.read_staffroll(data)), data, path.name)

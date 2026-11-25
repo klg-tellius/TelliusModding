@@ -14,7 +14,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fe_modding.formats import animation, dispo, engine_pose, face_data, gcdisc, dsp_adpcm, event_script, fe8data, gltf_export, gltf_import, gs_file, gs_stats, lz10, map_file, message, model, pak, portrait_anim, shop, skeleton, stm, thp, tpl
-from tests.corpus import FULL, sample
+from tests.corpus import per_disc, FULL, sample
 from fe_modding.gui import map_scene, model_viewer
 
 
@@ -2827,7 +2827,8 @@ class DiscFe8DataTests(unittest.TestCase):
 
     def test_tables_follow_their_count_words_and_skill_symbols(self):
         fe8 = fe8data.read_fe8data(self.data)
-        self.assertEqual((len(fe8.characters), len(fe8.classes), len(fe8.items), len(fe8.skills)), (340, 115, 189, 98))
+        self.assertEqual((len(fe8.characters), len(fe8.classes), len(fe8.items), len(fe8.skills)),
+                         per_disc(Path(os.environ["FE9_EXTRACTED_FILES"]), (340, 115, 189, 98), jp=(340, 115, 189, 97)))
         symbols = fe8data.symbol_offsets(self.data)
         for skill in fe8.skills:  # each SID_ symbol names its own record
             self.assertEqual(symbols[skill.sid] + fe8data.HEADER_SIZE, skill.offset)

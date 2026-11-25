@@ -500,6 +500,11 @@ def plan_roster(project, roster: ChapterRoster, *, source: Optional[str] = None)
         raise RosterError("This chapter has no deployment or no script.")
     documents = deployment.documents
     characters = _character_classes(project)
+    if characters:
+        unknown = [pid for pid in dict.fromkeys([m.pid for m in roster.members] + list(roster.joins)
+                                                + list(roster.leaves)) if pid not in characters]
+        if unknown:
+            raise RosterError("No character " + ", ".join(unknown) + " in the game data.")
     renames = roster.renamed_groups()
     all_sections = _sections(documents.values())
     for old, new in renames.items():

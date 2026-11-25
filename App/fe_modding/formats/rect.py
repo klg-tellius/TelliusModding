@@ -628,7 +628,7 @@ def new_background(
 
 def free_tpl_name(directory: Path | str) -> str:
     """The first unused three-character name (0-9, a-z, like every vanilla
-    ``s/`` file) in ``directory``, counting up from ``aaa``."""
+    ``s/`` file) in ``directory``, counting up from ``00a``."""
     taken = {p.name for p in as_path(directory).iterdir()} if as_path(directory).is_dir() else set()
     alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
     for n in range(10, len(alphabet) ** 3):

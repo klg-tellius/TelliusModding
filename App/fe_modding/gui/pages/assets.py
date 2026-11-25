@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from tkinter import ttk
 
-from ...game_profile import (AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_SKIES,
+from ...game_profile import (logical_game_path_of, AUDIO, BATTLE_CAMERAS, BATTLE_DATA, BATTLE_PARAMS, BATTLE_SCENERIES, BATTLE_SIM, BATTLE_SKIES,
                              BATTLE_WEAPONS,
                              CHAPTERS,
                              EFFECTS, ENDING_ART, ICONS, MODELS, STAFF_CREDITS, TUTORIALS, VIDEO, profile_of)
@@ -144,6 +144,21 @@ ASSET_APPLIES = {"ending": ENDING_ART, "sky_graphics": BATTLE_SKIES,
                  "tutorials": TUTORIALS, "staff_credits": STAFF_CREDITS}
 
 
+def has_asset_file(project, key: str) -> bool:
+    """Whether the project has the one file Assets tool ``key`` edits (always, for other tools).
+    The game's profile can list a file one region's disc lacks: the Japanese Radiant Dawn disc has
+    no ``Movie/caption_data.bin``."""
+    name = ASSET_FILES.get(key)
+    if name is None:
+        return True
+    if not profile_of(project).has_file(name):
+        return False
+    try:
+        return logical_game_path_of(project, name).is_file()
+    except Exception:  # noqa: BLE001 - a project not extracted yet: show the tile, the page says why
+        return True
+
+
 def tool_applies(project, key: str) -> bool:
     """Whether the Assets tool ``key`` exists for this project's game."""
     feature = ASSET_APPLIES.get(key)
@@ -185,7 +200,7 @@ class AssetsHub(Page):
             for key in keys:
                 if not tool_applies(shell.project, key):
                     continue
-                if key in ASSET_FILES and not profile_of(shell.project).has_file(ASSET_FILES[key]):
+                if not has_asset_file(shell.project, key):
                     continue
                 _k, label, icon, description, _cls = TOOLS_BY_KEY[key]
                 grid.add(key, Card(grid, title=label, subtitle=description, icon=icon, width=280,
@@ -224,7 +239,7 @@ class AssetPage(Page):
             if not self._panels["dbx_files"].confirm_navigate_away():
                 return False
         feature = ASSET_FEATURES.get(key)
-        missing_file = key in ASSET_FILES and not profile_of(self.project).has_file(ASSET_FILES[key])
+        missing_file = not has_asset_file(self.project, key)
         if missing_file or (feature is not None and not profile_of(self.project).supports(feature)):
             for other in self._panels.values():
                 other.pack_forget()
