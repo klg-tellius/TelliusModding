@@ -2,6 +2,7 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 import zipfile
 
@@ -65,3 +66,75 @@ class ToolInstallTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DownloadFallbackTests(unittest.TestCase):
+    """The patcher failed for a player whose network never reached wit.wiimm.de (WinError 10060):
+    every source is tried in turn, and a total failure says how to install WIT by hand."""
+
+    PAYLOAD = b'pinned archive bytes'
+
+    def spec(self, **extra):
+        return dict(runtime_tools.TOOLS['wit'], url='https://primary.example/wit.zip',
+                    mirrors=('https://mirror.example/wit.zip',),
+                    sha256=hashlib.sha256(self.PAYLOAD).hexdigest(), **extra)
+
+    def test_mirror_is_used_when_the_primary_times_out(self):
+        calls = []
+
+        def fetch(name, url, archive, progress, timeout):
+            calls.append(url)
+            if 'primary' in url:
+                raise urllib.error.URLError(TimeoutError(10060, 'timed out'))
+            archive.write_bytes(self.PAYLOAD)
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(runtime_tools.TOOLS, wit=self.spec()):
+            archive = Path(temporary) / 'tool.zip'
+            used = runtime_tools.download_archive('wit', archive, fetch=fetch, sleep=lambda s: None)
+            self.assertEqual(used, 'https://mirror.example/wit.zip')
+            self.assertEqual(archive.read_bytes(), self.PAYLOAD)
+        self.assertEqual(calls, ['https://primary.example/wit.zip'] * 2 + ['https://mirror.example/wit.zip'])
+
+    def test_wrong_bytes_from_a_source_are_not_kept(self):
+        def fetch(name, url, archive, progress, timeout):
+            archive.write_bytes(b'tampered' if 'primary' in url else self.PAYLOAD)
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(runtime_tools.TOOLS, wit=self.spec()):
+            archive = Path(temporary) / 'tool.zip'
+            self.assertIn('mirror', runtime_tools.download_archive('wit', archive, fetch=fetch, sleep=lambda s: None))
+
+    def test_total_failure_lists_sources_and_manual_steps(self):
+        def fetch(name, url, archive, progress, timeout):
+            raise urllib.error.URLError(TimeoutError(10060, 'timed out'))
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(runtime_tools.TOOLS, wit=self.spec()):
+            with self.assertRaises(runtime_tools.ToolDownloadError) as caught:
+                runtime_tools.download_archive('wit', Path(temporary) / 'tool.zip', fetch=fetch, sleep=lambda s: None)
+        message = str(caught.exception)
+        for text in ('primary.example', 'mirror.example', 'by hand', 'wit.exe'):
+            self.assertIn(text, message)
+
+    def test_a_missing_mirror_file_is_not_retried(self):
+        calls = []
+
+        def fetch(name, url, archive, progress, timeout):
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 404, 'Not Found', None, None)
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(runtime_tools.TOOLS, wit=self.spec()):
+            with self.assertRaises(runtime_tools.ToolDownloadError):
+                runtime_tools.download_archive('wit', Path(temporary) / 'tool.zip', fetch=fetch, sleep=lambda s: None)
+        self.assertEqual(len(calls), 2)
+
+    def test_pinned_wit_has_a_mirror(self):
+        self.assertTrue(runtime_tools.TOOLS['wit']['mirrors'])
+        self.assertTrue(all(url.endswith(runtime_tools.archive_name('wit')) for url in runtime_tools.TOOLS['wit']['mirrors']))
+
+    def test_manual_archive_is_checksum_checked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / 'wit.zip'
+            with zipfile.ZipFile(archive, 'w') as package:
+                package.writestr('wit.exe', b'x')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                runtime_tools.install_from_archive('wit', archive, root=root / 'tools')

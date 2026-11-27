@@ -85,8 +85,8 @@ class MainWindow(tk.Tk):
                 pass
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)
         self._show_launcher()
-        from ..tools import WIT_EXE
-        if getattr(sys, "frozen", False) and not WIT_EXE.is_file() and "--self-test" not in sys.argv:
+        from ..tools import find_wit
+        if getattr(sys, "frozen", False) and find_wit() is None and "--self-test" not in sys.argv:
             self.after(200, self._setup_tools)
 
     # -- menu -----------------------------------------------------------

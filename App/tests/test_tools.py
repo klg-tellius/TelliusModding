@@ -228,3 +228,62 @@ class ShiftJisNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FindWitTests(unittest.TestCase):
+    def test_wit_next_to_the_program_is_found(self):
+        import tempfile
+        from unittest import mock
+        from pathlib import Path
+        from fe_modding import tools as tools_module
+        with tempfile.TemporaryDirectory() as temporary:
+            here = Path(temporary)
+            (here / 'wit').mkdir()
+            (here / 'wit' / 'wit.exe').write_bytes(b'x')
+            with mock.patch.object(tools_module, '_program_dir', return_value=here), \
+                    mock.patch.object(tools_module, 'REPO_ROOT', here / 'none'), \
+                    mock.patch.object(tools_module, 'tool_directory', return_value=here / 'none'), \
+                    mock.patch('fe_modding.config.load_setting', return_value=None), \
+                    mock.patch.object(tools_module.shutil, 'which', return_value=None):
+                self.assertEqual(tools_module.find_wit(), here / 'wit' / 'wit.exe')
+
+
+class FindDolphinToolTests(unittest.TestCase):
+    """Tellius Patcher on a player's PC has no Dolphin path in the settings: DolphinTool is still
+    found in the usual folders, next to the program, or where the player points."""
+
+    def isolated(self, root, **extra):
+        from fe_modding import emulator
+        patches = [mock.patch.object(tools, "_program_dir", return_value=root / "program"),
+                   mock.patch.object(tools, "_saved", return_value=extra.get("saved")),
+                   mock.patch.object(emulator, "configured_dolphin", return_value=None),
+                   mock.patch.object(emulator, "candidate_paths", return_value=extra.get("installs", [])),
+                   mock.patch.object(tools.shutil, "which", return_value=None)]
+        stack = __import__("contextlib").ExitStack()
+        for item in patches:
+            stack.enter_context(item)
+        return stack
+
+    def test_found_in_a_usual_install_folder_without_settings(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Dolphin-x64").mkdir()
+            (root / "Dolphin-x64" / "DolphinTool.exe").write_bytes(b"")
+            with self.isolated(root, installs=[root / "Dolphin-x64" / "Dolphin.exe"]):
+                self.assertEqual(tools.dolphin_tool_path(), root / "Dolphin-x64" / "DolphinTool.exe")
+
+    def test_missing_is_a_dolphin_tool_missing_error(self):
+        with tempfile.TemporaryDirectory() as temporary, self.isolated(Path(temporary)):
+            with self.assertRaises(tools.DolphinToolMissing):
+                tools.dolphin_tool_path()
+
+    def test_remember_accepts_the_dolphin_folder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "DolphinTool.exe").write_bytes(b"")
+            with mock.patch("fe_modding.config.save_setting") as save:
+                self.assertEqual(tools.remember_dolphin_tool(root), root / "DolphinTool.exe")
+            save.assert_called_once_with(tools.DOLPHIN_TOOL_SETTING, str(root / "DolphinTool.exe"))
+            (root / "empty").mkdir()
+            with self.assertRaises(ToolError):
+                tools.remember_dolphin_tool(root / "empty")

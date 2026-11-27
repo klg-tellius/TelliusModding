@@ -46,8 +46,8 @@ class ToolSetupDialog(tk.Toplevel):
         def worker():
             try:
                 for name in names:
-                    existing = tools.WIT_EXE if name == "wit" else tools.FFMPEG_EXE
-                    if not existing.is_file():
+                    present = tools.find_wit() is not None if name == "wit" else tools.FFMPEG_EXE.is_file()
+                    if not present:
                         runtime_tools.install_tool(name, lambda text: self.events.put(("progress", text)))
                 self.events.put(("done", "Tools are ready. You can now create or open a project."))
             except Exception as error:
