@@ -458,7 +458,7 @@ def replace_clip_with_ga(container_path: Path, file: str, ga: bytes, pack: str |
         text = "The file has no events: the replaced clip's were copied"
         if old_end != new.header.end_frame:
             text += f" and moved from {old_end} to {new.header.end_frame} frames"
-        warnings.append(text + ". Check them with Events...")
+        warnings.append(text + ". Check them with Events.")
     warnings += [e.replace("the fight would", "the fight may") for e in rig_contract.event_errors(file, ga, old)]
     out, notes = clip_output(container_path, file, ga, pack)
     return out, notes + warnings
@@ -639,7 +639,7 @@ def copy_clip(source_container: Path, source_file: str, target_container: Path, 
 
     Refused when fewer than a quarter of the source clip's animated bones are in the target
     skeleton (bones are matched by name, and :data:`BONE_ALIASES` across the games), or fewer than
-    six: the motion would not carry over (fit the model with Fit new rig... instead)."""
+    six: the motion would not carry over (fit the model with Fit new rig instead)."""
     from .formats import gltf_export, gltf_import
 
     source_data = clip_bytes(source_container, source_file, source_pack)
@@ -661,7 +661,7 @@ def copy_clip(source_container: Path, source_file: str, target_container: Path, 
         raise ClipError(
             f"Only {len(matched)} of the {len(animated)} bones {source_file} moves are in the target skeleton "
             "(bones are matched by name): the motion would not carry over. Give the target model the source "
-            "set's animations with Fit new rig... instead.")
+            "set's animations with Fit new rig instead.")
 
     glb = _rename_glb_nodes(gltf_export.export_glb([], source_bones, {}, [("clip", source_anim)]), renames)
     try:
@@ -681,7 +681,7 @@ def copy_clip(source_container: Path, source_file: str, target_container: Path, 
         events = retimed_events(rig_contract._events(template), old_end, new_end)
         note = (f"Events: {target_file}'s" + (f", moved from {old_end} to {new_end} frames" if old_end != new_end
                                                else "") + " (sound and effect numbers differ between the games). "
-                "Check them with Events...")
+                "Check them with Events.")
     ga = rig_contract.replace_events(ga, events)
     missing = sorted(animated - target_names)
     notes = [f"{len(matched)} of the {len(animated)} bones {source_file} moves are in the target skeleton."]

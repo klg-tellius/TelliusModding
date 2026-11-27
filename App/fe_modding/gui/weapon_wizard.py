@@ -88,7 +88,7 @@ class NewWeaponDialog(tk.Toplevel):
         ttk.Entry(mesh_row, textvariable=self._mesh, width=30).pack(side="left", fill="x", expand=True)
         ttk.Button(mesh_row, text="Browse...", command=self._browse).pack(side="left", padx=(6, 0))
         line("New mesh (.glb)", mesh_row,
-             "Optional: replaces the copied mesh (as 3D Models > Import .glb...). Model it over the "
+             "Optional: replaces the copied mesh (as 3D Models > Import .glb). Model it over the "
              "template's exported .glb so the grip stays in the hand. A .blend goes through 3D Models.")
 
         ttk.Separator(body).grid(row=row, column=0, columnspan=3, sticky="ew", pady=6)
@@ -205,5 +205,5 @@ class NewWeaponDialog(tk.Toplevel):
             for path, data in result.outputs.items():
                 self._project.write_keeping_original(path, data)
         except Exception as exc:  # noqa: BLE001
-            return [f"The mesh was not imported ({exc}). Use 3D Models > Import .glb... on xwp/{model}."]
+            return [f"The mesh was not imported ({exc}). Use 3D Models > Import .glb on xwp/{model}."]
         return list(result.warnings)

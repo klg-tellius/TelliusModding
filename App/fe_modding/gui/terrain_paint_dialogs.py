@@ -273,7 +273,7 @@ class PaintKitDialog(tk.Toplevel):
             body,
             text="Blender opens a sculpt grid seeded from the map's ground, its texture layers and the playable "
                  "tiles. Sculpt FE9 Sculpt, paint the layers from the sidebar's Tellius tab (the add-on is "
-                 "installed from Settings > Preferences), save, then use Import .blend/.glb... here.",
+                 "installed from Settings > Preferences), save, then use Import .blend/.glb here.",
             wraplength=560, justify="left",
         ).pack(anchor="w")
         self._from_current = tk.BooleanVar(value=True)

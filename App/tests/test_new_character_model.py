@@ -1,4 +1,4 @@
-"""3D Models › New character model...: New slot..., then Fit new rig... on the new slot."""
+"""3D Models › New character model: New slot, then Fit new rig on the new slot."""
 
 import sys
 import unittest
