@@ -477,22 +477,34 @@ class Fe10RealSaveTests(unittest.TestCase):
         free = next(u.slot for u in units if u.empty)
         slot = record.copy_unit(edward, counts)
         self.assertEqual(slot, free)
-        copy = next(u for u in record.unit_records(counts) if u.slot == slot)
-        self.assertEqual((copy.person_number, copy.class_number, copy.level, copy.stat_gains, copy.linked_slots),
-                         (edward.person_number, edward.class_number, edward.level, edward.stat_gains, (0, 0, 0)))
+        copied = record.unit_records(counts)
+        copy = copied[slot]
+        # the army list is a chain of (previous, next) slot numbers; the copy goes at its end
+        last = next(u for u in units if not u.empty and u.army == edward.army
+                    and not u.linked_slots[1] and u.linked_slots[0])
+        self.assertEqual(copy.linked_slots, (last.slot + 1, 0, 0))
+        self.assertEqual(copied[last.slot].linked_slots[1], slot + 1)
+        self.assertEqual((copy.person_number, copy.class_number, copy.level, copy.stat_gains),
+                         (edward.person_number, edward.class_number, edward.level, edward.stat_gains))
         if copy.support_slot_count:
             self.assertEqual(copy.active_partner, 0)
             self.assertEqual(copy.support_points, edward.support_points)
         self.assertEqual(sf.validate(sf.SaveFile.from_bytes(save.to_bytes([record]))), [])
         record.remove_unit(copy, counts)
         after = record.unit_records(counts)
-        self.assertTrue(next(u for u in after if u.slot == slot).empty)
+        self.assertTrue(after[slot].empty)
         self.assertEqual([u.raw for u in after], [u.raw for u in units])     # back to the game's bytes
-        linked = next((u for u in after if any(u.linked_slots)), None)
-        if linked is not None:   # a unit another unit links to is refused
-            other = next(u for u in after if u.slot + 1 in linked.linked_slots)
-            with self.assertRaises(ValueError):
-                record.remove_unit(other, counts)
+        head = next(u for u in after if not u.empty and not u.linked_slots[0] and u.linked_slots[1])
+        with self.assertRaises(ValueError):                                   # the list start is refused
+            record.remove_unit(head, counts)
+        middle = after[head.linked_slots[1] - 1]
+        before, following = middle.linked_slots[0], middle.linked_slots[1]
+        record.remove_unit(middle, counts)
+        relinked = record.unit_records(counts)
+        self.assertTrue(relinked[middle.slot].empty)
+        self.assertEqual(relinked[before - 1].linked_slots[1], following)
+        if following:
+            self.assertEqual(relinked[following - 1].linked_slots[0], before)
 
 
     @unittest.skipUnless(os.environ.get("FE10_EXTRACTED_FILES"), "set FE10_EXTRACTED_FILES")

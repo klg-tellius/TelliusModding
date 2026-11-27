@@ -7,7 +7,7 @@ RFEE01 reads a row in ``0x800AA548`` (scenery setup), ``0x800AB310`` / ``0x80185
 weather), ``0x800A95F4`` (flight height), ``0x800ABA28`` (the run-in) and ``0x800BA2C8`` (footsteps):
 
 - +0x00 the ``zbg/`` folder of the model, +0x04 the map's sound group (``SND_GROUP_C0101``).
-- +0x08 flag bits (:data:`FLAGS`): 0x02 indoors (the chapter's battle weather and sky are not
+- +0x08 flag bits (:data:`FLAGS`): 0x02 indoors (the map's weather effect and sky are not
   applied), 0x08 mirrored (drawn with X scale -1), 0x10 the fighters may run in (the 突撃 motion, on
   variants 0 and 2 only), 0x20 / 0x40 when they run in, mirror the model / turn it 180 degrees.
   0x01 and 0x04 are set on vanilla rows but no reader was found.

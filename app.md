@@ -42,6 +42,19 @@ Three tiers, from quickest to slowest:
   python -m tools.chapter_sweep.drive --run G:/ROM/tellius_test/sweep_run_rd --out G:/ROM/tellius_test/sweep_out_rd
   python -m tools.chapter_sweep.index --run G:/ROM/tellius_test/sweep_run_rd --out G:/ROM/tellius_test/sweep_out_rd
   ```
+- `tools/ingame_checks` checks app edits in the game with no one at the controller. Each check is built twice from the same start (a chapter jump, or a save loaded from the title): once retail and once with the edit, both through the app's own functions. Each runs in Dolphin with the chapter sweep's driver. `play` then observes the game:
+  - runtime units and the records they use, read from RAM (`ram_view.py` has the unit layouts of both games);
+  - screenshots;
+  - the save the game writes itself.
+
+  `judge` compares the edited run with the retail one. A run that logs a new invalid memory access fails. Check sets are `checks_<set>.py`; the results go to `G:/ROM/tellius_test/ingame/RESULTS.md`:
+
+  ```bash
+  python -m tools.ingame_checks.run --set gamedata [--only G1 G2] [--no-build] [--reuse-retail]
+  python -m tools.ingame_checks.run --set assets --rejudge     # judge stored observations again, no Dolphin
+  ```
+
+  The sets are `gamedata`, `saves`, `chapters` (dialogue, deployments, Add chapter, Story order), `assets` (portraits) and `code` (a critical hit in a real attack, driven through the map menus).
 
 ## Architecture
 

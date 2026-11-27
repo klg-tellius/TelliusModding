@@ -122,6 +122,8 @@ The row now reads 1.6 and *edited*, and the status says *Edited model fig1.*
 | **Target effect** | an `EID_` name or empty | The effect played on the target |
 | **Add weapon…** | | Asks for the item name without `IID_` (`DEVILAXE`) and whether it has a model in `files/xwp/<NAME>/<NAME>.cmp`, then adds its table. |
 
+A sword with range 2 needs a ranged table: a melee **Flight** attacking from two tiles turns the battle screen magenta for good. Ragnell is the exception, since its gale effect (`EID_REPPU`) carries the ranged attack. A wave blade (Type 8, Flight 2) also needs a model with the blade's two marker quads. These are hidden meshes at the base and the tip of the blade, on the model's `_sw1_` and `_sw2_` bones. Every vanilla weapon model has them except the Iron Sword's, the Iron Lance's and three forge models. On the Iron Sword's model, a fire wave blade fights normally but its fight ends with about 2.5 seconds of flat magenta. On the Steel or Sonic Sword's model, it ends cleanly. The page and the project check warn about both cases. <span class="confidence confidence--confirmed">in game</span>
+
 ### Battle Sceneries
 
 | Field | Values | Meaning |
@@ -158,7 +160,7 @@ Radiant Dawn has no `.dbx` tables: the three pages edit rows of `FE10Battle.cms`
 | --- | --- |
 | **Footstep effect** | The `FE10BFootEffect` row played under the fighters' feet: None, Dust, Dust (night), Water spray, Snow spray, Rain spray, Coins |
 | **Footstep ground** | Which column of each fighter's footstep sound set plays: Plain, Sand, Water, Snow, Rain, Floor, Coins |
-| **Indoors** | The chapter's battle weather and sky are not applied |
+| **Indoors** | The map's weather effect and sky are not applied |
 | **Mirrored** | The backdrop is drawn mirrored |
 | **Fighters run in** | The attacker may run up to the target (on variants 0 and 2) |
 | **Mirror / Turn 180° when they run in** | What happens to the backdrop when they do |

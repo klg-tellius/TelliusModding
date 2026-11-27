@@ -1,0 +1,94 @@
+"""3D model round trips (1.0 checklist section 4 ⭐ 3D Models): Export .glb, then Import .glb of the same file
+through the Models page's own functions, and Write files.
+
+* B1 / B1r: the lord's map model (``ymu/lord``, ``ymu/mikaya1``): ``export_set_glb`` then
+  ``replace_body_with_glb``.
+* B2 / B2r: chapter 1's / the Prologue's map terrain: ``export_map_terrain_glb`` then
+  ``replace_map_terrain_with_glb`` (the dialog's defaults: heights followed, conformed, map texturing and
+  light overlay kept). B2Wr: the same with a white overlay, which flattens the map (why the default).
+
+The files really change (the import rebuilds them), but the map must look the same as retail: the judge
+compares the first player phase's screen and accepts a small difference only. The screenshots are kept
+for a look.
+"""
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+
+from .core import Check, Jump
+from .oracles import map_shot, region_diff
+
+
+def _write(ctx, outputs: dict) -> int:
+    changed = 0
+    for path, data in outputs.items():
+        path = Path(path)
+        if not path.is_file() or path.read_bytes() != data:
+            changed += 1
+        ctx.project.write_keeping_original(path, data)
+    return changed
+
+
+def body_round_trip(folder: str):
+    def fixture(ctx):
+        from fe_modding.game_profile import files_root_of
+        from fe_modding.gui import model_viewer as mv
+        container = files_root_of(ctx.project) / "ymu" / folder / "pack.cmp"
+        with tempfile.TemporaryDirectory() as temp:
+            glb = Path(temp) / f"{folder}.glb"
+            glb.write_bytes(mv.export_set_glb(container))
+            result = mv.replace_body_with_glb(container, glb)
+        ctx.facts.update(files=_write(ctx, result.outputs), warnings=result.warnings[:5], model=f"ymu/{folder}")
+    return fixture
+
+
+def terrain_round_trip(folder: str, keep_light: bool = True):
+    """As 3D Models' Import .glb on a map with the dialog's defaults: projected map texturing and the light
+    overlay kept for a mesh holding map_base (the dialog ticks both then, since 2026-11-24)."""
+    def fixture(ctx):
+        from fe_modding.game_profile import files_root_of
+        from fe_modding.gui import model_viewer as mv
+        container = files_root_of(ctx.project) / "zmap" / folder / "map.cmp"
+        with tempfile.TemporaryDirectory() as temp:
+            glb = Path(temp) / f"{folder}.glb"
+            glb.write_bytes(mv.export_map_terrain_glb(container))
+            result = mv.replace_map_terrain_with_glb(container, glb, map_texturing=True, keep_light=keep_light)
+        ctx.facts.update(files=_write(ctx, result.outputs), warnings=result.warnings[:5],
+                         model=f"zmap/{folder} (map texturing kept, light overlay {'kept' if keep_light else 'white'})")
+    return fixture
+
+
+def judge_white_overlay(mod, retail, facts):
+    """The case behind the dialog's default: with a white overlay the ground comes out lighter (1.7% of the screen,
+    2026-11-24; the kept overlay: 0.2%). An earlier 18.9% reading was not the overlay."""
+    share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
+    return share > 0.01, (f"{facts['model']}: the map differs from retail on {share:.1%} (expected over 1%, "
+                          f"against 0.2% with the overlay kept: why the import keeps it by default; B2r covers "
+                          f"the default)")
+
+
+def judge_same(mod, retail, facts):
+    share = region_diff(retail["shot"], mod["shot"], (0.0, 0.2, 1.0, 0.85))
+    ok = facts["files"] > 0 and share < 0.03
+    return ok, f"{facts['model']}: {facts['files']} file(s) rewritten by the import; the map differs from " \
+               f"retail on {share:.1%} of the screen (accepted below 3%)" + \
+               (f"; import warnings: {facts['warnings']}" if facts["warnings"] else "")
+
+
+CHECKS = [
+    Check("B1", "por", "3D Models: Ike's map model exported to .glb and imported back", ["1.0 §4 3D Models ⭐ (POR)"],
+          play=map_shot(), judge=judge_same, fixture=body_round_trip("lord"), start=Jump(2)),
+    Check("B1r", "rd", "3D Models: Micaiah's map model exported to .glb and imported back",
+          ["1.0 §4 3D Models ⭐ (RD)"], play=map_shot(), judge=judge_same, fixture=body_round_trip("mikaya1"),
+          start=Jump("0101")),
+    Check("B2", "por", "3D Models: chapter 1's map terrain exported to .glb and imported back",
+          ["1.0 §4 3D Models ⭐ map terrain (POR)"], play=map_shot(), judge=judge_same,
+          fixture=terrain_round_trip("bmap02"), start=Jump(2)),
+    Check("B2r", "rd", "3D Models: the Prologue's map terrain exported to .glb and imported back",
+          ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_same,
+          fixture=terrain_round_trip("bmap0101"), start=Jump("0101")),
+    Check("B2Wr", "rd", "3D Models: the Prologue's terrain round trip with a white light overlay",
+          ["1.0 §4 3D Models ⭐ map terrain (RD)"], play=map_shot(), judge=judge_white_overlay,
+          fixture=terrain_round_trip("bmap0101", keep_light=False), start=Jump("0101")),
+]

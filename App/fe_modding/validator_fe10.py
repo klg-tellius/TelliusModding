@@ -247,6 +247,8 @@ def validate_fe10_project(project: ModProject) -> Report:
     known = {kind: _ids(db, kind) for kind in ("character", "class", "item", "skill")}
     _check_chapter_files(project, db, issues)
     _check_deployments(project, known, issues, db)
+    from .validator import check_map_animations
+    check_map_animations(project, issues)
     _check_scripts(project, set().union(*known.values()), issues)
     _check_script_globals(project, issues)
     _check_shops(project, known["item"], issues)

@@ -153,7 +153,14 @@ class BattleWeaponsViewer(_WeaponEffects, BattleTableViewer):
                 "effectId": t.effect_id or "", "damageEffId": t.damage_effect_id or ""}
 
     def describe(self, name, t):
-        return f"Model: {t.model_folder}/{t.model}.cmp" if t.model_folder else "No Model block (no 3D weapon)"
+        text = f"Model: {t.model_folder}/{t.model}.cmp" if t.model_folder else "No Model block (no 3D weapon)"
+        try:
+            from .. import battle_tables
+            problem = bw.wave_model_problem(battle_tables.read_entry(self._project, f"xwp/{name}.dbx"),
+                                            files_root_of(self._project))
+        except Exception:  # noqa: BLE001 - the description never fails
+            problem = None
+        return f"{text}\n⚠ {problem}" if problem else text
 
     def set_field(self, text, key, value):
         return bw.set_weapon_field(text, key, value)

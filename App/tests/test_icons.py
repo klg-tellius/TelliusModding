@@ -35,6 +35,29 @@ class IconCellTests(unittest.TestCase):
         self.assertEqual(icons.item_icon(self.images, 186).getpixel((5, 5))[0], 282 % 256)
         self.assertEqual(icons.item_icon(self.images, 0).size, (24, 24))
 
+    def test_radiant_dawn_item_icon_n_is_cell_128_plus_n(self):
+        """Seen in Dolphin: RD's Light (icon 115) draws cell 243; 96 + N is another item's picture."""
+        from fe_modding.games import Game
+        from fe_modding.gui.icon_viewer import SHEETS
+        self.assertEqual(icons.item_cell(115, Game.RADIANT_DAWN), 243)
+        self.assertEqual(icons.item_cell(115, Game.PATH_OF_RADIANCE), 211)
+        rd_items = next(s for s in SHEETS[Game.RADIANT_DAWN] if s.item_icons)
+        por_items = next(s for s in SHEETS[Game.PATH_OF_RADIANCE] if s.item_icons)
+        self.assertEqual((rd_items.item_first_cell, por_items.item_first_cell), (128, 96))
+
+    def test_radiant_dawn_sheet_path_and_compressed_read(self):
+        """The shop lists read RD's icon.cms (LZ10) and its items from cell 128."""
+        from unittest import mock
+        from fe_modding.formats import lz10
+        from fe_modding.games import Game
+        self.assertEqual(icons.icon_path("files", Game.RADIANT_DAWN).as_posix(), "files/window/icon.cms")
+        self.assertEqual(icons.icon_path("files").as_posix(), "files/window/icon.tpl")
+        seen = []
+        with mock.patch.object(icons.tpl, "read_tpl_images", lambda stream: seen.append(stream.read()) or self.images):
+            images = icons.read_icon_images(lz10.compress(b"TPL bytes"))
+        self.assertEqual(seen, [b"TPL bytes"])
+        self.assertEqual(icons.item_icon(images, 0, Game.RADIANT_DAWN).getpixel((0, 0))[0], 128)
+
     def test_item_icon_outside_the_sheet_is_none(self):
         self.assertIsNone(icons.item_icon(self.images, 255))  # cell 351 of 288
 

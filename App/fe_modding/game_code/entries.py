@@ -10,7 +10,7 @@ from __future__ import annotations
 import struct
 
 from . import ppc
-from .catalog import CATALOG, CAVE_ADDRESS, Edit, Field, Patch, Tunable, in_cave
+from .catalog import CATALOG, CAVE_ADDRESS, OPEN_REPAIRS, Edit, Field, Patch, Tunable, in_cave
 from .versions import VERSIONS
 
 US, EU, JP = "GFEE01", "GFEP01", "GFEJ01"
@@ -229,8 +229,43 @@ def _stub(version: str, address: int) -> tuple[int, ...]:
             ppc.srawi(0, 3, 31), ppc.andc(3, 3, 0), ppc.b(address + 20, ROLL_PERCENT[version]))
 
 
+# Astra's stub was the cave's first slot until 2026-11-19. Dolphin (cheats off) HLE-patches 0x80001800 and
+# writes "STUBHAXX" at 0x80001804, so it never ran there: the game closed at the first Astra roll (in-game
+# check SK1). It now uses a free slot; the other stubs keep their places.
+ASTRA_OLD_STUB = CAVE_ADDRESS
+ASTRA_STUB = CAVE_ADDRESS + 0x2E0          # free: 0x254-0x300 sits between anim.speed and battle.show_stats
+
+
+def _proc_stub_address(index: int) -> int:
+    return ASTRA_STUB if index == 0 else CAVE_ADDRESS + index * STUB_SIZE
+
+
+def _repair_astra_stub(session) -> None:
+    """Move an Astra stub an older release put at 0x80001800 to its slot, keeping its scale and bonus."""
+    v = session.version.code
+    site = PROCS[0][4].get(v)
+    if site is None or not session.dol.has_section_at(CAVE_ADDRESS):
+        return
+    try:
+        if session.dol.read(site, 4) != _word(ppc.bl(site, ASTRA_OLD_STUB)):
+            return
+        old = session.dol.read(ASTRA_OLD_STUB, 24)
+        if any(session.dol.read(ASTRA_STUB, 24)):
+            return
+    except Exception:
+        return
+    new = bytearray(b"".join(_word(w) for w in _stub(v, ASTRA_STUB)))
+    new[2:4], new[10:12] = old[2:4], old[10:12]             # the scale and bonus immediates
+    session.dol.write(ASTRA_STUB, bytes(new))
+    session.dol.write(site, _word(ppc.bl(site, ASTRA_STUB)))
+    session.dol.write(ASTRA_OLD_STUB, bytes(24))
+
+
+OPEN_REPAIRS.append(_repair_astra_stub)
+
+
 for _index, (_key, _name, _sid, _formula, _sites, _bonus) in enumerate(PROCS):
-    _stub_address = CAVE_ADDRESS + _index * STUB_SIZE
+    _stub_address = _proc_stub_address(_index)
     _hook = Patch(
         f"proc.{_key}.hook", G_PROCS, f"{_name} activation hook",
         f"Routes {_name}'s activation roll through an adjustable stub.",

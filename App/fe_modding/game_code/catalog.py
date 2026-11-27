@@ -198,6 +198,11 @@ def make_signature(dol: Dol, address: int, before: int = 4, after: int = 4) -> S
 
 
 # -- the engine ------------------------------------------------------------------------------------
+#: ``repair(session)`` functions run when a session opens a DOL of a known version: they move code an
+#: older release of the app put where it cannot run (see entries.py, the Astra activation stub).
+OPEN_REPAIRS: list[Callable[["Session"], None]] = []
+
+
 class Session:
     """A DOL, its identified version, and the operations on catalog entries."""
 
@@ -208,6 +213,9 @@ class Session:
         self.version = version
         self.retail = retail
         self._index: _TextIndex | None = None
+        if version is not None:
+            for repair in OPEN_REPAIRS:
+                repair(self)
 
     # locating
     def _search(self, signature: Signature) -> int | None:

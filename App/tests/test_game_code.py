@@ -768,3 +768,34 @@ class SoundRoomTrackTests(unittest.TestCase):
             self.tracks.write_tracks(self.dol, "TEST01", [f"BGM_{i:02d}" for i in range(64)])
         with self.assertRaises(DolError):
             self.tracks.write_tracks(self.dol, "TEST01", ["BGM_A"] * 63)
+
+
+class AstraStubTests(unittest.TestCase):
+    """Dolphin overwrites 0x80001800-0x8000180B, so no cave code may start there; old projects are repaired."""
+
+    def test_no_por_cave_code_in_the_bytes_dolphin_overwrites(self):
+        for code in entries.ALL:
+            for entry in CATALOG.entries_for(code):
+                for edit in getattr(entry, "versions", {}).get(code, ()):
+                    if isinstance(edit, Edit) and in_cave(edit.address) and any(edit.patched):
+                        self.assertGreaterEqual(edit.address, CAVE_ADDRESS + 0x10, (entry.id, code))
+
+    def test_an_old_astra_stub_moves_with_its_scale_and_bonus(self):
+        site = entries.PROCS[0][4][US]
+        base = site & ~0xFF
+        text = bytearray(0x200)
+        offsets, addresses, sizes = [0] * 18, [0] * 18, [0] * 18
+        offsets[0], addresses[0], sizes[0] = 0x100, base, len(text)
+        header = struct.pack(">18I18I18I3I", *offsets, *addresses, *sizes, 0x80400000, 0x1000, base)
+        dol = Dol(header.ljust(0x100, b"\x00") + bytes(text))
+        dol.add_text_section(CAVE_ADDRESS, bytes(CAVE_SIZE))
+        old = bytearray(b"".join(word(w) for w in entries._stub(US, CAVE_ADDRESS)))
+        old[2:4], old[10:12] = (8).to_bytes(2, "big"), (60).to_bytes(2, "big")
+        dol.write(CAVE_ADDRESS, bytes(old))
+        dol.write(site, word(ppc.bl(site, CAVE_ADDRESS)))
+        Session(dol, versions.VERSIONS[US])
+        self.assertEqual(dol.read(site, 4), word(ppc.bl(site, entries.ASTRA_STUB)))
+        moved = dol.read(entries.ASTRA_STUB, 24)
+        self.assertEqual((moved[2:4], moved[10:12]), ((8).to_bytes(2, "big"), (60).to_bytes(2, "big")))
+        self.assertEqual(moved[20:], word(ppc.b(entries.ASTRA_STUB + 20, entries.ROLL_PERCENT[US])))
+        self.assertEqual(dol.read(CAVE_ADDRESS, 24), bytes(24))

@@ -140,6 +140,8 @@ If you want new objective logic, edit and test the chapter script in a later les
 
 **Battle sky** selects `BattleSkyData[weather_id]`. Because the index is the weather ID, changing it affects all maps using that ID. It is saved in FE8Data, not `map.cmp`.
 
+On Radiant Dawn, **Weather** selects codes `0–21`, each named after the weather the game gives it: Clear, Cloudy, Rain, Snow, Night, Indoors and others. The map's code alone decides the weather on the map and in its fights. Chapter data's **Promotion weather** and **Promotion background** don't: they apply only to a promotion played outside a fight.
+
 **Fog of war** selects the stored sight code and its runtime mode. It hides units outside allied vision on the difficulties where that regional executable retains the setting.
 
 ### Advanced

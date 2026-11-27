@@ -82,9 +82,9 @@ Inputs come from `mapextra`, `maplight`, `mapfog`, weather resources, sky tables
 
 ## Radiant Dawn
 
-A Radiant Dawn chapter names its weather in `ChapterData` +0x9C: one of 22 names, among them clear, cloudy, snow, night, indoors and none. Only the battle scene setup reads it, together with the battle background. On 1-1, snow in place of cloudy drew no snow on the map or in battle, but the bandit's displayed hit rate on Micaiah went from 54 to 69. <span class="confidence confidence--confirmed">in game</span>
+Radiant Dawn works the same way: the map's `mapextra` weather code (0–21) decides what is drawn, on the map and behind the fighters. The map loader translates the code into one of 22 named weathers (clear, cloudy, rain, snow, night, indoors and others); the [Radiant Dawn page](../meta/radiant-dawn.md#weather) lists both orders. With 1-1's map set to snow, both the map and the fight showed falling snow. <span class="confidence confidence--confirmed">in game</span>
 
-The map's own weather number is in its `mapextra` bits (0–21), named in the app's Map settings by the story maps that use them. <span class="confidence confidence--confirmed">files</span>
+A Radiant Dawn chapter also names a weather, in `ChapterData` +0x9C, beside a backdrop at +0x98. Only the promotion scene reads them, and only for a promotion played outside a fight. Setting the field to snow, night or sandstorm changed nothing on the map or in fights. <span class="confidence confidence--confirmed">in game</span>
 
 ## Review boundary
 

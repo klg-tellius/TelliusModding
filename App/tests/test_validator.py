@@ -209,6 +209,57 @@ class RetailChecks(unittest.TestCase):
         report = validator.validate_project(project, flow)
         self.assertEqual([str(i) for i in report.errors], [])
 
+    def test_a_melee_weapon_given_range_is_flagged_and_retail_is_not(self):
+        """In game (E1, 2026-11-24): the Iron Sword given range 2 turns a ranged fight flat magenta."""
+        from dataclasses import replace
+        from types import SimpleNamespace
+        from fe_modding.formats import fe8data
+        files = Path(os.environ["FE9_EXTRACTED_FILES"])
+
+        class Retail(ModProject):
+            @property
+            def extracted_dir(self):
+                return files.parent
+
+        project = Retail(name="retail", game=Game.PATH_OF_RADIANCE, directory=files.parent.parent)
+        fe8 = fe8data.read_fe8data((files / "FE8Data.bin").read_bytes())
+        issues = []
+        validator.check_ranged_melee_weapons(project, fe8, issues)
+        self.assertEqual(issues, [])          # Ragnell and the like reach 2 tiles through their gale effect
+        items = [replace(i, max_range=2) if i.iid == "IID_IRONSWORD" else i for i in fe8.items]
+        validator.check_ranged_melee_weapons(project, SimpleNamespace(items=items), issues)
+        self.assertEqual([i.where for i in issues], ["xwp/IRONSWORD.dbx"])
+        self.assertEqual(issues[0].route, ("asset", "battle_weapons", "IRONSWORD"))
+
+    def test_a_wave_blade_on_a_model_without_markers_is_flagged(self):
+        """In game (E1/E1m/E1t, 2026-11-25): a wave blade on the Iron Sword's model flashes magenta, on the
+        Steel or Sonic Sword's model it doesn't."""
+        from unittest import mock
+        from fe_modding import battle_tables
+        from fe_modding.formats import battle_weapons
+        files = Path(os.environ["FE9_EXTRACTED_FILES"])
+
+        class Retail(ModProject):
+            @property
+            def extracted_dir(self):
+                return files.parent
+
+        project = Retail(name="retail", game=Game.PATH_OF_RADIANCE, directory=files.parent.parent)
+        issues = []
+        validator.check_wave_blade_models(project, issues)
+        self.assertEqual(issues, [])          # the Rune and Sonic Swords have the marker quads
+        tables = battle_tables.read_entries(project, "xwp")
+        edited = {}
+        for name in ("xwp/IRONSWORD.dbx", "xwp/STEELSWORD.dbx"):
+            text = tables[name]
+            for field, value in (("kind", "8"), ("missile", "2")):
+                text = battle_weapons.set_weapon_field(text, field, value)
+            edited[name] = text
+        with mock.patch.object(battle_tables, "read_entries", return_value=edited):
+            validator.check_wave_blade_models(project, issues)
+        self.assertEqual([i.where for i in issues], ["xwp/IRONSWORD.dbx"])
+        self.assertEqual(issues[0].route, ("asset", "battle_weapons", "IRONSWORD"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -497,18 +497,19 @@ WEATHER_NAMES = {
     14: "Effect 14 (as Ch.7, Ch.10)", 15: "Mountain (as Ch.9, Ch.12)", 16: "Effect 16 (unused)",
     17: "Light overlay 2 (as the Prologue)",
 }
-#: Radiant Dawn's map weather ids (same mapextra bits, 0-21), named by the story maps that use them
-#: (RFEE01 census, 2026-11-04). Snow (5) is checked in Dolphin; the others are named after their
-#: maps and their chapter's weather.
+#: Radiant Dawn's map weather codes (same mapextra bits, 0-21). The map loader (0x8013A35C) turns each
+#: code into an entry of the weather name table at 0x803694D4 (晴れ, 曇り, 雨, ...), which the map and
+#: its fights use; the names below are those entries, with the story maps that use each code
+#: (RFEE01 census, 2026-11-04). Snow (5) is checked in Dolphin.
 RD_WEATHER_NAMES = {
-    0: "None (as bmap0107, bmap0201)", 1: "Overcast (as bmap0101, bmap0102)", 2: "Weather 2 (as bmap0313)",
-    3: "Weather 3 (unused)", 4: "Weather 4 (unused)", 5: "Snow (as bmap0314, bmap0401, bmap0403)",
-    6: "Weather 6 (unused)", 7: "Weather 7 (unused)", 8: "Weather 8 (unused)", 9: "Weather 9 (unused)",
-    10: "Weather 10 (unused)", 11: "Weather 11 (as bmap0406)", 12: "Night (as bmap0110, bmap0301)",
+    0: "Clear (as bmap0107, bmap0201)", 1: "Cloudy (as bmap0101, bmap0102)", 2: "Rain (as bmap0313)",
+    3: "Light rain (unused)", 4: "Heavy rain (unused)", 5: "Snow (as bmap0314, bmap0401, bmap0403)",
+    6: "Light snow (unused)", 7: "Blizzard (unused)", 8: "Sandstorm (unused)", 9: "Storm (unused)",
+    10: "Waves (unused)", 11: "Fog (as bmap0406)", 12: "Night (as bmap0110, bmap0301)",
     13: "Sunset (as bmap0109, bmap0311)", 14: "Indoors (as bmap0103, bmap0407b)",
-    15: "Night 15 (as bmap0304)", 16: "Weather 16 (unused)", 17: "Weather 17 (as bmap0312)",
-    18: "Sandstorm (as bmap0106)", 19: "Desert heat (as bmap0404)", 20: "Weather 20 (as bmap0309)",
-    21: "Weather 21 (as bmap0308)",
+    15: "Embers (as bmap0304)", 16: "Sunrise (unused)", 17: "Low cloud (as bmap0312)",
+    18: "Desert (as bmap0106)", 19: "Desert heat (as bmap0404)", 20: "Lava (as bmap0309)",
+    21: "Clearing clouds (as bmap0308)",
 }
 #: Fog-of-war code (mapextra bits 18-19): the game maps 0/1/2/3 to runtime modes 0/3/1/2
 #: and keeps it only on Hard (US/PAL; any difficulty but Normal in JP).
@@ -758,8 +759,8 @@ class MapSettingsForm(ttk.Frame):
             names = dict(RD_WEATHER_NAMES)
             names.setdefault(extra.weather_id, f"Weather {extra.weather_id}")
             self._choice(row, "extra:weather_id", "Weather", names, extra.weather_id,
-                         "Effect drawn over the map (snow checked in the game). Chapter data's Weather is "
-                         "separate: it sets the battle scenes' weather.")
+                         "The weather drawn over the map and in its fights (snow checked in the game). "
+                         "Chapter data's Promotion weather is separate: only promotions outside a fight use it.")
             row += 1
         if extra is not None and us:
             self._choice(row, "extra:sight_code", "Fog of war", SIGHT_NAMES, extra.sight_code,

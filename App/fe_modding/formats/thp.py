@@ -444,6 +444,7 @@ def encode_thp(
     max_audio_samples_per_frame = 0
 
     if has_audio:
+        pcm_channels = [_fit_audio(pcm, num_frames, audio_sample_rate, fps) for pcm in pcm_channels]
         total_audio_samples = len(pcm_channels[0])
         channel_coefs = []
         channel_adpcm = []
@@ -535,6 +536,14 @@ def encode_thp(
 
 def _round_up(value: int, align: int) -> int:
     return (value + align - 1) // align * align
+
+
+def _fit_audio(pcm: list[int], num_frames: int, sample_rate: int, fps: float) -> list[int]:
+    """Trim or pad (with silence) one channel to the video's length, so no frame carries more than its
+    share of samples. Audio longer than the video used to pile up in the last frame and raised
+    ``audioMaxSamples``, from which the game's player sizes its audio buffers."""
+    wanted = int(round(num_frames * sample_rate / fps))
+    return list(pcm[:wanted]) + [0] * max(0, wanted - len(pcm))
 
 
 def _compute_audio_chunks(num_frames: int, total_audio_samples: int, sample_rate: int, fps: float) -> list[tuple[int, int]]:

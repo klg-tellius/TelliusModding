@@ -132,8 +132,11 @@ CLASS_FIXED_SIZE = 16
 # 9 labels; 20 bytes (+17 attribute count, +18 effectiveness count, +19 optional-block flags);
 # attributes; effectivenesses; optional ten-byte stat and eight-byte extension blocks; word padding.
 ITEM_LABELS = _labels(("iid", "ID"), ("miid", "Name key"), ("help", "Help key"), ("weapon_type", "Weapon type"),
-                      ("display_type", "Displayed type"), ("rank", "Weapon rank"), ("effect", "Effect"),
-                      ("effect_2", "Effect 2"), ("effect_3", "Effect 3"), group="Identity")
+                      ("display_type", "Displayed type"), ("rank", "Weapon rank"),
+                      # seen in game (E1r/E1rm, 2026-11-24): these play in the fight shown on the map; a battle
+                      # scene takes its effects from the weapon's FE10BWeapon row (Battle Weapons)
+                      ("effect", "Effect (map fight)"), ("effect_2", "Effect 2 (map fight)"), ("effect_3", "Effect 3"),
+                      group="Identity")
 ITEM_FIXED = (
     _bytes("u16", (("icon", "Icon"), ("price", "Price per use")), "Item")
     + _bytes("u8", (("might", "Might"), ("hit", "Hit"), ("crit", "Critical"), ("weight", "Weight"),
@@ -843,8 +846,11 @@ def _chapter_fields() -> tuple:
                _f("player_group", "Player army", "u8", 0x8F, "Settings")]
     fields += [_f("affinity", "Affinity", "label", 0x90, "Settings"),
                _f("base_scene", "Base scene", "label", 0x94, "Settings"),
-               _f("battle_background", "Battle background", "label", 0x98, "Settings"),
-               _f("weather", "Weather", "label", 0x9C, "Settings"),
+               # +0x98/+0x9C: read only by the promotion scene (0x801861A0) when E_CCProc runs in modes 1-4,
+               # i.e. a promotion outside a fight. Fights use the tile's scenery and the map's weather
+               # (0x804CB834, from mapextra); W1r-W3r/W1b/W2b saw no change on the map or in fights.
+               _f("battle_background", "Promotion background", "label", 0x98, "Settings"),
+               _f("weather", "Promotion weather", "label", 0x9C, "Settings"),
                _f("scene_2", "Second scene", "label", 0xA0, "Settings"),
                _f("lord", "Lord", "label", 0xA4, "Settings")]
     # +0xA8..+0xB3: trial-map grade thresholds A-D (0x800634d8, 0x80063568, 0x80063620); chapters below

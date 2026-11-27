@@ -109,7 +109,7 @@ source_path: "meta/radiant-dawn.md"
   | --- | --- |
   | +0x00 | The `zbg/` folder of the model |
   | +0x04 | The map's sound group (`SND_GROUP_C0101`) |
-  | +0x08 | Flags: 0x02 indoors (the chapter's battle weather and sky are not applied), 0x08 mirrored (X scale −1), 0x10 the fighters may run in (the `突撃` motion; variants 0 and 2 only), 0x20 mirror and 0x40 turn 180° when they run in. 0x01 and 0x04 are set on retail rows but have no reader. |
+  | +0x08 | Flags: 0x02 indoors (the map's weather effect and sky are not applied), 0x08 mirrored (X scale −1), 0x10 the fighters may run in (the `突撃` motion; variants 0 and 2 only), 0x20 mirror and 0x40 turn 180° when they run in. 0x01 and 0x04 are set on retail rows but have no reader. |
   | +0x09 | Flight height on the aerial variants 2 and 3; 0 uses FE10BSetup `上空高度` |
   | +0x0A, +0x0B | Move and camera limits; 0 uses FE10BSetup `移動限界` (50) and `カメラ限界` (40) |
   | +0x0C | The `FE10BFootEffect` row (none, dust, dust at night, water spray, snow spray, rain spray, coins) |
@@ -130,6 +130,8 @@ source_path: "meta/radiant-dawn.md"
 
   Path of Radiance gives each weapon a `xwp/<NAME>.dbx` table in `zdbx.cmp`. Radiant Dawn has one `FE10BWeapon` row per weapon in `FE10Battle.cms` (192 rows, 36 bytes each). Its string fields are, in order: a Japanese name, the weapon key (`IRONSWORD`; an arrow names its bow), the model (`xwp/<model>/`), the hit and critical-hit effects (`EID_K_ATTK1`, `EID_K_CRIT1`), the weapon's own effect (`EID_K_FIRE`), the effect on the target (`EID_K_HEAD_FIRE`), and on a few rows a magic class name. Byte +0x20 indexes `FE10BWeaponType`: no, sw, sp, ax, kn, ja (thrown lance), ha (hand axe), kt (thrown knife), ms (magic sword), mg (magic), bw (bow), bg (bowgun), cr (claw), br (breath), rd (staff), ar (arrow). <span class="confidence confidence--confirmed">files</span>
 
+  Which effects a fight plays depends on how it is shown. In a battle scene, the weapon's `FE10BWeapon` row decides: the LIGHT row given the FIRE row's effect and target makes Light hit with a fireball, and the textures of `yme/EID_K_LIGHT.cmp` are the ones drawn. The item's own ItemData effect fields (`EID_HEAD_LIGHT`, `EID_LIGHT`) change nothing there. They drive the fight played on the map instead: given Fire's (`EID_HEAD_FIRE`, `EID_FIRE`), Light throws a fireball on the map. <span class="confidence confidence--confirmed">in game</span>
+
 ## Tutorials
 
   The tutorial lists use Path of Radiance's `tut_data` layout, one file per difficulty set: `Tutorial/tut_data_n_en.bin` and `tut_data_h_en.bin`, plus the Japanese `tut_data_n.bin` and `tut_data_h.bin`. Each entry has the same four start-flag slots as Path of Radiance's; retail English entries are 0, 2, 2, 0 (only slots 2 and 3 unlocked). Which game each slot stands for has not been checked in game. <span class="confidence confidence--confirmed">files</span>
@@ -138,7 +140,13 @@ source_path: "meta/radiant-dawn.md"
 
 ## Weather
 
-  ChapterData +0x9C names the chapter's weather: one of 22 names (`晴れ` clear, `曇り` cloudy, `雪` snow, `夜` night, `室内` indoors, `なし` none, and others). `0x801347B0` turns the name into its number (21, `なし`, for an unknown name) and `0x80134624` turns it back. The only caller is the battle scene setup (`0x801861A0`), which reads the battle background at +0x98 and the weather at +0x9C together. On 1-1, snow in place of cloudy drew no snow on the map or in battle, but the bandit's displayed hit rate on Micaiah went from 54 to 69. <span class="confidence confidence--confirmed">in game</span>
+  Radiant Dawn numbers its weathers through one table of 22 names at `0x803694D4`: 0 `晴れ` clear, 1 `曇り` cloudy, 2 `曇り(低)` low cloud, 3 `曇り(晴)` clearing clouds, 4 `雨` rain, 5 `小雨` light rain, 6 `豪雨` heavy rain, 7 `雪` snow, 8 `小雪` light snow, 9 `吹雪` blizzard, 10 `砂漠` desert, 11 `砂嵐` sandstorm, 12 `熱砂` desert heat, 13 `嵐` storm, 14 `波` waves, 15 `霧` fog, 16 `夜` night, 17 `夕日` sunset, 18 `朝日` sunrise, 19 `火の粉` embers, 20 `溶岩` lava, 21 `室内` indoors. `0x80134624` gives a number's name (`なし` past 21) and `0x801347B0` a name's number (21 for an unknown name). <span class="confidence confidence--confirmed">engine</span>
+
+  The weather that is drawn comes from the map. When a map loads, `0x8013A35C` turns its `mapextra` weather code (bits 20–24, 0–21) into one of these numbers and keeps it at `0x804CB834`. The codes are not in table order: 0 clear, 1 cloudy, 2 rain, 3 light rain, 4 heavy rain, 5 snow, 6 light snow, 7 blizzard, 8 sandstorm, 9 storm, 10 waves, 11 fog, 12 night, 13 sunset, 14 indoors, 15 embers, 16 sunrise, 17 low cloud, 18 desert, 19 desert heat, 20 lava, 21 clearing clouds. A fight copies the number into the battle (`+0x15FC`, `0x8002CEB0`) and starts the same effect behind the fighters. An event's `NetuzoWeather` can override the number, and a backdrop row flagged indoors gets no weather effect. `SetWeather` changes the number during the chapter, and saves keep it. With 1-1's map set from code 1 to 5, the map and the fight both showed falling snow: the effect process was `E_MapSnow` in place of `E_MapCloud`. <span class="confidence confidence--confirmed">in game</span>
+
+  ChapterData +0x9C names a weather too, but only one piece of code reads it (`0x801861A0`, together with +0x98). That code belongs to the promotion scene, which uses the two fields only when the promotion process (`E_CCProc`) runs in modes 1–4, for a promotion played outside a fight. Otherwise a promotion keeps the fight's backdrop and weather. On 1-1, snow, night or sandstorm in the chapter field changed nothing on the map, and the fight's weather effect stayed `E_MapCloud`, as in retail. <span class="confidence confidence--confirmed">in game</span>
+
+  A fight's displayed hit and avoid can't show whether a field had an effect. On the same 1-1 attack with nothing edited, the bandit's raw hit and avoid moved by 5–15 points from one run to the next (its biorhythm). That variation also explains the 54 → 69 hit rate that was once put down to the chapter field. <span class="confidence confidence--confirmed">in game</span>
 
 ## Saves
 

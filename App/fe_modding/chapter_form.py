@@ -148,11 +148,13 @@ def rd_sections(data: bytes, index: int) -> list[ChapterSection]:
     scenes = (ChapterField("Base background", "base_scene", CHOICE, "A rect RID (Game Data › Rect RIDs).",
                            options=_rd_used(data, "base_scene")),
               ChapterField("Second scene", "scene_2", CHOICE, options=_rd_used(data, "scene_2")),
-              ChapterField("Battle background", "battle_background", CHOICE,
-                           "A BattleTerrName entry (Game Data › Battle scenery).", options=scenery),
-              ChapterField("Weather", "weather", CHOICE,
-                           "The battle scenes' weather; it can change battle numbers. Nothing is drawn "
-                           "on the map: a map's own weather is in Build › Map settings.",
+              ChapterField("Promotion background", "battle_background", CHOICE,
+                           "A BattleTerrName entry (Game Data › Battle scenery): the scene behind a promotion "
+                           "played outside a fight (in the base or a menu). Fights take theirs from the tile.",
+                           options=scenery),
+              ChapterField("Promotion weather", "weather", CHOICE,
+                           "The weather of a promotion played outside a fight. Fights and the map use the "
+                           "map's own weather (Build › Map settings); this field changes neither.",
                            options=_rd_used(data, "weather")),
               ChapterField("Affinity", "affinity", CHOICE, options=_rd_used(data, "affinity")),
               ChapterField("Lord", "lord", CHOICE,

@@ -228,6 +228,69 @@ def _check_chapter_files(project: ModProject, records, issues: list, titles: dic
                                 "No chapter leads to this one in the story flow, so it cannot be played in order.", route))
 
 
+def check_map_animations(project: ModProject, issues: list) -> None:
+    """A prop told to load its ``.ga`` animation (``flag_bits_c`` 0x02) whose map pack holds none: in Dolphin the
+    chapter's opening event then never ends (MAP-04 sweep, 2026-11-18). Both games."""
+    from . import map_props
+    zmap = files_root_of(project) / "zmap"
+    for path in sorted(zmap.glob("*/map.cmp")) if zmap.is_dir() else []:
+        try:
+            missing = map_props.objects_missing_animation(map_props.map_pack_files(path))
+        except Exception:  # noqa: BLE001 - an unreadable map is reported by the map checks
+            continue
+        for model in missing:
+            issues.append(Issue(WARNING, "Maps", f"zmap/{path.parent.name}/map.cmp",
+                                f"{model} is set to load its animation ({model}.ga), but the map has none: the "
+                                "chapter's opening event will not end. Clear the prop's 'Load matching .ga "
+                                "animation' flag or add the .ga."))
+
+
+def check_ranged_melee_weapons(project: ModProject, fe8, issues: list) -> None:
+    """A weapon that reaches 2 or more tiles while its battle table (``xwp/<NAME>.dbx``) is a melee one (missile
+    0) and it has no gale effect (``EID_REPPU*``, as on Ragnell): attacking from range turns the battle screen
+    flat magenta and it stays that way (in-game checks E1/E1p/E1w, 2026-11-24). Path of Radiance."""
+    from . import battle_tables
+    from .formats import battle_weapons
+    try:
+        tables = battle_tables.read_entries(project, "xwp")
+    except Exception:  # noqa: BLE001 - no battle archive: nothing to compare
+        return
+    for item in fe8.items:
+        if not item.iid or (item.max_range or 0) < 2 or item.max_range == 255:
+            continue
+        text = tables.get(f"xwp/{item.iid[4:]}.dbx")
+        if text is None:
+            continue
+        try:
+            weapon = battle_weapons.read_weapon(text)
+        except Exception:  # noqa: BLE001
+            continue
+        if weapon.missile == 0 and not str(getattr(item, "effect", None) or "").startswith("EID_REPPU"):
+            issues.append(Issue(WARNING, "Items", f"xwp/{item.iid[4:]}.dbx",
+                                f"{item.iid} reaches {item.max_range} tiles, but its battle weapon is a melee one "
+                                f"(Flight 0) with no gale effect: attacking from range turns the battle screen "
+                                f"magenta. Give it a thrown or wave Type and Flight in Battle Weapons, or range 1.",
+                                ("asset", "battle_weapons", item.iid[4:])))
+
+
+def check_wave_blade_models(project: ModProject, issues: list) -> None:
+    """A wave blade (Rune/Sonic Sword type) on a model without the blade's marker quads ends its fights with a
+    flat magenta screen (in-game checks E1/E1m/E1t, 2026-11-25). Path of Radiance."""
+    from . import battle_tables
+    from .formats import battle_weapons
+    try:
+        tables = battle_tables.read_entries(project, "xwp")
+    except Exception:  # noqa: BLE001 - no battle archive: nothing to check
+        return
+    root = files_root_of(project)
+    for path, text in sorted(tables.items()):
+        problem = battle_weapons.wave_model_problem(text, root)
+        if problem:
+            name = path[len("xwp/"):-len(".dbx")]
+            issues.append(Issue(WARNING, "Items", path, f"Battle weapon {name}: {problem}",
+                                ("asset", "battle_weapons", name)))
+
+
 def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) -> None:
     zmap = files_root_of(project) / "zmap"
     for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
@@ -397,6 +460,9 @@ def validate_project(project: ModProject, flow=None) -> Report:
     titles = chapters.chapter_titles(project)
     _check_chapter_files(project, records, issues, titles, reachable)
     _check_deployments(project, pids, jids, issues)
+    check_map_animations(project, issues)
+    check_ranged_melee_weapons(project, fe8, issues)
+    check_wave_blade_models(project, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
     _check_script_globals(project, issues)
     _check_shops(project, iids, issues)

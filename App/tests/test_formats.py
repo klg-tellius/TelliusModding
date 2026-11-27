@@ -1363,6 +1363,25 @@ class ThpTests(unittest.TestCase):
         max_diff = max(abs(a - b) for a, b in zip(left, decoded_audio[0]))
         self.assertLess(max_diff, 2000)
 
+    def test_audio_longer_or_shorter_than_the_video_is_fitted(self):
+        """Extra audio used to pile up in the last frame (known bug: a 4,337-sample last frame and
+        audioMaxSamples 4,337 where retail never goes above 1,078)."""
+        from PIL import Image
+
+        num_frames, fps, rate = 30, 29.97, 32000
+        frames = [Image.new("RGB", (16, 16)) for _ in range(num_frames)]
+        expected = round(num_frames * rate / fps)
+        for length in (expected + 5000, expected - 3000):
+            data = thp.encode_thp(frames, [_sine_pcm(length, freq=440.0, sample_rate=rate)], rate, fps)
+            stream = io.BytesIO(data)
+            info = thp.read_info(stream)
+            counts = [len(thp.read_frame(stream, offset, info)[1][0])
+                      for offset in thp.iter_frame_offsets(stream, info)]
+            self.assertEqual(sum(counts), expected)
+            self.assertLessEqual(max(counts), rate / fps + 14)
+            audio_max = struct.unpack(">I", data[0x0C:0x10])[0]
+            self.assertEqual(audio_max, max(counts))
+
     def test_frames_use_the_retail_jpeg_marker_layout(self):
         """The game shows a black picture for frames laid out as PIL writes
         them; retail frames are SOI, one DQT, SOF0, DRI, one DHT (DC0, DC1,

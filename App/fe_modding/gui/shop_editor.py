@@ -9,7 +9,7 @@ cell names the item offered (or nothing). Chapter ``NN``'s shops are the
 sections ending in ``CNN``; a chapter without them (an added chapter) can
 get a copy of another chapter's.
 
-The armory and vendor lists show each item's icon (``window/icon.tpl``, see
+The armory and vendor lists show each item's icon (``window/icon.tpl``; Radiant Dawn ``window/icon.cms``, see
 :mod:`fe_modding.formats.icons`) and price. The price is not a shop setting:
 the game charges an item's cost per use times its uses. On Path of Radiance,
 **Edit price...** changes that cost in the shared
@@ -351,8 +351,8 @@ class ShopEditor(EditorPanel):
         return label[:label.rindex(" (")] if label.endswith(")") and " (" in label else str(iid)
 
     def _icons(self) -> list:
-        """The images of window/icon.tpl, re-read when the file changes."""
-        path = icons.icon_path(files_root_of(self._project))
+        """The images of window/icon.tpl (Radiant Dawn: window/icon.cms), re-read when the file changes."""
+        path = icons.icon_path(files_root_of(self._project), self._project.game)
         try:
             stamp = path.stat().st_mtime_ns
         except OSError:
@@ -372,7 +372,7 @@ class ShopEditor(EditorPanel):
             return None
         images = self._icons()
         if item.icon not in self._icon_photos:
-            image = icons.item_icon(images, item.icon) if images else None
+            image = icons.item_icon(images, item.icon, self._project.game) if images else None
             if image is None:
                 return None
             try:
