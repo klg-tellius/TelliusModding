@@ -107,7 +107,10 @@ def new_weapon_dbx(name: str, *, kind: int, missile: int, model: str | None = No
                    effect_id: str | None = None, damage_effect_id: str | None = None,
                    eol: str = "\r\n") -> str:
     """A fresh ``xwp/<NAME>.dbx``; ``model`` (a ``.cmp`` under ``files/xwp/<name>/``)
-    adds the Model block, leave it None for a tome."""
+    adds the Model block, leave it None for a tome. The Weapon block names the
+    Model block (``name``), not the file: a mismatch such as ``model saber_r``
+    under ``name SABER_R`` leaves the unit empty-handed and crashes the battle
+    when the engine looks for the blade's bones (retail tables use one name)."""
     if not NAME_RE.match(name):
         raise WeaponError("Weapon name must be letters, digits and underscores.")
     lines = ["#", f"# {name}", "#", ""]
@@ -115,8 +118,9 @@ def new_weapon_dbx(name: str, *, kind: int, missile: int, model: str | None = No
         lines += ["{", "\tclass\tModel", f"\tname\t{name}", f"\tfolder\txwp/{name}", f"\tmodel\t{model}", "}", ""]
     lines += ["{", "\tclass\tWeapon", f"\tname\t{name}"]
     if model:
-        lines.append(f"\tmodel\t{model}")
-    lines += ["\tshow\t1", f"\tkind\t{int(kind)}", f"\tmissile\t{int(missile)}", "}"]
+        lines.append(f"\tmodel\t{name}")
+    lines += ["\tshow\t1", f"\tkind\t{int(kind)}", f"\tmissile\t{int(missile)}", "}",
+              "\\"]  # every retail table ends with a lone backslash line
     text = eol.join(lines) + eol
     doc = dbx.parse(text)
     block = doc.find("Weapon")

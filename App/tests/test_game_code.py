@@ -497,6 +497,8 @@ class RetailCatalogTests(unittest.TestCase):
             expected = {"RFEE01", "RFEP01", "RFEJ01"} if rd else set(entries.ALL)
             if entry.id == "rd.skill.wrath_hp_ratio":      # a different rule on JP (rd_region_table)
                 expected = {"RFEE01", "RFEP01"}
+            if entry.id == "chapters.hub.no_autoend":      # its EU/JP sites are not located yet
+                expected = {"GFEE01"}
             self.assertEqual(set(entry.versions), expected, entry.id)
 
     def test_every_version_verifies(self):

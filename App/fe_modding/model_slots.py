@@ -23,6 +23,7 @@ from pathlib import Path
 from .exceptions import ProjectError
 from .formats import anim_registry, fe8data, fe10_anim, fe10_battle, fe10data, lz10, zdbx
 from .games import Game
+from .game_files import GamePath
 from .game_profile import ANIM, BATTLE_TABLES, GAME_DATA, logical_game_path_of, profile_of, files_root_of
 from .project import ModProject
 from .game_files import files_of, remove_tree
@@ -33,6 +34,20 @@ FOLDER_RE = re.compile(r"^[a-z0-9_]+$")
 
 def _files(project: ModProject) -> Path:
     return files_root_of(project)
+
+
+def _copy_folder(source, dest) -> None:
+    """Copy a model folder file by file through the project's layers. The copy takes the folder's
+    current files (edited ones included) and writes them as new files: ``shutil.copytree`` read the
+    vanilla folder only and kept the read-only flag of the shared vanilla store's files, so renaming
+    the copied texture failed ("Access denied") on input/output projects."""
+    for file in sorted(source.rglob("*")):
+        if not file.is_file():
+            continue
+        target = dest / file.relative_to(source).as_posix()
+        if not isinstance(target, GamePath):
+            target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(file.read_bytes())
 
 
 # The codecs below are Path of Radiance's (zdbx, FE8Anim, FE8Data): another game's file of the same
@@ -113,6 +128,12 @@ def _rd_assign(project: ModProject, code: str, *, aid: str | None, pid: str | No
     keys = (aid, pid, jid)
     try:
         exact = next((i for i, s in enumerate(rows) if (s.get(0), s.get(4), s.get(8)) == keys), None)
+        if exact is None and pid:
+            # The character already has a row of their own that the game's lookup picks first
+            # (Edward's is keyed by AID_SWORDER1_E as well): point that row at the model.
+            first = fe10_battle.select_battle_row(battle, aid, pid, jid)
+            if first is not None and rows[first].get(4) == pid:
+                exact = first
         own = next((i for i, s in enumerate(rows) if s.get(12) == description), None)
         if exact is not None:
             data = fe10_battle.set_battle_selector_target(data, exact, description, aerial)
@@ -178,7 +199,7 @@ def clone_battle_model(project: ModProject, source_code: str, new_code: str) -> 
                 pid=selector.get(4), jid=selector.get(8))
         except (ValueError, IndexError) as exc:
             raise ProjectError(str(exc)) from exc
-        shutil.copytree(source, dest)
+        _copy_folder(source, dest)
         old_texture = dest / f"{source_code}.tpl"
         if old_texture.is_file() and source_code != new_code:
             old_texture.rename(dest / f"{new_code}.tpl")
@@ -423,7 +444,7 @@ def clone_map_model(project: ModProject, source_aid: str, new_aid: str, new_fold
             data, _header_index = fe10_anim.clone_anim_header(data, source_index, new_aid, model_index)
         except (ValueError, IndexError) as exc:
             raise ProjectError(str(exc)) from exc
-        shutil.copytree(source, dest)
+        _copy_folder(source, dest)
         try:
             project.write_logical("anim_data", data)
         except Exception:

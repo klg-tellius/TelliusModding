@@ -8,6 +8,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tests.corpus import per_disc
 from fe_modding.formats import rect, tpl
 from fe_modding.formats.fe9_conversation_assets import read_rect_resources
 
@@ -175,7 +176,8 @@ class RealRectTests(unittest.TestCase):
     def test_vanilla_file_rebuilds_byte_for_byte(self):
         doc = rect.parse_rect(self.data)
         self.assertEqual(doc.build(), self.data)
-        self.assertEqual((len(doc.resources), sum(len(r.layers) for r in doc.resources)), (195, 316))
+        self.assertEqual((len(doc.resources), sum(len(r.layers) for r in doc.resources)),
+                         per_disc(self.root, (195, 316), eu=(200, 321), jp=(190, 310)))
 
     def test_known_resources(self):
         doc = rect.parse_rect(self.data)
@@ -183,9 +185,12 @@ class RealRectTests(unittest.TestCase):
         self.assertEqual((len(night.layers), night.mode, night.depth, night.brightness), (4, 2, 900, 184))
         self.assertAlmostEqual(night.duration, 1.85, places=5)
         self.assertEqual([l.texture for l in night.layers], [0, 1, 2, 3])
-        self.assertEqual(doc.find("RID_タイトル炎_JP").effect, rect.EFFECT_NONE)
-        self.assertEqual(doc.find("RID_砂漠").effect, rect.EFFECT_SAND)
-        self.assertEqual(doc.find("RID_山裾-雪").effect, rect.EFFECT_SNOW)
+        for rid, effect in (("RID_タイトル炎_JP", rect.EFFECT_NONE), ("RID_砂漠", rect.EFFECT_SAND),
+                            ("RID_山裾-雪", rect.EFFECT_SNOW)):
+            resource = doc.find(rid)
+            if resource is None and per_disc(self.root, False, eu=True, jp=True):
+                continue    # the European and Japanese discs have another resource list
+            self.assertEqual(resource.effect, effect, rid)
 
     def test_every_layer_source_matches_its_texture(self):
         doc = rect.parse_rect(self.data)
@@ -195,11 +200,11 @@ class RealRectTests(unittest.TestCase):
             return [(i.width, i.height) for i in tpl.read_tpl_image_info_path(target)] if target.is_file() else None
 
         # One vanilla layer (RID_地図ドラゴン13) asks for 432 rows of a 430-row texture.
-        self.assertEqual(len(rect.validate(doc, sizes)), 1)
+        self.assertEqual(len(rect.validate(doc, sizes)), per_disc(self.root, 1, eu=0))
 
     def test_compat_reader_sees_every_resource(self):
         entries = rect.read_rects_path(self.root / "s" / "rect.bin")
-        self.assertEqual(len(entries), 195)
+        self.assertEqual(len(entries), per_disc(self.root, 195, eu=200, jp=190))
         self.assertEqual(entries[0].resource_id, "RID_アジト-作戦室".encode("shift_jis"))
 
 @unittest.skipUnless(os.environ.get("FE9_EXTRACTED_FILES"), "set FE9_EXTRACTED_FILES to an extracted files/ directory")
@@ -223,7 +228,7 @@ class RealSiblingRectTests(unittest.TestCase):
         if not desc.is_file():
             self.skipTest("no RectDesc.bin")
         doc = rect.read_rect_file(desc)
-        self.assertEqual(len(doc.resources), 51)
+        self.assertEqual(len(doc.resources), per_disc(self.root, 51, eu=53))
         pagecur = doc.find("RID_PAGECUR")
         self.assertEqual((pagecur.mode, len(pagecur.layers), pagecur.duration), (rect.MODE_FLIPBOOK, 16, 1.0))
         talk = doc.find("RID_TW3")

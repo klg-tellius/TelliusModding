@@ -111,7 +111,9 @@ class EffectsViewer(EditorPanel):
         self._restore_btn = ttk.Button(actions, text="Restore original", command=self._restore, state="disabled")
         self._restore_btn.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
         self._remove_btn = ttk.Button(actions, text="Remove added effect", command=self._remove, state="disabled")
-        self._remove_btn.grid(row=2, column=1, columnspan=2, sticky="ew", padx=2, pady=2)
+        self._remove_btn.grid(row=2, column=1, sticky="ew", padx=2, pady=2)
+        self._recolour_btn = ttk.Button(actions, text="Recolour...", command=self._recolour, state="disabled")
+        self._recolour_btn.grid(row=2, column=2, sticky="ew", padx=2, pady=2)
         for column in range(3):
             actions.columnconfigure(column, weight=1)
         self._status = ttk.Label(right, text="", style="Muted.TLabel", wraplength=520, justify="left")
@@ -183,6 +185,7 @@ class EffectsViewer(EditorPanel):
         self._replace_btn.config(state="normal" if writable else "disabled")
         self._part_btn.config(state="normal" if writable and entry.has_pack else "disabled")
         self._texture_btn.config(state="normal" if writable and entry.has_pack else "disabled")
+        self._recolour_btn.config(state="normal" if writable and entry.has_pack else "disabled")
         self._register_btn.config(state="normal" if writable and not entry.registered else "disabled")
         self._registry_btn.config(state="normal" if writable and entry.registered else "disabled")
         self._restore_btn.config(state="normal" if writable and self._has_original(entry) else "disabled")
@@ -515,6 +518,22 @@ class EffectsViewer(EditorPanel):
             return
         self._write_pack(entry, data, f"Replaced the texture of {entry.name}")
 
+    def _recolour(self) -> None:
+        entry = self._selected()
+        if entry is None:
+            return
+        try:
+            parts = effects.read_effect_pack(self._pack_file(entry).read_bytes())
+        except (effects.EffectError, OSError) as exc:
+            messagebox.showerror("Visual effects", str(exc), parent=self)
+            return
+        dialog = EffectRecolourDialog(self, entry.name, parts)
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return
+        new_parts, description = dialog.result
+        self._write_pack(entry, effects.build_effect_pack(new_parts), f"Recoloured {entry.name} ({description})")
+
     def _write_pack(self, entry: effects.EffectEntry, data: bytes, message: str) -> None:
         path = self._pack_file(entry)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -558,3 +577,91 @@ class EffectsViewer(EditorPanel):
             return
         self._changelog.append("Visual effects", f"Removed added effect {entry.name}")
         self._load()
+
+
+class EffectRecolourDialog(tk.Toplevel):
+    """Recolour an effect's texture: tint every colour to one hue (a glow keeps its white core), or
+    turn every hue by an angle (greys and whites kept). ``result`` is ``(parts, description)``."""
+
+    PREVIEW = 96
+
+    def __init__(self, parent: tk.Misc, name: str, parts: dict):
+        from .. import recolour
+
+        super().__init__(parent)
+        self.title(f"Recolour {name}")
+        self.transient(parent.winfo_toplevel())
+        self.resizable(False, False)
+        self.result = None
+        self._recolour = recolour
+        self._parts = parts
+        self._mode = tk.StringVar(value="tint")
+        self._hue = tk.DoubleVar(value=210.0)
+        self._photos: list = []
+        body = ttk.Frame(self, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Radiobutton(body, text="Tint every colour to this hue", value="tint", variable=self._mode,
+                        command=self._update).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Radiobutton(body, text="Turn every hue by this angle", value="shift", variable=self._mode,
+                        command=self._update).grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Scale(body, from_=0, to=359, variable=self._hue, orient="horizontal", length=260,
+                  command=lambda _v: self._update()).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self._swatch = tk.Canvas(body, width=260, height=12, highlightthickness=0)
+        self._swatch.grid(row=3, column=0, columnspan=2, pady=(2, 8))
+        self._before = ttk.Label(body)
+        self._before.grid(row=4, column=0)
+        self._after = ttk.Label(body)
+        self._after.grid(row=4, column=1)
+        ttk.Label(body, text="Before").grid(row=5, column=0)
+        ttk.Label(body, text="After").grid(row=5, column=1)
+        self._notes = ttk.Label(body, text="", style="Muted.TLabel", wraplength=300, justify="left")
+        self._notes.grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        buttons = ttk.Frame(body)
+        buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Recolour", command=self._ok).pack(side="right", padx=(0, 6))
+        self._update()
+        self.grab_set()
+
+    def _apply(self):
+        hue = float(self._hue.get())
+        if self._mode.get() == "tint":
+            return self._recolour.recolour_effect_pack(self._parts, hue=hue), f"tinted to {hue:.0f}°"
+        shift = (hue + 180) % 360 - 180
+        return self._recolour.recolour_effect_pack(self._parts, shift=shift), f"hues turned {shift:+.0f}°"
+
+    def _image(self, parts: dict):
+        name = next((n for n in parts if n.lower().endswith(".tpl")), None)
+        if name is None:
+            return None
+        try:
+            image = tpl.read_tpl_images(io.BytesIO(parts[name]))[0].convert("RGBA")
+        except Exception:  # noqa: BLE001 - the preview is optional
+            return None
+        image.thumbnail((self.PREVIEW, self.PREVIEW))
+        board = Image.new("RGBA", image.size, (40, 40, 48, 255))
+        board.alpha_composite(image)
+        return ImageTk.PhotoImage(board)
+
+    def _update(self) -> None:
+        hue = float(self._hue.get())
+        self._swatch.delete("all")
+        if self._mode.get() == "tint":
+            import colorsys
+            r, g, b = (int(c * 255) for c in colorsys.hsv_to_rgb(hue / 360, 1, 1))
+            self._swatch.create_rectangle(0, 0, 260, 12, fill=f"#{r:02x}{g:02x}{b:02x}", outline="")
+        else:
+            self._swatch.create_text(130, 6, text=f"{(hue + 180) % 360 - 180:+.0f}°", fill="#888")
+        (parts, notes), _description = self._apply()
+        self._photos = [self._image(self._parts), self._image(parts)]
+        self._before.config(image=self._photos[0] or "")
+        self._after.config(image=self._photos[1] or "")
+        self._notes.config(text="\n".join(notes))
+
+    def _ok(self) -> None:
+        (parts, notes), description = self._apply()
+        if parts == self._parts:
+            messagebox.showinfo("Recolour", "\n".join(notes) or "Nothing to change.", parent=self)
+            return
+        self.result = (parts, description)
+        self.destroy()

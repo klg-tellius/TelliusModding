@@ -520,11 +520,24 @@ FE10_BYTE_OFFSETS = {
 FE10_GROWTH_FLAGS_FIELD = 2
 FE10_GROWTH_FLAGS_OFFSET = 0x02
 FE10_GROWTH_TABLE = 0x0400
+#: Army-group (``_mikata_``) bits of the same halfword, read by US main.dol's group loader 0x8010BF00.
+FE10_CREATE_IF_ABSENT = 0x0008
+FE10_PLACE_THIS_CHARACTER = 0x0800
 FE10_GROWTH_FLAG_BITS = ((
     FE10_GROWTH_TABLE,
     "Use FE10Growth stats",
     "Build this unit's eight stats from its character and internal-level row in FE10Growth.cms. "
     "If no row applies, normal class/personal bases remain in use.",
+), (
+    FE10_CREATE_IF_ABSENT,
+    "Create if absent",
+    "Player groups (_mikata_): when the character doesn't exist yet, it is created in the reserve and "
+    "placed on this tile (how new recruits join).",
+), (
+    FE10_PLACE_THIS_CHARACTER,
+    "Place this character",
+    "Player groups (_mikata_): the listed character takes the tile when it is in the army. Without it, "
+    "the tile takes the next unit of the army (lords with SID_HERO aside).",
 ),)
 FE10_SUPPORTED_FIELDS = frozenset((*FE10_POINTER_OFFSETS, *FE10_BYTE_OFFSETS,
                                    FE10_GROWTH_FLAGS_FIELD))
@@ -538,7 +551,7 @@ def field_name_for(index: int, dialect: str = "fe9") -> Optional[str]:
 
 def field_help_for(index: int, dialect: str = "fe9") -> str:
     if dialect == "fe10" and index == FE10_GROWTH_FLAGS_FIELD:
-        return "Radiant Dawn unit-creation growth flags."
+        return "Radiant Dawn unit-creation flags: FE10Growth stats, and in player groups (_mikata_) Create if absent and Place this character."
     return FIELD_HELP.get(index, "")
 
 

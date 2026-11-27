@@ -278,7 +278,9 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
     props, the way vanilla maps set them: the ground layer is the terrain
     surface, or the deck of a low prop over it (a bridge); the combined and
     roof layers are the ground, or flat at the top of the highest prop
-    covering the tile (its base plus ``prop_rise``). A corner off the
+    covering the tile (its base plus ``prop_rise``); under a building roof
+    (``map_file.is_roof_object``) the roof layer is at the roof's top instead,
+    except on walls and doors. A corner off the
     terrain keeps its value. An estimate: on vanilla maps about 80% of all
     tiles come out within 0.05 units of the stored corners on each layer
     (some props raise only part of what they cover)."""
@@ -315,6 +317,20 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
         for tile in hit:
             covering[tile].append((world, None if rise is None else base + rise))
 
+    # a building roof (map_file.is_roof_object) holds the roof layer at its top over the room,
+    # while the combined layer stays on the floor the opened roof shows
+    roofed: dict[tuple[int, int], int] = {}
+    if data.layout.game != "fe10" and data.capacity is not None:
+        keep = map_file.door_tiles(data)
+        names = map_file.terrain_grid(files["map.bin"]) if "map.bin" in files else None
+        for index in map_file.roof_instances(data):
+            inst = data.build_inst[index]
+            elevation = map_file.roof_elevation(data.build_desc[inst.desc_index], inst)
+            for x, y in map_file.clipped_footprint(data, inst):
+                if (x, y) in keep or (names is not None and names[x][y] in map_file.ROOF_KEEPS):
+                    continue
+                roofed[(x, y)] = min(elevation, roofed.get((x, y), elevation))
+
     out = {}
     for tile in tiles:
         x, y = tile
@@ -329,6 +345,7 @@ def deduce_corners(files: dict[str, bytes], data: map_file.MapData, tiles) -> di
         ground_el = tuple(fallback[k] if np.isnan(h) else _elevation(float(h)) for k, h in enumerate(ground))
         tops = [top for _world, top in covering[tile] if top is not None]
         combined = tuple(min(g, _elevation(max(tops))) for g in ground_el) if tops else ground_el
-        result = {"ground": ground_el, "combined": combined, "roof": combined}
+        result = {"ground": ground_el, "combined": combined,
+                  "roof": (roofed[tile],) * 4 if tile in roofed else combined}
         out[tile] = {layer: values for layer, values in result.items() if layer in current}
     return out

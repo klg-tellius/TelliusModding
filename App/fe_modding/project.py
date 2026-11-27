@@ -387,11 +387,19 @@ class ModProject:
         if self.profile.has_file("system_archive"):
             if dest.exists() and not overwrite:
                 raise ProjectError(f"{dest} already exists.")
-            from .chapters import ensure_name_images
-            ensure_name_images(self)       # before the sync: nothing it writes is in system.cmp
-            self.sync_system_archive()
+            self.prepare_disc_files()
         self.last_build_warning = build_image(self.game, self.disc_tree(), dest, overwrite=overwrite)
         return dest
+
+    def prepare_disc_files(self) -> None:
+        """What every way out of the project (build, patch, a Dolphin run) needs first on Path of
+        Radiance: the chapter name images added chapters lack, then ``system.cmp`` in step with the
+        loose files. Nothing to do on Radiant Dawn (no ``system.cmp``)."""
+        if not self.profile.has_file("system_archive"):
+            return
+        from .chapters import ensure_name_images
+        ensure_name_images(self)       # before the sync: nothing it writes is in system.cmp
+        self.sync_system_archive()
 
     def sync_system_archive(self) -> list[str]:
         """Copy edited loose files into ``system.cmp`` and return their names.

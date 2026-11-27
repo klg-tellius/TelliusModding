@@ -15,7 +15,10 @@ one ``mapbuilddesc`` record and placed by ``mapbuildinst`` records.
   or a ship's or bridge's deck), as vanilla props sit.
 
 A prop does not change what its tiles are for movement: the tiles' terrain
-types (``map_file.set_tile_terrains``) do.
+types (``map_file.set_tile_terrains``) do. Door models are the exception:
+a closed door's tiles take their roof-layer terrain, so placing, moving,
+turning, swapping or removing an instance keeps 扉 in the roof layer under
+every door (``map_file.sync_door_terrain``).
 """
 
 from __future__ import annotations
@@ -342,6 +345,13 @@ def standing_heights(files: dict[str, bytes], data: map_file.MapData, tiles) -> 
     return out
 
 
+def sync_doors(files: dict[str, bytes]) -> list[str]:
+    """Give every door model's tiles the roof-layer 扉 that makes them block
+    movement while closed (``map_file.sync_door_terrain``); returns its warnings."""
+    files["map.bin"], warnings = map_file.sync_door_terrain(files["map.bin"])
+    return warnings
+
+
 def place_prop(files: dict[str, bytes], name: str, x: int, y: int, angle: int = 0) -> int:
     """Add an instance of prop ``name`` on tile ``(x, y)`` (placement
     coordinates, the same as the map's tile grid) on the surface units stand
@@ -354,6 +364,7 @@ def place_prop(files: dict[str, bytes], name: str, x: int, y: int, angle: int = 
     records = map_file.instance_records(files["map.bin"])
     records.append(map_file.instance_record(data.build_desc[index], index, x, y, angle, height))
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    sync_doors(files)
     return len(records) - 1
 
 
@@ -372,6 +383,7 @@ def move_instance(files: dict[str, bytes], index: int, x: int, y: int) -> None:
         inst.x2 + dx, inst.y2 + dy, inst.end_x2 + dx, inst.end_y2 + dy, height,
     )
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    sync_doors(files)
 
 
 def rotate_instance(files: dict[str, bytes], index: int, angle: int) -> None:
@@ -382,6 +394,7 @@ def rotate_instance(files: dict[str, bytes], index: int, angle: int) -> None:
     records = map_file.instance_records(files["map.bin"])
     records[index] = map_file.instance_record(data.build_desc[inst.desc_index], inst.desc_index, inst.x, inst.y, angle, inst.height())
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    sync_doors(files)
 
 
 def set_instance_object(files: dict[str, bytes], index: int, desc_index: int) -> None:
@@ -392,12 +405,14 @@ def set_instance_object(files: dict[str, bytes], index: int, desc_index: int) ->
     records = map_file.instance_records(files["map.bin"])
     records[index] = map_file.instance_record(obj, desc_index, inst.x, inst.y, inst.angle, inst.height())
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    sync_doors(files)
 
 
 def remove_instance(files: dict[str, bytes], index: int) -> None:
     records = map_file.instance_records(files["map.bin"])
     del records[index]
     files["map.bin"] = map_file.set_build_instances(files["map.bin"], records)
+    sync_doors(files)
 
 
 # -- props of every map --------------------------------------------------------------

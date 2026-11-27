@@ -27,6 +27,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageTk
 
+from .. import rect_catalog
 from ..formats import rect, tpl
 from ..project import ModProject
 from .changelog import ChangeLog
@@ -140,8 +141,15 @@ class BackgroundViewer(EditorPanel):
         ttk.Label(frame, text="Layers cross-fade over the period; 255 brightness is unchanged.",
                   style="Muted.TLabel").grid(row=4, column=2, columnspan=2, sticky="w", pady=(6, 0))
 
+    def _is_radiant_dawn(self) -> bool:
+        return rect_catalog.is_fe10(self._project)
+
     def _load_rect_doc(self) -> None:
         self._rect_doc = None
+        if self._is_radiant_dawn():
+            # Radiant Dawn's rect.bin is another format (fe10_rect): the resource panel reads Path of
+            # Radiance's only; Add New Background goes through Game Data > Rect RIDs' code.
+            return
         path = files_root_of(self._project) / "s" / "rect.bin"
         try:
             if path.exists():
@@ -209,8 +217,12 @@ class BackgroundViewer(EditorPanel):
         return True
 
     def _add_background(self) -> None:
-        if self._rect_doc is None:
+        rect_path = files_root_of(self._project) / "s" / "rect.bin"
+        if not rect_path.exists():
             messagebox.showinfo("Add background", "s/rect.bin was not found; extract the project first.", parent=self)
+            return
+        if self._rect_doc is None and not self._is_radiant_dawn():
+            messagebox.showerror("Add background", "s/rect.bin could not be read.", parent=self)
             return
         chosen = filedialog.askopenfilenames(
             title="Choose the image(s) of the new background (several are cross-faded as an animation)",
@@ -233,12 +245,22 @@ class BackgroundViewer(EditorPanel):
             if len({image.size for image in images}) != 1:
                 first = images[0].size
                 images = [image.resize(first, Image.LANCZOS) for image in images]
-            rect.add_background(self._rect_doc, files_root_of(self._project), name, images)
+            if self._is_radiant_dawn():
+                changes = rect_catalog.prepare_add(self._project, rect_path, name, images)
+            else:
+                rect.add_background(self._rect_doc, files_root_of(self._project), name, images)
         except Exception as exc:  # noqa: BLE001
             self._load_rect_doc()  # drop the half-added resource
             messagebox.showerror("Could not add background", str(exc), parent=self)
             return
-        if not self._write_rect_doc(f"Added {name}"):
+        if self._is_radiant_dawn():
+            try:
+                rect_catalog.save_changes(self._project, changes, self._changelog, f"Added {name}")
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror("Could not save rect.bin", str(exc), parent=self)
+                return
+            self._status_label.config(text=f"Added {name}")
+        elif not self._write_rect_doc(f"Added {name}"):
             return
         self._load_background_list()
         self._show_resources_for_current_file()

@@ -143,7 +143,7 @@ def flat_ground_appearance(files: dict[str, bytes]) -> GroundAppearance:
     material = next((item for item in model.materials
                      if item.name == "hub_ground" or (generated and item.name == "map_base")), None)
     if material is None or not material.textures:
-        raise ValueError("Only a hub created with Blank map has an editable generated ground.")
+        raise ValueError("This map has a 3D terrain model, not a generated flat ground (Blank map or New blank map).")
     color = tuple(min(255, round(channel * gltf_import.COLOR_LOAD_SCALE)) for channel in material.color0[:3])
     base_id = material.textures[0].tex_id
     overlay_id = material.textures[-1].tex_id
@@ -225,6 +225,57 @@ def blank_map(compressed: bytes, width: int, height: int, *,
     packed = lz10.decompress(compressed)
     entries = pak.read_pak_entries(packed)
     content = {entry.name: pak.read_pak_file_content(packed, entry) for entry in entries}
+    had_texpack = "texpack.tpl" in content
+    blank_map_files(entries, content, width, height, ground_color=ground_color,
+                    ground_image=ground_image, tile_ground_image=tile_ground_image)
+    if not had_texpack:
+        return lz10.compress(pak.pack_pak(list(content.items())))
+    return _pack_entries(packed, content)
+
+
+def _ensure_roof_layer(data: bytes) -> bytes:
+    """Path of Radiance: give a map without one an (empty) roof panel layer, which the blanking
+    below fills like the main one. The game takes a closed door's or roof's terrain from that
+    layer, so without it doors and roofs placed later never block a tile (``map_file.door_warnings``)."""
+    try:
+        map_file.section_bytes(data, "panelindexRoof")
+        return data
+    except map_file.MapFileError:
+        pass
+    following = next(name for name in ("panelindexBase", "maplight", "mapfog", "mapgrid", "mapextra")
+                     if _has_section(data, name))
+    data = map_file.insert_section_before(data, following, "panelindexRoof", bytes(4))
+    return map_file.insert_section_before(data, following, "uniquepanelRoof", bytes(12))
+
+
+def _has_section(data: bytes, name: str) -> bool:
+    try:
+        map_file.section_bytes(data, name)
+        return True
+    except map_file.MapFileError:
+        return False
+
+
+def _blank_extra_flags(flags: int, por: bool) -> int:
+    """A blank map's mapextra flags: no water; on Path of Radiance, the roof and door hit test
+    (0x10000000) on, so doors and roofs placed on it work as in the retail maps that have them."""
+    flags &= ~map_props.MAP_FLAG_WATER
+    return flags | map_file.MAP_EXTRA_FOOTPRINT_MASK if por else flags
+
+
+def blank_map_files(entries: list[pak.PakEntry], content: dict[str, bytes], width: int, height: int, *,
+                    ground_color: tuple[int, int, int] = DEFAULT_GROUND_COLOR,
+                    ground_image: Image.Image | None = None, tile_ground_image: bool = False) -> None:
+    """:func:`blank_map` on an open archive: rewrite ``content`` (name -> bytes,
+    ``map.bin`` included) in place, appending a ``texpack.tpl`` entry to
+    ``entries`` when the archive had none. Any chapter map can be blanked this
+    way, not only a hub's: the base terrain model becomes one flat plane of
+    ``width`` x ``height`` tiles, decorative placements are removed and every
+    tile becomes plain ground."""
+    if not MIN_SIZE <= width <= MAX_SIZE or not MIN_SIZE <= height <= MAX_SIZE:
+        raise ValueError(f"Map dimensions must be {MIN_SIZE}–{MAX_SIZE} tiles.")
+    if len(ground_color) != 3 or any(not 0 <= channel <= 255 for channel in ground_color):
+        raise ValueError("The ground color needs three values from 0 to 255.")
     if "map.bin" not in content:
         raise ValueError("The starter map has no map.bin.")
     data = content["map.bin"]
@@ -236,6 +287,9 @@ def blank_map(compressed: bytes, width: int, height: int, *,
     if ground is None:
         raise ValueError("The starter map has no usable ground model.")
     base_index = parsed.build_desc.index(ground)
+    por = parsed.layout.game == "fe9"
+    if por:
+        data = _ensure_roof_layer(data)
     # Replace every present panel layer with one flat panel and a zero-index grid.
     for index_name, panel_name in (("panelindex", "uniquepanel"),
                                    ("panelindexRoof", "uniquepanelRoof"),
@@ -277,7 +331,7 @@ def blank_map(compressed: bytes, width: int, height: int, *,
                              ("half_x_size", _half(width, layout)), ("half_y_size", _half(height, layout)),
                              ("texture_projection_extent_x2", min(255, 2 * max(width, height))),
                              ("grid_buffer", 0),
-                             ("unknown_tail", parsed.extra.unknown_tail & ~map_props.MAP_FLAG_WATER)):
+                             ("unknown_tail", _blank_extra_flags(parsed.extra.unknown_tail, por))):
             data = map_file.patch_extra_field(data, parsed.extra, field, value)
     content["map.bin"] = data
     white = tpl.build_tpl([(Image.new("RGBA", (8, 8), "white"), tpl.FORMAT_I4)], wrap=tpl.WRAP_CLAMP)
@@ -299,8 +353,7 @@ def blank_map(compressed: bytes, width: int, height: int, *,
         width, height, texture_id, white_id, material_color,
         ground_image is not None and tile_ground_image, material=ground_material(layout))
     if not any(entry.name == "texpack.tpl" for entry in entries):
-        return lz10.compress(pak.pack_pak(list(content.items())))
-    return _pack_entries(packed, content)
+        entries.append(pak.PakEntry("texpack.tpl", 0, 0, 0))
 
 
 def avatar_deployment(compressed: bytes, avatar_pid: str, x: int, y: int, avatar_jid: str) -> bytes:

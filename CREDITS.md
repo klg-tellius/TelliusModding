@@ -58,6 +58,12 @@ All dependencies retain their respective licenses.
 
 WIT and FFmpeg executables are not included in this repository.
 
+- [Tellius Forge](https://github.com/ltra043/tellius-forge) by Jade (ltra043): Blender add-on
+  for `.ga` animations, bodies and skeletons (GPL-3.0). Settings > Preferences downloads it from
+  its repository and installs it in the user's Blender; it is not included in this repository
+  or in releases, and none of its code is used by the app, which only reads and writes the
+  `.ga` files it exchanges with it.
+
 ## Game content
 
 Fire Emblem and the supported games belong to Nintendo and Intelligent Systems.

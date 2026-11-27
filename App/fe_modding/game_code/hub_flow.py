@@ -12,6 +12,7 @@ from .catalog import CATALOG, CAVE_ADDRESS, Edit, Patch, State, in_cave
 from .chapter_flow import CONTINUED_PART, FLOW_HOOK, FLOW_PATCH, _SITES
 
 HUB_HOOK = CAVE_ADDRESS + 0x700
+AUTOEND_ROUTINE = CAVE_ADDRESS + 0x6B0
 HUB_CONFIG = CAVE_ADDRESS + 0x9F0
 CONFIG_SIZE = 5
 FLAG_BITS_OFFSET = 0x3B4  # party_data + 0xB4 + 0x300
@@ -139,6 +140,53 @@ def validate_slots(hub_chapter: int, active_slot: int, destination_slot: int, pe
                   destination_slot // 8, pending_slot // 8))
 
 
+# The player-phase step that ends a unit's action (US ``0x80028C90``) sets the unit's acted bit,
+# then, unless Options › Autoend Turns is off (party_data + 0x9E bit 0x20), ends the player phase
+# when no player unit can still act. The hub's after-action refresh runs too late for that test,
+# so with one avatar every action ended the turn. The hook makes the test answer "Autoend off"
+# while the current chapter (party_data + 0x10) is the hub (HUB_CONFIG byte 0), and clears the
+# acted bit again there, so the avatar is ready at once even before the script's refresh runs.
+# Only the North American executable is mapped so far; on EU/JP the hub keeps retail behaviour.
+_AUTOEND_SITES = {"GFEE01": 0x80028CC4}
+_AUTOEND_RETAIL = bytes.fromhex("8803009E5400DFFE")   # lbz r0,0x9E(r3) ; rlwinm r0,r0,27,31,31
+
+
+def _autoend_routine() -> bytes:
+    program = [
+        0x8803009E,                     # lbz r0,0x9E(r3): option bits
+        0x5400DFFE,                     # rlwinm r0,r0,27,31,31: 1 = Autoend Turns off
+        ppc.cmplwi(0, 1), ("eq", "out"),
+        ppc.lis(12, 0x8000), ppc.lbz(12, HUB_CONFIG & 0xFFFF, 12),
+        ppc.li(0, 0),
+        ppc.cmpwi(12, 0), ("eq", "out"),
+        ppc.lbz(11, 0x10, 3),           # current chapter
+        ppc.cmplw(11, 12), ("ne", "out"),
+        # the hub: give the action back at once (r5 = the unit; the caller just set bit 0x1)
+        ppc.lwz(11, 0x1A0, 5),
+        (21 << 26) | (11 << 21) | (11 << 16) | (0 << 11) | (0 << 6) | (30 << 1),   # rlwinm r11,r11,0,0,30
+        ppc.stw(11, 0x1A0, 5),
+        ppc.li(0, 1),
+        "out",
+        ppc.BLR,
+    ]
+    code = b"".join(_word(w) for w in ppc.assemble(AUTOEND_ROUTINE, program))
+    assert in_cave(AUTOEND_ROUTINE, len(code)) and AUTOEND_ROUTINE + len(code) <= HUB_HOOK
+    return code
+
+
+def _autoend_edits(site: int) -> tuple[Edit, ...]:
+    code = _autoend_routine()
+    return (Edit(site, _AUTOEND_RETAIL, _word(ppc.bl(site, AUTOEND_ROUTINE)) + _word(ppc.NOP)),
+            Edit(AUTOEND_ROUTINE, bytes(len(code)), code))
+
+
+HUB_AUTOEND_PATCH = CATALOG.add(Patch(
+    "chapters.hub.no_autoend", "Chapters", "No auto end of turn in the hub",
+    "In the hub chapter the player phase does not end by itself after the avatar acts, so the "
+    "avatar can act again at once, whatever Options › Autoend Turns says.",
+    versions={v: _autoend_edits(a) for v, a in _AUTOEND_SITES.items()}, internal=True))
+
+
 class HubFlow:
     def __init__(self, editor):
         self.editor = editor
@@ -179,6 +227,9 @@ class HubFlow:
             raise ValueError(f"Hub routing cannot be patched: {status.detail}")
         self.editor.session.set_patch(HUB_PATCH, True)
         self.editor.session._write(HUB_CONFIG, config)
+        if (version in HUB_AUTOEND_PATCH.versions
+                and self.editor.status(HUB_AUTOEND_PATCH).state in (State.ORIGINAL, State.APPLIED)):
+            self.editor.session.set_patch(HUB_AUTOEND_PATCH, True)
         self.editor.save()
 
     def remove(self) -> None:
@@ -187,4 +238,6 @@ class HubFlow:
             raise ValueError("Removing hub routing from an extended runtime is not supported.")
         if self.installed:
             self.editor.session.set_patch(HUB_PATCH, False)
+            if self.editor.status(HUB_AUTOEND_PATCH).state == State.APPLIED:
+                self.editor.session.set_patch(HUB_AUTOEND_PATCH, False)
             self.editor.save()

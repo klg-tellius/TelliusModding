@@ -288,6 +288,81 @@ def install_addon(blender: Optional[Path | str] = None, *, run=subprocess.run) -
     return executable
 
 
+# ---------------------------------------------------------------- Tellius Forge (Jade's add-on)
+
+#: Jade's Blender add-on that imports and exports ``.ga`` animations (and bodies, skeletons)
+#: directly. It is GPL-3.0 and not part of this app: it is downloaded from its own repository and
+#: installed in the user's Blender, never bundled.
+TELLIUS_FORGE_REPO = "ltra043/tellius-forge"
+TELLIUS_FORGE_PAGE = f"https://github.com/{TELLIUS_FORGE_REPO}"
+TELLIUS_FORGE_FILE = "tellius-forge.py"
+TELLIUS_FORGE_MODULE = "tellius-forge"
+_TELLIUS_FORGE_RELEASE = f"https://api.github.com/repos/{TELLIUS_FORGE_REPO}/releases/latest"
+_TELLIUS_FORGE_MAIN = f"https://raw.githubusercontent.com/{TELLIUS_FORGE_REPO}/main/plugin/{TELLIUS_FORGE_FILE}"
+
+
+def _fetch(url: str) -> bytes:
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"User-Agent": "TelliusModding"})
+    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - fixed https URLs
+        return response.read()
+
+
+def tellius_forge_version(source: bytes) -> str:
+    """``v0.27.1`` from the add-on's ``bl_info``; refuses a file that is not Tellius Forge."""
+    import re
+
+    text = source.decode("utf-8", errors="replace")
+    if "bl_info" not in text or "Tellius Forge" not in text[:4000]:
+        raise BlenderError("The downloaded file is not the Tellius Forge add-on.")
+    found = re.search(r'"version"\s*:\s*\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)', text[:4000])
+    return "v" + ".".join(found.groups()) if found else "unknown version"
+
+
+def download_tellius_forge(fetch: Callable[[str], bytes] = _fetch) -> tuple[str, bytes]:
+    """``(version, add-on source)``: the latest release's ``tellius-forge.py``, else the file on
+    the repository's main branch."""
+    try:
+        release = json.loads(fetch(_TELLIUS_FORGE_RELEASE).decode("utf-8"))
+        asset = next((a for a in release.get("assets", []) if a.get("name") == TELLIUS_FORGE_FILE), None)
+        if asset is not None:
+            source = fetch(asset["browser_download_url"])
+            return tellius_forge_version(source), source
+    except BlenderError:
+        raise
+    except Exception:  # noqa: BLE001 - no release, rate limit, offline API: try the main branch
+        pass
+    try:
+        source = fetch(_TELLIUS_FORGE_MAIN)
+    except Exception as exc:  # noqa: BLE001
+        raise BlenderError(f"Tellius Forge could not be downloaded from {TELLIUS_FORGE_PAGE}: {exc}") from exc
+    return tellius_forge_version(source), source
+
+
+def install_tellius_forge(blender: Optional[Path | str] = None, *, run=subprocess.run,
+                          fetch: Callable[[str], bytes] = _fetch) -> tuple[Path, str]:
+    """Download Tellius Forge and install and enable it in the user's Blender (its preferences are
+    saved, as for the Tellius Terrain add-on). Returns Blender's path and the add-on's version."""
+    executable = _executable(blender)
+    version, source = download_tellius_forge(fetch)
+    with tempfile.TemporaryDirectory(prefix="tellius_forge_") as folder:
+        work = Path(folder)
+        addon = work / TELLIUS_FORGE_FILE
+        addon.write_bytes(source)
+        script = work / "install.py"
+        script.write_text(_INSTALL_SCRIPT, encoding="utf-8")
+        result = _run_checked(
+            run,
+            [str(executable), "--background", "--python", str(script), "--", str(addon), TELLIUS_FORGE_MODULE],
+            "install Tellius Forge",
+        )
+        if "TELLIUS_ADDON_INSTALLED" not in (result.stdout or ""):
+            details = (result.stderr or result.stdout or "").strip()[-3000:]
+            raise BlenderError(f"Blender did not confirm the Tellius Forge install:\n{details}")
+    return executable, version
+
+
 _KIT_BUILD_SCRIPT = r'''
 import sys
 

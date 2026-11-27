@@ -78,8 +78,21 @@ class MiniPPC:
                 self.r[ra] = self.r[rd] & self.r[rb]
             elif op == 31 and (w >> 1) & 0x3FF == 32:       # cmplw
                 self._compare(self.r[ra], self.r[rb], False)
+            elif op == 7:                                   # mulli
+                self.r[rd] = (self.r[ra] * _s16(imm)) & 0xFFFFFFFF
+            elif op == 31 and (w >> 1) & 0x3FF == 266:      # add
+                self.r[rd] = (self.r[ra] + self.r[rb]) & 0xFFFFFFFF
             elif op == 31 and (w >> 1) & 0x3FF == 444:      # or (mr)
                 self.r[ra] = self.r[rd] | self.r[rb]
+            elif op == 21:                                  # rlwinm (no record form)
+                sh, mb, me = rb, (w >> 6) & 31, (w >> 1) & 31
+                value = self.r[rd]
+                rotated = ((value << sh) | (value >> (32 - sh))) & 0xFFFFFFFF if sh else value
+                mask = 0
+                for bit in range(32):
+                    if (mb <= me and mb <= bit <= me) or (mb > me and (bit >= mb or bit <= me)):
+                        mask |= 1 << (31 - bit)
+                self.r[ra] = rotated & mask
             elif op == 18:                                  # b
                 delta = w & 0x03FFFFFC
                 nxt = pc + (delta - 0x04000000 if delta & 0x02000000 else delta)
@@ -358,8 +371,12 @@ class AddStoryChapterTests(unittest.TestCase):
         plan = chapters.add_story_chapter(self.project, fe8, "09", 33, "Ch.8x: A New Road", after=9, flow=flow)
 
         record = fe8data.read_chapter_data(plan.fe8data)[plan.record_index]
-        self.assertEqual((record.chapter_id, record.map_name, record.script, record.message, record.title_key),
-                         (33, "bmap33", "C33", "C33", "MCT33"))
+        self.assertEqual((record.chapter_id, record.map_name, record.script, record.message),
+                         (33, "bmap33", "C33", "C33"))
+        if fe8data.japanese_chapter_layout(fe8):    # the Japanese record holds its title as text
+            self.assertEqual((record.title_key, record.title_text), (None, "Ch.8x: A New Road"))
+        else:
+            self.assertEqual(record.title_key, "MCT33")
         self.assertIn("bmap33", [r.map_name for r in fe8data.read_battle_terrain(plan.fe8data)])
 
         # the copied script loads and deploys its own (renamed) maps; the neighbour's map stays
@@ -386,6 +403,7 @@ class AddStoryChapterTests(unittest.TestCase):
         for name in shop.DIFFICULTY_FILES.values():
             doc = shop.parse_shop((self.files / "shop" / name).read_bytes())
             self.assertIsNotNone(doc.shop("W", 33), name)
+        self.project.write_logical("game_data", plan.fe8data)    # as the Chapters page saves it
         self.assertEqual(chapters.chapter_titles(self.project)["33"], "Ch.8x: A New Road")
         from fe_modding import chapter_images
         strip = chapter_images.preview((self.files / "window/chapter2/chap33.cms").read_bytes())
@@ -406,6 +424,7 @@ class AddStoryChapterTests(unittest.TestCase):
         for name in shop.DIFFICULTY_FILES.values():
             doc = shop.parse_shop((self.files / "shop" / name).read_bytes())
             self.assertFalse(any(doc.shop(kind, 33) for kind in shop.SHOP_KINDS), name)
+        self.project.write_logical("game_data", removed.fe8data)
         self.assertNotIn("33", chapters.chapter_titles(self.project))
         self.assertEqual(chapter_flow.ChapterFlow(CodeEditor(self.project.extracted_dir)).next_of(9), 10)
 

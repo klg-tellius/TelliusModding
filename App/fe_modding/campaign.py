@@ -146,6 +146,9 @@ def add_character(project: ModProject, fe8: bytes, spec: CharacterSpec, warnings
     warnings = warnings if warnings is not None else []
     source = next(c for c in fe8data.read_fe8data(fe8).characters if c.pid == spec.template)
     data, index = fe8data.add_record(fe8, "character", spec.pid, copy_from=source.index)
+    # every vanilla character has a recruitment order of its own; the copy would share the template's
+    taken = [c.roster_order for c in fe8data.read_fe8data(data).characters]
+    data = fe8data.patch_character_field(data, index, "roster_order", max(taken) + 1)
     if spec.jid:
         data = fe8data.patch_character_field(data, index, "jid", spec.jid)
     if spec.name.strip():

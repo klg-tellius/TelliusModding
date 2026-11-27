@@ -161,8 +161,8 @@ def chapter_titles(project: ModProject) -> dict[str, str]:
             system_cmp = (files_of(project).find(logical_rel_of(project, "system_archive"))
                           if profile_of(project).has_file("system_archive") else None)
             texts = fe8data.read_message_texts(system_cmp) if system_cmp is not None else {}
-    except Exception:  # noqa: BLE001 - titles are presentation only
-        return {}
+    except Exception:  # noqa: BLE001 - titles are presentation only; the records' own text still counts
+        texts = {}
     titles = {}
     for key, text in texts.items():
         match = re.fullmatch(r"MCT(\d+)", key)

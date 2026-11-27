@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from tests.corpus import per_disc
 from fe_modding import map_props
 from fe_modding.formats.map_file import MapObject
 
@@ -70,7 +71,11 @@ class MapObjectEditTests(unittest.TestCase):
     def test_edit_one_map_and_the_same_prop_elsewhere(self):
         prop = next(p for p in map_props.map_props_info(self.path) if p.name == "wave_99")
         others = map_props.maps_with_same_prop(self.project.extracted_dir, self.path, prop.name)
-        self.assertEqual([o.parent.name for o in others], ["bmap04"])
+        # The European bmap04 has no wave_99 of the same shape.
+        expected = per_disc(Path(os.environ["FE9_EXTRACTED_FILES"]), ["bmap04"], eu=[])
+        self.assertEqual([o.parent.name for o in others], expected)
+        if not others:
+            return
         changes = {"size_y": prop.obj.size_y + 1, "flag_bits_b": prop.obj.flag_bits_b | 2}
         for path in [self.path, *others]:
             self.assertTrue(map_props.edit_prop(self.project, path, prop.name, changes))

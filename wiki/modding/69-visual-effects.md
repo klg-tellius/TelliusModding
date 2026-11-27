@@ -92,6 +92,7 @@ Press **Add effect…**. Set **Effect name** `EID_TUTORIAL_FIRE`, keep **Clone e
 | **Add effect…** | A new effect: name, then **Clone effect** (copy a registered effect's pack) or **Import pack** (a `.cmp` file, checked first), and **Copy flags from**. |
 | **Replace pack…** | Replaces the whole pack with another `.cmp` (also gives a pack to a record that has none). |
 | **Replace part…** | Replaces one part of the pack (`.g`, `.ga`, `.gs`, `.tpl`) with a file. |
+| **Recolour…** | Recolours the pack's texture: **Tint every colour to this hue** (a glow keeps its white core) or **Turn every hue by this angle** (greys and whites kept), with a before/after preview. A greyscale texture (I4, I8, IA4, IA8) has no colour to change: its colour comes from the material colour tracks of the particle editor. |
 | **Replace texture…** | Replaces one image of the pack's texture with a picture (it asks which when there are several), re-encoded in the stored format; a format the app cannot encode is refused. |
 | **Register…** | Adds a registry record for an unregistered pack, keeping the pack. |
 | **Edit registry…** | Edits the raw flags and the next effect in the chain (a chain that loops back is refused). |
@@ -149,6 +150,10 @@ Checked in game on Radiant Dawn's Light spell: textures replaced in its pack (`E
 ## Save, build, and revert
 
 Every action is written to the extracted files at once (the particle editor only on **Save effect**) and logged in **Changes this session**. **Restore original** reverts the selected effect's pack. A new effect is removed by restoring `FE8Effect.bin` and deleting its pack. Build the disc to test.
+
+## Effects on a new weapon
+
+To give a new weapon its own coloured effect: **Add effect…** with **Clone effect** on an effect the game's weapons of that type already play (on a sword, `EID_REPPU1`, Ragnell's wave), **Recolour…** the copy, then pick it in **Battle Weapons** (or **New weapon…**). The Battle Weapons page lists, under the selected weapon, the effects vanilla weapons of its type play, and asks before applying any other: an effect made for another type of weapon can crash the battle. A clone counts as its source, since it keeps the same skeleton and animation.
 
 ## Limits and confidence
 

@@ -81,6 +81,11 @@ a few kilobytes of both games are read by a decoder the app uses.
 - New skeletons can be fitted on Radiant Dawn map units: the pose model now applies
   the loader's joint-orient rule.
 - Window images preview Radiant Dawn layouts and backgrounds.
+- 3D Models: the **Fit new rig…** mapping draws both skeletons (click a joint, then the
+  game bone), mirrors one side onto the other, and adds two options: feet at the game
+  ankle's height and faces drawn from both sides. New **Add anchor bones…** (typed in or
+  copied from another set) and **Check rig…** (missing anchors, trail anchors the clips
+  need, bone counts, blended map vertices).
 
 ### Game data and checks
 
@@ -101,12 +106,39 @@ Extras unlocks, Conversation Room order and subtitle edits.
 
 ## Both games
 
+- **Roster tab** on chapter pages: pick a fixed team or the player's army, set the
+  team's tiles, set every other unit aside, and choose who joins or leaves the army at
+  the end of the chapter, without writing script. **Check turn 1** shows who is on the
+  map with a new save and with a full army. The playthrough simulator now follows each
+  game's army rule for `_mikata_` groups (Radiant Dawn: the "Place this character" and
+  "Create if absent" record flags, lords on their own tile).
+
 - Saves, Battle Data and Battle Cameras are one page each (`battle_browser`), with a
   per-game adapter. The four per-game viewers are gone.
 - Build tab map image: tile (0,0) is drawn top-left, matching the grid.
 - Object flag edits keep the bits no control shows.
 - Paragon-style discs (IDs such as GFEE02), latin-1 file names, `system.cmp` data and
   `.cmb` padding are handled.
+- New weapons: **Battle Weapons › New weapon…** adds the item, its own `xwp/` model
+  (copied, with an optional `.glb` mesh) and its battle entry in one dialog, on both games
+  (a new `FE10BWeapon` row on Radiant Dawn). **3D Models › New slot…** copies a weapon model.
+- Weapon effects: the effect boxes list first what the game's own weapons of the same type
+  play and ask before any other; **Visual Effects › Recolour…** tints or turns the hues of an
+  effect's texture.
+- Maps: **Build › Paint terrain › Ground** gives every chapter map **Edit ground…** (a flat
+  plane with a colour or an image) and **New blank map…**, as hubs had.
+- Map Builder (Path of Radiance): doors and building roofs work as in the retail game (a
+  closed door blocks its tile, a roof lifts when a door in or next to it opens), and the new
+  **Add roof** tool builds a gable or flat roof over a walled room.
+- **Game Data › Flags › Chapter flags › Free unused flags…** frees chapter flags that nothing uses, so a
+  busy chapter keeps room for a hub's campaign flags.
+- 3D Models: **New character model…** makes a slot for one character or class and fits a
+  rigged humanoid `.glb` onto it in one go.
+- 3D Models, Animations tab: each weapon's clips with their role, length and combat
+  events, played at the game's speed (with 0.5x and 0.25x). A clip shared by several
+  weapons is imported once for all of them. Clips go to and from Jade's Tellius Forge
+  Blender add-on as `.ga` files, and **Copy clip from another model…** works across both games.
+- Assets: **Tutorials**, **Staff Credits** and **Soundroom Tracks** have their own tiles.
 
 ## Decoding coverage
 
@@ -153,6 +185,8 @@ was measured on the US disc.
 - Disc tests check a fixed sample by default (`TELLIUS_CORPUS=full` walks everything)
   and run in parallel with pytest-xdist; every Radiant Dawn disc test runs on the US,
   European or Japanese disc.
+- `docs/app/agent-modding-api.md` maps each page of the app to the Python functions an
+  agent or script calls, with examples checked on both games' discs.
 - `tools/dolphin_input.py` drives a running Dolphin (keys, screenshots, save states)
   for in-game checks; `build --set rdcheck` builds the controller-driven check set.
 
@@ -163,6 +197,8 @@ was measured on the US disc.
 - A chapter jump into Radiant Dawn's Endgame can't reach the endings: the game reads the
   top unit of an empty army after the slideshow.
 - Disc-backed tests need your own extracted games and do not run in CI.
+- Not yet checked in Dolphin: fitted battle (`zu/`) models, weapons made with **New
+  weapon…** and their effects. Fitted Radiant Dawn map models were checked.
 - See [known bugs](https://github.com/klg-tellius/TelliusModding/blob/main/docs/app/known-bugs.md)
   for the remaining confirmed defects.
 

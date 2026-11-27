@@ -72,6 +72,36 @@ class HubRouterTests(unittest.TestCase):
         self.assertEqual(memory[PARTY + hub_flow.HISTORY_OFFSET + 8], 0)
 
 
+class HubAutoendTests(unittest.TestCase):
+    """The hub keeps the player phase open after the avatar acts (Options › Autoend Turns)."""
+
+    UNIT = 0x80400000
+
+    def check(self, current, *, hub_chapter=40, autoend_off=False):
+        code = {}
+        for edit in hub_flow.HUB_AUTOEND_PATCH.versions["GFEE01"]:
+            if edit.address >= CAVE_ADDRESS:
+                for i in range(0, len(edit.patched), 4):
+                    code[edit.address + i] = int.from_bytes(edit.patched[i:i + 4], "big")
+        memory = {hub_flow.HUB_CONFIG: hub_chapter, PARTY + 0x10: current,
+                  PARTY + 0x9E: 0x20 if autoend_off else 0, self.UNIT + 0x1A3: 0x01}
+        cpu = MiniPPC(code, memory)
+        cpu.r[3], cpu.r[5] = PARTY, self.UNIT
+        self.assertEqual(cpu.run(hub_flow.AUTOEND_ROUTINE, set()), -1)
+        return cpu.r[0], memory[self.UNIT + 0x1A3] & 1
+
+    def test_only_the_hub_skips_autoend_and_keeps_the_avatar_ready(self):
+        self.assertEqual(self.check(40), (1, 0))                    # hub: no autoend, action given back
+        self.assertEqual(self.check(6), (0, 1))                     # story chapter: retail behaviour
+        self.assertEqual(self.check(6, autoend_off=True), (1, 1))   # the player's own option still counts
+        self.assertEqual(self.check(0, hub_chapter=0), (0, 1))      # no hub installed
+
+    def test_hook_replaces_the_option_test(self):
+        site, routine = hub_flow.HUB_AUTOEND_PATCH.versions["GFEE01"]
+        self.assertEqual(site.original, bytes.fromhex("8803009E5400DFFE"))
+        self.assertTrue(CAVE_ADDRESS <= routine.address < hub_flow.HUB_HOOK)
+
+
 class HubPatchTests(unittest.TestCase):
     def test_install_preserves_the_existing_story_flow(self):
         path = RETAIL_DIR / "GFEE01.dol"
@@ -89,6 +119,7 @@ class HubPatchTests(unittest.TestCase):
             router.install(40, 30, 32, 40)
             self.assertTrue(router.installed)
             self.assertEqual(router.config(), bytes((40, 3, 0x40, 4, 5)))
+            self.assertEqual(editor.status(hub_flow.HUB_AUTOEND_PATCH).state, State.APPLIED)
             self.assertEqual(flow.status.state, State.APPLIED)
             self.assertEqual(chapter_flow.ChapterFlow(CodeEditor(root)).next_of(40), 40)
             with self.assertRaises(ValueError):
@@ -97,6 +128,7 @@ class HubPatchTests(unittest.TestCase):
                 flow.remove(40)
             router.remove()
             self.assertEqual(flow.status.state, State.APPLIED)
+            self.assertEqual(editor.status(hub_flow.HUB_AUTOEND_PATCH).state, State.ORIGINAL)
 
 
 class HubScriptTests(unittest.TestCase):
@@ -236,6 +268,55 @@ class HubCreationTests(unittest.TestCase):
         self.assertLess(source.index('InstantSetMapCamera'), source.index('Fade(2, 500)'))
         self.assertTrue(source.endswith('    FadeWait()\n'))
         self.assertNotIn('Opening2', source)  # no preparations menu
+
+    def test_blank_map_files_matches_blank_map_on_an_open_archive(self):
+        # Any chapter's map can be blanked in place (Build tab › Terrain › New blank map).
+        from fe_modding import hub_creation
+        from fe_modding.formats import lz10, map_file, pak, tpl
+        from PIL import Image
+        from tests.test_map_heights import _map_bin
+
+        original_tpl = tpl.build_tpl([(Image.new("RGBA", (8, 8), "red"), tpl.FORMAT_RGB565)])
+        image = Image.new("RGBA", (64, 48), (10, 120, 200, 255))
+        for files in ([("map.bin", _map_bin()), ("flat.gs", b"donor"), ("texpack.tpl", original_tpl)],
+                      [("map.bin", _map_bin()), ("flat.gs", b"donor")]):
+            donor = lz10.compress(pak.pack_pak(files))
+            expected = lz10.decompress(hub_creation.blank_map(donor, 12, 9, ground_image=image))
+            packed = lz10.decompress(donor)
+            entries = pak.read_pak_entries(packed)
+            content = {e.name: pak.read_pak_file_content(packed, e) for e in entries}
+            hub_creation.blank_map_files(entries, content, 12, 9, ground_image=image)
+            self.assertEqual([e.name for e in entries], [e.name for e in pak.read_pak_entries(expected)])
+            for entry in pak.read_pak_entries(expected):
+                self.assertEqual(content[entry.name], pak.read_pak_file_content(expected, entry), entry.name)
+            parsed = map_file.read_map_bytes(content["map.bin"])
+            self.assertEqual((parsed.capacity.x_size, parsed.capacity.y_size), (12, 9))
+        with self.assertRaises(ValueError):
+            hub_creation.blank_map_files([], {"map.bin": _map_bin()}, 3, 9)
+
+    def test_blank_map_has_a_roof_layer_and_the_door_hit_test(self):
+        # Doors and roofs placed on a blank map must block tiles (they read the roof layer).
+        from fe_modding import hub_creation
+        from fe_modding.formats import lz10, map_file, pak
+        from tests.test_map_heights import _map_bin
+
+        source = _map_bin()
+        try:
+            map_file.section_bytes(source, "panelindexRoof")
+            had_roof = True
+        except map_file.MapFileError:
+            had_roof = False
+        packed = lz10.decompress(lz10.compress(pak.pack_pak([("map.bin", source), ("flat.gs", b"donor")])))
+        entries = pak.read_pak_entries(packed)
+        content = {e.name: pak.read_pak_file_content(packed, e) for e in entries}
+        hub_creation.blank_map_files(entries, content, 12, 9)
+        parsed = map_file.read_map_bytes(content["map.bin"])
+        self.assertIsNotNone(parsed.panel_index_roof, "had a roof layer before" if had_roof else "added")
+        self.assertEqual(parsed.panel_index_roof, parsed.panel_index)
+        self.assertTrue(parsed.unique_panel_roof)
+        if parsed.extra is not None:
+            self.assertTrue(parsed.extra.unknown_tail & map_file.MAP_EXTRA_FOOTPRINT_MASK)
+        self.assertFalse([w for w in map_file.door_warnings(parsed) if "roof layer" in w or "0x10000000" in w])
 
     def test_flat_map_has_selected_dimensions_and_only_ground(self):
         from fe_modding import hub_creation
@@ -415,12 +496,18 @@ class RealAssetIntegrationTests(unittest.TestCase):
             shutil.copytree(source / "shop", files / "shop")
             (project.extracted_dir / "sys").mkdir(exist_ok=True)
             dol = RETAIL_DIR / "GFEE01.dol"
-            if not dol.is_file() and os.environ.get("FE9_EXTRACTED"):  # the extracted disc's own copy
-                dol = Path(os.environ["FE9_EXTRACTED"]) / "sys" / "main.dol"
+            boot = b"GFEE01\0\0" + bytes(0x438)
+            if not dol.is_file() and os.environ.get("FE9_EXTRACTED"):
+                # The extracted disc's own executable, with its own boot.bin: the European and
+                # Japanese discs' DOLs are another region than GFEE01 (a mismatch is a code conflict).
+                disc = Path(os.environ["FE9_EXTRACTED"]) / "sys"
+                dol = disc / "main.dol"
+                if (disc / "boot.bin").is_file():
+                    boot = (disc / "boot.bin").read_bytes()
             if not dol.is_file():
                 self.skipTest("no retail GFEE01 DOL (research/main_dol/dols or FE9_EXTRACTED)")
             shutil.copy(dol, project.extracted_dir / "sys" / "main.dol")
-            (project.extracted_dir / "sys" / "boot.bin").write_bytes(b"GFEE01\0\0" + bytes(0x438))
+            (project.extracted_dir / "sys" / "boot.bin").write_bytes(boot)
 
             plan = chapters.add_story_chapter(project, (files / "FE8Data.bin").read_bytes(), "05", 33, "Hub")
             project.write_logical("game_data", plan.fe8data)
