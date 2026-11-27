@@ -1,4 +1,4 @@
-"""3D Models › New slot… / Model tables… write FE8Data.bin on disk (a character's animation ID): the
+"""3D Models › New slot / Model tables write FE8Data.bin on disk (a character's animation ID): the
 shared FE8Data.bin copy is saved before (on the user's yes) and read again after, so the next
 Save FE8Data.bin from another page cannot undo the assignment."""
 

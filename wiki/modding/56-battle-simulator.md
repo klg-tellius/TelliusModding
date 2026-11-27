@@ -199,7 +199,7 @@ The render follows the log from step 1. If a strike looks wrong here but the log
 | A weapon is missing from **Weapon** | The class has no rank in that weapon type | Tick **Any weapon type**, or check the class's weapon ranks |
 | A skill does nothing | It is listed *no battle effect*, or its proc is rolled but not modelled (Colossus, Corrosion, Impact, Snipe's sleep, Sunlight) | Read the rolls table; test the effect in Play or Dolphin |
 | The forecast ignores a Game Data edit | The edit was discarded, or never applied | **Apply** it in Game Data, then **Reset from game data** here |
-| **Render fight** shows a note instead of a fight | No battle model in the job list for this class and character | Check **Assets → 3D Models › Model tables…** |
+| **Render fight** shows a note instead of a fight | No battle model in the job list for this class and character | Check **Assets → 3D Models › Model assignments** |
 
 ## Save, build, and revert
 

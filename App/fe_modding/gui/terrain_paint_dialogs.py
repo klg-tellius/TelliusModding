@@ -264,7 +264,7 @@ class PaintKitDialog(tk.Toplevel):
 
     def __init__(self, parent, objects: list[str]) -> None:
         super().__init__(parent)
-        self.title("Sculpt & paint kit")
+        self.title("Sculpt & paint in Blender")
         self.transient(parent)
         self.result: tuple | None = None
         body = ttk.Frame(self, padding=10)
@@ -273,7 +273,7 @@ class PaintKitDialog(tk.Toplevel):
             body,
             text="Blender opens a sculpt grid seeded from the map's ground, its texture layers and the playable "
                  "tiles. Sculpt FE9 Sculpt, paint the layers from the sidebar's Tellius tab (the add-on is "
-                 "installed from Settings > Preferences), save, then use Import .blend/.glb... here.",
+                 "installed from Settings > Preferences), save, then use Import from Blender here.",
             wraplength=560, justify="left",
         ).pack(anchor="w")
         self._from_current = tk.BooleanVar(value=True)
@@ -497,7 +497,7 @@ class AtlasSwatchesDialog(tk.Toplevel):
             if container_path is None:
                 raise ValueError("A map is required for map atlas swatches.")
             self._folder = container_path.parent.name
-            self.title(f"Atlas swatches - {self._folder}")
+            self.title(f"Ground textures - {self._folder}")
             self._source = terrain_kit.read_terrain(container_path)
             self._layout, self._atlas, self._custom = terrain_kit.load_layout(
                 self._source, self._project_dir, self._folder
@@ -725,7 +725,7 @@ class AtlasSwatchesDialog(tk.Toplevel):
                     clear_custom=not self._custom,
                 )
         except (OSError, ValueError) as exc:
-            messagebox.showerror("Atlas swatches", str(exc), parent=self)
+            messagebox.showerror("Ground textures", str(exc), parent=self)
             return
         self._custom_changed = False
         self._refresh()

@@ -97,7 +97,7 @@ Set **Str** back to 2, **Apply**, **Save FE8Data.bin**. For files that have a **
 | **Revert** | Character Stats | Reloads the form from the in-memory copy (drops what you typed, not what you applied) |
 | **Discard unsaved edits** | Game Data | Drops every applied edit of `FE8Data.bin` since the last save |
 | **Save …** | Each editor | Writes the editor's file (see the table below) |
-| **Restore original** / **Restore original file** / **Restore original…** | Editors of files with a kept original | Copies the extracted original back over the file and drops the copy |
+| **Restore original** / **Restore original file** / **Revert to original** (3D Models, Map Models) | Editors of files with a kept original | Copies the extracted original back over the file and drops the copy |
 | *● N unsaved: …* | Status bar | Editors whose edits are not saved |
 | *N changes this session ▴* / **View › Changes this session** | Status bar / menu | Opens the change log of the session |
 | Save prompt | Closing the project, building, making a patch | Lists the unsaved editors; **Yes** saves them all and goes on, **No** goes on without them, **Cancel** goes back |

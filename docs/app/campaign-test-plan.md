@@ -97,7 +97,7 @@ Do these in the test project after 1.4. After each chapter's edits: **Save Chapt
 
 - [ ] **5.1 Portrait (B7).** Assets › Portraits: Import Replacement Image… on the portrait of a character who speaks in Ch.34 (Rowan is a copy of Oscar; check on his Character page › Portrait & models which face he uses). Expected in Dolphin: the new face in Ch.34's conversations and in the unit window; colours are matched to the existing palette, so note how far they are from your image.
   Result:
-- [ ] **5.2 Static model (B6).** Assets › 3D Models: Import .glb… a static mesh over one map prop (or a weapon) used in Ch.33. Dolphin: it shows, at the right size and place, textured.
+- [ ] **5.2 Static model (B6).** Assets › 3D Models: Import from Blender a static mesh over one map prop (or a weapon) used in Ch.33. Dolphin: it shows, at the right size and place, textured.
   Result:
 - [ ] **5.3 Rigged model (B6, decision only).** Not built. After 4.x, decide whether a new animated character model is needed for your campaign; write what you would need (which unit, map or battle model).
   Result:

@@ -20,7 +20,7 @@ verification: ["source-reviewed", "unknown"]
 ---
 # Import water and set its flow
 
-**Route:** Chapter → Build → Map settings → Import water GLB / Water flow, or Assets → Map Models → Sculpt & paint kit... (Blender)
+**Route:** Chapter → Build → Map settings → Import water GLB / Water flow, or Assets → Map Models → Sculpt & paint in Blender (Blender)
 
 ## What you will make
 
@@ -123,7 +123,7 @@ Read the report for confirmation that water flag `0x20` was set. Then resolve al
 
 The terrain kit carries the map's water with it, so the shoreline can follow ground you sculpt. Install the add-on once from **Settings → Install the Tellius Terrain add-on** (Blender 4.2 or newer; reinstall it after updating the app).
 
-1. In **Assets → Map Models**, select the map's `zmap/` set and choose **Sculpt & paint kit...**. Open the `.blend` it writes and find the **Tellius** tab of the 3D View sidebar. The **Water** panel lists every water body. Each body is an object in the **FE9 Water** collection, and every `wave_99` and ship wake is a movable object under **FE9 Shore Waves**. Press Play in the timeline to watch the water flow.
+1. In **Assets → Map Models**, select the map's `zmap/` set and choose **Sculpt & paint in Blender**. Open the `.blend` it writes and find the **Tellius** tab of the 3D View sidebar. The **Water** panel lists every water body. Each body is an object in the **FE9 Water** collection, and every `wave_99` and ship wake is a movable object under **FE9 Shore Waves**. Press Play in the timeline to watch the water flow.
 2. Pick the water body and set **Water level**. The surface moves as you drag.
 3. Put the 3D cursor on the water and choose **Cut Shoreline from Terrain**. The surface is rebuilt over every bit of ground below the level, running **Under the banks** units past the waterline so its edge stays hidden.
    - Keep **Only the water at the 3D cursor** on so hollows elsewhere stay dry.
@@ -136,7 +136,7 @@ The terrain kit carries the map's water with it, so the shoreline can follow gro
    - Moved by hand, a wave lands where the game will put it after **Snap to Tiles**: its tile's centre and the nearest of its 256 turns.
    - **Face the Shore** turns the selected waves toward the bank.
 7. **Check Water Tiles** marks playable tiles in red where water terrain has no surface over it, and in yellow where land lies under a surface. Yellow along the banks is normal.
-8. Save the kit and use **Import .blend/.glb...** on the same set. After the paint options, the **Water import** dialog appears:
+8. Save the kit and use **Import from Blender** on the same set. After the paint options, the **Water import** dialog appears:
    - It asks for a map to copy from when the kit adds water to a dry map, or adds `wave_99` waves to a map that has none.
    - It offers **Repaint the tiles to match the water**, off by default. A tile becomes the chosen water type where you can see water over its centre. Water tiles left dry become the chosen land type. Only natural ground floods: bridges, ship decks and floors keep their type.
 9. Read the **Water** tab of the review before choosing **Write files**. It shows the water over the tiles with the waves, the fade, and what was rebuilt.

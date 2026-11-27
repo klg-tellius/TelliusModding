@@ -565,7 +565,7 @@ class CharacterPage(Page):
         head.pack(anchor="w", pady=(24, 8))
         section_header(head, "Models", "what the game loads for this character").pack(side="left")
         help_mark(head, "Models are shared by every unit that resolves to them. To give this character a model "
-                        "of their own, open the model and use New slot…; Model tables… shows the lines that "
+                        "of their own, open the model and use Duplicate as new model; Model assignments shows the lines that "
                         "pick it.").pack(side="left", padx=(6, 0))
         models = ttk.Frame(body, style="Surface.TFrame", padding=14)
         models.pack(fill="x")

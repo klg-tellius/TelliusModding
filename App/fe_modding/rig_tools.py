@@ -1,6 +1,6 @@
 """Helpers that make skeletons easier to handle in the 3D Models page.
 
-- **Mirroring a joint mapping** (:func:`mirror_mapping`): the Fit new rig
+- **Mirroring a joint mapping** (:func:`mirror_mapping`): the Replace with my character
   mapping set on one side of the body is copied to the other. Mirrored
   joints are found by name (``Left``/``Right``, ``L``/``R``, ``hidari``/
   ``migi``...) or, failing that, by position (the joint nearest the
@@ -505,7 +505,7 @@ def anchor_joint_specs(target_glb: bytes, anchors: Iterable[tuple[str, str, tupl
     """Joints for :func:`add_joints_to_glb`: each ``(name, parent,
     offset)`` at its parent's rest position plus ``offset``. On a battle
     rig an anchor sits on its parent, so an offset anchor hangs from a
-    ``carrier<name>`` bone placed at the offset (as Fit new rig does)."""
+    ``carrier<name>`` bone placed at the offset (as Replace with my character does)."""
     t_names, _t_parent, t_pos, _t_rot = glb_joints(target_glb)
     index = {n: i for i, n in enumerate(t_names)}
     specs: list[JointSpec] = []
@@ -608,7 +608,7 @@ def rig_check(
                 findings.append(Finding(
                     "error", f"{stats.blended_vertices} map vertices are blended between bones: every retail map "
                     "model has one bone per vertex, and the map renderer bends shared vertices wrongly "
-                    "(Fit new rig gives each vertex its heaviest bone)."))
+                    "(Replace with my character gives each vertex its heaviest bone)."))
             if stats.triangles > limits["triangles"]:
                 findings.append(Finding("warning", f"{stats.triangles:,} triangles: more than any "
                                         f"{'battle' if battle else 'map'} model of the disc ({limits['triangles']:,})."))

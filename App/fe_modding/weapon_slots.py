@@ -3,7 +3,7 @@ which visual effects a weapon can play.
 
 A weapon model is ``xwp/<name>/<name>.cmp`` (an LZ10 pack holding ``<name>.g``, ``.gs`` and
 ``.tpl``). :func:`clone_weapon_model` copies one under a new name, with its entries renamed, so
-the copy can take a new mesh (3D Models › Import .glb) while the original keeps its own.
+the copy can take a new mesh (3D Models › Import from Blender) while the original keeps its own.
 
 The battle finds the weapon of an equipped item by the item ID without ``IID_``:
 

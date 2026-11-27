@@ -26,7 +26,7 @@ verification: ["source-reviewed", "unknown"]
 
 You will export one existing model set to `.glb`, make a tiny reversible geometry change in Blender, import it into the same slot, inspect every proposed output and warning, write it, and compare bind pose plus animations with the original. This is a pipeline proof, not a character redesign.
 
-The exercise teaches the boundary between static scenery, map-character bodies, battle bodies, weapons, rigs, and animations. After it passes, you can decide whether a larger change belongs to **Import .glb…**, **Import animation…**, **Replace rig…**, or **Fit new rig…**.
+The exercise teaches the boundary between static scenery, map-character bodies, battle bodies, weapons, rigs, and animations. After it passes, you can decide whether a larger change belongs to **Import from Blender**, **Replace clip › From a .glb file**, **Skeleton › Replace skeleton and all animations**, or **Replace with my character**.
 
 ## Before you begin
 
@@ -57,9 +57,9 @@ Model-set prefixes identify different contracts:
 - `zmap/` and chapter terrain have map-specific geometry, texturing, and grid/height options.
 - Bows use a dedicated composite-skinned import path that retains their existing weapon skeleton; preserve its bone names and weights.
 
-**Export .glb…** exports the selected set. **Import .glb…** replaces only the mesh/body contract appropriate to that set and preserves other resources where documented. Import conversion happens before writing. The **Import Review** shows the preview, current-versus-imported figures, proposed files, joint mappings, and warnings. Nothing changes until **Write files**.
+**Export to Blender** exports the selected set. **Import from Blender** replaces only the mesh/body contract appropriate to that set and preserves other resources where documented. Import conversion happens before writing. The **Import Review** shows the preview, current-versus-imported figures, proposed files, joint mappings, and warnings. Nothing changes until **Write files**.
 
-Written files go to the project's `output/`; the disc's versions stay in the vanilla files. **Restore original…** becomes available when the mod has replaced files in that model folder.
+Written files go to the project's `output/`; the disc's versions stay in the vanilla files. **Revert to original** becomes available when the mod has replaced files in that model folder.
 
 ## Guided walkthrough
 
@@ -68,7 +68,7 @@ Written files go to the project's `output/`; the disc's versions stay in the van
 
 [![3D Models page with zu/fig1 selected, the posed model, the Skeleton and Animations tabs and the button grid.](../assets/images/tutorials/screenshots/51-viewer.png)](../assets/images/tutorials/screenshots/51-viewer.png)
 
-<figcaption markdown="span">**Assets › 3D Models** with the Fighter battle model `zu/fig1`: preview with mesh and skeleton, animations, and the export/import buttons (**Export .glb…**, **Export .blend…**, **Import …**).</figcaption>
+<figcaption markdown="span">**Assets › 3D Models** with the Fighter battle model `zu/fig1`: preview with mesh and skeleton, animations, and the export/import buttons (**Export to Blender**, **Import from Blender**, …).</figcaption>
 </figure>
 
 ### 1. Select and document one exact set
@@ -79,11 +79,11 @@ Inspect the preview from several angles. Record the triangle and bone counts sho
 
 ### 2. Export the reference `.glb`
 
-Click **Export .glb…** and save outside the extracted project tree using the proposed set-based filename. Re-select the set after export and confirm that export itself did not modify the project.
+Click **Export to Blender** and save outside the extracted project tree using the proposed set-based filename. Re-select the set after export and confirm that export itself did not modify the project.
 
 For chapter terrain, export may also write a `_mask.png`; it maps a 640 × 640-unit area and records how the two UV sets blend the atlas. Preserve it beside the `.glb`. The GLB also carries a display-only baked texture on a third UV channel, so Blender shows the atlas blend and projected light overlay without needing FE9's runtime material callback. UV0 and UV1 remain the game-facing channels—do not delete or merge them. This first exercise should avoid chapter terrain unless you are specifically following the terrain-mesh lesson.
 
-If Blender is configured under **Settings → Preferences → 3D tools**, every supported model set also offers **Export .blend…** and **Import .blend/.glb…**. The app runs Blender in the background, packs the model's images, and saves one self-contained file. Ordinary scenery, weapons, map characters, and battle characters are placed in a tagged **FE9 Model** collection; keep the objects being returned to the game inside that collection. Import asks Blender to export only that collection and then runs the same static, skinned-body, or battle-body conversion and Import Review used for GLB files. Armatures and exported animations remain available in the Blender file, but ordinary mesh import still follows the selected set's existing contract; use **Replace rig…** or **Import animation…** when that is the intended operation.
+If Blender is configured under **Settings → Preferences → 3D tools**, **Export to Blender** can also save a `.blend`, and **Import from Blender** reads one. The app runs Blender in the background, packs the model's images, and saves one self-contained file. Ordinary scenery, weapons, map characters, and battle characters are placed in a tagged **FE9 Model** collection; keep the objects being returned to the game inside that collection. Import asks Blender to export only that collection and then runs the same static, skinned-body, or battle-body conversion and Import Review used for GLB files. Armatures and exported animations remain available in the Blender file, but ordinary mesh import still follows the selected set's existing contract; use **Skeleton › Replace skeleton and all animations** or **Replace clip › From a .glb file** when that is the intended operation.
 
 Chapter maps additionally receive the live node graph that samples the atlas through UV0 and UV1, blends them with the projected mask, and multiplies the projected light overlay. Their import converts only the tagged terrain objects, opens the normal terrain options, and excludes optional context props. The live Blender graph itself cannot be written into FE9, so the geometry round trip keeps the map's current game atlas, mask, and light textures.
 
@@ -107,13 +107,13 @@ For a later body-only test, move a small surface region while keeping the existi
 
 ### 5. Save the Blender file or export glTF 2.0 binary
 
-When you started with **Export .blend…**, save the file and import that `.blend` directly; keep intended replacement objects in its tagged **FE9 Model** collection. When you started with GLB, export a `.glb` containing the intended objects, materials, images, and—only when relevant—armature and animations. Use the Blender export report to catch missing images or unsupported features. Keep the original export and edited file as separate files.
+When you started with **Export to Blender**, save the file and import that `.blend` directly; keep intended replacement objects in its tagged **FE9 Model** collection. When you started with GLB, export a `.glb` containing the intended objects, materials, images, and—only when relevant—armature and animations. Use the Blender export report to catch missing images or unsupported features. Keep the original export and edited file as separate files.
 
 Do not overwrite the untouched reference. A byte-identical source is valuable when determining whether an import warning was introduced by Blender or already present in the exported set.
 
 ### 6. Convert and read the complete Import Review
 
-Return to the same model-set label and choose **Import .blend/.glb…**. Select the edited file. Blender conversion runs in the background for `.blend`; the normal importer then continues. For `ymu/` sets above the known map-body triangle range, the app may offer reduction; keep the mesh for the first comparison unless you are deliberately testing reduction.
+Return to the same model-set label and choose **Import from Blender**. Select the edited file. Blender conversion runs in the background for `.blend`; the normal importer then continues. For `ymu/` sets above the known map-body triangle range, the app may offer reduction; keep the mesh for the first comparison unless you are deliberately testing reduction.
 
 The conversion opens **Import Review**. Inspect every tab before writing:
 
@@ -141,17 +141,17 @@ For an animated set, scrub the beginning, middle, and end of every representativ
 
 ### 8. Restore and prove recovery
 
-Click **Restore original…**, review the targeted originals, and restore the set. Re-select it and compare the original figures and silhouette. Then repeat the import once from the untouched exported `.glb`. A no-edit round trip should minimize differences and is the best diagnostic if Blender changed something unexpectedly.
+Click **Revert to original**, review the targeted originals, and restore the set. Re-select it and compare the original figures and silhouette. Then repeat the import once from the untouched exported `.glb`. A no-edit round trip should minimize differences and is the best diagnostic if Blender changed something unexpectedly.
 
 ### 9. Escalate through the model pipeline one boundary at a time
 
 After static import passes:
 
-1. Use **Import .glb…** on a body that keeps its existing skeleton.
-2. Use **Import animation…** for one named animation while retaining the rig/body.
-3. Use **Rig kit…** to inspect anchor bones, weapons, required animations, frames, and events.
-4. Use **Replace rig…** only when the new glTF provides the complete required skeleton/animation contract.
-5. Use **Fit new rig…** when importing a different humanoid and retargeting the set's animations through an explicit bone map.
+1. Use **Import from Blender** on a body that keeps its existing skeleton.
+2. Use **Replace clip › From a .glb file** for one named animation while retaining the rig/body.
+3. Use **Skeleton › Export skeleton template** to inspect anchor bones, weapons, required animations, frames, and events.
+4. Use **Skeleton › Replace skeleton and all animations** only when the new glTF provides the complete required skeleton/animation contract.
+5. Use **Replace with my character** when importing a different humanoid and retargeting the set's animations through an explicit bone map.
 
 Do not combine these transitions into one first test.
 
@@ -160,17 +160,16 @@ Do not combine these transitions into one first test.
 | Control | Meaning | How to choose and verify |
 | --- | --- | --- |
 | Model-set search | Filters known `ymu/`, `zu/`, `zbg/`, and `xwp/` sets (chapter maps, `zmap/`, are under **Map Models**). | Record the full selected label before exporting and importing. |
-| **Export .glb…** | Converts the selected set or map terrain to binary glTF. | Preserve the file as a reference; export is non-mutating. |
-| **Export .blend…** | Creates a self-contained Blender file with packed images and a tagged model collection. | Keep replacement objects in **FE9 Model**; map terrain receives its specialized live material graph. |
-| **Import .blend/.glb…** | Rebuilds the compatible mesh/body for the selected set. | `.blend` is converted in the background, then follows the same reviewed import as GLB; bows use their dedicated composite-skinned path. |
-| **Import animation…** | Replaces one target `.ga` from a named glTF animation. | Match source and target deliberately; review frames/events afterward. |
-| **Replace rig…** | Replaces skeleton, body, and required animations from a glTF rig. | Use only with a complete rig contract and inspect missing/extra animation warnings. |
-| **Rig kit…** | Exports reference `.glb`, checklist `.md`, and animation list `.json`. | Treat its anchors, weapons, animations, frames, and events as requirements. |
-| **Events…** | Edits animation event tracks. | Preserve gameplay-critical hit/swing/throw events and test timing in battle. |
-| **Fit new rig…** | Maps a different humanoid rig and retargets existing animations. | Review every bone mapping, generated fitted `.glb`, and dropped/added-bone warning. |
-| **Restore original…** | Puts the disc's version of the replaced files back. | Verify the exact selected set and compare figures after reload. |
-| **New slot…** | Creates another supported model slot and associated mappings. | Use only after understanding the identity tables; it is not needed for a replacement. |
-| **Model tables…** | Opens model-resolution tables. | Use to diagnose or create class/character/weapon mappings separately from mesh import. |
+| **Export to Blender** | Saves the selected set as binary glTF (`.glb`) or, with Blender configured, as a self-contained Blender file with packed images and a tagged model collection (`.blend`): pick the type in the save window. Export is non-mutating. | Keep replacement objects in **FE9 Model**; map terrain receives its specialized live material graph. |
+| **Import from Blender** | Rebuilds the compatible mesh/body for the selected set. | `.blend` is converted in the background, then follows the same reviewed import as GLB; bows use their dedicated composite-skinned path. |
+| **Replace clip › From a .glb file** | Replaces one target `.ga` from a named glTF animation. | Match source and target deliberately; review frames/events afterward. |
+| **Skeleton › Replace skeleton and all animations** | Replaces skeleton, body, and required animations from a glTF rig. | Use only with a complete rig contract and inspect missing/extra animation warnings. |
+| **Skeleton › Export skeleton template** | Exports reference `.glb`, checklist `.md`, and animation list `.json`. | Treat its anchors, weapons, animations, frames, and events as requirements. |
+| **Edit clip events** | Edits animation event tracks. | Preserve gameplay-critical hit/swing/throw events and test timing in battle. |
+| **Replace with my character** | Maps a different humanoid rig and retargets existing animations. | Review every bone mapping, generated fitted `.glb`, and dropped/added-bone warning. |
+| **Revert to original** | Puts the disc's version of the replaced files back. | Verify the exact selected set and compare figures after reload. |
+| **Duplicate as new model** | Creates another supported model slot and associated mappings. | Use only after understanding the identity tables; it is not needed for a replacement. |
+| **Model assignments** | Opens model-resolution tables. | Use to diagnose or create class/character/weapon mappings separately from mesh import. |
 | **Show mesh** | Toggles rendered geometry. | Turn off to inspect skeleton placement. |
 | **Show particles** | Toggles previewed particle stages. | Relevant to effect-bearing animations; absence in a static model is normal. |
 | **Show skeleton** | Toggles bone markers/hierarchy display. | Inspect anchor/socket placement and unexpected hierarchy changes. |
@@ -238,7 +237,7 @@ For a rigged or battle asset, add rendered-fight and Dolphin tests covering idle
 
 Conversion and review are non-writing until **Write files**. Writing changes every output listed in the review; the disc's versions stay in the vanilla files. Re-select the set to confirm the written result.
 
-Use **Restore original…** for the exact set when available. Otherwise restore the saved project checkpoint. Build a new image for Dolphin; neither Blender export nor the app preview changes an older image.
+Use **Revert to original** for the exact set when available. Otherwise restore the saved project checkpoint. Build a new image for Dolphin; neither Blender export nor the app preview changes an older image.
 
 ## Limits and confidence
 

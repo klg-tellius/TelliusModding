@@ -25,6 +25,9 @@ First stable release.
 - Chapter pages gain a Roster tab on both games (fixed team or player's army, set the
   others aside, join/leave at the end, turn 1 check with a new save and a full army).
 - Tellius Archive: Radiant Dawn sections in the lessons and systems pages.
+- 3D Models and Map Models show only the buttons that work on the selected model, with
+  plainer names (Export to Blender, Replace with my character, Duplicate as new model...):
+  the skeleton tools sit in one Skeleton menu, the clip tools under the Animations tab's list.
 - Faster test runs (affected tests, disc samples, parallel runs) and a Dolphin input
   driver for in-game checks.
 - The app shows its version in the window title, on the start screen and in Help >

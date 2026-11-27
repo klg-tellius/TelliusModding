@@ -67,7 +67,7 @@ Therefore a visible symptom is often downstream. A missing PID shown in a deploy
 | A playable part never starts | part 1's victory and the part opening | `Complete18(1)` and `Opening18_2` ([65](65-chapter-parts-and-phases.md)); the header's part status |
 | A new character is called by its template's name | **Name key (MPID)** on its Stats tab | `Mess/common.m` ([10](10-create-character.md)) |
 | A copied character shares the template's look | **Portrait & models** | portrait and model slots ([11](11-portraits.md), [12](12-character-model-slot.md)) |
-| A model assignment comes undone after a save | which page wrote `FE8Data.bin` last | 3D Models › New slot… now saves and reloads the shared copy ([12](12-character-model-slot.md)) |
+| A model assignment comes undone after a save | which page wrote `FE8Data.bin` last | 3D Models › Duplicate as new model now saves and reloads the shared copy ([12](12-character-model-slot.md)) |
 | A talk never appears, or appears twice | the `@on_talk` trigger and its one-time flag | the script and `Startup`'s `regist` ([14](14-recruitment-and-bosses.md)) |
 | A removal is refused | the reference list it shows | every listed owner ([15](15-remove-records.md)) |
 | An Excel import changes nothing | *Excel import has errors* rows | the workbook's `index` and label columns ([67](67-bulk-edit.md)) |

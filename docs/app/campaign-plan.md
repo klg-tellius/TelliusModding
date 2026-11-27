@@ -68,14 +68,14 @@ Do these in order:
 4. **B1 – Mini-Campaign** (the main validation). Build a small campaign and log each item as *works / workaround / blocked*, in the simulator **and** in Dolphin:
    - 3 chapters with new maps of different sizes (Chapters > **New campaign…** after chapter 31, one chapter with "Empty" ticked)
    - 4 new characters (1 recruitable, 1 boss, 2 generics) with names, 1 new class, 2 items, 1 skill edit (skills are fixed-count)
-   - custom portraits, one custom model (static, or a rigged character through **Fit new rig…**), one BGM, one SFX
+   - custom portraits, one custom model (static, or a rigged character through **Replace with my character**), one BGM, one SFX
    - intro / mid / ending cutscenes, a recruitment (`@on_talk`), a choice dialog, a shop, reinforcements (`@on_phase`)
    - story order: new prologue → new chapters → ending; use **Story order…** once
    - run **Check**, **Build and play**, play each chapter from its start on every difficulty
 5. **B4 – Chapter limit.** Put a chapter at id ≥ 33 in the flow and verify saving, loading the save, the chapter-select/ending flow and that trial maps are unaffected. (Cloud finding: ids 33–89 and the save-check hook already exist in `game_code/chapter_flow.py`; what is unverified is the behaviour in the real game.)
 6. **B5 – Audio.** Add an SFX and a track; check them in Dolphin (the SFX dialog says "not verified in Dolphin"; "New track" is unwired).
 7. **B7 – Portraits.** New portrait in dialogue (palette is shared with the character's existing one; free-form palette import not built).
-8. **B6 – Models.** Rigged model import is built: **New slot…**, then **Fit new rig…** (any humanoid glTF gets the set's animations) or **Replace rig…** (your own animations). A fitted Radiant Dawn map model plays in Dolphin; check a fitted battle model (`zu/`) in Dolphin.
+8. **B6 – Models.** Rigged model import is built: **Duplicate as new model**, then **Replace with my character** (any humanoid glTF gets the set's animations) or **Skeleton › Replace skeleton and all animations** (your own animations). A fitted Radiant Dawn map model plays in Dolphin; check a fitted battle model (`zu/`) in Dolphin.
 9. **B9 – Simulator vs game.** Compare movement, AI and damage with Dolphin for one chapter; note where the simulator diverges (fog is class-vision only, preparations only choose placed units, choices default to the first entry).
 10. **B10 – Docs.** Re-read `docs/app/modder-guide.md` while doing B1 and correct anything that differs from reality; add screenshots; write the missing script tutorial and AI-script page.
 
@@ -86,7 +86,7 @@ Do these in order:
 | Story structure limit (slots 0–31, 32 = ending) | Partly addressed already (ids 33–89, save-check hook); needs B4 |
 | No emulator launch | Built (A2); needs B3 |
 | No project validator | Built (A1); needs B8 |
-| Animated custom models | Built (New slot…, Fit new rig…, Replace rig…); a fitted battle model still needs a Dolphin check |
+| Animated custom models | Built (Duplicate as new model, Replace with my character, Skeleton › Replace skeleton and all animations); a fitted battle model still needs a Dolphin check |
 | Portrait palette limit | Done 2026-10-15: new palette on replace, New portrait… (Assets › Portraits); not checked in Dolphin |
 | New map from scratch (size/tileset/background) | Unknown: chapters are copies; check in B1 whether map size and tileset can be changed freely |
 | New world map / base | Unknown; check in B1 |

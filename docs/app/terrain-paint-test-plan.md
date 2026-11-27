@@ -22,12 +22,12 @@ Tick each box; for a failure, note the step number and take a screenshot.
 ## 1. App, before Blender (5 min)
 
 - [ ] **Assets → 3D Models**, search `zmap/bmap01`, select it.
-      Expect: **Sculpt & paint kit…** and **Atlas swatches…** are enabled. On `zu/fig1` they are greyed out.
-- [ ] **Atlas swatches…**
+      Expect: **Sculpt & paint in Blender** and **Ground textures** are enabled. On `zu/fig1` they are greyed out.
+- [ ] **Ground textures**
       Expect: the atlas with a blue box on the grass (top half), plus yellow boxes on the dirt (`0, 768`) and the rock (`256, 768`).
 - [ ] Select `0, 768`, rename it `Road`, click **Apply**. Rename `256, 768` to `Rock`. Click **Add unused 128 cells**, then **Save**.
       Expect: the status reads "Saved in the project". Close.
-- [ ] **Sculpt & paint kit…**: choose "current painting" and **2 units**, then **Continue**. Save as `bmap01_kit.blend` on the Desktop.
+- [ ] **Sculpt & paint in Blender**: choose "current painting" and **2 units**, then **Continue**. Save as `bmap01_kit.blend` on the Desktop.
       Expect: done in under 30 s, with a "Wrote …" message.
 
 ## 2. Blender (15 min)
@@ -69,7 +69,7 @@ Tick each box; for a failure, note the step number and take a screenshot.
 
 ## 3. App import (5 min)
 
-- [ ] `zmap/bmap01`, **Import .blend/.glb…**, choose the kit.
+- [ ] `zmap/bmap01`, **Import from Blender**, choose the kit.
       Expect: the **Painted terrain import** dialog opens.
 - [ ] Keep both checkboxes ticked and choose **The kit's light overlay**, then **Continue**.
       Expect: the review opens on the **Texturing** tab. "What the game draws" matches what you painted; Conflicts shows no red.
@@ -77,7 +77,7 @@ Tick each box; for a failure, note the step number and take a screenshot.
       Check the **Warnings** tab and note anything surprising.
 - [ ] Click **Write files**.
       Expect: the 3D Models preview shows the hill and the road.
-- [ ] Regression: on `zu/fig1`, **Export .blend…** then **Import .blend/.glb…** of the untouched file. Expect: the review opens with no changes beyond the usual. Cancel.
+- [ ] Regression: on `zu/fig1`, **Export to Blender** then **Import from Blender** of the untouched file. Expect: the review opens with no changes beyond the usual. Cancel.
 
 ## 4. Dolphin (15 min)
 
@@ -94,11 +94,11 @@ Tick each box; for a failure, note the step number and take a screenshot.
 
 ## 5. Optional extras (10 min)
 
-- [ ] **Custom atlas**: in **Atlas swatches…**, use **Build custom atlas…** with a seamless 512 px base image and one 128 px swatch, then **Save**.
+- [ ] **Custom atlas**: in **Ground textures**, use **Build custom atlas…** with a seamless 512 px base image and one 128 px swatch, then **Save**.
       Make a kit with "base ground only", paint the swatch, import, and check in Dolphin.
 - [ ] **Cliffs**: sculpt a sharp cliff (about 30 m), tick the Rock layer's **Cliffs** icon, import.
       Expect: rock on the cliff faces, not stretched grass.
-- [ ] **Restore**: **Restore original…** on `zmap/bmap01` brings back the vanilla Prologue.
+- [ ] **Restore**: **Revert to original** on `zmap/bmap01` brings back the vanilla Prologue.
 
 ## 6. Water and shore waves (about 45 min)
 
@@ -114,7 +114,7 @@ Branch `claude/blender-water` (commit `a216727`), built on `claude/blender-terra
 
 ### 6.1 The kit shows the map's water (5 min)
 
-- [ ] In the app: `zmap/bmap13`, **Sculpt & paint kit…** (2 units), saved as `bmap13_kit.blend`. **Blender:** open it, press **N**, open the **Tellius** tab.
+- [ ] In the app: `zmap/bmap13`, **Sculpt & paint in Blender** (2 units), saved as `bmap13_kit.blend`. **Blender:** open it, press **N**, open the **Tellius** tab.
       Expect: the sea is teal with a soft, lighter edge along the banks, and white foam strips line parts of the shore.
 - [ ] **Blender:** the Outliner has **FE9 Water** with `FE9 Water - bmap13_water0`, and **FE9 Shore Waves** with the foam objects.
 - [ ] **Blender:** press Play in the timeline (or Space over the 3D view). Expect: the water pattern drifts.
@@ -148,7 +148,7 @@ In every step below, the water body being edited is the one selected in the list
 
 ### 6.3 Import (10 min)
 
-- [ ] `zmap/bmap01`, **Import .blend/.glb…**, choose the kit. Continue through the paint options.
+- [ ] `zmap/bmap01`, **Import from Blender**, choose the kit. Continue through the paint options.
       Expect: the **Water import** dialog (no donor line on this map). Leave **Repaint the tiles** off, **Continue**.
 - [ ] Review **Water** tab: the river with the new outline, the waves as white strokes, the fade, and notes reading "1 of 1 water surfaces rebuilt", "flow set to 0, -2, …", "Shoreline fade replaced", "Shore props: … added".
       Write files.

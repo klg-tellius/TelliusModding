@@ -1110,15 +1110,15 @@ def lesson_12(ctx: Ctx):
         yield 3500
         viewer = ctx.page("asset")._panels["models"]
         ctx.later(viewer._new_slot)
-        yield Wait(until=lambda: ctx.toplevel("New slot from") is not None, timeout=20_000)
-        dialog = ctx.toplevel("New slot from")
+        yield Wait(until=lambda: ctx.toplevel("Duplicate ") is not None, timeout=20_000)
+        dialog = ctx.toplevel("Duplicate ")
         dialog._source_aid.set("AID_FIGHTER_BO")
         dialog._new_name.set("AID_TGUARD")
         dialog._folder.set("tguard")
         dialog._pid.set(GUARD)
         yield 500
         ctx.grab("12-a-setup.png", widget=dialog, lesson=12,
-                 caption="**New slot…** on `ymu/fighter`: **Copy animation ID** `AID_FIGHTER_BO` (Boyd's), **New "
+                 caption="**Duplicate as new model** on `ymu/fighter`: **Copy animation ID** `AID_FIGHTER_BO` (Boyd's), **New "
                          "animation ID** `AID_TGUARD`, **New folder** `tguard` (its own copy of the files), "
                          "**Character** `PID_TUTORIAL_GUARD`, **Promoted model** off.",
                  alt="New slot dialog for a map model with the copied animation ID, new ID, new folder, character "
@@ -1129,28 +1129,28 @@ def lesson_12(ctx: Ctx):
         ctx.go("asset", "models", "zu/fig1")
         yield 3500
         ctx.later(viewer._new_slot)
-        yield Wait(until=lambda: ctx.toplevel("New slot from") is not None, timeout=20_000)
-        dialog = ctx.toplevel("New slot from")
+        yield Wait(until=lambda: ctx.toplevel("Duplicate ") is not None, timeout=20_000)
+        dialog = ctx.toplevel("Duplicate ")
         dialog._new_name.set("tgd1")
         dialog._pid.set(GUARD)
         dialog._character_picked()
         yield 500
         ctx.grab("12-c-battle.png", widget=dialog, lesson=12,
-                 caption="**New slot…** on `zu/fig1`: **New model code** `tgd1`, **Character** `PID_TUTORIAL_GUARD`, "
+                 caption="**Duplicate as new model** on `zu/fig1`: **New model code** `tgd1`, **Character** `PID_TUTORIAL_GUARD`, "
                          "**Class** `JID_FIGHTER` (filled from the character). **Create** copies the model and adds the "
                          "job-list line `JID_FIGHTER+PID_TUTORIAL_GUARD`.",
                  alt="New slot dialog for a battle model with the model code, character and class fields.")
         ctx.button(dialog, "Create").invoke()
         yield 2500
         ctx.later(viewer._model_tables)
-        yield Wait(until=lambda: ctx.toplevel("Model tables") is not None, timeout=20_000)
-        tables = ctx.toplevel("Model tables")
+        yield Wait(until=lambda: ctx.toplevel("Model assignments") is not None, timeout=20_000)
+        tables = ctx.toplevel("Model assignments")
         tables._check_pid.set(GUARD)
         tables._check_character()
         ctx.select_row(tables, "PID_TUTORIAL_GUARD")
         yield 1200
         ctx.grab("12-b-result.png", widget=tables, lesson=12,
-                 caption="**Model tables…**, **Battle job list**: the new line `JID_FIGHTER+PID_TUTORIAL_GUARD` → "
+                 caption="**Model assignments**, **Battle job list**: the new line `JID_FIGHTER+PID_TUTORIAL_GUARD` → "
                          "`tgd1`. **Which models does a character get?** with `PID_TUTORIAL_GUARD`: battle `zu/tgd1`, "
                          "map from `AID_TGUARD`. Boyd still gets `zu/fig1` and `AID_FIGHTER_BO`.",
                  alt="Model tables dialog with the battle job list, the new character line selected and the result "
@@ -1544,8 +1544,8 @@ def lesson_25(ctx: Ctx):
     ctx.go("asset", "models", "zmap/bmap01")
     yield 6000
     ctx.grab("25-a-setup.png", lesson=25,
-             caption="**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export .glb…** writes the "
-                     "terrain (and its `_mask.png`), **Import .glb…** opens the import review before anything is "
+             caption="**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export to Blender** writes the "
+                     "terrain (and its `_mask.png`), **Import from Blender** opens the import review before anything is "
                      "written.",
              alt="3D Models page with the zmap/bmap01 set selected and the terrain mesh in the preview.")
 
@@ -1979,8 +1979,8 @@ def lesson_50_icon(ctx: Ctx):
 def lesson_51(ctx: Ctx):
     yield from view(ctx, "51-viewer.png", 51, ("asset", "models", "zu/fig1"),
                     "**Assets › 3D Models** with the Fighter battle model `zu/fig1`: preview with mesh and skeleton, "
-                    "animations, and the export/import buttons (**Export .glb…**, **Export .blend…**, **Import "
-                    "…**).",
+                    "animations, and the export/import buttons (**Export to Blender**, **Import from Blender**, "
+                    "…).",
                     "3D Models page with zu/fig1 selected, the posed model, the Skeleton and Animations tabs and the "
                     "button grid.", wait=6000)
 
@@ -2004,15 +2004,15 @@ def lesson_53(ctx: Ctx):
     ctx.grab("53-a-setup.png", lesson=53,
              caption="**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: **Animation files "
                      "(.ga)** lists the set's clips; the selected attack plays on the skeleton with **Play** / "
-                     "**Pause** and its frame counter. **Import animation…** and **Events...** work on this set.",
+                     "**Pause** and its frame counter. **Replace clip › From a .glb file** and **Edit clip events** work on this set.",
              alt="3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.")
     ctx.later(viewer._edit_events)
-    yield Wait(until=lambda: ctx.toplevel("Events -") is not None, timeout=20_000)
-    dialog = ctx.toplevel("Events -")
+    yield Wait(until=lambda: ctx.toplevel("Edit clip events -") is not None, timeout=20_000)
+    dialog = ctx.toplevel("Edit clip events -")
     choices = list(dialog.children.values())
     yield 1500
     ctx.grab("53-c-events.png", widget=dialog, lesson=53,
-             caption="**Events...**: one animation's event track, one key per line (frame and codes). **Frame** and "
+             caption="**Edit clip events**: one animation's event track, one key per line (frame and codes). **Frame** and "
                      "**Codes (comma-separated)** with **Add**, **Update**, **Delete**; *0 = the blow lands, 1 = the "
                      "swing (miss), 2 = throw/shot release*: combat waits for these. **Save...** writes the set.",
              alt="Events dialog with the animation choice, the list of event keys, frame and codes fields and the "

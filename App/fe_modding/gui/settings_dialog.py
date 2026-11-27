@@ -84,8 +84,8 @@ class SettingsDialog(tk.Toplevel):
             modeling,
             text="Jade's add-on: imports and exports .ga animations, bodies and skeletons in Blender "
                  "(File > Import / Export > FE9 & FE10). Downloaded from " + blender.TELLIUS_FORGE_PAGE +
-                 " (GPL-3.0, not part of this app). Use it with 3D Models › Export clip .ga... and "
-                 "Replace clip from .ga...",
+                 " (GPL-3.0, not part of this app). Use it with 3D Models › Animations: Export clip (.ga) and "
+                 "Replace clip › From a .ga file.",
             style="Muted.TLabel", wraplength=420, justify="left",
         )
         self._forge_status.pack(anchor="w")
