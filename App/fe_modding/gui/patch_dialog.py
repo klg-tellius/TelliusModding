@@ -15,7 +15,7 @@ from typing import Optional
 
 from .. import __version__, patch, runtime_tools, tools
 from ..exceptions import ModdingError
-from ..games import get_game_info
+from ..games import DOLPHIN_ONLY_FORMATS, get_game_info
 
 
 class ApplyPatchDialog(tk.Toplevel):
@@ -145,6 +145,13 @@ class ApplyPatchDialog(tk.Toplevel):
                 if self._locate_wit():
                     self._run()
                 return
+        if Path(disc).suffix.lower() in DOLPHIN_ONLY_FORMATS and tools.find_dolphin_tool() is None:
+            if not (messagebox.askokcancel(
+                    "Where is Dolphin?", "This disc is a .rvz image, which is read with DolphinTool, a program "
+                    "that comes with the Dolphin emulator. It was not found.\n\nChoose the folder where Dolphin "
+                    "is installed (the one with Dolphin.exe and DolphinTool.exe). Or cancel and use a "
+                    ".iso/.wbfs/.ciso dump instead.", parent=self) and self._locate_dolphin_tool()):
+                return
         self._busy = True
         self._update_state()
         self._close.configure(state="disabled")
@@ -161,6 +168,8 @@ class ApplyPatchDialog(tk.Toplevel):
                 results.put(("ok", patch.apply_patch_to_disc(patch_path, disc, output)))
             except runtime_tools.ToolDownloadError as exc:
                 results.put(("no_wit", str(exc)))
+            except tools.DolphinToolMissing as exc:
+                results.put(("no_dolphin_tool", str(exc)))
             except ModdingError as exc:
                 results.put(("error", str(exc)))
             except Exception as exc:  # noqa: BLE001 - a failed download or an unexpected error alike
@@ -189,10 +198,28 @@ class ApplyPatchDialog(tk.Toplevel):
                 if messagebox.askyesno("Could not download WIT", payload + "\n\nChoose wit.exe or the downloaded "
                                        ".zip now?", icon="warning", parent=self) and self._locate_wit():
                     self._run()
+            elif status == "no_dolphin_tool":
+                self._status.configure(text="")
+                if messagebox.askyesno("DolphinTool not found", payload + "\n\nChoose the Dolphin folder now?",
+                                       icon="warning", parent=self) and self._locate_dolphin_tool():
+                    self._run()
             else:
                 self._status.configure(text="")
                 messagebox.showerror("Could not apply the patch", payload, parent=self)
         poll()
+
+    def _locate_dolphin_tool(self) -> bool:
+        """Ask for the Dolphin folder and remember the DolphinTool in it. True once it is usable."""
+        chosen = filedialog.askdirectory(title="Choose the Dolphin folder (with DolphinTool.exe)",
+                                         parent=self, mustexist=True)
+        if not chosen:
+            return False
+        try:
+            tools.remember_dolphin_tool(chosen)
+        except (ModdingError, OSError) as exc:
+            messagebox.showerror("DolphinTool not found", str(exc), parent=self)
+            return False
+        return tools.find_dolphin_tool() is not None
 
     def _locate_wit(self) -> bool:
         """Let the player point at a WIT they downloaded themselves: the release .zip (installed after

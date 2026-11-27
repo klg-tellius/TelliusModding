@@ -5,6 +5,15 @@ Each release's full notes are on the
 notes of the release being prepared are in [release/RELEASE-NOTES.md](release/RELEASE-NOTES.md).
 Version numbers come from `App/fe_modding/__init__.py`.
 
+## v1.0.0.1
+
+Tellius Patcher fixes.
+
+- WIT download: retries, then falls back to the `tools-mirror` release copy; a WIT
+  next to the patcher, on the PATH or chosen by hand (`wit.exe` or the `.zip`) is used.
+- `.rvz` discs: DolphinTool is also found in the usual Dolphin folders, next to the
+  patcher and on the PATH, or asked for once.
+
 ## v1.0.0.0
 
 First stable release.

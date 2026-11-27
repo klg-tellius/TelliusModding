@@ -6,7 +6,7 @@
   ``TelliusPatcher.exe --self-test`` pass from an empty working folder with a clean environment
   (``release/build_windows.py``'s smoke test); ``_internal`` sits next to the executable.
 * RZ2: ``START-HERE.txt`` names the MIT licence, and every link in it is to the project's site or
-  repository; the release notes start with ``# Tellius Modding v1.0.0.0``.
+  repository; the release notes start with ``# Tellius Modding v<__version__>``.
 
 Results go to the in-game results table. Getting the ZIP needs a download (the CI artifact) or
 PyInstaller (``release/requirements-build.txt``); neither is fetched by this script.
@@ -29,6 +29,7 @@ if __package__ in (None, ""):
 
 from .core import ROOT  # noqa: E402
 from .run import write_table  # noqa: E402
+from fe_modding import __version__  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -77,7 +78,7 @@ def check_zip(zip_path: Path) -> list[tuple[str, str, list, str, str]]:
         links = re.findall(r"https?://\S+", text)
         foreign = [u for u in links if "klg-tellius" not in u and "github.com/klg-tellius" not in u]
         notes = (REPO / "release" / "RELEASE-NOTES.md").read_text(encoding="utf-8").splitlines()
-        ok = bool(start) and "MIT" in text and not foreign and notes[:1] == ["# Tellius Modding v1.0.0.0"]
+        ok = bool(start) and "MIT" in text and not foreign and notes[:1] == [f"# Tellius Modding v{__version__}"]
         rows.append(("RZ2", "START-HERE and release notes", ["1.0 §7 Documentation"], "PASS" if ok else "FAIL",
                      f"START-HERE {'found' if start else 'MISSING'}, MIT {'named' if 'MIT' in text else 'MISSING'}, "
                      f"{len(links)} links ({len(foreign)} elsewhere: {foreign[:3]}); notes start {notes[:1]}"))

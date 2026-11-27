@@ -125,22 +125,71 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
     return result
 
 
-def dolphin_tool_path(dolphin: Optional[Path | str] = None) -> Path:
-    """``DolphinTool`` next to the configured Dolphin executable (Dolphin's release ships both)."""
+DOLPHIN_TOOL_SETTING = "dolphin_tool_path"  # a DolphinTool the user pointed at (Tellius Patcher asks)
+
+
+class DolphinToolMissing(ToolError):
+    """A .rvz disc needs DolphinTool and none was found; the patcher then asks where it is."""
+
+
+def _saved(key: str) -> Optional[str]:
+    try:
+        from .config import load_setting
+        return load_setting(key)
+    except Exception:  # noqa: BLE001 - an unreadable settings file must not hide an installed tool
+        return None
+
+
+def dolphin_tool_candidates(dolphin: Optional[Path | str] = None) -> list[Path]:
+    """Where DolphinTool may be, best first: the saved choice, next to the configured (or found)
+    Dolphin, next to this program, in the usual Dolphin install folders, then the PATH."""
+    from .emulator import candidate_paths, configured_dolphin
+    folders = []
+    saved = _saved(DOLPHIN_TOOL_SETTING)
+    found = [Path(saved)] if saved else []
     if dolphin is None:
-        from .emulator import configured_dolphin
         dolphin = configured_dolphin()
-    if not dolphin:
-        raise ToolError(
-            ".rvz discs are converted with DolphinTool, which ships with Dolphin. "
-            "Set the Dolphin path in Settings first (or use a .wbfs/.iso/.ciso dump)."
-        )
-    folder = Path(dolphin).parent
+    if dolphin:
+        folders.append(Path(dolphin).parent)
+    folders.append(_program_dir())
+    folders += [path.parent for path in candidate_paths()]
+    found += [folder / name for folder in folders for name in DOLPHIN_TOOL_NAMES]
     for name in DOLPHIN_TOOL_NAMES:
-        candidate = folder / name
-        if candidate.is_file():
-            return candidate
-    raise ToolError(f"DolphinTool was not found next to {dolphin}. It is needed to read .rvz discs.")
+        hit = shutil.which(name)
+        if hit:
+            found.append(Path(hit))
+    return found
+
+
+def find_dolphin_tool(dolphin: Optional[Path | str] = None) -> Optional[Path]:
+    return next((path for path in dolphin_tool_candidates(dolphin) if path.is_file()), None)
+
+
+def remember_dolphin_tool(chosen: Path | str) -> Path:
+    """Use this DolphinTool from now on. ``chosen`` may be DolphinTool itself, Dolphin.exe or the
+    Dolphin folder: Dolphin's release ships DolphinTool beside Dolphin.exe."""
+    chosen = Path(chosen)
+    folder = chosen if chosen.is_dir() else chosen.parent
+    candidates = [chosen] if chosen.is_file() and chosen.name in DOLPHIN_TOOL_NAMES else []
+    candidates += [folder / name for name in DOLPHIN_TOOL_NAMES]
+    exe = next((path for path in candidates if path.is_file()), None)
+    if exe is None:
+        raise ToolError(f"DolphinTool was not found in {folder}. Choose the folder where Dolphin is installed "
+                        "(Dolphin's download has DolphinTool.exe next to Dolphin.exe).")
+    from .config import save_setting
+    save_setting(DOLPHIN_TOOL_SETTING, str(exe))
+    return exe
+
+
+def dolphin_tool_path(dolphin: Optional[Path | str] = None) -> Path:
+    """``DolphinTool``, which converts ``.rvz`` discs (see :func:`dolphin_tool_candidates`)."""
+    exe = find_dolphin_tool(dolphin)
+    if exe is None:
+        raise DolphinToolMissing(
+            ".rvz discs are converted with DolphinTool, which ships with Dolphin, and it was not found. "
+            "Set the Dolphin path in Settings (or, in Tellius Patcher, choose the Dolphin folder when asked), "
+            "or use a .iso/.wbfs/.ciso dump.")
+    return exe
 
 
 def convert_to_iso(source: Path, dest_iso: Path) -> None:
