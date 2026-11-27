@@ -125,3 +125,63 @@ def new_weapon_dbx(name: str, *, kind: int, missile: int, model: str | None = No
             doc.add_field(block, key, _check(key, value))
             block = doc.find("Weapon")
     return doc.text
+
+
+#: Wave blades (``kind`` 8, the Rune and Sonic Swords; ``missile`` 2) need a model with the blade's two marker
+#: quads: hidden 1x1 meshes on the ``_sw1_`` / ``_sw2_`` bones at the base and the tip (draw flag 0x400). Every
+#: vanilla weapon model has them except ``ironsword``, ``ironlance`` and three ``forge`` models. In game (checks
+#: E1/E1m/E1t, 2026-11-25): a fire wave blade on the Iron Sword's model ends its fight with about 2.5 s of flat
+#: magenta; on the Steel or Sonic Sword's model it doesn't.
+HIDDEN_CHUNK = 0x400
+
+
+def is_wave(table: WeaponTable) -> bool:
+    return table.kind == 8 or table.missile == 2
+
+
+def model_pack(text: str, files_root) -> "object | None":
+    """The ``.cmp`` the Model block names (``files/<folder>/<model>.cmp``, case-insensitive), or None."""
+    from pathlib import Path
+    doc = dbx.parse(text)
+    block = next((b for b in doc.blocks() if b.cls == "Model"), None)
+    if block is None or not block.get("folder") or not block.get("model"):
+        return None
+    root = Path(files_root)
+    folder = root / block.get("folder")
+    if not folder.is_dir():
+        folder = next((p for p in (root / "xwp").glob("*") if p.name.lower() == Path(block.get("folder")).name.lower()),
+                      folder)
+    name = f"{block.get('model')}.cmp".lower()
+    return next((p for p in folder.glob("*.cmp") if p.name.lower() == name), None) if folder.is_dir() else None
+
+
+def has_blade_markers(cmp_bytes: bytes) -> bool:
+    """True if the weapon model has a hidden mesh (the blade's base/tip marker quads)."""
+    from . import gs_file, lz10, pak
+    data = lz10.decompress(cmp_bytes) if cmp_bytes[:1] == b"\x10" else cmp_bytes
+    for entry in pak.read_pak_entries(data):
+        if entry.name.lower().endswith(".gs"):
+            gs = gs_file.read_gs(pak.read_pak_file_content(data, entry))
+            return any(chunk.flags & HIDDEN_CHUNK for chunk in gs.chunks)
+    return False
+
+
+def wave_model_problem(text: str, files_root) -> str | None:
+    """Why this table's wave blade would flash magenta at the end of its fights, or None."""
+    try:
+        table = read_weapon(text)
+    except WeaponError:
+        return None
+    if not is_wave(table):
+        return None
+    pack = model_pack(text, files_root)
+    if pack is None:
+        return None
+    try:
+        if has_blade_markers(pack.read_bytes()):
+            return None
+    except Exception:  # noqa: BLE001 - an unreadable model is reported elsewhere
+        return None
+    return (f"{pack.parent.name}/{pack.name} has no blade markers (hidden quads at the base and tip of the "
+            f"blade): a wave blade on it ends its fights with a magenta screen. Use a model that has them, such as the Steel or "
+            f"Sonic Sword's.")

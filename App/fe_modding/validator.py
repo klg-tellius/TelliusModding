@@ -273,6 +273,24 @@ def check_ranged_melee_weapons(project: ModProject, fe8, issues: list) -> None:
                                 ("asset", "battle_weapons", item.iid[4:])))
 
 
+def check_wave_blade_models(project: ModProject, issues: list) -> None:
+    """A wave blade (Rune/Sonic Sword type) on a model without the blade's marker quads ends its fights with a
+    flat magenta screen (in-game checks E1/E1m/E1t, 2026-11-25). Path of Radiance."""
+    from . import battle_tables
+    from .formats import battle_weapons
+    try:
+        tables = battle_tables.read_entries(project, "xwp")
+    except Exception:  # noqa: BLE001 - no battle archive: nothing to check
+        return
+    root = files_root_of(project)
+    for path, text in sorted(tables.items()):
+        problem = battle_weapons.wave_model_problem(text, root)
+        if problem:
+            name = path[len("xwp/"):-len(".dbx")]
+            issues.append(Issue(WARNING, "Items", path, f"Battle weapon {name}: {problem}",
+                                ("asset", "battle_weapons", name)))
+
+
 def _check_deployments(project: ModProject, pids: set, jids: set, issues: list) -> None:
     zmap = files_root_of(project) / "zmap"
     for path in sorted(zmap.glob("*/dispos.cmp")) if zmap.is_dir() else []:
@@ -444,6 +462,7 @@ def validate_project(project: ModProject, flow=None) -> Report:
     _check_deployments(project, pids, jids, issues)
     check_map_animations(project, issues)
     check_ranged_melee_weapons(project, fe8, issues)
+    check_wave_blade_models(project, issues)
     _check_scripts(project, pids | jids | iids | sids, issues)
     _check_script_globals(project, issues)
     _check_shops(project, iids, issues)

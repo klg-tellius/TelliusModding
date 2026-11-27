@@ -812,6 +812,58 @@ def fixture_sonic_kills(ctx):
     ctx.facts.update(change=ctx.facts["change"] + "; Sonic Sword hit and crit 255 (kills at range)")
 
 
+# -- E1 group E (2026-11-25): E1's fire wave blade ends its fight with ~2.5 s of flat magenta; the retail Sonic
+# Sword never does. The xwp tables differ only in model and effects (the fire and wind pairs ship the same
+# _WP/_2D variants in yme/). E1m: E1 with the Iron Sword's Model block pointed at the Sonic Sword's model.
+# E1f: the real Sonic Sword (its model and item) with E1's fire effects in place of wind.
+
+def fire_on_model(model: str):
+    """E1's edit with the Iron Sword's Model block pointed at another sword's model."""
+    def fixture(ctx):
+        from fe_modding import battle_tables
+        from fe_modding.formats import dbx
+        fixture_fire_no_crit(ctx)
+        doc = dbx.parse(battle_tables.read_entry(ctx.project, "xwp/IRONSWORD.dbx"))
+        for field in doc.find("Model").fields:
+            if field.key == "folder":
+                doc.set_value(field, f"xwp/{model}")
+            elif field.key == "model":
+                doc.set_value(field, model)
+        battle_tables.write_entry(ctx.project, "xwp/IRONSWORD.dbx", doc.text)
+        ctx.facts.update(change=ctx.facts["change"] + f"; Model block -> xwp/{model}/{model}")
+    return fixture
+
+
+fixture_fire_sonic_model = fire_on_model("SONICBLADE")
+
+
+def fixture_sonic_in_fire(ctx):
+    from fe_modding import battle_tables
+    from fe_modding.formats import battle_weapons, fe8data
+    fixture_real_sonic_sword(ctx)
+    text = battle_tables.read_entry(ctx.project, "xwp/SONICBLADE.dbx")
+    for field, value in (("effectId", "EID_K_FIRE2"), ("damageEffId", "EID_K_FIRE2_WP")):
+        text = battle_weapons.set_weapon_field(text, field, value)
+    battle_tables.write_entry(ctx.project, "xwp/SONICBLADE.dbx", text)
+    blade = next(i for i in ctx.data.items if i.iid == "IID_SONICBLADE")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, blade.index, "effect", "EID_FIRE2")
+    ctx.fe8 = fe8data.patch_item_field(ctx.fe8, blade.index, "weapon_effect", "EID_FIRE2_WP")
+    ctx.facts.update(change=ctx.facts["change"] + "; xwp/SONICBLADE effectId EID_K_FIRE2, damageEffId "
+                            "EID_K_FIRE2_WP; item effects EID_FIRE2 / EID_FIRE2_WP")
+
+
+CHECKS += [
+    Check("E1m", "por", "E1 isolation: the fire wave blade on the Sonic Sword's model", [],
+          play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
+          fixture=fixture_fire_sonic_model, start=Jump(2), retail=False, probe=True),
+    Check("E1t", "por", "E1 isolation: the fire wave blade on the Steel Sword's model", [],
+          play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
+          fixture=fire_on_model("STEELSWORD"), start=Jump(2), retail=False, probe=True),
+    Check("E1f", "por", "E1 isolation: the retail Sonic Sword with fire effects", [],
+          play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
+          fixture=fixture_sonic_in_fire, start=Jump(2), retail=False, probe=True),
+]
+
 CHECKS += [
     Check("E1c", "por", "E1 isolation: the fire wave blade without a forced critical", [],
           play=attack_play("PID_IKE", RANGED_TILE), judge=judge_no_magenta, setup=setup_attack_ranged,
@@ -860,6 +912,45 @@ for _check in CHECKS:
         _check.title = _check.title.replace("E1 isolation: ", "Ranged melee weapon: ") + " - magenta, and warned"
         _check.fixture = with_ranged_melee_warning(_check.fixture)
         _check.judge = judge_magenta_warned
+
+
+# -- group E (2026-11-25): the flash at the end of E1's fight comes from the Iron Sword's model, which lacks the
+# blade's marker quads (E1m on the Sonic Sword's model and E1t on the Steel Sword's: no magenta). E1 now builds
+# the fire wave blade on the Steel Sword's model and must draw cleanly with no warning; E1c keeps the Iron
+# Sword's model and must flash, with the project check warning about it.
+
+def with_wave_warning(fixture):
+    def wrapped(ctx):
+        from fe_modding import validator
+        fixture(ctx)
+        issues: list = []
+        validator.check_wave_blade_models(ctx.project, issues)
+        ctx.facts.update(wave_warned=[i.where for i in issues])
+    return wrapped
+
+
+def judge_fire_wave_unwarned(mod, retail, facts):
+    ok, details = judge_fire_wave(mod, retail, facts)
+    warned = facts.get("wave_warned", [])
+    return ok and not warned, f"{details}; the project check {'warns about ' + str(warned) if warned else 'is quiet'}"
+
+
+def judge_wave_magenta_warned(mod, retail, facts):
+    magenta = flat_magenta_frames(mod)
+    warned = "xwp/IRONSWORD.dbx" in facts.get("wave_warned", [])
+    return magenta > 0 and warned, (f"{facts['change']}: {magenta} flat magenta frames at the end of the fight; the "
+                                    f"project check {'warns about xwp/IRONSWORD.dbx' if warned else 'says nothing'}")
+
+
+for _check in CHECKS:
+    if _check.id == "E1":
+        _check.title = "Battle Weapons: the Iron Sword as a fire wave blade on the Steel Sword's model"
+        _check.fixture = with_wave_warning(fire_on_model("STEELSWORD"))
+        _check.judge = judge_fire_wave_unwarned
+    if _check.id == "E1c":
+        _check.title = "Wave blade on the Iron Sword's model - magenta, and warned"
+        _check.fixture = with_wave_warning(fixture_fire_no_crit)
+        _check.judge = judge_wave_magenta_warned
 
 
 
