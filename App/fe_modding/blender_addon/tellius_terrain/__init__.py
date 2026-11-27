@@ -2,7 +2,7 @@
 terrain with its texture atlas, for the Tellius modding app.
 
 Open a terrain kit made by the app (Assets > 3D Models, a zmap/ set,
-"Sculpt & paint kit"), sculpt FE9 Sculpt, paint the layers and shape
+"Sculpt & paint in Blender"), sculpt FE9 Sculpt, paint the layers and shape
 the water from the sidebar's Tellius tab, save, and import the .blend back
 in the app.
 """

@@ -77,7 +77,7 @@ M/S/R sur chaque éditeur, **Jeu** quand indiqué :
 - [ ] ⭐ **Portraits** : **Replace picture…** sur un visage, **Jeu** : le portrait change en dialogue (RD : 4:3 et 16:9).
 - [ ] **Icons** : **Replace icon…** sur une icône d'objet, puis **Restore original file**.
 - [ ] **Fonts** (POR) : import d'une police TrueType, **Save**, **Jeu** : le texte reste sur ses lignes.
-- [ ] ⭐ **3D Models** : **Export .glb...** puis **Import .glb...** du même modèle de carte : la fenêtre de revue s'ouvre, **Write files**, **Jeu** : le modèle s'affiche. **Restore original...** remet l'original.
+- [ ] ⭐ **3D Models** : **Export to Blender** puis **Import from Blender** du même modèle de carte : la fenêtre de revue s'ouvre, **Write files**, **Jeu** : le modèle s'affiche. **Revert to original** remet l'original.
 - [ ] **Map Objects** : un prop s'affiche en 3D ; **Export .glb...** fonctionne.
 - [ ] **Animation Data ▸ Edit…** : POR change un numéro de texture d'armée ; RD change l'octet de variante. **Jeu**.
 - [ ] ⭐ **Battle Data** : RD **Edit fields…** sur une table `FE10Battle` (nouveau en 1.0) et **Motions by weapon…** ; POR **Form** sur `param.dbx`. M/S/R, **Jeu** avec animations : le combat se lance sans plantage.

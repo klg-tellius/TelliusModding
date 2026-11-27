@@ -20,7 +20,7 @@ verification: ["source-reviewed", "app-tested", "unknown"]
 ---
 # Import animations and edit events
 
-**Route:** Assets → 3D Models → Import animation… / Events…
+**Route:** Assets → 3D Models → **Animations** tab → Replace clip / Export clip (.ga) / Edit clip events
 
 !!! warning "Imported animation needs game verification"
     The conversion and event validators are source-reviewed; imported rig animation has not completed Dolphin verification.
@@ -37,9 +37,9 @@ In Blender, animate against that exact armature. Apply no destructive skeleton c
 
 ## How the editor fits together
 
-A `.ga` stores transforms plus timing/loop/event metadata but no external symbolic name; the containing filename/registry/role table supplies identity. **Import animation…** asks for a glTF and the existing animation it replaces, imports tracks against the selected set's skeleton, and uses the old `.ga` as a template.
+A `.ga` stores transforms plus timing/loop/event metadata but no external symbolic name; the containing filename/registry/role table supplies identity. **Replace clip › From a .glb file** asks for a glTF and the existing animation it replaces, imports tracks against the selected set's skeleton, and uses the old `.ga` as a template.
 
-If the glTF does not supply an event track, the importer preserves the old events and loop settings. If it does supply events, that track becomes authoritative. **Events…** rewrites only the selected clip's event keys: frame plus one to four numeric codes.
+If the glTF does not supply an event track, the importer preserves the old events and loop settings. If it does supply events, that track becomes authoritative. **Edit clip events** rewrites only the selected clip's event keys: frame plus one to four numeric codes.
 
 ## Guided walkthrough
 
@@ -50,7 +50,7 @@ If the glTF does not supply an event track, the importer preserves the old event
 
 [![3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.](../assets/images/tutorials/screenshots/53-a-setup.png)](../assets/images/tutorials/screenshots/53-a-setup.png)
 
-<figcaption markdown="span">**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: the clips of each weapon archive with their role, frames and combat events; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Import animation…** and **Events...** work on this set.</figcaption>
+<figcaption markdown="span">**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: the clips of each weapon archive with their role, frames and combat events; the selected attack plays on the skeleton with **Play** / **Pause** and its frame counter. **Replace clip › From a .glb file** and **Edit clip events** work on this set.</figcaption>
 </figure>
 
 Select the set in **Model sets** (`zu/fig1`, the Fighter) and open the **Animations** tab. **Animation clips (.ga), by weapon** lists one branch per weapon archive (*axe (ax)*, *hand axe (ha)*…) with, for each clip:
@@ -65,7 +65,7 @@ For battle models, confirm the weapon archive and role suffix (`at1`, `at2`, `cr
 
 ### Import one clip
 
-Press **Import animation…**, choose the glTF, select its animation and the target it replaces, then import. Read current-versus-imported frame/track/event figures. Inspect warnings for unmatched joints, constant/bind tracks, fixed-point range, duration, and retained events.
+Press **Replace clip › From a .glb file**, choose the glTF, select its animation and the target it replaces, then import. Read current-versus-imported frame/track/event figures. Inspect warnings for unmatched joints, constant/bind tracks, fixed-point range, duration, and retained events.
 
 Preview from frame 0 through the final recovery and across the loop boundary when applicable. Check root movement, foot contact, interpolation, weapon hand, and whether the last pose connects to the following idle/role.
 
@@ -75,21 +75,21 @@ If animation extremes exceed the body's encoded blended-vertex range, follow the
 
 [Tellius Forge](https://github.com/ltra043/tellius-forge), by Jade, is a Blender add-on that opens and writes `.ga` files directly. It is not part of the app (it is GPL-3.0): **Settings › Preferences › Download and install Tellius Forge** fetches it from its repository and installs it in the Blender set there.
 
-1. Select the clip in the **Animations** tab, then **Export clip .ga...**. The file is saved as stored, under its own name.
+1. Select the clip in the **Animations** tab, then **Export clip (.ga)**. The file is saved as stored, under its own name.
 2. In Blender, import the model and the clip with Tellius Forge (*File › Import › FE9 & FE10 Animation*), edit, and export the action as `.ga`. Its guides cover the workflow: [animation workflow](https://github.com/ltra043/tellius-forge/blob/main/docs/animation-workflow.md), [which models' animations it handles](https://github.com/ltra043/tellius-forge/blob/main/docs/animation-compatibility.md). On Radiant Dawn, set the action's *ga_game_flag* to 1.
-3. Back in the app, select the same clip and **Replace clip from .ga...**. The file must be the set's game format and animate only bones the set's skeleton has. A file without events (an action made in Blender has none) gets the replaced clip's events, moved in proportion to the new length; check them in **Events...**.
+3. Back in the app, select the same clip and **Replace clip › From a .ga file**. The file must be the set's game format and animate only bones the set's skeleton has. A file without events (an action made in Blender has none) gets the replaced clip's events, moved in proportion to the new length; check them in **Edit clip events**.
 
 Tellius Forge reads the battle (`zu/`) archives' clips once exported this way, but its own compatibility notes cover map models: test battle clips in **Simulate a battle…** and Dolphin.
 
 ### Copy a clip from another model
 
-**Copy clip from another model...** replaces a clip of the selected set with another model's, with no export or import: from the same game (the male swordmaster's attack onto the female one) or from the other game (a Path of Radiance fighter's attack onto Radiant Dawn's, and back).
+**Replace clip › From another model** replaces a clip of the selected set with another model's, with no export or import: from the same game (the male swordmaster's attack onto the female one) or from the other game (a Path of Radiance fighter's attack onto Radiant Dawn's, and back).
 
-1. Select the clip to replace in the **Animations** tab (or pick it in the dialog), then **Copy clip from another model...**.
+1. Select the clip to replace in the **Animations** tab (or pick it in the dialog), then **Replace clip › From another model**.
 2. In **Copy from**, pick this project, a vanilla disc registered in *Settings › Vanilla discs* (the other game's included), or **Browse files folder...** for any extracted `files` folder.
 3. Pick the model and its clip. The dialog proposes the clip it replaces: the same name without the set codes (`swm1_at1_sw.ga` → `swf1_at1_sw.ga`), else the same role (Path of Radiance's `fig1_at1_ax.ga` → Radiant Dawn's `att1_ax.ga`). Change it if needed, then **Copy** and review.
 
-The clip is played on this set's skeleton: each bone matched by name (and `Head`/`_head_`, `Top`/`_top_` across the games) turns as the source bone deforms its mesh; the others keep their rest pose (the review lists both). A model sharing fewer than a quarter of the source's moving bones is refused: give it the animations with **Fit new rig...**. Within a game the source clip's events come along; between the games the replaced clip's are kept and moved to the new length, since sound and effect numbers differ between the discs. Check them in **Events...**, then in **Simulate a battle…** and Dolphin.
+The clip is played on this set's skeleton: each bone matched by name (and `Head`/`_head_`, `Top`/`_top_` across the games) turns as the source bone deforms its mesh; the others keep their rest pose (the review lists both). A model sharing fewer than a quarter of the source's moving bones is refused: give it the animations with **Replace with my character**. Within a game the source clip's events come along; between the games the replaced clip's are kept and moved to the new length, since sound and effect numbers differ between the discs. Check them in **Edit clip events**, then in **Simulate a battle…** and Dolphin.
 
 A copy replaces an existing clip; it does not add a clip the set lacks.
 
@@ -100,10 +100,10 @@ A copy replaces an existing clip; it does not add a clip the set lacks.
 
 [![Events dialog with the animation choice, the list of event keys, frame and codes fields and the Add, Update, Delete, Save and Cancel buttons.](../assets/images/tutorials/screenshots/53-c-events.png)](../assets/images/tutorials/screenshots/53-c-events.png)
 
-<figcaption markdown="span">**Events...**: one animation's event track, one key per line (frame and codes). **Frame** and **Codes (comma-separated)** with **Add**, **Update**, **Delete**; *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release*: combat waits for these. **Save...** writes the set.</figcaption>
+<figcaption markdown="span">**Edit clip events**: one animation's event track, one key per line (frame and codes). **Frame** and **Codes (comma-separated)** with **Add**, **Update**, **Delete**; *0 = the blow lands, 1 = the swing (miss), 2 = throw/shot release*: combat waits for these. **Save...** writes the set.</figcaption>
 </figure>
 
-Open **Events...**. **Animation** picks the clip (*59 frames, plays once*); the list shows one key per line, e.g. `frame 33: 1*` and `frame 41: 0*` (the asterisk marks codes the battle script waits for). Select a key to load it into **Frame** and **Codes (comma-separated)**, then **Update**; **Add** a new key, or **Delete** the selected one. Frames must be numeric and fall from 0 through the clip's frame count. Preserve unknown codes unless executable evidence assigns them.
+Open **Edit clip events**. **Animation** picks the clip (*59 frames, plays once*); the list shows one key per line, e.g. `frame 33: 1*` and `frame 41: 0*` (the asterisk marks codes the battle script waits for). Select a key to load it into **Frame** and **Codes (comma-separated)**, then **Update**; **Add** a new key, or **Delete** the selected one. Frames must be numeric and fall from 0 through the clip's frame count. Preserve unknown codes unless executable evidence assigns them.
 
 Move markers to the frame where the new action visually reaches the synchronization point. Impact/swing markers coordinate hit/dodge presentation; release markers detach arrows/thrown weapons; effect markers transfer spells or select hit/miss stages; other markers can control visibility, dust, water, snow, or completion.
 
@@ -117,9 +117,9 @@ In Import Review, inspect proposed files and warnings, then **Write files**. Reo
 
 - **Animations** tab, **Animation clips (.ga), by weapon**: each weapon archive's clips with role, frames and combat events; a shared clip once.
 - **Play** / **Pause**, **<** / **>**, slider, *frame N/M*, **Speed**, **Loop** and the event marks: preview at the game's 60 frames a second.
-- **Export clip .ga... / Replace clip from .ga...:** the selected clip to and from a `.ga` file (Tellius Forge).
+- **Export clip .ga... / Replace clip › From a .ga file:** the selected clip to and from a `.ga` file (Tellius Forge).
 - **Copy clip from another model...:** another model's clip, from this game or the other one, onto the selected set's clip.
-- **Import animation…:** chooses source glTF animation and exact replacement target (a clip listed with several weapons changes in each). A glTF animation named `stem@ha` targets the hand-axe archive's copy; **Export .glb** and **Rig kit** use the same names.
+- **Import animation…:** chooses source glTF animation and exact replacement target (a clip listed with several weapons changes in each). A glTF animation named `stem@ha` targets the hand-axe archive's copy; **Export to Blender** and **Skeleton › Export skeleton template** use the same names.
 - **Template:** preserves target role, events, and loop data when source omits them.
 - **Events… list:** ordered event keys shown by frame.
 - **Frame:** callback position within `0..length_in_frames`.
@@ -135,7 +135,7 @@ On Radiant Dawn, a unit's animations are in `.pak` archives beside its model. Ea
 
 ## Things to try next
 
-1. **Move a hit frame.** In **Events...**, move the code-0 key of `fig1_at1_ax.ga` two frames later, **Save...**, and compare the hit timing in **Simulate a battle…** ([Simulate and render a fight](56-battle-simulator.md)).
+1. **Move a hit frame.** In **Edit clip events**, move the code-0 key of `fig1_at1_ax.ga` two frames later, **Save...**, and compare the hit timing in **Simulate a battle…** ([Simulate and render a fight](56-battle-simulator.md)).
 2. **Read the roles.** Compare the event tracks of `at1`, `cr1` and `dog`: which codes each role waits for.
 3. **Footsteps.** Find the `50` codes of a run cycle and line them up with the feet.
 
@@ -168,7 +168,7 @@ Map and full-battle models use different registries and files. Editing one does 
 
 **The fight waits forever.** Compare required original markers and import diagnostics. Restore missing impact/release/completion events.
 
-**The event fires before visual contact.** Move its frame in **Events…**; do not change combat timing to compensate for presentation.
+**The event fires before visual contact.** Move its frame in **Edit clip events**; do not change combat timing to compensate for presentation.
 
 **Preview works but vertices distort at extremes.** The body range was sized for older animations. Reimport the body with the new complete animation set.
 

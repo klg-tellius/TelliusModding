@@ -20,9 +20,9 @@ verification: ["source-reviewed", "unknown"]
 ---
 # Replace or fit a humanoid rig
 
-**Route:** Assets → 3D Models → Rig kit… / Replace rig… / Fit new rig…
+**Route:** Assets → 3D Models → Skeleton › Export skeleton template / Skeleton › Replace skeleton and all animations / Replace with my character
 
-**Shortcut:** **New character model…** does **New slot…** and **Fit new rig…** in one go: it asks for the rigged model, makes the copy for the character or class you pick, then opens the joint mapping on the copy.
+**Shortcut:** **Duplicate as new model** with **Put my character (.glb) on the copy** ticked does the copy and **Replace with my character** in one go: it makes the copy for the character or class you pick, asks for the rigged model, then opens the joint mapping on the copy.
 
 !!! warning "Untested rig writer in game"
     Rig replacement/fitting is source-reviewed but has not completed Dolphin verification. Work on a disposable project copy and retain every generated/replaced file.
@@ -35,13 +35,13 @@ You will export the selected set's rig kit, classify an incoming character as a 
 
 Complete a static/body round trip first. Select one exact `ymu/` map-character set or `zu/` battle set and record its folder, skeleton bones, texture variants, weapon packs, every animation filename, and representative idle/move/attack/damage/death clips.
 
-Export **Rig kit…** and keep its model, skeleton, animation names, and checklist together. In Blender, apply object transforms, keep one armature, remove accidental helper joints, use stable unique names, and normalize vertex weights. Do not rename or delete underscore/socket bones such as hand, weapon, arrow, camera, root, or effect anchors.
+Export **Skeleton › Export skeleton template** and keep its model, skeleton, animation names, and checklist together. In Blender, apply object transforms, keep one armature, remove accidental helper joints, use stable unique names, and normalize vertex weights. Do not rename or delete underscore/socket bones such as hand, weapon, arrow, camera, root, or effect anchors.
 
 ## How the editor fits together
 
-**Replace rig…** imports an armature/body already compatible with the selected set. A map rig requires every class animation in the glTF, named like its `.ga` file. Battle replacement can import named clips and retarget missing clips by bone name when enough body bones remain; a substantially new rig needs complete/fallback-compatible animation coverage.
+**Skeleton › Replace skeleton and all animations** imports an armature/body already compatible with the selected set. A map rig requires every class animation in the glTF, named like its `.ga` file. Battle replacement can import named clips and retarget missing clips by bone name when enough body bones remain; a substantially new rig needs complete/fallback-compatible animation coverage.
 
-**Fit new rig…** instead reads your rigged model and the game's rig kit, guesses body-chain correspondences, lets you edit model-joint → game-bone mappings, then mathematically fits the game motion onto your skeleton. It preserves weapon-anchor responsibilities separately from ordinary body-chain mapping.
+**Replace with my character** instead reads your rigged model and the game's rig kit, guesses body-chain correspondences, lets you edit model-joint → game-bone mappings, then mathematically fits the game motion onto your skeleton. It preserves weapon-anchor responsibilities separately from ordinary body-chain mapping.
 
 Both produce an **Import Review** with current/imported figures, proposed files, warnings, and joint mapping. Nothing is written until **Write files**.
 
@@ -49,7 +49,7 @@ Both produce an **Import Review** with current/imported figures, proposed files,
 
 ### Export and classify
 
-Export the Rig kit for the exact selected set. If most incoming body bones deliberately retain the game's names/hierarchy and every required animation is authored for them, choose **Replace rig…**. If the model has its own humanoid hierarchy, choose **Fit new rig…**. Do not select replacement merely because both rigs look human.
+Export the Rig kit for the exact selected set. If most incoming body bones deliberately retain the game's names/hierarchy and every required animation is authored for them, choose **Skeleton › Replace skeleton and all animations**. If the model has its own humanoid hierarchy, choose **Replace with my character**. Do not select replacement merely because both rigs look human.
 
 ### Preserve the non-body contract
 
@@ -59,7 +59,7 @@ For battle sets, remember that the same body/skeleton participates in multiple w
 
 ### Review a Fit mapping
 
-Open **Fit new rig…** and select the rigged model. The dialog *Fit new rig - zu/&lt;code&gt;* explains: *Each model joint turns like the game bone it follows. Blank: the joint follows its parent (fingers, hair...). The pelvis must be the one mapped joint all the others hang from.* The table lists model joints (indented by depth) and the guessed game bone of each. Check root/pelvis first, then spine/chest/neck/head, shoulders/arms/hands, hips/legs/feet, and any tails/wings. Detect mirrored left/right matches and mappings that cross body chains.
+Open **Replace with my character** and select the rigged model. The dialog *Fit new rig - zu/&lt;code&gt;* explains: *Each model joint turns like the game bone it follows. Blank: the joint follows its parent (fingers, hair...). The pelvis must be the one mapped joint all the others hang from.* The table lists model joints (indented by depth) and the guessed game bone of each. Check root/pelvis first, then spine/chest/neck/head, shoulders/arms/hands, hips/legs/feet, and any tails/wings. Detect mirrored left/right matches and mappings that cross body chains.
 
 Next to the table, both skeletons are drawn from the front (the character's left on your right). Click a model joint in the drawing or the list: it turns orange, and so does the game bone it follows. Click a bone of the game drawing to make the selected joint follow it; **Clear joint** blanks it. Blue joints follow a game bone, grey ones their parent; a red joint carries part of the mesh while nothing above it is mapped, so it would stay frozen. **Mirror left to right** copies the left side's mapping onto the right (and **Mirror right to left** the reverse): joints are paired by name (`Left`/`Right`, `L_`/`R_`, `.L`/`.R`, `hidari`/`migi`) or, failing that, by mirrored position; the message lists the joints it could not pair.
 
@@ -71,9 +71,9 @@ Keep the generated fitted glTF. Open it in Blender and inspect bind pose and sev
 
 ### Add anchors and check the rig
 
-**Add anchor bones...** adds the bones the engine finds by name. Type one in (name, the bone it goes under, an offset from that bone) or pick another set under **Copy the anchors of** and press **Copy**: every anchor that set has and this one lacks is listed under the matching bone (same name, else the bone the comparison of the two bodies pairs it with) at the same place, scaled to this set's height. Check each bone and offset (select a row, change it, **Update selected**), then **Add anchors**. Example: a map model fitted on a sword class has no `_ex1_`/`_ex2_`, so its spells show no effect; copy them from `ymu/sene` (the Sage) before giving it the Sage's spell clips. The anchors have no animation track: they follow their bone in every clip. The change goes through **Replace rig...** and its review.
+**Skeleton › Add anchor bones** adds the bones the engine finds by name. Type one in (name, the bone it goes under, an offset from that bone) or pick another set under **Copy the anchors of** and press **Copy**: every anchor that set has and this one lacks is listed under the matching bone (same name, else the bone the comparison of the two bodies pairs it with) at the same place, scaled to this set's height. Check each bone and offset (select a row, change it, **Update selected**), then **Add anchors**. Example: a map model fitted on a sword class has no `_ex1_`/`_ex2_`, so its spells show no effect; copy them from `ymu/sene` (the Sage) before giving it the Sage's spell clips. The anchors have no animation track: they follow their bone in every clip. The change goes through **Skeleton › Replace skeleton and all animations** and its review.
 
-**Check rig...** lists what the skeleton lacks: the anchors every map model (`_s1_`, `_s2_`) or battle model (`_r_hand_`, `_l_hand_`, `_root_`, `_cam_`) has; on a map model, the trail anchors its clips start (event `0x18` needs `_ex1_`/`_ex2_`, `0x14` `_sw1_`/`_sw2_`, `0x16` `_ax1_`/`_ax2_`...); the anchors the vanilla set had; bone and triangle counts above the disc's largest models; and map vertices blended between bones (every retail map model has one bone per vertex). The fit review repeats its problems. The Skeleton tab names what each anchor does.
+**Skeleton › Check skeleton** lists what the skeleton lacks: the anchors every map model (`_s1_`, `_s2_`) or battle model (`_r_hand_`, `_l_hand_`, `_root_`, `_cam_`) has; on a map model, the trail anchors its clips start (event `0x18` needs `_ex1_`/`_ex2_`, `0x14` `_sw1_`/`_sw2_`, `0x16` `_ax1_`/`_ax2_`...); the anchors the vanilla set had; bone and triangle counts above the disc's largest models; and map vertices blended between bones (every retail map model has one bone per vertex). The fit review repeats its problems. The Skeleton tab names what each anchor does.
 
 ### Review Replace-rig coverage
 
@@ -104,7 +104,7 @@ Compare triangle/vertex/texture figures, proposed files, mapping method, and eve
 
 1. **Keep a mapping.** Save the mapping of a first fit, change one joint, fit again from **Load mapping...**, and compare.
 2. **A blank joint.** Leave a tail joint blank and watch it follow its parent through an attack.
-3. **Coverage report.** On **Replace rig...**, read which battle animations were retargeted and which were reused from another clip.
+3. **Coverage report.** On **Skeleton › Replace skeleton and all animations**, read which battle animations were retargeted and which were reused from another clip.
 
 ## Interactions and precedence
 
@@ -131,7 +131,7 @@ Character/class model selection happens before loading the rig. A perfect import
 
 **Import says animations are missing.** Supply clips named after every target listed by the Rig kit. A new map skeleton cannot reuse unrelated old tracks.
 
-**A spell or a weapon trail shows no effect on a map model.** Run **Check rig...**: the clip starts a trail whose anchors the skeleton lacks. Add them with **Add anchor bones...** (copy `_ex1_`/`_ex2_` from the Sage, `ymu/sene`).
+**A spell or a weapon trail shows no effect on a map model.** Run **Skeleton › Check skeleton**: the clip starts a trail whose anchors the skeleton lacks. Add them with **Skeleton › Add anchor bones** (copy `_ex1_`/`_ex2_` from the Sage, `ymu/sene`).
 
 **The head sinks into the floor or the model floats.** Fit again with **Feet: ankle at the game ankle's height**.
 
@@ -149,7 +149,7 @@ Character/class model selection happens before loading the rig. A perfect import
 
 Write only after saving the mapping and fitted/source glTF. Run project checks, reopen the set, preview the full matrix, build, and test in Dolphin with a disposable save.
 
-Use **Restore original…** for the model folder or restore every proposed output as one transaction. Skeleton, body, animations, and texture variants must remain mutually compatible; partial rollback is unsafe.
+Use **Revert to original** for the model folder or restore every proposed output as one transaction. Skeleton, body, animations, and texture variants must remain mutually compatible; partial rollback is unsafe.
 
 ## Radiant Dawn
 

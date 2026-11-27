@@ -81,10 +81,10 @@ a few kilobytes of both games are read by a decoder the app uses.
 - New skeletons can be fitted on Radiant Dawn map units: the pose model now applies
   the loader's joint-orient rule.
 - Window images preview Radiant Dawn layouts and backgrounds.
-- 3D Models: the **Fit new rig…** mapping draws both skeletons (click a joint, then the
+- 3D Models: the **Replace with my character** mapping draws both skeletons (click a joint, then the
   game bone), mirrors one side onto the other, and adds two options: feet at the game
-  ankle's height and faces drawn from both sides. New **Add anchor bones…** (typed in or
-  copied from another set) and **Check rig…** (missing anchors, trail anchors the clips
+  ankle's height and faces drawn from both sides. New **Skeleton › Add anchor bones** (typed in or
+  copied from another set) and **Skeleton › Check skeleton** (missing anchors, trail anchors the clips
   need, bone counts, blended map vertices).
 
 ### Game data and checks
@@ -121,7 +121,7 @@ Extras unlocks, Conversation Room order and subtitle edits.
   `.cmb` padding are handled.
 - New weapons: **Battle Weapons › New weapon…** adds the item, its own `xwp/` model
   (copied, with an optional `.glb` mesh) and its battle entry in one dialog, on both games
-  (a new `FE10BWeapon` row on Radiant Dawn). **3D Models › New slot…** copies a weapon model.
+  (a new `FE10BWeapon` row on Radiant Dawn). **3D Models › Duplicate as new model** copies a weapon model.
 - Weapon effects: the effect boxes list first what the game's own weapons of the same type
   play and ask before any other; **Visual Effects › Recolour…** tints or turns the hues of an
   effect's texture.
@@ -132,12 +132,16 @@ Extras unlocks, Conversation Room order and subtitle edits.
   **Add roof** tool builds a gable or flat roof over a walled room.
 - **Game Data › Flags › Chapter flags › Free unused flags…** frees chapter flags that nothing uses, so a
   busy chapter keeps room for a hub's campaign flags.
-- 3D Models: **New character model…** makes a slot for one character or class and fits a
-  rigged humanoid `.glb` onto it in one go.
+- 3D Models: **Duplicate as new model** with **Put my character (.glb) on the copy** makes a slot for
+  one character or class and fits a rigged humanoid `.glb` onto it in one go.
 - 3D Models, Animations tab: each weapon's clips with their role, length and combat
   events, played at the game's speed (with 0.5x and 0.25x). A clip shared by several
   weapons is imported once for all of them. Clips go to and from Jade's Tellius Forge
-  Blender add-on as `.ga` files, and **Copy clip from another model…** works across both games.
+  Blender add-on as `.ga` files, and **Replace clip › From another model** works across both games.
+- 3D Models and Map Models show only the buttons that work on the selected model, under
+  plainer names: **Export to Blender** (.blend or .glb), **Import from Blender**, **Replace with my
+  character**, a **Skeleton** menu (check, anchor bones, template, full replacement), and the clip
+  tools (**Replace clip**, **Export clip (.ga)**, **Edit clip events**) under the Animations tab's list.
 - Assets: **Tutorials**, **Staff Credits** and **Soundroom Tracks** have their own tiles.
 
 ## Decoding coverage

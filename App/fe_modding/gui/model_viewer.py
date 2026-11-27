@@ -57,17 +57,17 @@ as this panel's own central+right columns (factored out as
 for a single resolved model - see ``map_editor.py``'s "View Model..."
 buttons for where this gets used.
 
-Write support: "Export .glb" writes the selected set through
-``gltf_export``. "Export .blend" packs that model into a tagged Blender
-collection, and "Import .blend/.glb" rebuilds the set's ``.gs`` from Blender or glTF
+Write support: "Export to Blender" writes the selected set through
+``gltf_export`` (a .glb) or packs it into a tagged Blender collection (a
+.blend), and "Import from Blender" rebuilds the set's ``.gs`` from Blender or glTF
 through ``gltf_import`` and repacks the ``.cmp``: as a static mesh for
 ``zbg/`` scenery (``replace_set_with_static_glb()``), as a skinned body on
 the class skeleton for ``ymu/`` characters (blended vertices use the engine's
 CPU-skinned composite shapes)
 (``replace_body_with_glb()``, which also handles the ``tex_N.tpl``
-variants). "Import animation" (``ymu/`` sets) rebuilds one of the set's
-``.ga`` from a glTF animation (``replace_animation_with_glb()``). "Replace
-rig..." (``ymu/`` sets) builds a new skeleton from a glTF armature and
+variants). "Replace clip › From a .glb file" (Animations tab) rebuilds one of the set's
+``.ga`` from a glTF animation (``replace_animation_with_glb()``). "Skeleton ›
+Replace skeleton and all animations" builds a new skeleton from a glTF armature and
 rebuilds the body and every class animation on it
 (``replace_rig_with_glb()``).
 
@@ -80,7 +80,7 @@ are the map models.
 Weapon models (``xwp/<name>/<name>.cmp``, and ``xwp/forge/<name>_b.cmp``
 for forged weapons; see ``formats/icons.py`` for how an item picks one) are
 listed as ``xwp/<name>`` and ``xwp/forge/<name>_b``; Game Data's items link
-here. "Import .glb" replaces a weapon as a rigid static mesh, like
+here. "Import from Blender" replaces a weapon as a rigid static mesh, like
 scenery. Bows are detected by ``is_skinned_weapon()`` and use their own
 importer: it rebuilds every triangle as composite skinning on the weapon's
 existing skeleton so the bow and string can continue bending.
@@ -92,16 +92,16 @@ of every changed file next to the current ones (``import_review_rows()``,
 flagging sizes above every vanilla model of the same kind), the joints and the
 warnings. Writing goes through ``ModProject.write_keeping_original``, which
 keeps the file as extracted in the project's ``originals/`` folder;
-"Restore original" puts a set's kept files back.
+"Revert to original" puts a set's kept files back.
 
-"New slot" (``ymu/`` and ``zu/`` sets, ``_NewSlotDialog``) copies the
+"Duplicate as new model" (``ymu/`` and ``zu/`` sets, ``_NewSlotDialog``) copies the
 set under a new name and points a character or class at the copy through
 ``model_slots``, so the copy can be changed without touching the vanilla
-model's other users. "Model tables" (``_ModelTablesDialog``) edits the
+model's other users. "Model assignments" (``_ModelTablesDialog``) edits the
 tables that pick the models: the battle job list (with a "which models does
 a character get" check), each battle model's texture lines, and the per-army
 texture numbers of a map model's ``FE8Anim.bin`` records; it also removes
-slots made with "New slot" (``model_slots.remove_battle_model`` /
+slots made with "Duplicate as new model" (``model_slots.remove_battle_model`` /
 ``remove_map_model``).
 """
 
@@ -2118,7 +2118,7 @@ def _rebuild_character(
 
     Textures: a body uses one texture (``tex_id`` 0) and the unit picks one
     of the class's ``tex_N.tpl`` variants. A glTF texture identical to one
-    of those variants (what Export .glb writes) keeps every variant as it
+    of those variants (what Export to Blender writes as .glb) keeps every variant as it
     is; a new texture replaces all of them (army colours are lost); no
     texture keeps the variants and points the materials at them."""
     entries, files = _read_container(container_path)
@@ -2365,7 +2365,7 @@ def replace_battle_rig_with_glb(container_path: Path, gltf_path: Path, *, new_ri
     problems = []
     if missing:
         problems.append(
-            "A new skeleton needs every animation (named like the files; see Rig kit). Missing: " + ", ".join(missing)
+            "A new skeleton needs every animation (named like the files; see Skeleton › Export skeleton template). Missing: " + ", ".join(missing)
         )
     problems += event_problems
     if problems:
@@ -2753,7 +2753,7 @@ def add_anchor_bones(
 ) -> ModelImport:
     """The set with anchor bones added, each ``(name, parent bone, offset
     from it)``: the rig kit gets the new joints, then goes through the
-    regular rig import (Replace rig). The new bones have no animation
+    regular rig import (Replace skeleton and all animations). The new bones have no animation
     track, so they follow their parent in every clip. A battle set's clips
     are carried over by bone name; a map set's are rebuilt from the kit."""
     import tempfile
@@ -2937,9 +2937,11 @@ class _NewSlotDialog(tk.Toplevel):
 
     def __init__(self, parent, project: ModProject, label: str) -> None:
         super().__init__(parent)
-        self.title(f"New slot from {label}")
+        self.title(f"Duplicate {label} as a new model")
         self.transient(parent)
         self.result: str | None = None
+        #: "Put my character on the copy" was ticked: the caller fits a rigged .glb onto the new set
+        self.put_character = False
         #: the new set's label in the model list (``zu/<code>`` or ``ymu/<folder>``)
         self.new_label: str | None = None
         self._project = project
@@ -2994,6 +2996,9 @@ class _NewSlotDialog(tk.Toplevel):
             field("New folder", ttk.Entry(body, textvariable=self._folder, width=30), "ymu/<folder>/; empty: share")
             field("Character", pid_box, "empty: register only")
             field("", ttk.Checkbutton(body, text="Promoted model", variable=self._promoted))
+        self._put_character = tk.BooleanVar(value=False)
+        put = ttk.Checkbutton(body, text="Put my character (.glb) on the copy", variable=self._put_character)
+        field("", put, "a rigged humanoid; it plays the copied animations")
         body.columnconfigure(1, weight=1)
         buttons = ttk.Frame(body)
         buttons.grid(row=row, column=0, columnspan=3, sticky="e", pady=(8, 0))
@@ -3035,6 +3040,7 @@ class _NewSlotDialog(tk.Toplevel):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Could not create the slot", str(exc), parent=self)
             return
+        self.put_character = self._put_character.get()
         self.destroy()
 
 
@@ -3049,7 +3055,7 @@ class _ModelTablesDialog(tk.Toplevel):
 
     def __init__(self, parent, project: ModProject, on_change) -> None:
         super().__init__(parent)
-        self.title("Model tables")
+        self.title("Model assignments")
         self.transient(parent)
         self.geometry("900x560")
         self._project = project
@@ -3078,7 +3084,7 @@ class _ModelTablesDialog(tk.Toplevel):
         try:
             action()
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Model tables", str(exc), parent=self)
+            messagebox.showerror("Model assignments", str(exc), parent=self)
             return False
         self._on_change(label, text)
         self._refresh_all()
@@ -3372,7 +3378,7 @@ class _ModelTablesDialog(tk.Toplevel):
         try:
             ids = tuple(int(v.get()) for v in self._map_textures)
         except ValueError:
-            messagebox.showerror("Model tables", "Texture numbers are whole numbers 0-255.", parent=self)
+            messagebox.showerror("Model assignments", "Texture numbers are whole numbers 0-255.", parent=self)
             return
         self._run(lambda: model_slots.set_map_textures(self._project, aid, ids),
                   self._anim_label, f"Map textures of {aid} set to {ids}")
@@ -3526,7 +3532,7 @@ class _RigMappingDialog(tk.Toplevel):
 
     def __init__(self, parent, label: str, setup: RigFitSetup) -> None:
         super().__init__(parent)
-        self.title(f"Fit new rig - {label}")
+        self.title(f"Replace with my character - {label}")
         self.transient(parent)
         self.result: dict[str, str] | None = None
         self.options: dict[str, object] = {}
@@ -3934,7 +3940,7 @@ class _RigCheckDialog(tk.Toplevel):
 
     def __init__(self, parent, label: str, findings: list[rig_tools.Finding], compared: str) -> None:
         super().__init__(parent)
-        self.title(f"Check rig - {label}")
+        self.title(f"Check skeleton - {label}")
         self.transient(parent)
         top = ttk.Frame(self, padding=8)
         top.pack(fill="both", expand=True)
@@ -3967,7 +3973,7 @@ class _EventEditorDialog(tk.Toplevel):
     def __init__(self, parent, label: str, path: Path, clips: list[animation_catalog.ClipInfo],
                  selected: animation_catalog.ClipInfo | None = None) -> None:
         super().__init__(parent)
-        self.title(f"Events - {label}")
+        self.title(f"Edit clip events - {label}")
         self.transient(parent)
         self.result: tuple[animation_catalog.ClipInfo, list[animation.EventKey]] | None = None
         self._path = path
@@ -4111,7 +4117,7 @@ class _EventEditorDialog(tk.Toplevel):
 
 def match_clip(gltf_name: str, clips: list[animation_catalog.ClipInfo]) -> int | None:
     """The clip a glTF animation is named after: ``fig1_at1_ax`` (the file's stem) or
-    ``fig1_dam_ax@ha`` (the stem in one weapon archive, as the rig kit and Export .glb name a
+    ``fig1_dam_ax@ha`` (the stem in one weapon archive, as the skeleton template and Export to Blender name a
     file that differs between archives)."""
     stem, _at, pack = gltf_name.lower().partition("@")
     for i, clip in enumerate(clips):
@@ -4126,7 +4132,7 @@ class _AnimationImportDialog(tk.Toplevel):
     def __init__(self, parent, gltf_names: list[str], clips: list[animation_catalog.ClipInfo],
                  selected: animation_catalog.ClipInfo | None = None) -> None:
         super().__init__(parent)
-        self.title("Import animation")
+        self.title("Replace clip from a .glb file")
         self.transient(parent)
         self.result: tuple[str, animation_catalog.ClipInfo] | None = None
         body = ttk.Frame(self, padding=10)
@@ -4172,7 +4178,7 @@ class _AnimationImportDialog(tk.Toplevel):
     def _ok(self) -> None:
         source, target = self._source.curselection(), self._target.curselection()
         if not source or not target:
-            messagebox.showinfo("Import animation", "Pick a glTF animation and the animation it replaces.", parent=self)
+            messagebox.showinfo("Replace clip", "Pick a glTF animation and the animation it replaces.", parent=self)
             return
         self.result = (self._gltf_names[source[0]], self._clips[target[0]])
         self.destroy()
@@ -5589,6 +5595,7 @@ class _ModelPreview(ttk.Frame):
             # an "if mesh_only" branch at every call site.
             self._bone_tree = ttk.Treeview(self)
             self._clip_tree = ttk.Treeview(self)
+            self.clip_actions = ttk.Frame(self)
             self._anim_summary_label = ttk.Label(self)
             self._event_marks = tk.Canvas(self)
             self._curve_tree = ttk.Treeview(self)
@@ -5634,6 +5641,9 @@ class _ModelPreview(ttk.Frame):
                              "with the others in brackets: an import or an event edit changes every copy. "
                              "Role: what the file name or the battle tables say plays it. Combat events: "
                              "the frames of the hit (0), swing (1) and release (2) the fight waits for.")
+        #: buttons acting on the selected clip (the 3D Models panel fills it; empty in a preview popup)
+        self.clip_actions = ttk.Frame(anim_tab)
+        self.clip_actions.pack(fill="x", pady=(0, 6))
 
         self._anim_summary_label = ttk.Label(anim_tab, text="", style="Muted.TLabel", justify="left",
                                              wraplength=420)
@@ -6200,7 +6210,7 @@ class ModelViewer(EditorPanel):
         super().__init__(parent)
         self._project = project
         self._changelog = changelog
-        # New slot and Model tables write FE8Data.bin themselves (a character's animation ID);
+        # Duplicate as new model and Model assignments write FE8Data.bin themselves (a character's animation ID);
         # the shared copy every other editor works on is saved before and reloaded after.
         self._session = session
         self._dirty = False  # read-only viewer - never has unsaved changes
@@ -6218,7 +6228,7 @@ class ModelViewer(EditorPanel):
         self._preview.cleanup()
 
     def refresh_set_list(self) -> None:
-        """Re-glob ymu/, zu/, zmap/, zbg/ and xwp/ (New slot adds folders)."""
+        """Re-glob ymu/, zu/, zmap/, zbg/ and xwp/ (Duplicate as new model adds folders)."""
         self._load_set_list()
 
     def select_set(self, label: str) -> None:
@@ -6271,84 +6281,85 @@ class ModelViewer(EditorPanel):
         self._set_list.config(yscrollcommand=scrollbar.set)
         self._set_list.bind("<<ListboxSelect>>", lambda e: self._on_set_selected())
 
-        buttons = ttk.Frame(left)
+        buttons = self._buttons_frame = ttk.Frame(left)
         buttons.pack(fill="x", pady=(6, 0))
-        self._export_button = ttk.Button(buttons, text="Export .glb", command=self._export_glb, state="disabled")
-        self._blend_button = ttk.Button(buttons, text="Export .blend", command=self._export_blend, state="disabled")
-        self._import_button = ttk.Button(buttons, text="Import .glb", command=self._import_glb, state="disabled")
-        self._import_anim_button = ttk.Button(
-            buttons, text="Import animation", command=self._import_animation, state="disabled"
-        )
-        self._import_rig_button = ttk.Button(
-            buttons, text="Replace rig", command=self._import_rig, state="disabled"
-        )
-        self._kit_button = ttk.Button(buttons, text="Rig kit", command=self._export_rig_kit, state="disabled")
-        self._events_button = ttk.Button(buttons, text="Events", command=self._edit_events, state="disabled")
-        self._export_ga_button = ttk.Button(
-            buttons, text="Export clip .ga", command=self._export_clip_ga, state="disabled")
-        tip(self._export_ga_button, "The clip selected in the Animations tab as a .ga file, to edit in Blender "
-                                    "with Tellius Forge (Jade's add-on).")
-        self._import_ga_button = ttk.Button(
-            buttons, text="Replace clip from .ga", command=self._import_clip_ga, state="disabled")
-        tip(self._import_ga_button, "Replace the clip selected in the Animations tab with a .ga file (Tellius "
-                                    "Forge's export, for one). A file with no events gets the replaced clip's.")
-        self._copy_clip_button = ttk.Button(
-            buttons, text="Copy clip from another model", command=self._copy_clip, state="disabled")
-        tip(self._copy_clip_button, "Replace a clip of this set with another model's: same game or the other "
-                                    "one, played on this set's skeleton. No export or import.")
-        self._fit_button = ttk.Button(buttons, text="Fit new rig", command=self._fit_rig, state="disabled")
-        self._anchor_button = ttk.Button(
-            buttons, text="Add anchor bones", command=self._add_anchors, state="disabled")
-        tip(self._anchor_button, "Add engine anchors (_ex1_/_ex2_ for spell effects, trail ends, shadow points...) "
-                                 "under a bone, typed in or copied from another set at the same place.")
-        self._check_button = ttk.Button(buttons, text="Check rig", command=self._check_rig, state="disabled")
-        tip(self._check_button, "What the skeleton lacks for the engine and the set's clips: anchors a trail or "
-                                "spell needs, anchors the vanilla set had, bone and triangle counts against the "
-                                "disc's models, map vertices shared between bones.")
+        self._export_button = ttk.Button(buttons, text="Export to Blender", command=self._export, state="disabled")
+        tip(self._export_button, "Save the model as a Blender file (.blend, needs Blender in Settings > "
+                                 "Preferences) or as glTF (.glb): pick the type in the save window.")
+        self._import_button = ttk.Button(buttons, text="Import from Blender", command=self._import_glb,
+                                         state="disabled")
+        tip(self._import_button, "Replace the model with a .blend or .glb, after a review of what changes.")
+        self._fit_button = ttk.Button(buttons, text="Replace with my character", command=self._fit_rig,
+                                      state="disabled")
+        tip(self._fit_button, "A rigged humanoid .glb takes this model's place and plays its animations: "
+                              "its skeleton is fitted onto the set's.")
+        self._skeleton_button = ttk.Menubutton(buttons, text="Skeleton", state="disabled")
+        skeleton_menu = tk.Menu(self._skeleton_button, tearoff=False)
+        skeleton_menu.add_command(label="Check skeleton", command=self._check_rig)
+        skeleton_menu.add_command(label="Add anchor bones", command=self._add_anchors)
+        skeleton_menu.add_separator()
+        skeleton_menu.add_command(label="Export skeleton template", command=self._export_rig_kit)
+        skeleton_menu.add_command(label="Replace skeleton and all animations", command=self._import_rig)
+        self._skeleton_button.config(menu=skeleton_menu)
+        tip(self._skeleton_button, "Check skeleton: what the skeleton lacks for the engine and the set's clips. "
+                                   "Add anchor bones: engine anchors (_ex1_/_ex2_ for spell effects, trail "
+                                   "ends...) under a bone. Export skeleton template + Replace skeleton and all "
+                                   "animations: bring a new skeleton with every clip made in Blender.")
+        self._new_slot_button = ttk.Button(buttons, text="Duplicate as new model", command=self._new_slot,
+                                           state="disabled")
+        tip(self._new_slot_button, "Copy this model under a new name for one character or class, so it can "
+                                   "change without touching the model's other users. Option: put your own "
+                                   "character (.glb) on the copy.")
+        self._tables_button = ttk.Button(buttons, text="Model assignments", command=self._model_tables)
+        tip(self._tables_button, "The tables that pick each unit's models: battle job list, texture lines, "
+                                 "map-model records.")
         self._restore_button = ttk.Button(
-            buttons, text="Restore original", command=self._restore_originals, state="disabled"
-        )
-        self._new_slot_button = ttk.Button(buttons, text="New slot", command=self._new_slot, state="disabled")
-        self._new_character_button = ttk.Button(
-            buttons, text="New character model", command=self._new_character_model, state="disabled")
-        tip(self._new_character_button, "A rigged humanoid .glb as a new model: copies this set under a new "
-                                        "name for one character or class (New slot), then fits the model "
-                                        "onto the copy with the set's animations (Fit new rig).")
+            buttons, text="Revert to original", command=self._restore_originals, state="disabled")
+        tip(self._restore_button, "Put back this model's files as extracted from the disc.")
         self._remove_slot_button = ttk.Button(
-            buttons, text="Remove added slot", command=self._remove_slot, state="disabled")
-        self._tables_button = ttk.Button(buttons, text="Model tables", command=self._model_tables)
+            buttons, text="Delete this copy", command=self._remove_slot, state="disabled")
+        tip(self._remove_slot_button, "Delete this model, added with Duplicate as new model, and give its users "
+                                      "their previous model back.")
         self._paint_kit_button = ttk.Button(
-            buttons, text="Sculpt & paint kit", command=self._export_paint_kit, state="disabled"
-        )
+            buttons, text="Sculpt & paint in Blender", command=self._export_paint_kit, state="disabled")
         tip(self._paint_kit_button, "A Blender file to sculpt this map's ground and paint it with its atlas "
-                                    "(Tellius Terrain add-on); import the saved file with Import .blend/.glb.")
+                                    "(Tellius Terrain add-on); bring the saved file back with Import from Blender.")
         self._swatches_button = ttk.Button(
-            buttons, text="Atlas swatches", command=self._edit_swatches, state="disabled"
-        )
+            buttons, text="Ground textures", command=self._edit_swatches, state="disabled")
         tip(self._swatches_button, "The atlas rectangles this map's ground can be painted with, and the atlas "
                                    "builder for custom textures.")
-
-        # Each page shows only the buttons its sets can use: the terrain tools on Map Models (every
-        # set there is a zmap/ map.cmp), the character, rig and clip tools on 3D Models (no zmap/
-        # set). The hidden buttons still exist, so the selection code can keep configuring them.
-        shared = (self._export_button, self._blend_button, self._import_button)
-        if self.map_only:
-            shown = shared + (self._paint_kit_button, self._swatches_button, self._restore_button)
-        else:
-            shown = shared + (self._import_anim_button, self._import_rig_button, self._kit_button,
-                              self._events_button, self._export_ga_button, self._import_ga_button,
-                              self._copy_clip_button, self._fit_button, self._anchor_button,
-                              self._check_button, self._restore_button, self._new_slot_button,
-                              self._new_character_button, self._remove_slot_button, self._tables_button)
-        # wrapped in rows so the button bar never widens the list pane
-        for i, button in enumerate(shown):
-            # two per row: three cut labels such as "Import animation" at the default pane width
-            button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
+        self._all_buttons = (self._export_button, self._import_button, self._fit_button, self._skeleton_button,
+                             self._new_slot_button, self._tables_button, self._paint_kit_button,
+                             self._swatches_button, self._restore_button, self._remove_slot_button)
         for column in range(2):
             buttons.grid_columnconfigure(column, weight=1, uniform="buttons")
 
         self._preview = _ModelPreview(paned)
         paned.add(self._preview, weight=5)
+
+        # the clip buttons act on the clip selected in the Animations tab, so they sit under its list
+        actions = self._preview.clip_actions
+        self._replace_clip_button = ttk.Menubutton(actions, text="Replace clip", state="disabled")
+        clip_menu = tk.Menu(self._replace_clip_button, tearoff=False)
+        clip_menu.add_command(label="From a .glb file", command=self._import_animation)
+        clip_menu.add_command(label="From a .ga file (Tellius Forge)", command=self._import_clip_ga)
+        clip_menu.add_command(label="From another model", command=self._copy_clip)
+        self._replace_clip_button.config(menu=clip_menu)
+        tip(self._replace_clip_button, "Replace the selected clip: with an animation from a .glb, a .ga file "
+                                       "(Tellius Forge's export; a file with no events gets the replaced "
+                                       "clip's), or another model's clip from this game or the other one.")
+        self._export_ga_button = ttk.Button(actions, text="Export clip (.ga)", command=self._export_clip_ga,
+                                            state="disabled")
+        tip(self._export_ga_button, "The selected clip as a .ga file, to edit in Blender with Tellius Forge "
+                                    "(Jade's add-on).")
+        self._events_button = ttk.Button(actions, text="Edit clip events", command=self._edit_events,
+                                         state="disabled")
+        # two per row, like the set buttons: three side by side are cut at the default pane width
+        for i, button in enumerate((self._replace_clip_button, self._events_button, self._export_ga_button)):
+            button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
+        for column in range(2):
+            actions.grid_columnconfigure(column, weight=1, uniform="clip")
+        self._layout_buttons(self._buttons_for(None))
         self._place_list_sash(paned, left)
 
     def _place_list_sash(self, paned: ttk.PanedWindow, left: ttk.Frame, tries: int = 30) -> None:
@@ -6366,6 +6377,7 @@ class ModelViewer(EditorPanel):
 
     # -- data loading ---------------------------------------------------------
     def _load_set_list(self) -> None:
+        self._vanilla_cache: dict[str, set[str]] = {}  # Delete this copy: the disc's models, read once
         self._all_sets = _iter_model_sets(self._project)
         # chapter maps are listed under Map Models only
         self._all_sets = [item for item in self._all_sets if item[0].startswith("zmap/") == self.map_only]
@@ -6386,37 +6398,10 @@ class ModelViewer(EditorPanel):
         if not selection:
             return
         label, path = self._filtered_sets[selection[0]]
-        self._export_button.config(state="normal")
-        self._blend_button.config(state="normal")
-        writable = True
-        # Scenery takes a static mesh, map and battle models a skinned body.
-        self._import_button.config(
-            text="Import .blend/.glb",
-            state="normal" if writable and label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")) else "disabled",
-        )
-        animatable = writable and label.startswith(("ymu/", "zu/"))
-        self._import_anim_button.config(state="normal" if animatable else "disabled")
-        self._import_rig_button.config(state="normal" if animatable else "disabled")
-        self._kit_button.config(state="normal" if writable and label.startswith(("ymu/", "zu/")) else "disabled")
-        self._events_button.config(state="normal" if animatable else "disabled")
-        self._export_ga_button.config(state="normal" if animatable else "disabled")
-        self._import_ga_button.config(state="normal" if animatable else "disabled")
-        self._copy_clip_button.config(state="normal" if animatable else "disabled")
-        self._fit_button.config(state="normal" if animatable else "disabled")
-        self._anchor_button.config(state="normal" if animatable else "disabled")
-        self._check_button.config(state="normal" if animatable else "disabled")
-        self._restore_button.config(
-            state="normal" if writable and self._project.originals_in(path.parent) else "disabled")
-        weapon = label.startswith("xwp/") and not label.startswith("xwp/forge/")
-        self._new_slot_button.config(
-            state="normal" if label.startswith(("ymu/", "zu/")) or weapon else "disabled")
-        self._new_character_button.config(
-            state="normal" if label.startswith(("ymu/", "zu/")) else "disabled")
-        self._remove_slot_button.config(
-            state="normal" if label.startswith(("ymu/", "zu/")) or weapon else "disabled")
-        paintable = "normal" if is_map_container(path) else "disabled"
-        self._paint_kit_button.config(state=paintable)
-        self._swatches_button.config(state=paintable)
+        self._layout_buttons(self._buttons_for(label, path))
+        animatable = label.startswith(("ymu/", "zu/"))
+        for button in (self._replace_clip_button, self._export_ga_button, self._events_button):
+            button.config(state="normal" if animatable else "disabled")
         try:
             loaded = _load_model_set(label, path)
         except Exception as exc:  # noqa: BLE001
@@ -6433,7 +6418,92 @@ class ModelViewer(EditorPanel):
         selection = self._set_list.curselection()
         return self._filtered_sets[selection[0]] if selection else None
 
-    def _export_glb(self) -> None:
+    def _buttons_for(self, label: str | None, path: Path | None = None) -> list[ttk.Widget]:
+        """The buttons that work on the set ``label`` (none selected: the page's main ones, greyed)."""
+        if label is None or path is None:
+            if self.map_only:
+                return [self._export_button, self._import_button, self._paint_kit_button, self._swatches_button]
+            return [self._export_button, self._import_button, self._tables_button]
+        character = label.startswith(("ymu/", "zu/"))
+        weapon = label.startswith("xwp/") and not label.startswith("xwp/forge/")
+        shown: list[ttk.Widget] = [self._export_button]
+        # scenery takes a static mesh, map and battle models a skinned body
+        if label.startswith(("zbg/", "ymu/", "zu/", "zmap/", "xwp/")):
+            shown.append(self._import_button)
+        if character:
+            shown += [self._fit_button, self._skeleton_button]
+        if character or weapon:
+            shown.append(self._new_slot_button)
+        if character:
+            shown.append(self._tables_button)
+        if is_map_container(path):
+            shown += [self._paint_kit_button, self._swatches_button]
+        if self._project.originals_in(path.parent):
+            shown.append(self._restore_button)
+        if (character or weapon) and self._is_added_copy(label):
+            shown.append(self._remove_slot_button)
+        return shown
+
+    def _layout_buttons(self, shown: list[ttk.Widget]) -> None:
+        """Lay out only ``shown``, two per row so the bar never widens the list pane; the others are
+        hidden, not greyed. With no set selected the set buttons stay greyed."""
+        enabled = self._selected_set() is not None
+        for button in self._all_buttons:
+            button.grid_forget()
+        for i, button in enumerate(shown):
+            button.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 4), pady=(0, 4))
+            if button is not self._tables_button:
+                button.config(state="normal" if enabled else "disabled")
+
+    def _is_added_copy(self, label: str) -> bool:
+        """Whether ``label`` is a model the mod added with Duplicate as new model (Delete this copy)."""
+        kind, name = label.split("/", 1)
+        cache = self.__dict__.setdefault("_vanilla_cache", {})
+        try:
+            if kind == "xwp":
+                from .. import weapon_slots
+
+                return weapon_slots.is_added_model(self._project, name)
+            if kind == "zu":
+                if "zu" not in cache:
+                    cache["zu"] = model_slots.vanilla_battle_codes(self._project)
+                return name not in cache["zu"]
+            if kind == "ymu":
+                if "ymu" not in cache:
+                    vanilla = model_slots.vanilla_map_aids(self._project)
+                    cache["ymu"] = {record.class_folder.rstrip("/")
+                                    for record in model_slots.map_model_records(self._project)
+                                    if record.base_aid not in vanilla}
+                return name in cache["ymu"]
+        except Exception:  # noqa: BLE001 - no vanilla tables to compare with: offer nothing to delete
+            return False
+        return False
+
+    def _export(self) -> None:
+        """Export to Blender: a .blend (with Blender set in the Preferences) or a .glb, by the type picked."""
+        selected = self._selected_set()
+        if selected is None:
+            return
+        label, _path = selected
+        types = [("Blender file", "*.blend"), ("glTF binary", "*.glb")]
+        if blender_tool.configured_blender() is None:
+            types.reverse()
+        extension = types[0][1][1:]
+        target = filedialog.asksaveasfilename(
+            title=f"Export {label} to Blender",
+            defaultextension=extension,
+            initialfile=label.replace("/", "_") + extension,
+            filetypes=types,
+            parent=self,
+        )
+        if not target:
+            return
+        if Path(target).suffix.lower() == ".blend":
+            self._export_blend(target)
+        else:
+            self._export_glb(target)
+
+    def _export_glb(self, target: str | None = None) -> None:
         selected = self._selected_set()
         if selected is None:
             return
@@ -6454,7 +6524,7 @@ class ModelViewer(EditorPanel):
                 if dialog.result is None:
                     return
                 object_names = dialog.result
-        target = filedialog.asksaveasfilename(
+        target = target or filedialog.asksaveasfilename(
             title="Export model as glTF",
             defaultextension=".glb",
             initialfile=label.replace("/", "_") + ".glb",
@@ -6486,7 +6556,7 @@ class ModelViewer(EditorPanel):
             )
         messagebox.showinfo("Exported", "Wrote " + "\n".join(written) + note, parent=self)
 
-    def _export_blend(self) -> None:
+    def _export_blend(self, target: str | None = None) -> None:
         selected = self._selected_set()
         if selected is None:
             return
@@ -6515,7 +6585,7 @@ class ModelViewer(EditorPanel):
                 if dialog.result is None:
                     return
                 object_names = dialog.result
-        target = filedialog.asksaveasfilename(
+        target = target or filedialog.asksaveasfilename(
             title="Export as a self-contained Blender file",
             defaultextension=".blend",
             initialfile=label.replace("/", "_") + ".blend",
@@ -6551,7 +6621,7 @@ class ModelViewer(EditorPanel):
         bar.start(12)
         progress.protocol("WM_DELETE_WINDOW", lambda: None)
         progress.grab_set()
-        self._blend_button.config(state="disabled")
+        self._export_button.config(state="disabled")
 
         results: "queue.Queue" = queue.Queue()
 
@@ -6574,7 +6644,7 @@ class ModelViewer(EditorPanel):
                 progress.destroy()
             if self.winfo_exists():
                 selected = self._selected_set()
-                self._blend_button.config(
+                self._export_button.config(
                     state="normal" if selected is not None else "disabled"
                 )
                 if status == "ok":
@@ -6633,7 +6703,7 @@ class ModelViewer(EditorPanel):
             True,
             "Open it in Blender with the Tellius Terrain add-on enabled (Settings > Preferences > Install add-on). "
             "Sculpt FE9 Sculpt, paint the layers from the sidebar's Tellius tab, save, then import the .blend "
-            "here with Import .blend/.glb",
+            "here with Import from Blender",
         )
 
     def _create_new_map(self) -> None:
@@ -6742,7 +6812,7 @@ class ModelViewer(EditorPanel):
         try:
             dialog = AtlasSwatchesDialog(self, self._project.directory, path)
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Atlas swatches", str(exc), parent=self)
+            messagebox.showerror("Ground textures", str(exc), parent=self)
             return
         self.wait_window(dialog)
 
@@ -6866,9 +6936,9 @@ class ModelViewer(EditorPanel):
             messagebox.showerror("Could not export the rig kit", str(exc), parent=self)
             return
         messagebox.showinfo(
-            "Rig kit exported",
+            "Skeleton template exported",
             "Wrote " + "\n".join(str(p) for p in written) + "\n\nThe .md lists the anchor bones, map weapons and "
-            "every animation with its frames and events; a replacement rig imported with Replace rig must "
+            "every animation with its frames and events; a skeleton imported with Replace skeleton and all animations must "
             "provide them.",
             parent=self,
         )
@@ -7103,12 +7173,12 @@ class ModelViewer(EditorPanel):
         messagebox.showinfo(
             "Clip exported",
             f"Wrote {target}.\n\nOpen it in Blender with Tellius Forge (File > Import > FE9 & FE10 Animation) "
-            "on the set's model, then use Replace clip from .ga to bring the edited file back.",
+            "on the set's model, then use Replace clip › From a .ga file to bring the edited file back.",
             parent=self)
 
     def _import_clip_ga(self) -> None:
         """Replace the selected clip with a .ga file (from Tellius Forge, or any other tool)."""
-        found = self._clip_for_ga("Replace clip from .ga")
+        found = self._clip_for_ga("Replace clip")
         if found is None:
             return
         label, path, clips, clip = found
@@ -7385,6 +7455,8 @@ class ModelViewer(EditorPanel):
                 callback()  # the project index: character pages show the models they resolve to
 
     def _new_slot(self) -> None:
+        """Duplicate as new model: copy the set under a new name for a character or class, then, with
+        "Put my character on the copy" ticked, fit a rigged humanoid onto the copy."""
         selected = self._selected_set()
         if selected is None:
             return
@@ -7405,40 +7477,23 @@ class ModelViewer(EditorPanel):
         self._reload_game_data()
         self._changelog.append(label, dialog.result)
         self._load_set_list()
-
-    def _new_character_model(self) -> None:
-        """New slot, then Fit new rig of a rigged humanoid onto the new slot, in one go."""
-        selected = self._selected_set()
-        if selected is None or not self._game_data_saved():
+        if not getattr(dialog, "put_character", False):
             return
-        label, _path = selected
-        chosen = filedialog.askopenfilename(
-            title=f"New character model from {label}: a rigged humanoid model (it gets the set's animations)",
-            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")],
-            parent=self,
-        )
-        if not chosen:
-            return
-        try:
-            dialog = _NewSlotDialog(self, self._project, label)
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Could not read the game data", str(exc), parent=self)
-            return
-        self.wait_window(dialog)
-        if dialog.result is None:
-            return
-        self._reload_game_data()
-        self._changelog.append(label, dialog.result)
-        self._load_set_list()
         target = next(((l, p) for l, p in self._all_sets if l == dialog.new_label), None)
         if target is None or dialog.new_label == label:
             messagebox.showinfo(
-                "New character model",
-                f"{dialog.result}.\nThe slot shares the files of {label}: give it its own folder, then use "
-                "Fit new rig on it.", parent=self)
+                "Duplicate as new model",
+                f"{dialog.result}.\nThe copy shares the files of {label}: give it its own folder, then use "
+                "Replace with my character on it.", parent=self)
             return
         self._select_set(target[0])
-        self._fit_rig_onto(target[0], target[1], Path(chosen))
+        chosen = filedialog.askopenfilename(
+            title=f"Your character for {target[0]}: a rigged humanoid model (it gets the set's animations)",
+            filetypes=[("glTF", "*.glb *.gltf"), ("All files", "*.*")],
+            parent=self,
+        )
+        if chosen:
+            self._fit_rig_onto(target[0], target[1], Path(chosen))
 
     def _select_set(self, label: str) -> None:
         """Show ``label`` in the list (clearing the filter) and select it."""
@@ -7489,8 +7544,8 @@ class ModelViewer(EditorPanel):
         self._select_set(new_label)
         messagebox.showinfo(
             "New weapon model",
-            f"{new_label} is a copy of xwp/{source}. Import .blend/.glb gives it its own mesh.\n"
-            "Tip: Export .glb the original first and model over it in Blender, so the grip stays in the hand.",
+            f"{new_label} is a copy of xwp/{source}. Import from Blender gives it its own mesh.\n"
+            "Tip: Export to Blender the original first and model over it in Blender, so the grip stays in the hand.",
             parent=self)
 
     def _remove_slot(self) -> None:
@@ -7569,7 +7624,7 @@ class ModelViewer(EditorPanel):
             return
         names = ", ".join(p.name for p in originals)
         if not messagebox.askyesno(
-            "Restore original files?",
+            "Revert to original?",
             f"Put back the files of {label} as they were extracted ({names})? Every import into them is undone.",
             parent=self,
         ):

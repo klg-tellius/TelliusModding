@@ -44,7 +44,7 @@ Records are found by their ID (`PID_ZAWANAR`, `IID_IRONAXE`, `SEQ_…`, `RID_…
 | An icon | **Assets › Icons**: *used by* under the selected icon | Items and skills with that icon number |
 | A flag | **Game Data › Flags** | Every script that registers, sets, clears or tests it ([Design, register, and test event flags](34-event-flags.md)) |
 | A message or a line of dialogue | Ctrl+K, the words of the text; the chapter's Dialogue | Every chapter message |
-| A model | **3D Models › Model tables…** › **Which models does a character get?** | The battle job list and the animation IDs ([Give a character unique models](12-character-model-slot.md)) |
+| A model | **3D Models › Model assignments** › **Which models does a character get?** | The battle job list and the animation IDs ([Give a character unique models](12-character-model-slot.md)) |
 | A chapter | Its **Overview**: **Played after:** | The story table ([Work with chapter IDs and story order](07-chapter-ids-and-story-flow.md)) |
 | Anything else | **Disc & Patch › Export as text…**, then a text search in the folder | Every table, deployment, message and decompiled script as text ([Edit data in bulk outside the app](67-bulk-edit.md)) |
 

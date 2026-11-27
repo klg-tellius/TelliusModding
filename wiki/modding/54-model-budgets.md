@@ -34,7 +34,7 @@ Create a fixed Battle Simulator setup using the asset. Record actors, weapon, di
 
 ## How the editor fits together
 
-`xwp/` contains attached weapon resources; `zbg/` contains battle scenery. **Export .glb…** converts the current slot. **Import .glb…** rebuilds the slot-specific `.gs`/texture output and opens Import Review. The review compares current and imported figures, lists files to write, and reports limits or above-retail values. Nothing changes before **Write files**.
+`xwp/` contains attached weapon resources; `zbg/` contains battle scenery. **Export to Blender** converts the current slot. **Import from Blender** rebuilds the slot-specific `.gs`/texture output and opens Import Review. The review compares current and imported figures, lists files to write, and reports limits or above-retail values. Nothing changes before **Write files**.
 
 The importer supports its documented material subset. Geometry, UVs, texture encoding, shape/render family, coordinate system, and model-local transforms jointly determine the result. Raising a count does not add engine support for an unsupported blend or skinning mode.
 
@@ -76,7 +76,7 @@ Write the files, reopen the set, and rotate/zoom the preview. Render the fixed f
 - **Import Review figures:** current/imported resource costs and structural changes.
 - **Warnings:** unsupported or above-reference conditions requiring correction or game evidence.
 - **Reduce mesh:** trades geometric detail for budget; it does not repair UV/material design.
-- **Write files / Restore original…:** transaction commit and whole-resource recovery.
+- **Write files / Revert to original:** transaction commit and whole-resource recovery.
 
 ## On Radiant Dawn
 
@@ -85,7 +85,7 @@ On Radiant Dawn the weapon models are named by `FE10BWeapon` rows of `FE10Battle
 ## Things to try next
 
 1. **Read a retail outlier.** Open `zu/drm2` and `zu/pal3` and read their figures under the preview: they set the battle references.
-2. **Reduce a map model.** Export a battle model as `.glb`, import it onto a map model slot made with **New slot...**, and choose **Reduce** to 800 triangles; compare the silhouette.
+2. **Reduce a map model.** Export a battle model as `.glb`, import it onto a map model slot made with **Duplicate as new model**, and choose **Reduce** to 800 triangles; compare the silhouette.
 3. **A texture budget.** Halve a weapon texture and compare the file size in Import Review.
 
 ## Interactions and precedence
@@ -119,7 +119,7 @@ Texture alpha and shape flags determine render-list behavior; app preview cannot
 
 ## Save, build, and revert
 
-Write only the reviewed file set, run checks, reopen, render, build, and test in Dolphin. Keep the source glTF plus baseline figures. Revert with **Restore original…** for the entire slot; restore related texture outputs together.
+Write only the reviewed file set, run checks, reopen, render, build, and test in Dolphin. Keep the source glTF plus baseline figures. Revert with **Revert to original** for the entire slot; restore related texture outputs together.
 
 ## Limits and confidence
 

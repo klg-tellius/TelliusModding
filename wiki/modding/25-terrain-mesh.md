@@ -77,7 +77,7 @@ These choices are independent. “Keep map texturing” does not move tactical h
 
 [![3D Models page with the zmap/bmap01 set selected and the terrain mesh in the preview.](../assets/images/tutorials/screenshots/25-a-setup.png)](../assets/images/tutorials/screenshots/25-a-setup.png)
 
-<figcaption markdown="span">**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export .glb…** writes the terrain (and its `_mask.png`), **Import .glb…** opens the import review before anything is written.</figcaption>
+<figcaption markdown="span">**Assets › 3D Models** with the Prologue terrain (`zmap/bmap01`): **Export to Blender** writes the terrain (and its `_mask.png`), **Import from Blender** opens the import review before anything is written.</figcaption>
 </figure>
 
 ### 1. Export and archive the reference

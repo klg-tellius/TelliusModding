@@ -20,7 +20,7 @@ source_path: "modding/12-character-model-slot.md"
 ---
 # Give a character unique models
 
-**Route:** a character's **Portrait & models**; Assets → **3D Models** → **New slot…** / **Model tables…**
+**Route:** a character's **Portrait & models**; Assets → **3D Models** → **Duplicate as new model** / **Model assignments**
 
 ## What you will make
 
@@ -63,10 +63,10 @@ Open the Guard › **Portrait & models**. Under **Models**: *Battle model* `zu/f
 
 [![New slot dialog for a map model with the copied animation ID, new ID, new folder, character and promoted fields, Create and Cancel.](../assets/images/tutorials/screenshots/12-a-setup.png)](../assets/images/tutorials/screenshots/12-a-setup.png)
 
-<figcaption markdown="span">**New slot…** on `ymu/fighter`: **Copy animation ID** `AID_FIGHTER_BO` (Boyd's), **New animation ID** `AID_TGUARD`, **New folder** `tguard` (its own copy of the files), **Character** `PID_TUTORIAL_GUARD`, **Promoted model** off.</figcaption>
+<figcaption markdown="span">**Duplicate as new model** on `ymu/fighter`: **Copy animation ID** `AID_FIGHTER_BO` (Boyd's), **New animation ID** `AID_TGUARD`, **New folder** `tguard` (its own copy of the files), **Character** `PID_TUTORIAL_GUARD`, **Promoted model** off.</figcaption>
 </figure>
 
-1. Press **Open in 3D Models** on the *Map model* row (`ymu/fighter`), then **New slot…**.
+1. Press **Open in 3D Models** on the *Map model* row (`ymu/fighter`), then **Duplicate as new model**.
 2. **Copy animation ID**: `AID_FIGHTER_BO`. **New animation ID**: `AID_TGUARD` (*AID_ and capitals*). **New folder**: `tguard` (*ymu/<folder>/; empty: share*: empty would make a new AID that uses the same files). **Character**: `PID_TUTORIAL_GUARD` (*empty: register only*). **Promoted model**: off.
 3. Press **Create**. The app copies `ymu/fighter/` to `ymu/tguard/`, adds `AID_TGUARD` to `FE8Anim.bin`, and sets the Guard's **Unpromoted** map model to it in `FE8Data.bin`. If `FE8Data.bin` had unsaved edits, it asks to save them first.
 
@@ -77,10 +77,10 @@ Open the Guard › **Portrait & models**. Under **Models**: *Battle model* `zu/f
 
 [![New slot dialog for a battle model with the model code, character and class fields.](../assets/images/tutorials/screenshots/12-c-battle.png)](../assets/images/tutorials/screenshots/12-c-battle.png)
 
-<figcaption markdown="span">**New slot…** on `zu/fig1`: **New model code** `tgd1`, **Character** `PID_TUTORIAL_GUARD`, **Class** `JID_FIGHTER` (filled from the character). **Create** copies the model and adds the job-list line `JID_FIGHTER+PID_TUTORIAL_GUARD`.</figcaption>
+<figcaption markdown="span">**Duplicate as new model** on `zu/fig1`: **New model code** `tgd1`, **Character** `PID_TUTORIAL_GUARD`, **Class** `JID_FIGHTER` (filled from the character). **Create** copies the model and adds the job-list line `JID_FIGHTER+PID_TUTORIAL_GUARD`.</figcaption>
 </figure>
 
-1. Back on **Portrait & models**, press **Open in 3D Models** on *Battle model* (`zu/fig1`), then **New slot…**.
+1. Back on **Portrait & models**, press **Open in 3D Models** on *Battle model* (`zu/fig1`), then **Duplicate as new model**.
 2. **New model code**: `tgd1` (*4 lowercase letters or digits*). **Character**: `PID_TUTORIAL_GUARD` (*empty: the whole class*). **Class** fills in: `JID_FIGHTER`.
 3. Press **Create**. The app copies `zu/fig1` to `zu/tgd1` in `zdbx.cmp` and adds the job-list line `JID_FIGHTER+PID_TUTORIAL_GUARD` → `tgd1`.
 
@@ -91,10 +91,10 @@ Open the Guard › **Portrait & models**. Under **Models**: *Battle model* `zu/f
 
 [![Model tables dialog with the battle job list, the new character line selected and the result of Which models does a character get.](../assets/images/tutorials/screenshots/12-b-result.png)](../assets/images/tutorials/screenshots/12-b-result.png)
 
-<figcaption markdown="span">**Model tables…**, **Battle job list**: the new line `JID_FIGHTER+PID_TUTORIAL_GUARD` → `tgd1`. **Which models does a character get?** with `PID_TUTORIAL_GUARD`: battle `zu/tgd1`, map from `AID_TGUARD`. Boyd still gets `zu/fig1` and `AID_FIGHTER_BO`.</figcaption>
+<figcaption markdown="span">**Model assignments**, **Battle job list**: the new line `JID_FIGHTER+PID_TUTORIAL_GUARD` → `tgd1`. **Which models does a character get?** with `PID_TUTORIAL_GUARD`: battle `zu/tgd1`, map from `AID_TGUARD`. Boyd still gets `zu/fig1` and `AID_FIGHTER_BO`.</figcaption>
 </figure>
 
-1. On **3D Models**, press **Model tables…**. The **Battle job list** tab ends with the new line `JID_FIGHTER+PID_TUTORIAL_GUARD`, model `tgd1`.
+1. On **3D Models**, press **Model assignments**. The **Battle job list** tab ends with the new line `JID_FIGHTER+PID_TUTORIAL_GUARD`, model `tgd1`.
 2. In **Which models does a character get?**, pick `PID_TUTORIAL_GUARD`: *class JID_FIGHTER, animation ID AID_TGUARD: battle zu/tgd1, map ymu/tguard/*. Tick **Promoted**: still `zu/war1` and `ymu/fighter2`.
 3. Pick `PID_BOLE`: `zu/fig1` and `ymu/fighter`, unchanged. Pick another Fighter's PID: `zu/fig1`.
 
@@ -171,7 +171,7 @@ On Radiant Dawn the same dialog edits `FE10Battle.cms` and `FE10Anim.cms`:
 A character whose map animation ID is shared (with the class or other characters) gets a copy of the records under `<AID>_<TAG>`, using the same folder, and the job-list line of the old ID is copied so the battle model stays. Portraits change palette only, so the eye and mouth frames follow.
 
 1. **The promoted state.** Repeat steps 2 and 3 from `ymu/fighter2` and `zu/war1` with **Promoted model** on, then check **Promoted** in **Which models does a character get?**.
-2. **A class-wide model.** In **Model tables…**, set the line `JID_FIGHTER` to `tgd1` and look at Boyd: every Fighter now uses the copy. Set it back to `fig1`.
+2. **A class-wide model.** In **Model assignments**, set the line `JID_FIGHTER` to `tgd1` and look at Boyd: every Fighter now uses the copy. Set it back to `fig1`.
 3. **Remove the slots.** **Battle textures** › `tgd1` › **Remove this slot...**, then **Map models** › `AID_TGUARD` › **Remove this slot...**: the Guard falls back to the class models.
 
 ## Interactions and precedence
@@ -199,7 +199,7 @@ Checkpoint before slot creation. Save FE8Data and model tables/resources they ow
 
 ## Limits and confidence
 
-- The two resolution systems, the dialogs and what they write are source-reviewed. Both slots of this lesson were created in the app on a US disc, checked in **Model tables…** and on the character page, then removed (app-tested).
+- The two resolution systems, the dialogs and what they write are source-reviewed. Both slots of this lesson were created in the app on a US disc, checked in **Model assignments** and on the character page, then removed (app-tested).
 - How a copied or replaced model plays in every map action and battle animation needs Dolphin (unknown).
 - Colour variants and army colours were created in the app on a copy of a US project and their files and tables read back (app-tested). The per-character battle texture line follows the engine's lookup order and the Boyd test; a new loose `tex_<n>.tpl` texture number for a map model has not been seen in game yet (unknown).
 

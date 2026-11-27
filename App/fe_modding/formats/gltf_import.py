@@ -1019,7 +1019,7 @@ def build_skinned_gs(
     if all_names and not any(n in matched for n in all_names):
         raise GltfImportError(
             "None of the glTF joints match a bone of this skeleton. Export the model set with "
-            "Export .glb and weight the new mesh to that armature."
+            "Export to Blender and weight the new mesh to that armature."
         )
     warnings = list(scene.warnings)
     unmatched: set[str] = set()
