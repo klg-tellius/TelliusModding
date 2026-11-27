@@ -1,0 +1,41 @@
+name: Tool download mirror
+
+# Keeps copies of the pinned tool archives (App/fe_modding/runtime_tools.py) on the
+# "tools-mirror" release, so the app and Tellius Patcher can still install WIT when
+# wit.wiimm.de does not answer. The files are upstream's, byte for byte: the pinned
+# SHA-256 is checked here and again by the program that downloads them.
+# Run it after changing a pinned tool version (Actions > Tool download mirror > Run workflow).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download, verify and upload the pinned archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd App
+          python - <<'PY' > ../mirror.tsv
+          from fe_modding.runtime_tools import TOOLS, archive_name
+          for name, spec in TOOLS.items():
+              if spec.get("mirrors"):
+                  print(spec["url"], archive_name(name), spec["sha256"], sep="\t")
+          PY
+          cd ..
+          if ! gh release view tools-mirror > /dev/null 2>&1; then
+            gh release create tools-mirror --title "Tool download mirror" --latest=false --notes \
+              "Unmodified copies of third-party tools that Tellius Modding downloads on demand, used when the upstream site does not answer. Wiimm's ISO Tools (WIT) is GPL-2.0 software by Dirk Clemens (Wiimm); its source code is at https://wit.wiimm.de/ and https://github.com/Wiimm/wiimms-iso-tools."
+          fi
+          while IFS=$'\t' read -r url file sha; do
+            curl -fsSL --retry 4 --retry-delay 5 -o "$file" "$url"
+            echo "$sha  $file" | sha256sum -c -
+            gh release upload tools-mirror "$file" --clobber
+          done < mirror.tsv

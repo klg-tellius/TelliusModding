@@ -228,3 +228,21 @@ class ShiftJisNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FindWitTests(unittest.TestCase):
+    def test_wit_next_to_the_program_is_found(self):
+        import tempfile
+        from unittest import mock
+        from pathlib import Path
+        from fe_modding import tools as tools_module
+        with tempfile.TemporaryDirectory() as temporary:
+            here = Path(temporary)
+            (here / 'wit').mkdir()
+            (here / 'wit' / 'wit.exe').write_bytes(b'x')
+            with mock.patch.object(tools_module, '_program_dir', return_value=here), \
+                    mock.patch.object(tools_module, 'REPO_ROOT', here / 'none'), \
+                    mock.patch.object(tools_module, 'tool_directory', return_value=here / 'none'), \
+                    mock.patch('fe_modding.config.load_setting', return_value=None), \
+                    mock.patch.object(tools_module.shutil, 'which', return_value=None):
+                self.assertEqual(tools_module.find_wit(), here / 'wit' / 'wit.exe')

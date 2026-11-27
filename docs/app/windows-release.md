@@ -17,6 +17,19 @@ The app remains usable for existing projects while offline; disc/media features
 need their respective tools installed first. You can return to setup through
 **Settings > Disc and media tools**.
 
+If wit.wiimm.de does not answer (a timeout such as `WinError 10060`), the
+program retries, then falls back to an identical copy on this repository's
+`tools-mirror` release (same pinned SHA-256). If no source works, Tellius
+Patcher offers to use a WIT you already have: pick `wit.exe` or the
+`wit-v3.05a-r8638-cygwin64.zip` downloaded in a browser (the ZIP's checksum is
+checked before it is installed). WIT is also picked up, without any download,
+when it sits next to `TelliusPatcher.exe` (`wit.exe`, `wit\wit.exe` or
+`tools\wit\win64\wit.exe`, with its DLLs) or is on the `PATH`, so a mod
+author may ship it beside the patch.
+
+The `tools-mirror` release is filled by **Actions > Tool download mirror > Run
+workflow**; run it again whenever a pinned tool version changes.
+
 Downloaded tools live in `%LOCALAPPDATA%\TelliusModding\tools`. Preferences and
 recent projects remain in `%USERPROFILE%\.tellius_modding`. Keep mod projects
 outside the application folder. To update, extract the new release into a new

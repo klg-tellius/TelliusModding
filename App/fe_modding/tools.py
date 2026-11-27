@@ -29,6 +29,7 @@ reasoning, stm.py only reads WAV, so anything else goes through here first.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,7 @@ WIT_DIR = REPO_ROOT / "tools" / "wit" / "win64"
 if not (WIT_DIR / "wit.exe").is_file():
     WIT_DIR = tool_directory("wit")
 WIT_EXE = WIT_DIR / "wit.exe"
+WIT_SETTING = "wit_exe"  # a wit.exe the user pointed at (the patcher's "Locate WIT" choice)
 FFMPEG_DIR = REPO_ROOT / "tools" / "ffmpeg" / "win64"
 if not (FFMPEG_DIR / "ffmpeg.exe").is_file():
     FFMPEG_DIR = tool_directory("ffmpeg")
@@ -59,15 +61,54 @@ class ToolError(ModdingError):
     """Raised when the bundled WIT binary is missing or a command fails."""
 
 
+def _program_dir() -> Path:
+    """The folder of the running program (the .exe once frozen, where a mod author may put WIT)."""
+    return Path(sys.executable if getattr(sys, "frozen", False) else sys.argv[0] or ".").resolve().parent
+
+
+def wit_candidates() -> list[Path]:
+    """Where WIT may already be, best first: the repository copy, the per-user install, next to the
+    program (``wit.exe``, ``wit/`` or ``tools/wit/win64/``), the saved choice, then the PATH."""
+    found = [REPO_ROOT / "tools" / "wit" / "win64" / "wit.exe", tool_directory("wit") / "wit.exe"]
+    here = _program_dir()
+    found += [here / "wit.exe", here / "wit" / "wit.exe", here / "tools" / "wit" / "win64" / "wit.exe"]
+    try:
+        from .config import load_setting
+        saved = load_setting(WIT_SETTING)
+    except Exception:  # noqa: BLE001 - an unreadable settings file must not hide an installed WIT
+        saved = None
+    if saved:
+        found.append(Path(saved))
+    hit = shutil.which("wit")
+    if hit:
+        found.append(Path(hit))
+    return found
+
+
+def find_wit() -> Optional[Path]:
+    return next((path for path in wit_candidates() if path.is_file()), None)
+
+
+def remember_wit(exe: Path | str) -> Path:
+    """Use this wit.exe from now on (saved in the settings)."""
+    exe = Path(exe)
+    if exe.name.lower() not in ("wit.exe", "wit") or not exe.is_file():
+        raise ToolError(f"{exe} is not wit.exe.")
+    from .config import save_setting
+    save_setting(WIT_SETTING, str(exe))
+    return exe
+
+
 def wit_path() -> Path:
     if sys.platform != "win32":
         raise ToolError(
             "The bundled WIT binary is Windows-only. Install Wiimm's ISO Tools "
             "for your platform and point WIT_EXE at it."
         )
-    if not WIT_EXE.exists():
+    exe = find_wit()
+    if exe is None:
         raise ToolError("WIT is not installed. Open Settings > Disc and media tools to download it.")
-    return WIT_EXE
+    return exe
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:
@@ -76,7 +117,7 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
         [str(exe), *args],
         capture_output=True,
         text=True,
-        cwd=str(WIT_DIR),
+        cwd=str(exe.parent),
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()

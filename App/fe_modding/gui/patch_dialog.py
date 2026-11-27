@@ -131,12 +131,20 @@ class ApplyPatchDialog(tk.Toplevel):
         if Path(output).exists() and not messagebox.askyesno(
                 "Replace the file?", f"{output} already exists. Replace it?", parent=self):
             return
-        needs_wit = not tools.WIT_EXE.is_file()
-        if needs_wit and not messagebox.askyesno(
+        needs_wit = tools.find_wit() is None
+        if needs_wit:
+            answer = messagebox.askyesnocancel(
                 "Download WIT?", "Reading and writing disc images needs Wiimm's ISO Tools (WIT), a small free "
-                "tool. Download it now from wit.wiimm.de? The download is checked against a known checksum and "
-                "needs no administrator access.", parent=self):
-            return
+                "tool. Download it now (from wit.wiimm.de, or this project's GitHub copy if that site does not "
+                "answer)? The download is checked against a known checksum and needs no administrator access."
+                "\n\nYes: download it.\nNo: choose a WIT you already have (wit.exe or the downloaded .zip).",
+                parent=self)
+            if answer is None:
+                return
+            if answer is False:
+                if self._locate_wit():
+                    self._run()
+                return
         self._busy = True
         self._update_state()
         self._close.configure(state="disabled")
@@ -151,6 +159,8 @@ class ApplyPatchDialog(tk.Toplevel):
                 if needs_wit:
                     runtime_tools.install_tool("wit")
                 results.put(("ok", patch.apply_patch_to_disc(patch_path, disc, output)))
+            except runtime_tools.ToolDownloadError as exc:
+                results.put(("no_wit", str(exc)))
             except ModdingError as exc:
                 results.put(("error", str(exc)))
             except Exception as exc:  # noqa: BLE001 - a failed download or an unexpected error alike
@@ -174,10 +184,33 @@ class ApplyPatchDialog(tk.Toplevel):
                 if payload:
                     messagebox.showwarning("Disc image is oversized", payload, parent=self)
                 messagebox.showinfo("Patched disc ready", f"Built {output}", parent=self)
+            elif status == "no_wit":
+                self._status.configure(text="")
+                if messagebox.askyesno("Could not download WIT", payload + "\n\nChoose wit.exe or the downloaded "
+                                       ".zip now?", icon="warning", parent=self) and self._locate_wit():
+                    self._run()
             else:
                 self._status.configure(text="")
                 messagebox.showerror("Could not apply the patch", payload, parent=self)
         poll()
+
+    def _locate_wit(self) -> bool:
+        """Let the player point at a WIT they downloaded themselves: the release .zip (installed after
+        its checksum is checked) or an unpacked wit.exe (remembered). True once WIT is usable."""
+        chosen = filedialog.askopenfilename(
+            title="Choose wit.exe or the WIT .zip", parent=self,
+            filetypes=[("WIT", "wit.exe *.zip"), ("All files", "*.*")])
+        if not chosen:
+            return False
+        try:
+            if chosen.lower().endswith(".zip"):
+                runtime_tools.install_from_archive("wit", chosen)
+            else:
+                tools.remember_wit(chosen)
+        except (ModdingError, ValueError, OSError) as exc:
+            messagebox.showerror("Could not use this WIT", str(exc), parent=self)
+            return False
+        return tools.find_wit() is not None
 
     def _on_close(self) -> None:
         if not self._busy:
