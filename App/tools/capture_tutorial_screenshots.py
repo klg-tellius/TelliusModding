@@ -1991,20 +1991,23 @@ def lesson_53(ctx: Ctx):
     yield 4000
     viewer = ctx.page("asset")._panels["models"]
     preview = viewer._preview
-    notebook = preview._anim_list.master.master
+    tree = preview._clip_tree  # weapon rows, each holding its clips (iid "clip:<n>")
+    notebook = tree.master
     while not isinstance(notebook, ttk.Notebook):
         notebook = notebook.master
     ctx.tab(notebook, "Animations")
-    names = list(preview._anim_list.get(0, "end"))
-    row = next((i for i, n in enumerate(names) if "_at1_" in str(n).lower()), 0)
-    preview._anim_list.selection_set(row)
-    preview._anim_list.see(row)
-    preview._on_animation_selected()
+    clips = [iid for parent in tree.get_children() for iid in tree.get_children(parent)]
+    clip = next((iid for iid in clips if "_at1_" in str(tree.item(iid, "text")).lower()), clips[0] if clips else None)
+    if clip is not None:
+        tree.see(clip)
+        tree.selection_set(clip)
+        preview._on_animation_selected()
     yield 3000
     ctx.grab("53-a-setup.png", lesson=53,
-             caption="**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: **Animation files "
-                     "(.ga)** lists the set's clips; the selected attack plays on the skeleton with **Play** / "
-                     "**Pause** and its frame counter. **Replace clip › From a .glb file** and **Edit clip events** work on this set.",
+             caption="**3D Models** on `zu/fig1`, the Fighter's battle model, **Animations** tab: each weapon "
+                     "archive's clips with their role, frames and combat events; the selected attack plays on the "
+                     "skeleton with **Play** / **Pause** and its frame counter. Under the list, **Replace clip**, "
+                     "**Edit clip events** and **Export clip (.ga)** work on the selected clip.",
              alt="3D Models page with the Fighter battle model and its Animations tab, an attack clip selected.")
     ctx.later(viewer._edit_events)
     yield Wait(until=lambda: ctx.toplevel("Edit clip events -") is not None, timeout=20_000)
