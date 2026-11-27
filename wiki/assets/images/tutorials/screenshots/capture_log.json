@@ -697,11 +697,11 @@
   "status": "captured",
   "notes": "",
   "size": [
-   559,
-   249
+   721,
+   281
   ],
-  "captured": "2026-10-21",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "12-b-result.png": {
@@ -715,8 +715,8 @@
    902,
    592
   ],
-  "captured": "2026-10-21",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "12-c-battle.png": {
@@ -727,11 +727,11 @@
   "status": "captured",
   "notes": "",
   "size": [
-   543,
-   185
+   709,
+   217
   ],
-  "captured": "2026-10-21",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "12-d-look.png": {
@@ -745,8 +745,8 @@
    1442,
    952
   ],
-  "captured": "2026-10-21",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "12-look.png": {
@@ -760,8 +760,8 @@
    1442,
    952
   ],
-  "captured": "2026-10-21",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "13-a-setup.png": {
@@ -1555,8 +1555,8 @@
    1442,
    952
   ],
-  "captured": "2026-10-20",
-  "app_commit": "a371364+dirty",
+  "captured": "2026-11-26",
+  "app_commit": "196e88e",
   "project": "Tutorial Practice (USA, fresh extraction)"
  },
  "53-a-setup.png": {
