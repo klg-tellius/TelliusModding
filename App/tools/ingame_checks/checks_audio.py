@@ -59,7 +59,8 @@ def fixture_por_map_music(ctx):
 def fixture_rd_phase_music(ctx):
     from fe_modding.formats import fe10_sound_tables as tables, lz10
     cue = add_rd_track(ctx)
-    path = ctx.project.profile.path(ctx.project.extracted_dir / "files", "sound_data")
+    from fe_modding.game_profile import files_root_of
+    path = ctx.project.profile.path(files_root_of(ctx.project), "sound_data")
     raw = path.read_bytes()
     compressed = raw[:1] == b"\x10"
     data = lz10.decompress(raw) if compressed else raw
@@ -142,7 +143,8 @@ CHECKS = [
 def fixture_rd_menu_sfx(ctx):
     from fe_modding.formats import brsar, fe10_sound, lz10, rwsd
     profile = ctx.project.profile
-    files = ctx.project.extracted_dir / "files"
+    from fe_modding.game_profile import files_root_of
+    files = files_root_of(ctx.project)
     data_path, archive_path = profile.path(files, "sound_data"), profile.path(files, "sound_archive")
     raw = data_path.read_bytes()
     cues = fe10_sound.read_sound_data(lz10.decompress(raw) if raw[:1] == b"\x10" else raw)
